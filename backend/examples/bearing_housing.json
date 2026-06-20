@@ -1,0 +1,10 @@
+{
+  "id": "bearing_housing_001",
+  "category": "housing",
+  "tags": ["bearing", "轴承座", "轴承箱", "支撑座", "工业", "底座"],
+  "description": "立式轴承座（底座+圆柱座孔+安装孔）",
+  "description_en": "A pillow block bearing housing with base and mounting holes",
+  "difficulty": "moderate",
+  "features_used": ["box", "cylinder", "union", "hole", "fillet", "chamfer"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\nbore_d = 40        # 轴承孔径 (mm)\nouter_d = 80       # 座圈外径 (mm)\ncap_h = 50         # 座圈高度 (mm) (从底座顶面)\nbase_w = 140       # 底座宽度 (mm)\nbase_d = 60        # 底座深度 (mm)\nbase_h = 20        # 底座高度 (mm)\nbolt_d = 12        # 安装螺栓孔径 (mm)\nbolt_spacing = 110 # 螺栓孔间距 (mm)\noil_hole_d = 6     # 油孔直径 (mm)\n\n# === 底座 ===\nbase = (\n    cq.Workplane(\"XY\")\n    .box(base_w, base_d, base_h)\n)\n\n# 安装螺栓孔\nbase = (\n    base\n    .faces(\">Z\").workplane()\n    .pushPoints([(-bolt_spacing / 2, 0), (bolt_spacing / 2, 0)])\n    .hole(bolt_d)\n)\n\n# === 轴承座圈 (半圆柱) ===\nseat = (\n    cq.Workplane(\"XY\")\n    .workplane(offset=base_h / 2)\n    .circle(outer_d / 2)\n    .extrude(cap_h)\n)\nresult = base.union(seat)\n\n# 轴承孔 (贯通)\nresult = (\n    result\n    .faces(\">Y\").workplane()\n    .center(0, cap_h / 2 + base_h / 2)\n    .hole(bore_d, base_d + 10)\n)\n\n# === 油孔 (顶部) ===\nresult = (\n    result\n    .faces(\">Z\").workplane()\n    .hole(oil_hole_d, cap_h / 2)\n)\n\n# === 圆角 ===\nresult = result.edges(\"|Z\").fillet(3)\n\nshow_object(result)"
+}

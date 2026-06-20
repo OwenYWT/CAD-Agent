@@ -1,0 +1,10 @@
+{
+  "id": "hinge_simple_001",
+  "category": "hardware",
+  "tags": ["hinge", "铰链", "合页", "门", "连接"],
+  "description": "简单合页（一片带轴孔）",
+  "description_en": "A simple hinge leaf with pin hole",
+  "difficulty": "moderate",
+  "features_used": ["box", "cylinder", "hole", "union"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\nleaf_w = 40    # 叶片宽 (mm)\nleaf_h = 50    # 叶片高 (mm)\nthickness = 2  # 板厚 (mm)\npin_d = 5      # 铰链轴直径 (mm)\nknuckle_d = 8  # 铰链筒外径 (mm)\nhole_d = 4     # 安装孔直径 (mm)\n\n# === 建模 ===\n# 叶片\nleaf = (\n    cq.Workplane(\"XY\")\n    .box(leaf_w, leaf_h, thickness)\n)\n\n# 铰链筒\nknuckle = (\n    cq.Workplane(\"XZ\")\n    .center(-leaf_w / 2, 0)\n    .circle(knuckle_d / 2)\n    .extrude(leaf_h)\n    .translate((0, -leaf_h / 2, 0))\n)\n\nresult = leaf.union(knuckle)\n\n# 铰链轴孔\nresult = (\n    result\n    .faces(\">Y\").workplane()\n    .center(-leaf_w / 2, 0)\n    .hole(pin_d, leaf_h)\n)\n\n# 安装孔\nresult = (\n    result\n    .faces(\">Z\").workplane()\n    .rect(leaf_w - 12, leaf_h - 12, forConstruction=True)\n    .vertices()\n    .hole(hole_d)\n)\n\nshow_object(result)"
+}

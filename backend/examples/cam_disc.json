@@ -1,0 +1,10 @@
+{
+  "id": "cam_disc_001",
+  "category": "mechanism",
+  "tags": ["cam", "disc", "凸轮", "偏心", "机构"],
+  "description": "偏心凸轮盘",
+  "description_en": "An eccentric cam disc",
+  "difficulty": "moderate",
+  "features_used": ["circle", "extrude", "hole"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\nbase_r = 25      # 基圆半径 (mm)\nlobe_r = 35      # 凸起半径 (mm)\nthickness = 10   # 厚度 (mm)\nbore = 8         # 轴孔直径 (mm)\noffset = 8       # 偏心量 (mm)\n\n# === 建模 ===\n# 基圆\nbase = (\n    cq.Workplane(\"XY\")\n    .circle(base_r)\n    .extrude(thickness)\n)\n\n# 凸起（偏心圆）\nlobe = (\n    cq.Workplane(\"XY\")\n    .center(0, offset)\n    .circle(lobe_r - offset)\n    .extrude(thickness)\n)\n\nresult = base.union(lobe)\n\n# 轴孔\nresult = result.faces(\">Z\").workplane().hole(bore)\n\nshow_object(result)"
+}

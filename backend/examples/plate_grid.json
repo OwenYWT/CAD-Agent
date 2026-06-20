@@ -1,0 +1,10 @@
+{
+  "id": "plate_grid_001",
+  "category": "plate",
+  "tags": ["plate", "grid", "散热", "网格板", "ventilation"],
+  "description": "带网格孔的散热板",
+  "description_en": "A ventilation plate with grid holes",
+  "difficulty": "moderate",
+  "features_used": ["box", "rarray", "hole"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\nwidth = 100      # 板宽 (mm)\nheight = 80      # 板高 (mm)\nthickness = 3    # 板厚 (mm)\nhole_d = 5       # 孔径 (mm)\nrows = 6         # 行数\ncols = 8         # 列数\nspacing = 10     # 孔间距 (mm)\n\n# === 建模 ===\nresult = (\n    cq.Workplane(\"XY\")\n    .box(width, height, thickness)\n    .faces(\">Z\").workplane()\n    .rarray(spacing, spacing, cols, rows)\n    .hole(hole_d)\n)\n\nshow_object(result)"
+}

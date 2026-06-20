@@ -1,0 +1,10 @@
+{
+  "id": "cylinder_flanged_001",
+  "category": "cylinder",
+  "tags": ["cylinder", "flange", "法兰", "圆柱", "连接"],
+  "description": "带法兰的圆柱管",
+  "description_en": "A flanged cylinder tube",
+  "difficulty": "moderate",
+  "features_used": ["cylinder", "hole", "cboreHole"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\ntube_od = 30       # 管外径 (mm)\ntube_id = 24       # 管内径 (mm)\ntube_length = 60   # 管长 (mm)\nflange_od = 60     # 法兰外径 (mm)\nflange_t = 8       # 法兰厚度 (mm)\nbolt_pcd = 46      # 螺栓分布圆直径 (mm)\nbolt_d = 5         # 螺栓孔直径 (mm)\nbolt_count = 4     # 螺栓数量\n\n# === 建模 ===\nresult = (\n    cq.Workplane(\"XY\")\n    .circle(flange_od / 2)\n    .extrude(flange_t)\n    .faces(\">Z\").workplane()\n    .circle(tube_od / 2)\n    .extrude(tube_length)\n    .faces(\">Z\").workplane()\n    .hole(tube_id, flange_t + tube_length)\n)\n\n# 螺栓孔\nresult = (\n    result\n    .faces(\"<Z\").workplane()\n    .polygon(bolt_count, bolt_pcd, forConstruction=True)\n    .vertices()\n    .hole(bolt_d)\n)\n\nshow_object(result)"
+}

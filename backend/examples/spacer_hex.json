@@ -1,0 +1,10 @@
+{
+  "id": "spacer_001",
+  "category": "fastener",
+  "tags": ["spacer", "standoff", "间隔柱", "铜柱", "隔离"],
+  "description": "六角间隔柱（铜柱）",
+  "description_en": "A hexagonal standoff spacer",
+  "difficulty": "simple",
+  "features_used": ["polygon", "extrude", "hole"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\nflat_size = 5.5    # 对边距 (mm)\nlength = 10        # 长度 (mm)\nhole_d = 3         # 通孔直径 (mm)\n\n# === 建模 ===\nresult = (\n    cq.Workplane(\"XY\")\n    .polygon(6, flat_size * 2 / math.sqrt(3))\n    .extrude(length)\n    .faces(\">Z\").workplane()\n    .hole(hole_d)\n)\n\nshow_object(result)"
+}

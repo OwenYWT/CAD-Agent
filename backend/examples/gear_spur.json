@@ -1,0 +1,10 @@
+{
+  "id": "gear_spur_001",
+  "category": "gear",
+  "tags": ["gear", "spur", "齿轮", "直齿", "传动"],
+  "description": "简单直齿圆柱齿轮（近似外形）",
+  "description_en": "A simplified spur gear shape",
+  "difficulty": "complex",
+  "features_used": ["polygon", "extrude", "hole"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\nmodule = 2          # 模数 (mm)\nnum_teeth = 20      # 齿数\npressure_angle = 20 # 压力角 (度)\nface_width = 10     # 齿宽 (mm)\nbore_d = 8          # 轴孔直径 (mm)\n\n# === 计算 ===\npitch_r = module * num_teeth / 2\naddendum = module\ndedendum = 1.25 * module\nouter_r = pitch_r + addendum\nroot_r = pitch_r - dedendum\ntooth_angle = 360 / num_teeth\n\n# === 建模 ===\n# 齿根圆盘\nresult = (\n    cq.Workplane(\"XY\")\n    .circle(root_r)\n    .extrude(face_width)\n)\n\n# 齿形（用梯形近似每个齿）\nfor i in range(num_teeth):\n    angle = math.radians(i * tooth_angle)\n    half_tooth = math.radians(tooth_angle * 0.22)\n    pts = [\n        (root_r * math.cos(angle - half_tooth), root_r * math.sin(angle - half_tooth)),\n        (outer_r * math.cos(angle - half_tooth * 0.6), outer_r * math.sin(angle - half_tooth * 0.6)),\n        (outer_r * math.cos(angle + half_tooth * 0.6), outer_r * math.sin(angle + half_tooth * 0.6)),\n        (root_r * math.cos(angle + half_tooth), root_r * math.sin(angle + half_tooth)),\n    ]\n    tooth = (\n        cq.Workplane(\"XY\")\n        .polyline(pts).close()\n        .extrude(face_width)\n    )\n    result = result.union(tooth)\n\n# 轴孔\nresult = result.faces(\">Z\").workplane().hole(bore_d)\n\nshow_object(result)"
+}

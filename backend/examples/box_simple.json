@@ -1,0 +1,10 @@
+{
+  "id": "box_simple_001",
+  "category": "enclosure",
+  "tags": ["box", "simple", "basic", "长方体", "盒子"],
+  "description": "一个简单的实心长方体",
+  "description_en": "A simple solid box",
+  "difficulty": "simple",
+  "features_used": ["box"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\nwidth = 100    # 宽度 (mm)\nheight = 60    # 高度 (mm)\ndepth = 40     # 深度 (mm)\n\n# === 建模 ===\nresult = (\n    cq.Workplane(\"XY\")\n    .box(width, height, depth)\n)\n\nshow_object(result)"
+}

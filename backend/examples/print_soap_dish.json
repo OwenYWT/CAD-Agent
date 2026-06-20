@@ -1,0 +1,10 @@
+{
+  "id": "print_soap_dish_001",
+  "category": "print_accessory",
+  "tags": ["肥皂盒", "皂托", "沥水盒", "香皂架", "soap dish", "tray", "排水", "3D打印", "打印"],
+  "description": "带沥水槽的肥皂盒，底部排水孔",
+  "description_en": "Soap dish with drainage slots and bottom holes",
+  "difficulty": "easy",
+  "features_used": ["box", "shell", "cut", "rarray", "fillet"],
+  "code": "import cadquery as cq\n\n# === 参数 ===\nlength = 100     # 长 (mm)\nwidth = 70       # 宽 (mm)\nheight = 20      # 高 (mm)\nwall = 2         # 壁厚 (mm)\nhole_d = 5       # 排水孔直径 (mm)\n\n# === 外盒抽壳 ===\nresult = (\n    cq.Workplane(\"XY\")\n    .box(length, width, height, centered=(True, True, False))\n    .faces(\">Z\").shell(-wall)\n)\n\n# === 底部排水孔阵列 ===\nresult = (\n    result.faces(\"<Z\").workplane(centerOption=\"CenterOfBoundBox\")\n    .rarray(20, 20, 4, 3)\n    .hole(hole_d)\n)\n\nresult = result.edges(\"|Z\").fillet(4)\n\nshow_object(result)"
+}

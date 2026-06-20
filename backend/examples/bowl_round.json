@@ -1,0 +1,10 @@
+{
+  "id": "bowl_round_001",
+  "category": "container",
+  "tags": ["bowl", "碗", "容器", "回转体", "revolve", "圆碗"],
+  "description": "圆形碗（回转体，外壁减内腔）",
+  "description_en": "A round bowl made by revolving and cutting inner cavity",
+  "difficulty": "moderate",
+  "features_used": ["revolve", "cut", "fillet"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\nouter_r = 60      # 碗外半径 (mm)\ninner_r = 55      # 碗内半径 (mm)\nheight = 50       # 碗高度 (mm)\nbottom_t = 5      # 底部厚度 (mm)\nfoot_r = 25       # 碗底圈足半径 (mm)\nfoot_h = 8        # 圈足高度 (mm)\n\n# === 碗外壳 (半球形) ===\nouter = (\n    cq.Workplane(\"XZ\")\n    .moveTo(0, foot_h)\n    .lineTo(outer_r, foot_h)\n    .radiusArc((0, foot_h + outer_r), -outer_r)\n    .close()\n    .revolve(360, (0, 0, 0), (0, 1, 0))\n)\n\n# === 内腔 ===\ninner = (\n    cq.Workplane(\"XZ\")\n    .moveTo(0, foot_h + bottom_t)\n    .lineTo(inner_r, foot_h + bottom_t)\n    .radiusArc((0, foot_h + bottom_t + inner_r), -inner_r)\n    .close()\n    .revolve(360, (0, 0, 0), (0, 1, 0))\n)\n\nresult = outer.cut(inner)\n\n# === 圈足 ===\nfoot = (\n    cq.Workplane(\"XZ\")\n    .moveTo(foot_r - 3, 0)\n    .lineTo(foot_r + 3, 0)\n    .lineTo(foot_r + 3, foot_h)\n    .lineTo(foot_r - 3, foot_h)\n    .close()\n    .revolve(360, (0, 0, 0), (0, 1, 0))\n)\n\nresult = result.union(foot)\n\nshow_object(result)"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "cup_simple_001",
+  "category": "cup",
+  "tags": ["cup", "杯子", "马克杯", "水杯", "回转体", "revolve", "碗", "花瓶"],
+  "description": "简单杯子（回转体+手柄）",
+  "description_en": "A simple cup made by revolving a cross-section profile, with a handle",
+  "difficulty": "moderate",
+  "features_used": ["revolve", "polyline", "union", "fillet"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\nouter_r = 40     # 杯子外半径 (mm)\ninner_r = 37     # 杯子内半径 (mm) → 壁厚 3mm\nheight = 100     # 杯子高度 (mm)\nbottom_t = 5     # 底部厚度 (mm)\nlip_r = 1.5      # 杯口圆角 (mm)\n\n# === 杯身 (回转体) ===\n# 在 XZ 平面画右半截面，绕 Z 轴旋转\nouter_body = (\n    cq.Workplane(\"XZ\")\n    .moveTo(0, 0)\n    .lineTo(outer_r, 0)\n    .lineTo(outer_r, height)\n    .lineTo(0, height)\n    .close()\n    .revolve(360, (0, 0, 0), (0, 1, 0))\n)\n\ninner_cut = (\n    cq.Workplane(\"XZ\")\n    .moveTo(0, bottom_t)\n    .lineTo(inner_r, bottom_t)\n    .lineTo(inner_r, height + 1)\n    .lineTo(0, height + 1)\n    .close()\n    .revolve(360, (0, 0, 0), (0, 1, 0))\n)\n\nresult = outer_body.cut(inner_cut)\n\n# === 顶部圆角 ===\nresult = result.edges(\">Z\").fillet(lip_r)\n\nshow_object(result)"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "print_wall_hook_001",
+  "category": "print_accessory",
+  "tags": ["挂钩", "墙壁挂钩", "粘贴挂钩", "衣帽钩", "wall hook", "hook", "挂物", "3D打印", "打印"],
+  "description": "墙壁粘贴挂钩，带背板和螺丝孔",
+  "description_en": "Wall-mounted hook with backplate and screw holes",
+  "difficulty": "easy",
+  "features_used": ["box", "cylinder", "union", "fillet", "hole"],
+  "code": "import cadquery as cq\n\n# === 参数 ===\nplate_w = 30     # 背板宽 (mm)\nplate_h = 60     # 背板高 (mm)\nplate_t = 4      # 背板厚 (mm)\nhook_len = 30    # 挂钩前伸 (mm)\nhook_d = 8       # 挂钩直径 (mm)\nscrew_d = 4      # 螺丝孔直径 (mm)\n\n# === 背板 (立在 XZ 平面，贴墙) ===\nresult = cq.Workplane(\"XY\").box(plate_w, plate_t, plate_h, centered=(True, True, False))\n\n# === 挂钩臂 (从底部前伸再上翘，少支撑) ===\narm = cq.Workplane(\"XY\").box(hook_d, hook_len, hook_d, centered=(True, True, False)).translate((0, plate_t/2 + hook_len/2, hook_d/2))\ntip = cq.Workplane(\"XY\").box(hook_d, hook_d, hook_d*2, centered=(True, True, False)).translate((0, plate_t/2 + hook_len, hook_d))\nresult = result.union(arm).union(tip)\n\n# === 螺丝孔 (上下各一) ===\nresult = (\n    result.faces(\"<Y\").workplane(centerOption=\"CenterOfBoundBox\")\n    .pushPoints([(0, plate_h/2 - 8), (0, -plate_h/2 + 8)])\n    .hole(screw_d)\n)\nresult = result.edges(\"|X\").fillet(1.5)\n\nshow_object(result)"
+}

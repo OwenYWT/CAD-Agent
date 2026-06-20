@@ -1,0 +1,10 @@
+{
+  "id": "funnel_001",
+  "category": "container",
+  "tags": ["funnel", "cone", "漏斗", "锥形", "导管"],
+  "description": "锥形漏斗",
+  "description_en": "A conical funnel",
+  "difficulty": "moderate",
+  "features_used": ["cone", "shell", "cylinder"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\ntop_d = 80       # 上口直径 (mm)\nbottom_d = 15    # 下口直径 (mm)\ncone_h = 60      # 锥部高度 (mm)\nspout_h = 20     # 管口高度 (mm)\nwall = 1.5       # 壁厚 (mm)\n\n# === 建模 ===\n# 锥形外壳（用旋转体）\npts = [\n    (0, 0),\n    (bottom_d / 2, 0),\n    (top_d / 2, cone_h),\n    (top_d / 2, cone_h + 5),\n    (0, cone_h + 5),\n]\nouter = (\n    cq.Workplane(\"XZ\")\n    .polyline(pts).close()\n    .revolve(360)\n)\n\n# 内壁\npts_inner = [\n    (0, wall),\n    (bottom_d / 2 - wall, wall),\n    (top_d / 2 - wall, cone_h),\n    (top_d / 2 - wall, cone_h + 5),\n    (0, cone_h + 5),\n]\ninner = (\n    cq.Workplane(\"XZ\")\n    .polyline(pts_inner).close()\n    .revolve(360)\n)\n\n# 管口\nspout_outer = (\n    cq.Workplane(\"XY\")\n    .circle(bottom_d / 2)\n    .extrude(-spout_h)\n)\nspout_inner = (\n    cq.Workplane(\"XY\")\n    .circle(bottom_d / 2 - wall)\n    .extrude(-spout_h)\n)\n\nresult = outer.cut(inner).union(spout_outer).cut(spout_inner)\n\nshow_object(result)"
+}

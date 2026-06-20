@@ -1,0 +1,326 @@
+[
+  {
+    "id": "cnc_wall_thickness",
+    "process": "CNC",
+    "category": "wall_thickness",
+    "check_type": "geometric",
+    "threshold_min": 0.5,
+    "unit": "mm",
+    "severity": "critical",
+    "description": "CNC 加工最小壁厚",
+    "suggestion_template": "壁厚 {actual:.1f}mm 低于 CNC 最小壁厚 {min}mm，建议增加到 {min}mm 以上"
+  },
+  {
+    "id": "cnc_min_fillet",
+    "process": "CNC",
+    "category": "fillet",
+    "check_type": "geometric",
+    "threshold_min": 0.5,
+    "unit": "mm",
+    "severity": "warning",
+    "description": "CNC 内角最小圆角半径 (受刀具直径限制)",
+    "suggestion_template": "内角圆角半径应不小于 {min}mm (对应刀具直径 {min_x2}mm)"
+  },
+  {
+    "id": "cnc_max_depth_ratio",
+    "process": "CNC",
+    "category": "hole",
+    "check_type": "geometric",
+    "threshold_max": 10.0,
+    "unit": "ratio",
+    "severity": "warning",
+    "description": "CNC 刀具长径比限制 (深腔/深孔)",
+    "suggestion_template": "深度/宽度比 {actual:.1f} 超过 CNC 推荐值 {max}:1，可能需要特殊刀具"
+  },
+  {
+    "id": "cnc_min_hole_diameter",
+    "process": "CNC",
+    "category": "hole",
+    "check_type": "geometric",
+    "threshold_min": 1.0,
+    "unit": "mm",
+    "severity": "warning",
+    "description": "CNC 最小钻孔直径",
+    "suggestion_template": "孔径 {actual:.1f}mm 小于 CNC 推荐最小孔径 {min}mm"
+  },
+  {
+    "id": "cnc_tool_access",
+    "process": "CNC",
+    "category": "feature",
+    "check_type": "heuristic",
+    "severity": "warning",
+    "description": "CNC 刀具可达性评估 — 内腔、底切区域是否可加工",
+    "suggestion_template": "存在刀具不可达区域，建议拆分加工或调整设计"
+  },
+  {
+    "id": "cnc_max_size",
+    "process": "CNC",
+    "category": "size",
+    "check_type": "geometric",
+    "threshold_max": 1000.0,
+    "unit": "mm",
+    "severity": "info",
+    "description": "CNC 常规加工最大尺寸",
+    "suggestion_template": "最大尺寸 {actual:.0f}mm 超过常规 CNC 行程 {max}mm，需确认设备能力"
+  },
+
+  {
+    "id": "fdm_wall_thickness",
+    "process": "FDM",
+    "category": "wall_thickness",
+    "check_type": "geometric",
+    "threshold_min": 0.8,
+    "unit": "mm",
+    "severity": "critical",
+    "description": "FDM 最小壁厚 (需 >= 2 倍喷嘴直径)",
+    "suggestion_template": "壁厚 {actual:.1f}mm 低于 FDM 最小壁厚 {min}mm"
+  },
+  {
+    "id": "fdm_overhang",
+    "process": "FDM",
+    "category": "overhang",
+    "check_type": "geometric",
+    "threshold_max": 0.3,
+    "unit": "ratio",
+    "severity": "warning",
+    "description": "FDM 悬臂面积占比 (>45° 需支撑)",
+    "suggestion_template": "悬臂面积占比 {actual:.0%}，超过阈值 {max:.0%}，需要大量支撑材料"
+  },
+  {
+    "id": "fdm_bridge_distance",
+    "process": "FDM",
+    "category": "feature",
+    "check_type": "heuristic",
+    "severity": "warning",
+    "description": "FDM 桥接距离评估 — 水平跨越是否需要支撑",
+    "suggestion_template": "存在较长桥接区域，建议缩短跨距或添加支撑"
+  },
+  {
+    "id": "fdm_min_feature",
+    "process": "FDM",
+    "category": "feature",
+    "check_type": "geometric",
+    "threshold_min": 0.4,
+    "unit": "mm",
+    "severity": "warning",
+    "description": "FDM 最小特征尺寸 (受喷嘴精度限制)",
+    "suggestion_template": "存在小于 {min}mm 的细节特征，FDM 可能无法精确打印"
+  },
+
+  {
+    "id": "sla_wall_thickness",
+    "process": "SLA",
+    "category": "wall_thickness",
+    "check_type": "geometric",
+    "threshold_min": 0.5,
+    "unit": "mm",
+    "severity": "critical",
+    "description": "SLA 最小壁厚",
+    "suggestion_template": "壁厚 {actual:.1f}mm 低于 SLA 最小壁厚 {min}mm"
+  },
+  {
+    "id": "sla_drain_hole",
+    "process": "SLA",
+    "category": "feature",
+    "check_type": "heuristic",
+    "severity": "warning",
+    "description": "SLA 排液孔检查 — 封闭腔体需要排液孔",
+    "suggestion_template": "模型可能存在封闭腔体，SLA 打印需要排液孔"
+  },
+  {
+    "id": "sla_min_feature",
+    "process": "SLA",
+    "category": "feature",
+    "check_type": "geometric",
+    "threshold_min": 0.2,
+    "unit": "mm",
+    "severity": "info",
+    "description": "SLA 最小特征尺寸",
+    "suggestion_template": "存在小于 {min}mm 的细节特征，需确认 SLA 精度是否满足"
+  },
+
+  {
+    "id": "im_wall_thickness",
+    "process": "injection_mold",
+    "category": "wall_thickness",
+    "check_type": "geometric",
+    "threshold_min": 0.8,
+    "unit": "mm",
+    "severity": "critical",
+    "description": "注塑最小壁厚",
+    "suggestion_template": "壁厚 {actual:.1f}mm 低于注塑最小壁厚 {min}mm，可能导致短射"
+  },
+  {
+    "id": "im_wall_uniformity",
+    "process": "injection_mold",
+    "category": "wall_thickness",
+    "check_type": "geometric",
+    "threshold_max": 3.0,
+    "unit": "ratio",
+    "severity": "warning",
+    "description": "注塑壁厚均匀性 (最厚/最薄比)",
+    "suggestion_template": "壁厚比 {actual:.1f}:1 过大 (推荐 < {max}:1)，可能导致缩痕和翘曲"
+  },
+  {
+    "id": "im_draft_angle",
+    "process": "injection_mold",
+    "category": "draft_angle",
+    "check_type": "geometric",
+    "threshold_min": 1.0,
+    "unit": "degree",
+    "severity": "critical",
+    "description": "注塑最小拔模角",
+    "suggestion_template": "存在拔模角小于 {min}° 的面，可能导致脱模困难"
+  },
+  {
+    "id": "im_undercut",
+    "process": "injection_mold",
+    "category": "undercut",
+    "check_type": "heuristic",
+    "severity": "critical",
+    "description": "注塑底切检查 — 是否需要侧向抽芯或滑块",
+    "suggestion_template": "模型存在底切特征，注塑需要侧向抽芯机构，增加模具成本"
+  },
+  {
+    "id": "im_gate_location",
+    "process": "injection_mold",
+    "category": "feature",
+    "check_type": "heuristic",
+    "severity": "info",
+    "description": "注塑浇口位置建议",
+    "suggestion_template": "建议浇口位于壁厚最大处，避免外观面"
+  },
+
+  {
+    "id": "sm_wall_thickness",
+    "process": "sheet_metal",
+    "category": "wall_thickness",
+    "check_type": "geometric",
+    "threshold_min": 0.5,
+    "threshold_max": 6.0,
+    "unit": "mm",
+    "severity": "critical",
+    "description": "钣金板材厚度范围",
+    "suggestion_template": "壁厚 {actual:.1f}mm 不在钣金常用范围 {min}-{max}mm 内"
+  },
+  {
+    "id": "sm_bend_radius",
+    "process": "sheet_metal",
+    "category": "fillet",
+    "check_type": "geometric",
+    "threshold_min": 1.0,
+    "unit": "mm",
+    "severity": "warning",
+    "description": "钣金最小折弯半径 (>= 板厚)",
+    "suggestion_template": "折弯半径应不小于板厚 ({min}mm)，当前可能过小"
+  },
+  {
+    "id": "sm_hole_edge_distance",
+    "process": "sheet_metal",
+    "category": "hole",
+    "check_type": "heuristic",
+    "severity": "warning",
+    "description": "钣金孔边距检查 — 孔到边缘/折弯线距离",
+    "suggestion_template": "孔到边缘距离应 >= 2 倍板厚，避免变形"
+  },
+  {
+    "id": "sm_flat_pattern",
+    "process": "sheet_metal",
+    "category": "feature",
+    "check_type": "heuristic",
+    "severity": "info",
+    "description": "钣金展开评估 — 是否可展开为平板",
+    "suggestion_template": "模型包含复杂曲面，可能无法展开为钣金平板"
+  },
+
+  {
+    "id": "dc_wall_thickness",
+    "process": "die_casting",
+    "category": "wall_thickness",
+    "check_type": "geometric",
+    "threshold_min": 1.0,
+    "threshold_max": 8.0,
+    "unit": "mm",
+    "severity": "critical",
+    "description": "压铸最小/最大壁厚 (铝合金)",
+    "suggestion_template": "壁厚 {actual:.1f}mm 不在压铸推荐范围 {min}-{max}mm 内，过薄导致欠铸，过厚导致缩孔"
+  },
+  {
+    "id": "dc_wall_uniformity",
+    "process": "die_casting",
+    "category": "wall_thickness",
+    "check_type": "geometric",
+    "threshold_max": 3.0,
+    "unit": "ratio",
+    "severity": "warning",
+    "description": "压铸壁厚均匀性 (最厚/最薄比)",
+    "suggestion_template": "壁厚比 {actual:.1f}:1 过大 (推荐 < {max}:1)，可能导致缩孔和热裂"
+  },
+  {
+    "id": "dc_draft_angle",
+    "process": "die_casting",
+    "category": "draft_angle",
+    "check_type": "geometric",
+    "threshold_min": 1.0,
+    "unit": "degree",
+    "severity": "critical",
+    "description": "压铸最小拔模角 (内壁 2°, 外壁 1°)",
+    "suggestion_template": "存在拔模角小于 {min}° 的面，压铸脱模困难，外壁需 ≥1°，内壁需 ≥2°"
+  },
+  {
+    "id": "dc_min_fillet",
+    "process": "die_casting",
+    "category": "fillet",
+    "check_type": "geometric",
+    "threshold_min": 0.5,
+    "unit": "mm",
+    "severity": "warning",
+    "description": "压铸最小内圆角半径 (避免应力集中和模具损伤)",
+    "suggestion_template": "内角圆角半径应不小于 {min}mm，尖角会导致模具开裂和铸件应力集中"
+  },
+  {
+    "id": "dc_undercut",
+    "process": "die_casting",
+    "category": "undercut",
+    "check_type": "heuristic",
+    "severity": "critical",
+    "description": "压铸底切/倒扣检查 — 是否需要侧向抽芯或滑块",
+    "suggestion_template": "模型存在底切特征，压铸需要侧向抽芯滑块，增加模具成本和复杂度"
+  },
+  {
+    "id": "dc_rib_design",
+    "process": "die_casting",
+    "category": "feature",
+    "check_type": "heuristic",
+    "severity": "warning",
+    "description": "压铸加强筋设计评估 — 筋厚应为壁厚 60-80%，筋高不超过壁厚 5 倍",
+    "suggestion_template": "加强筋/散热筋设计应满足：筋厚 ≤ 0.8×壁厚，筋高 ≤ 5×壁厚，避免缩孔"
+  },
+  {
+    "id": "dc_boss_design",
+    "process": "die_casting",
+    "category": "feature",
+    "check_type": "heuristic",
+    "severity": "warning",
+    "description": "压铸螺丝柱/凸台设计评估 — 凸台壁厚、高度、根部圆角",
+    "suggestion_template": "螺丝柱壁厚应为主壁厚 60-80%，高度不超过直径 2.5 倍，根部需圆角过渡"
+  },
+  {
+    "id": "dc_parting_line",
+    "process": "die_casting",
+    "category": "feature",
+    "check_type": "heuristic",
+    "severity": "info",
+    "description": "压铸分型面位置评估",
+    "suggestion_template": "建议分型面设在最大截面处，确保两半模具可顺利合模和脱模"
+  },
+  {
+    "id": "dc_overflow",
+    "process": "die_casting",
+    "category": "feature",
+    "check_type": "heuristic",
+    "severity": "info",
+    "description": "压铸排气/溢流槽评估 — 末端填充区域是否需要排气",
+    "suggestion_template": "壳体末端和薄壁区域需预留排气槽，避免气孔缺陷"
+  }
+]

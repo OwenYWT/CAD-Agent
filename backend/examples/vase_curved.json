@@ -1,0 +1,10 @@
+{
+  "id": "vase_curved_001",
+  "category": "container",
+  "tags": ["vase", "花瓶", "回转体", "revolve", "spline", "曲线", "瓶子"],
+  "description": "曲线花瓶（spline 回转体）",
+  "description_en": "A curved vase using spline profile and revolve",
+  "difficulty": "moderate",
+  "features_used": ["revolve", "spline", "cut"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\nbottom_r = 30     # 底部半径 (mm)\nwaist_r = 20      # 腰部半径 (mm)\nbelly_r = 40      # 肚部半径 (mm)\nneck_r = 18       # 颈部半径 (mm)\nmouth_r = 25      # 口部半径 (mm)\nheight = 200      # 总高度 (mm)\nwall_t = 4        # 壁厚 (mm)\n\n# === 外轮廓 ===\nouter = (\n    cq.Workplane(\"XZ\")\n    .moveTo(0, 0)\n    .lineTo(bottom_r, 0)\n    .spline([\n        (waist_r, height * 0.25),\n        (belly_r, height * 0.5),\n        (neck_r, height * 0.75),\n        (mouth_r, height * 0.95),\n    ])\n    .lineTo(mouth_r, height)\n    .lineTo(0, height)\n    .close()\n    .revolve(360, (0, 0, 0), (0, 1, 0))\n)\n\n# === 内腔 ===\ninner = (\n    cq.Workplane(\"XZ\")\n    .moveTo(0, wall_t)\n    .lineTo(bottom_r - wall_t, wall_t)\n    .spline([\n        (waist_r - wall_t, height * 0.25),\n        (belly_r - wall_t, height * 0.5),\n        (neck_r - wall_t, height * 0.75),\n        (mouth_r - wall_t, height * 0.95),\n    ])\n    .lineTo(mouth_r - wall_t, height + 1)\n    .lineTo(0, height + 1)\n    .close()\n    .revolve(360, (0, 0, 0), (0, 1, 0))\n)\n\nresult = outer.cut(inner)\n\nshow_object(result)"
+}

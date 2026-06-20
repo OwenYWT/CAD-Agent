@@ -1,0 +1,10 @@
+{
+  "id": "plate_slot_001",
+  "category": "plate",
+  "tags": ["plate", "slot", "开槽", "平板", "滑槽"],
+  "description": "带长槽孔的安装板",
+  "description_en": "A mounting plate with elongated slots",
+  "difficulty": "moderate",
+  "features_used": ["box", "slot"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\nwidth = 120     # 板宽 (mm)\nheight = 60     # 板高 (mm)\nthickness = 5   # 板厚 (mm)\nslot_length = 20  # 槽长 (mm)\nslot_width = 6    # 槽宽 (mm)\nslot_spacing = 40 # 槽间距 (mm)\n\n# === 建模 ===\nresult = (\n    cq.Workplane(\"XY\")\n    .box(width, height, thickness)\n    .faces(\">Z\").workplane()\n    .rarray(slot_spacing, 1, 3, 1)\n    .slot2D(slot_length, slot_width)\n    .cutThruAll()\n)\n\nshow_object(result)"
+}

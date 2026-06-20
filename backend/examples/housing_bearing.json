@@ -1,0 +1,10 @@
+{
+  "id": "housing_bearing_001",
+  "category": "housing",
+  "tags": ["bearing", "housing", "轴承座", "座体", "支撑"],
+  "description": "简单轴承座",
+  "description_en": "A simple bearing housing block",
+  "difficulty": "moderate",
+  "features_used": ["box", "hole", "fillet"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\nbearing_od = 22    # 轴承外径 (mm) - 608轴承\nbearing_w = 7      # 轴承宽度 (mm)\nwall = 6           # 壁厚 (mm)\nbase_h = 12        # 底座高度 (mm)\nbolt_d = 5         # 安装孔直径 (mm)\nbolt_spacing = 50  # 安装孔间距 (mm)\n\n# === 计算 ===\ntotal_w = bearing_od + 2 * wall\ntotal_h = bearing_od / 2 + wall + base_h\ntotal_l = bearing_w + 2 * wall\n\n# === 建模 ===\n# 底座\nresult = (\n    cq.Workplane(\"XY\")\n    .box(bolt_spacing + 20, total_l, base_h)\n)\n\n# 圆柱支撑\npillar = (\n    cq.Workplane(\"XZ\")\n    .circle(total_w / 2)\n    .extrude(total_l)\n    .translate((0, -total_l / 2, base_h))\n)\nresult = result.union(pillar)\n\n# 轴承孔\nresult = (\n    result\n    .faces(\">Y\").workplane()\n    .hole(bearing_od)\n)\n\n# 安装孔\nresult = (\n    result\n    .faces(\"<Z\").workplane()\n    .rect(bolt_spacing, 0, forConstruction=True)\n    .vertices()\n    .hole(bolt_d)\n)\n\nshow_object(result)"
+}

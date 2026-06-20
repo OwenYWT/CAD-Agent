@@ -1,0 +1,10 @@
+{
+  "id": "box_rounded_001",
+  "category": "enclosure",
+  "tags": ["box", "fillet", "rounded", "圆角", "盒子"],
+  "description": "圆角长方体",
+  "description_en": "A box with rounded edges",
+  "difficulty": "simple",
+  "features_used": ["box", "fillet"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\nwidth = 80     # 宽度 (mm)\nheight = 50    # 高度 (mm)\ndepth = 30     # 深度 (mm)\nfillet_r = 5   # 圆角半径 (mm)\n\n# === 建模 ===\nresult = (\n    cq.Workplane(\"XY\")\n    .box(width, height, depth)\n    .edges(\"|Z\")\n    .fillet(fillet_r)\n)\n\nshow_object(result)"
+}

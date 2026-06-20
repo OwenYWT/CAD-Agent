@@ -1,0 +1,10 @@
+{
+  "id": "handle_door_001",
+  "category": "hardware",
+  "tags": ["handle", "把手", "门把手", "sweep", "扫掠", "拉手"],
+  "description": "U 型门把手（sweep 扫掠）",
+  "description_en": "A U-shaped door handle using sweep",
+  "difficulty": "moderate",
+  "features_used": ["sweep", "radiusArc", "cylinder", "union"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\ngrip_length = 120  # 握柄长度 (mm)\ngrip_d = 16        # 握柄直径 (mm)\noffset = 50        # 离墙距离 (mm)\nbend_r = 20        # 弯曲半径 (mm)\nmount_d = 12       # 安装柱直径 (mm)\nmount_h = 10       # 安装柱高度 (mm)\n\n# === 握柄路径: 竖直-弯曲-水平-弯曲-竖直 ===\npath = (\n    cq.Workplane(\"XZ\")\n    .moveTo(0, 0)\n    .lineTo(0, offset - bend_r)\n    .radiusArc((bend_r, offset), -bend_r)\n    .lineTo(grip_length - bend_r, offset)\n    .radiusArc((grip_length, offset - bend_r), -bend_r)\n    .lineTo(grip_length, 0)\n)\n\n# === 握柄 ===\nresult = (\n    cq.Workplane(\"XY\")\n    .circle(grip_d / 2)\n    .sweep(path)\n)\n\n# === 安装座 ===\nmount1 = cq.Workplane(\"XY\").circle(mount_d / 2).extrude(-mount_h)\nmount2 = cq.Workplane(\"XY\").center(grip_length, 0).circle(mount_d / 2).extrude(-mount_h)\n\nresult = result.union(mount1).union(mount2)\n\nshow_object(result)"
+}

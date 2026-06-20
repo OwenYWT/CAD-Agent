@@ -1,0 +1,10 @@
+{
+  "id": "box_hollow_001",
+  "category": "enclosure",
+  "tags": ["box", "hollow", "shell", "空心", "盒子", "壳体", "外壳"],
+  "description": "一个空心盒子，顶面开口，壁厚2mm",
+  "description_en": "A hollow box with open top and 2mm wall thickness",
+  "difficulty": "simple",
+  "features_used": ["box", "shell"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\nwidth = 100       # 宽度 (mm)\nheight = 60       # 高度 (mm)\ndepth = 40        # 深度 (mm)\nwall_thickness = 2  # 壁厚 (mm)\n\n# === 建模 ===\nresult = (\n    cq.Workplane(\"XY\")\n    .box(width, height, depth)\n    .faces(\">Z\")\n    .shell(-wall_thickness)\n)\n\nshow_object(result)"
+}

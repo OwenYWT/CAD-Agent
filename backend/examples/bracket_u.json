@@ -1,0 +1,10 @@
+{
+  "id": "bracket_u_001",
+  "category": "bracket",
+  "tags": ["bracket", "U型", "支架", "channel", "槽钢"],
+  "description": "U型支架（槽型件）",
+  "description_en": "A U-shaped channel bracket",
+  "difficulty": "moderate",
+  "features_used": ["box", "cut", "hole"],
+  "code": "import cadquery as cq\nimport math\n\n# === 参数 ===\nwidth = 60       # 总宽 (mm)\nheight = 40      # 总高 (mm)\nlength = 100     # 长度 (mm)\nwall = 4         # 壁厚 (mm)\nhole_d = 6       # 安装孔直径 (mm)\n\n# === 建模 ===\nouter = cq.Workplane(\"XY\").box(width, length, height)\ninner = (\n    cq.Workplane(\"XY\")\n    .box(width - 2 * wall, length, height - wall)\n    .translate((0, 0, wall))\n)\nresult = outer.cut(inner)\n\n# 两侧安装孔\nresult = (\n    result\n    .faces(\">X\").workplane()\n    .rect(length - 20, 0, forConstruction=True)\n    .vertices()\n    .hole(hole_d)\n)\nresult = (\n    result\n    .faces(\"<X\").workplane()\n    .rect(length - 20, 0, forConstruction=True)\n    .vertices()\n    .hole(hole_d)\n)\n\nshow_object(result)"
+}

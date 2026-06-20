@@ -1,0 +1,10 @@
+{
+  "id": "print_headphone_hook_001",
+  "category": "print_accessory",
+  "tags": ["耳机挂钩", "耳机架", "挂钩", "桌沿", "headphone", "hook", "desk", "3D打印", "打印"],
+  "description": "桌沿耳机挂钩，卡在桌板上，J 形挂耳",
+  "description_en": "Under-desk headphone hook that clamps onto a desk edge, J-shaped hanger",
+  "difficulty": "easy",
+  "features_used": ["box", "cut", "fillet"],
+  "code": "import cadquery as cq\n\n# === 参数 ===\ndesk_t = 25      # 桌板厚度 (mm)\nclamp_d = 35     # 卡口深度 (mm)\narm_t = 6        # 臂厚 (mm)\nwidth = 40       # 挂钩宽度 (mm)\nhook_drop = 35   # 挂耳下垂长度 (mm)\nhook_out = 25    # 挂耳前伸长度 (mm)\n\n# === C 形夹 (倒扣在桌沿) ===\nback = cq.Workplane(\"XY\").box(arm_t, width, desk_t + clamp_d, centered=(True, True, False))\ntop = cq.Workplane(\"XY\").workplane(offset=desk_t + clamp_d - arm_t).box(hook_out + arm_t, width, arm_t, centered=(True, True, False)).translate(((hook_out + arm_t)/2, 0, 0))\nlip = cq.Workplane(\"XY\").box(arm_t, width, arm_t, centered=(True, True, False)).translate((hook_out, 0, 0))\nresult = back.union(top).union(lip)\n\n# === 挂耳 (前伸+下垂的 J 形) ===\nhanger = cq.Workplane(\"XY\").box(arm_t, width, hook_drop, centered=(True, True, False)).translate((hook_out, 0, 0))\nresult = result.union(hanger)\n\n# === 圆角让打印更顺、不刮手 ===\nresult = result.edges(\"|Y\").fillet(2)\n\nshow_object(result)"
+}
