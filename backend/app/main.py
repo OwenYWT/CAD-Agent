@@ -33,6 +33,7 @@ from app.api.analyze import router as analyze_router
 from app.api.dfm_rules import router as dfm_rules_router
 from app.api.knowledge import router as knowledge_router
 from app.api.feedback import router as feedback_router
+from app.api.login import router as login_router
 from app.api.websocket import websocket_endpoint
 
 logger = logging.getLogger(__name__)
@@ -132,6 +133,8 @@ async def lifespan(app: FastAPI):
     cleanup_task.cancel()
     from app.storage.history import close_db
     await close_db()
+    from app.storage.auth import close_db as close_auth_db
+    await close_auth_db()
     from app.dfm.rule_store import close_db as close_rules_db
     await close_rules_db()
     from app.dfm.knowledge_graph import close_db as close_kg_db
@@ -164,6 +167,7 @@ def create_app() -> FastAPI:
     app.include_router(dfm_rules_router, prefix="/api")
     app.include_router(knowledge_router, prefix="/api")
     app.include_router(feedback_router)
+    app.include_router(login_router)
 
     # WebSocket
     app.websocket("/ws/{session_id}")(websocket_endpoint)

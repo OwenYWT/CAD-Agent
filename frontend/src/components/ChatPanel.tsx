@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useSessionStore } from "../stores/sessionStore";
 import type { ChatMessage, GenerationResult } from "../types";
 
+import { authFetch } from "../auth";
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 interface ChatPanelProps {
@@ -162,7 +163,7 @@ function FeedbackChip({ requestId }: { requestId: string }) {
   const send = async (printed: string, rating?: string) => {
     setSent(printed);
     try {
-      await fetch(`${API_BASE}/api/feedback`, {
+      await authFetch(`${API_BASE}/api/feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ request_id: requestId, printed, rating }),

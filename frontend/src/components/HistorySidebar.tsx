@@ -3,6 +3,7 @@ import { useSessionStore } from "../stores/sessionStore";
 import { useWebSocket } from "../hooks/useWebSocket";
 import type { GenerationResult } from "../types";
 
+import { authFetch } from "../auth";
 interface SessionSummary {
   id: string;
   title: string;
@@ -34,7 +35,7 @@ export default function HistorySidebar() {
   const fetchSessions = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/history/sessions`);
+      const res = await authFetch(`${API_BASE}/api/history/sessions`);
       if (res.ok) {
         setSessions(await res.json());
       }
@@ -51,7 +52,7 @@ export default function HistorySidebar() {
 
   const handleRestore = async (sessionId: string) => {
     try {
-      const panelsRes = await fetch(
+      const panelsRes = await authFetch(
         `${API_BASE}/api/history/sessions/${sessionId}/panels`,
       );
       if (!panelsRes.ok) return;
@@ -59,7 +60,7 @@ export default function HistorySidebar() {
 
       const panelData = await Promise.all(
         panels.map(async (p) => {
-          const msgsRes = await fetch(
+          const msgsRes = await authFetch(
             `${API_BASE}/api/history/panels/${p.id}/messages`,
           );
           const messages: MessageData[] = msgsRes.ok ? await msgsRes.json() : [];
@@ -91,7 +92,7 @@ export default function HistorySidebar() {
 
   const handleDelete = async (sessionId: string) => {
     try {
-      await fetch(`${API_BASE}/api/history/sessions/${sessionId}`, {
+      await authFetch(`${API_BASE}/api/history/sessions/${sessionId}`, {
         method: "DELETE",
       });
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));

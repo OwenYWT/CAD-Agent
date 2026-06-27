@@ -24,7 +24,7 @@ React Web App -> REST + WebSocket -> CAD Agent FastAPI -> Podman/Docker Sandbox
 cd backend
 pip install -r requirements.txt
 export LLM_PROVIDER=azure
-export AZURE_OPENAI_ENDPOINT=https://secalgo-azure-openai.openai.azure.com/
+export AZURE_OPENAI_ENDPOINT=https://<your-azure-openai-resource>.openai.azure.com/
 export AZURE_OPENAI_API_KEY=<AZURE_OPENAI_API_KEY>
 export AZURE_OPENAI_API_VERSION=2025-03-01-preview
 export LLM_MODEL=gpt-5

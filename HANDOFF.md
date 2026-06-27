@@ -127,7 +127,7 @@ SANDBOX_IMAGE=cad-agent-sandbox:latest
 
 ```env
 LLM_PROVIDER=azure
-AZURE_OPENAI_ENDPOINT=https://secalgo-azure-openai.openai.azure.com/
+AZURE_OPENAI_ENDPOINT=https://<your-azure-openai-resource>.openai.azure.com/
 AZURE_OPENAI_API_KEY=<AZURE_OPENAI_API_KEY>
 AZURE_OPENAI_API_VERSION=2025-03-01-preview
 LLM_MODEL=gpt-5
@@ -183,7 +183,7 @@ Copy-Item backend\.env.example backend\.env
 
 ```env
 LLM_PROVIDER=azure
-AZURE_OPENAI_ENDPOINT=https://secalgo-azure-openai.openai.azure.com/
+AZURE_OPENAI_ENDPOINT=https://<your-azure-openai-resource>.openai.azure.com/
 AZURE_OPENAI_API_KEY=<AZURE_OPENAI_API_KEY>
 AZURE_OPENAI_API_VERSION=2025-03-01-preview
 LLM_MODEL=gpt-5
@@ -348,7 +348,7 @@ azure True AsyncAzureOpenAI
 
 ```env
 AZURE_OPENAI_ENDPOINT=...
-AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_API_KEY=<AZURE_OPENAI_API_KEY>
 AZURE_OPENAI_API_VERSION=2025-03-01-preview
 LLM_MODEL=gpt-5
 ```

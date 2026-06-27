@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useSessionStore } from "../stores/sessionStore";
 import type { WSMessage } from "../types";
+import { getAuthToken } from "../auth";
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const BASE_RECONNECT_DELAY_MS = 1000;
@@ -15,7 +16,7 @@ export function useWebSocket() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const apiBase = import.meta.env.VITE_API_BASE || window.location.host;
     const host = apiBase.replace(/^https?:\/\//, "");
-    const token = import.meta.env.VITE_API_TOKEN;
+    const token = getAuthToken() || import.meta.env.VITE_API_TOKEN;
     const tokenParam = token ? `?token=${encodeURIComponent(token)}` : "";
     const url = `${protocol}//${host}/ws/${sessionId}${tokenParam}`;
 

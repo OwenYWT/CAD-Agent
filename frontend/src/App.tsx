@@ -1,4 +1,7 @@
 import { useState, useCallback } from "react";
+import type { AuthSession, AuthUser } from "./auth";
+import { getAuthUser, logoutAuthSession } from "./auth";
+import { LoginPage } from "./components/LoginPage";
 import { useSessionStore } from "./stores/sessionStore";
 import { useWebSocket } from "./hooks/useWebSocket";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -13,6 +16,7 @@ import PanelTabs from "./components/PanelTabs";
 import HistorySidebar from "./components/HistorySidebar";
 import SettingsDrawer from "./components/SettingsDrawer";
 import DownloadPanel from "./components/DownloadPanel";
+import { AccountPanel } from "./components/AccountPanel";
 import type { Annotation3D } from "./types";
 
 type RightTab = "params" | "analysis" | "download" | "code" | "assembly";
@@ -24,7 +28,7 @@ const TAB_ITEMS: { key: RightTab; label: string; icon: string }[] = [
   { key: "code", label: "代码", icon: "</>" },
 ];
 
-function App() {
+function MainApp({ authUser, onLogout, onUserUpdate }: { authUser: AuthUser; onLogout: () => void; onUserUpdate: (user: AuthUser) => void }) {
   const panel = useSessionStore((s) => s.getActivePanel());
   const { sendMessage, executeCode, cancelGeneration, modifyPart } = useWebSocket();
 
@@ -85,8 +89,12 @@ function App() {
           </div>
 
           {/* Right: Actions */}
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             <HistorySidebar />
+            <div className="flex items-center gap-2 text-xs text-gray-500 border-l border-gray-200 pl-3">
+              <span className="hidden md:inline max-w-[160px] truncate" title={authUser.phone}>{authUser.phone}</span>
+              <AccountPanel user={authUser} onUserUpdate={onUserUpdate} onLogout={onLogout} />
+            </div>
             <button
               onClick={() => setSettingsOpen(true)}
               className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
@@ -225,6 +233,25 @@ function App() {
       </div>
     </ErrorBoundary>
   );
+}
+
+function App() {
+  const [authUser, setAuthUser] = useState<AuthUser | null>(() => getAuthUser());
+
+  const handleLogin = (session: AuthSession) => {
+    setAuthUser(session.user);
+  };
+
+  const handleLogout = async () => {
+    await logoutAuthSession();
+    setAuthUser(null);
+  };
+
+  if (!authUser) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
+
+  return <MainApp authUser={authUser} onLogout={handleLogout} onUserUpdate={setAuthUser} />;
 }
 
 export default App;

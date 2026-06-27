@@ -21,7 +21,15 @@ class Settings(BaseSettings):
     file_ttl_hours: int = 24  # generated files older than this are cleaned up
     cors_origins: list[str] = ["http://localhost:5173"]
     log_level: str = "info"
-    api_keys: list[str] = []  # empty = no auth required
+    api_keys: list[str] = []  # empty = no legacy API-key auth required
+    auth_required: bool = True
+    auth_token_secret: str = "change-me-in-production"
+    auth_token_ttl_hours: int = 24 * 14
+    verification_code_ttl_minutes: int = 10
+    # Local-dev invite code. Leave empty to disable default invite seeding.
+    default_invite_code: str = "CAD-AGENT-2026"
+    default_invite_max_uses: int = 100
+    admin_password: str = "admin123456"
     rate_limit_per_minute: int = 30
     # Behind a trusted reverse proxy / tunnel (nginx, cloudflared), the direct client
     # IP is the proxy's, so all users share one rate-limit bucket. Enable ONLY when a

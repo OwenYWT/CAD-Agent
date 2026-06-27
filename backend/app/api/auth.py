@@ -1,11 +1,12 @@
-import logging
+﻿import logging
 import time
 from collections import defaultdict
 
-from fastapi import Request, HTTPException, Depends, Query, WebSocket
+from fastapi import Request, HTTPException, Depends, WebSocket
 from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 
 from app.config import settings
+from app.storage import auth as auth_store
 
 logger = logging.getLogger(__name__)
 
@@ -13,28 +14,58 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
+async def get_current_user(
+    bearer: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+):
+    token = bearer.credentials if bearer else None
+    user_id = await auth_store.verify_session_token(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid or missing login token")
+    user = await auth_store.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
+
+
 async def verify_api_key(
     request: Request,
     bearer: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
     x_api_key: str | None = Depends(_api_key_header),
 ):
-    """Verify API credentials. Skip auth when api_keys list is empty (dev mode)."""
-    if not settings.api_keys:
-        return None
+    """Verify API credentials.
 
-    if bearer and bearer.credentials in settings.api_keys:
-        return bearer.credentials
+    Supports the new login Bearer token and legacy static API keys. When no
+    legacy API keys are configured, login tokens are still accepted but auth is
+    otherwise optional to preserve local-dev behavior.
+    """
+    if bearer:
+        user_id = await auth_store.verify_session_token(bearer.credentials)
+        if user_id:
+            return f"user:{user_id}"
+        if bearer.credentials in settings.api_keys:
+            return bearer.credentials
 
     if x_api_key and x_api_key in settings.api_keys:
         logger.warning("X-API-Key header is deprecated. Use 'Authorization: Bearer <key>' instead.")
         return x_api_key
 
+    if not settings.auth_required and not settings.api_keys:
+        return None
+
     raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
-def verify_ws_token(token: str | None) -> bool:
+async def get_ws_user_id(token: str | None) -> str | None:
+    if token:
+        return await auth_store.verify_session_token(token)
+    return None
+
+
+async def verify_ws_token(token: str | None) -> bool:
     """Verify WebSocket token. Returns True if valid or if auth is disabled."""
-    if not settings.api_keys:
+    if token and await auth_store.verify_session_token(token):
+        return True
+    if not settings.auth_required and not settings.api_keys:
         return True
     return token is not None and token in settings.api_keys
 

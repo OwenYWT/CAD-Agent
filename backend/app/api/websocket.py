@@ -4,7 +4,7 @@ import re
 from fastapi import WebSocket, WebSocketDisconnect
 
 from app.agent.orchestrator import ConversationContext, Orchestrator
-from app.api.auth import verify_ws_token, rate_limiter
+from app.api.auth import verify_ws_token, get_ws_user_id, rate_limiter
 from app.models.schemas import StepUpdate
 from app.storage import history
 
@@ -55,9 +55,10 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
     # Auth check
     token = websocket.query_params.get("token")
-    if not verify_ws_token(token):
+    if not await verify_ws_token(token):
         await websocket.close(code=4003, reason="Invalid or missing token")
         return
+    user_id = await get_ws_user_id(token)
 
     await websocket.accept()
 
@@ -106,8 +107,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 context = _get_context(session_id, panel_id)
                 on_step = await make_on_step(panel_id)
 
-                await history.create_session(session_id, title="")
-                await history.create_panel(session_id, panel_id)
+                await history.create_session(session_id, title="", user_id=user_id)
+                await history.create_panel(session_id, panel_id, user_id=user_id)
                 await history.save_message(panel_id, "user", text)
 
                 try:
@@ -161,8 +162,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
                 # Ensure session+panel rows exist before saving a message — otherwise
                 # the FK on messages.panel_id rejects the insert. (user_message does this too.)
-                await history.create_session(session_id, title="")
-                await history.create_panel(session_id, panel_id)
+                await history.create_session(session_id, title="", user_id=user_id)
+                await history.create_panel(session_id, panel_id, user_id=user_id)
                 await history.save_message(panel_id, "user", f"修改零件 {part_name}: {instruction}")
 
                 try:
@@ -218,8 +219,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 if response.success and response.code:
                     context.current_code = response.code
                     # Ensure the panel row exists so update_panel_code isn't a silent no-op.
-                    await history.create_session(session_id, title="")
-                    await history.create_panel(session_id, panel_id)
+                    await history.create_session(session_id, title="", user_id=user_id)
+                    await history.create_panel(session_id, panel_id, user_id=user_id)
                     await history.update_panel_code(panel_id, response.code)
 
                 result_data = {

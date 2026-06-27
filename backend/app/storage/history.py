@@ -45,6 +45,7 @@ async def _init_tables(db: aiosqlite.Connection):
     await db.executescript("""
         CREATE TABLE IF NOT EXISTS sessions (
             id TEXT PRIMARY KEY,
+            user_id TEXT,
             title TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -77,6 +78,10 @@ async def _init_tables(db: aiosqlite.Connection):
         CREATE INDEX IF NOT EXISTS idx_messages_panel ON messages(panel_id);
         CREATE INDEX IF NOT EXISTS idx_feedback_request ON feedback(request_id);
     """)
+    columns = await db.execute_fetchall("PRAGMA table_info(sessions)")
+    if "user_id" not in {row["name"] for row in columns}:
+        await db.execute("ALTER TABLE sessions ADD COLUMN user_id TEXT")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, updated_at)")
     await db.commit()
 
 
@@ -86,28 +91,63 @@ def _now() -> str:
 
 # ---- Sessions ----
 
-async def create_session(session_id: str, title: str = "") -> dict:
+async def create_session(session_id: str, title: str = "", user_id: str | None = None) -> dict:
     db = await get_db()
     now = _now()
     await db.execute(
-        "INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
-        (session_id, title, now, now),
+        "INSERT OR IGNORE INTO sessions (id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        (session_id, user_id, title, now, now),
     )
+    if user_id:
+        await db.execute(
+            "UPDATE sessions SET user_id = COALESCE(user_id, ?) WHERE id = ?",
+            (user_id, session_id),
+        )
     await db.commit()
-    return {"id": session_id, "title": title, "created_at": now, "updated_at": now}
+    return {"id": session_id, "user_id": user_id, "title": title, "created_at": now, "updated_at": now}
 
 
-async def list_sessions() -> list[dict]:
+async def list_sessions(user_id: str | None = None) -> list[dict]:
     db = await get_db()
-    rows = await db.execute_fetchall(
-        "SELECT id, title, created_at, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 50"
-    )
+    if user_id:
+        rows = await db.execute_fetchall(
+            "SELECT id, title, created_at, updated_at FROM sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 50",
+            (user_id,),
+        )
+    else:
+        rows = await db.execute_fetchall(
+            "SELECT id, title, created_at, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 50"
+        )
     return [dict(r) for r in rows]
 
 
-async def delete_session(session_id: str):
+async def session_belongs_to_user(session_id: str, user_id: str | None) -> bool:
+    if not user_id:
+        return True
     db = await get_db()
-    await db.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    cursor = await db.execute("SELECT user_id FROM sessions WHERE id = ?", (session_id,))
+    row = await cursor.fetchone()
+    return bool(row and row["user_id"] == user_id)
+
+
+async def panel_belongs_to_user(panel_id: str, user_id: str | None) -> bool:
+    if not user_id:
+        return True
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT s.user_id FROM panels p JOIN sessions s ON p.session_id = s.id WHERE p.id = ?",
+        (panel_id,),
+    )
+    row = await cursor.fetchone()
+    return bool(row and row["user_id"] == user_id)
+
+
+async def delete_session(session_id: str, user_id: str | None = None):
+    db = await get_db()
+    if user_id:
+        await db.execute("DELETE FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
+    else:
+        await db.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
     await db.commit()
 
 
@@ -121,11 +161,11 @@ async def touch_session(session_id: str):
 
 # ---- Panels ----
 
-async def create_panel(session_id: str, panel_id: str, title: str = "") -> dict:
+async def create_panel(session_id: str, panel_id: str, title: str = "", user_id: str | None = None) -> dict:
     db = await get_db()
     now = _now()
     # Ensure session exists
-    await create_session(session_id)
+    await create_session(session_id, user_id=user_id)
     await db.execute(
         "INSERT OR IGNORE INTO panels (id, session_id, title, created_at) VALUES (?, ?, ?, ?)",
         (panel_id, session_id, title, now),

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 
+import { authFetch } from "../auth";
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 interface KGNode {
@@ -49,7 +50,7 @@ export default function KnowledgeGraph() {
   const fetchProcesses = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/knowledge/nodes?type=process`);
+      const res = await authFetch(`${API_BASE}/api/knowledge/nodes?type=process`);
       if (res.ok) {
         const data: KGNode[] = await res.json();
         setProcesses(data);
@@ -62,14 +63,14 @@ export default function KnowledgeGraph() {
 
   const fetchMaterials = useCallback(async (processId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/knowledge/process/${processId}/materials`);
+      const res = await authFetch(`${API_BASE}/api/knowledge/process/${processId}/materials`);
       if (res.ok) setMaterials(await res.json());
     } catch { /* ignore */ }
   }, []);
 
   const fetchSuppliers = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/knowledge/nodes?type=supplier`);
+      const res = await authFetch(`${API_BASE}/api/knowledge/nodes?type=supplier`);
       if (res.ok) setSuppliers(await res.json());
     } catch { /* ignore */ }
   }, []);
@@ -89,7 +90,7 @@ export default function KnowledgeGraph() {
   const handleRecommend = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/knowledge/recommend`, {
+      const res = await authFetch(`${API_BASE}/api/knowledge/recommend`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -107,7 +108,7 @@ export default function KnowledgeGraph() {
     const name = prompt("\u8F93\u5165\u4F9B\u5E94\u5546\u540D\u79F0:");
     if (!name) return;
     const id = `supplier_${name.toLowerCase().replace(/\s+/g, "_")}`;
-    await fetch(`${API_BASE}/api/knowledge/nodes`, {
+    await authFetch(`${API_BASE}/api/knowledge/nodes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -121,7 +122,7 @@ export default function KnowledgeGraph() {
   };
 
   const handleDeleteSupplier = async (nodeId: string) => {
-    await fetch(`${API_BASE}/api/knowledge/nodes/${nodeId}?customer_id=default`, {
+    await authFetch(`${API_BASE}/api/knowledge/nodes/${nodeId}?customer_id=default`, {
       method: "DELETE",
     });
     setSuppliers((prev) => prev.filter((s) => s.id !== nodeId));

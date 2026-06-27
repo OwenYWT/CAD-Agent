@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { DesignAnalysis as DesignAnalysisType, DFMIssue, RuleViolation, Annotation3D } from "../types";
 
+import { authFetch } from "../auth";
 interface DesignAnalysisProps {
   requestId: string | null;
   code: string | null;
@@ -332,7 +333,7 @@ export default function DesignAnalysis({
     setError(null);
     setAnalysis(null);
     try {
-      const res = await fetch(`${API_BASE}/api/analyze/${requestId}`, {
+      const res = await authFetch(`${API_BASE}/api/analyze/${requestId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: code || "", description }),

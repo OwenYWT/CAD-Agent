@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { DFMRuleData } from "../types";
 
+import { authFetch } from "../auth";
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 const PROCESS_LABELS: Record<string, string> = {
@@ -27,7 +28,7 @@ export default function DFMRuleConfig() {
   const fetchRuleSets = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/dfm/rules`);
+      const res = await authFetch(`${API_BASE}/api/dfm/rules`);
       if (res.ok) {
         const data: RuleSet[] = await res.json();
         setRuleSets(data);
@@ -49,7 +50,7 @@ export default function DFMRuleConfig() {
   }, [open]);
 
   const handleToggleRule = async (ruleId: string, enabled: boolean) => {
-    const res = await fetch(`${API_BASE}/api/dfm/rules/${ruleId}`, {
+    const res = await authFetch(`${API_BASE}/api/dfm/rules/${ruleId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled }),
@@ -71,7 +72,7 @@ export default function DFMRuleConfig() {
     field: "threshold_min" | "threshold_max",
     value: number,
   ) => {
-    const res = await fetch(`${API_BASE}/api/dfm/rules/${ruleId}`, {
+    const res = await authFetch(`${API_BASE}/api/dfm/rules/${ruleId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ [field]: value }),
