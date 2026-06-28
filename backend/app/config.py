@@ -23,13 +23,23 @@ class Settings(BaseSettings):
     log_level: str = "info"
     api_keys: list[str] = []  # empty = no legacy API-key auth required
     auth_required: bool = True
-    auth_token_secret: str = "change-me-in-production"
+    # HMAC signing key for login/session tokens. MUST be set to a long random value
+    # in any deployment. Empty by default ON PURPOSE so a misconfigured prod fails
+    # loud (see assert_auth_config_safe) instead of silently signing with a value
+    # that is public in the repo. Never commit a real value here or in .env.example.
+    auth_token_secret: str = ""
     auth_token_ttl_hours: int = 24 * 14
     verification_code_ttl_minutes: int = 10
+    # When True, /api/auth/code/request echoes the verification code back in the HTTP
+    # response (dev convenience, NO SMS). MUST be False in production — otherwise
+    # anyone who knows a phone number can obtain its code and take over the account.
+    auth_dev_expose_code: bool = False
     # Local-dev invite code. Leave empty to disable default invite seeding.
-    default_invite_code: str = "CAD-AGENT-2026"
+    default_invite_code: str = ""
     default_invite_max_uses: int = 100
-    admin_password: str = "admin123456"
+    # Bootstrap password for the built-in "admin" account. Empty = admin is NOT
+    # auto-created (the safe default). Set to a strong value to provision admin.
+    admin_password: str = ""
     rate_limit_per_minute: int = 30
     # Behind a trusted reverse proxy / tunnel (nginx, cloudflared), the direct client
     # IP is the proxy's, so all users share one rate-limit bucket. Enable ONLY when a
@@ -65,6 +75,38 @@ class Settings(BaseSettings):
         if self.normalized_llm_provider == "azure":
             return "AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY are required for Azure OpenAI operations"
         return "LLM credentials are required: set Azure OpenAI variables when LLM_PROVIDER=azure, or DASHSCOPE_API_KEY when LLM_PROVIDER=openai_compatible"
+
+    # Values that previously shipped as defaults and would silently weaken auth if
+    # left in place. Refuse to boot with auth on while any of these is in effect.
+    _INSECURE_SECRETS = {"", "change-me-in-production", "cad-agent-dev-secret"}
+
+    def auth_config_problems(self) -> list[str]:
+        """Return human-readable reasons the auth config is unsafe for a real
+        deployment. Empty list = safe. Only meaningful when auth_required is True."""
+        problems: list[str] = []
+        if not self.auth_required:
+            return problems
+        if (self.auth_token_secret or "").strip() in self._INSECURE_SECRETS:
+            problems.append(
+                "AUTH_TOKEN_SECRET is empty or a known placeholder. Set it to a long "
+                "random value (e.g. `python -c \"import secrets; print(secrets.token_urlsafe(48))\"`). "
+                "Tokens are HMAC-signed with this key; a public/empty key lets anyone forge any user's session."
+            )
+        if self.auth_dev_expose_code:
+            problems.append(
+                "AUTH_DEV_EXPOSE_CODE is True: verification codes are returned in HTTP responses. "
+                "This must be False in production (it bypasses SMS and enables account takeover)."
+            )
+        return problems
+
+    def assert_auth_config_safe(self) -> None:
+        """Fail loud at startup if auth is enabled with an unsafe config."""
+        problems = self.auth_config_problems()
+        if problems:
+            raise RuntimeError(
+                "Unsafe auth configuration (set AUTH_REQUIRED=false only for local dev):\n  - "
+                + "\n  - ".join(problems)
+            )
 
 
 settings = Settings()

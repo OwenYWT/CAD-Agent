@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { AuthSession, AuthUser } from "./auth";
-import { getAuthUser, logoutAuthSession } from "./auth";
+import { getAuthUser, logoutAuthSession, onSessionCleared, fetchCurrentUser } from "./auth";
 import { LoginPage } from "./components/LoginPage";
 import { useSessionStore } from "./stores/sessionStore";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -236,7 +236,31 @@ function MainApp({ authUser, onLogout, onUserUpdate }: { authUser: AuthUser; onL
 }
 
 function App() {
+  // Optimistically render from the cached user, but validate the token against the
+  // backend on load (L5) so an expired/forged stored token doesn't grant a UI flash.
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => getAuthUser());
+
+  // Any session clear (logout, expiry, or a background 401 in authFetch) drops the
+  // UI back to the login page instead of leaving a zombie authenticated view (H3).
+  useEffect(() => {
+    const unsubscribe = onSessionCleared(() => setAuthUser(null));
+    return unsubscribe;
+  }, []);
+
+  // Revalidate the stored token once on mount; clear the session if it's no longer
+  // valid. (Only runs when there is a cached user to check.)
+  useEffect(() => {
+    if (!getAuthUser()) return;
+    let cancelled = false;
+    fetchCurrentUser().then((user) => {
+      if (cancelled) return;
+      if (user) setAuthUser(user);
+      else setAuthUser(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleLogin = (session: AuthSession) => {
     setAuthUser(session.user);

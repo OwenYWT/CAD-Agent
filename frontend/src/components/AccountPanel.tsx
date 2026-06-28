@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { AuthUser } from "../auth";
 import { authFetch, deleteAuthAccount, refreshAuthSession } from "../auth";
 
@@ -51,8 +51,12 @@ export function AccountPanel({ user, onUserUpdate, onLogout }: AccountPanelProps
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: newCode.trim() || null, max_uses: maxUses }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "邀请码创建失败");
+      // Parse defensively: an error response may be empty or non-JSON, and reading
+      // .detail off a failed parse would mask the real failure.
+      const raw = await res.text();
+      const data = raw ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : null;
+      if (!res.ok) throw new Error((data && data.detail) || "邀请码创建失败");
+      if (!data || !data.code) throw new Error("邀请码创建失败");
       setMessage(`邀请码已创建：${data.code}`);
       setNewCode("");
       setMaxUses(1);

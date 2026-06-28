@@ -1,4 +1,4 @@
-﻿import base64
+import base64
 import hashlib
 import hmac
 import re
@@ -20,6 +20,17 @@ def _now() -> datetime:
 
 def _now_text() -> str:
     return _now().isoformat()
+
+
+def _parse_dt(value: str) -> datetime:
+    """Parse a stored ISO timestamp, coercing naive values to UTC so comparisons
+    against the tz-aware _now() never raise 'can't compare offset-naive and
+    offset-aware datetimes'. Used for any stored expires_at that may have been
+    supplied by a client (e.g. invite expires_at)."""
+    dt = datetime.fromisoformat(value)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _db_path() -> Path:
@@ -104,6 +115,21 @@ async def _migrate_legacy_tables(db: aiosqlite.Connection):
                 last_login_at TEXT NOT NULL
             );
         """)
+        # Carry existing accounts forward instead of abandoning them in the
+        # renamed table (the old code created an empty table => silent data loss).
+        # The legacy "identifier" column maps onto the new "phone" column. Rows that
+        # violate NOT NULL/UNIQUE are skipped (INSERT OR IGNORE) rather than aborting.
+        legacy_cols = {row["name"] for row in await db.execute_fetchall("PRAGMA table_info(users_legacy)")}
+        if {"id", "identifier", "password_hash"}.issubset(legacy_cols):
+            reg_expr = "registered_via" if "registered_via" in legacy_cols else "'legacy'"
+            created_src = "created_at" if "created_at" in legacy_cols else "NULL"
+            login_src = "last_login_at" if "last_login_at" in legacy_cols else "NULL"
+            await db.execute(f"""
+                INSERT OR IGNORE INTO users (id, phone, password_hash, registered_via, created_at, last_login_at)
+                SELECT id, identifier, password_hash, {reg_expr},
+                       COALESCE({created_src}, ?), COALESCE({login_src}, ?)
+                FROM users_legacy
+            """, (_now_text(), _now_text()))
     else:
         if "phone" not in user_column_names:
             await db.execute("ALTER TABLE users ADD COLUMN phone TEXT")
@@ -162,7 +188,21 @@ def validate_password(password: str) -> str:
 
 
 def _secret() -> str:
-    return settings.auth_token_secret or "cad-agent-dev-secret"
+    secret = (settings.auth_token_secret or "").strip()
+    if not secret:
+        # No usable signing key. When auth is required this is caught at startup
+        # (assert_auth_config_safe); reaching here means auth is disabled OR a test
+        # forgot to set one. Use a per-process random key so tokens are at least
+        # unforgeable from outside this process (and useless across restarts),
+        # never the old public "cad-agent-dev-secret" constant.
+        global _EPHEMERAL_SECRET
+        if _EPHEMERAL_SECRET is None:
+            _EPHEMERAL_SECRET = secrets.token_urlsafe(48)
+        return _EPHEMERAL_SECRET
+    return secret
+
+
+_EPHEMERAL_SECRET: str | None = None
 
 
 def _hash_value(value: str) -> str:
@@ -199,12 +239,6 @@ def _make_token(user_id: str, token_id: str, expires_at: datetime) -> str:
     return f"{encoded}.{_sign(encoded)}"
 
 
-def create_access_token(user_id: str, ttl_hours: int | None = None) -> str:
-    expires_at = _now() + timedelta(hours=ttl_hours or settings.auth_token_ttl_hours)
-    token_id = secrets.token_hex(8)
-    return _make_token(user_id, token_id, expires_at)
-
-
 async def create_session_token(user_id: str, ttl_hours: int | None = None) -> str:
     expires_at = _now() + timedelta(hours=ttl_hours or settings.auth_token_ttl_hours)
     token_id = secrets.token_hex(8)
@@ -236,11 +270,6 @@ def parse_access_token(token: str | None) -> tuple[str, int, str] | None:
         return None
 
 
-def verify_access_token(token: str | None) -> str | None:
-    parsed = parse_access_token(token)
-    return parsed[0] if parsed else None
-
-
 async def verify_session_token(token: str | None) -> str | None:
     parsed = parse_access_token(token)
     if not parsed:
@@ -253,11 +282,13 @@ async def verify_session_token(token: str | None) -> str | None:
     )
     row = await cursor.fetchone()
     if not row:
-        # Accept stateless tokens created before session tracking existed.
-        return user_id
+        # A validly-signed token whose token_id is not in auth_sessions is rejected.
+        # (Previously this branch returned user_id, which made every signed token
+        # un-revocable and let a forged token_id bypass the session table entirely.)
+        return None
     if row["revoked_at"]:
         return None
-    if datetime.fromisoformat(row["expires_at"]) < _now():
+    if _parse_dt(row["expires_at"]) < _now():
         return None
     return row["user_id"]
 
@@ -293,16 +324,18 @@ def public_user(row: aiosqlite.Row | dict) -> dict:
 
 
 async def ensure_admin_user():
+    # No admin password configured => do NOT auto-create an admin. (Previously this
+    # shipped a default "admin123456", an instant takeover of the invite-management
+    # surface.) Operators must set ADMIN_PASSWORD explicitly to provision admin.
     if not settings.admin_password:
         return
     db = await get_db()
-    cursor = await db.execute("SELECT id FROM users WHERE phone = ?", ("admin",))
-    if await cursor.fetchone():
-        return
     now = _now_text()
+    # INSERT OR IGNORE on the UNIQUE phone makes concurrent first-logins idempotent
+    # (no double-insert race). The admin id stays the stable literal "admin".
     await db.execute(
         """
-        INSERT INTO users (id, phone, password_hash, registered_via, created_at, last_login_at)
+        INSERT OR IGNORE INTO users (id, phone, password_hash, registered_via, created_at, last_login_at)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
         ("admin", "admin", hash_password(settings.admin_password), "admin", now, now),
@@ -317,22 +350,53 @@ async def user_exists(phone: str) -> bool:
     return await cursor.fetchone() is not None
 
 
+# Max verification codes a single phone+purpose may request inside the TTL window.
+# Bounds the verification_codes table and blunts code-flooding / brute-prep.
+_MAX_CODES_PER_WINDOW = 5
+
+
+class VerificationThrottleError(Exception):
+    """Raised when a phone requests verification codes too frequently."""
+
+
 async def issue_verification_code(phone: str, purpose: str) -> str:
     normalized = normalize_phone(phone)
     if purpose not in {"register", "login", "reset_password"}:
         raise ValueError("验证码用途无效")
+    # The built-in admin account is managed by password only — never issue codes
+    # for it (otherwise the dev-code / reset flow becomes an admin-takeover path).
+    if is_admin_account(normalized):
+        raise ValueError("管理员账号不支持验证码流程")
     exists = await user_exists(normalized)
-    if purpose == "register" and exists:
-        raise ValueError("该手机号已注册，请直接登录")
-    if purpose in {"login", "reset_password"} and not exists:
-        raise ValueError("该手机号尚未注册，请先注册")
+    # NOTE: we intentionally do NOT branch the error on whether the phone is
+    # registered (that leaks account existence). For register-on-existing and
+    # login/reset-on-missing we still proceed to issue a code; the downstream
+    # register/login/reset step returns a uniform failure. The only signal a
+    # caller gets here is throttling.
+    _ = exists
+
+    # Per-phone+purpose request throttle within the active TTL window.
+    window_start = (_now() - timedelta(minutes=settings.verification_code_ttl_minutes)).isoformat()
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT COUNT(*) AS n FROM verification_codes WHERE phone = ? AND purpose = ? AND created_at >= ?",
+        (normalized, purpose, window_start),
+    )
+    recent = await cursor.fetchone()
+    if recent and recent["n"] >= _MAX_CODES_PER_WINDOW:
+        raise VerificationThrottleError("验证码请求过于频繁，请稍后再试")
 
     code = f"{secrets.randbelow(1_000_000):06d}"
     expires_at = (_now() + timedelta(minutes=settings.verification_code_ttl_minutes)).isoformat()
-    db = await get_db()
     await db.execute(
         "INSERT INTO verification_codes (phone, purpose, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
         (normalized, purpose, _hash_value(code), expires_at, _now_text()),
+    )
+    # Opportunistic cleanup of expired/consumed rows for this phone so the table
+    # doesn't grow without bound.
+    await db.execute(
+        "DELETE FROM verification_codes WHERE phone = ? AND (expires_at < ? OR consumed_at IS NOT NULL)",
+        (normalized, _now_text()),
     )
     await db.commit()
     return code
@@ -355,16 +419,23 @@ async def consume_verification_code(phone: str, purpose: str, code: str) -> bool
     for row in rows:
         if row["consumed_at"]:
             continue
-        expires_at = datetime.fromisoformat(row["expires_at"])
+        expires_at = _parse_dt(row["expires_at"])
         if expires_at < now:
             continue
         if hmac.compare_digest(row["code_hash"], _hash_value(code.strip())):
-            await db.execute(
-                "UPDATE verification_codes SET consumed_at = ? WHERE id = ?",
+            # Atomic claim: the `AND consumed_at IS NULL` guard means only one
+            # concurrent consumer can flip the row; cursor.rowcount tells us whether
+            # WE were the one that claimed it. (Previously the UPDATE was
+            # unconditional, so two requests racing on the same code both "won".)
+            cursor = await db.execute(
+                "UPDATE verification_codes SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL",
                 (_now_text(), row["id"]),
             )
             await db.commit()
-            return True
+            if cursor.rowcount == 1:
+                return True
+            # Lost the race for this row — keep scanning for another valid code.
+            continue
     return False
 
 
@@ -386,22 +457,30 @@ async def consume_invite_code(code: str) -> bool:
     if not normalized:
         return False
     db = await get_db()
+    # Pre-check expiry separately: SQLite can't reliably compare arbitrary ISO
+    # strings, and expiry is time- not count-based, so it's safe to read first.
     cursor = await db.execute(
-        "SELECT code, max_uses, used_count, expires_at, disabled_at FROM invite_codes WHERE code = ?",
+        "SELECT expires_at FROM invite_codes WHERE code = ?",
         (normalized,),
     )
     row = await cursor.fetchone()
     if not row:
         return False
-    if row["disabled_at"]:
+    if row["expires_at"] and _parse_dt(row["expires_at"]) < _now():
         return False
-    if row["expires_at"] and datetime.fromisoformat(row["expires_at"]) < _now():
-        return False
-    if row["used_count"] >= row["max_uses"]:
-        return False
-    await db.execute("UPDATE invite_codes SET used_count = used_count + 1 WHERE code = ?", (normalized,))
+    # Atomic increment: the WHERE clause enforces the seat limit and not-disabled
+    # condition inside the single UPDATE, so two concurrent registrations on the
+    # last remaining use can't both succeed. rowcount == 1 means we claimed a seat.
+    cursor = await db.execute(
+        """
+        UPDATE invite_codes
+        SET used_count = used_count + 1
+        WHERE code = ? AND disabled_at IS NULL AND used_count < max_uses
+        """,
+        (normalized,),
+    )
     await db.commit()
-    return True
+    return cursor.rowcount == 1
 
 
 async def create_invite_code(code: str | None, max_uses: int, expires_at: str | None = None) -> dict:
@@ -453,7 +532,10 @@ async def create_user(phone: str, password: str, registered_via: str) -> dict:
     if await user_exists(normalized):
         raise ValueError("该手机号已注册，请直接登录")
     password_hash = hash_password(password)
-    user_id = hashlib.sha256(f"phone:{normalized}".encode("utf-8")).hexdigest()[:24]
+    # Random, non-guessable id. (Previously sha256("phone:"+phone)[:24], which made
+    # every user's id derivable from their phone number — combined with a leaked
+    # signing key that turned into trivial token forgery.)
+    user_id = secrets.token_hex(16)
     now = _now_text()
     db = await get_db()
     await db.execute(
@@ -472,6 +554,13 @@ async def create_user(phone: str, password: str, registered_via: str) -> dict:
 
 async def reset_password(phone: str, password: str) -> dict:
     normalized = normalize_phone(phone)
+    if is_admin_account(normalized):
+        raise ValueError("管理员账号不支持验证码流程")
+    # Confirm existence BEFORE mutating, so we never run an UPDATE for a phone that
+    # isn't registered (and the error path is deterministic).
+    existing = await get_user_by_phone(normalized)
+    if not existing:
+        raise ValueError("该手机号尚未注册，请先注册")
     password_hash = hash_password(password)
     db = await get_db()
     await db.execute(
@@ -479,10 +568,7 @@ async def reset_password(phone: str, password: str) -> dict:
         (password_hash, _now_text(), normalized),
     )
     await db.commit()
-    user = await get_user_by_phone(normalized)
-    if not user:
-        raise ValueError("该手机号尚未注册，请先注册")
-    return user
+    return await get_user_by_phone(normalized)
 
 
 async def authenticate_password(phone: str, password: str) -> dict | None:

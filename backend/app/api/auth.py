@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import time
 from collections import defaultdict
 
@@ -27,6 +27,28 @@ async def get_current_user(
     return user
 
 
+async def get_optional_user(
+    bearer: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+):
+    """Like get_current_user, but tolerates the local-dev auth-off mode.
+
+    - A valid login token always resolves to that user (per-user data isolation).
+    - With no/invalid token AND auth disabled (auth_required False, no api_keys),
+      returns None (anonymous) so dev mode keeps working without a login.
+    - With no/invalid token while auth is enabled, raises 401.
+    """
+    token = bearer.credentials if bearer else None
+    if token:
+        user_id = await auth_store.verify_session_token(token)
+        if user_id:
+            user = await auth_store.get_user(user_id)
+            if user:
+                return user
+    if not settings.auth_required and not settings.api_keys:
+        return None
+    raise HTTPException(status_code=401, detail="Invalid or missing login token")
+
+
 async def verify_api_key(
     request: Request,
     bearer: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
@@ -34,9 +56,10 @@ async def verify_api_key(
 ):
     """Verify API credentials.
 
-    Supports the new login Bearer token and legacy static API keys. When no
-    legacy API keys are configured, login tokens are still accepted but auth is
-    otherwise optional to preserve local-dev behavior.
+    Accepts a login session Bearer token or a legacy static API key. Auth is only
+    skipped (returns None) when BOTH auth_required is False AND no api_keys are
+    configured — i.e. an explicit local-dev opt-out. With the default
+    auth_required=True, a valid login token (or legacy key) is mandatory.
     """
     if bearer:
         user_id = await auth_store.verify_session_token(bearer.credentials)

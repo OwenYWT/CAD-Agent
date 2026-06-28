@@ -60,6 +60,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         return
     user_id = await get_ws_user_id(token)
 
+    # Ownership check: a logged-in user must not attach to a session_id that another
+    # user already owns (otherwise they could write panels/messages into it). A brand
+    # new session_id, a NULL-owner session, and local-dev anonymous mode (user_id is
+    # None) are all allowed; session_writable_by_user encodes exactly that.
+    if not await history.session_writable_by_user(session_id, user_id):
+        await websocket.close(code=4003, reason="Session belongs to another user")
+        return
+
     await websocket.accept()
 
     orchestrator = _get_orchestrator()

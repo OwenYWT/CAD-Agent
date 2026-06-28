@@ -1,4 +1,4 @@
-﻿const TOKEN_KEY = "cad_agent_auth_token";
+const TOKEN_KEY = "cad_agent_auth_token";
 const USER_KEY = "cad_agent_auth_user";
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
@@ -35,9 +35,27 @@ export function saveAuthSession(session: AuthSession) {
   localStorage.setItem(USER_KEY, JSON.stringify(session.user));
 }
 
+// Listeners notified whenever the session is cleared (logout, expiry, 401).
+// The app subscribes so a background 401 can immediately drop the UI back to the
+// login page instead of leaving a "zombie" authenticated view that 401s forever.
+type SessionListener = () => void;
+const sessionListeners = new Set<SessionListener>();
+
+export function onSessionCleared(listener: SessionListener): () => void {
+  sessionListeners.add(listener);
+  return () => sessionListeners.delete(listener);
+}
+
 export function clearAuthSession() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  sessionListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch {
+      /* a misbehaving listener must not block session teardown */
+    }
+  });
 }
 
 export function authHeaders(): HeadersInit {
@@ -53,9 +71,26 @@ export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}
   }
   const response = await fetch(input, { ...init, headers });
   if (response.status === 401) {
+    // Token rejected/expired: tear down the session and notify the app so it can
+    // route back to the login page.
     clearAuthSession();
   }
   return response;
+}
+
+// Validate the stored token against the backend (L5: don't trust localStorage on
+// load). Returns the fresh user on success, null otherwise.
+export async function fetchCurrentUser(): Promise<AuthUser | null> {
+  const token = getAuthToken();
+  if (!token) return null;
+  try {
+    const res = await authFetch(`${API_BASE}/api/auth/me`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { user: AuthUser };
+    return data.user ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function refreshAuthSession(): Promise<AuthSession | null> {
@@ -79,7 +114,7 @@ export async function deleteAuthAccount() {
     const res = await authFetch(`${API_BASE}/api/auth/account`, { method: "DELETE" });
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(text || "??????");
+      throw new Error(text || "注销账号失败，请稍后重试");
     }
   } finally {
     clearAuthSession();

@@ -125,8 +125,16 @@ async def _periodic_cleanup(interval_s: int = 3600):
 async def lifespan(app: FastAPI):
     # Startup
     import asyncio
+    # Refuse to boot with an unsafe auth config (empty/placeholder token secret,
+    # dev code exposure on). This is a hard gate, not a warning.
+    settings.assert_auth_config_safe()
     _cleanup_old_files()
     app.state.startup_problems = _startup_self_check()
+    # Provision admin + default invite eagerly so misconfig surfaces at boot, not
+    # on the first request. Both are no-ops when their config is unset/empty.
+    from app.storage.auth import ensure_admin_user, ensure_default_invite_code
+    await ensure_admin_user()
+    await ensure_default_invite_code()
     cleanup_task = asyncio.create_task(_periodic_cleanup())
     yield
     # Shutdown

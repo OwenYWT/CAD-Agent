@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { AuthSession } from "../auth";
 import { saveAuthSession } from "../auth";
 
@@ -96,12 +96,12 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         body: JSON.stringify({ phone, purpose }),
       });
       const data = await readJsonResponse(res);
-      if (!res.ok) throw new Error(errorMessage(data, "???????"));
+      if (!res.ok) throw new Error(errorMessage(data, "验证码发送失败，请稍后重试"));
       const payload = data as { dev_code?: string; message?: string } | null;
       setDevCode(payload?.dev_code || null);
-      setMessage(payload?.message || "??????");
+      setMessage(payload?.message || "验证码已发送，请查收短信");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "???????");
+      setError(err instanceof Error ? err.message : "验证码发送失败，请稍后重试");
     } finally {
       setLoading(false);
     }
@@ -136,12 +136,12 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         body: JSON.stringify(body),
       });
       const data = await readJsonResponse(res);
-      if (!res.ok) throw new Error(errorMessage(data, "????"));
-      if (!data) throw new Error("???????");
+      if (!res.ok) throw new Error(errorMessage(data, "操作失败，请稍后重试"));
+      if (!data) throw new Error("服务器无响应，请稍后重试");
       saveAuthSession(data as AuthSession);
       onLogin(data as AuthSession);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "????");
+      setError(err instanceof Error ? err.message : "操作失败，请稍后重试");
     } finally {
       setLoading(false);
     }
@@ -174,7 +174,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
         {screen === "reset" ? (
           <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-700">
-            ????????????????????????
+            通过手机号验证码重置登录密码，重置后请使用新密码登录。
           </div>
         ) : screen === "login" ? (
           <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-1">

@@ -130,6 +130,24 @@ async def session_belongs_to_user(session_id: str, user_id: str | None) -> bool:
     return bool(row and row["user_id"] == user_id)
 
 
+async def session_writable_by_user(session_id: str, user_id: str | None) -> bool:
+    """Write-side ownership check (used by the WebSocket).
+
+    Differs from session_belongs_to_user: a session that does NOT exist yet is
+    writable (the caller is about to create it). A session is only refused when it
+    already exists AND is owned by a *different* user. Sessions with a NULL owner
+    (created in dev/anonymous mode) are claimable by the first authenticated writer.
+    """
+    if not user_id:
+        return True
+    db = await get_db()
+    cursor = await db.execute("SELECT user_id FROM sessions WHERE id = ?", (session_id,))
+    row = await cursor.fetchone()
+    if row is None:
+        return True  # new session_id — caller creates it
+    return row["user_id"] is None or row["user_id"] == user_id
+
+
 async def panel_belongs_to_user(panel_id: str, user_id: str | None) -> bool:
     if not user_id:
         return True
