@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import shutil
@@ -303,7 +304,12 @@ class Orchestrator:
             result.assembly_parts = _assy_parts_info
 
         # Populate the code cache on success (skip assemblies — richer multi-part state).
-        if result.success and result.code and not is_assembly and cache:
+        # A result whose FINAL vision check failed is still returned (with an honest
+        # fail check on the report) but must not poison the cache for future prompts.
+        if (
+            result.success and result.code and not is_assembly and cache
+            and not self._vision_failed(result)
+        ):
             cache.put(prompt, result.code)
 
         # Step 5: Auto-DFM analysis (when process/material keywords detected)
@@ -845,8 +851,11 @@ class Orchestrator:
                             )
                             continue
 
-                        # === Vision validation (max 2 retries) ===
-                        if vision_retry_count < 2 and stl_path:
+                        # === Vision validation (verify → critique → regenerate loop) ===
+                        # Runs on EVERY successful attempt, including after the fix
+                        # budget is spent — a final mismatch is then recorded as an
+                        # honest FAIL check instead of silently passing.
+                        if stl_path:
                             try:
                                 if on_step:
                                     await _call_step(
@@ -854,7 +863,12 @@ class Orchestrator:
                                         StepUpdate(step="executing", message="正在进行视觉校验..."),
                                     )
                                 renders_dir = result.work_dir / "renders"
-                                render_paths = self.renderer.render_stl(stl_path, renders_dir)
+                                # Rendering is CPU-bound and synchronous (trimesh GL or
+                                # the matplotlib software fallback) — run it off the event
+                                # loop so a slow render can't stall the whole server.
+                                render_paths = await asyncio.to_thread(
+                                    self.renderer.render_stl, stl_path, renders_dir
+                                )
                                 if not render_paths:
                                     # No renders → vision is INDETERMINATE, not skipped silently.
                                     # Surface it honestly instead of letting it pass invisibly.
@@ -868,20 +882,30 @@ class Orchestrator:
                                     )
                                     # Only an EXPLICIT mismatch (is_match is False) triggers a fix.
                                     # Indeterminate (None) never retries and never passes silently.
-                                    if vision_result.is_match is False and attempt < self.MAX_RETRIES:
-                                        vision_retry_count += 1
-                                        shutil.rmtree(result.work_dir, ignore_errors=True)
-                                        if on_step:
-                                            await _call_step(
-                                                on_step,
-                                                StepUpdate(step="fixing_error", message="视觉校验不通过，正在修复..."),
+                                    if vision_result.is_match is False:
+                                        if (
+                                            vision_retry_count < settings.vision_max_retries
+                                            and attempt < self.MAX_RETRIES
+                                        ):
+                                            vision_retry_count += 1
+                                            shutil.rmtree(result.work_dir, ignore_errors=True)
+                                            if on_step:
+                                                await _call_step(
+                                                    on_step,
+                                                    StepUpdate(step="fixing_error", message="视觉校验不通过，正在修复..."),
+                                                )
+                                            code = await self.code_gen.fix_visual_issues(
+                                                code, vision_result.issues, vision_result.suggestions,
+                                                on_step=on_step,
                                             )
-                                        code = await self.code_gen.fix_visual_issues(
-                                            code, vision_result.issues, vision_result.suggestions,
-                                            on_step=on_step,
+                                            continue
+                                        # Fix budget exhausted and the artifact still
+                                        # doesn't match — say so instead of hiding it.
+                                        self._add_failed_vision_check(
+                                            inspect_report,
+                                            "; ".join(vision_result.issues) or "视觉校验不通过",
                                         )
-                                        continue
-                                    if vision_result.is_match is None:
+                                    elif vision_result.is_match is None:
                                         self._add_indeterminate_vision_check(
                                             inspect_report,
                                             "; ".join(vision_result.issues) or "视觉校验结果不可信",
@@ -1081,6 +1105,26 @@ class Orchestrator:
         result.inspect_report.dfm_violations = [
             RuleViolationModel(**rv) for rv in dfm_data.get("rule_violations", [])
         ]
+
+    @staticmethod
+    def _add_failed_vision_check(report, message: str) -> None:
+        """Record that the artifact still failed the visual check after the fix budget
+        was spent. The result is returned (it may still be usable) but the report says
+        FAIL and generate() refuses to cache the code."""
+        if report is None:
+            return
+        from app.models.schemas import InspectCheck
+        from app.validation.inspect import add_check
+        add_check(report, InspectCheck(
+            name="vision", status="fail", message=message, source="vision",
+        ))
+
+    @staticmethod
+    def _vision_failed(result) -> bool:
+        report = getattr(result, "inspect_report", None)
+        if not report:
+            return False
+        return any(c.name == "vision" and c.status == "fail" for c in report.checks)
 
     @staticmethod
     def _add_indeterminate_vision_check(report, message: str) -> None:

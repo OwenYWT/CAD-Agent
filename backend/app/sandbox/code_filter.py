@@ -13,6 +13,15 @@ _DANGEROUS_NAMES = frozenset({
 _DANGEROUS_ATTRS = frozenset({
     "__import__", "__subclasses__", "__bases__", "__globals__",
     "__code__", "__builtins__", "__loader__", "__spec__",
+    # numpy re-exports the whole ctypes module as `np.ctypeslib.ctypes`, which
+    # reaches CDLL/windll and thus native host code — bypassing the import
+    # whitelist entirely (no `import` statement fires). Block the bridge and the
+    # native loaders directly. None of these appear in legitimate CadQuery code.
+    "ctypeslib", "ctypes", "windll", "cdll", "oledll", "pydll",
+    "CDLL", "WinDLL", "OleDLL", "PyDLL", "LoadLibrary",
+    # ndarray.tofile / np.fromfile are arbitrary host file I/O reachable via the
+    # whitelisted numpy object; CAD exports go through cq.exporters, never these.
+    "tofile", "fromfile",
 })
 
 

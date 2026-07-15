@@ -1,9 +1,12 @@
+import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import trimesh
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -79,18 +82,81 @@ class CADRenderer:
             scene.camera_transform = transform
 
             out_path = output_dir / f"{angle.name}.png"
+            rendered = False
             try:
                 png_data = scene.save_image(resolution=(512, 512), visible=False)
                 if png_data and len(png_data) > 100:
                     with open(out_path, "wb") as f:
                         f.write(png_data)
-                    result_paths.append(out_path)
-                else:
-                    # Empty or trivially small render — treat as failure, skip this angle
-                    pass
+                    rendered = True
             except Exception:
-                # Render failed for this angle (e.g., no display available)
-                # Do NOT create a placeholder — skip this angle entirely
+                # GL render failed (no display / pyglet missing) — fall through to
+                # the software renderer below instead of dropping the angle.
                 pass
 
+            if not rendered:
+                rendered = self._render_matplotlib(mesh, angle, out_path)
+
+            if rendered:
+                result_paths.append(out_path)
+
         return result_paths
+
+    def _render_matplotlib(self, mesh, angle: CameraAngle, out_path: Path) -> bool:
+        """Software fallback: shade the mesh with matplotlib's 3D engine.
+
+        The vision self-check is only as good as its input images; without this
+        fallback a host with no OpenGL context produces zero renders and the whole
+        visual verify-and-correct loop silently degrades to 'indeterminate'."""
+        try:
+            # Check the face COUNT before materializing the full (n,3,3) triangle
+            # array — a multi-million-face mesh would otherwise allocate hundreds of
+            # MB just to be rejected. matplotlib's 3D engine is pure-Python and slow,
+            # so cap well below where per-render latency becomes painful.
+            n_faces = len(mesh.faces)
+            if n_faces == 0 or n_faces > 60_000:
+                if n_faces > 60_000:
+                    logger.warning(
+                        "matplotlib fallback skipped for %s: %d faces exceeds cap (60k)",
+                        angle.name, n_faces,
+                    )
+                return False
+            faces = np.asarray(mesh.triangles)
+
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+            # Simple lambert shading from face normals against a fixed light
+            light = np.array([0.4, -0.5, 0.75])
+            light /= np.linalg.norm(light)
+            intensity = 0.35 + 0.6 * np.clip(mesh.face_normals @ light, 0.0, 1.0)
+            base = np.array([0.62, 0.68, 0.80])
+            colors = np.clip(intensity[:, None] * base[None, :], 0.0, 1.0)
+
+            fig = plt.figure(figsize=(5.12, 5.12), dpi=100)
+            try:
+                ax = fig.add_subplot(111, projection="3d")
+                ax.add_collection3d(
+                    Poly3DCollection(faces, facecolors=colors, edgecolors="none")
+                )
+                # Mesh is centered at the origin; frame it by its bounding-sphere radius
+                radius = float(np.linalg.norm(mesh.bounding_box.extents) / 2.0) or 1.0
+                radius *= 1.05
+                ax.set_xlim(-radius, radius)
+                ax.set_ylim(-radius, radius)
+                ax.set_zlim(-radius, radius)
+                ax.set_box_aspect((1, 1, 1))
+                # Match the GL camera convention (azimuth 0 = looking from +Y):
+                # matplotlib measures azimuth from the +X axis.
+                ax.view_init(elev=angle.elevation, azim=90 - angle.azimuth)
+                ax.set_axis_off()
+                fig.savefig(out_path, bbox_inches="tight", pad_inches=0.05, facecolor="white")
+            finally:
+                plt.close(fig)
+
+            return out_path.exists() and out_path.stat().st_size > 100
+        except Exception as e:
+            logger.warning(f"matplotlib fallback render failed for {angle.name}: {e}")
+            return False

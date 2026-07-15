@@ -1,0 +1,145 @@
+{
+  "summary": {
+    "exp1_detection": {
+      "n": 8,
+      "accuracy_correct": 7,
+      "mismatches_total": 4,
+      "mismatches_caught": 4,
+      "matches_total": 4,
+      "false_alarms": 1,
+      "detection_rate_pct": 100.0,
+      "specificity_pct": 75.0
+    },
+    "exp2_correction": {
+      "cases": 2,
+      "initially_mismatched": 2,
+      "corrected_by_loop": 2
+    }
+  },
+  "exp1": [
+    {
+      "case": 1,
+      "desc": "一个 40×30×20mm 的长方体",
+      "expected_match": true,
+      "is_match": true,
+      "confidence": 1.0,
+      "correct": true,
+      "issues": [],
+      "s": 15.0
+    },
+    {
+      "case": 2,
+      "desc": "一个直径 30mm、高 40mm 的圆柱",
+      "expected_match": true,
+      "is_match": true,
+      "confidence": 1.0,
+      "correct": true,
+      "issues": [],
+      "s": 13.8
+    },
+    {
+      "case": 3,
+      "desc": "一个 40mm 立方体，中心有一个直径 12mm 的竖直通孔",
+      "expected_match": true,
+      "is_match": false,
+      "confidence": 0.6,
+      "correct": false,
+      "issues": [
+        "模型顶面存在未描述的锥形凹陷（倒角）特征，不符合'立方体'的平面要求",
+        "中心孔顶部呈现锥形扩大，不是描述要求的圆柱形'直通孔'"
+      ],
+      "s": 41.7
+    },
+    {
+      "case": 4,
+      "desc": "一个圆柱形外壳：外径 40mm、高 40mm、壁厚 3mm、顶部开口",
+      "expected_match": true,
+      "is_match": true,
+      "confidence": 0.95,
+      "correct": true,
+      "issues": [
+        "顶视图中的斜向线条可能是渲染伪影或Z-fighting，但不影响实体结构判断",
+        "前视图和右视图无法直接显示壁厚（正常现象，需通过等轴测图确认）"
+      ],
+      "s": 27.2
+    },
+    {
+      "case": 5,
+      "desc": "一个直径 30mm、高 40mm 的圆柱",
+      "expected_match": false,
+      "is_match": false,
+      "confidence": 0.1,
+      "correct": true,
+      "issues": [
+        "形状类型错误：用户要求的是圆柱体(diameter 30mm, height 40mm)，但等轴测图显示的是长方体/盒子",
+        "顶视图和前视图显示为矩形而非圆形，确认生成的是棱柱而非圆柱"
+      ],
+      "s": 11.6
+    },
+    {
+      "case": 6,
+      "desc": "一个 40mm 立方体，中心有一个直径 12mm 的竖直通孔",
+      "expected_match": false,
+      "is_match": false,
+      "confidence": 0.3,
+      "correct": true,
+      "issues": [
+        "缺少中心通孔：用户要求直径12mm的竖直通孔，但所有视图显示为实心立方体，无任何孔特征",
+        "顶视图和等轴测图应清晰显示圆孔轮廓，但实际显示为完整实体表面"
+      ],
+      "s": 13.1
+    },
+    {
+      "case": 7,
+      "desc": "一个 L 形支架（两条互相垂直的臂）",
+      "expected_match": false,
+      "is_match": false,
+      "confidence": 0.1,
+      "correct": true,
+      "issues": [
+        "形状类型完全错误：用户要求的是L形支架（两条互相垂直的臂），但渲染图显示的是一个简单的长方体（盒子）",
+        "缺少L形结构：模型应该是由两个垂直相交的臂组成的L形轮廓，而不是单一的矩形块"
+      ],
+      "s": 13.1
+    },
+    {
+      "case": 8,
+      "desc": "一个盒子，顶面有一个与盒体相连的凸台",
+      "expected_match": false,
+      "is_match": false,
+      "confidence": 0.2,
+      "correct": true,
+      "issues": [
+        "凸台与盒体完全分离，存在明显间隙，未形成物理连接",
+        "前视图和右视图显示凸台悬浮于盒体上方，未接触顶面"
+      ],
+      "s": 17.5
+    }
+  ],
+  "exp2": [
+    {
+      "case": 1,
+      "desc": "一个 40mm 立方体，中心有一个直径 12mm 的竖直通孔",
+      "before_match": false,
+      "before_issues": [
+        "缺少中心通孔：描述要求中心有直径12mm的竖直通孔，但模型为实心立方体",
+        "代码未执行cut操作：代码仅创建box(40,40,40)，未添加任何钻孔或切割操作"
+      ],
+      "after_match": true,
+      "fix_rounds": 1,
+      "corrected": true
+    },
+    {
+      "case": 2,
+      "desc": "一个 40×30×20mm 的盒子，顶面中心有一个直径 8mm、高 ",
+      "before_match": false,
+      "before_issues": [
+        "凸台与盒体完全分离，没有物理连接",
+        "凸台Z轴位置错误：设置在Z=25mm处，而盒体顶面仅在Z=10mm处，两者之间有15mm间隙"
+      ],
+      "after_match": true,
+      "fix_rounds": 1,
+      "corrected": true
+    }
+  ]
+}

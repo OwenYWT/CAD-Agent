@@ -151,8 +151,12 @@ def test_startup_self_check_reports_missing_key(monkeypatch):
 
 
 def test_startup_self_check_reports_docker_problem(monkeypatch):
-    """No Docker daemon in this env -> a docker/sandbox problem string is emitted."""
+    """No Docker daemon in this env -> a docker/sandbox problem string is emitted.
+
+    Pin the docker runtime so the test is independent of any developer .env that may
+    select SANDBOX_RUNTIME=local (which needs no Docker and would report no problem)."""
     from app import config, main
+    monkeypatch.setattr(config.settings, "sandbox_runtime", "docker")
     monkeypatch.setattr(config.settings, "dashscope_api_key", None)
     problems = main._startup_self_check()
     assert any(("Docker" in p) or ("沙箱" in p) or ("docker" in p) for p in problems)

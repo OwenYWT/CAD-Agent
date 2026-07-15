@@ -259,7 +259,8 @@ class MultiStepExecutor:
                     except Exception as e:
                         logger.warning(f"Multi-step geometry validation skipped: {e}")
 
-                # Vision validation + auto-fix (max 3 rounds)
+                # Vision validation + auto-fix: up to vision_max_retries fix rounds,
+                # plus one final verification of the last artifact.
                 if stl_path:
                     try:
                         from app.rendering.renderer import CADRenderer
@@ -268,21 +269,29 @@ class MultiStepExecutor:
                         renderer = CADRenderer()
                         vision_validator = VisionValidator()
                         user_prompt = plan.description if plan else ""
+                        max_fix_rounds = settings.vision_max_retries
 
-                        for vision_round in range(2):
+                        for vision_round in range(max_fix_rounds + 1):
                             if on_step:
-                                round_msg = f"正在进行视觉校验 ({vision_round + 1}/2)..." if vision_round > 0 else "正在进行视觉校验..."
+                                round_msg = (
+                                    f"正在进行视觉校验 ({vision_round + 1}/{max_fix_rounds + 1})..."
+                                    if vision_round > 0 else "正在进行视觉校验..."
+                                )
                                 await _call_step(on_step, StepUpdate(
                                     step="executing", message=round_msg
                                 ))
 
                             renders_dir = final_result.work_dir / "renders"
                             if renders_dir.exists():
-                                shutil.rmtree(renders_dir)
+                                shutil.rmtree(renders_dir, ignore_errors=True)
                             stl_path = self._find_file_in_output(final_result.work_dir, ".stl")
                             if not stl_path:
                                 break
-                            render_paths = renderer.render_stl(stl_path, renders_dir)
+                            # Off the event loop — sync CPU-bound render (see orchestrator).
+                            import asyncio as _asyncio
+                            render_paths = await _asyncio.to_thread(
+                                renderer.render_stl, stl_path, renders_dir
+                            )
                             if not render_paths:
                                 break
 
@@ -299,11 +308,24 @@ class MultiStepExecutor:
                                 break
 
                             logger.info(f"Vision round {vision_round + 1} issues: {vision_result.issues}")
+                            if vision_round >= max_fix_rounds:
+                                # Fix budget spent and the final artifact still mismatches —
+                                # keep the result but say so instead of pretending it passed.
+                                logger.warning(
+                                    "Vision check still failing after %d fix rounds: %s",
+                                    max_fix_rounds, "; ".join(vision_result.issues),
+                                )
+                                if on_step:
+                                    await _call_step(on_step, StepUpdate(
+                                        step="executing",
+                                        message="视觉校验仍不通过（已达修复上限）",
+                                    ))
+                                break
                             if on_step:
                                 issues_str = "; ".join(vision_result.issues[:2])
                                 await _call_step(on_step, StepUpdate(
                                     step="fixing_error",
-                                    message=f"视觉校验不通过 ({vision_round + 1}/2)，正在修复: {issues_str}",
+                                    message=f"视觉校验不通过 ({vision_round + 1}/{max_fix_rounds + 1})，正在修复: {issues_str}",
                                 ))
 
                             fixed_code = await self.code_gen.fix_visual_issues(

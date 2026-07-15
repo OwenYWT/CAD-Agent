@@ -68,7 +68,8 @@ def _startup_self_check():
             "请在 backend/.env 写入 dashscope_api_key。"
         )
 
-    if settings.sandbox_runtime.strip().lower() == "podman":
+    runtime = settings.sandbox_runtime.strip().lower()
+    if runtime == "podman":
         import subprocess
         command = settings.sandbox_command or "podman"
         result = subprocess.run(
@@ -79,6 +80,18 @@ def _startup_self_check():
             problems.append(
                 f"Sandbox image '{settings.sandbox_image}' not found for Podman. "
                 "Run: cd backend/sandbox && podman build -t cad-agent-sandbox:latest ."
+            )
+    elif runtime == "local":
+        import importlib.util
+        if importlib.util.find_spec("cadquery") is None:
+            problems.append(
+                "SANDBOX_RUNTIME=local but 'cadquery' is not importable in this "
+                "environment. Run: pip install cadquery"
+            )
+        else:
+            logger.warning(
+                "SANDBOX_RUNTIME=local — generated code executes on the host without "
+                "container isolation (dev only)."
             )
     else:
         try:

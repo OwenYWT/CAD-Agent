@@ -11,6 +11,16 @@ from unittest.mock import MagicMock
 from app.sandbox.executor import CadQueryExecutor, SandboxResult
 
 
+@pytest.fixture(autouse=True)
+def _pin_docker_runtime(monkeypatch):
+    """These tests inject a mocked *docker* client and exercise the docker branch.
+    Pin the runtime so they don't route into the podman/local subprocess branch
+    when a developer's .env sets SANDBOX_RUNTIME=local (the podman tests override
+    this to 'podman' themselves)."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "sandbox_runtime", "docker")
+
+
 # === SandboxResult structure ===
 
 class TestSandboxResult:

@@ -133,8 +133,10 @@ class VisionValidator:
 
         try:
             response = await self.client.chat.completions.create(
-                model=settings.llm_model,
-                max_tokens=1024,
+                # Must be a multimodal model; a text-only llm_model here rejects the
+                # image blocks and silently degrades every check to indeterminate.
+                model=settings.effective_vision_model,
+                max_tokens=2048,
                 temperature=0.3,
                 messages=[
                     {"role": "system", "content": VISION_VALIDATION_PROMPT},

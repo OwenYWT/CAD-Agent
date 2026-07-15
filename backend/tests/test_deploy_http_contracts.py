@@ -115,9 +115,22 @@ def test_health_ok(client):
     assert r.json() == {"status": "ok"}
 
 
-def test_ready_degraded_no_docker_no_key(client):
-    """No Docker + no LLM key in this env => startup self-check finds problems => 503."""
-    r = client.get("/ready")
+def test_ready_degraded_no_docker_no_key(isolated_storage, monkeypatch):
+    """A broken env (docker runtime + daemon down + no LLM key) => startup self-check
+    finds problems => /ready is 503 degraded.
+
+    Pins the scenario instead of reading the ambient .env: a developer .env with a
+    working key and SANDBOX_RUNTIME=local produces a clean startup, which is correct
+    but not what this contract test is about. Patch settings BEFORE the lifespan runs
+    the self-check (at TestClient(app) entry)."""
+    from app import config
+    monkeypatch.setattr(config.settings, "sandbox_runtime", "docker")
+    monkeypatch.setattr(config.settings, "dashscope_api_key", None)
+    monkeypatch.setattr(config.settings, "azure_openai_endpoint", None)
+    monkeypatch.setattr(config.settings, "azure_openai_api_key", None)
+    with TestClient(app) as c:
+        r = c.get("/ready")
+    websocket_mod._orchestrator = None
     assert r.status_code == 503
     body = r.json()
     assert body["status"] == "degraded"

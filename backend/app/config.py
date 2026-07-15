@@ -7,6 +7,13 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     llm_model: str = "qwen-plus"
     llm_reasoning_effort: str | None = None
+    # Dedicated multimodal model for the render-based visual self-check. None = reuse
+    # llm_model (only correct when llm_model itself accepts image input; a text-only
+    # model makes every vision check fail → indeterminate → no visual correction ever).
+    vision_model: str | None = None
+    # How many vision-driven fix rounds one generate() may spend (shares the overall
+    # MAX_RETRIES attempt budget).
+    vision_max_retries: int = 2
     azure_openai_endpoint: str | None = None
     azure_openai_api_key: str | None = None
     azure_openai_api_version: str = "2025-03-01-preview"
@@ -63,6 +70,10 @@ class Settings(BaseSettings):
     @property
     def normalized_llm_provider(self) -> str:
         return self.llm_provider.strip().lower()
+
+    @property
+    def effective_vision_model(self) -> str:
+        return self.vision_model or self.llm_model
 
     @property
     def has_llm_credentials(self) -> bool:

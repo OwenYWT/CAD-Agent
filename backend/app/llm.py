@@ -9,6 +9,26 @@ def _is_gpt5_model(model: str) -> bool:
     return model.lower().startswith("gpt-5")
 
 
+# Moonshot K2-series models reject any temperature other than the default
+# ("invalid temperature: only 1 is allowed for this model") — the sampler knob
+# must simply be omitted for them.
+_FIXED_TEMPERATURE_PREFIXES = ("kimi-k2", "kimi-latest")
+
+# K2-series are reasoning models: thinking tokens count against max_tokens, so a
+# small cap (e.g. the planner's 1024) can be consumed entirely by reasoning and
+# truncate the visible answer mid-JSON. Raise the cap to a floor that leaves room
+# for both; it is a ceiling, not a target, so short answers still stop early.
+_REASONING_MIN_COMPLETION_TOKENS = 8192
+
+
+def _is_fixed_temperature_model(model: str) -> bool:
+    return model.lower().startswith(_FIXED_TEMPERATURE_PREFIXES)
+
+
+def _is_reasoning_completion_model(model: str) -> bool:
+    return model.lower().startswith("kimi-k2")
+
+
 def build_chat_params(
     *,
     model: str,
@@ -30,9 +50,12 @@ def build_chat_params(
         params.pop("temperature", None)
         return params
 
+    if _is_reasoning_completion_model(model) and max_tokens is not None:
+        max_tokens = max(max_tokens, _REASONING_MIN_COMPLETION_TOKENS)
+
     if max_tokens is not None:
         params["max_tokens"] = max_tokens
-    if temperature is not None:
+    if temperature is not None and not _is_fixed_temperature_model(model):
         params["temperature"] = temperature
     return params
 
