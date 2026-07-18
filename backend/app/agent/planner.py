@@ -51,13 +51,17 @@ class Planner:
                 logger.info(f"Planner LLM call start (model={settings.llm_model}, attempt={attempt+1})")
                 response = await self.client.chat.completions.create(
                     model=settings.llm_model,
-                    max_tokens=1024,
+                    max_tokens=2048,
                     temperature=0.1,
                     messages=[{"role": "system", "content": PLANNER_SYSTEM_PROMPT}] + messages,
+                    response_format={"type": "json_object"},
                 )
                 elapsed = time.time() - t0
                 logger.info(f"Planner LLM call done in {elapsed:.1f}s")
-                text = response.choices[0].message.content.strip()
+                content = response.choices[0].message.content
+                if not isinstance(content, str) or not content.strip():
+                    raise ValueError("planner model returned empty content")
+                text = content.strip()
                 # Strip markdown code fences if present
                 if text.startswith("```"):
                     text = text.split("\n", 1)[1]
@@ -85,16 +89,7 @@ class Planner:
                     logger.warning(f"Planner attempt {attempt + 1} failed: {e}", exc_info=True)
                 if attempt == 0:
                     continue
-                # Fallback to a generic plan so the pipeline can still try to build something.
-                original_text = messages[-1]["content"] if messages else ""
-                return CADPlan(
-                    description=original_text,
-                    part_type="custom",
-                    dimensions={},
-                    features=[],
-                    constraints=[],
-                    ambiguities=["无法自动解析，使用原始描述"],
-                )
+                raise ValueError("planner model did not return a valid CAD plan") from e
 
     async def plan_modification(self, messages: list[dict], current_code: str) -> ModificationPlan:
         system = MODIFICATION_SYSTEM_PROMPT.format(current_code=current_code)
@@ -104,13 +99,17 @@ class Planner:
                 logger.info(f"Modification planner LLM call start (attempt={attempt+1})")
                 response = await self.client.chat.completions.create(
                     model=settings.llm_model,
-                    max_tokens=1024,
+                    max_tokens=2048,
                     temperature=0.1,
                     messages=[{"role": "system", "content": system}] + messages,
+                    response_format={"type": "json_object"},
                 )
                 elapsed = time.time() - t0
                 logger.info(f"Modification planner LLM call done in {elapsed:.1f}s")
-                text = response.choices[0].message.content.strip()
+                content = response.choices[0].message.content
+                if not isinstance(content, str) or not content.strip():
+                    raise ValueError("modification planner model returned empty content")
+                text = content.strip()
                 if text.startswith("```"):
                     text = text.split("\n", 1)[1]
                     if text.endswith("```"):
@@ -127,8 +126,4 @@ class Planner:
                     logger.warning(f"Modification planner attempt {attempt + 1} failed: {e}", exc_info=True)
                 if attempt == 0:
                     continue
-                original_text = messages[-1]["content"] if messages else ""
-                return ModificationPlan(
-                    description=original_text,
-                    modification_type="redesign",
-                )
+                raise ValueError("planner model did not return a valid modification plan") from e

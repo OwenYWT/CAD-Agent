@@ -1,14 +1,19 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSessionStore } from "../stores/sessionStore";
 import type { ChatMessage, GenerationResult } from "../types";
+import type { ConnectionState } from "../hooks/useWebSocket";
+import { Icon, type IconName } from "./ui/Icon";
+import CapabilityPicker, { type CapabilitySelection } from "./CapabilityPicker";
 
 import { authFetch } from "../auth";
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 interface ChatPanelProps {
-  onSendMessage: (text: string) => void;
+  connectionState: ConnectionState;
+  onSendMessage: (text: string, capability?: CapabilitySelection) => boolean;
   onCancel?: () => void;
   onSwitchTab?: (tab: string) => void;
+  onViewModel?: () => void;
 }
 
 const EXAMPLES = [
@@ -18,16 +23,16 @@ const EXAMPLES = [
   { title: "钥匙扣", desc: "可刻字的圆角钥匙扣", prompt: "设计一个圆角矩形钥匙扣，长 40mm 宽 20mm 厚 3mm，一端有 5mm 挂孔" },
 ];
 
-const STEP_ICONS: Record<string, string> = {
-  planning: "\u{1F914}",
-  retrieving_examples: "\u{1F4DA}",
-  generating_code: "\u{1F4BB}",
-  executing: "\u2699\uFE0F",
-  fixing_error: "\u{1F527}",
-  multi_step: "\u{1F9E9}",
-  assembly_part: "\u{1F9F1}",
-  complete: "\u2705",
-  failed: "\u274C",
+const STEP_ICONS: Record<string, IconName> = {
+  planning: "message",
+  retrieving_examples: "history",
+  generating_code: "code",
+  executing: "settings",
+  fixing_error: "rotate",
+  multi_step: "layers",
+  assembly_part: "box",
+  complete: "shield-check",
+  failed: "x",
 };
 
 function PrintBadges({ result }: { result: GenerationResult }) {
@@ -71,7 +76,7 @@ function RequirementBrief({ result }: { result: GenerationResult }) {
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-1.5 text-[10px] text-gray-600 hover:text-gray-800 w-full"
       >
-        <span>🧠</span>
+        <Icon name="message" size={13} />
         <span className="font-medium">理解到的需求</span>
         {ambig.length > 0 && <span className="text-amber-600">· {ambig.length} 处待确认</span>}
         <span className="ml-auto text-gray-400">{open ? "收起" : "展开"}</span>
@@ -174,7 +179,7 @@ function FeedbackChip({ requestId }: { requestId: string }) {
   };
 
   if (sent) {
-    return <div className="text-[10px] text-gray-400 pt-1">感谢反馈 🙏</div>;
+    return <div className="text-[11px] text-slate-500 pt-1">反馈已记录，感谢。</div>;
   }
 
   return (
@@ -184,13 +189,13 @@ function FeedbackChip({ requestId }: { requestId: string }) {
         onClick={() => send("yes", "up")}
         className="text-[10px] px-1.5 py-0.5 bg-white border border-emerald-300 text-emerald-700 rounded hover:bg-emerald-100"
       >
-        👍 打成功了
+        打印成功
       </button>
       <button
         onClick={() => send("no", "down")}
         className="text-[10px] px-1.5 py-0.5 bg-white border border-gray-300 text-gray-600 rounded hover:bg-gray-100"
       >
-        👎 没打出来
+        未打印成功
       </button>
       <button
         onClick={() => send("not_yet")}
@@ -202,20 +207,29 @@ function FeedbackChip({ requestId }: { requestId: string }) {
   );
 }
 
-function ResultCard({
+export function ResultCard({
   result,
   onSwitchTab,
+  onViewModel,
+  onRetry,
 }: {
   result: GenerationResult;
   onSwitchTab?: (tab: string) => void;
+  onViewModel?: () => void;
+  onRetry?: () => void;
 }) {
   if (!result.success) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-1">
+      <div className="bg-red-50 border border-red-200 rounded-md p-3 space-y-2" role="alert">
         <div className="flex items-center gap-1.5 text-red-700 text-sm font-medium">
           <span>&#10007;</span> 生成失败
         </div>
         <p className="text-xs text-red-600">{result.error?.message || "未知错误"}</p>
+        {onRetry && (
+          <button className="min-h-9 rounded-md border border-red-200 bg-white px-3 text-xs font-medium text-red-700 hover:bg-red-100" onClick={onRetry} type="button">
+            修改描述后重试
+          </button>
+        )}
       </div>
     );
   }
@@ -231,7 +245,7 @@ function ResultCard({
   const notPrintable = result.validation?.printable === false;
 
   return (
-    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 space-y-2">
+    <div className={`${notPrintable ? "bg-amber-50 border-amber-200" : "bg-emerald-50 border-emerald-200"} border rounded-md p-3 space-y-2`}>
       {notPrintable ? (
         <div className="flex items-center gap-1.5 text-amber-700 text-sm font-medium">
           <span>&#9888;</span> 模型已生成（不可直接打印，见下方提示）
@@ -259,28 +273,32 @@ function ResultCard({
         </ul>
       )}
 
-      {onSwitchTab && (
-        <div className="flex gap-1.5 pt-1">
-          {result.params && Object.keys(result.params).length > 0 && (
+      {(onSwitchTab || onViewModel) && (
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {onViewModel && (
+            <button onClick={onViewModel} className="min-h-9 text-xs px-2.5 bg-slate-900 text-white rounded-md hover:bg-slate-700 transition-colors" type="button">
+              查看模型
+            </button>
+          )}
+          {onSwitchTab && (
+            <button onClick={() => onSwitchTab("analysis")} className="min-h-9 text-xs px-2.5 bg-white border border-emerald-300 text-emerald-700 rounded-md hover:bg-emerald-100 transition-colors" type="button">
+              工程检查
+            </button>
+          )}
+          {onSwitchTab && result.params && Object.keys(result.params).length > 0 && (
             <button
               onClick={() => onSwitchTab("params")}
-              className="text-xs px-2 py-1 bg-white border border-emerald-300 text-emerald-700 rounded hover:bg-emerald-100 transition-colors"
+              className="min-h-9 text-xs px-2.5 bg-white border border-emerald-300 text-emerald-700 rounded-md hover:bg-emerald-100 transition-colors"
+              type="button"
             >
               调整参数
             </button>
           )}
-          <button
-            onClick={() => onSwitchTab("analysis")}
-            className="text-xs px-2 py-1 bg-white border border-emerald-300 text-emerald-700 rounded hover:bg-emerald-100 transition-colors"
-          >
-            DFM 分析
-          </button>
-          <button
-            onClick={() => onSwitchTab("download")}
-            className="text-xs px-2 py-1 bg-white border border-emerald-300 text-emerald-700 rounded hover:bg-emerald-100 transition-colors"
-          >
-            下载文件
-          </button>
+          {onSwitchTab && (
+            <button onClick={() => onSwitchTab("download")} className="min-h-9 text-xs px-2.5 bg-white border border-emerald-300 text-emerald-700 rounded-md hover:bg-emerald-100 transition-colors" type="button">
+              下载文件
+            </button>
+          )}
         </div>
       )}
 
@@ -296,9 +314,13 @@ function ResultCard({
 function MessageBubble({
   msg,
   onSwitchTab,
+  onViewModel,
+  onRetry,
 }: {
   msg: ChatMessage;
   onSwitchTab?: (tab: string) => void;
+  onViewModel?: () => void;
+  onRetry?: () => void;
 }) {
   const [showCode, setShowCode] = useState(false);
   const isUser = msg.role === "user";
@@ -317,7 +339,7 @@ function MessageBubble({
         {!isUser && (
           <div className="space-y-2">
             {msg.result ? (
-              <ResultCard result={msg.result} onSwitchTab={onSwitchTab} />
+              <ResultCard result={msg.result} onSwitchTab={onSwitchTab} onViewModel={onViewModel} onRetry={onRetry} />
             ) : (
               <div className="bg-gray-100 text-gray-800 rounded-lg px-3 py-2 text-sm">
                 <p className="whitespace-pre-wrap">{msg.content}</p>
@@ -349,14 +371,20 @@ function MessageBubble({
 function InlineProgress() {
   const panel = useSessionStore((s) => s.getActivePanel());
   const { stepHistory, generationStartTime, isGenerating } = panel;
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!generationStartTime) return;
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.round((Date.now() - generationStartTime) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [generationStartTime]);
 
   if (!isGenerating || stepHistory.length === 0) return null;
 
   const lastStep = stepHistory[stepHistory.length - 1];
-  const icon = STEP_ICONS[lastStep.step] || "\u23F3";
-  const elapsed = generationStartTime
-    ? `${Math.round((Date.now() - generationStartTime) / 1000)}s`
-    : "";
+  const icon = STEP_ICONS[lastStep.step] || "clock";
 
   return (
     <div className="flex items-start gap-2 px-1">
@@ -364,7 +392,7 @@ function InlineProgress() {
         {/* Show last few steps */}
         {stepHistory.slice(-3).map((entry, i) => {
           const isLast = i === stepHistory.slice(-3).length - 1;
-          const stepIcon = isLast ? icon : "\u2705";
+          const stepIcon: IconName = isLast ? icon : "shield-check";
           return (
             <div
               key={i}
@@ -372,11 +400,11 @@ function InlineProgress() {
                 isLast ? "text-indigo-700 font-medium" : "text-gray-400"
               }`}
             >
-              <span className="shrink-0 w-4 text-center">{stepIcon}</span>
+              <Icon className="shrink-0" name={stepIcon} size={15} />
               <span className="flex-1 truncate">{entry.message}</span>
               {isLast && (
                 <>
-                  <span className="text-indigo-400 tabular-nums text-[10px]">{elapsed}</span>
+                  <span className="text-indigo-400 tabular-nums text-[10px]">{elapsedSeconds}s</span>
                   <span className="shrink-0 inline-block w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
                 </>
               )}
@@ -388,10 +416,12 @@ function InlineProgress() {
   );
 }
 
-export default function ChatPanel({ onSendMessage, onSwitchTab }: ChatPanelProps) {
+export default function ChatPanel({ connectionState, onSendMessage, onSwitchTab, onViewModel }: ChatPanelProps) {
   const panel = useSessionStore((s) => s.getActivePanel());
   const { messages, isGenerating } = panel;
   const [input, setInput] = useState("");
+  const [capability, setCapability] = useState<CapabilitySelection>("auto");
+  const [sendError, setSendError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -415,8 +445,13 @@ export default function ChatPanel({ onSendMessage, onSwitchTab }: ChatPanelProps
   const handleSend = () => {
     const text = input.trim();
     if (!text || isGenerating) return;
+    if (!onSendMessage(text, capability)) {
+      setSendError("连接尚未就绪，描述已保留。请稍后重试。");
+      return;
+    }
+    setSendError(null);
+    useSessionStore.getState().beginGeneration();
     useSessionStore.getState().addMessage({ role: "user", content: text });
-    onSendMessage(text);
     setInput("");
   };
 
@@ -428,8 +463,14 @@ export default function ChatPanel({ onSendMessage, onSwitchTab }: ChatPanelProps
   };
 
   const handleExampleClick = (prompt: string) => {
+    if (!onSendMessage(prompt)) {
+      setInput(prompt);
+      setSendError("连接尚未就绪，示例已放入输入框。");
+      return;
+    }
+    setSendError(null);
+    useSessionStore.getState().beginGeneration();
     useSessionStore.getState().addMessage({ role: "user", content: prompt });
-    onSendMessage(prompt);
   };
 
   const isEmpty = messages.length === 0;
@@ -442,7 +483,7 @@ export default function ChatPanel({ onSendMessage, onSwitchTab }: ChatPanelProps
           /* Empty state with examples */
           <div className="flex flex-col items-center justify-center h-full space-y-6 px-2">
             <div className="text-center space-y-2">
-              <div className="text-3xl">🖨️</div>
+              <Icon className="mx-auto text-slate-300" name="box" size={34} />
               <h2 className="text-base font-semibold text-gray-700">AI 建模助手</h2>
               <p className="text-xs text-gray-400">用一句话描述你想要的东西，AI 自动生成可 3D 打印的模型</p>
             </div>
@@ -467,7 +508,19 @@ export default function ChatPanel({ onSendMessage, onSwitchTab }: ChatPanelProps
           /* Message list */
           <>
             {messages.map((msg, i) => (
-              <MessageBubble key={i} msg={msg} onSwitchTab={onSwitchTab} />
+              <MessageBubble
+                key={i}
+                msg={msg}
+                onRetry={() => {
+                  const previousRequest = messages.slice(0, i).reverse().find((item) => item.role === "user");
+                  if (previousRequest) {
+                    setInput(previousRequest.content);
+                    textareaRef.current?.focus();
+                  }
+                }}
+                onSwitchTab={onSwitchTab}
+                onViewModel={onViewModel}
+              />
             ))}
             <InlineProgress />
           </>
@@ -477,6 +530,10 @@ export default function ChatPanel({ onSendMessage, onSwitchTab }: ChatPanelProps
 
       {/* Input area */}
       <div className="border-t border-gray-200 p-3">
+        {sendError && <div className="mb-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" role="alert">{sendError}</div>}
+        <div className="mb-2">
+          <CapabilityPicker onChange={setCapability} value={capability} />
+        </div>
         <div className="flex gap-2 items-end">
           <div className="flex-1 relative">
             <textarea
@@ -488,6 +545,7 @@ export default function ChatPanel({ onSendMessage, onSwitchTab }: ChatPanelProps
               disabled={isGenerating}
               rows={1}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent disabled:opacity-50 resize-none leading-relaxed"
+              aria-label="建模需求"
             />
           </div>
           {/* NOTE: the previous "取消" button was a no-op — the backend only ACKs a
@@ -505,10 +563,13 @@ export default function ChatPanel({ onSendMessage, onSwitchTab }: ChatPanelProps
           ) : (
             <button
               onClick={handleSend}
-              disabled={!input.trim()}
-              className="bg-indigo-600 text-white rounded-lg px-4 py-2 text-sm hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed shrink-0 transition-colors"
+              disabled={!input.trim() || connectionState === "connecting" || connectionState === "reconnecting"}
+              className="flex min-h-11 min-w-11 items-center justify-center bg-sky-700 text-white rounded-md px-3 text-sm hover:bg-sky-800 disabled:opacity-40 disabled:cursor-not-allowed shrink-0 transition-colors"
+              aria-label="发送建模需求"
+              title="发送"
             >
-              发送
+              <Icon name="send" size={17} />
+              <span className="ml-1 hidden sm:inline">发送</span>
             </button>
           )}
         </div>

@@ -1,12 +1,10 @@
 import { useMemo, useState } from "react";
 import type { AuthSession } from "../auth";
 import { saveAuthSession } from "../auth";
+import { Icon } from "./ui/Icon";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
-
-type Screen = "login" | "register" | "reset";
-type LoginMode = "password" | "code";
-type RegisterMode = "code" | "invite";
+type Screen = "login" | "register";
 
 interface LoginPageProps {
   onLogin: (session: AuthSession) => void;
@@ -27,17 +25,9 @@ function errorMessage(data: unknown, fallback: string) {
   const detail = (data as { detail?: unknown }).detail;
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
-    return detail
-      .map((item) => {
-        if (item && typeof item === "object" && "msg" in item) {
-          return String((item as { msg: unknown }).msg);
-        }
-        return String(item);
-      })
-      .join(" / ");
+    return detail.map((item) => item && typeof item === "object" && "msg" in item ? String((item as { msg: unknown }).msg) : String(item)).join(" / ");
   }
-  if (detail) return JSON.stringify(detail);
-  return fallback;
+  return detail ? JSON.stringify(detail) : fallback;
 }
 
 function isPhoneReady(phone: string) {
@@ -50,86 +40,36 @@ function isAdminAccount(phone: string) {
 
 export function LoginPage({ onLogin }: LoginPageProps) {
   const [screen, setScreen] = useState<Screen>("login");
-  const [loginMode, setLoginMode] = useState<LoginMode>("password");
-  const [registerMode, setRegisterMode] = useState<RegisterMode>("code");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [code, setCode] = useState("");
   const [inviteCode, setInviteCode] = useState("");
-  const [devCode, setDevCode] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const purpose = screen === "register" ? "register" : screen === "reset" ? "reset_password" : "login";
-  const needsCode = screen === "reset" || (screen === "register" ? registerMode === "code" : loginMode === "code");
-  const passwordMismatch = (screen === "register" || screen === "reset") && password && confirmPassword && password !== confirmPassword;
+  const passwordMismatch = screen === "register" && Boolean(password && confirmPassword && password !== confirmPassword);
   const canSubmit = useMemo(() => {
     if (loading) return false;
-    if (screen === "login") {
-      if (isAdminAccount(phone)) return loginMode === "password" && password.length > 0;
-      if (!isPhoneReady(phone)) return false;
-      return loginMode === "password" ? password.length > 0 : code.trim().length > 0;
-    }
-    if (!isPhoneReady(phone) || isAdminAccount(phone)) return false;
-    if (password.length < 8 || password !== confirmPassword) return false;
-    if (screen === "reset") return code.trim().length > 0;
-    return registerMode === "code" ? code.trim().length > 0 : inviteCode.trim().length > 0;
-  }, [phone, loading, screen, loginMode, password, code, confirmPassword, registerMode, inviteCode]);
+    if (screen === "login") return (isAdminAccount(phone) || isPhoneReady(phone)) && password.length > 0;
+    return isPhoneReady(phone) && !isAdminAccount(phone) && password.length >= 8 && password === confirmPassword && inviteCode.trim().length > 0;
+  }, [confirmPassword, inviteCode, loading, password, phone, screen]);
 
-  const resetTransient = () => {
+  const switchScreen = (nextScreen: Screen) => {
+    setScreen(nextScreen);
     setError(null);
-    setMessage(null);
-    setDevCode(null);
-    setCode("");
   };
 
-  const requestCode = async () => {
-    setLoading(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const res = await fetch(`${API_BASE}/api/auth/code/request`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, purpose }),
-      });
-      const data = await readJsonResponse(res);
-      if (!res.ok) throw new Error(errorMessage(data, "验证码发送失败，请稍后重试"));
-      const payload = data as { dev_code?: string; message?: string } | null;
-      setDevCode(payload?.dev_code || null);
-      setMessage(payload?.message || "验证码已发送，请查收短信");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "验证码发送失败，请稍后重试");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const submit = async () => {
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!canSubmit) return;
     setLoading(true);
     setError(null);
     try {
-      let endpoint = "";
-      let body: Record<string, string> = { phone };
-      if (screen === "register" && registerMode === "code") {
-        endpoint = "/api/auth/register/code";
-        body = { phone, code, password };
-      } else if (screen === "register" && registerMode === "invite") {
-        endpoint = "/api/auth/register/invite";
-        body = { phone, invite_code: inviteCode, password };
-      } else if (screen === "reset") {
-        endpoint = "/api/auth/password/reset";
-        body = { phone, code, password };
-      } else if (screen === "login" && loginMode === "password") {
-        endpoint = "/api/auth/login/password";
-        body = { phone, password };
-      } else {
-        endpoint = "/api/auth/login/code";
-        body = { phone, code };
-      }
-
+      const endpoint = screen === "register" ? "/api/auth/register/invite" : "/api/auth/login/password";
+      const body = screen === "register"
+        ? { phone: phone.trim(), invite_code: inviteCode.trim(), password }
+        : { phone: phone.trim(), password };
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -148,104 +88,67 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 flex items-center justify-center p-6">
-      <div className="w-full max-w-md bg-white/95 backdrop-blur rounded-2xl shadow-2xl border border-white/20 p-8 space-y-6">
-        <div className="space-y-2 text-center">
-          <div className="text-3xl font-bold text-slate-900">CAD Agent</div>
-          <p className="text-sm text-slate-500">注册或登录后开始生成、预览和管理 CAD 模型</p>
+    <main className="flex min-h-[100dvh] items-center justify-center bg-slate-950 p-4 sm:p-6">
+      <div className="w-full max-w-[420px]">
+        <div className="mb-6 flex items-center justify-center gap-3 text-white">
+          <span className="flex h-11 w-11 items-center justify-center rounded-md bg-sky-500 text-slate-950"><Icon name="box" size={24} /></span>
+          <div>
+            <h1 className="text-xl font-semibold">CAD Agent</h1>
+            <p className="text-sm text-slate-400">参数化建模工作台</p>
+          </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 rounded-xl bg-slate-100 p-1">
-          <button
-            type="button"
-            onClick={() => { setScreen("login"); resetTransient(); }}
-            className={`rounded-lg py-2 text-sm font-medium transition ${screen === "login" ? "bg-white text-indigo-700 shadow" : "text-slate-500 hover:text-slate-700"}`}
-          >
-            登录
-          </button>
-          <button
-            type="button"
-            onClick={() => { setScreen("register"); resetTransient(); }}
-            className={`rounded-lg py-2 text-sm font-medium transition ${screen === "register" ? "bg-white text-indigo-700 shadow" : "text-slate-500 hover:text-slate-700"}`}
-          >
-            注册
-          </button>
-        </div>
-
-        {screen === "reset" ? (
-          <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-700">
-            通过手机号验证码重置登录密码，重置后请使用新密码登录。
+        <form className="space-y-5 rounded-lg border border-slate-200 bg-white p-5 shadow-2xl sm:p-7" onSubmit={submit}>
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">进入工作台</h2>
+            <p className="mt-1 text-sm text-slate-500">登录后生成、检查并导出 CAD 模型。</p>
           </div>
-        ) : screen === "login" ? (
-          <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-1">
-            <button type="button" onClick={() => { setLoginMode("password"); resetTransient(); }} className={`rounded-lg py-2 text-xs font-medium ${loginMode === "password" ? "bg-white text-slate-900 shadow" : "text-slate-500"}`}>密码登录</button>
-            <button type="button" onClick={() => { setLoginMode("code"); resetTransient(); }} className={`rounded-lg py-2 text-xs font-medium ${loginMode === "code" ? "bg-white text-slate-900 shadow" : "text-slate-500"}`}>验证码登录</button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-1">
-            <button type="button" onClick={() => { setRegisterMode("code"); resetTransient(); }} className={`rounded-lg py-2 text-xs font-medium ${registerMode === "code" ? "bg-white text-slate-900 shadow" : "text-slate-500"}`}>验证码注册</button>
-            <button type="button" onClick={() => { setRegisterMode("invite"); resetTransient(); }} className={`rounded-lg py-2 text-xs font-medium ${registerMode === "invite" ? "bg-white text-slate-900 shadow" : "text-slate-500"}`}>邀请码注册</button>
-          </div>
-        )}
 
-        <div className="space-y-4">
-          <label className="block space-y-1.5">
-            <span className="text-sm font-medium text-slate-700">手机号</span>
-            <input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="请输入手机号"
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />
-          </label>
+          <div aria-label="账号操作" className="grid grid-cols-2 rounded-md bg-slate-100 p-1" role="tablist">
+            <button aria-selected={screen === "login"} className={`min-h-10 rounded-[4px] text-sm font-medium ${screen === "login" ? "bg-white text-sky-700 shadow-sm" : "text-slate-600 hover:text-slate-900"}`} onClick={() => switchScreen("login")} role="tab" type="button">登录</button>
+            <button aria-selected={screen === "register"} className={`min-h-10 rounded-[4px] text-sm font-medium ${screen === "register" ? "bg-white text-sky-700 shadow-sm" : "text-slate-600 hover:text-slate-900"}`} onClick={() => switchScreen("register")} role="tab" type="button">邀请码注册</button>
+          </div>
 
-          {screen === "login" && loginMode === "password" && (
-            <label className="block space-y-1.5">
-              <span className="text-sm font-medium text-slate-700">密码</span>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="请输入密码" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+          <div className="space-y-4">
+            <label className="block" htmlFor="account">
+              <span className="mb-1.5 block text-sm font-medium text-slate-700">手机号或管理员账号</span>
+              <input autoComplete="username" className="min-h-11 w-full rounded-md border border-slate-300 px-3 text-base outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100" id="account" inputMode={isAdminAccount(phone) ? "text" : "tel"} name="username" onChange={(event) => setPhone(event.target.value)} placeholder="手机号" required type="text" value={phone} />
             </label>
-          )}
 
-          {(screen === "register" || screen === "reset") && (
-            <>
-              <label className="block space-y-1.5">
-                <span className="text-sm font-medium text-slate-700">设置密码</span>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="至少 8 位" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
-              </label>
-              <label className="block space-y-1.5">
-                <span className="text-sm font-medium text-slate-700">确认密码</span>
-                <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="再次输入密码" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
-                {passwordMismatch && <span className="text-xs text-red-500">两次输入的密码不一致</span>}
-              </label>
-            </>
-          )}
-
-          {needsCode && (
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="请输入验证码" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
-                <button type="button" onClick={requestCode} disabled={loading || !isPhoneReady(phone)} className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">获取验证码</button>
-              </div>
-              {devCode && <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">开发模式验证码：<span className="font-mono font-semibold">{devCode}</span></div>}
-            </div>
-          )}
-
-          {screen === "register" && registerMode === "invite" && (
-            <label className="block space-y-1.5">
-              <span className="text-sm font-medium text-slate-700">邀请码</span>
-              <input value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="请输入开发者提供的邀请码" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
-              <span className="text-xs text-slate-400">本地默认邀请码：CAD-AGENT-2026</span>
+            <label className="block" htmlFor="password">
+              <span className="mb-1.5 block text-sm font-medium text-slate-700">{screen === "register" ? "设置密码" : "密码"}</span>
+              <span className="relative block">
+                <input autoComplete={screen === "register" ? "new-password" : "current-password"} className="min-h-11 w-full rounded-md border border-slate-300 px-3 pr-12 text-base outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100" id="password" minLength={screen === "register" ? 8 : undefined} name="password" onChange={(event) => setPassword(event.target.value)} placeholder={screen === "register" ? "至少 8 位" : "输入密码"} required type={showPassword ? "text" : "password"} value={password} />
+                <button aria-label={showPassword ? "隐藏密码" : "显示密码"} className="icon-button absolute right-0.5 top-0.5 text-slate-500 hover:text-slate-900" onClick={() => setShowPassword((value) => !value)} title={showPassword ? "隐藏密码" : "显示密码"} type="button"><Icon name={showPassword ? "eye-off" : "eye"} size={18} /></button>
+              </span>
+              {screen === "register" && <span className="mt-1 block text-xs text-slate-500">至少 8 位字符。</span>}
             </label>
-          )}
-        </div>
 
-        {message && <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</div>}
-        {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+            {screen === "register" && (
+              <>
+                <label className="block" htmlFor="confirm-password">
+                  <span className="mb-1.5 block text-sm font-medium text-slate-700">确认密码</span>
+                  <input aria-invalid={passwordMismatch} autoComplete="new-password" className={`min-h-11 w-full rounded-md border px-3 text-base outline-none focus:ring-2 ${passwordMismatch ? "border-red-400 focus:ring-red-100" : "border-slate-300 focus:border-sky-600 focus:ring-sky-100"}`} id="confirm-password" name="confirm-password" onChange={(event) => setConfirmPassword(event.target.value)} required type={showPassword ? "text" : "password"} value={confirmPassword} />
+                  {passwordMismatch && <span className="mt-1 block text-xs text-red-600">两次输入的密码不一致。</span>}
+                </label>
+                <label className="block" htmlFor="invite-code">
+                  <span className="mb-1.5 block text-sm font-medium text-slate-700">邀请码</span>
+                  <input autoComplete="off" className="min-h-11 w-full rounded-md border border-slate-300 px-3 text-base uppercase outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100" id="invite-code" name="invite-code" onChange={(event) => setInviteCode(event.target.value)} placeholder="输入已发放的邀请码" required value={inviteCode} />
+                </label>
+              </>
+            )}
+          </div>
 
-        <button type="button" onClick={submit} disabled={!canSubmit} className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
-          {loading ? "处理中..." : screen === "register" ? "注册并登录" : "登录"}
-        </button>
+          <div aria-live="polite">
+            {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</div>}
+          </div>
+
+          <button className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-sky-700 px-4 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-45" disabled={!canSubmit} type="submit">
+            {loading && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />}
+            {loading ? "正在处理" : screen === "register" ? "注册并登录" : "登录"}
+          </button>
+        </form>
       </div>
-    </div>
+    </main>
   );
 }

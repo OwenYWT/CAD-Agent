@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useSessionStore } from "../stores/sessionStore";
-import { useWebSocket } from "../hooks/useWebSocket";
 import type { GenerationResult } from "../types";
+import { Icon } from "./ui/Icon";
 
 import { authFetch } from "../auth";
 interface SessionSummary {
@@ -25,30 +25,32 @@ interface MessageData {
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
-export default function HistorySidebar() {
+export default function HistorySidebar({ restoreContext }: { restoreContext: (panelId: string, code: string) => void }) {
   const [isOpen, setIsOpen] = useState(false);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const loadSession = useSessionStore((s) => s.loadSession);
-  const { restoreContext } = useWebSocket();
 
   const fetchSessions = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await authFetch(`${API_BASE}/api/history/sessions`);
-      if (res.ok) {
-        setSessions(await res.json());
-      }
+      if (!res.ok) throw new Error("历史记录加载失败");
+      setSessions(await res.json());
     } catch (e) {
-      console.error("Failed to fetch sessions:", e);
+      setError(e instanceof Error ? e.message : "历史记录加载失败");
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    if (isOpen) fetchSessions();
-  }, [isOpen, fetchSessions]);
+  const toggleOpen = () => {
+    const nextOpen = !isOpen;
+    setIsOpen(nextOpen);
+    if (nextOpen) void fetchSessions();
+  };
 
   const handleRestore = async (sessionId: string) => {
     try {
@@ -86,18 +88,20 @@ export default function HistorySidebar() {
       }
       setIsOpen(false);
     } catch (e) {
-      console.error("Failed to restore session:", e);
+      setError(e instanceof Error ? e.message : "历史记录恢复失败");
     }
   };
 
   const handleDelete = async (sessionId: string) => {
+    if (!window.confirm("确认删除这条历史记录？此操作不可恢复。")) return;
     try {
-      await authFetch(`${API_BASE}/api/history/sessions/${sessionId}`, {
+      const res = await authFetch(`${API_BASE}/api/history/sessions/${sessionId}`, {
         method: "DELETE",
       });
+      if (!res.ok) throw new Error("删除失败，请重试");
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
     } catch (e) {
-      console.error("Failed to delete session:", e);
+      setError(e instanceof Error ? e.message : "删除失败，请重试");
     }
   };
 
@@ -111,26 +115,29 @@ export default function HistorySidebar() {
   };
 
   return (
-    <>
+    <div className="relative">
       <button
-        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
-        onClick={() => setIsOpen(!isOpen)}
+        aria-label="打开历史记录"
+        className="icon-button text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+        onClick={toggleOpen}
         title="历史记录"
+        type="button"
       >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
+        <Icon name="history" size={18} />
       </button>
 
       {isOpen && (
-        <div className="absolute top-12 left-0 w-72 max-h-[70vh] bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden flex flex-col">
+        <div className="fixed left-3 right-3 top-16 z-50 flex max-h-[70vh] flex-col overflow-hidden rounded-md border border-slate-200 bg-white shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-11 sm:w-80">
           <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
             <span className="text-sm font-medium text-gray-700">历史记录</span>
             <button
-              className="text-xs text-gray-400 hover:text-gray-600"
+              aria-label="关闭历史记录"
+              className="icon-button text-slate-500 hover:bg-slate-100 hover:text-slate-900"
               onClick={() => setIsOpen(false)}
+              title="关闭"
+              type="button"
             >
-              x
+              <Icon name="x" size={17} />
             </button>
           </div>
 
@@ -138,6 +145,11 @@ export default function HistorySidebar() {
             {loading ? (
               <div className="p-4 text-center text-xs text-gray-400">
                 加载中...
+              </div>
+            ) : error ? (
+              <div className="p-4 text-center text-xs text-red-600" role="alert">
+                <p>{error}</p>
+                <button className="mt-2 min-h-9 rounded-md border border-red-200 bg-white px-3 font-medium" onClick={() => void fetchSessions()} type="button">重试</button>
               </div>
             ) : sessions.length === 0 ? (
               <div className="p-4 text-center text-xs text-gray-400">
@@ -151,17 +163,19 @@ export default function HistorySidebar() {
                 >
                   <div className="flex items-center justify-between">
                     <button
-                      className="flex-1 text-left text-xs text-gray-700 truncate hover:text-indigo-600"
+                      className="min-h-10 flex-1 truncate text-left text-xs text-slate-700 hover:text-sky-700"
                       onClick={() => handleRestore(s.id)}
                     >
                       {s.title || s.id.slice(0, 8)}
                     </button>
                     <button
-                      className="opacity-0 group-hover:opacity-60 text-xs text-red-400 hover:text-red-600 ml-2"
+                      aria-label={`删除历史记录 ${s.title || s.id.slice(0, 8)}`}
+                      className="icon-button ml-2 text-red-400 opacity-70 hover:bg-red-50 hover:text-red-600 sm:opacity-0 sm:group-hover:opacity-100"
                       onClick={() => handleDelete(s.id)}
                       title="删除"
+                      type="button"
                     >
-                      x
+                      <Icon name="trash" size={16} />
                     </button>
                   </div>
                   <div className="text-[10px] text-gray-400 mt-0.5">
@@ -173,6 +187,6 @@ export default function HistorySidebar() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

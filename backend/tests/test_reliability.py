@@ -52,13 +52,15 @@ def test_sessions_lru_marks_recent(monkeypatch):
 # === LLM client factory timeouts (#17/#23) ===
 
 def test_llm_factory_requires_key(monkeypatch):
-    monkeypatch.setattr(settings, "dashscope_api_key", None)
-    with pytest.raises(RuntimeError, match="DASHSCOPE_API_KEY"):
+    monkeypatch.setattr(settings, "llm_provider", "moonshot")
+    monkeypatch.setattr(settings, "moonshot_api_key", None)
+    with pytest.raises(RuntimeError, match="MOONSHOT_API_KEY"):
         make_llm_client()
 
 
 def test_llm_factory_sets_timeout(monkeypatch):
-    monkeypatch.setattr(settings, "dashscope_api_key", "sk-test")
+    monkeypatch.setattr(settings, "llm_provider", "moonshot")
+    monkeypatch.setattr(settings, "moonshot_api_key", "sk-test")
     monkeypatch.setattr(settings, "llm_timeout_s", 42.0)
     client = make_llm_client()
     assert client.timeout == 42.0
@@ -69,11 +71,37 @@ def test_llm_factory_sets_timeout(monkeypatch):
 @pytest.mark.asyncio
 async def test_planner_reraises_missing_credentials(monkeypatch):
     """Missing-key RuntimeError must propagate, not silently fall back to a generic plan."""
-    monkeypatch.setattr(settings, "dashscope_api_key", None)
+    monkeypatch.setattr(settings, "llm_provider", "moonshot")
+    monkeypatch.setattr(settings, "moonshot_api_key", None)
     from app.agent.planner import Planner
     p = Planner()
-    with pytest.raises(RuntimeError, match="DASHSCOPE_API_KEY"):
+    with pytest.raises(RuntimeError, match="MOONSHOT_API_KEY"):
         await p.plan_new([{"role": "user", "content": "一个盒子"}])
+
+@pytest.mark.asyncio
+async def test_planner_empty_output_fails_closed():
+    """Empty model output must not become a fabricated generic CAD plan."""
+    from types import SimpleNamespace
+    from app.agent.planner import Planner
+
+    class EmptyCompletions:
+        def __init__(self):
+            self.calls = 0
+
+        async def create(self, **_kwargs):
+            self.calls += 1
+            message = SimpleNamespace(content=None)
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    completions = EmptyCompletions()
+    planner = Planner()
+    planner._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions)
+    )
+
+    with pytest.raises(ValueError, match="valid CAD plan"):
+        await planner.plan_new([{"role": "user", "content": "一个盒子"}])
+    assert completions.calls == 2
 
 
 # === overall deadline (#17) at the REST layer ===

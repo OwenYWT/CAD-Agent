@@ -31,9 +31,20 @@ Thumbs.db
 data/
 *.db
 
+# Eval harness output (reports + rendered spot-check images). The canonical
+# baseline is kept by copying it elsewhere / committing explicitly, not by tracking
+# every run here. Legacy benchmark output too.
+backend/benchmark/reports/
+backend/benchmark_results.json
+
 # Node
 node_modules/
 frontend/dist/
+
+# The pinned CAD Skills viewer ships a prebuilt, versioned browser bundle.
+# Keep the general dist/ rule above, but track this third-party runtime.
+!third_party/cadskills/skills/cad-viewer/scripts/viewer/dist/
+!third_party/cadskills/skills/cad-viewer/scripts/viewer/dist/**
 
 # Test / cache
 .pytest_cache/
@@ -50,3 +61,4 @@ chroma_data/
 *.dll
 *.pdb
 *.baml
+.gstack/

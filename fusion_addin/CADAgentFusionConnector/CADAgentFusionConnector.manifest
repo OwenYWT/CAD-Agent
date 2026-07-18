@@ -1,0 +1,12 @@
+{
+  "autodeskProduct": "Fusion360",
+  "type": "addin",
+  "id": "1f14a828-dace-4c7a-9281-d47bc1b151f2",
+  "author": "CAD Agent",
+  "description": {
+    "": "Typed, local-only CAD Agent connector for Autodesk Fusion 360."
+  },
+  "version": "1.0.0",
+  "runOnStartup": true,
+  "supportedOS": "windows|mac"
+}

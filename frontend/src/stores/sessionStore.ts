@@ -5,6 +5,7 @@ import type {
   MultiStepInfo,
   StepUpdate,
 } from "../types";
+import { createId } from "../lib/createId";
 
 export interface StepHistoryEntry extends StepUpdate {
   timestamp: number;
@@ -19,12 +20,14 @@ export interface PanelState {
   isGenerating: boolean;
   stepHistory: StepHistoryEntry[];
   generationStartTime: number | null;
+  baselineVersion: number;
   multiStepProgress: MultiStepInfo[] | null;
+  lastError: string | null;
 }
 
 function createPanel(title = "新对话"): PanelState {
   return {
-    id: crypto.randomUUID(),
+    id: createId(),
     title,
     messages: [],
     currentStep: null,
@@ -32,7 +35,9 @@ function createPanel(title = "新对话"): PanelState {
     isGenerating: false,
     stepHistory: [],
     generationStartTime: null,
+    baselineVersion: 0,
     multiStepProgress: null,
+    lastError: null,
   };
 }
 
@@ -52,6 +57,7 @@ interface SessionState {
 
   // Actions (operate on active panel)
   addMessage: (msg: ChatMessage) => void;
+  beginGeneration: () => void;
   setStep: (step: StepUpdate | null, panelId?: string) => void;
   setResult: (result: GenerationResult, panelId?: string) => void;
   setError: (error: string, panelId?: string) => void;
@@ -81,10 +87,32 @@ function updatePanel(
   );
 }
 
+function restoreGenerationResult(
+  messages: ChatMessage[],
+  currentCode?: string | null,
+): GenerationResult | null {
+  const stored = [...messages]
+    .reverse()
+    .find((message) => message.result?.success)
+    ?.result;
+  if (stored) {
+    return currentCode && !stored.code ? { ...stored, code: currentCode } : stored;
+  }
+  return currentCode
+    ? ({ success: true, code: currentCode } as GenerationResult)
+    : null;
+}
+
+function restoreLastError(messages: ChatMessage[]): string | null {
+  const latest = [...messages].reverse().find((message) => message.result);
+  if (!latest?.result || latest.result.success) return null;
+  return latest.result.error?.message || "任务执行失败";
+}
+
 const defaultPanel = createPanel("对话 1");
 
 export const useSessionStore = create<SessionState>((set, get) => ({
-  sessionId: crypto.randomUUID(),
+  sessionId: createId(),
   panels: [defaultPanel],
   activePanelId: defaultPanel.id,
 
@@ -127,6 +155,18 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set((state) => ({
       panels: updatePanel(state.panels, state.activePanelId, (p) => ({
         messages: [...p.messages, msg],
+      })),
+    })),
+
+  beginGeneration: () =>
+    set((state) => ({
+      panels: updatePanel(state.panels, state.activePanelId, (panel) => ({
+        isGenerating: true,
+        currentStep: { step: "planning", message: "正在理解建模需求" },
+        stepHistory: [],
+        generationStartTime: Date.now(),
+        baselineVersion: panel.baselineVersion + 1,
+        lastError: null,
       })),
     })),
 
@@ -203,7 +243,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             result,
           };
           return {
-            result,
+            result: result.success ? result : p.result,
+            lastError: result.success ? null : result.error?.message || "任务执行失败",
             isGenerating: false,
             currentStep: null,
             multiStepProgress: null,
@@ -229,6 +270,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             currentStep: null,
             stepHistory: [],
             generationStartTime: null,
+            lastError: error,
             messages: [...p.messages, errorMsg],
           };
         }),
@@ -238,7 +280,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   reset: () => {
     const panel = createPanel("对话 1");
     set({
-      sessionId: crypto.randomUUID(),
+      sessionId: createId(),
       panels: [panel],
       activePanelId: panel.id,
     });
@@ -248,9 +290,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set((state) => ({
       panels: updatePanel(state.panels, panelId, () => ({
         messages,
-        result: code
-          ? ({ success: true, code } as GenerationResult)
-          : null,
+        result: restoreGenerationResult(messages, code),
+        lastError: restoreLastError(messages),
+        baselineVersion: 1,
       })),
     })),
 
@@ -259,14 +301,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       ...createPanel(p.title),
       id: p.id,
       messages: p.messages,
-      result: p.currentCode
-        ? ({ success: true, code: p.currentCode } as GenerationResult)
-        : null,
+      result: restoreGenerationResult(p.messages, p.currentCode),
+      lastError: restoreLastError(p.messages),
+      baselineVersion: 1,
     }));
     set({
       sessionId,
       panels: panelStates.length > 0 ? panelStates : [createPanel("对话 1")],
-      activePanelId: panelStates.length > 0 ? panelStates[0].id : crypto.randomUUID(),
+      activePanelId: panelStates.length > 0 ? panelStates[0].id : createId(),
     });
   },
 }));

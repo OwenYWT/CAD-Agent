@@ -5,8 +5,10 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from app.agent.orchestrator import ConversationContext, Orchestrator
 from app.api.auth import verify_ws_token, get_ws_user_id, rate_limiter
+from app.api.error_messages import public_generation_error
 from app.models.schemas import StepUpdate
 from app.storage import history
+from app.storage.file_ownership import claim_request_owner
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         await websocket.close(code=4003, reason="Invalid or missing token")
         return
     user_id = await get_ws_user_id(token)
+    principal = f"user:{user_id}" if user_id else token
 
     # Ownership check: a logged-in user must not attach to a session_id that another
     # user already owns (otherwise they could write panels/messages into it). A brand
@@ -101,6 +104,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
             if msg_type == "user_message":
                 text = data.get("text", "")
+                capability = data.get("capability", "auto")
                 if not text or len(text) > 10000:
                     await websocket.send_json({
                         "type": "generation_result",
@@ -111,21 +115,46 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         },
                     })
                     continue
+                if capability not in {"auto", "cad", "dxf"}:
+                    await websocket.send_json({
+                        "type": "generation_result",
+                        "data": {
+                            "success": False,
+                            "error": {
+                                "type": "ValidationError",
+                                "message": (
+                                    "该能力需要结构化输入或已有产物，请使用 /api/capability-actions，"
+                                    "不能按普通 CAD 对话执行。"
+                                ),
+                            },
+                            "panel_id": panel_id,
+                        },
+                    })
+                    continue
+
+                effective_text = text
+                if capability == "dxf":
+                    effective_text = (
+                        "只生成 1:1 的二维 DXF 图纸，不生成三维模型。"
+                        "请将下述需求规划为 profile_2d，并输出 DXF：\n" + text
+                    )
 
                 context = _get_context(session_id, panel_id)
                 on_step = await make_on_step(panel_id)
 
-                await history.create_session(session_id, title="", user_id=user_id)
+                await history.create_session(session_id, title=text[:80], user_id=user_id)
                 await history.create_panel(session_id, panel_id, user_id=user_id)
                 await history.save_message(panel_id, "user", text)
 
                 try:
-                    result = await orchestrator.handle_message(context, text, on_step=on_step)
+                    result = await orchestrator.handle_message(context, effective_text, on_step=on_step)
+                except WebSocketDisconnect:
+                    raise
                 except Exception as e:
                     logger.error(f"Generation error for {session_id}/{panel_id}: {e}", exc_info=True)
                     error_data = {
                         "success": False,
-                        "error": {"type": "ServerError", "message": str(e)},
+                        "error": public_generation_error(e),
                         "panel_id": panel_id,
                     }
                     await websocket.send_json({"type": "generation_result", "data": error_data})
@@ -133,6 +162,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
                 result_data = result.model_dump()
                 result_data["panel_id"] = panel_id
+                claim_request_owner(result.request_id, principal)
 
                 assistant_content = (
                     "CAD 模型已生成"
@@ -178,13 +208,15 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     result = await orchestrator.modify_assembly_part(
                         context, part_name, instruction, on_step=on_step
                     )
+                except WebSocketDisconnect:
+                    raise
                 except Exception as e:
                     logger.error(f"modify_part error for {session_id}/{panel_id}: {e}", exc_info=True)
                     await websocket.send_json({
                         "type": "generation_result",
                         "data": {
                             "success": False,
-                            "error": {"type": "ServerError", "message": str(e)},
+                            "error": public_generation_error(e),
                             "panel_id": panel_id,
                         },
                     })
@@ -192,6 +224,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
                 result_data = result.model_dump()
                 result_data["panel_id"] = panel_id
+                claim_request_owner(result.request_id, principal)
 
                 msg_content = (
                     f"零件 {part_name} 已修改"
@@ -210,42 +243,51 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 if not code or len(code) > 50000:
                     continue
                 context = _get_context(session_id, panel_id)
+                await history.create_session(session_id, title="", user_id=user_id)
+                await history.create_panel(session_id, panel_id, user_id=user_id)
                 try:
                     response = await orchestrator.execute_code(code)
                 except Exception as e:
                     logger.error(f"Execute error: {e}", exc_info=True)
-                    await websocket.send_json({
-                        "type": "generation_result",
-                        "data": {
-                            "success": False,
-                            "error": {"type": "ServerError", "message": str(e)},
-                            "panel_id": panel_id,
-                        },
-                    })
+                    result_data = {
+                        "success": False,
+                        "error": public_generation_error(e),
+                        "panel_id": panel_id,
+                    }
+                    await history.save_message(
+                        panel_id,
+                        "assistant",
+                        "参数修改执行失败",
+                        result=result_data,
+                    )
+                    await history.touch_session(session_id)
+                    await websocket.send_json({"type": "generation_result", "data": result_data})
                     continue
 
                 if response.success and response.code:
                     context.current_code = response.code
-                    # Ensure the panel row exists so update_panel_code isn't a silent no-op.
-                    await history.create_session(session_id, title="", user_id=user_id)
-                    await history.create_panel(session_id, panel_id, user_id=user_id)
-                    await history.update_panel_code(panel_id, response.code)
+                    params_dict = (
+                        {k: v.model_dump() for k, v in response.params.items()}
+                        if response.params
+                        else None
+                    )
+                    await history.update_panel_code(panel_id, response.code, params_dict)
 
-                result_data = {
-                    "success": response.success,
-                    "request_id": response.request_id,
-                    "files": response.files,
-                    "code": response.code,
-                    "params": {
-                        k: v.model_dump() for k, v in response.params.items()
-                    }
-                    if response.params
-                    else None,
-                    "execution_time_ms": response.execution_time_ms,
-                    "attempts": response.attempts,
-                    "error": response.error,
-                    "panel_id": panel_id,
-                }
+                result_data = response.model_dump()
+                result_data["panel_id"] = panel_id
+                claim_request_owner(response.request_id, principal)
+                assistant_content = (
+                    "参数修改已执行"
+                    if response.success
+                    else f"参数修改失败: {response.error.get('message', '') if response.error else '未知错误'}"
+                )
+                await history.save_message(
+                    panel_id,
+                    "assistant",
+                    assistant_content,
+                    result=result_data,
+                )
+                await history.touch_session(session_id)
                 await websocket.send_json({"type": "generation_result", "data": result_data})
 
             elif msg_type == "restore_context":

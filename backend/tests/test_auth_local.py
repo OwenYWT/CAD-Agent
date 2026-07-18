@@ -26,13 +26,26 @@ from fastapi.testclient import TestClient
 
 import app.main as appmain
 from app.config import settings
-from app.api import auth as auth_mod
+from app.api import login as login_mod
+from app.services.sms import SmsDeliveryResult
 from app.storage import auth as auth_store
 from app.storage import history as history_store
 
 pytestmark = pytest.mark.auth
 
 SECRET = "test-secret-" + "x" * 40
+DEFAULT_INVITES = [
+    "CAD1-A7K9",
+    "CAD2-M4Q8",
+    "CAD3-Z6P2",
+    "CAD4-H9R5",
+    "CAD5-T2N7",
+    "CAD6-W8L3",
+    "CAD7-Q5X1",
+    "CAD8-B3V6",
+    "CAD9-J2Y4",
+    "CAD0-S9D8",
+]
 
 
 @pytest.fixture
@@ -41,9 +54,11 @@ def auth_env(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "auth_required", True)
     monkeypatch.setattr(settings, "auth_token_secret", SECRET)
     monkeypatch.setattr(settings, "api_keys", [])
+    monkeypatch.setattr(settings, "auth_code_flows_enabled", True)
     monkeypatch.setattr(settings, "auth_dev_expose_code", True)  # so tests can read codes
     monkeypatch.setattr(settings, "admin_password", "")          # no admin unless a test sets it
     monkeypatch.setattr(settings, "default_invite_code", "")     # no seeded invite unless a test sets it
+    monkeypatch.setattr(settings, "default_invite_codes", [])     # no seeded invites unless a test sets them
     monkeypatch.setattr(settings, "history_db_path", str(tmp_path / "history.db"))
     monkeypatch.setattr(settings, "verification_code_ttl_minutes", 10)
 
@@ -52,7 +67,6 @@ def auth_env(tmp_path, monkeypatch):
     asyncio.run(history_store.close_db())
     # Reset the per-process ephemeral secret + login throttle so tests don't bleed.
     auth_store._EPHEMERAL_SECRET = None
-    import app.api.login as login_mod
     login_mod._failed_logins.clear()
     yield tmp_path
     asyncio.run(auth_store.close_db())
@@ -93,7 +107,7 @@ def test_register_with_code_then_login(client):
 
 
 def test_register_with_invite(client, monkeypatch):
-    monkeypatch.setattr(settings, "default_invite_code", "INVITE-OK")
+    monkeypatch.setattr(settings, "default_invite_codes", ["INVITE-OK"])
     monkeypatch.setattr(settings, "default_invite_max_uses", 2)
     phone = "13800000002"
     r = client.post("/api/auth/register/invite", json={"phone": phone, "invite_code": "INVITE-OK", "password": "secret123"})
@@ -261,15 +275,88 @@ def test_admin_not_created_without_password(client):
     assert r.status_code == 400
 
 
+def test_invite_only_mode_blocks_code_endpoints(client, monkeypatch):
+    monkeypatch.setattr(settings, "auth_code_flows_enabled", False)
+    assert client.post("/api/auth/code/request", json={"phone": "13800000051", "purpose": "register"}).status_code == 403
+    assert client.post(
+        "/api/auth/register/code",
+        json={"phone": "13800000051", "code": "123456", "password": "secret123"},
+    ).status_code == 403
+    assert client.post(
+        "/api/auth/login/code",
+        json={"phone": "13800000051", "code": "123456"},
+    ).status_code == 403
+    assert client.post(
+        "/api/auth/password/reset",
+        json={"phone": "13800000051", "code": "123456", "password": "secret123"},
+    ).status_code == 403
+
+
+def test_default_private_beta_invites_seeded_single_use(client, monkeypatch):
+    monkeypatch.setattr(settings, "auth_code_flows_enabled", False)
+    monkeypatch.setattr(settings, "default_invite_codes", DEFAULT_INVITES)
+    monkeypatch.setattr(settings, "default_invite_code", "OLD-CODE")
+    monkeypatch.setattr(settings, "default_invite_max_uses", 1)
+    first = DEFAULT_INVITES[0]
+
+    seeded = asyncio.run(auth_store.list_invite_codes())
+    seeded_codes = {row["code"] for row in seeded}
+    assert set(DEFAULT_INVITES).issubset(seeded_codes)
+
+    r = client.post(
+        "/api/auth/register/invite",
+        json={"phone": "13800000052", "invite_code": first, "password": "secret123"},
+    )
+    assert r.status_code == 200, r.text
+    reused = client.post(
+        "/api/auth/register/invite",
+        json={"phone": "13800000053", "invite_code": first, "password": "secret123"},
+    )
+    assert reused.status_code == 400
+    random_code = client.post(
+        "/api/auth/register/invite",
+        json={"phone": "13800000054", "invite_code": "NOPE-0000", "password": "secret123"},
+    )
+    assert random_code.status_code == 400
+    old_legacy_code = client.post(
+        "/api/auth/register/invite",
+        json={"phone": "13800000055", "invite_code": "OLD-CODE", "password": "secret123"},
+    )
+    assert old_legacy_code.status_code == 400
+
+
 # --------------------------------------------------------------------------- #
 # dev_code gating
 # --------------------------------------------------------------------------- #
 
-def test_dev_code_hidden_when_flag_off(client, monkeypatch):
+def test_code_request_requires_sms_when_dev_code_hidden(client, monkeypatch):
     monkeypatch.setattr(settings, "auth_dev_expose_code", False)
     r = client.post("/api/auth/code/request", json={"phone": "13800000019", "purpose": "register"})
-    assert r.status_code == 200
+    assert r.status_code == 503
     assert "dev_code" not in r.json()
+    assert "短信服务" in r.json()["detail"]
+
+
+def test_code_request_sends_sms_when_dev_code_hidden(client, monkeypatch):
+    sent = []
+
+    async def fake_send(phone: str, code: str, purpose: str):
+        sent.append((phone, code, purpose))
+        return SmsDeliveryResult(provider="test-sms", message_id="msg-1")
+
+    monkeypatch.setattr(settings, "auth_dev_expose_code", False)
+    monkeypatch.setattr(login_mod, "send_verification_code_sms", fake_send)
+    phone = "13800000039"
+    r = client.post("/api/auth/code/request", json={"phone": phone, "purpose": "register"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "dev_code" not in body
+    assert body["delivery_provider"] == "test-sms"
+    assert body["message"] == "验证码已通过短信发送，请查收。"
+    assert sent and sent[0][0] == phone and sent[0][2] == "register"
+    # The delivered code is the only code that can complete registration.
+    reg = client.post("/api/auth/register/code", json={"phone": phone, "code": sent[0][1], "password": "secret123"})
+    assert reg.status_code == 200, reg.text
 
 
 # --------------------------------------------------------------------------- #
@@ -348,7 +435,13 @@ def test_auth_config_gate_rejects_insecure_secret(secret):
 
 def test_auth_config_gate_allows_good_secret():
     from app.config import Settings
-    s = Settings(_env_file=None, auth_required=True, auth_token_secret="x" * 50)
+    s = Settings(
+        _env_file=None,
+        auth_required=True,
+        auth_token_secret="x" * 50,
+        sms_provider="webhook",
+        sms_webhook_url="https://sms.example.test/send",
+    )
     s.assert_auth_config_safe()  # no raise
 
 
@@ -360,7 +453,40 @@ def test_auth_config_gate_skipped_when_auth_off():
 
 def test_dev_expose_code_blocked_in_prod_gate():
     from app.config import Settings
-    s = Settings(_env_file=None, auth_required=True, auth_token_secret="x" * 50, auth_dev_expose_code=True)
+    s = Settings(
+        _env_file=None,
+        auth_required=True,
+        auth_token_secret="x" * 50,
+        auth_dev_expose_code=True,
+        sms_provider="webhook",
+        sms_webhook_url="https://sms.example.test/send",
+    )
+    with pytest.raises(RuntimeError):
+        s.assert_auth_config_safe()
+
+
+def test_auth_config_gate_rejects_missing_sms_provider():
+    from app.config import Settings
+    s = Settings(
+        _env_file=None,
+        auth_required=True,
+        auth_token_secret="x" * 50,
+        auth_code_flows_enabled=True,
+        sms_provider="disabled",
+    )
+    with pytest.raises(RuntimeError):
+        s.assert_auth_config_safe()
+
+
+def test_auth_config_gate_rejects_incomplete_tencent_sms():
+    from app.config import Settings
+    s = Settings(
+        _env_file=None,
+        auth_required=True,
+        auth_token_secret="x" * 50,
+        auth_code_flows_enabled=True,
+        sms_provider="tencentcloud",
+    )
     with pytest.raises(RuntimeError):
         s.assert_auth_config_safe()
 

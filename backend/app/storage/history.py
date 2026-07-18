@@ -103,8 +103,22 @@ async def create_session(session_id: str, title: str = "", user_id: str | None =
             "UPDATE sessions SET user_id = COALESCE(user_id, ?) WHERE id = ?",
             (user_id, session_id),
         )
+    if title.strip():
+        await db.execute(
+            """
+            UPDATE sessions
+            SET title = ?, updated_at = ?
+            WHERE id = ? AND (title IS NULL OR TRIM(title) = '')
+            """,
+            (title, now, session_id),
+        )
     await db.commit()
-    return {"id": session_id, "user_id": user_id, "title": title, "created_at": now, "updated_at": now}
+    cursor = await db.execute(
+        "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE id = ?",
+        (session_id,),
+    )
+    row = await cursor.fetchone()
+    return dict(row)
 
 
 async def list_sessions(user_id: str | None = None) -> list[dict]:

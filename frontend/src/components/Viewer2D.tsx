@@ -1,75 +1,64 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { authFetch } from "../auth";
+import { Icon } from "./ui/Icon";
+
+const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 function sanitizeSvg(raw: string): string {
-  // Remove script tags, event handlers, and potentially dangerous elements
   let cleaned = raw.replace(/<script[\s\S]*?<\/script>/gi, "");
   cleaned = cleaned.replace(/on\w+\s*=\s*"[^"]*"/gi, "");
   cleaned = cleaned.replace(/on\w+\s*=\s*'[^']*'/gi, "");
   cleaned = cleaned.replace(/<iframe[\s\S]*?(<\/iframe>|\/?>)/gi, "");
   cleaned = cleaned.replace(/<object[\s\S]*?(<\/object>|\/?>)/gi, "");
   cleaned = cleaned.replace(/<embed[\s\S]*?\/?>/gi, "");
-  cleaned = cleaned.replace(/javascript\s*:/gi, "");
-  return cleaned;
+  return cleaned.replace(/javascript\s*:/gi, "");
 }
 
-export default function Viewer2D({ svgUrl }: { svgUrl: string | null }) {
-  const [svgContent, setSvgContent] = useState<string | null>(null);
+function LoadedSvg({ svgUrl }: { svgUrl: string }) {
+  const [state, setState] = useState<{ content: string | null; error: boolean }>({ content: null, error: false });
   const [zoom, setZoom] = useState(1);
 
   useEffect(() => {
-    if (!svgUrl) {
-      setSvgContent(null);
-      return;
-    }
-    fetch(svgUrl)
-      .then((r) => r.text())
-      .then((text) => setSvgContent(sanitizeSvg(text)))
-      .catch(() => setSvgContent(null));
+    const controller = new AbortController();
+    const target = /^https?:\/\//.test(svgUrl) ? svgUrl : `${API_BASE}${svgUrl}`;
+    authFetch(target, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.text();
+      })
+      .then((text) => setState({ content: sanitizeSvg(text), error: false }))
+      .catch((error) => {
+        if (error instanceof Error && error.name !== "AbortError") setState({ content: null, error: true });
+      });
+    return () => controller.abort();
   }, [svgUrl]);
 
-  if (!svgUrl) {
-    return (
-      <div className="w-full h-full bg-white rounded-lg overflow-hidden relative flex items-center justify-center">
-        <p className="text-gray-500 text-lg">
-          描述你想要的 2D 图形，AI 将为你生成 DXF 文件
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div className="w-full h-full bg-white rounded-lg overflow-hidden relative">
-      <div className="absolute top-3 right-3 z-10 flex gap-1">
-        <button
-          onClick={() => setZoom((z) => Math.min(z * 1.25, 5))}
-          className="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded text-lg font-bold"
-        >
-          +
-        </button>
-        <button
-          onClick={() => setZoom((z) => Math.max(z / 1.25, 0.2))}
-          className="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded text-lg font-bold"
-        >
-          -
-        </button>
-        <button
-          onClick={() => setZoom(1)}
-          className="px-2 h-8 bg-gray-100 hover:bg-gray-200 rounded text-sm"
-        >
-          1:1
-        </button>
+    <div className="relative h-full w-full overflow-hidden bg-white">
+      <div className="absolute right-3 top-3 z-10 flex gap-1 rounded-md border border-slate-200 bg-white p-1 shadow-sm">
+        <button aria-label="放大二维图" className="icon-button" onClick={() => setZoom((value) => Math.min(value * 1.25, 5))} title="放大" type="button"><Icon name="plus" size={17} /></button>
+        <button aria-label="缩小二维图" className="icon-button" onClick={() => setZoom((value) => Math.max(value / 1.25, 0.2))} title="缩小" type="button"><Icon name="minus" size={17} /></button>
+        <button className="min-h-10 rounded-md px-2 text-xs font-medium text-slate-600 hover:bg-slate-100" onClick={() => setZoom(1)} type="button">1:1</button>
       </div>
-
-      <div className="w-full h-full overflow-auto flex items-center justify-center p-4">
-        {svgContent ? (
-          <div
-            style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}
-            dangerouslySetInnerHTML={{ __html: svgContent }}
-          />
+      <div className="flex h-full w-full items-center justify-center overflow-auto p-4">
+        {state.error ? (
+          <div className="max-w-sm text-center" role="alert">
+            <p className="text-sm font-medium text-red-700">二维预览加载失败</p>
+            <p className="mt-1 text-xs text-slate-500">请检查文件是否仍然有效，或重新生成模型。</p>
+          </div>
+        ) : state.content ? (
+          <div dangerouslySetInnerHTML={{ __html: state.content }} style={{ transform: `scale(${zoom})`, transformOrigin: "center" }} />
         ) : (
-          <p className="text-gray-400">Loading SVG...</p>
+          <div className="flex items-center gap-2 text-sm text-slate-500" role="status"><span className="h-4 w-4 animate-spin rounded-full border-2 border-sky-600 border-t-transparent" />正在加载二维图</div>
         )}
       </div>
     </div>
   );
+}
+
+export default function Viewer2D({ svgUrl }: { svgUrl: string | null }) {
+  if (!svgUrl) {
+    return <div className="flex h-full w-full items-center justify-center bg-white px-6 text-center text-sm text-slate-500">二维图将在生成后显示</div>;
+  }
+  return <LoadedSvg key={svgUrl} svgUrl={svgUrl} />;
 }

@@ -1,0 +1,338 @@
+{
+  "$defs": {
+    "ArtifactValidCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "check": {
+          "const": "artifact_valid",
+          "default": "artifact_valid",
+          "title": "Check",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_id"
+      ],
+      "title": "ArtifactValidCheck",
+      "type": "object"
+    },
+    "CloudVersionCompleteCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "const": "cloud_version_complete",
+          "default": "cloud_version_complete",
+          "title": "Check",
+          "type": "string"
+        }
+      },
+      "title": "CloudVersionCompleteCheck",
+      "type": "object"
+    },
+    "DimensionValue": {
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "amount"
+                ]
+              },
+              {
+                "required": [
+                  "unit"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "expression"
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "expression"
+            ]
+          },
+          "required": [
+            "amount",
+            "unit"
+          ]
+        }
+      ],
+      "properties": {
+        "amount": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount"
+        },
+        "expression": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expression"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        }
+      },
+      "title": "DimensionValue",
+      "type": "object"
+    },
+    "EntityResolvesCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "const": "entity_resolves",
+          "default": "entity_resolves",
+          "title": "Check",
+          "type": "string"
+        },
+        "target_id": {
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "EntityResolvesCheck",
+      "type": "object"
+    },
+    "LocalSaveAcceptedCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "const": "local_save_accepted",
+          "default": "local_save_accepted",
+          "title": "Check",
+          "type": "string"
+        }
+      },
+      "title": "LocalSaveAcceptedCheck",
+      "type": "object"
+    },
+    "NoFeatureErrorsCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "const": "no_feature_errors",
+          "default": "no_feature_errors",
+          "title": "Check",
+          "type": "string"
+        }
+      },
+      "title": "NoFeatureErrorsCheck",
+      "type": "object"
+    },
+    "NoNewFeatureErrorsCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "const": "no_new_feature_errors",
+          "default": "no_new_feature_errors",
+          "title": "Check",
+          "type": "string"
+        },
+        "snapshot_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snapshot Id"
+        }
+      },
+      "title": "NoNewFeatureErrorsCheck",
+      "type": "object"
+    },
+    "ParameterEqualsCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "const": "parameter_equals",
+          "default": "parameter_equals",
+          "title": "Check",
+          "type": "string"
+        },
+        "expected": {
+          "$ref": "#/$defs/DimensionValue"
+        },
+        "target_id": {
+          "title": "Target Id",
+          "type": "string"
+        },
+        "tolerance": {
+          "default": 1e-06,
+          "minimum": 0,
+          "title": "Tolerance",
+          "type": "number"
+        }
+      },
+      "required": [
+        "target_id",
+        "expected"
+      ],
+      "title": "ParameterEqualsCheck",
+      "type": "object"
+    },
+    "VerifySpecification": {
+      "additionalProperties": false,
+      "properties": {
+        "baseline_request_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline Request Id"
+        },
+        "checks": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "artifact_valid": "#/$defs/ArtifactValidCheck",
+                "cloud_version_complete": "#/$defs/CloudVersionCompleteCheck",
+                "entity_resolves": "#/$defs/EntityResolvesCheck",
+                "local_save_accepted": "#/$defs/LocalSaveAcceptedCheck",
+                "no_feature_errors": "#/$defs/NoFeatureErrorsCheck",
+                "no_new_feature_errors": "#/$defs/NoNewFeatureErrorsCheck",
+                "parameter_equals": "#/$defs/ParameterEqualsCheck"
+              },
+              "propertyName": "check"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ParameterEqualsCheck"
+              },
+              {
+                "$ref": "#/$defs/EntityResolvesCheck"
+              },
+              {
+                "$ref": "#/$defs/NoFeatureErrorsCheck"
+              },
+              {
+                "$ref": "#/$defs/NoNewFeatureErrorsCheck"
+              },
+              {
+                "$ref": "#/$defs/LocalSaveAcceptedCheck"
+              },
+              {
+                "$ref": "#/$defs/CloudVersionCompleteCheck"
+              },
+              {
+                "$ref": "#/$defs/ArtifactValidCheck"
+              }
+            ]
+          },
+          "maxItems": 100,
+          "minItems": 1,
+          "title": "Checks",
+          "type": "array"
+        },
+        "document_id": {
+          "title": "Document Id",
+          "type": "string"
+        },
+        "source_request_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Request Id"
+        }
+      },
+      "required": [
+        "document_id",
+        "checks"
+      ],
+      "title": "VerifySpecification",
+      "type": "object"
+    }
+  },
+  "$id": "https://cad-agent.local/schemas/fusion360/verify-request/1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "connector_instance_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Connector Instance Id"
+    },
+    "request_id": {
+      "format": "uuid",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "specification": {
+      "$ref": "#/$defs/VerifySpecification"
+    },
+    "timeout_ms": {
+      "default": 30000,
+      "maximum": 300000,
+      "minimum": 1000,
+      "title": "Timeout Ms",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "specification"
+  ],
+  "title": "VerifyRequest",
+  "type": "object",
+  "x-contract-version": "1.0.0"
+}

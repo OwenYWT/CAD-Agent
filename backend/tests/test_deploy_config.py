@@ -2,7 +2,7 @@
 
 Angle: DEPLOY CONFIG. Hermetic — no Docker, no real LLM, no network.
 Covers:
-  1. Settings parses env vars (DASHSCOPE_API_KEY, CORS_ORIGINS JSON list, API_KEYS,
+  1. Settings parses env vars (MOONSHOT_API_KEY, CORS_ORIGINS JSON list, API_KEYS,
      BUILD_VOLUME_MM, MIN_WALL_MM, TRUST_PROXY_HEADERS).
   2. make_llm_client raises without key, sets timeout/retries with key.
   3. _startup_self_check reports missing-key + docker problems; /ready reflects them.
@@ -43,11 +43,14 @@ REQUIREMENTS = BACKEND_DIR / "requirements.txt"
 def test_settings_defaults_are_safe(monkeypatch):
     """Fresh defaults: no auth, no key, sane print gate."""
     # Clear any env that could leak in.
-    for k in ("DASHSCOPE_API_KEY", "CORS_ORIGINS", "API_KEYS",
+    for k in ("MOONSHOT_API_KEY", "DASHSCOPE_API_KEY", "CORS_ORIGINS", "API_KEYS",
               "BUILD_VOLUME_MM", "MIN_WALL_MM", "TRUST_PROXY_HEADERS"):
         monkeypatch.delenv(k, raising=False)
     s = Settings(_env_file=None)
     assert s.dashscope_api_key is None
+    assert s.moonshot_api_key is None
+    assert s.llm_provider == "moonshot"
+    assert s.llm_model == "kimi-k2.7-code"
     assert s.api_keys == []            # empty = auth OFF by default
     assert s.has_llm_credentials is False
     assert s.trust_proxy_headers is False
@@ -56,10 +59,10 @@ def test_settings_defaults_are_safe(monkeypatch):
     assert s.min_wall_mm == pytest.approx(0.8)
 
 
-def test_settings_reads_dashscope_key_from_env(monkeypatch):
-    monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-from-env")
+def test_settings_reads_moonshot_key_from_env(monkeypatch):
+    monkeypatch.setenv("MOONSHOT_API_KEY", "sk-from-env")
     s = Settings(_env_file=None)
-    assert s.dashscope_api_key == "sk-from-env"
+    assert s.moonshot_api_key == "sk-from-env"
     assert s.has_llm_credentials is True
 
 
@@ -104,10 +107,10 @@ def test_settings_parses_trust_proxy_headers_bool(monkeypatch, raw, expected):
 def test_settings_env_is_case_insensitive(monkeypatch):
     """pydantic-settings maps env vars case-insensitively (the .env.example uses
     UPPER_CASE while the fields are lower_case)."""
-    monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-upper")
+    monkeypatch.setenv("MOONSHOT_API_KEY", "sk-upper")
     monkeypatch.setenv("LLM_MODEL", "qwen-test")
     s = Settings(_env_file=None)
-    assert s.dashscope_api_key == "sk-upper"
+    assert s.moonshot_api_key == "sk-upper"
     assert s.llm_model == "qwen-test"
 
 
@@ -118,13 +121,17 @@ def test_settings_env_is_case_insensitive(monkeypatch):
 def test_make_llm_client_raises_without_key(monkeypatch):
     from app import config
     monkeypatch.setattr(config.settings, "dashscope_api_key", None)
-    with pytest.raises(RuntimeError, match="DASHSCOPE_API_KEY"):
+    monkeypatch.setattr(config.settings, "moonshot_api_key", None)
+    monkeypatch.setattr(config.settings, "llm_provider", "moonshot")
+    with pytest.raises(RuntimeError, match="MOONSHOT_API_KEY"):
         config.make_llm_client()
 
 
 def test_make_llm_client_sets_timeout_and_retries_with_key(monkeypatch):
     from app import config
-    monkeypatch.setattr(config.settings, "dashscope_api_key", "sk-present")
+    monkeypatch.setattr(config.settings, "llm_provider", "moonshot")
+    monkeypatch.setattr(config.settings, "moonshot_api_key", "sk-present")
+    monkeypatch.setattr(config.settings, "llm_base_url", "https://api.moonshot.cn/v1")
     monkeypatch.setattr(config.settings, "llm_timeout_s", 42.0)
     monkeypatch.setattr(config.settings, "llm_max_retries", 1)
     client = config.make_llm_client()
@@ -146,14 +153,17 @@ def test_make_llm_client_importable_from_module():
 def test_startup_self_check_reports_missing_key(monkeypatch):
     from app import config, main
     monkeypatch.setattr(config.settings, "dashscope_api_key", None)
+    monkeypatch.setattr(config.settings, "moonshot_api_key", None)
+    monkeypatch.setattr(config.settings, "llm_provider", "moonshot")
     problems = main._startup_self_check()
-    assert any("DASHSCOPE_API_KEY" in p for p in problems)
+    assert any("MOONSHOT_API_KEY" in p for p in problems)
 
 
 def test_startup_self_check_reports_docker_problem(monkeypatch):
     """No Docker daemon in this env -> a docker/sandbox problem string is emitted."""
     from app import config, main
-    monkeypatch.setattr(config.settings, "dashscope_api_key", None)
+    monkeypatch.setattr(config.settings, "llm_provider", "moonshot")
+    monkeypatch.setattr(config.settings, "moonshot_api_key", "sk-present")
     problems = main._startup_self_check()
     assert any(("Docker" in p) or ("沙箱" in p) or ("docker" in p) for p in problems)
 
@@ -165,7 +175,8 @@ def test_startup_self_check_clean_when_key_and_docker_ok(monkeypatch):
     import types
     from app import config, main
 
-    monkeypatch.setattr(config.settings, "dashscope_api_key", "sk-present")
+    monkeypatch.setattr(config.settings, "llm_provider", "moonshot")
+    monkeypatch.setattr(config.settings, "moonshot_api_key", "sk-present")
 
     fake_docker = types.ModuleType("docker")
 
@@ -196,12 +207,12 @@ def test_ready_endpoint_reflects_problems():
     """/ready returns 503 + problem list when startup_problems are set on state."""
     from app.main import app
     with TestClient(app) as client:
-        app.state.startup_problems = ["DASHSCOPE_API_KEY 未设置 — test"]
+        app.state.startup_problems = ["MOONSHOT_API_KEY is required — test"]
         resp = client.get("/ready")
         assert resp.status_code == 503
         body = resp.json()
         assert body["status"] == "degraded"
-        assert any("DASHSCOPE_API_KEY" in p for p in body["problems"])
+        assert any("MOONSHOT_API_KEY" in p for p in body["problems"])
 
 
 def test_ready_endpoint_ok_when_no_problems():
@@ -279,7 +290,7 @@ def test_env_example_exists():
 
 def test_env_example_contains_required_keys():
     text = ENV_EXAMPLE.read_text()
-    for key in ("DASHSCOPE_API_KEY", "CORS_ORIGINS", "API_KEYS"):
+    for key in ("MOONSHOT_API_KEY", "DASHSCOPE_API_KEY", "CORS_ORIGINS", "API_KEYS"):
         assert f"{key}=" in text, f"{key} missing from .env.example"
 
 

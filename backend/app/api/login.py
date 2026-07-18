@@ -11,6 +11,7 @@ from app.config import settings
 from app.storage import auth as auth_store
 from app.storage.auth import VerificationThrottleError
 from app.api.auth import get_current_user
+from app.services.sms import SmsDeliveryError, send_verification_code_sms
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 _bearer_scheme = HTTPBearer(auto_error=False)
@@ -129,6 +130,8 @@ def require_admin(user=Depends(get_current_user)):
 
 @router.post("/code/request")
 async def request_code(req: CodeRequest):
+    if not settings.auth_code_flows_enabled:
+        raise HTTPException(status_code=403, detail="验证码登录/注册暂未开放，请使用邀请码注册或密码登录")
     try:
         code = await auth_store.issue_verification_code(req.phone, req.purpose)
     except VerificationThrottleError as exc:
@@ -136,21 +139,30 @@ async def request_code(req: CodeRequest):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # The verification code is delivered out-of-band (SMS, not yet wired). Only echo
-    # it back in the response when AUTH_DEV_EXPOSE_CODE is explicitly enabled for
-    # local dev — never in production, where doing so is an account-takeover hole.
-    response = {
-        "message": "验证码已发送，请查收短信。",
-        "expires_in_minutes": settings.verification_code_ttl_minutes,
-    }
     if settings.auth_dev_expose_code:
-        response["dev_code"] = code
-        response["message"] = "验证码已生成（开发模式直接返回，生产环境请关闭 AUTH_DEV_EXPOSE_CODE）。"
-    return response
+        return {
+            "message": "验证码已生成（开发模式直接返回，生产环境请关闭 AUTH_DEV_EXPOSE_CODE）。",
+            "expires_in_minutes": settings.verification_code_ttl_minutes,
+            "dev_code": code,
+        }
+
+    try:
+        delivery = await send_verification_code_sms(req.phone, code, req.purpose)
+    except SmsDeliveryError as exc:
+        await auth_store.delete_verification_code(req.phone, req.purpose, code)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return {
+        "message": "验证码已通过短信发送，请查收。",
+        "expires_in_minutes": settings.verification_code_ttl_minutes,
+        "delivery_provider": delivery.provider,
+    }
 
 
 @router.post("/register/code")
 async def register_with_code(req: RegisterWithCodeRequest):
+    if not settings.auth_code_flows_enabled:
+        raise HTTPException(status_code=403, detail="验证码注册暂未开放，请使用邀请码注册")
     try:
         if not await auth_store.consume_verification_code(req.phone, "register", req.code):
             raise HTTPException(status_code=400, detail="验证码无效或已过期")
@@ -187,6 +199,8 @@ async def login_with_password(req: LoginWithPasswordRequest, request: Request):
 
 @router.post("/login/code")
 async def login_with_code(req: LoginWithCodeRequest, request: Request):
+    if not settings.auth_code_flows_enabled:
+        raise HTTPException(status_code=403, detail="验证码登录暂未开放，请使用密码登录")
     _check_login_attempts(request, req.phone)
     try:
         if not await auth_store.consume_verification_code(req.phone, "login", req.code):
@@ -206,6 +220,8 @@ async def login_with_code(req: LoginWithCodeRequest, request: Request):
 
 @router.post("/password/reset")
 async def reset_password(req: ResetPasswordRequest):
+    if not settings.auth_code_flows_enabled:
+        raise HTTPException(status_code=403, detail="验证码重置密码暂未开放，请联系管理员")
     try:
         if not await auth_store.consume_verification_code(req.phone, "reset_password", req.code):
             raise HTTPException(status_code=400, detail="验证码无效或已过期")

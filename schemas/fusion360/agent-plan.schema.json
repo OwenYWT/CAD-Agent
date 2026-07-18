@@ -1,0 +1,1896 @@
+{
+  "$defs": {
+    "CirclePrimitive": {
+      "additionalProperties": false,
+      "properties": {
+        "center": {
+          "$ref": "#/$defs/Point2"
+        },
+        "kind": {
+          "const": "circle",
+          "default": "circle",
+          "title": "Kind",
+          "type": "string"
+        },
+        "radius": {
+          "exclusiveMinimum": 0,
+          "title": "Radius",
+          "type": "number"
+        }
+      },
+      "required": [
+        "center",
+        "radius"
+      ],
+      "title": "CirclePrimitive",
+      "type": "object"
+    },
+    "ComponentTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "component_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Component Id",
+          "type": "string"
+        },
+        "document_id": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Document Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id",
+        "component_id"
+      ],
+      "title": "ComponentTarget",
+      "type": "object"
+    },
+    "CreateChamferAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "cad.create_chamfer",
+          "default": "cad.create_chamfer",
+          "title": "Action",
+          "type": "string"
+        },
+        "approval_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Id"
+        },
+        "connector_instance_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Connector Instance Id"
+        },
+        "distance": {
+          "$ref": "#/$defs/DimensionValue"
+        },
+        "edge_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 500,
+          "minItems": 1,
+          "title": "Edge Ids",
+          "type": "array"
+        },
+        "execution_mode": {
+          "default": "execute",
+          "enum": [
+            "preview",
+            "execute"
+          ],
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idempotency Key"
+        },
+        "request_id": {
+          "format": "uuid",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "tangent_chain": {
+          "default": true,
+          "title": "Tangent Chain",
+          "type": "boolean"
+        },
+        "target": {
+          "$ref": "#/$defs/ComponentTarget"
+        },
+        "timeout_ms": {
+          "default": 30000,
+          "maximum": 300000,
+          "minimum": 1000,
+          "title": "Timeout Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target",
+        "edge_ids",
+        "distance"
+      ],
+      "title": "CreateChamferAction",
+      "type": "object"
+    },
+    "CreateExtrudeAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "cad.create_extrude",
+          "default": "cad.create_extrude",
+          "title": "Action",
+          "type": "string"
+        },
+        "approval_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Id"
+        },
+        "connector_instance_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Connector Instance Id"
+        },
+        "direction": {
+          "default": "positive",
+          "enum": [
+            "positive",
+            "negative",
+            "symmetric"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "distance": {
+          "$ref": "#/$defs/DimensionValue"
+        },
+        "execution_mode": {
+          "default": "execute",
+          "enum": [
+            "preview",
+            "execute"
+          ],
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idempotency Key"
+        },
+        "operation": {
+          "default": "new_body",
+          "enum": [
+            "new_body",
+            "new_component",
+            "join",
+            "cut",
+            "intersect"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "participant_body_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 500,
+          "title": "Participant Body Ids",
+          "type": "array"
+        },
+        "profile_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "request_id": {
+          "format": "uuid",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/ComponentTarget"
+        },
+        "timeout_ms": {
+          "default": 30000,
+          "maximum": 300000,
+          "minimum": 1000,
+          "title": "Timeout Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target",
+        "profile_id",
+        "distance"
+      ],
+      "title": "CreateExtrudeAction",
+      "type": "object"
+    },
+    "CreateFilletAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "cad.create_fillet",
+          "default": "cad.create_fillet",
+          "title": "Action",
+          "type": "string"
+        },
+        "approval_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Id"
+        },
+        "connector_instance_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Connector Instance Id"
+        },
+        "edge_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 500,
+          "minItems": 1,
+          "title": "Edge Ids",
+          "type": "array"
+        },
+        "execution_mode": {
+          "default": "execute",
+          "enum": [
+            "preview",
+            "execute"
+          ],
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idempotency Key"
+        },
+        "radius": {
+          "$ref": "#/$defs/DimensionValue"
+        },
+        "request_id": {
+          "format": "uuid",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "tangent_chain": {
+          "default": true,
+          "title": "Tangent Chain",
+          "type": "boolean"
+        },
+        "target": {
+          "$ref": "#/$defs/ComponentTarget"
+        },
+        "timeout_ms": {
+          "default": 30000,
+          "maximum": 300000,
+          "minimum": 1000,
+          "title": "Timeout Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target",
+        "edge_ids",
+        "radius"
+      ],
+      "title": "CreateFilletAction",
+      "type": "object"
+    },
+    "CreateHoleAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "cad.create_hole",
+          "default": "cad.create_hole",
+          "title": "Action",
+          "type": "string"
+        },
+        "approval_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Id"
+        },
+        "connector_instance_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Connector Instance Id"
+        },
+        "diameter": {
+          "$ref": "#/$defs/DimensionValue"
+        },
+        "execution_mode": {
+          "default": "execute",
+          "enum": [
+            "preview",
+            "execute"
+          ],
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "extent": {
+          "discriminator": {
+            "mapping": {
+              "distance": "#/$defs/DistanceExtent",
+              "through_all": "#/$defs/ThroughAllExtent"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DistanceExtent"
+            },
+            {
+              "$ref": "#/$defs/ThroughAllExtent"
+            }
+          ],
+          "title": "Extent"
+        },
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idempotency Key"
+        },
+        "request_id": {
+          "format": "uuid",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "sketch_point_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "minItems": 1,
+          "title": "Sketch Point Ids",
+          "type": "array"
+        },
+        "target": {
+          "$ref": "#/$defs/ComponentTarget"
+        },
+        "timeout_ms": {
+          "default": 30000,
+          "maximum": 300000,
+          "minimum": 1000,
+          "title": "Timeout Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target",
+        "sketch_point_ids",
+        "diameter",
+        "extent"
+      ],
+      "title": "CreateHoleAction",
+      "type": "object"
+    },
+    "CreateSketchAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "cad.create_sketch",
+          "default": "cad.create_sketch",
+          "title": "Action",
+          "type": "string"
+        },
+        "approval_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Id"
+        },
+        "connector_instance_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Connector Instance Id"
+        },
+        "execution_mode": {
+          "default": "execute",
+          "enum": [
+            "preview",
+            "execute"
+          ],
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idempotency Key"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "plane": {
+          "discriminator": {
+            "mapping": {
+              "entity": "#/$defs/EntityPlane",
+              "origin": "#/$defs/OriginPlane"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OriginPlane"
+            },
+            {
+              "$ref": "#/$defs/EntityPlane"
+            }
+          ],
+          "title": "Plane"
+        },
+        "primitives": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "circle": "#/$defs/CirclePrimitive",
+                "line": "#/$defs/LinePrimitive",
+                "rectangle": "#/$defs/RectanglePrimitive"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/LinePrimitive"
+              },
+              {
+                "$ref": "#/$defs/CirclePrimitive"
+              },
+              {
+                "$ref": "#/$defs/RectanglePrimitive"
+              }
+            ]
+          },
+          "maxItems": 500,
+          "minItems": 1,
+          "title": "Primitives",
+          "type": "array"
+        },
+        "request_id": {
+          "format": "uuid",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/ComponentTarget"
+        },
+        "timeout_ms": {
+          "default": 30000,
+          "maximum": 300000,
+          "minimum": 1000,
+          "title": "Timeout Ms",
+          "type": "integer"
+        },
+        "unit": {
+          "default": "mm",
+          "enum": [
+            "mm",
+            "cm",
+            "m",
+            "in",
+            "ft"
+          ],
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target",
+        "plane",
+        "primitives"
+      ],
+      "title": "CreateSketchAction",
+      "type": "object"
+    },
+    "DimensionValue": {
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "amount"
+                ]
+              },
+              {
+                "required": [
+                  "unit"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "expression"
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "expression"
+            ]
+          },
+          "required": [
+            "amount",
+            "unit"
+          ]
+        }
+      ],
+      "properties": {
+        "amount": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount"
+        },
+        "expression": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expression"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        }
+      },
+      "title": "DimensionValue",
+      "type": "object"
+    },
+    "DistanceExtent": {
+      "additionalProperties": false,
+      "properties": {
+        "distance": {
+          "$ref": "#/$defs/DimensionValue"
+        },
+        "kind": {
+          "const": "distance",
+          "default": "distance",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "distance"
+      ],
+      "title": "DistanceExtent",
+      "type": "object"
+    },
+    "DocumentTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "document_id": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Document Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id"
+      ],
+      "title": "DocumentTarget",
+      "type": "object"
+    },
+    "EntityPlane": {
+      "additionalProperties": false,
+      "properties": {
+        "entity_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "entity",
+          "default": "entity",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "entity_id"
+      ],
+      "title": "EntityPlane",
+      "type": "object"
+    },
+    "EntityProperties": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "material": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MaterialRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "name": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "part_number": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Part Number"
+        }
+      },
+      "title": "EntityProperties",
+      "type": "object"
+    },
+    "EntityTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "component_id": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Component Id"
+        },
+        "document_id": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Document Id",
+          "type": "string"
+        },
+        "entity_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_kind": {
+          "enum": [
+            "component",
+            "occurrence",
+            "body"
+          ],
+          "title": "Entity Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id",
+        "entity_id",
+        "entity_kind"
+      ],
+      "title": "EntityTarget",
+      "type": "object"
+    },
+    "ExportAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "cad.export",
+          "default": "cad.export",
+          "title": "Action",
+          "type": "string"
+        },
+        "approval_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Id"
+        },
+        "connector_instance_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Connector Instance Id"
+        },
+        "execution_mode": {
+          "default": "execute",
+          "enum": [
+            "preview",
+            "execute"
+          ],
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "filename": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Filename",
+          "type": "string"
+        },
+        "format": {
+          "enum": [
+            "step",
+            "stl",
+            "dxf",
+            "f3d",
+            "png"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idempotency Key"
+        },
+        "options": {
+          "$ref": "#/$defs/ExportOptions"
+        },
+        "request_id": {
+          "format": "uuid",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/DocumentTarget"
+        },
+        "timeout_ms": {
+          "default": 30000,
+          "maximum": 300000,
+          "minimum": 1000,
+          "title": "Timeout Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target",
+        "format",
+        "filename"
+      ],
+      "title": "ExportAction",
+      "type": "object"
+    },
+    "ExportOptions": {
+      "additionalProperties": false,
+      "properties": {
+        "binary": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Binary"
+        },
+        "body_id": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Body Id"
+        },
+        "component_id": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Component Id"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 4096,
+              "minimum": 64,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height"
+        },
+        "mesh_refinement": {
+          "anyOf": [
+            {
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mesh Refinement"
+        },
+        "sketch_id": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sketch Id"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 4096,
+              "minimum": 64,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        }
+      },
+      "title": "ExportOptions",
+      "type": "object"
+    },
+    "FeatureParameterTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "component_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Component Id",
+          "type": "string"
+        },
+        "document_id": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Document Id",
+          "type": "string"
+        },
+        "feature_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Feature Id",
+          "type": "string"
+        },
+        "parameter_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Parameter Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id",
+        "component_id",
+        "parameter_id",
+        "feature_id"
+      ],
+      "title": "FeatureParameterTarget",
+      "type": "object"
+    },
+    "LinePrimitive": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "$ref": "#/$defs/Point2"
+        },
+        "kind": {
+          "const": "line",
+          "default": "line",
+          "title": "Kind",
+          "type": "string"
+        },
+        "start": {
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "LinePrimitive",
+      "type": "object"
+    },
+    "MaterialRef": {
+      "additionalProperties": false,
+      "properties": {
+        "library_id": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Library Id",
+          "type": "string"
+        },
+        "material_id": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Material Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "library_id",
+        "material_id"
+      ],
+      "title": "MaterialRef",
+      "type": "object"
+    },
+    "OriginPlane": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "origin",
+          "default": "origin",
+          "title": "Kind",
+          "type": "string"
+        },
+        "plane": {
+          "enum": [
+            "xy",
+            "xz",
+            "yz"
+          ],
+          "title": "Plane",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plane"
+      ],
+      "title": "OriginPlane",
+      "type": "object"
+    },
+    "ParameterTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "component_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Component Id",
+          "type": "string"
+        },
+        "document_id": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Document Id",
+          "type": "string"
+        },
+        "parameter_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Parameter Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id",
+        "component_id",
+        "parameter_id"
+      ],
+      "title": "ParameterTarget",
+      "type": "object"
+    },
+    "Point2": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "Point2",
+      "type": "object"
+    },
+    "RectanglePrimitive": {
+      "additionalProperties": false,
+      "properties": {
+        "corner1": {
+          "$ref": "#/$defs/Point2"
+        },
+        "corner2": {
+          "$ref": "#/$defs/Point2"
+        },
+        "kind": {
+          "const": "rectangle",
+          "default": "rectangle",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "corner1",
+        "corner2"
+      ],
+      "title": "RectanglePrimitive",
+      "type": "object"
+    },
+    "SaveAsAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "cad.save_as",
+          "default": "cad.save_as",
+          "title": "Action",
+          "type": "string"
+        },
+        "approval_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Id"
+        },
+        "connector_instance_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Connector Instance Id"
+        },
+        "data_folder_id": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Data Folder Id",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "maxLength": 1024,
+          "title": "Description",
+          "type": "string"
+        },
+        "execution_mode": {
+          "default": "execute",
+          "enum": [
+            "preview",
+            "execute"
+          ],
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idempotency Key"
+        },
+        "name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "request_id": {
+          "format": "uuid",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "tag": {
+          "default": "",
+          "maxLength": 255,
+          "title": "Tag",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/DocumentTarget"
+        },
+        "timeout_ms": {
+          "default": 30000,
+          "maximum": 300000,
+          "minimum": 1000,
+          "title": "Timeout Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target",
+        "data_folder_id",
+        "name"
+      ],
+      "title": "SaveAsAction",
+      "type": "object"
+    },
+    "SaveDocumentAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "cad.save_document",
+          "default": "cad.save_document",
+          "title": "Action",
+          "type": "string"
+        },
+        "approval_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Id"
+        },
+        "connector_instance_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Connector Instance Id"
+        },
+        "execution_mode": {
+          "default": "execute",
+          "enum": [
+            "preview",
+            "execute"
+          ],
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idempotency Key"
+        },
+        "request_id": {
+          "format": "uuid",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/DocumentTarget"
+        },
+        "timeout_ms": {
+          "default": 30000,
+          "maximum": 300000,
+          "minimum": 1000,
+          "title": "Timeout Ms",
+          "type": "integer"
+        },
+        "version_description": {
+          "default": "",
+          "maxLength": 1024,
+          "title": "Version Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "title": "SaveDocumentAction",
+      "type": "object"
+    },
+    "ThroughAllExtent": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "default": "positive",
+          "enum": [
+            "positive",
+            "negative"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "kind": {
+          "const": "through_all",
+          "default": "through_all",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "ThroughAllExtent",
+      "type": "object"
+    },
+    "UpdateEntityPropertiesAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "cad.update_entity_properties",
+          "default": "cad.update_entity_properties",
+          "title": "Action",
+          "type": "string"
+        },
+        "approval_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Id"
+        },
+        "connector_instance_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Connector Instance Id"
+        },
+        "execution_mode": {
+          "default": "execute",
+          "enum": [
+            "preview",
+            "execute"
+          ],
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idempotency Key"
+        },
+        "properties": {
+          "$ref": "#/$defs/EntityProperties"
+        },
+        "request_id": {
+          "format": "uuid",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/EntityTarget"
+        },
+        "timeout_ms": {
+          "default": 30000,
+          "maximum": 300000,
+          "minimum": 1000,
+          "title": "Timeout Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target",
+        "properties"
+      ],
+      "title": "UpdateEntityPropertiesAction",
+      "type": "object"
+    },
+    "UpdateFeatureParameterAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "cad.update_feature_parameter",
+          "default": "cad.update_feature_parameter",
+          "title": "Action",
+          "type": "string"
+        },
+        "approval_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Id"
+        },
+        "connector_instance_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Connector Instance Id"
+        },
+        "execution_mode": {
+          "default": "execute",
+          "enum": [
+            "preview",
+            "execute"
+          ],
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idempotency Key"
+        },
+        "request_id": {
+          "format": "uuid",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/FeatureParameterTarget"
+        },
+        "timeout_ms": {
+          "default": 30000,
+          "maximum": 300000,
+          "minimum": 1000,
+          "title": "Timeout Ms",
+          "type": "integer"
+        },
+        "value": {
+          "$ref": "#/$defs/DimensionValue"
+        }
+      },
+      "required": [
+        "target",
+        "value"
+      ],
+      "title": "UpdateFeatureParameterAction",
+      "type": "object"
+    },
+    "UpdateParameterAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "cad.update_parameter",
+          "default": "cad.update_parameter",
+          "title": "Action",
+          "type": "string"
+        },
+        "approval_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Id"
+        },
+        "connector_instance_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Connector Instance Id"
+        },
+        "execution_mode": {
+          "default": "execute",
+          "enum": [
+            "preview",
+            "execute"
+          ],
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idempotency Key"
+        },
+        "request_id": {
+          "format": "uuid",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/ParameterTarget"
+        },
+        "timeout_ms": {
+          "default": 30000,
+          "maximum": 300000,
+          "minimum": 1000,
+          "title": "Timeout Ms",
+          "type": "integer"
+        },
+        "value": {
+          "$ref": "#/$defs/DimensionValue"
+        }
+      },
+      "required": [
+        "target",
+        "value"
+      ],
+      "title": "UpdateParameterAction",
+      "type": "object"
+    }
+  },
+  "$id": "https://cad-agent.local/schemas/fusion360/agent-plan/1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "anyOf": [
+        {
+          "discriminator": {
+            "mapping": {
+              "cad.create_chamfer": "#/$defs/CreateChamferAction",
+              "cad.create_extrude": "#/$defs/CreateExtrudeAction",
+              "cad.create_fillet": "#/$defs/CreateFilletAction",
+              "cad.create_hole": "#/$defs/CreateHoleAction",
+              "cad.create_sketch": "#/$defs/CreateSketchAction",
+              "cad.export": "#/$defs/ExportAction",
+              "cad.save_as": "#/$defs/SaveAsAction",
+              "cad.save_document": "#/$defs/SaveDocumentAction",
+              "cad.update_entity_properties": "#/$defs/UpdateEntityPropertiesAction",
+              "cad.update_feature_parameter": "#/$defs/UpdateFeatureParameterAction",
+              "cad.update_parameter": "#/$defs/UpdateParameterAction"
+            },
+            "propertyName": "action"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/UpdateParameterAction"
+            },
+            {
+              "$ref": "#/$defs/UpdateFeatureParameterAction"
+            },
+            {
+              "$ref": "#/$defs/CreateSketchAction"
+            },
+            {
+              "$ref": "#/$defs/CreateExtrudeAction"
+            },
+            {
+              "$ref": "#/$defs/CreateHoleAction"
+            },
+            {
+              "$ref": "#/$defs/CreateFilletAction"
+            },
+            {
+              "$ref": "#/$defs/CreateChamferAction"
+            },
+            {
+              "$ref": "#/$defs/UpdateEntityPropertiesAction"
+            },
+            {
+              "$ref": "#/$defs/SaveDocumentAction"
+            },
+            {
+              "$ref": "#/$defs/SaveAsAction"
+            },
+            {
+              "$ref": "#/$defs/ExportAction"
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Action"
+    },
+    "connector_instance_id": {
+      "format": "uuid",
+      "title": "Connector Instance Id",
+      "type": "string"
+    },
+    "context_fingerprint": {
+      "pattern": "^ctx-c14n-1:[0-9a-f]{64}$",
+      "title": "Context Fingerprint",
+      "type": "string"
+    },
+    "contract_version": {
+      "const": "1.0.0",
+      "default": "1.0.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "expires_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expires At"
+    },
+    "proposal_id": {
+      "format": "uuid",
+      "title": "Proposal Id",
+      "type": "string"
+    },
+    "question": {
+      "anyOf": [
+        {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Question"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reason"
+    },
+    "request_id": {
+      "format": "uuid",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "risk": {
+      "anyOf": [
+        {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Risk"
+    },
+    "status": {
+      "enum": [
+        "proposed",
+        "needs_clarification",
+        "no_action"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "proposal_id",
+    "connector_instance_id",
+    "status",
+    "context_fingerprint"
+  ],
+  "title": "AgentPlanResponse",
+  "type": "object",
+  "x-contract-version": "1.0.0"
+}

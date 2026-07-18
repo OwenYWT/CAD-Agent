@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.agent.orchestrator import Orchestrator
 from app.api.auth import verify_api_key, rate_limiter
 from app.models.schemas import GenerateResponse
+from app.storage.file_ownership import claim_request_owner
 
 router = APIRouter(prefix="/api", tags=["batch"])
 
@@ -88,6 +89,7 @@ async def batch_generate(
                 error={"type": type(r).__name__, "message": str(r)},
             ))
         else:
+            claim_request_owner(r.request_id, api_key)
             final_results.append(r)
 
     total_ms = int((time.time() - start) * 1000)
@@ -115,10 +117,11 @@ async def generate_async(
     _tasks[task_id] = {
         "status": "pending",
         "result": None,
+        "owner": api_key,
     }
 
     # Launch background task
-    asyncio.create_task(_run_async_generate(task_id, req))
+    asyncio.create_task(_run_async_generate(task_id, req, api_key))
 
     return AsyncTaskStatus(task_id=task_id, status="pending")
 
@@ -130,7 +133,7 @@ async def get_task_status(
 ):
     """查询异步任务状态"""
     task = _tasks.get(task_id)
-    if task is None:
+    if task is None or task.get("owner") != api_key:
         raise HTTPException(status_code=404, detail="Task not found")
 
     return AsyncTaskStatus(
@@ -140,7 +143,11 @@ async def get_task_status(
     )
 
 
-async def _run_async_generate(task_id: str, req: AsyncGenerateRequest):
+async def _run_async_generate(
+    task_id: str,
+    req: AsyncGenerateRequest,
+    principal: str | None,
+):
     """后台执行生成任务"""
     _tasks[task_id]["status"] = "running"
 
@@ -150,6 +157,7 @@ async def _run_async_generate(task_id: str, req: AsyncGenerateRequest):
             prompt=req.prompt,
             output_formats=req.output_formats,
         )
+        claim_request_owner(result.request_id, principal)
         _tasks[task_id]["status"] = "completed"
         _tasks[task_id]["result"] = result
     except Exception as e:

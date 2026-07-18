@@ -34,7 +34,11 @@ from app.api.dfm_rules import router as dfm_rules_router
 from app.api.knowledge import router as knowledge_router
 from app.api.feedback import router as feedback_router
 from app.api.login import router as login_router
+from app.api.capabilities import router as capabilities_router
+from app.api.capability_actions import router as capability_actions_router
 from app.api.websocket import websocket_endpoint
+from app.fusion360.api import router as fusion360_router
+from app.fusion360.agent_api import router as fusion360_agent_router
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +68,8 @@ def _startup_self_check():
 
     if not settings.has_llm_credentials:
         problems.append(
-            "DASHSCOPE_API_KEY 未设置 — planner/codegen 的第一次 LLM 调用会失败。"
-            "请在 backend/.env 写入 dashscope_api_key。"
+            f"{settings.llm_credentials_error} — planner/codegen 的第一次 LLM 调用会失败。"
+            "请在 backend/.env 写入对应的模型 API key。"
         )
 
     if settings.sandbox_runtime.strip().lower() == "podman":
@@ -176,6 +180,10 @@ def create_app() -> FastAPI:
     app.include_router(knowledge_router, prefix="/api")
     app.include_router(feedback_router)
     app.include_router(login_router)
+    app.include_router(capabilities_router)
+    app.include_router(capability_actions_router)
+    app.include_router(fusion360_router)
+    app.include_router(fusion360_agent_router)
 
     # WebSocket
     app.websocket("/ws/{session_id}")(websocket_endpoint)
@@ -203,6 +211,13 @@ def create_app() -> FastAPI:
 
         @app.get("/{full_path:path}", include_in_schema=False)
         def serve_web_app(full_path: str):
+            # Never disguise an unknown API/WebSocket path as a successful SPA page.
+            # Apart from confusing clients, returning index.html with 200 makes path
+            # traversal probes appear to succeed after URL normalization.
+            if full_path == "api" or full_path.startswith(("api/", "ws/")):
+                from fastapi import HTTPException
+
+                raise HTTPException(status_code=404, detail="Not found")
             requested = (FRONTEND_DIST / full_path).resolve()
             dist_root = FRONTEND_DIST.resolve()
             if requested.is_file() and str(requested).startswith(str(dist_root)):

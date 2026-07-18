@@ -28,7 +28,17 @@ jobs:
         # Excludes tests needing a Docker daemon or a live LLM key. The hermetic
         # e2e suite (tests/test_e2e_pipeline.py) + printability gate run here and
         # MUST be green. Any non-skip failure fails the build.
-        run: pytest -m "not docker and not llm" -q
+        run: pytest -m "not docker and not llm and not fusion_e2e" -q
+
+      - name: Fusion connector schemas and Add-in syntax
+        run: |
+          python scripts/fusion360/generate_schema.py --check
+          python -m compileall -q backend/app/fusion360 fusion_addin/CADAgentFusionConnector scripts/fusion360
+          for script in scripts/fusion360/*.sh; do bash -n "$script"; done
+
+      - name: Fusion connector hermetic contract suite
+        working-directory: backend
+        run: PYTHONPATH=.. pytest tests/fusion360 -m "not fusion_e2e" -q
 
   frontend:
     name: Frontend typecheck + build

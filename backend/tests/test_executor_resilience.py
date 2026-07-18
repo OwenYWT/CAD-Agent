@@ -10,7 +10,7 @@ from app.sandbox.executor import CadQueryExecutor
 
 @pytest.mark.asyncio
 async def test_execute_returns_clean_result_when_docker_unavailable(monkeypatch):
-    """client property raising (daemon down / image missing) → DockerUnavailable result,
+    """client property raising (daemon down / image missing) → SandboxUnavailable result,
     not an unhandled exception bubbling up the pipeline."""
     ex = CadQueryExecutor()
 
@@ -21,7 +21,7 @@ async def test_execute_returns_clean_result_when_docker_unavailable(monkeypatch)
 
     result = await ex.execute("result = 1\nshow_object(result)")
     assert result.success is False
-    assert result.error_type == "DockerUnavailable"
+    assert result.error_type == "SandboxUnavailable"
     assert "沙箱不可用" in result.error_message
     assert result.work_dir.exists()  # work dir created + returned for cleanup
 

@@ -1,0 +1,27 @@
+{
+  "$id": "https://cad-agent.local/schemas/fusion360/ipc-task-control/1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cancel_requested": {
+      "title": "Cancel Requested",
+      "type": "boolean"
+    },
+    "deadline": {
+      "title": "Deadline",
+      "type": "number"
+    },
+    "lease_valid": {
+      "title": "Lease Valid",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "cancel_requested",
+    "deadline",
+    "lease_valid"
+  ],
+  "title": "TaskControl",
+  "type": "object",
+  "x-contract-version": "1.0.0"
+}
