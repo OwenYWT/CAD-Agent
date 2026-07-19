@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useSessionStore } from "../stores/sessionStore";
+import type { ManufacturingProfile } from "../types";
 import type { WSMessage } from "../types";
 import { getAuthToken } from "../auth";
 
@@ -102,11 +103,16 @@ export function useWebSocket() {
     };
   }, [connect]);
 
-  const sendMessage = useCallback((text: string) => {
+  const sendMessage = useCallback((text: string, manufacturingProfile?: ManufacturingProfile | null) => {
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
       const panelId = useSessionStore.getState().activePanelId;
-      ws.send(JSON.stringify({ type: "user_message", text, panel_id: panelId }));
+      ws.send(JSON.stringify({
+        type: "user_message",
+        text,
+        panel_id: panelId,
+        manufacturing_profile: manufacturingProfile || null,
+      }));
     } else {
       console.warn("WebSocket not open, readyState:", ws?.readyState);
       useSessionStore.getState().setError("连接未就绪，请稍后重试");

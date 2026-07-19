@@ -1,4 +1,4 @@
-import json
+﻿import json
 import logging
 import shutil
 import time
@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 from app.config import settings, make_llm_client
+from app.agent.run_steps import ensure_timeline_fields, make_step
 from app.models.schemas import CADPlan, GenerateResponse, ParamConfig, StepUpdate
 
 logger = logging.getLogger(__name__)
@@ -36,35 +37,35 @@ class BuildPlan:
     complexity: str  # "simple"|"moderate"|"complex"
 
 
-DECOMPOSE_PROMPT = """你是 CAD 构建规划专家。将零件描述分解为有序构建步骤。
+DECOMPOSE_PROMPT = """浣犳槸 CAD 鏋勫缓瑙勫垝涓撳銆傚皢闆朵欢鎻忚堪鍒嗚В涓烘湁搴忔瀯寤烘楠ゃ€?
 
-## 规则
-1. 第一步总是 phase="base"，创建基础形体
-2. 然后 phase="primary": 抽壳、主要通孔、凸台
-3. 然后 phase="secondary": 安装孔、散热筋、减重槽、安装耳等（每种特征单独一步）
-4. 最后 phase="refinement": 圆角、倒角
-5. 简单零件 (≤2 特征) 返回 1-2 步，不要过度分解
-6. 最多 10 步，复杂零件应充分分步，每步只做一种特征
-7. 复杂工业零件 (减速器/齿轮箱/逆止器等): 用简化几何，不要尝试精确齿形/螺纹
-8. 装配体: 每个零件用函数定义，最后用 cq.Assembly() 组装
+## 瑙勫垯
+1. 绗竴姝ユ€绘槸 phase="base"锛屽垱寤哄熀纭€褰綋
+2. 鐒跺悗 phase="primary": 鎶藉３銆佷富瑕侀€氬瓟銆佸嚫鍙?
+3. 鐒跺悗 phase="secondary": 瀹夎瀛斻€佹暎鐑瓔銆佸噺閲嶆Ы銆佸畨瑁呰€崇瓑锛堟瘡绉嶇壒寰佸崟鐙竴姝ワ級
+4. 鏈€鍚?phase="refinement": 鍦嗚銆佸€掕
+5. 绠€鍗曢浂浠?(鈮? 鐗瑰緛) 杩斿洖 1-2 姝ワ紝涓嶈杩囧害鍒嗚В
+6. 鏈€澶?10 姝ワ紝澶嶆潅闆朵欢搴斿厖鍒嗗垎姝ワ紝姣忔鍙仛涓€绉嶇壒寰?
+7. 澶嶆潅宸ヤ笟闆朵欢 (鍑忛€熷櫒/榻胯疆绠?閫嗘鍣ㄧ瓑): 鐢ㄧ畝鍖栧嚑浣曪紝涓嶈灏濊瘯绮剧‘榻垮舰/铻虹汗
+8. 瑁呴厤浣? 姣忎釜闆朵欢鐢ㄥ嚱鏁板畾涔夛紝鏈€鍚庣敤 cq.Assembly() 缁勮
 
-## 关键要求
-- description 中必须包含**精确的数值参数**（尺寸、位置、数量、间距等）
-- 不要写模糊描述如"添加安装孔"，要写"在底面四角添加4个M3通孔(Φ3.4mm)，按120x60mm矩形阵列分布"
-- 每步的 description 必须自包含，LLM 仅凭 description 就能写出正确代码
-- 每步只聚焦一种特征，降低单步复杂度
+## 鍏抽敭瑕佹眰
+- description 涓繀椤诲寘鍚?*绮剧‘鐨勬暟鍊煎弬鏁?*锛堝昂瀵搞€佷綅缃€佹暟閲忋€侀棿璺濈瓑锛?
+- 涓嶈鍐欐ā绯婃弿杩板"娣诲姞瀹夎瀛?锛岃鍐?鍦ㄥ簳闈㈠洓瑙掓坊鍔?涓狹3閫氬瓟(桅3.4mm)锛屾寜120x60mm鐭╁舰闃靛垪鍒嗗竷"
+- 姣忔鐨?description 蹇呴』鑷寘鍚紝LLM 浠呭嚟 description 灏辫兘鍐欏嚭姝ｇ‘浠ｇ爜
+- 姣忔鍙仛鐒︿竴绉嶇壒寰侊紝闄嶄綆鍗曟澶嶆潅搴?
 
-## 输出 JSON (不要输出其他文字):
+## 杈撳嚭 JSON (涓嶈杈撳嚭鍏朵粬鏂囧瓧):
 {
     "complexity": "complex",
     "steps": [
-        {"phase": "base", "description": "创建 160x100x35mm 长方体，原点在底面中心"},
-        {"phase": "primary", "description": "从顶面(>Z)抽壳，壁厚3mm，底部保留"},
-        {"phase": "secondary", "description": "内部底面四角添加4个M3螺丝柱：外径6mm，内孔Φ2.5mm，高度15mm，位置按120x70mm矩形阵列"},
-        {"phase": "secondary", "description": "外侧长边(>Y和<Y面)各添加4条散热筋：宽2mm，高3mm，间距20mm，从壳体外壁面凸出，共8条，用union合并到主体"},
-        {"phase": "secondary", "description": "底部外表面添加蜂窝状减重槽：六边形阵列，六边形外接圆直径10mm，间距12mm，深度1.5mm，用cut从底面挖除"},
-        {"phase": "secondary", "description": "左右两侧(<X和>X面)各添加2个安装耳：20x15x3mm凸台，从侧壁外表面延伸，中心有Φ5.5mm通孔，用union合并到主体"},
-        {"phase": "refinement", "description": "所有外边缘倒角1mm"}
+        {"phase": "base", "description": "鍒涘缓 160x100x35mm 闀挎柟浣擄紝鍘熺偣鍦ㄥ簳闈腑蹇?},
+        {"phase": "primary", "description": "浠庨《闈?>Z)鎶藉３锛屽鍘?mm锛屽簳閮ㄤ繚鐣?},
+        {"phase": "secondary", "description": "鍐呴儴搴曢潰鍥涜娣诲姞4涓狹3铻轰笣鏌憋細澶栧緞6mm锛屽唴瀛斘?.5mm锛岄珮搴?5mm锛屼綅缃寜120x70mm鐭╁舰闃靛垪"},
+        {"phase": "secondary", "description": "澶栦晶闀胯竟(>Y鍜?Y闈?鍚勬坊鍔?鏉℃暎鐑瓔锛氬2mm锛岄珮3mm锛岄棿璺?0mm锛屼粠澹充綋澶栧闈㈠嚫鍑猴紝鍏?鏉★紝鐢╱nion鍚堝苟鍒颁富浣?},
+        {"phase": "secondary", "description": "搴曢儴澶栬〃闈㈡坊鍔犺渹绐濈姸鍑忛噸妲斤細鍏竟褰㈤樀鍒楋紝鍏竟褰㈠鎺ュ渾鐩村緞10mm锛岄棿璺?2mm锛屾繁搴?.5mm锛岀敤cut浠庡簳闈㈡寲闄?},
+        {"phase": "secondary", "description": "宸﹀彸涓や晶(<X鍜?X闈?鍚勬坊鍔?涓畨瑁呰€筹細20x15x3mm鍑稿彴锛屼粠渚у澶栬〃闈㈠欢浼革紝涓績鏈壩?.5mm閫氬瓟锛岀敤union鍚堝苟鍒颁富浣?},
+        {"phase": "refinement", "description": "鎵€鏈夊杈圭紭鍊掕1mm"}
     ]
 }"""
 
@@ -84,10 +85,10 @@ class PlanDecomposer:
 
     async def decompose(self, plan: CADPlan) -> BuildPlan:
         user_content = (
-            f"零件描述: {plan.description}\n"
-            f"类型: {plan.part_type}\n"
-            f"尺寸: {plan.dimensions}\n"
-            f"特征: {plan.features}\n"
+            f"闆朵欢鎻忚堪: {plan.description}\n"
+            f"绫诲瀷: {plan.part_type}\n"
+            f"灏哄: {plan.dimensions}\n"
+            f"鐗瑰緛: {plan.features}\n"
         )
 
         try:
@@ -159,7 +160,7 @@ class MultiStepExecutor:
                     on_step,
                     StepUpdate(
                         step="multi_step",
-                        message=f"步骤 {i + 1}/{total}: {step.description}",
+                        message=f"姝ラ {i + 1}/{total}: {step.description}",
                     ),
                 )
 
@@ -179,7 +180,7 @@ class MultiStepExecutor:
                     if on_step:
                         await _call_step(on_step, StepUpdate(
                             step="fixing_error",
-                            message=f"步骤 {i + 1} 修复中 (尝试 {attempt}/{self.MAX_STEP_RETRIES})",
+                            message=f"姝ラ {i + 1} 淇涓?(灏濊瘯 {attempt}/{self.MAX_STEP_RETRIES})",
                         ))
                     snippet = await self.code_gen.fix_error(
                         test_code,
@@ -221,7 +222,7 @@ class MultiStepExecutor:
         final_code = accumulated_code + "\nshow_object(result)"
 
         if on_step:
-            await _call_step(on_step, StepUpdate(step="executing", message="正在执行最终代码..."))
+            await _call_step(on_step, StepUpdate(step="executing", message="姝ｅ湪鎵ц鏈€缁堜唬鐮?.."))
 
         final_result = await self.executor.execute(final_code)
 
@@ -254,7 +255,7 @@ class MultiStepExecutor:
                             vol_str = f"{geo_result.volume:.0f}" if geo_result.volume else "?"
                             await _call_step(on_step, StepUpdate(
                                 step="executing",
-                                message=f"几何校验完成 (体积: {vol_str}mm³)",
+                                message=f"鍑犱綍鏍￠獙瀹屾垚 (浣撶Н: {vol_str}mm鲁)",
                             ))
                     except Exception as e:
                         logger.warning(f"Multi-step geometry validation skipped: {e}")
@@ -271,7 +272,7 @@ class MultiStepExecutor:
 
                         for vision_round in range(2):
                             if on_step:
-                                round_msg = f"正在进行视觉校验 ({vision_round + 1}/2)..." if vision_round > 0 else "正在进行视觉校验..."
+                                round_msg = f"姝ｅ湪杩涜瑙嗚鏍￠獙 ({vision_round + 1}/2)..." if vision_round > 0 else "姝ｅ湪杩涜瑙嗚鏍￠獙..."
                                 await _call_step(on_step, StepUpdate(
                                     step="executing", message=round_msg
                                 ))
@@ -294,7 +295,7 @@ class MultiStepExecutor:
                             if vision_result.is_match is not False:
                                 if on_step and vision_round > 0 and vision_result.is_match:
                                     await _call_step(on_step, StepUpdate(
-                                        step="executing", message="视觉校验通过"
+                                        step="executing", message="瑙嗚鏍￠獙閫氳繃"
                                     ))
                                 break
 
@@ -303,7 +304,7 @@ class MultiStepExecutor:
                                 issues_str = "; ".join(vision_result.issues[:2])
                                 await _call_step(on_step, StepUpdate(
                                     step="fixing_error",
-                                    message=f"视觉校验不通过 ({vision_round + 1}/2)，正在修复: {issues_str}",
+                                    message=f"瑙嗚鏍￠獙涓嶉€氳繃 ({vision_round + 1}/2)锛屾鍦ㄤ慨澶? {issues_str}",
                                 ))
 
                             fixed_code = await self.code_gen.fix_visual_issues(
@@ -338,7 +339,7 @@ class MultiStepExecutor:
                                 shutil.rmtree(retry_result.work_dir, ignore_errors=True)
                                 if on_step:
                                     await _call_step(on_step, StepUpdate(
-                                        step="executing", message=f"视觉修复第 {vision_round + 1} 轮未成功"
+                                        step="executing", message=f"瑙嗚淇绗?{vision_round + 1} 杞湭鎴愬姛"
                                     ))
                                 break
                     except Exception as e:
@@ -376,14 +377,14 @@ class MultiStepExecutor:
     def _build_step_context(self, plan: CADPlan, failed_steps: list[str]) -> str:
         parts = []
         if plan:
-            parts.append(f"零件: {plan.description}")
+            parts.append(f"闆朵欢: {plan.description}")
             if plan.dimensions:
                 dims_str = ", ".join(f"{k}={v}mm" for k, v in plan.dimensions.items())
-                parts.append(f"尺寸: {dims_str}")
+                parts.append(f"灏哄: {dims_str}")
             if plan.features:
-                parts.append(f"特征: {', '.join(plan.features)}")
+                parts.append(f"鐗瑰緛: {', '.join(plan.features)}")
         if failed_steps:
-            parts.append(f"注意: 以下步骤未成功，请在当前步骤中尽量补全: {'; '.join(failed_steps)}")
+            parts.append(f"娉ㄦ剰: 浠ヤ笅姝ラ鏈垚鍔燂紝璇峰湪褰撳墠姝ラ涓敖閲忚ˉ鍏? {'; '.join(failed_steps)}")
         return "\n".join(parts)
 
     def _copy_output_files(
@@ -400,6 +401,7 @@ class MultiStepExecutor:
 async def _call_step(on_step, step: StepUpdate):
     import asyncio
 
-    result = on_step(step)
+    result = on_step(ensure_timeline_fields(step))
     if asyncio.iscoroutine(result):
         await result
+

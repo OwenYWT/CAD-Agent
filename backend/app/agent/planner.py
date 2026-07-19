@@ -4,6 +4,7 @@ import re
 import time
 
 
+from app.agent.design_brief import ensure_design_brief
 from app.agent.prompts import PLANNER_SYSTEM_PROMPT
 from app.config import settings, make_llm_client
 from app.models.schemas import CADPlan, ModificationPlan
@@ -44,6 +45,13 @@ class Planner:
         r"|逆止器|单向离合|backstop|overrunning"
     )
 
+
+    @staticmethod
+    def _parse_plan_payload(data: dict) -> CADPlan:
+        plan = CADPlan(**data)
+        ensure_design_brief(plan)
+        return plan
+
     async def plan_new(self, messages: list[dict]) -> CADPlan:
         for attempt in range(2):
             try:
@@ -65,12 +73,14 @@ class Planner:
                         text = text[:-3]
                     text = text.strip()
                 parsed = json.loads(text)
-                plan = CADPlan(**parsed)
+                plan = self._parse_plan_payload(parsed)
 
                 # Detect assembly intent from user message
                 user_text = messages[-1]["content"] if messages else ""
                 if self._ASSEMBLY_KEYWORDS.search(user_text):
                     plan.part_type = "assembly"
+                    if plan.design_brief:
+                        plan.design_brief.artifact_type = "assembly"
 
                 return plan
             except RuntimeError:
@@ -87,14 +97,16 @@ class Planner:
                     continue
                 # Fallback to a generic plan so the pipeline can still try to build something.
                 original_text = messages[-1]["content"] if messages else ""
-                return CADPlan(
+                fallback_plan = CADPlan(
                     description=original_text,
                     part_type="custom",
                     dimensions={},
                     features=[],
                     constraints=[],
-                    ambiguities=["无法自动解析，使用原始描述"],
+                    ambiguities=["Unable to parse automatically; using original request"],
                 )
+                ensure_design_brief(fallback_plan)
+                return fallback_plan
 
     async def plan_modification(self, messages: list[dict], current_code: str) -> ModificationPlan:
         system = MODIFICATION_SYSTEM_PROMPT.format(current_code=current_code)

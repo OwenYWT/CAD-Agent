@@ -101,6 +101,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
             if msg_type == "user_message":
                 text = data.get("text", "")
+                manufacturing_profile = data.get("manufacturing_profile")
                 if not text or len(text) > 10000:
                     await websocket.send_json({
                         "type": "generation_result",
@@ -120,7 +121,15 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 await history.save_message(panel_id, "user", text)
 
                 try:
-                    result = await orchestrator.handle_message(context, text, on_step=on_step)
+                    if manufacturing_profile is not None:
+                        result = await orchestrator.handle_message(
+                            context,
+                            text,
+                            on_step=on_step,
+                            manufacturing_profile=manufacturing_profile,
+                        )
+                    else:
+                        result = await orchestrator.handle_message(context, text, on_step=on_step)
                 except Exception as e:
                     logger.error(f"Generation error for {session_id}/{panel_id}: {e}", exc_info=True)
                     error_data = {
@@ -133,12 +142,23 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
                 result_data = result.model_dump()
                 result_data["panel_id"] = panel_id
+                if result.success and result.code:
+                    snapshot = await history.create_model_snapshot(
+                        panel_id,
+                        result_data,
+                        source="generation",
+                        prompt=text,
+                    )
+                    result_data["snapshot_id"] = snapshot["id"]
+                    result_data["version"] = snapshot["version"]
 
-                assistant_content = (
-                    "CAD 模型已生成"
-                    if result.success
-                    else f"生成失败: {result.error.get('message', '') if result.error else '未知错误'}"
-                )
+                if result.needs_confirmation:
+                    assistant_content = "\u8bbe\u8ba1\u7b80\u62a5\u9700\u8981\u786e\u8ba4"
+                elif result.success:
+                    assistant_content = "CAD \u6a21\u578b\u5df2\u751f\u6210"
+                else:
+                    error_message = result.error.get("message", "") if result.error else "\u672a\u77e5\u9519\u8bef"
+                    assistant_content = f"\u751f\u6210\u5931\u8d25: {error_message}"
                 await history.save_message(panel_id, "assistant", assistant_content, result=result_data)
                 if result.success and result.code:
                     params_dict = (
@@ -192,6 +212,15 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
                 result_data = result.model_dump()
                 result_data["panel_id"] = panel_id
+                if result.success and result.code:
+                    snapshot = await history.create_model_snapshot(
+                        panel_id,
+                        result_data,
+                        source="modify_part",
+                        prompt=f"modify part {part_name}: {instruction}",
+                    )
+                    result_data["snapshot_id"] = snapshot["id"]
+                    result_data["version"] = snapshot["version"]
 
                 msg_content = (
                     f"零件 {part_name} 已修改"
@@ -241,11 +270,26 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     }
                     if response.params
                     else None,
+                    "parameters": [p.model_dump() for p in response.parameters]
+                    if response.parameters
+                    else None,
                     "execution_time_ms": response.execution_time_ms,
                     "attempts": response.attempts,
+                    "repair_history": [step.model_dump() for step in response.repair_history],
+                    "recovery_actions": [action.model_dump() for action in response.recovery_actions],
+                    "inspect_report": response.inspect_report.model_dump() if response.inspect_report else None,
                     "error": response.error,
                     "panel_id": panel_id,
                 }
+                if response.success and response.code:
+                    snapshot = await history.create_model_snapshot(
+                        panel_id,
+                        result_data,
+                        source="execute_code",
+                        prompt="manual code execution",
+                    )
+                    result_data["snapshot_id"] = snapshot["id"]
+                    result_data["version"] = snapshot["version"]
                 await websocket.send_json({"type": "generation_result", "data": result_data})
 
             elif msg_type == "restore_context":

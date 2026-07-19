@@ -1,0 +1,39 @@
+{
+  "id": "printable_vent_panel_v2",
+  "category": "panel",
+  "part_type": "plate",
+  "tags": [
+    "vent",
+    "grid",
+    "panel",
+    "slots",
+    "airflow"
+  ],
+  "description": "??????????????",
+  "description_en": "Printable vent panel with repeated airflow slots",
+  "difficulty": "simple",
+  "features_used": [
+    "slot array",
+    "fillet",
+    "thin panel",
+    "cut"
+  ],
+  "modeling_hints": [
+    "extrude_cut"
+  ],
+  "manufacturing_notes": [
+    "Keep web width between slots above nozzle-friendly wall thickness",
+    "Round slot corners to reduce stress",
+    "Avoid excessive slot count"
+  ],
+  "failure_modes": [
+    "Thin webs warp during printing",
+    "Too many slots make boolean operations slow"
+  ],
+  "print_profile": {
+    "process": "FDM",
+    "min_web_mm": 1.2,
+    "min_wall_mm": 1.2
+  },
+  "code": "import cadquery as cq\nimport math\n\n# [Panel]\n# ????\nwidth_mm = 90  # [40:1:180]\n# ????\nheight_mm = 55  # [25:1:120]\n# ????\nthickness_mm = 3  # [1.5:0.5:8]\n# ?????\nslot_width_mm = 5  # [2:0.5:12]\n# ?????\nslot_height_mm = 22  # [8:1:50]\n# ???\nslot_count = 7  # [3:1:15]\n\nresult = cq.Workplane(\"XY\").box(width_mm, height_mm, thickness_mm)\nspacing = width_mm / (slot_count + 1)\nfor i in range(slot_count):\n    x = -width_mm/2 + spacing * (i + 1)\n    slot = cq.Workplane(\"XY\").box(slot_width_mm, slot_height_mm, thickness_mm + 2).translate((x, 0, 0))\n    result = result.cut(slot)\nresult = result.edges(\"|Z\").fillet(1)\nshow_object(result)"
+}

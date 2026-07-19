@@ -1,7 +1,12 @@
+import type { GenerationResult } from "../types";
+import { buildArtifactManifest, manifestFilename, manifestJson } from "../utils/artifactManifest";
+
 interface DownloadPanelProps {
   files: Record<string, string> | null;
   requestId: string | null;
   hasResult: boolean;
+  result?: GenerationResult | null;
+  prompt?: string | null;
 }
 
 const FILE_ICONS: Record<string, string> = {
@@ -28,7 +33,19 @@ const FILE_DESCRIPTIONS: Record<string, string> = {
   png: "\u7528\u4e8e\u5feb\u901f\u5206\u4eab\u548c\u65b9\u6848\u6c47\u62a5",
 };
 
-export default function DownloadPanel({ files, requestId, hasResult }: DownloadPanelProps) {
+function downloadTextFile(filename: string, text: string, mimeType: string) {
+  const blob = new Blob([text], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+export default function DownloadPanel({ files, requestId, hasResult, result, prompt }: DownloadPanelProps) {
   if (!hasResult) {
     return (
       <div className="p-4 text-sm text-gray-500">
@@ -38,6 +55,15 @@ export default function DownloadPanel({ files, requestId, hasResult }: DownloadP
   }
 
   const fileEntries = files ? Object.entries(files).filter(([, url]) => !!url) : [];
+  const handleManifestDownload = () => {
+    if (!result) return;
+    const manifest = buildArtifactManifest(result, { prompt });
+    downloadTextFile(
+      manifestFilename(result.request_id || requestId),
+      manifestJson(manifest),
+      "application/json",
+    );
+  };
 
   return (
     <div className="p-4 space-y-4">
@@ -72,6 +98,29 @@ export default function DownloadPanel({ files, requestId, hasResult }: DownloadP
             {"\u5f53\u524d\u7ed3\u679c\u6ca1\u6709\u53ef\u4e0b\u8f7d\u6587\u4ef6\u3002"}
           </div>
         )}
+      </div>
+
+      <div>
+        <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+          {"\u5de5\u7a0b\u4ea4\u4ed8\u5305"}
+        </h4>
+        <button
+          type="button"
+          onClick={handleManifestDownload}
+          disabled={!result}
+          className="w-full flex items-center gap-3 px-3 py-2.5 bg-white border border-gray-200 rounded-lg hover:border-purple-300 hover:bg-purple-50 transition-colors group disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <span className="text-xs font-semibold text-purple-500 w-10">JSON</span>
+          <div className="min-w-0 flex-1 text-left">
+            <div className="text-sm font-medium text-gray-700 group-hover:text-purple-700">
+              {"Manifest \u6e05\u5355 JSON"}
+            </div>
+            <div className="text-[11px] text-gray-400 truncate">
+              {"\u4fdd\u5b58\u6765\u6e90\u3001\u53c2\u6570\u3001\u7b80\u62a5\u3001\u68c0\u67e5\u7ed3\u679c\u3001\u4fee\u590d\u8bb0\u5f55\u548c\u53c2\u8003\u9644\u4ef6"}
+            </div>
+          </div>
+          <span className="text-xs text-purple-500">{"\u4e0b\u8f7d"}</span>
+        </button>
       </div>
 
       <div className="rounded-lg bg-indigo-50 border border-indigo-100 p-3 text-xs text-indigo-700 leading-5">

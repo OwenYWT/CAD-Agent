@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -66,6 +67,24 @@ async def _init_tables(db: aiosqlite.Connection):
             result TEXT,
             created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS model_snapshots (
+            id TEXT PRIMARY KEY,
+            panel_id TEXT NOT NULL REFERENCES panels(id) ON DELETE CASCADE,
+            parent_snapshot_id TEXT REFERENCES model_snapshots(id) ON DELETE SET NULL,
+            version INTEGER NOT NULL,
+            source TEXT NOT NULL,
+            prompt TEXT NOT NULL DEFAULT '',
+            code TEXT NOT NULL,
+            result TEXT NOT NULL,
+            files TEXT NOT NULL DEFAULT '{}',
+            params TEXT,
+            parameters TEXT,
+            validation TEXT,
+            inspect_report TEXT,
+            repair_history TEXT,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS feedback (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             request_id TEXT NOT NULL,
@@ -76,6 +95,8 @@ async def _init_tables(db: aiosqlite.Connection):
         );
         CREATE INDEX IF NOT EXISTS idx_panels_session ON panels(session_id);
         CREATE INDEX IF NOT EXISTS idx_messages_panel ON messages(panel_id);
+        CREATE INDEX IF NOT EXISTS idx_model_snapshots_panel_version ON model_snapshots(panel_id, version);
+        CREATE INDEX IF NOT EXISTS idx_model_snapshots_panel_created ON model_snapshots(panel_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_feedback_request ON feedback(request_id);
     """)
     columns = await db.execute_fetchall("PRAGMA table_info(sessions)")
@@ -87,6 +108,50 @@ async def _init_tables(db: aiosqlite.Connection):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _json_dump(value) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value)
+
+
+def _json_load(value, default=None):
+    if value is None:
+        return default
+    return json.loads(value)
+
+
+def _snapshot_status(result: dict) -> str:
+    if not result.get("success"):
+        return "fail"
+    verdict = (result.get("inspect_report") or {}).get("verdict")
+    return verdict if verdict in {"pass", "warn", "fail"} else "unknown"
+
+
+def _snapshot_from_row(row) -> dict:
+    result = _json_load(row["result"], {})
+    inspect_report = _json_load(row["inspect_report"], None)
+    return {
+        "id": row["id"],
+        "panel_id": row["panel_id"],
+        "parent_snapshot_id": row["parent_snapshot_id"],
+        "version": row["version"],
+        "source": row["source"],
+        "prompt": row["prompt"],
+        "code": row["code"],
+        "result": result,
+        "files": _json_load(row["files"], {}),
+        "params": _json_load(row["params"], None),
+        "parameters": _json_load(row["parameters"], None),
+        "validation": _json_load(row["validation"], None),
+        "inspect_report": inspect_report,
+        "repair_history": _json_load(row["repair_history"], []),
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "available_exports": (inspect_report or {}).get("available_exports", []),
+        "inspect_verdict": (inspect_report or {}).get("verdict"),
+    }
 
 
 # ---- Sessions ----
@@ -236,6 +301,111 @@ async def get_messages(panel_id: str) -> list[dict]:
             msg["result"] = json.loads(r["result"])
         result.append(msg)
     return result
+
+
+# ---- Model snapshots ----
+
+async def create_model_snapshot(
+    panel_id: str,
+    result: dict,
+    source: str,
+    prompt: str = "",
+    parent_snapshot_id: str | None = None,
+) -> dict:
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM model_snapshots WHERE panel_id = ?",
+        (panel_id,),
+    )
+    row = await cursor.fetchone()
+    version = int(row["next_version"])
+    snapshot_id = str(uuid.uuid4())
+    now = _now()
+    status = _snapshot_status(result)
+    code = result.get("code") or ""
+    files = result.get("files") or {}
+    params = result.get("params")
+    parameters = result.get("parameters")
+    validation = result.get("validation")
+    inspect_report = result.get("inspect_report")
+    repair_history = result.get("repair_history") or []
+    await db.execute(
+        """
+        INSERT INTO model_snapshots (
+            id, panel_id, parent_snapshot_id, version, source, prompt, code,
+            result, files, params, parameters, validation, inspect_report,
+            repair_history, status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            snapshot_id,
+            panel_id,
+            parent_snapshot_id,
+            version,
+            source,
+            prompt,
+            code,
+            json.dumps(result),
+            json.dumps(files),
+            _json_dump(params),
+            _json_dump(parameters),
+            _json_dump(validation),
+            _json_dump(inspect_report),
+            json.dumps(repair_history),
+            status,
+            now,
+        ),
+    )
+    await db.commit()
+    snapshot = await get_model_snapshot(snapshot_id)
+    return snapshot
+
+
+async def list_model_snapshots(panel_id: str) -> list[dict]:
+    db = await get_db()
+    rows = await db.execute_fetchall(
+        "SELECT * FROM model_snapshots WHERE panel_id = ? ORDER BY version DESC",
+        (panel_id,),
+    )
+    return [_snapshot_from_row(row) for row in rows]
+
+
+async def get_model_snapshot(snapshot_id: str) -> dict | None:
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT * FROM model_snapshots WHERE id = ?",
+        (snapshot_id,),
+    )
+    row = await cursor.fetchone()
+    return _snapshot_from_row(row) if row else None
+
+
+async def snapshot_belongs_to_user(snapshot_id: str, user_id: str | None) -> bool:
+    if not user_id:
+        return True
+    db = await get_db()
+    cursor = await db.execute(
+        """
+        SELECT s.user_id
+        FROM model_snapshots ms
+        JOIN panels p ON ms.panel_id = p.id
+        JOIN sessions s ON p.session_id = s.id
+        WHERE ms.id = ?
+        """,
+        (snapshot_id,),
+    )
+    row = await cursor.fetchone()
+    return bool(row and row["user_id"] == user_id)
+
+
+async def restore_model_snapshot(snapshot_id: str, user_id: str | None = None) -> dict | None:
+    if not await snapshot_belongs_to_user(snapshot_id, user_id):
+        return None
+    snapshot = await get_model_snapshot(snapshot_id)
+    if snapshot is None:
+        return None
+    await update_panel_code(snapshot["panel_id"], snapshot["code"], snapshot.get("params"))
+    return snapshot
 
 
 # ---- Feedback (tester ground-truth signal) ----

@@ -15,9 +15,14 @@ import AssemblyTree from "./components/AssemblyTree";
 import PanelTabs from "./components/PanelTabs";
 import HistorySidebar from "./components/HistorySidebar";
 import SettingsDrawer from "./components/SettingsDrawer";
+import RepairHistory from "./components/RepairHistory";
+import InspectReportPanel from "./components/InspectReportPanel";
+import VersionHistoryPanel from "./components/VersionHistoryPanel";
 import DownloadPanel from "./components/DownloadPanel";
+import AgentRunTimeline from "./components/AgentRunTimeline";
+import DesignBriefPanel from "./components/DesignBriefPanel";
 import { AccountPanel } from "./components/AccountPanel";
-import type { Annotation3D } from "./types";
+import type { Annotation3D, ModelSnapshotDetail } from "./types";
 
 type RightTab = "params" | "analysis" | "download" | "code" | "assembly";
 
@@ -30,7 +35,9 @@ const TAB_ITEMS: { key: RightTab; label: string; icon: string }[] = [
 
 function MainApp({ authUser, onLogout, onUserUpdate }: { authUser: AuthUser; onLogout: () => void; onUserUpdate: (user: AuthUser) => void }) {
   const panel = useSessionStore((s) => s.getActivePanel());
-  const { sendMessage, executeCode, cancelGeneration, modifyPart } = useWebSocket();
+  const activePanelId = useSessionStore((s) => s.activePanelId);
+  const restorePanelResult = useSessionStore((s) => s.restorePanelResult);
+  const { sendMessage, executeCode, cancelGeneration, modifyPart, restoreContext } = useWebSocket();
 
   const result = panel.result;
   const multiStepProgress = panel.multiStepProgress;
@@ -40,7 +47,15 @@ function MainApp({ authUser, onLogout, onUserUpdate }: { authUser: AuthUser; onL
   const is2D = !!(svgUrl && !stlUrl);
 
   const assemblyParts = result?.assembly_parts || null;
-  const hasResult = !!result?.success;
+  const hasResult = !!result;
+  const latestUserPrompt = panel.messages.filter((message) => message.role === "user").at(-1)?.content || null;
+  const canAnalyzeDesign = Boolean(
+    result?.success &&
+      result?.request_id &&
+      result?.code &&
+      result?.files?.stl &&
+      !result?.needs_confirmation,
+  );
 
   // Right toolbar tab state
   const [activeTab, setActiveTab] = useState<RightTab>("params");
@@ -64,6 +79,32 @@ function MainApp({ authUser, onLogout, onUserUpdate }: { authUser: AuthUser; onL
   const handleCodeChange = (newCode: string) => {
     executeCode(newCode);
   };
+
+  const handleRestoreSnapshot = useCallback((snapshot: ModelSnapshotDetail) => {
+    const restoredResult = {
+      ...snapshot.result,
+      code: snapshot.code,
+      snapshot_id: snapshot.id,
+      version: snapshot.version,
+    };
+    restorePanelResult(activePanelId, restoredResult, snapshot.code);
+    restoreContext(activePanelId, snapshot.code);
+  }, [activePanelId, restoreContext, restorePanelResult]);
+
+  const handleRetryPrompt = useCallback(() => {
+    const latestPrompt = panel.messages
+      .filter((message) => message.role === "user")
+      .at(-1)?.content;
+    if (latestPrompt && !panel.isGenerating) {
+      sendMessage(latestPrompt);
+    }
+  }, [panel.messages, panel.isGenerating, sendMessage]);
+
+  const handleRerunCurrentCode = useCallback(() => {
+    if (result?.code && !panel.isGenerating) {
+      executeCode(result.code);
+    }
+  }, [executeCode, panel.isGenerating, result?.code]);
 
   const handleSwitchTab = useCallback((tab: string) => {
     setActiveTab(tab as RightTab);
@@ -171,14 +212,34 @@ function MainApp({ authUser, onLogout, onUserUpdate }: { authUser: AuthUser; onL
                   {activeTab === "params" && (
                     <ParameterPanel
                       params={result?.params || null}
+                      parameters={result?.parameters || null}
                       code={result?.code || null}
                       onCodeChange={handleCodeChange}
                       validation={result?.validation || null}
+                      designBrief={result?.design_brief || result?.plan?.design_brief || null}
                     />
                   )}
 
                   {activeTab === "analysis" && (
-                    <>
+                    <div className="space-y-3 p-3">
+                      <AgentRunTimeline
+                        steps={panel.stepHistory}
+                        isGenerating={panel.isGenerating}
+                        result={result}
+                        repairHistory={result?.repair_history || null}
+                        inspectReport={result?.inspect_report || null}
+                        onRetryPrompt={handleRetryPrompt}
+                        onRerunCode={handleRerunCurrentCode}
+                      />
+                      <DesignBriefPanel brief={result?.design_brief || result?.plan?.design_brief || null} />
+                      <InspectReportPanel report={result?.inspect_report || null} />
+                      <VersionHistoryPanel
+                        panelId={activePanelId}
+                        activeSnapshotId={result?.snapshot_id || null}
+                        refreshKey={result?.snapshot_id || result?.request_id || null}
+                        onRestore={handleRestoreSnapshot}
+                      />
+                      <RepairHistory steps={result?.repair_history || null} attempts={result?.attempts} />
                       <DesignAnalysis
                         requestId={result?.request_id || null}
                         code={result?.code || null}
@@ -189,6 +250,8 @@ function MainApp({ authUser, onLogout, onUserUpdate }: { authUser: AuthUser; onL
                         }
                         hasResult={hasResult}
                         is2D={is2D}
+                        canAnalyze={canAnalyzeDesign}
+                        disabledReason={'生成 CAD 模型后才能进行 AI 设计审查。请先回答待确认问题，并完成模型生成。'}
                         onAnnotationsReady={handleAnnotationsReady}
                         selectedAnnotation={selectedAnnotation}
                         onSelectAnnotation={setSelectedAnnotation}
@@ -196,7 +259,7 @@ function MainApp({ authUser, onLogout, onUserUpdate }: { authUser: AuthUser; onL
                       {multiStepProgress && (
                         <MultiStepProgress steps={multiStepProgress} />
                       )}
-                    </>
+                    </div>
                   )}
 
                   {activeTab === "download" && (
@@ -204,6 +267,8 @@ function MainApp({ authUser, onLogout, onUserUpdate }: { authUser: AuthUser; onL
                       files={result?.files || null}
                       requestId={result?.request_id || null}
                       hasResult={hasResult}
+                      result={result}
+                      prompt={latestUserPrompt}
                     />
                   )}
 

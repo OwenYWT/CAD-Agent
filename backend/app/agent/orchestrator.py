@@ -6,16 +6,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from app.agent.code_gen import CodeGenerator
+from app.agent.design_brief import ensure_design_brief
 from app.agent.failure_taxonomy import FixPath, classify
 from app.agent.planner import Planner
+from app.agent.run_steps import ensure_timeline_fields, make_step
+from app.agent.recovery_actions import build_recovery_actions
 from app.config import settings
 from app.logging_context import set_request_id
 from app.models.schemas import (
     AssemblyPartInfo,
     BoundingBox,
+    DesignBrief,
     GenerateResponse,
     GenerationResult,
+    ManufacturingProfile,
     ParamConfig,
+    RepairStep,
     StepUpdate,
     ValidationResult,
 )
@@ -29,6 +35,26 @@ from app.validation.vision_validator import VisionValidator
 
 logger = logging.getLogger(__name__)
 
+_BLOCKING_CONFIRMATION_MARKERS = (
+    "必须确认",
+    "无法安全默认",
+    "无法继续",
+    "无法生成",
+    "必须先确认",
+)
+
+
+def requires_design_confirmation(brief: DesignBrief) -> bool:
+    """Only block generation for explicitly blocking questions.
+
+    Normal open_questions are design brief reminders and should not interrupt
+    first-pass CAD generation. This keeps the agent usable for simple prompts.
+    """
+    return any(
+        any(marker in question for marker in _BLOCKING_CONFIRMATION_MARKERS)
+        for question in brief.open_questions
+    )
+
 
 @dataclass
 class ConversationContext:
@@ -38,6 +64,8 @@ class ConversationContext:
     current_params: dict | None = None
     generation_count: int = 0
     assembly_parts: list[dict] | None = None  # per-part code/metadata for assemblies
+    current_design_brief: DesignBrief | None = None
+    current_manufacturing_profile: ManufacturingProfile | None = None
 
 
 class Orchestrator:
@@ -47,19 +75,78 @@ class Orchestrator:
         self.planner = Planner()
         self.code_gen = CodeGenerator()
         self.executor = CadQueryExecutor()
-        try:
-            from app.examples.vector_retriever import VectorExampleRetriever
-            self.retriever = VectorExampleRetriever()
-            logger.info("Using VectorExampleRetriever (ChromaDB)")
-        except Exception:
-            from app.examples.retriever import ExampleRetriever
-            self.retriever = ExampleRetriever()
-            logger.info("Falling back to TF-IDF ExampleRetriever")
+        self._retriever = None
         self.renderer = CADRenderer()
         self.geometry_validator = GeometryValidator()
         self.vision_validator = VisionValidator()
         from app.agent.code_cache import CodeCache
         self.code_cache = CodeCache()
+
+    @property
+    def retriever(self):
+        if self._retriever is None:
+            self._retriever = self._create_retriever()
+        return self._retriever
+
+    @retriever.setter
+    def retriever(self, value):
+        self._retriever = value
+
+    def _create_retriever(self):
+        try:
+            from app.examples.vector_retriever import VectorExampleRetriever
+            retriever = VectorExampleRetriever()
+            logger.info("Using VectorExampleRetriever (ChromaDB)")
+        except Exception:
+            from app.examples.retriever import ExampleRetriever
+            retriever = ExampleRetriever()
+            logger.info("Falling back to TF-IDF ExampleRetriever")
+        return retriever
+
+    def _normalize_manufacturing_profile(
+        self, manufacturing_profile: ManufacturingProfile | dict | None
+    ) -> ManufacturingProfile | None:
+        if manufacturing_profile is None:
+            return None
+        if isinstance(manufacturing_profile, ManufacturingProfile):
+            return manufacturing_profile
+        return ManufacturingProfile.model_validate(manufacturing_profile)
+
+    def _prompt_with_manufacturing_profile(
+        self, prompt: str, profile: ManufacturingProfile | None
+    ) -> str:
+        if not profile:
+            return prompt
+        return f"{profile.prompt_context()}\nUser request: {prompt}"
+
+    def _apply_manufacturing_profile_to_brief(
+        self, brief: DesignBrief, profile: ManufacturingProfile | None
+    ) -> None:
+        if not profile:
+            return
+        process_labels = {
+            "fdm": "FDM",
+            "sla": "SLA",
+            "cnc": "CNC",
+            "laser_cut": "激光切割",
+            "generic": "通用工艺",
+        }
+        process_label = process_labels.get(profile.process, profile.process)
+        brief.manufacturing_posture = f"{process_label} {profile.material}".strip()
+        profile_targets = [
+            f"制造工艺：{process_label}",
+            f"材料：{profile.material}",
+        ]
+        if profile.nozzle_diameter_mm is not None:
+            profile_targets.append(f"喷嘴直径：{profile.nozzle_diameter_mm:g} mm")
+        if profile.layer_height_mm is not None:
+            profile_targets.append(f"层高：{profile.layer_height_mm:g} mm")
+        if profile.build_volume_mm:
+            volume = " x ".join(f"{value:g}" for value in profile.build_volume_mm)
+            profile_targets.append(f"成型空间：{volume} mm")
+        for target in profile_targets:
+            if target not in brief.printability_targets:
+                brief.printability_targets.append(target)
 
     # === Stateless REST methods (Scheme C core) ===
 
@@ -68,6 +155,7 @@ class Orchestrator:
         prompt: str,
         output_formats: list[str] = None,
         on_step=None,
+        manufacturing_profile: ManufacturingProfile | dict | None = None,
     ) -> GenerateResponse:
         if output_formats is None:
             output_formats = ["step", "stl"]
@@ -75,35 +163,73 @@ class Orchestrator:
         request_id = str(uuid.uuid4())
         set_request_id(request_id)
 
-        # Cache hit: identical prompt already produced working code — skip the 2 LLM
+        profile = self._normalize_manufacturing_profile(manufacturing_profile)
+        planner_prompt = self._prompt_with_manufacturing_profile(prompt, profile)
+        cache_key = planner_prompt
+
+        # Cache hit: identical prompt already produced working code 鈥?skip the 2 LLM
         # calls (plan + codegen) and re-execute the cached code (fresh files/validation).
         cache = getattr(self, "code_cache", None)
-        cached_code = cache.get(prompt) if cache else None
+        cached_code = cache.get(cache_key) if cache else None
         if cached_code:
-            logger.info("Code cache hit — skipping LLM plan+codegen")
+            logger.info("Code cache hit 鈥?skipping LLM plan+codegen")
             if on_step:
-                await _call_step(on_step, StepUpdate(step="executing", message="命中缓存，正在执行..."))
+                await _call_step(on_step, StepUpdate(step="executing", message="\u547d\u4e2d\u7f13\u5b58\uff0c\u6b63\u5728\u6267\u884c\u5df2\u6709\u6a21\u578b\u4ee3\u7801..."))
             is_2d_cached = "ezdxf" in cached_code or "result.dxf" in cached_code
             cached_result = await self._execute_with_retry(
                 request_id, cached_code, None, output_formats, on_step, prompt, is_2d=is_2d_cached
             )
             if cached_result.success:
+                cached_result.manufacturing_profile = profile
                 return cached_result
-            # cache produced stale/broken code — fall through to a fresh generation
+            # cache produced stale/broken code 鈥?fall through to a fresh generation
             logger.info("Cached code failed on re-execution, regenerating")
 
         # Step 1: Planning
         if on_step:
-            await _call_step(on_step, StepUpdate(step="planning", message="正在理解你的需求... (LLM 规划中)"))
+            await _call_step(on_step, StepUpdate(step="planning", message="\u6b63\u5728\u7406\u89e3\u4f60\u7684\u9700\u6c42... (LLM \u89c4\u5212\u4e2d)"))
 
-        plan = await self.planner.plan_new([{"role": "user", "content": prompt}])
+        plan = await self.planner.plan_new([{"role": "user", "content": planner_prompt}])
+        plan.manufacturing_profile = profile
+        design_brief = ensure_design_brief(plan)
+        self._apply_manufacturing_profile_to_brief(design_brief, profile)
         logger.info(f"Plan: type={plan.part_type}, hint={plan.modeling_hint}, dims={plan.dimensions}")
+
+        if requires_design_confirmation(design_brief):
+            if on_step:
+                await _call_step(on_step, StepUpdate(
+                    step="planning",
+                    message="检测到必须确认的关键需求，先暂停生成 CAD 模型。",
+                    status="warn",
+                    stage_id="design_confirmation",
+                    detail={"open_questions": design_brief.open_questions},
+                ))
+            response = GenerateResponse(
+                request_id=request_id,
+                success=False,
+                needs_confirmation=True,
+                manufacturing_profile=profile,
+                error={
+                    "type": "NeedsConfirmation",
+                    "message": "\u8bf7\u5148\u56de\u7b54\u8bbe\u8ba1\u7b80\u62a5\u4e2d\u7684\u5f85\u786e\u8ba4\u95ee\u9898\uff0c\u518d\u7ee7\u7eed\u751f\u6210 CAD \u6a21\u578b\u3002",
+                },
+                plan=plan,
+                design_brief=design_brief,
+            )
+            response.recovery_actions = build_recovery_actions(response)
+            return response
 
         # Step 2: Retrieve examples
         if on_step:
-            await _call_step(on_step, StepUpdate(step="retrieving_examples", message="正在查找相似案例..."))
+            await _call_step(on_step, StepUpdate(step="retrieving_examples", message="\u6b63\u5728\u67e5\u627e\u76f8\u4f3c\u53ef\u6253\u5370\u6848\u4f8b..."))
 
-        examples = await self.retriever.find_similar(plan.description, top_k=3)
+        examples = await self.retriever.find_similar(
+            plan.description,
+            top_k=3,
+            part_type=plan.part_type,
+            features=plan.features,
+            modeling_hint=plan.modeling_hint or None,
+        )
 
         # Step 3: Generate code
         is_2d = plan.part_type == "profile_2d"
@@ -111,25 +237,25 @@ class Orchestrator:
 
         if is_2d:
             if on_step:
-                await _call_step(on_step, StepUpdate(step="generating_code", message="正在生成 ezdxf 2D 代码..."))
+                await _call_step(on_step, StepUpdate(step="generating_code", message="\u6b63\u5728\u751f\u6210 ezdxf 2D \u4ee3\u7801..."))
             code = await self.code_gen.generate_2d(
                 plan, examples, [{"role": "user", "content": prompt}]
             )
             output_formats = ["dxf"]
         elif is_assembly:
             if on_step:
-                await _call_step(on_step, StepUpdate(step="planning", message="正在拆解装配体零件清单..."))
+                await _call_step(on_step, StepUpdate(step="planning", message="\u6b63\u5728\u62c6\u89e3\u88c5\u914d\u4f53\u96f6\u4ef6\u6e05\u5355..."))
 
             from app.agent.assembly_planner import AssemblyPlanner
             assy_planner = AssemblyPlanner()
             assy_plan = await assy_planner.plan_assembly(plan)
             total_parts = len(assy_plan.parts)
-            logger.info(f"Assembly plan: {total_parts} parts — {[p.name for p in assy_plan.parts]}")
+            logger.info(f"Assembly plan: {total_parts} parts 鈥?{[p.name for p in assy_plan.parts]}")
 
             if on_step:
                 await _call_step(on_step, StepUpdate(
                     step="generating_code",
-                    message=f"装配体共 {total_parts} 个零件，并行生成中...",
+                    message=f"\u88c5\u914d\u4f53\u5171 {total_parts} \u4e2a\u96f6\u4ef6\uff0c\u6b63\u5728\u751f\u6210...",
                 ))
 
             # Generate all parts in parallel (LLM calls), then execute sequentially
@@ -139,7 +265,7 @@ class Orchestrator:
                 if on_step:
                     await _call_step(on_step, StepUpdate(
                         step="assembly_part",
-                        message=f"正在生成零件 {idx+1}/{total_parts}: {apart.name}",
+                        message=f"\u6b63\u5728\u751f\u6210\u96f6\u4ef6 {idx+1}/{total_parts}: {apart.name}",
                         part_name=apart.name,
                         part_index=idx,
                         total_parts=total_parts,
@@ -161,7 +287,7 @@ class Orchestrator:
                     if on_step:
                         await _call_step(on_step, StepUpdate(
                             step="assembly_part",
-                            message=f"零件 {apart.name} 验证通过",
+                            message=f"\u96f6\u4ef6 {apart.name} \u9a8c\u8bc1\u901a\u8fc7",
                             part_name=apart.name,
                             part_index=idx,
                             total_parts=total_parts,
@@ -171,7 +297,7 @@ class Orchestrator:
                     if on_step:
                         await _call_step(on_step, StepUpdate(
                             step="fixing_error",
-                            message=f"零件 {apart.name} 执行失败，正在修复...",
+                            message=f"\u96f6\u4ef6 {apart.name} \u6267\u884c\u5931\u8d25\uff0c\u6b63\u5728\u4fee\u590d...",
                             part_name=apart.name,
                             part_index=idx,
                             total_parts=total_parts,
@@ -209,21 +335,21 @@ class Orchestrator:
             if failed_parts and on_step:
                 await _call_step(on_step, StepUpdate(
                     step="fixing_error",
-                    message=f"警告: 以下零件生成失败: {', '.join(failed_parts)}",
+                    message=f"\u8b66\u544a: \u4ee5\u4e0b\u96f6\u4ef6\u751f\u6210\u5931\u8d25: {', '.join(failed_parts)}",
                 ))
 
             # Combine all parts into assembly
             if on_step:
                 await _call_step(on_step, StepUpdate(
                     step="generating_code",
-                    message="正在组合装配体...",
+                    message="\u6b63\u5728\u7ec4\u5408\u88c5\u914d\u4f53...",
                 ))
             code = await self.code_gen.generate_assembly_combiner(part_codes)
         else:
             # Multi-step decomposition for complex parts
             from app.agent.multi_step import PlanDecomposer, MultiStepExecutor
             if on_step:
-                await _call_step(on_step, StepUpdate(step="generating_code", message="正在分析零件复杂度..."))
+                await _call_step(on_step, StepUpdate(step="generating_code", message="\u6b63\u5728\u5206\u6790\u96f6\u4ef6\u590d\u6742\u5ea6..."))
             decomposer = PlanDecomposer()
             build_plan = await decomposer.decompose(plan)
             logger.info(f"BuildPlan: complexity={build_plan.complexity}, steps={len(build_plan.steps)}")
@@ -232,7 +358,7 @@ class Orchestrator:
                 if on_step:
                     await _call_step(on_step, StepUpdate(
                         step="generating_code",
-                        message=f"复杂零件，分 {len(build_plan.steps)} 步构建...",
+                        message=f"\u590d\u6742\u96f6\u4ef6\uff0c\u5206 {len(build_plan.steps)} \u6b65\u6784\u5efa...",
                     ))
                 multi_executor = MultiStepExecutor(self.code_gen, self.executor)
                 result = await multi_executor.execute_plan(
@@ -244,9 +370,12 @@ class Orchestrator:
                     try:
                         if on_step:
                             await _call_step(on_step, StepUpdate(
-                                step="dfm_analysis", message="正在进行 DFM 可制造性分析..."
+                                step="dfm_analysis", message="\u6b63\u5728\u8fdb\u884c DFM \u53ef\u5236\u9020\u6027\u5206\u6790..."
                             ))
                         process_hint, material_hint = self._detect_process_material(prompt)
+                        if profile:
+                            process_hint = profile.process
+                            material_hint = profile.material
                         dfm_data = await self._run_auto_dfm(
                             result.request_id, result.code or "", prompt,
                             process_hint, material_hint,
@@ -258,7 +387,7 @@ class Orchestrator:
                             if on_step:
                                 await _call_step(on_step, StepUpdate(
                                     step="dfm_complete",
-                                    message=f"DFM 分析完成 (评分: {score}/100)",
+                                    message=f"DFM \u5206\u6790\u5b8c\u6210 (\u8bc4\u5206: {score}/100)",
                                 ))
                     except Exception as e:
                         logger.warning(f"Auto-DFM skipped for multi-step: {e}")
@@ -266,9 +395,9 @@ class Orchestrator:
                 result.plan = plan  # surface the requirement brief (A2)
                 return result
 
-            # Simple part — single-step generation
+            # Simple part 鈥?single-step generation
             if on_step:
-                await _call_step(on_step, StepUpdate(step="generating_code", message="正在生成 CadQuery 代码..."))
+                await _call_step(on_step, StepUpdate(step="generating_code", message="\u6b63\u5728\u751f\u6210 CadQuery \u4ee3\u7801..."))
             parts_info = self._lookup_standard_parts(plan)
             code = await self.code_gen.generate(
                 plan, examples, [{"role": "user", "content": prompt}],
@@ -297,24 +426,28 @@ class Orchestrator:
 
         # Surface the understood requirement brief (A2)
         result.plan = plan
+        result.manufacturing_profile = profile
 
         # Attach assembly_parts to the result
         if _assy_parts_info:
             result.assembly_parts = _assy_parts_info
 
-        # Populate the code cache on success (skip assemblies — richer multi-part state).
+        # Populate the code cache on success (skip assemblies 鈥?richer multi-part state).
         if result.success and result.code and not is_assembly and cache:
-            cache.put(prompt, result.code)
+            cache.put(cache_key, result.code)
 
         # Step 5: Auto-DFM analysis (when process/material keywords detected)
         if result.success and not is_2d and self._should_auto_dfm(prompt):
             try:
                 if on_step:
                     await _call_step(on_step, StepUpdate(
-                        step="dfm_analysis", message="正在进行 DFM 可制造性分析..."
+                        step="dfm_analysis", message="\u6b63\u5728\u8fdb\u884c DFM \u53ef\u5236\u9020\u6027\u5206\u6790..."
                     ))
 
                 process_hint, material_hint = self._detect_process_material(prompt)
+                if profile:
+                    process_hint = profile.process
+                    material_hint = profile.material
                 dfm_data = await self._run_auto_dfm(
                     request_id, result.code or "", prompt,
                     process_hint, material_hint,
@@ -326,20 +459,20 @@ class Orchestrator:
                     if on_step:
                         await _call_step(on_step, StepUpdate(
                             step="dfm_complete",
-                            message=f"DFM 分析完成 (评分: {score}/100)",
+                            message=f"DFM \u5206\u6790\u5b8c\u6210 (\u8bc4\u5206: {score}/100)",
                         ))
             except Exception as e:
                 logger.warning(f"Auto-DFM skipped: {e}")
 
-        # Step 6: Strategy fallback — if failed, try alternative modeling approach
+        # Step 6: Strategy fallback 鈥?if failed, try alternative modeling approach
         if not result.success and not is_2d and not is_assembly:
             alt_hint = self._get_fallback_hint(plan.modeling_hint, result.error)
             if alt_hint:
-                logger.info(f"Strategy fallback: {plan.modeling_hint} → {alt_hint}")
+                logger.info(f"Strategy fallback: {plan.modeling_hint} 鈫?{alt_hint}")
                 if on_step:
                     await _call_step(on_step, StepUpdate(
                         step="generating_code",
-                        message=f"换用 {alt_hint} 策略重新生成...",
+                        message=f"\u6362\u7528 {alt_hint} \u7b56\u7565\u91cd\u65b0\u751f\u6210...",
                     ))
                 plan.modeling_hint = alt_hint
                 fallback_code = await self.code_gen.generate(
@@ -352,8 +485,10 @@ class Orchestrator:
                 )
                 if fallback_result.success:
                     fallback_result.plan = plan  # surface the requirement brief (A2)
+                    fallback_result.recovery_actions = build_recovery_actions(fallback_result)
                     return fallback_result
 
+        result.recovery_actions = build_recovery_actions(result)
         return result
 
     async def modify(
@@ -370,7 +505,7 @@ class Orchestrator:
         set_request_id(request_id)
 
         if on_step:
-            await _call_step(on_step, StepUpdate(step="planning", message="正在分析修改需求..."))
+            await _call_step(on_step, StepUpdate(step="planning", message="\u6b63\u5728\u5206\u6790\u4fee\u6539\u9700\u6c42..."))
 
         plan = await self.planner.plan_modification(
             [{"role": "user", "content": prompt}], code
@@ -379,7 +514,7 @@ class Orchestrator:
         examples = await self.retriever.find_similar(prompt, top_k=3)
 
         if on_step:
-            await _call_step(on_step, StepUpdate(step="generating_code", message="正在修改代码..."))
+            await _call_step(on_step, StepUpdate(step="generating_code", message="\u6b63\u5728\u4fee\u6539\u4ee3\u7801..."))
 
         new_code = await self.code_gen.modify(
             plan, code, examples, [{"role": "user", "content": prompt}]
@@ -388,9 +523,11 @@ class Orchestrator:
         # Detect if original code is 2D (ezdxf) or 3D (CadQuery)
         is_2d = "ezdxf" in code or "result.dxf" in code
 
-        return await self._execute_with_retry(
+        response = await self._execute_with_retry(
             request_id, new_code, None, output_formats, on_step, prompt, is_2d=is_2d
         )
+        response.recovery_actions = build_recovery_actions(response)
+        return response
 
     async def execute_code(
         self,
@@ -409,13 +546,15 @@ class Orchestrator:
         # Validate code
         is_valid, error_msg = validate_code(code)
         if not is_valid:
-            return GenerateResponse(
+            response = GenerateResponse(
                 request_id=request_id,
                 success=False,
                 error={"type": "ValidationError", "message": error_msg},
             )
+            response.recovery_actions = build_recovery_actions(response)
+            return response
 
-        # Execute directly — no LLM
+        # Execute directly 鈥?no LLM
         exec_mode = "2d" if is_2d else "3d"
         result = await self.executor.execute(code, mode=exec_mode)
         try:
@@ -428,6 +567,7 @@ class Orchestrator:
                 # Run the same printability gate as /api/generate so parameter edits
                 # don't silently produce an un-printable model (3D only; 2D has no STL).
                 validation_data = None
+                inspect_report = None
                 if not is_2d:
                     stl_path = self._find_stl_in_output(result.work_dir)
                     if stl_path:
@@ -442,10 +582,16 @@ class Orchestrator:
                                 min_wall_thickness=geo.min_wall_thickness,
                                 print_warnings=geo.print_warnings,
                             )
+                            inspect_report = build_inspect_report(
+                                geo,
+                                available_exports=sorted(files.keys()),
+                                repair_attempts=0,
+                                source="geometry_validator",
+                            )
                         except Exception as e:
                             logger.warning(f"execute_code geometry validation skipped: {e}")
 
-                return GenerateResponse(
+                response = GenerateResponse(
                     request_id=request_id,
                     success=True,
                     files=files,
@@ -454,9 +600,12 @@ class Orchestrator:
                     execution_time_ms=result.execution_time_ms,
                     attempts=1,
                     validation=validation_data,
+                    inspect_report=inspect_report,
                 )
+                response.recovery_actions = build_recovery_actions(response)
+                return response
             else:
-                return GenerateResponse(
+                response = GenerateResponse(
                     request_id=request_id,
                     success=False,
                     code=code,
@@ -467,16 +616,34 @@ class Orchestrator:
                     execution_time_ms=result.execution_time_ms,
                     attempts=1,
                 )
+                response.recovery_actions = build_recovery_actions(response)
+                return response
         finally:
             shutil.rmtree(result.work_dir, ignore_errors=True)
 
     # === Stateful WebSocket method (Web frontend streaming) ===
+
+    def _prompt_with_pending_design_brief(
+        self, context: ConversationContext, user_message: str
+    ) -> str:
+        brief = context.current_design_brief
+        if not brief or not brief.open_questions or context.current_code:
+            return user_message
+        questions = "\n".join(f"- {question}" for question in brief.open_questions)
+        return (
+            "Continue from this pending engineering brief before CAD generation.\n"
+            f"Intent: {brief.intent_summary}\n"
+            f"Artifact type: {brief.artifact_type}\n"
+            f"Open questions:\n{questions}\n"
+            f"User clarification: {user_message}"
+        )
 
     async def handle_message(
         self,
         context: ConversationContext,
         user_message: str,
         on_step=None,
+        manufacturing_profile: ManufacturingProfile | dict | None = None,
     ) -> GenerationResult:
         context.messages.append({"role": "user", "content": user_message})
 
@@ -489,9 +656,18 @@ class Orchestrator:
             )
         else:
             # generate or generate_relative both go through generate
-            response = await self.generate(user_message, on_step=on_step)
+            generation_prompt = self._prompt_with_pending_design_brief(context, user_message)
+            response = await self.generate(
+                generation_prompt,
+                on_step=on_step,
+                manufacturing_profile=manufacturing_profile or getattr(context, "current_manufacturing_profile", None),
+            )
 
         # Update context
+        if response.manufacturing_profile:
+            context.current_manufacturing_profile = response.manufacturing_profile
+        if response.needs_confirmation:
+            context.current_design_brief = response.design_brief
         if response.success:
             context.current_code = response.code
             context.current_params = (
@@ -500,18 +676,21 @@ class Orchestrator:
                 else None
             )
             context.generation_count += 1
+            context.current_design_brief = response.design_brief
             if response.assembly_parts:
                 context.assembly_parts = [p.model_dump() for p in response.assembly_parts]
             else:
                 context.assembly_parts = None
 
-        if on_step:
+        if on_step and not response.needs_confirmation:
             step = "complete" if response.success else "failed"
-            msg = "生成完成！" if response.success else f"生成失败: {response.error}"
+            msg = "\u751f\u6210\u5b8c\u6210" if response.success else f"\u751f\u6210\u5931\u8d25: {response.error}"
             await _call_step(on_step, StepUpdate(step=step, message=msg))
 
         return GenerationResult(
             success=response.success,
+            needs_confirmation=response.needs_confirmation,
+            manufacturing_profile=response.manufacturing_profile,
             request_id=response.request_id,
             files=response.files,
             code=response.code,
@@ -523,6 +702,7 @@ class Orchestrator:
             assembly_parts=response.assembly_parts,
             inspect_report=response.inspect_report,
             plan=response.plan,
+            design_brief=response.design_brief,
         )
 
     def _detect_intent(self, message: str, context: ConversationContext) -> str:
@@ -532,21 +712,21 @@ class Orchestrator:
 
         # Explicit modification keywords
         modify_keywords = [
-            "改", "修改", "调整", "增大", "减小", "移动", "删除",
-            "加厚", "加高", "变大", "变小", "换成", "改为", "改成",
-            "加一个", "去掉", "圆角改", "直径改", "高度改", "宽度改",
-            "缩小", "放大", "旋转", "镜像", "倒角", "圆角",
+            "\u6539", "\u4fee\u6539", "\u8c03\u6574", "\u4f18\u5316", "\u52a0", "\u589e\u52a0", "\u6dfb\u52a0",
+            "\u5220", "\u5220\u9664", "\u79fb\u9664", "\u53d8", "\u53d8\u6210", "\u7f29\u5c0f", "\u653e\u5927",
+            "\u52a0\u539a", "\u53d8\u8584", "\u5012\u89d2", "\u5706\u89d2", "\u5f00\u5b54", "\u6253\u5b54",
+            "\u79fb\u52a8", "\u65cb\u8f6c", "\u66ff\u6362", "\u4fee\u590d", "\u589e\u5f3a", "\u51cf\u5c0f",
         ]
 
         # Generate relative to selection
-        relative_keywords = ["根据", "配套", "插入", "匹配", "适配", "基于此", "基于选中"]
+        relative_keywords = ["\u57fa\u4e8e", "\u53c2\u8003", "\u6cbf\u7740", "\u56f4\u7ed5", "\u8fd9\u4e2a", "\u5f53\u524d", "\u9009\u4e2d\u90e8\u5206"]
 
         # Explicit new generation
-        generate_keywords = ["生成", "创建", "画一个", "做一个", "新建", "新的", "设计一个"]
+        generate_keywords = ["\u8bbe\u8ba1", "\u751f\u6210", "\u521b\u5efa", "\u5efa\u6a21", "\u505a\u4e00\u4e2a", "\u5236\u4f5c", "\u91cd\u65b0\u751f\u6210"]
 
         # Strong "fresh start" markers: even with existing code + a modify-ish word,
         # these mean the user wants a NEW model, not an edit of the current one.
-        fresh_start_keywords = ["重新生成", "重新设计", "重新画", "换一个", "另做一个", "另外做", "再做一个"]
+        fresh_start_keywords = ["\u91cd\u65b0\u751f\u6210", "\u91cd\u65b0\u8bbe\u8ba1", "\u65b0\u5efa\u4e00\u4e2a", "\u53e6\u505a\u4e00\u4e2a", "\u4ece\u5934\u751f\u6210", "\u6362\u4e00\u4e2a", "\u505a\u4e00\u4e2a\u65b0\u7684"]
         if any(kw in message for kw in fresh_start_keywords):
             return "generate"
 
@@ -554,15 +734,19 @@ class Orchestrator:
         if has_code and any(kw in message for kw in modify_keywords):
             return "modify"
 
-        # Check for generate relative to selection
-        if has_selection and any(kw in message for kw in relative_keywords):
+        # With existing code, a selection normally means editing the current model.
+        if has_code and has_selection:
+            return "modify"
+
+        # Without existing code, selection context should generate from the selection.
+        if has_selection and (any(kw in message for kw in relative_keywords) or not has_code):
             return "generate_relative"
 
         # Explicit generation
         if any(kw in message for kw in generate_keywords):
             return "generate"
 
-        # Has code + selection → likely modification
+        # Has code + selection 鈫?likely modification
         if has_code and has_selection:
             return "modify"
 
@@ -580,7 +764,7 @@ class Orchestrator:
         if not context.assembly_parts:
             return GenerationResult(
                 success=False,
-                error={"type": "ValidationError", "message": "当前不是装配体，无法修改零件"},
+                error={"type": "ValidationError", "message": "\u5f53\u524d\u4ee3\u7801\u4e0d\u5305\u542b\u88c5\u914d\u4f53\u96f6\u4ef6"},
             )
 
         # Find the target part
@@ -593,7 +777,7 @@ class Orchestrator:
         if target_idx is None:
             return GenerationResult(
                 success=False,
-                error={"type": "ValidationError", "message": f"未找到零件: {part_name}"},
+                error={"type": "ValidationError", "message": f"鏈壘鍒伴浂浠? {part_name}"},
             )
 
         target_part = context.assembly_parts[target_idx]
@@ -601,7 +785,7 @@ class Orchestrator:
         if on_step:
             await _call_step(on_step, StepUpdate(
                 step="generating_code",
-                message=f"正在修改零件: {part_name}...",
+                message=f"\u6b63\u5728\u4fee\u6539\u96f6\u4ef6: {part_name}...",
                 part_name=part_name,
                 part_index=target_idx,
                 total_parts=len(context.assembly_parts),
@@ -623,7 +807,7 @@ class Orchestrator:
             if on_step:
                 await _call_step(on_step, StepUpdate(
                     step="fixing_error",
-                    message=f"零件 {part_name} 修改后执行失败，尝试修复...",
+                    message=f"\u96f6\u4ef6 {part_name} \u4fee\u6539\u540e\u6267\u884c\u5931\u8d25\uff0c\u5c1d\u8bd5\u4fee\u590d...",
                     part_name=part_name,
                 ))
             shutil.rmtree(part_result.work_dir, ignore_errors=True)
@@ -641,7 +825,7 @@ class Orchestrator:
             if not retry_result.success:
                 return GenerationResult(
                     success=False,
-                    error={"type": "ExecutionError", "message": f"零件 {part_name} 修改失败: {retry_result.error_message}"},
+                    error={"type": "ExecutionError", "message": f"\u96f6\u4ef6 {part_name} \u4fee\u6539\u5931\u8d25: {retry_result.error_message}"},
                 )
         else:
             shutil.rmtree(part_result.work_dir, ignore_errors=True)
@@ -657,7 +841,7 @@ class Orchestrator:
         # Rebuild the assembly
         if on_step:
             await _call_step(on_step, StepUpdate(
-                step="generating_code", message="正在重新组合装配体..."
+                step="generating_code", message="\u6b63\u5728\u91cd\u65b0\u7ec4\u5408\u88c5\u914d\u4f53..."
             ))
 
         combined_code = await self.code_gen.generate_assembly_combiner(context.assembly_parts)
@@ -678,7 +862,7 @@ class Orchestrator:
 
         if on_step:
             step = "complete" if result.success else "failed"
-            msg = f"零件 {part_name} 修改完成！" if result.success else f"装配体重建失败"
+            msg = f"Part {part_name} modification complete" if result.success else "Assembly rebuild failed"
             await _call_step(on_step, StepUpdate(step=step, message=msg))
 
         return GenerationResult(
@@ -692,6 +876,7 @@ class Orchestrator:
             error=result.error,
             validation=result.validation,
             assembly_parts=assy_parts,
+            design_brief=context.current_design_brief,
         )
 
     # === Internal methods ===
@@ -705,6 +890,7 @@ class Orchestrator:
         # error type repeats, retrying just burns LLM calls without converging.
         last_error_sig: str | None = None
         repeat_error_count = 0
+        repair_history: list[RepairStep] = []
 
         for attempt in range(1, self.MAX_RETRIES + 1):
             # Validate code (import whitelist)
@@ -716,9 +902,17 @@ class Orchestrator:
                             on_step,
                             StepUpdate(
                                 step="fixing_error",
-                                message=f"代码校验失败，正在修复... (尝试 {attempt}/{self.MAX_RETRIES})",
+                                message=f"\u4ee3\u7801\u6821\u9a8c\u5931\u8d25\uff0c\u6b63\u5728\u4fee\u590d... (\u5c1d\u8bd5 {attempt}/{self.MAX_RETRIES})",
                             ),
                         )
+                    repair_history.append(RepairStep(
+                        attempt=attempt,
+                        stage="validation",
+                        error_type="ValidationError",
+                        message=error_msg or "Code validation failed",
+                        action="fix_error",
+                        status="repaired",
+                    ))
                     code = await self.code_gen.fix_error(
                         code,
                         {"type": "ValidationError", "message": error_msg, "gate": "ValidationError"},
@@ -731,9 +925,11 @@ class Orchestrator:
                     code=code,
                     error={"type": "ValidationError", "message": error_msg},
                     attempts=attempt,
+                    repair_history=repair_history,
+                    design_brief=plan.design_brief if plan else None,
                 )
 
-            # Static analysis — catch CadQuery anti-patterns before sandbox
+            # Static analysis 鈥?catch CadQuery anti-patterns before sandbox
             analysis_warnings = analyze_code(code)
             if analysis_warnings and attempt < self.MAX_RETRIES:
                 logger.info(f"Static analysis warnings: {analysis_warnings}")
@@ -742,9 +938,17 @@ class Orchestrator:
                         on_step,
                         StepUpdate(
                             step="fixing_error",
-                            message=f"静态分析发现问题，正在修复...",
+                            message="\u9759\u6001\u5206\u6790\u53d1\u73b0\u95ee\u9898\uff0c\u6b63\u5728\u4fee\u590d...",
                         ),
                     )
+                repair_history.append(RepairStep(
+                    attempt=attempt,
+                    stage="static_analysis",
+                    error_type="StaticAnalysis",
+                    message="; ".join(analysis_warnings),
+                    action="fix_error",
+                    status="repaired",
+                ))
                 code = await self.code_gen.fix_error(
                     code,
                     {
@@ -760,7 +964,7 @@ class Orchestrator:
             if on_step:
                 await _call_step(
                     on_step,
-                    StepUpdate(step="executing", message=f"正在执行代码... (尝试 {attempt}/{self.MAX_RETRIES})"),
+                    StepUpdate(step="executing", message=f"\u6b63\u5728\u6267\u884c\u4ee3\u7801... (\u5c1d\u8bd5 {attempt}/{self.MAX_RETRIES})"),
                 )
 
             exec_mode = "2d" if is_2d else "3d"
@@ -803,6 +1007,8 @@ class Orchestrator:
                         params=params if params else None,
                         execution_time_ms=result.execution_time_ms,
                         attempts=attempt,
+                    design_brief=plan.design_brief if plan else None,
+                        repair_history=repair_history,
                     )
 
                 # === Geometry validation ===
@@ -824,9 +1030,14 @@ class Orchestrator:
                             min_wall_thickness=geo_validation.min_wall_thickness,
                             print_warnings=geo_validation.print_warnings,
                         )
-                        # Evidence inspect report — aggregate the facts just computed
+                        # Evidence inspect report 鈥?aggregate the facts just computed
                         # (built on every successful 3D gen; DFM enrichment added later).
-                        inspect_report = build_inspect_report(geo_validation)
+                        inspect_report = build_inspect_report(
+                            geo_validation,
+                            available_exports=sorted(files.keys()),
+                            repair_attempts=len(repair_history),
+                            source="geometry_validator",
+                        )
 
                         if not geo_validation.passed and attempt < self.MAX_RETRIES:
                             error_messages = "; ".join(
@@ -836,8 +1047,16 @@ class Orchestrator:
                             if on_step:
                                 await _call_step(
                                     on_step,
-                                    StepUpdate(step="fixing_error", message=f"几何验证失败: {error_messages}"),
+                                    StepUpdate(step="fixing_error", message=f"\u51e0\u4f55\u9a8c\u8bc1\u5931\u8d25: {error_messages}"),
                                 )
+                            repair_history.append(RepairStep(
+                                attempt=attempt,
+                                stage="geometry",
+                                error_type="GeometryError",
+                                message=error_messages,
+                                action="fix_error",
+                                status="repaired",
+                            ))
                             code = await self.code_gen.fix_error(
                                 code,
                                 {"type": "GeometryError", "message": error_messages, "gate": "GeometryError"},
@@ -851,16 +1070,16 @@ class Orchestrator:
                                 if on_step:
                                     await _call_step(
                                         on_step,
-                                        StepUpdate(step="executing", message="正在进行视觉校验..."),
+                                        StepUpdate(step="executing", message="\u6b63\u5728\u8fdb\u884c\u89c6\u89c9\u6821\u9a8c..."),
                                     )
                                 renders_dir = result.work_dir / "renders"
                                 render_paths = self.renderer.render_stl(stl_path, renders_dir)
                                 if not render_paths:
-                                    # No renders → vision is INDETERMINATE, not skipped silently.
+                                    # No renders 鈫?vision is INDETERMINATE, not skipped silently.
                                     # Surface it honestly instead of letting it pass invisibly.
                                     logger.warning("No render images produced, vision validation indeterminate")
                                     self._add_indeterminate_vision_check(
-                                        inspect_report, "无渲染图，视觉校验未执行"
+                                        inspect_report, "鏃犳覆鏌撳浘锛岃瑙夋牎楠屾湭鎵ц"
                                     )
                                 else:
                                     vision_result = await self.vision_validator.validate(
@@ -874,8 +1093,16 @@ class Orchestrator:
                                         if on_step:
                                             await _call_step(
                                                 on_step,
-                                                StepUpdate(step="fixing_error", message="视觉校验不通过，正在修复..."),
+                                                StepUpdate(step="fixing_error", message="\u89c6\u89c9\u6821\u9a8c\u4e0d\u901a\u8fc7\uff0c\u6b63\u5728\u4fee\u590d..."),
                                             )
+                                        repair_history.append(RepairStep(
+                                            attempt=attempt,
+                                            stage="vision",
+                                            error_type="VisionMismatch",
+                                            message="; ".join(vision_result.issues),
+                                            action="fix_visual_issues",
+                                            status="repaired",
+                                        ))
                                         code = await self.code_gen.fix_visual_issues(
                                             code, vision_result.issues, vision_result.suggestions,
                                             on_step=on_step,
@@ -884,12 +1111,12 @@ class Orchestrator:
                                     if vision_result.is_match is None:
                                         self._add_indeterminate_vision_check(
                                             inspect_report,
-                                            "; ".join(vision_result.issues) or "视觉校验结果不可信",
+                                            "; ".join(vision_result.issues) or "Vision validation result is indeterminate",
                                         )
                             except Exception as e:
                                 logger.warning(f"Vision validation skipped: {e}")
                                 self._add_indeterminate_vision_check(
-                                    inspect_report, "视觉校验异常，未执行"
+                                    inspect_report, "Vision validation raised an exception and was not executed"
                                 )
 
                     except Exception as e:
@@ -905,17 +1132,19 @@ class Orchestrator:
                     execution_time_ms=result.execution_time_ms,
                     attempts=attempt,
                     validation=validation_data,
+                    design_brief=plan.design_brief if plan else None,
                     inspect_report=inspect_report,
+                    repair_history=repair_history,
                 )
 
-            # Failed — classify the failure to decide how (or whether) to retry.
+            # Failed 鈥?classify the failure to decide how (or whether) to retry.
             shutil.rmtree(result.work_dir, ignore_errors=True)
             fc = classify(
                 result.error_type, result.error_message, result.traceback, gate="exec"
             )
 
             # HARD_STOP: infra failures (Docker down / image missing / no output) can't be
-            # fixed by re-prompting the LLM — abort immediately instead of burning retries.
+            # fixed by re-prompting the LLM 鈥?abort immediately instead of burning retries.
             if fc.fix_path is FixPath.HARD_STOP:
                 logger.info(f"Non-recoverable failure ({fc.key}), stopping retries")
                 break
@@ -929,7 +1158,7 @@ class Orchestrator:
                 repeat_error_count = 0
                 last_error_sig = error_sig
             if repeat_error_count >= 2:
-                logger.info(f"Retry oscillation detected ({error_sig} ×{repeat_error_count+1}), stopping early")
+                logger.info(f"Retry oscillation detected ({error_sig} 脳{repeat_error_count+1}), stopping early")
                 break
 
             if attempt < self.MAX_RETRIES:
@@ -938,9 +1167,17 @@ class Orchestrator:
                         on_step,
                         StepUpdate(
                             step="fixing_error",
-                            message=f"执行出错，正在修复... (尝试 {attempt}/{self.MAX_RETRIES})",
+                            message=f"\u6267\u884c\u51fa\u9519\uff0c\u6b63\u5728\u4fee\u590d... (\u5c1d\u8bd5 {attempt}/{self.MAX_RETRIES})",
                         ),
                     )
+                repair_history.append(RepairStep(
+                    attempt=attempt,
+                    stage="execution",
+                    error_type=result.error_type or "ExecutionError",
+                    message=result.error_message or "Execution failed",
+                    action="fix_error",
+                    status="repaired",
+                ))
                 prev_code = code
                 code = await self.code_gen.fix_error(
                     code,
@@ -968,14 +1205,16 @@ class Orchestrator:
             },
             execution_time_ms=result.execution_time_ms if result else 0,
             attempts=self.MAX_RETRIES,
+            repair_history=repair_history,
+            design_brief=plan.design_brief if plan else None,
         )
 
-    # Fallback strategy map: current_hint → alternative to try
+    # Fallback strategy map: current_hint 鈫?alternative to try
     _FALLBACK_MAP = {
-        "revolve": "extrude_cut",      # revolve 失败 → 拉伸+切割
-        "sweep": "extrude_cut",        # sweep 失败 → 拉伸+切割
-        "loft": "extrude_cut",         # loft 失败 → 拉伸+切割
-        "extrude_cut": "revolve",      # 拉伸失败 → 试试回转
+        "revolve": "extrude_cut",      # revolve 澶辫触 鈫?鎷変几+鍒囧壊
+        "sweep": "extrude_cut",        # sweep 澶辫触 鈫?鎷変几+鍒囧壊
+        "loft": "extrude_cut",         # loft 澶辫触 鈫?鎷変几+鍒囧壊
+        "extrude_cut": "revolve",      # 鎷変几澶辫触 鈫?璇曡瘯鍥炶浆
         "boolean_combine": "extrude_cut",
     }
 
@@ -1010,7 +1249,7 @@ class Orchestrator:
                 parts_info.append(info)
 
         if parts_info:
-            return "\n\n## 标准件参数\n" + "\n".join(parts_info)
+            return "\n\n## 鏍囧噯浠跺弬鏁癨n" + "\n".join(parts_info)
         return ""
 
     def _extract_params(self, code: str) -> dict[str, ParamConfig]:
@@ -1031,26 +1270,26 @@ class Orchestrator:
     # === Auto-DFM helpers ===
 
     _PROCESS_KEYWORDS = {
-        "sheet_metal": ["钣金", "板金", "折弯", "sheet metal", "冲压", "激光切割板"],
-        "CNC": ["CNC", "cnc", "铣削", "车削", "机加工"],
-        "FDM": ["3D打印", "FDM", "fdm", "3d打印"],
-        "SLA": ["光固化", "SLA", "sla", "树脂打印"],
-        "injection_mold": ["注塑", "注射成型", "开模"],
-        "die_casting": ["压铸", "die casting", "铝压铸", "锌压铸", "压铸铝"],
+        "sheet_metal": ["sheet metal", "\u94a3\u91d1", "\u6298\u5f2f", "\u51b2\u538b", "\u8584\u677f", "\u94a3\u91d1\u4ef6"],
+        "CNC": ["CNC", "cnc", "\u673a\u52a0\u5de5", "\u94e3\u524a", "\u8f66\u524a"],
+        "FDM": ["3D\u6253\u5370", "FDM", "fdm", "3d\u6253\u5370"],
+        "SLA": ["\u6811\u8102", "SLA", "sla", "\u5149\u56fa\u5316"],
+        "injection_mold": ["\u6ce8\u5851", "\u6ce8\u5c04\u6210\u578b", "\u6a21\u5177"],
+        "die_casting": ["\u538b\u94f8", "die casting", "\u94dd\u538b\u94f8", "\u950c\u538b\u94f8", "\u94f8\u9020"],
     }
 
     _MATERIAL_KEYWORDS = {
-        "mat_al_sheet": ["5052", "铝板", "铝合金板"],
+        "mat_al_sheet": ["5052", "\u94dd\u677f", "\u94dd\u5408\u91d1\u677f"],
         "mat_al6061": ["6061"],
         "mat_al7075": ["7075"],
-        "mat_ss304": ["304", "不锈钢"],
-        "mat_steel_sheet": ["SPCC", "冷轧钢", "钢板"],
+        "mat_ss304": ["304", "\u4e0d\u9508\u94a2"],
+        "mat_steel_sheet": ["SPCC", "\u51b7\u8f67\u94a2", "\u94a2\u677f"],
         "mat_adc12": ["ADC12", "adc12"],
         "mat_a380": ["A380", "a380"],
-        "mat_zamak3": ["Zamak", "zamak", "锌合金"],
+        "mat_zamak3": ["Zamak", "zamak", "\u950c\u5408\u91d1"],
     }
 
-    _DFM_TRIGGER_KEYWORDS = ["DFM", "dfm", "DFM检测", "可制造性", "制造性分析", "工艺检查"]
+    _DFM_TRIGGER_KEYWORDS = ["DFM", "dfm", "DFM\u68c0\u67e5", "\u53ef\u5236\u9020\u6027", "\u5236\u9020\u7ea6\u675f", "\u5de5\u827a\u68c0\u67e5"]
 
     def _detect_process_material(self, prompt: str) -> tuple[str | None, str | None]:
         process = None
@@ -1086,7 +1325,7 @@ class Orchestrator:
     def _add_indeterminate_vision_check(report, message: str) -> None:
         """Record an honest 'vision indeterminate' check (warn) on the inspect report.
 
-        Indeterminate means the visual self-check could not run / be trusted — it must
+        Indeterminate means the visual self-check could not run / be trusted 鈥?it must
         never read as a pass, so we surface it as a warning rather than hiding it."""
         if report is None:
             return
@@ -1159,6 +1398,7 @@ class Orchestrator:
 async def _call_step(on_step, step: StepUpdate):
     import asyncio
 
-    result = on_step(step)
+    result = on_step(ensure_timeline_fields(step))
     if asyncio.iscoroutine(result):
         await result
+

@@ -1,12 +1,25 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSessionStore } from "../stores/sessionStore";
-import type { ChatMessage, GenerationResult } from "../types";
+import type { ChatMessage, GenerationResult, ManufacturingProfile, RecoveryAction } from "../types";
+import SuggestionPills from "./SuggestionPills";
+import { buildPromptSuggestions, type PromptSuggestion } from "../utils/suggestions";
+import {
+  isSupportedReferenceAttachment,
+  summarizeReferenceAttachment,
+  withReferenceAttachmentsPrompt,
+  type ReferenceAttachmentSummary,
+} from "../utils/referenceAttachments";
+import {
+  formatManufacturingProfile,
+  getManufacturingProfilePreset,
+  MANUFACTURING_PROFILE_PRESETS,
+} from "../utils/manufacturingProfiles";
 
 import { authFetch } from "../auth";
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 interface ChatPanelProps {
-  onSendMessage: (text: string) => void;
+  onSendMessage: (text: string, manufacturingProfile?: ManufacturingProfile | null) => void;
   onCancel?: () => void;
   onSwitchTab?: (tab: string) => void;
 }
@@ -202,20 +215,87 @@ function FeedbackChip({ requestId }: { requestId: string }) {
   );
 }
 
+const RECOVERY_ACTION_LABELS: Record<RecoveryAction["action_type"], string> = {
+  retry_simpler: "\u7b80\u5316\u91cd\u8bd5",
+  fix_printability: "\u4f18\u5316\u53ef\u6253\u5370\u6027",
+  clarify: "\u56de\u7b54\u5f85\u786e\u8ba4\u9879",
+  explain: "\u89e3\u91ca\u5931\u8d25\u539f\u56e0",
+  inspect: "\u67e5\u770b\u68c0\u67e5\u95ee\u9898",
+};
+
+function RecoveryActionButtons({
+  actions,
+  onSelect,
+}: {
+  actions?: RecoveryAction[] | null;
+  onSelect?: (action: RecoveryAction) => void;
+}) {
+  if (!actions?.length || !onSelect) return null;
+
+  return (
+    <div className="flex flex-wrap gap-1.5 pt-1">
+      {actions.map((action) => (
+        <button
+          key={`${action.action_type}-${RECOVERY_ACTION_LABELS[action.action_type] || action.label}`}
+          type="button"
+          onClick={() => onSelect(action)}
+          title={action.reason || action.prompt}
+          className="text-xs px-2 py-1 bg-white border border-amber-300 text-amber-700 rounded hover:bg-amber-100 transition-colors"
+        >
+          {RECOVERY_ACTION_LABELS[action.action_type] || action.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ResultCard({
   result,
   onSwitchTab,
+  onRecoveryActionSelect,
 }: {
   result: GenerationResult;
   onSwitchTab?: (tab: string) => void;
+  onRecoveryActionSelect?: (action: RecoveryAction) => void;
 }) {
+  if (result.needs_confirmation) {
+    const questions = result.design_brief?.open_questions || result.plan?.design_brief?.open_questions || [];
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+        <div className="flex items-center gap-1.5 text-amber-700 text-sm font-medium">
+          <span>&#9888;</span> {"\u9700\u8981\u786e\u8ba4\u9700\u6c42"}
+        </div>
+        <p className="text-xs text-amber-700">{"\u8bf7\u5148\u56de\u7b54\u5f85\u786e\u8ba4\u95ee\u9898\uff0c\u518d\u7ee7\u7eed\u751f\u6210 CAD \u6a21\u578b\u3002"}</p>
+        {questions.length > 0 && (
+          <ul className="text-xs text-amber-700 space-y-0.5 list-disc list-inside">
+            {questions.map((question, index) => (
+              <li key={index}>{question}</li>
+            ))}
+          </ul>
+        )}
+        <div className="flex flex-wrap gap-1.5">
+          {onSwitchTab && (
+            <button
+              onClick={() => onSwitchTab("analysis")}
+              className="text-xs px-2 py-1 bg-white border border-amber-300 text-amber-700 rounded hover:bg-amber-100 transition-colors"
+            >
+              {"\u67e5\u770b\u8bbe\u8ba1\u7b80\u62a5"}
+            </button>
+          )}
+          <RecoveryActionButtons actions={result.recovery_actions} onSelect={onRecoveryActionSelect} />
+        </div>
+      </div>
+    );
+  }
+
   if (!result.success) {
     return (
       <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-1">
         <div className="flex items-center gap-1.5 text-red-700 text-sm font-medium">
-          <span>&#10007;</span> 生成失败
+          <span>&#10007;</span> {"\u751f\u6210\u5931\u8d25"}
         </div>
-        <p className="text-xs text-red-600">{result.error?.message || "未知错误"}</p>
+        <p className="text-xs text-red-600">{result.error?.message || "Unknown error"}</p>
+        <RecoveryActionButtons actions={result.recovery_actions} onSelect={onRecoveryActionSelect} />
       </div>
     );
   }
@@ -259,6 +339,8 @@ function ResultCard({
         </ul>
       )}
 
+      <RecoveryActionButtons actions={result.recovery_actions} onSelect={onRecoveryActionSelect} />
+
       {onSwitchTab && (
         <div className="flex gap-1.5 pt-1">
           {result.params && Object.keys(result.params).length > 0 && (
@@ -296,9 +378,11 @@ function ResultCard({
 function MessageBubble({
   msg,
   onSwitchTab,
+  onRecoveryActionSelect,
 }: {
   msg: ChatMessage;
   onSwitchTab?: (tab: string) => void;
+  onRecoveryActionSelect?: (action: RecoveryAction) => void;
 }) {
   const [showCode, setShowCode] = useState(false);
   const isUser = msg.role === "user";
@@ -317,7 +401,11 @@ function MessageBubble({
         {!isUser && (
           <div className="space-y-2">
             {msg.result ? (
-              <ResultCard result={msg.result} onSwitchTab={onSwitchTab} />
+              <ResultCard
+                result={msg.result}
+                onSwitchTab={onSwitchTab}
+                onRecoveryActionSelect={onRecoveryActionSelect}
+              />
             ) : (
               <div className="bg-gray-100 text-gray-800 rounded-lg px-3 py-2 text-sm">
                 <p className="whitespace-pre-wrap">{msg.content}</p>
@@ -392,8 +480,12 @@ export default function ChatPanel({ onSendMessage, onSwitchTab }: ChatPanelProps
   const panel = useSessionStore((s) => s.getActivePanel());
   const { messages, isGenerating } = panel;
   const [input, setInput] = useState("");
+  const [selectedProfileId, setSelectedProfileId] = useState("fdm-pla");
+  const [referenceAttachments, setReferenceAttachments] = useState<ReferenceAttachmentSummary[]>([]);
+  const selectedProfile = getManufacturingProfilePreset(selectedProfileId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -414,10 +506,12 @@ export default function ChatPanel({ onSendMessage, onSwitchTab }: ChatPanelProps
 
   const handleSend = () => {
     const text = input.trim();
-    if (!text || isGenerating) return;
-    useSessionStore.getState().addMessage({ role: "user", content: text });
-    onSendMessage(text);
+    if ((!text && referenceAttachments.length === 0) || isGenerating) return;
+    const prompt = withReferenceAttachmentsPrompt(text, referenceAttachments);
+    useSessionStore.getState().addMessage({ role: "user", content: prompt });
+    onSendMessage(prompt, selectedProfile.profile);
     setInput("");
+    setReferenceAttachments([]);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -429,10 +523,49 @@ export default function ChatPanel({ onSendMessage, onSwitchTab }: ChatPanelProps
 
   const handleExampleClick = (prompt: string) => {
     useSessionStore.getState().addMessage({ role: "user", content: prompt });
-    onSendMessage(prompt);
+    onSendMessage(prompt, selectedProfile.profile);
   };
 
   const isEmpty = messages.length === 0;
+  const latestUserMessage = messages.filter((msg) => msg.role === "user").at(-1)?.content;
+  const suggestions = buildPromptSuggestions({
+    isEmpty,
+    isGenerating,
+    result: panel.result,
+    latestUserMessage,
+  });
+
+  const handleSuggestionSelect = (suggestion: PromptSuggestion) => {
+    setInput(suggestion.prompt);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      adjustHeight();
+    });
+  };
+
+  const handleRecoveryActionSelect = (action: RecoveryAction) => {
+    setInput(action.prompt);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      adjustHeight();
+    });
+  };
+
+  const handleReferenceAttachmentChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    const supportedFiles = files.filter(isSupportedReferenceAttachment).slice(0, 4);
+    if (supportedFiles.length > 0) {
+      setReferenceAttachments((current) => [
+        ...current,
+        ...supportedFiles.map(summarizeReferenceAttachment),
+      ].slice(0, 4));
+    }
+    event.target.value = "";
+  };
+
+  const removeReferenceAttachment = (index: number) => {
+    setReferenceAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index));
+  };
 
   return (
     <div className="flex flex-col h-full bg-white border-r border-gray-200">
@@ -467,7 +600,12 @@ export default function ChatPanel({ onSendMessage, onSwitchTab }: ChatPanelProps
           /* Message list */
           <>
             {messages.map((msg, i) => (
-              <MessageBubble key={i} msg={msg} onSwitchTab={onSwitchTab} />
+              <MessageBubble
+                key={i}
+                msg={msg}
+                onSwitchTab={onSwitchTab}
+                onRecoveryActionSelect={handleRecoveryActionSelect}
+              />
             ))}
             <InlineProgress />
           </>
@@ -477,6 +615,51 @@ export default function ChatPanel({ onSendMessage, onSwitchTab }: ChatPanelProps
 
       {/* Input area */}
       <div className="border-t border-gray-200 p-3">
+        <div className="mb-2 flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-xs">
+          <span className="shrink-0 text-gray-500">{"\u5236\u9020\u914d\u7f6e"}</span>
+          <select
+            value={selectedProfileId}
+            onChange={(event) => setSelectedProfileId(event.target.value)}
+            disabled={isGenerating}
+            className="rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
+          >
+            {MANUFACTURING_PROFILE_PRESETS.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+          </select>
+          <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400" title={selectedProfile.description}>
+            {formatManufacturingProfile(selectedProfile.profile)}
+          </span>
+        </div>
+        <SuggestionPills
+          suggestions={suggestions}
+          disabled={isGenerating}
+          onSelect={handleSuggestionSelect}
+        />
+        {referenceAttachments.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {referenceAttachments.map((attachment, index) => (
+              <span
+                key={`${attachment.name}-${index}`}
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-indigo-100 bg-indigo-50 px-2 py-1 text-[11px] text-indigo-700"
+                title={`${attachment.mime_type} - ${attachment.size_label}`}
+              >
+                <span className="shrink-0">{attachment.category === "image" ? "\u56fe\u7247" : "CAD"}</span>
+                <span className="truncate max-w-[160px]">{attachment.name}</span>
+                <button
+                  type="button"
+                  onClick={() => removeReferenceAttachment(index)}
+                  className="text-indigo-400 hover:text-indigo-700"
+                  aria-label={`Remove ${attachment.name}`}
+                >
+                  x
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex gap-2 items-end">
           <div className="flex-1 relative">
             <textarea
@@ -500,16 +683,33 @@ export default function ChatPanel({ onSendMessage, onSwitchTab }: ChatPanelProps
               className="bg-gray-300 text-white rounded-lg px-4 py-2 text-sm shrink-0 cursor-not-allowed flex items-center gap-1.5"
             >
               <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              生成中
+              {"\u751f\u6210\u4e2d"}
             </button>
           ) : (
-            <button
-              onClick={handleSend}
-              disabled={!input.trim()}
-              className="bg-indigo-600 text-white rounded-lg px-4 py-2 text-sm hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed shrink-0 transition-colors"
-            >
-              发送
-            </button>
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".png,.jpg,.jpeg,.webp,.stl,.step,.stp,image/png,image/jpeg,image/webp"
+                onChange={handleReferenceAttachmentChange}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-xs text-gray-600 hover:border-indigo-300 hover:text-indigo-700 shrink-0 transition-colors"
+              >
+                {"\u53c2\u8003\u6587\u4ef6"}
+              </button>
+              <button
+                onClick={handleSend}
+                disabled={!input.trim() && referenceAttachments.length === 0}
+                className="bg-indigo-600 text-white rounded-lg px-4 py-2 text-sm hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed shrink-0 transition-colors"
+              >
+                {"\u53d1\u9001"}
+              </button>
+            </>
           )}
         </div>
         <div className="text-[10px] text-gray-300 mt-1 text-right">

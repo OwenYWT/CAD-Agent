@@ -1,0 +1,40 @@
+{
+  "id": "printable_l_bracket_ribbed_v2",
+  "category": "bracket",
+  "part_type": "bracket",
+  "tags": [
+    "L bracket",
+    "mount",
+    "screw holes",
+    "ribs",
+    "FDM"
+  ],
+  "description": "???????????? L ???",
+  "description_en": "Printable ribbed L bracket with mounting holes",
+  "difficulty": "moderate",
+  "features_used": [
+    "mounting holes",
+    "ribs",
+    "fillet",
+    "union",
+    "cut"
+  ],
+  "modeling_hints": [
+    "extrude_cut"
+  ],
+  "manufacturing_notes": [
+    "Use ribs instead of very thick walls",
+    "Hole diameter should include screw clearance",
+    "Fillet rib roots to reduce stress concentration"
+  ],
+  "failure_modes": [
+    "Large fillets on ribs can fail",
+    "Unsupported horizontal arm may need chamfer or print orientation guidance"
+  ],
+  "print_profile": {
+    "process": "FDM",
+    "min_wall_mm": 1.6,
+    "screw_clearance_mm": 0.3
+  },
+  "code": "import cadquery as cq\nimport math\n\n# [Bracket]\n# ????\nbase_length_mm = 80  # [40:1:160]\n# ????\nheight_mm = 60  # [30:1:140]\n# ??\nwidth_mm = 28  # [16:1:60]\n# ??\nthickness_mm = 6  # [3:0.5:12]\n# ?????\nhole_diameter_mm = 4.3  # [2.5:0.1:8]\n# ?????\nrib_thickness_mm = 5  # [3:0.5:10]\n\nbase = cq.Workplane(\"XY\").box(base_length_mm, width_mm, thickness_mm)\nvertical = cq.Workplane(\"XY\").box(thickness_mm, width_mm, height_mm).translate((-base_length_mm / 2 + thickness_mm / 2, 0, height_mm / 2))\nrib = cq.Workplane(\"YZ\").workplane(offset=-base_length_mm / 2 + thickness_mm).polyline([(0, thickness_mm / 2), (0, height_mm - thickness_mm), (height_mm - thickness_mm, thickness_mm / 2)]).close().extrude(rib_thickness_mm, both=True)\nresult = base.union(vertical).union(rib)\nresult = result.faces(\">Z\").workplane().pushPoints([(-base_length_mm * 0.25, 0), (base_length_mm * 0.25, 0)]).hole(hole_diameter_mm)\nresult = result.edges(\"|Z\").fillet(1.5)\nshow_object(result)"
+}

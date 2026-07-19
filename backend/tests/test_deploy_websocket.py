@@ -1,4 +1,4 @@
-"""Hermetic WebSocket end-to-end tests for app.api.websocket.websocket_endpoint.
+﻿"""Hermetic WebSocket end-to-end tests for app.api.websocket.websocket_endpoint.
 
 Drives the REAL FastAPI WS route via TestClient.websocket_connect, with a FAKE
 orchestrator injected (set websocket._orchestrator). The fake's
@@ -18,7 +18,7 @@ from starlette.websockets import WebSocketDisconnect
 import app.api.websocket as ws_mod
 from app.config import settings
 from app.main import app
-from app.models.schemas import GenerateResponse, GenerationResult, StepUpdate
+from app.models.schemas import GenerateResponse, GenerationResult, InspectReport, StepUpdate
 from app.storage import history
 
 
@@ -41,8 +41,8 @@ class FakeOrchestrator:
     async def handle_message(self, context, text, on_step=None):
         self.handle_calls.append(text)
         if on_step:
-            await on_step(StepUpdate(step="planning", message="规划中..."))
-            await on_step(StepUpdate(step="generating_code", message="生成代码..."))
+            await on_step(StepUpdate(step="planning", message="瑙勫垝涓?.."))
+            await on_step(StepUpdate(step="generating_code", message="鐢熸垚浠ｇ爜..."))
         return GenerationResult(
             success=self.succeed,
             request_id="req-handle",
@@ -55,7 +55,7 @@ class FakeOrchestrator:
     async def modify_assembly_part(self, context, part_name, instruction, on_step=None):
         self.modify_calls.append((part_name, instruction))
         if on_step:
-            await on_step(StepUpdate(step="assembly_part", message="修改零件...", part_name=part_name))
+            await on_step(StepUpdate(step="assembly_part", message="淇敼闆朵欢...", part_name=part_name))
         return GenerationResult(
             success=self.succeed,
             request_id="req-modify",
@@ -73,6 +73,12 @@ class FakeOrchestrator:
             code=code if self.succeed else None,
             execution_time_ms=5,
             attempts=1,
+            inspect_report=InspectReport(
+                verdict="pass",
+                available_exports=["stl"],
+                repair_attempts=0,
+                source="geometry_validator",
+            ) if self.succeed else None,
             error=None if self.succeed else {"type": "ExecutionError", "message": "boom"},
         )
 
@@ -181,11 +187,15 @@ def test_execute_code_returns_generation_result(client, fake_orch):
     assert msg["data"]["request_id"] == "req-exec"
     assert msg["data"]["code"] == code
     assert msg["data"]["panel_id"] == "pX"
+    assert msg["data"]["inspect_report"]["available_exports"] == ["stl"]
+    assert msg["data"]["inspect_report"]["repair_attempts"] == 0
+    assert msg["data"]["snapshot_id"] is not None
+    assert msg["data"]["version"] == 1
     assert fake_orch.execute_calls == [code]
 
 
 def test_execute_code_empty_is_silently_ignored(client, fake_orch):
-    """Empty code hits `continue` with no response — so a follow-up cancel is what
+    """Empty code hits `continue` with no response 鈥?so a follow-up cancel is what
     we actually receive back (proves the empty execute produced nothing)."""
     with client.websocket_connect("/ws/sess-4b") as wsk:
         wsk.send_json({"type": "execute_code", "code": "", "panel_id": "p1"})
@@ -304,3 +314,4 @@ def test_panel_id_isolation_results_echo_correct_panel(client, fake_orch):
     assert set(panels.keys()) == {"A", "B"}
     assert panels["A"] is not panels["B"]
     assert fake_orch.handle_calls == ["panel A msg", "panel B msg"]
+

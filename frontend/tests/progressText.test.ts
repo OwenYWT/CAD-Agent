@@ -1,0 +1,48 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import test from "node:test";
+
+const PROJECT_ROOT = join(import.meta.dirname, "..", "..");
+
+const FILES_TO_CHECK = [
+  "frontend/src/stores/sessionStore.ts",
+  "frontend/src/components/MultiStepProgress.tsx",
+  "frontend/src/components/ChatPanel.tsx",
+  "frontend/src/components/AgentRunTimeline.tsx",
+  "backend/app/api/websocket.py",
+  "backend/app/agent/orchestrator.py",
+];
+
+const FORBIDDEN_SNIPPETS = [
+  "????",
+  "CAD ?????",
+  "?????????",
+  "????:",
+  "Generation completed",
+  "Generation failed",
+  "Design brief needs confirmation",
+  "\u93e2\u677f",
+  "\u6fde\u6d93",
+  "\u59dd\u6b63",
+  "\u6fb6\u6d36",
+  "\u95c6\u6735",
+  "\u7480\ufe40",
+  "\u6fb6\u590d",
+  "\u93b5\u8f66",
+  "\u7470\u55da",
+  "\u6dc7\ue1ac",
+];
+
+test("progress and thinking text has no mojibake remnants", () => {
+  const failures: string[] = [];
+
+  for (const file of FILES_TO_CHECK) {
+    const text = readFileSync(join(PROJECT_ROOT, file), "utf8");
+    for (const snippet of FORBIDDEN_SNIPPETS) {
+      if (text.includes(snippet)) failures.push(`${file}: ${snippet}`);
+    }
+  }
+
+  assert.deepEqual(failures, []);
+});

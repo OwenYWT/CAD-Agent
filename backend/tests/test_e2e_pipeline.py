@@ -280,6 +280,9 @@ async def test_execute_code_direct_no_llm():
     assert r.success is True
     assert r.code == code
     assert r.attempts == 1
+    assert r.inspect_report is not None
+    assert sorted(r.inspect_report.available_exports) == ["step", "stl"]
+    assert r.inspect_report.repair_attempts == 0
 
 
 @pytest.mark.asyncio

@@ -3,9 +3,41 @@ export interface ParamConfig {
   comment: string;
 }
 
+export interface ManufacturingProfile {
+  process: "fdm" | "sla" | "cnc" | "laser_cut" | "generic";
+  material: string;
+  nozzle_diameter_mm?: number | null;
+  layer_height_mm?: number | null;
+  build_volume_mm: number[];
+}
+
+
+export interface CADParameter {
+  name: string;
+  display_name: string;
+  value: number;
+  default_value: number;
+  type: "number";
+  min?: number | null;
+  max?: number | null;
+  step?: number | null;
+  unit?: string | null;
+  group?: string | null;
+  comment?: string | null;
+  line: number;
+}
+
+export type StepStatus = "queued" | "running" | "success" | "warn" | "failed" | "skipped";
+
 export interface StepUpdate {
   step: string;
   message: string;
+  status?: StepStatus;
+  stage_id?: string | null;
+  attempt?: number | null;
+  started_at?: string | null;
+  duration_ms?: number | null;
+  detail?: Record<string, unknown> | null;
   part_name?: string;
   part_index?: number;
   total_parts?: number;
@@ -39,6 +71,23 @@ export interface AssemblyPartInfo {
   color: string;
 }
 
+
+export interface RecoveryAction {
+  label: string;
+  prompt: string;
+  reason: string;
+  action_type: "retry_simpler" | "fix_printability" | "clarify" | "explain" | "inspect";
+}
+
+export interface RepairStep {
+  attempt: number;
+  stage: "validation" | "static_analysis" | "execution" | "geometry" | "vision" | string;
+  error_type: string;
+  message: string;
+  action: string;
+  status: "repaired" | "failed" | "skipped" | string;
+}
+
 export interface InspectCheck {
   name: string;
   status: "pass" | "warn" | "fail";
@@ -57,6 +106,28 @@ export interface InspectReport {
   print_warnings: string[];
   design_score?: number | null;
   dfm_violations?: RuleViolation[];
+  available_exports?: string[];
+  repair_attempts?: number;
+  source?: string;
+}
+
+export interface CriticalDimension {
+  name: string;
+  value?: number | null;
+  unit: string;
+  reason: string;
+}
+
+export interface DesignBrief {
+  intent_summary: string;
+  artifact_type: string;
+  manufacturing_posture: string;
+  assumptions: string[];
+  critical_dimensions: CriticalDimension[];
+  functional_requirements: string[];
+  printability_targets: string[];
+  acceptance_criteria: string[];
+  open_questions: string[];
 }
 
 export interface CADPlanBrief {
@@ -67,21 +138,49 @@ export interface CADPlanBrief {
   constraints?: string[];
   ambiguities?: string[];
   modeling_hint?: string;
+  design_brief?: DesignBrief | null;
+  manufacturing_profile?: ManufacturingProfile | null;
 }
 
 export interface GenerationResult {
   request_id?: string;
+  needs_confirmation?: boolean;
+  manufacturing_profile?: ManufacturingProfile | null;
+  snapshot_id?: string;
+  version?: number;
   success: boolean;
   files?: Record<string, string>;
   code?: string;
   params?: Record<string, ParamConfig>;
+  parameters?: CADParameter[] | null;
   execution_time_ms?: number;
   attempts?: number;
+  repair_history?: RepairStep[];
+  recovery_actions?: RecoveryAction[];
   error?: { type: string; message: string };
   validation?: ValidationData;
   assembly_parts?: AssemblyPartInfo[];
   inspect_report?: InspectReport | null;
   plan?: CADPlanBrief | null;
+  design_brief?: DesignBrief | null;
+}
+
+export interface ModelSnapshotSummary {
+  id: string;
+  panel_id: string;
+  parent_snapshot_id?: string | null;
+  version: number;
+  source: "generation" | "execute_code" | "parameter_edit" | "modify_part" | string;
+  prompt: string;
+  status: "pass" | "warn" | "fail" | "unknown";
+  created_at: string;
+  inspect_verdict?: "pass" | "warn" | "fail" | null;
+  available_exports?: string[];
+}
+
+export interface ModelSnapshotDetail extends ModelSnapshotSummary {
+  code: string;
+  result: GenerationResult;
 }
 
 export interface ChatMessage {

@@ -141,6 +141,9 @@ async def test_inspect_report_on_generate_response(tmp_path):
     assert r.inspect_report.printable is True
     # parity with the existing validation payload
     assert r.inspect_report.is_watertight == r.validation.is_watertight
+    assert sorted(r.inspect_report.available_exports) == ["step", "stl"]
+    assert r.inspect_report.repair_attempts == 0
+    assert r.inspect_report.source == "geometry_validator"
 
 
 @pytest.mark.asyncio
@@ -172,3 +175,34 @@ async def test_oversized_generate_reports_fail_but_success_true():
     assert r.success is True               # model was produced
     assert r.inspect_report.verdict == "fail"
     assert r.inspect_report.printable is False
+
+def test_inspect_report_serializes_delivery_evidence():
+    report = InspectReport(
+        verdict="warn",
+        available_exports=["stl", "step"],
+        repair_attempts=2,
+        source="geometry_validator",
+    )
+
+    dumped = report.model_dump()
+
+    assert dumped["available_exports"] == ["stl", "step"]
+    assert dumped["repair_attempts"] == 2
+    assert dumped["source"] == "geometry_validator"
+
+
+@pytest.mark.asyncio
+async def test_build_inspect_report_includes_exports_repairs_and_source():
+    geo = await GeometryValidator().validate(make_stl("printable"))
+
+    report = build_inspect_report(
+        geo,
+        available_exports=["stl", "step"],
+        repair_attempts=1,
+        source="geometry_validator",
+    )
+
+    assert report.available_exports == ["stl", "step"]
+    assert report.repair_attempts == 1
+    assert report.source == "geometry_validator"
+
