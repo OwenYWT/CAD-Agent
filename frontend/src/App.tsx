@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import type { AuthSession, AuthUser } from "./auth";
-import { getAuthUser, logoutAuthSession, onSessionCleared, fetchCurrentUser } from "./auth";
+import { getAuthUser, logoutAuthSession, onSessionCleared, fetchCurrentUser, fetchAuthConfig, LOCAL_DEV_USER } from "./auth";
 import { LoginPage } from "./components/LoginPage";
 import { useSessionStore } from "./stores/sessionStore";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -304,6 +304,25 @@ function App() {
   // Optimistically render from the cached user, but validate the token against the
   // backend on load (L5) so an expired/forged stored token doesn't grant a UI flash.
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => getAuthUser());
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authDisabled, setAuthDisabled] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAuthConfig()
+      .then((config) => {
+        if (cancelled) return;
+        const disabled = Boolean(config?.auth_disabled);
+        setAuthDisabled(disabled);
+        if (disabled) setAuthUser(LOCAL_DEV_USER);
+      })
+      .finally(() => {
+        if (!cancelled) setAuthChecked(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Any session clear (logout, expiry, or a background 401 in authFetch) drops the
   // UI back to the login page instead of leaving a zombie authenticated view (H3).
@@ -332,9 +351,17 @@ function App() {
   };
 
   const handleLogout = async () => {
+    if (authDisabled) {
+      setAuthUser(LOCAL_DEV_USER);
+      return;
+    }
     await logoutAuthSession();
     setAuthUser(null);
   };
+
+  if (!authChecked && !authUser) {
+    return <div className="min-h-screen flex items-center justify-center text-sm text-slate-500">正在检查本地登录配置...</div>;
+  }
 
   if (!authUser) {
     return <LoginPage onLogin={handleLogin} />;

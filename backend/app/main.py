@@ -34,6 +34,7 @@ from app.api.dfm_rules import router as dfm_rules_router
 from app.api.knowledge import router as knowledge_router
 from app.api.feedback import router as feedback_router
 from app.api.login import router as login_router
+from app.api.onshape import router as onshape_router
 from app.api.websocket import websocket_endpoint
 
 logger = logging.getLogger(__name__)
@@ -176,6 +177,7 @@ def create_app() -> FastAPI:
     app.include_router(knowledge_router, prefix="/api")
     app.include_router(feedback_router)
     app.include_router(login_router)
+    app.include_router(onshape_router)
 
     # WebSocket
     app.websocket("/ws/{session_id}")(websocket_endpoint)

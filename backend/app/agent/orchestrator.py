@@ -93,14 +93,20 @@ class Orchestrator:
         self._retriever = value
 
     def _create_retriever(self):
-        try:
-            from app.examples.vector_retriever import VectorExampleRetriever
-            retriever = VectorExampleRetriever()
-            logger.info("Using VectorExampleRetriever (ChromaDB)")
-        except Exception:
-            from app.examples.retriever import ExampleRetriever
-            retriever = ExampleRetriever()
-            logger.info("Falling back to TF-IDF ExampleRetriever")
+        if settings.example_retriever.strip().lower() == "vector":
+            try:
+                from app.examples.vector_retriever import VectorExampleRetriever
+
+                retriever = VectorExampleRetriever()
+                logger.info("Using VectorExampleRetriever (ChromaDB)")
+                return retriever
+            except Exception:
+                logger.warning("VectorExampleRetriever unavailable, falling back to TF-IDF ExampleRetriever")
+
+        from app.examples.retriever import ExampleRetriever
+
+        retriever = ExampleRetriever()
+        logger.info("Using TF-IDF ExampleRetriever")
         return retriever
 
     def _normalize_manufacturing_profile(
@@ -1401,4 +1407,3 @@ async def _call_step(on_step, step: StepUpdate):
     result = on_step(ensure_timeline_fields(step))
     if asyncio.iscoroutine(result):
         await result
-

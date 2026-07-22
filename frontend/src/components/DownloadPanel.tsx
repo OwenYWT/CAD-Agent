@@ -1,5 +1,9 @@
+import { useEffect, useState } from "react";
 import type { GenerationResult } from "../types";
+import { authFetch } from "../auth";
 import { buildArtifactManifest, manifestFilename, manifestJson } from "../utils/artifactManifest";
+
+const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 interface DownloadPanelProps {
   files: Record<string, string> | null;
@@ -7,6 +11,21 @@ interface DownloadPanelProps {
   hasResult: boolean;
   result?: GenerationResult | null;
   prompt?: string | null;
+}
+
+interface OnshapeLink {
+  request_id: string;
+  status: string;
+  onshape_url: string;
+  document_id: string;
+  workspace_id: string;
+  element_id?: string | null;
+  translation_id?: string | null;
+  document_name?: string;
+  step_filename?: string;
+  mode?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 const FILE_ICONS: Record<string, string> = {
@@ -18,19 +37,19 @@ const FILE_ICONS: Record<string, string> = {
 };
 
 const FILE_LABELS: Record<string, string> = {
-  step: "STEP 3D \u6a21\u578b",
-  stl: "STL \u9884\u89c8/\u6253\u5370",
-  dxf: "DXF 2D \u56fe\u7eb8",
-  svg: "SVG 2D \u9884\u89c8",
-  png: "PNG \u6e32\u67d3\u56fe",
+  step: "STEP 3D 模型",
+  stl: "STL 预览/打印",
+  dxf: "DXF 2D 图纸",
+  svg: "SVG 2D 预览",
+  png: "PNG 渲染图",
 };
 
 const FILE_DESCRIPTIONS: Record<string, string> = {
-  step: "\u7528\u4e8e\u673a\u68b0 CAD\u3001\u88c5\u914d\u548c\u540e\u7eed\u7f16\u8f91",
-  stl: "\u7528\u4e8e\u7f51\u9875\u9884\u89c8\u3001\u5207\u7247\u548c 3D \u6253\u5370",
-  dxf: "\u7528\u4e8e 2D CAD\u3001\u6fc0\u5149\u5207\u5272\u548c\u5de5\u7a0b\u56fe",
-  svg: "\u7528\u4e8e\u6d4f\u89c8\u5668\u67e5\u770b\u548c\u6587\u6863\u5c55\u793a",
-  png: "\u7528\u4e8e\u5feb\u901f\u5206\u4eab\u548c\u65b9\u6848\u6c47\u62a5",
+  step: "用于机械 CAD、装配和后续编辑",
+  stl: "用于网页预览、切片和 3D 打印",
+  dxf: "用于 2D CAD、激光切割和工程图",
+  svg: "用于浏览器查看和文档展示",
+  png: "用于快速分享和方案汇报",
 };
 
 function downloadTextFile(filename: string, text: string, mimeType: string) {
@@ -46,15 +65,50 @@ function downloadTextFile(filename: string, text: string, mimeType: string) {
 }
 
 export default function DownloadPanel({ files, requestId, hasResult, result, prompt }: DownloadPanelProps) {
+  const [onshapeLink, setOnshapeLink] = useState<OnshapeLink | null>(null);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [publishMessage, setPublishMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setOnshapeLink(null);
+    setPublishError(null);
+    setPublishMessage(null);
+    if (!requestId) return;
+
+    const currentRequestId = requestId;
+    let cancelled = false;
+
+    async function loadOnshapeLinks() {
+      try {
+        const response = await authFetch(`${API_BASE}/api/onshape/links/${encodeURIComponent(currentRequestId)}`);
+        if (!response.ok) return;
+        const links = (await response.json()) as OnshapeLink[];
+        if (!cancelled) setOnshapeLink(links[0] || null);
+      } catch {
+        if (!cancelled) setPublishMessage(null);
+      }
+    }
+
+    loadOnshapeLinks();
+    return () => {
+      cancelled = true;
+    };
+  }, [requestId]);
+
   if (!hasResult) {
     return (
       <div className="p-4 text-sm text-gray-500">
-        {"\u751f\u6210\u6a21\u578b\u540e\uff0c\u53ef\u5728\u8fd9\u91cc\u4e0b\u8f7d STEP\u3001STL\u3001DXF\u3001SVG \u7b49\u7f51\u9875\u7aef\u4ea7\u7269\u3002"}
+        {"生成模型后，可在这里下载 STEP、STL、DXF、SVG 等网页端产物。"}
       </div>
     );
   }
 
   const fileEntries = files ? Object.entries(files).filter(([, url]) => !!url) : [];
+  const stepUrl = files?.step || files?.stp || null;
+  const canPublishToOnshape = Boolean(requestId && stepUrl);
+
   const handleManifestDownload = () => {
     if (!result) return;
     const manifest = buildArtifactManifest(result, { prompt });
@@ -65,11 +119,64 @@ export default function DownloadPanel({ files, requestId, hasResult, result, pro
     );
   };
 
+  const refreshOnshapeStatus = async () => {
+    if (!requestId || !onshapeLink?.translation_id) return;
+    setIsRefreshing(true);
+    setPublishError(null);
+    try {
+      const response = await authFetch(`${API_BASE}/api/onshape/links/${encodeURIComponent(requestId)}/refresh`, {
+        method: "POST",
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        const detail = data?.detail ?? data;
+        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail || "刷新失败"));
+      }
+      setOnshapeLink(data as OnshapeLink);
+      setPublishMessage("已刷新 Onshape 导入状态。");
+    } catch (error) {
+      setPublishError(error instanceof Error ? error.message : "刷新 Onshape 状态失败");
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const publishToOnshape = async () => {
+    if (!requestId || !stepUrl) return;
+    setIsPublishing(true);
+    setPublishError(null);
+    setPublishMessage("正在提交 STEP 到 Onshape...");
+    try {
+      const stepFilename = decodeURIComponent(stepUrl.split("/").pop()?.split("?")[0] || "");
+      const response = await authFetch(`${API_BASE}/api/onshape/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          request_id: requestId,
+          step_filename: stepFilename || undefined,
+          wait_for_completion: false,
+        }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        const detail = data?.detail ?? data;
+        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail || "发布失败"));
+      }
+      setOnshapeLink(data as OnshapeLink);
+      setPublishMessage("已提交到 Onshape，导入任务可能仍在后台处理中，可稍后刷新状态。");
+    } catch (error) {
+      setPublishError(error instanceof Error ? error.message : "发布到 Onshape 失败");
+      setPublishMessage(null);
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
   return (
     <div className="p-4 space-y-4">
       <div>
         <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-          {"\u6a21\u578b\u6587\u4ef6"}
+          {"模型文件"}
         </h4>
         {fileEntries.length > 0 ? (
           <div className="space-y-2">
@@ -86,23 +193,23 @@ export default function DownloadPanel({ files, requestId, hasResult, result, pro
                     {FILE_LABELS[format] || format.toUpperCase()}
                   </div>
                   <div className="text-[11px] text-gray-400 truncate">
-                    {FILE_DESCRIPTIONS[format] || "\u70b9\u51fb\u4e0b\u8f7d\u751f\u6210\u6587\u4ef6"}
+                    {FILE_DESCRIPTIONS[format] || "点击下载生成文件"}
                   </div>
                 </div>
-                <span className="text-xs text-indigo-500">{"\u4e0b\u8f7d"}</span>
+                <span className="text-xs text-indigo-500">{"下载"}</span>
               </a>
             ))}
           </div>
         ) : (
           <div className="rounded-lg border border-dashed border-gray-200 bg-white p-3 text-sm text-gray-500">
-            {"\u5f53\u524d\u7ed3\u679c\u6ca1\u6709\u53ef\u4e0b\u8f7d\u6587\u4ef6\u3002"}
+            {"当前结果没有可下载文件。"}
           </div>
         )}
       </div>
 
       <div>
         <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-          {"\u5de5\u7a0b\u4ea4\u4ed8\u5305"}
+          {"工程交付包"}
         </h4>
         <button
           type="button"
@@ -113,20 +220,75 @@ export default function DownloadPanel({ files, requestId, hasResult, result, pro
           <span className="text-xs font-semibold text-purple-500 w-10">JSON</span>
           <div className="min-w-0 flex-1 text-left">
             <div className="text-sm font-medium text-gray-700 group-hover:text-purple-700">
-              {"Manifest \u6e05\u5355 JSON"}
+              {"Manifest 清单 JSON"}
             </div>
             <div className="text-[11px] text-gray-400 truncate">
-              {"\u4fdd\u5b58\u6765\u6e90\u3001\u53c2\u6570\u3001\u7b80\u62a5\u3001\u68c0\u67e5\u7ed3\u679c\u3001\u4fee\u590d\u8bb0\u5f55\u548c\u53c2\u8003\u9644\u4ef6"}
+              {"保存来源、参数、简报、检查结果、修复记录和参考附件"}
             </div>
           </div>
-          <span className="text-xs text-purple-500">{"\u4e0b\u8f7d"}</span>
+          <span className="text-xs text-purple-500">{"下载"}</span>
         </button>
       </div>
 
       <div className="rounded-lg bg-indigo-50 border border-indigo-100 p-3 text-xs text-indigo-700 leading-5">
-        <div className="font-medium mb-1">Web {"\u7248\u5de5\u4f5c\u6d41"}</div>
-        <p>{"\u5728\u6d4f\u89c8\u5668\u5b8c\u6210\u751f\u6210\u3001\u9884\u89c8\u3001\u53c2\u6570\u8c03\u6574\u548c\u4e0b\u8f7d\uff1b\u4e0d\u518d\u4f9d\u8d56\u684c\u9762 CAD \u63d2\u4ef6\u3002"}</p>
-        {requestId && <p className="mt-1 text-indigo-500">{"\u8bf7\u6c42 ID\uff1a"}{requestId}</p>}
+        <div className="font-medium mb-1">Web {"版工作流"}</div>
+        <p>{"在浏览器完成生成、预览、参数调整和下载；不再依赖桌面 CAD 插件。"}</p>
+        {requestId && <p className="mt-1 text-indigo-500">{"请求 ID："}{requestId}</p>}
+      </div>
+
+      <div className="rounded-lg bg-sky-50 border border-sky-100 p-3 text-xs text-sky-800 leading-5">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div>
+            <div className="font-medium">Onshape 云端 CAD</div>
+            <p className="text-sky-600">将 STEP 文件发布到 Onshape 文档，用于浏览器查看、分享和协作。</p>
+          </div>
+          <button
+            type="button"
+            onClick={publishToOnshape}
+            disabled={!canPublishToOnshape || isPublishing}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              canPublishToOnshape && !isPublishing
+                ? "bg-sky-600 text-white hover:bg-sky-700"
+                : "bg-gray-200 text-gray-400 cursor-not-allowed"
+            }`}
+          >
+            {isPublishing ? "发布中..." : "发布到 Onshape"}
+          </button>
+        </div>
+
+        {!stepUrl && <p className="text-amber-600">当前结果没有 STEP 文件，无法发布到 Onshape。</p>}
+        {publishMessage && <p className="text-sky-600">{publishMessage}</p>}
+        {publishError && <p className="text-red-600 break-words">{publishError}</p>}
+        {onshapeLink && (
+          <div className="mt-2 rounded-md bg-white border border-sky-100 p-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="font-medium text-sky-700 truncate">{onshapeLink.document_name || "Onshape 文档"}</div>
+                <div className="text-[11px] text-sky-500 truncate">
+                  状态：{onshapeLink.status} {onshapeLink.translation_id ? `· Translation：${onshapeLink.translation_id}` : ""}
+                </div>
+              </div>
+              <a
+                href={onshapeLink.onshape_url}
+                target="_blank"
+                rel="noreferrer"
+                className="shrink-0 text-xs font-medium text-sky-600 hover:text-sky-800"
+              >
+                打开 Onshape
+              </a>
+            </div>
+            {onshapeLink.translation_id && (
+              <button
+                type="button"
+                onClick={refreshOnshapeStatus}
+                disabled={isRefreshing}
+                className="mt-2 text-[11px] font-medium text-sky-600 hover:text-sky-800 disabled:text-gray-400"
+              >
+                {isRefreshing ? "刷新中..." : "刷新导入状态"}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
