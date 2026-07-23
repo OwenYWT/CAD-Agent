@@ -5,6 +5,7 @@ pydantic==2.7.0
 pydantic-settings==2.3.0
 docker==7.1.0
 trimesh==4.4.0
+rtree==1.4.1
 numpy==1.26.4
 aiofiles==24.1.0
 python-multipart==0.0.9
