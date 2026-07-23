@@ -36,6 +36,7 @@ from app.api.feedback import router as feedback_router
 from app.api.login import router as login_router
 from app.api.capabilities import router as capabilities_router
 from app.api.capability_actions import router as capability_actions_router
+from app.api.onshape import router as onshape_router
 from app.api.websocket import websocket_endpoint
 from app.fusion360.api import router as fusion360_router
 from app.fusion360.agent_api import router as fusion360_agent_router
@@ -199,6 +200,7 @@ def create_app() -> FastAPI:
     app.include_router(capability_actions_router)
     app.include_router(fusion360_router)
     app.include_router(fusion360_agent_router)
+    app.include_router(onshape_router)
 
     # WebSocket
     app.websocket("/ws/{session_id}")(websocket_endpoint)

@@ -82,6 +82,26 @@ export interface ExportJob {
   limitation?: string;
 }
 
+export interface OnshapeConfig {
+  configured: boolean;
+  default_document_public: boolean;
+}
+
+export interface OnshapeLink {
+  request_id: string;
+  status: string;
+  onshape_url: string;
+  document_id: string;
+  workspace_id: string;
+  element_id?: string | null;
+  translation_id?: string | null;
+  document_name?: string;
+  step_filename?: string;
+  mode?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface HistoryProject {
   id: string;
   name: string;

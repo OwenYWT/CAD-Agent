@@ -59,14 +59,20 @@ class Planner:
                 logger.info(f"Planner LLM call start (model={settings.llm_model}, attempt={attempt+1})")
                 response = await self.client.chat.completions.create(
                     model=settings.llm_model,
-                    max_tokens=2048,
+                    max_tokens=settings.planner_max_tokens,
                     temperature=0.1,
                     messages=[{"role": "system", "content": PLANNER_SYSTEM_PROMPT}] + messages,
                     response_format={"type": "json_object"},
                 )
                 elapsed = time.time() - t0
-                logger.info(f"Planner LLM call done in {elapsed:.1f}s")
-                content = response.choices[0].message.content
+                choice = response.choices[0]
+                finish_reason = getattr(choice, "finish_reason", None)
+                logger.info(f"Planner LLM call done in {elapsed:.1f}s (stop={finish_reason})")
+                if finish_reason == "length":
+                    raise ValueError(
+                        f"planner output was truncated at {settings.planner_max_tokens} completion tokens"
+                    )
+                content = choice.message.content
                 if not isinstance(content, str) or not content.strip():
                     raise ValueError("planner model returned empty content")
                 text = content.strip()
@@ -107,14 +113,20 @@ class Planner:
                 logger.info(f"Modification planner LLM call start (attempt={attempt+1})")
                 response = await self.client.chat.completions.create(
                     model=settings.llm_model,
-                    max_tokens=2048,
+                    max_tokens=settings.planner_max_tokens,
                     temperature=0.1,
                     messages=[{"role": "system", "content": system}] + messages,
                     response_format={"type": "json_object"},
                 )
                 elapsed = time.time() - t0
-                logger.info(f"Modification planner LLM call done in {elapsed:.1f}s")
-                content = response.choices[0].message.content
+                choice = response.choices[0]
+                finish_reason = getattr(choice, "finish_reason", None)
+                logger.info(f"Modification planner LLM call done in {elapsed:.1f}s (stop={finish_reason})")
+                if finish_reason == "length":
+                    raise ValueError(
+                        f"modification planner output was truncated at {settings.planner_max_tokens} completion tokens"
+                    )
+                content = choice.message.content
                 if not isinstance(content, str) or not content.strip():
                     raise ValueError("modification planner model returned empty content")
                 text = content.strip()

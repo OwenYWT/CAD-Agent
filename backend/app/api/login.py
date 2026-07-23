@@ -79,6 +79,16 @@ class InviteCreateRequest(BaseModel):
         return dt.isoformat()
 
 
+@router.get("/config")
+async def auth_config():
+    api_key_required = bool(settings.api_keys)
+    return {
+        "auth_required": settings.auth_required,
+        "api_key_required": api_key_required,
+        "auth_disabled": not settings.auth_required and not api_key_required,
+    }
+
+
 def _client_host(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 

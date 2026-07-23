@@ -116,7 +116,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
         result={model.result}
         steps={panel.stepHistory}
       />
-      <ExportDialog jobs={model.exports} onClose={() => setExportOpen(false)} open={exportOpen} />
+      <ExportDialog jobs={model.exports} onClose={() => setExportOpen(false)} open={exportOpen} requestId={model.result?.request_id} />
       <SettingsDrawer onClose={() => setSettingsOpen(false)} open={settingsOpen} />
     </div>
   );

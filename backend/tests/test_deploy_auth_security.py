@@ -84,6 +84,26 @@ def test_auth_off_health_reachable(client):
     assert r.json()["status"] == "ok"
 
 
+def test_auth_config_truthfully_reports_local_dev_bypass(client, monkeypatch):
+    monkeypatch.setattr(settings, "auth_required", False)
+    monkeypatch.setattr(settings, "api_keys", [])
+    response = client.get("/api/auth/config")
+    assert response.status_code == 200
+    assert response.json() == {
+        "auth_required": False,
+        "api_key_required": False,
+        "auth_disabled": True,
+    }
+
+
+def test_auth_config_does_not_bypass_configured_api_keys(client, monkeypatch):
+    monkeypatch.setattr(settings, "auth_required", False)
+    monkeypatch.setattr(settings, "api_keys", ["configured-key"])
+    response = client.get("/api/auth/config")
+    assert response.status_code == 200
+    assert response.json()["auth_disabled"] is False
+
+
 def test_auth_off_parts_reachable_no_creds(client):
     """api_keys=[] -> verify_api_key is a no-op; route runs and returns its own
     404 for an unknown part (NOT 401)."""
@@ -238,6 +258,19 @@ def test_files_handler_serves_existing_allowed_file(tmp_path, monkeypatch):
     resp = asyncio.run(download_file("abc123", "result.stl"))
     # FileResponse pointing at the real file inside storage
     assert str(f.resolve()) == resp.path
+
+
+def test_files_reject_symlink_that_escapes_request_directory(client, tmp_path, monkeypatch):
+    storage = tmp_path / "files"
+    request_dir = storage / "abc123"
+    request_dir.mkdir(parents=True)
+    outside = tmp_path / "outside.stl"
+    outside.write_text("solid private\nendsolid private\n", encoding="utf-8")
+    (request_dir / "result.stl").symlink_to(outside)
+    monkeypatch.setattr(settings, "file_storage_dir", str(storage))
+
+    response = client.get("/api/files/abc123/result.stl")
+    assert response.status_code == 400
 
 
 # --------------------------------------------------------------------------- #

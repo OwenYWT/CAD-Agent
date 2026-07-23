@@ -104,6 +104,45 @@ async def test_planner_empty_output_fails_closed():
     assert completions.calls == 2
 
 
+@pytest.mark.asyncio
+async def test_planner_retries_truncated_output_with_configured_budget(monkeypatch):
+    """A length-limited response is never parsed as a plan; retry stays model-backed."""
+    from types import SimpleNamespace
+    from app.agent.planner import Planner
+
+    valid = (
+        '{"description":"盒子","part_type":"box","dimensions":{"width":20,'
+        '"height":10,"depth":5},"features":[]}'
+    )
+
+    class RecordingCompletions:
+        def __init__(self):
+            self.calls = []
+
+        async def create(self, **kwargs):
+            self.calls.append(kwargs)
+            if len(self.calls) == 1:
+                return SimpleNamespace(choices=[SimpleNamespace(
+                    finish_reason="length",
+                    message=SimpleNamespace(content='{"description":"截断'),
+                )])
+            return SimpleNamespace(choices=[SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(content=valid),
+            )])
+
+    monkeypatch.setattr(settings, "planner_max_tokens", 8192)
+    completions = RecordingCompletions()
+    planner = Planner()
+    planner._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+    plan = await planner.plan_new([{"role": "user", "content": "一个盒子"}])
+
+    assert plan.description == "盒子"
+    assert len(completions.calls) == 2
+    assert all(call["max_tokens"] == 8192 for call in completions.calls)
+
+
 # === overall deadline (#17) at the REST layer ===
 
 @pytest.mark.asyncio

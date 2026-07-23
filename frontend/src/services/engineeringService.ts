@@ -1,6 +1,6 @@
 import { authFetch } from "../auth";
 import type { DesignAnalysis, GenerationResult } from "../types";
-import type { HistoryProject } from "../types/engineering";
+import type { HistoryProject, OnshapeConfig, OnshapeLink } from "../types/engineering";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
@@ -26,10 +26,20 @@ export interface RestoredProject {
   }>;
 }
 
+function apiErrorMessage(detail: unknown, fallback: string): string {
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (detail && typeof detail === "object") {
+    const record = detail as Record<string, unknown>;
+    if (typeof record.message === "string" && record.message.trim()) return record.message;
+    if (typeof record.detail === "string" && record.detail.trim()) return record.detail;
+  }
+  return fallback;
+}
+
 async function readJson<T>(response: Response, fallback: string): Promise<T> {
   if (!response.ok) {
-    const body = await response.json().catch(() => ({})) as { detail?: string };
-    throw new Error(body.detail || fallback);
+    const body = await response.json().catch(() => ({})) as { detail?: unknown };
+    throw new Error(apiErrorMessage(body.detail, fallback));
   }
   return response.json() as Promise<T>;
 }
@@ -75,4 +85,34 @@ export async function downloadEngineeringArtifact(url: string, filename: string)
   anchor.download = filename;
   anchor.click();
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+}
+
+export async function getOnshapeConfig(): Promise<OnshapeConfig> {
+  const response = await authFetch(`${API_BASE}/api/onshape/config`);
+  return readJson<OnshapeConfig>(response, "Onshape 配置状态加载失败");
+}
+
+export async function listOnshapeLinks(requestId: string): Promise<OnshapeLink[]> {
+  const response = await authFetch(`${API_BASE}/api/onshape/links/${encodeURIComponent(requestId)}`);
+  return readJson<OnshapeLink[]>(response, "Onshape 发布记录加载失败");
+}
+
+export async function publishToOnshape(requestId: string, stepFilename: string): Promise<OnshapeLink> {
+  const response = await authFetch(`${API_BASE}/api/onshape/publish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      request_id: requestId,
+      step_filename: stepFilename,
+      wait_for_completion: false,
+    }),
+  });
+  return readJson<OnshapeLink>(response, "发布到 Onshape 失败");
+}
+
+export async function refreshOnshapeLink(requestId: string): Promise<OnshapeLink> {
+  const response = await authFetch(`${API_BASE}/api/onshape/links/${encodeURIComponent(requestId)}/refresh`, {
+    method: "POST",
+  });
+  return readJson<OnshapeLink>(response, "Onshape 导入状态刷新失败");
 }

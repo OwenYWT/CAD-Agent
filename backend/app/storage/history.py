@@ -93,11 +93,30 @@ async def _init_tables(db: aiosqlite.Connection):
             note TEXT,
             created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS onshape_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_id TEXT NOT NULL,
+            user_id TEXT,
+            document_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            element_id TEXT,
+            translation_id TEXT,
+            status TEXT NOT NULL,
+            onshape_url TEXT NOT NULL,
+            document_name TEXT,
+            step_filename TEXT,
+            mode TEXT NOT NULL DEFAULT 'import_step',
+            raw_response TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         CREATE INDEX IF NOT EXISTS idx_panels_session ON panels(session_id);
         CREATE INDEX IF NOT EXISTS idx_messages_panel ON messages(panel_id);
         CREATE INDEX IF NOT EXISTS idx_model_snapshots_panel_version ON model_snapshots(panel_id, version);
         CREATE INDEX IF NOT EXISTS idx_model_snapshots_panel_created ON model_snapshots(panel_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_feedback_request ON feedback(request_id);
+        CREATE INDEX IF NOT EXISTS idx_onshape_links_request ON onshape_links(request_id, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_onshape_links_user ON onshape_links(user_id, updated_at);
     """)
     columns = await db.execute_fetchall("PRAGMA table_info(sessions)")
     if "user_id" not in {row["name"] for row in columns}:
@@ -493,3 +512,195 @@ async def get_feedback(request_id: str) -> list[dict]:
         (request_id,),
     )
     return [dict(r) for r in rows]
+
+
+# ---- Onshape links ----
+
+async def save_onshape_link(
+    request_id: str,
+    user_id: str | None,
+    document_id: str,
+    workspace_id: str,
+    element_id: str | None,
+    translation_id: str | None,
+    status: str,
+    onshape_url: str,
+    document_name: str = "",
+    step_filename: str = "",
+    mode: str = "import_step",
+    raw_response: dict | None = None,
+) -> dict:
+    db = await get_db()
+    now = _now()
+    raw_text = json.dumps(raw_response, ensure_ascii=False) if raw_response is not None else None
+    await db.execute(
+        """
+        INSERT INTO onshape_links (
+            request_id, user_id, document_id, workspace_id, element_id,
+            translation_id, status, onshape_url, document_name, step_filename,
+            mode, raw_response, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            request_id,
+            user_id,
+            document_id,
+            workspace_id,
+            element_id,
+            translation_id,
+            status,
+            onshape_url,
+            document_name,
+            step_filename,
+            mode,
+            raw_text,
+            now,
+            now,
+        ),
+    )
+    await db.commit()
+    return {
+        "request_id": request_id,
+        "user_id": user_id,
+        "document_id": document_id,
+        "workspace_id": workspace_id,
+        "element_id": element_id,
+        "translation_id": translation_id,
+        "status": status,
+        "onshape_url": onshape_url,
+        "document_name": document_name,
+        "step_filename": step_filename,
+        "mode": mode,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+async def get_onshape_links(request_id: str, user_id: str | None = None) -> list[dict]:
+    db = await get_db()
+    if user_id:
+        rows = await db.execute_fetchall(
+            """
+            SELECT request_id, status, onshape_url, document_id, workspace_id,
+                   element_id, translation_id, document_name, step_filename,
+                   mode, created_at, updated_at
+            FROM onshape_links
+            WHERE request_id = ? AND user_id = ?
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (request_id, user_id),
+        )
+    else:
+        rows = await db.execute_fetchall(
+            """
+            SELECT request_id, status, onshape_url, document_id, workspace_id,
+                   element_id, translation_id, document_name, step_filename,
+                   mode, created_at, updated_at
+            FROM onshape_links
+            WHERE request_id = ?
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (request_id,),
+        )
+    return [dict(r) for r in rows]
+
+
+async def get_latest_onshape_link(request_id: str, user_id: str | None = None) -> dict | None:
+    db = await get_db()
+    if user_id:
+        cursor = await db.execute(
+            """
+            SELECT id, request_id, status, onshape_url, document_id, workspace_id,
+                   element_id, translation_id, document_name, step_filename,
+                   mode, created_at, updated_at
+            FROM onshape_links
+            WHERE request_id = ? AND user_id = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (request_id, user_id),
+        )
+    else:
+        cursor = await db.execute(
+            """
+            SELECT id, request_id, status, onshape_url, document_id, workspace_id,
+                   element_id, translation_id, document_name, step_filename,
+                   mode, created_at, updated_at
+            FROM onshape_links
+            WHERE request_id = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (request_id,),
+        )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def get_onshape_link_by_translation(
+    translation_id: str,
+    user_id: str | None = None,
+) -> dict | None:
+    db = await get_db()
+    if user_id:
+        cursor = await db.execute(
+            """
+            SELECT id, request_id, status, onshape_url, document_id, workspace_id,
+                   element_id, translation_id, document_name, step_filename,
+                   mode, created_at, updated_at
+            FROM onshape_links
+            WHERE translation_id = ? AND user_id = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (translation_id, user_id),
+        )
+    else:
+        cursor = await db.execute(
+            """
+            SELECT id, request_id, status, onshape_url, document_id, workspace_id,
+                   element_id, translation_id, document_name, step_filename,
+                   mode, created_at, updated_at
+            FROM onshape_links
+            WHERE translation_id = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (translation_id,),
+        )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def update_onshape_link_status(
+    link_id: int,
+    status: str,
+    element_id: str | None,
+    onshape_url: str,
+    raw_response: dict | None = None,
+) -> dict | None:
+    db = await get_db()
+    now = _now()
+    raw_text = json.dumps(raw_response, ensure_ascii=False) if raw_response is not None else None
+    await db.execute(
+        """
+        UPDATE onshape_links
+        SET status = ?, element_id = COALESCE(?, element_id), onshape_url = ?,
+            raw_response = COALESCE(?, raw_response), updated_at = ?
+        WHERE id = ?
+        """,
+        (status, element_id, onshape_url, raw_text, now, link_id),
+    )
+    await db.commit()
+    cursor = await db.execute(
+        """
+        SELECT request_id, status, onshape_url, document_id, workspace_id,
+               element_id, translation_id, document_name, step_filename,
+               mode, created_at, updated_at
+        FROM onshape_links
+        WHERE id = ?
+        """,
+        (link_id,),
+    )
+    row = await cursor.fetchone()
+    return dict(row) if row else None

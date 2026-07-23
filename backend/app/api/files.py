@@ -59,12 +59,13 @@ async def download_file(
 
     # Resolve and verify the path stays within storage dir
     storage_dir = Path(settings.file_storage_dir).resolve()
-    file_path = (storage_dir / request_id / filename).resolve()
+    request_dir = (storage_dir / request_id).resolve()
+    file_path = (request_dir / filename).resolve()
 
-    if not str(file_path).startswith(str(storage_dir)):
+    if request_dir.parent != storage_dir or file_path.parent != request_dir:
         raise HTTPException(status_code=400, detail="Invalid file path")
 
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
 
     media_type = MEDIA_TYPES.get(suffix, "application/octet-stream")

@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.moonshot.cn/v1"
     llm_model: str = "kimi-k2.7-code"
     llm_reasoning_effort: str | None = None
+    planner_max_tokens: int = Field(default=8192, ge=2048, le=32768)
     azure_openai_endpoint: str | None = None
     azure_openai_api_key: str | None = None
     azure_openai_api_version: str = "2025-03-01-preview"
@@ -30,6 +31,7 @@ class Settings(BaseSettings):
     cadskills_isolated_executor: list[str] = []
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     log_level: str = "info"
+    example_retriever: str = "tfidf"
     api_keys: list[str] = []  # empty = no legacy API-key auth required
     auth_required: bool = True
     # HMAC signing key for login/session tokens. MUST be set to a long random value
@@ -105,6 +107,13 @@ class Settings(BaseSettings):
     build_volume_mm: float = 256.0  # cubic build volume edge (Bambu A1 mini ≈ 180, generic FDM ≈ 256)
     min_wall_mm: float = 0.8  # minimum printable wall thickness (2x 0.4mm nozzle line)
 
+    # Onshape integration (server-side only; never expose the secret key to frontend)
+    onshape_base_url: str = "https://cad.onshape.com"
+    onshape_access_key: str | None = None
+    onshape_secret_key: str | None = None
+    onshape_timeout_s: float = 30.0
+    onshape_default_document_public: bool = False
+
     # LLM call resilience (SDK default read timeout is 600s — far too long for an
     # interactive product; one slow call would block the whole generate request).
     llm_timeout_s: float = 60.0
@@ -138,6 +147,17 @@ class Settings(BaseSettings):
         if self.normalized_llm_provider == "moonshot":
             return "MOONSHOT_API_KEY is required when LLM_PROVIDER=moonshot"
         return "LLM credentials are required: set Azure OpenAI variables when LLM_PROVIDER=azure, MOONSHOT_API_KEY when LLM_PROVIDER=moonshot, or DASHSCOPE_API_KEY when LLM_PROVIDER=openai_compatible"
+
+    @property
+    def has_onshape_credentials(self) -> bool:
+        access_key = (self.onshape_access_key or "").strip()
+        secret_key = (self.onshape_secret_key or "").strip()
+        placeholders = {"<ONSHAPE_ACCESS_KEY>", "<ONSHAPE_SECRET_KEY>"}
+        return bool(access_key and secret_key and access_key not in placeholders and secret_key not in placeholders)
+
+    @property
+    def onshape_credentials_error(self) -> str:
+        return "ONSHAPE_ACCESS_KEY and ONSHAPE_SECRET_KEY are required for Onshape operations"
 
     # Values that previously shipped as defaults and would silently weaken auth if
     # left in place. Refuse to boot with auth on while any of these is in effect.

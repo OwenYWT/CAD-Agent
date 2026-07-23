@@ -16,6 +16,21 @@ export interface AuthSession {
   user: AuthUser;
 }
 
+export interface AuthConfig {
+  auth_required: boolean;
+  api_key_required: boolean;
+  auth_disabled: boolean;
+}
+
+export const LOCAL_DEV_USER: AuthUser = {
+  id: "local-dev",
+  phone: "本地开发模式（无需登录）",
+  registered_via: "auth_disabled",
+  is_admin: false,
+  created_at: "",
+  last_login_at: "",
+};
+
 export function getAuthToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -88,6 +103,16 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
     if (!res.ok) return null;
     const data = (await res.json()) as { user: AuthUser };
     return data.user ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchAuthConfig(): Promise<AuthConfig | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/config`);
+    if (!res.ok) return null;
+    return (await res.json()) as AuthConfig;
   } catch {
     return null;
   }

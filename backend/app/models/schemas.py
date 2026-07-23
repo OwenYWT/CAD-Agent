@@ -260,6 +260,64 @@ class FeedbackRequest(BaseModel):
     note: str | None = Field(None, max_length=2000)
 
 
+class OnshapeCreateDocumentRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=256)
+    description: str | None = Field(None, max_length=2000)
+    is_public: bool | None = None
+
+
+class OnshapeDocumentResponse(BaseModel):
+    id: str
+    name: str = ""
+    default_workspace_id: str | None = None
+    web_url: str | None = None
+    raw: dict = Field(default_factory=dict)
+
+
+class OnshapeDocumentsResponse(BaseModel):
+    documents: list[dict] = Field(default_factory=list)
+    raw: dict = Field(default_factory=dict)
+
+
+class OnshapePublishRequest(BaseModel):
+    request_id: str = Field(..., min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_-]+$")
+    document_id: str | None = Field(None, min_length=1, max_length=128)
+    workspace_id: str | None = Field(None, min_length=1, max_length=128)
+    document_name: str | None = Field(None, min_length=1, max_length=256)
+    step_filename: str | None = Field(None, min_length=1, max_length=256, pattern=r"^[a-zA-Z0-9._-]+$")
+    wait_for_completion: bool = False
+    poll_interval_s: float = Field(2.0, ge=0.5, le=10.0)
+    timeout_s: float = Field(60.0, ge=1.0, le=300.0)
+
+
+class OnshapePublishResponse(BaseModel):
+    request_id: str
+    status: str
+    onshape_url: str
+    document_id: str
+    workspace_id: str
+    element_id: str | None = None
+    translation_id: str | None = None
+    document_name: str = ""
+    step_filename: str = ""
+    raw: dict = Field(default_factory=dict)
+
+
+class OnshapeLink(BaseModel):
+    request_id: str
+    status: str
+    onshape_url: str
+    document_id: str
+    workspace_id: str
+    element_id: str | None = None
+    translation_id: str | None = None
+    document_name: str = ""
+    step_filename: str = ""
+    mode: str = "import_step"
+    created_at: str
+    updated_at: str
+
+
 class GenerateResponse(BaseModel):
     request_id: str
     success: bool
