@@ -158,8 +158,9 @@ def test_capability_actions_report_runtime_blockers(monkeypatch):
     dxf = registry.get_capability("dxf")
     viewer = registry.get_capability("cad-viewer")
 
-    assert dxf is not None and dxf.available is True
+    assert dxf is not None and dxf.available is False
     assert all(action.available is False for action in dxf.actions)
     assert all(action.blocked_reason for action in dxf.actions)
+    assert dxf.blocked_reasons
     assert viewer is not None
     assert all(action.available is True for action in viewer.actions)

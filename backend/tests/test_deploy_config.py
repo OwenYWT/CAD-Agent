@@ -44,17 +44,18 @@ def test_settings_defaults_are_safe(monkeypatch):
     """Fresh defaults: no auth, no key, sane print gate."""
     # Clear any env that could leak in.
     for k in ("MOONSHOT_API_KEY", "DASHSCOPE_API_KEY", "CORS_ORIGINS", "API_KEYS",
-              "BUILD_VOLUME_MM", "MIN_WALL_MM", "TRUST_PROXY_HEADERS"):
+              "BUILD_VOLUME_MM", "MIN_WALL_MM", "TRUST_PROXY_HEADERS", "DEFAULT_INVITE_CODES"):
         monkeypatch.delenv(k, raising=False)
     s = Settings(_env_file=None)
     assert s.dashscope_api_key is None
     assert s.moonshot_api_key is None
     assert s.llm_provider == "moonshot"
     assert s.llm_model == "kimi-k2.7-code"
-    assert s.api_keys == []            # empty = auth OFF by default
+    assert s.api_keys == []
+    assert s.default_invite_codes == []  # access codes must be deployment-owned secrets
     assert s.has_llm_credentials is False
     assert s.trust_proxy_headers is False
-    assert s.cors_origins == ["http://localhost:5173"]
+    assert s.cors_origins == ["http://localhost:5173", "http://127.0.0.1:5173"]
     assert s.build_volume_mm == pytest.approx(256.0)
     assert s.min_wall_mm == pytest.approx(0.8)
 
@@ -168,6 +169,24 @@ def test_startup_self_check_reports_docker_problem(monkeypatch):
     assert any(("Docker" in p) or ("沙箱" in p) or ("docker" in p) for p in problems)
 
 
+def test_startup_self_check_reports_podman_timeout(monkeypatch):
+    """A stuck Podman VM must degrade readiness instead of blocking API startup."""
+    from app import config, main
+
+    monkeypatch.setattr(config.settings, "llm_provider", "moonshot")
+    monkeypatch.setattr(config.settings, "moonshot_api_key", "sk-present")
+    monkeypatch.setattr(config.settings, "sandbox_runtime", "podman")
+    monkeypatch.setattr(config.settings, "sandbox_command", "podman")
+
+    def _timed_out(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs["timeout"])
+
+    monkeypatch.setattr(subprocess, "run", _timed_out)
+
+    problems = main._startup_self_check()
+    assert any("Podman" in problem and "超时" in problem for problem in problems)
+
+
 def test_startup_self_check_clean_when_key_and_docker_ok(monkeypatch):
     """When the key is present AND docker reports healthy + image present, no
     problems are returned. We fake the docker SDK so the test stays hermetic."""
@@ -189,7 +208,7 @@ def test_startup_self_check_clean_when_key_and_docker_ok(monkeypatch):
         def ping(self):
             return True
 
-    fake_docker.from_env = lambda: _FakeClient()
+    fake_docker.from_env = lambda **kwargs: _FakeClient()
     fake_errors = types.ModuleType("docker.errors")
     class ImageNotFound(Exception):
         pass

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getAuthToken } from "../auth";
 import { useSessionStore } from "../stores/sessionStore";
-import type { WSMessage } from "../types";
-import type { CapabilitySelection } from "../types";
+import type { CapabilitySelection, ManufacturingProfile, WSMessage } from "../types";
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const BASE_RECONNECT_DELAY_MS = 1000;
@@ -97,11 +96,21 @@ export function useWebSocket() {
     };
   }, [sessionId, setStep, setResult, setError]);
 
-  const sendMessage = useCallback((text: string, capability: CapabilitySelection = "auto") => {
+  const sendMessage = useCallback((
+    text: string,
+    capability: CapabilitySelection = "auto",
+    manufacturingProfile: ManufacturingProfile | null = null,
+  ) => {
     const ws = wsRef.current;
     if (ws?.readyState !== WebSocket.OPEN) return false;
     const panelId = useSessionStore.getState().activePanelId;
-    ws.send(JSON.stringify({ type: "user_message", text, capability, panel_id: panelId }));
+    ws.send(JSON.stringify({
+      type: "user_message",
+      text,
+      capability,
+      panel_id: panelId,
+      manufacturing_profile: manufacturingProfile,
+    }));
     return true;
   }, []);
 

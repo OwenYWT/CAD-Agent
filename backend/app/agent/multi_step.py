@@ -400,6 +400,6 @@ class MultiStepExecutor:
 async def _call_step(on_step, step: StepUpdate):
     import asyncio
 
-    result = on_step(step)
+    result = on_step(ensure_timeline_fields(step))
     if asyncio.iscoroutine(result):
         await result

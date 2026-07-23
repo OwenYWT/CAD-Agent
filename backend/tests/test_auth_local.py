@@ -575,6 +575,35 @@ def test_ws_allows_owner_and_new_session(client):
         pass
 
 
+def test_panel_id_cannot_be_reused_by_another_session(auth_env):
+    async def _run():
+        await history_store.create_panel("panel-session-a", "shared-panel", user_id="user-A")
+        with pytest.raises(ValueError, match="another session"):
+            await history_store.create_panel("panel-session-b", "shared-panel", user_id="user-A")
+        return await history_store.list_panels("panel-session-b")
+
+    assert asyncio.run(_run()) == []
+
+
+def test_ws_rejects_panel_owned_by_another_session_for_same_user(client):
+    import app.api.websocket as ws_mod
+    from starlette.websockets import WebSocketDisconnect
+
+    ws_mod.sessions.clear()
+    account = _register(client, "13800000034")
+    asyncio.run(history_store.create_panel(
+        "panel-session-owner",
+        "shared-panel-ws",
+        user_id=account["user"]["id"],
+    ))
+
+    with pytest.raises(WebSocketDisconnect) as excinfo:
+        with client.websocket_connect(f"/ws/panel-session-other?token={account['token']}") as wsk:
+            wsk.send_json({"type": "user_message", "panel_id": "shared-panel-ws", "text": ""})
+            wsk.receive_json()
+    assert excinfo.value.code == 4003
+
+
 def test_ws_writable_helper_semantics(auth_env):
     async def _run():
         await history_store.create_session("owned", user_id="user-A")

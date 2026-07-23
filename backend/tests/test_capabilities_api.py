@@ -62,8 +62,14 @@ def test_list_returns_all_11_pinned_manifests(client):
             for dependency in manifest["dependencies"]
             if dependency["required"] and not dependency["available"]
         ]
+        if not expected_reasons and not any(action["available"] for action in manifest["actions"]):
+            expected_reasons = list(dict.fromkeys(
+                action["blocked_reason"]
+                for action in manifest["actions"]
+                if action["blocked_reason"]
+            ))
         assert manifest["blocked_reasons"] == expected_reasons
-        assert manifest["available"] is (not expected_reasons)
+        assert manifest["available"] is (not expected_reasons and any(action["available"] for action in manifest["actions"]))
 
 
 def test_get_returns_one_manifest_and_unknown_is_404(client):
@@ -119,11 +125,10 @@ def test_missing_required_dependency_never_reports_available(monkeypatch):
 
     assert manifests["cad"].available is False
     assert manifests["cad"].blocked_reasons
-    assert manifests["gcode"].available is False
     assert manifests["implicit-cad"].available is False
 
 
-def test_existing_dxf_module_is_a_real_local_backend(monkeypatch):
+def test_dxf_without_any_runnable_action_is_not_reported_available(monkeypatch):
     monkeypatch.setattr(registry, "_module_available", lambda name: name == "ezdxf")
     monkeypatch.setattr(registry, "_command_path", lambda *names: None)
 
@@ -132,10 +137,32 @@ def test_existing_dxf_module_is_a_real_local_backend(monkeypatch):
     runtime = next(dep for dep in dxf.dependencies if dep.id == "dxf-runtime")
     assert runtime.available is True
     assert "ezdxf" in runtime.detail
-    assert dxf.available is True
+    assert dxf.available is False
+    assert all(action.available is False for action in dxf.actions)
+    assert dxf.blocked_reasons == list(dict.fromkeys(
+        action.blocked_reason for action in dxf.actions if action.blocked_reason
+    ))
 
 
-def test_existing_sandbox_is_recognized_as_cad_backend(monkeypatch):
+def test_gcode_read_only_actions_remain_available_without_slicer(monkeypatch):
+    monkeypatch.setattr(registry, "_module_available", lambda name: True)
+    monkeypatch.setattr(registry, "_command_path", lambda *names: None)
+
+    gcode = registry.get_capability("gcode")
+    assert gcode is not None
+    availability = {action.id: action.available for action in gcode.actions}
+    assert availability == {
+        "discover": True,
+        "inspect": True,
+        "dry-run": False,
+        "slice": False,
+        "validate": True,
+    }
+    assert gcode.available is True
+    assert gcode.blocked_reasons == []
+
+
+def test_unrelated_conversational_sandbox_is_not_claimed_as_capability_backend(monkeypatch):
     monkeypatch.setattr(registry, "_module_available", lambda name: False)
     monkeypatch.setattr(registry, "_sandbox_assets_available", lambda: True)
     monkeypatch.setattr(registry, "_command_path", lambda *names: "/usr/bin/docker")
@@ -143,9 +170,9 @@ def test_existing_sandbox_is_recognized_as_cad_backend(monkeypatch):
     cad = registry.get_capability("cad")
     assert cad is not None
     runtime = next(dep for dep in cad.dependencies if dep.id == "cad-runtime")
-    assert runtime.available is True
-    assert "backend/sandbox" in runtime.detail
-    assert cad.available is True
+    assert runtime.available is False
+    assert "not used by capability actions" in runtime.detail
+    assert cad.available is False
 
 
 def test_optional_viewer_reuse_launcher_does_not_block_server(monkeypatch):

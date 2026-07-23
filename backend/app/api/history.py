@@ -8,6 +8,10 @@ from app.storage.history import (
     delete_session,
     panel_belongs_to_user,
     session_belongs_to_user,
+    list_model_snapshots,
+    get_model_snapshot,
+    restore_model_snapshot,
+    snapshot_belongs_to_user,
 )
 
 router = APIRouter(prefix="/api/history", tags=["history"])
@@ -35,6 +39,33 @@ async def api_get_messages(panel_id: str, user=Depends(get_optional_user)):
     if not await panel_belongs_to_user(panel_id, _uid(user)):
         raise HTTPException(status_code=404, detail="Panel not found")
     return await get_messages(panel_id)
+
+
+
+
+@router.get("/panels/{panel_id}/snapshots")
+async def api_list_model_snapshots(panel_id: str, user=Depends(get_optional_user)):
+    if not await panel_belongs_to_user(panel_id, _uid(user)):
+        raise HTTPException(status_code=404, detail="Panel not found")
+    return await list_model_snapshots(panel_id)
+
+
+@router.get("/snapshots/{snapshot_id}")
+async def api_get_model_snapshot(snapshot_id: str, user=Depends(get_optional_user)):
+    if not await snapshot_belongs_to_user(snapshot_id, _uid(user)):
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    snapshot = await get_model_snapshot(snapshot_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    return snapshot
+
+
+@router.post("/snapshots/{snapshot_id}/restore")
+async def api_restore_model_snapshot(snapshot_id: str, user=Depends(get_optional_user)):
+    snapshot = await restore_model_snapshot(snapshot_id, _uid(user))
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    return snapshot
 
 
 @router.delete("/sessions/{session_id}")

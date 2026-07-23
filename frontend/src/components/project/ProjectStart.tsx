@@ -1,5 +1,7 @@
 import { useState } from "react";
 import type { ConnectionState } from "../../hooks/useWebSocket";
+import type { ManufacturingProfile } from "../../types";
+import { MANUFACTURING_PROFILE_PRESETS, getManufacturingProfilePreset } from "../../utils/manufacturingProfiles";
 import { Icon } from "../ui/Icon";
 
 const EXAMPLES = [
@@ -10,18 +12,19 @@ const EXAMPLES = [
 
 interface ProjectStartProps {
   connectionState: ConnectionState;
-  onStart: (prompt: string) => boolean;
+  onStart: (prompt: string, profile: ManufacturingProfile) => boolean;
   onOpenHistory: () => void;
 }
 
 export default function ProjectStart({ connectionState, onStart, onOpenHistory }: ProjectStartProps) {
   const [prompt, setPrompt] = useState("");
+  const [profileId, setProfileId] = useState(MANUFACTURING_PROFILE_PRESETS[0].id);
   const [error, setError] = useState<string | null>(null);
 
   const start = () => {
     const value = prompt.trim();
     if (!value) return;
-    if (!onStart(value)) {
+    if (!onStart(value, getManufacturingProfilePreset(profileId).profile)) {
       setError("实时连接尚未就绪，需求已保留。请稍后重试。");
       return;
     }
@@ -46,6 +49,7 @@ export default function ProjectStart({ connectionState, onStart, onOpenHistory }
             <textarea aria-label="工程需求" autoFocus className="min-h-32 w-full resize-none border-0 bg-transparent px-2 py-2 text-sm leading-6 text-[var(--ink)] outline-none placeholder:text-[var(--faint)]" onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) start(); }} placeholder="例如：设计一个 IP67 工业传感器外壳，支持壁装，内部预留 PCB、电池和密封圈空间……" value={prompt} />
             <div className="flex flex-wrap items-center gap-2 border-t border-[var(--line)] px-1 pt-3">
               <span className="text-[11px] text-[var(--faint)]">当前生成接口支持文本需求；能力工作区可单独上传工程文件。</span>
+              <label className="flex items-center gap-1.5 text-[11px] text-[var(--muted)]"><span>制造方式</span><select aria-label="制造方式" className="rounded-md border border-[var(--line)] bg-white px-2 py-1 outline-none focus:border-[var(--focus)]" onChange={(event) => setProfileId(event.target.value)} value={profileId}>{MANUFACTURING_PROFILE_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</select></label>
               <span className={`text-[11px] ${connectionState === "connected" ? "text-emerald-700" : "text-amber-700"}`}>{connectionState === "connected" ? "实时任务已连接" : "正在连接实时任务"}</span>
               <button className="workspace-button workspace-button--primary ml-auto" disabled={!prompt.trim() || connectionState !== "connected"} onClick={start} type="button">开始创建<Icon name="chevron-right" size={15} /></button>
             </div>

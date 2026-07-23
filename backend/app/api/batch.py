@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.agent.orchestrator import Orchestrator
 from app.api.auth import verify_api_key, rate_limiter
-from app.models.schemas import GenerateResponse
+from app.models.schemas import GenerateResponse, ManufacturingProfile
 from app.storage.file_ownership import claim_request_owner
 
 router = APIRouter(prefix="/api", tags=["batch"])
@@ -21,6 +21,7 @@ _tasks: dict[str, dict] = {}
 
 class BatchItem(BaseModel):
     prompt: str
+    manufacturing_profile: ManufacturingProfile | None = None
     output_formats: list[str] = ["step", "stl"]
 
 
@@ -37,6 +38,7 @@ class BatchResponse(BaseModel):
 
 class AsyncGenerateRequest(BaseModel):
     prompt: str
+    manufacturing_profile: ManufacturingProfile | None = None
     output_formats: list[str] = ["step", "stl"]
 
 
@@ -69,9 +71,13 @@ async def batch_generate(
         async with semaphore:
             from app.api.websocket import _get_orchestrator
             orchestrator = _get_orchestrator()
+            kwargs = {}
+            if item.manufacturing_profile is not None:
+                kwargs["manufacturing_profile"] = item.manufacturing_profile
             return await orchestrator.generate(
                 prompt=item.prompt,
                 output_formats=item.output_formats,
+                **kwargs,
             )
 
     results = await asyncio.gather(
@@ -153,9 +159,13 @@ async def _run_async_generate(
 
     try:
         orchestrator = Orchestrator()
+        kwargs = {}
+        if req.manufacturing_profile is not None:
+            kwargs["manufacturing_profile"] = req.manufacturing_profile
         result = await orchestrator.generate(
             prompt=req.prompt,
             output_formats=req.output_formats,
+            **kwargs,
         )
         claim_request_owner(result.request_id, principal)
         _tasks[task_id]["status"] = "completed"

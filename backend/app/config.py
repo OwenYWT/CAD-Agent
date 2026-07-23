@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     # Optional deployment-owned command prefix for untrusted Python/JS generators.
     # Leave empty to keep source execution blocked; never accept this from an API.
     cadskills_isolated_executor: list[str] = []
-    cors_origins: list[str] = ["http://localhost:5173"]
+    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     log_level: str = "info"
     api_keys: list[str] = []  # empty = no legacy API-key auth required
     auth_required: bool = True
@@ -65,20 +65,9 @@ class Settings(BaseSettings):
     # Comma-separated template variable order. Most Tencent templates use the
     # verification code and expiry minutes, but operators can adapt this without code.
     tencent_sms_template_param_order: str = "code,minutes"
-    # Fixed private-beta invite codes. When non-empty, registration accepts only these
-    # seeded codes; each is single-use by default.
-    default_invite_codes: list[str] = [
-        "CAD1-A7K9",
-        "CAD2-M4Q8",
-        "CAD3-Z6P2",
-        "CAD4-H9R5",
-        "CAD5-T2N7",
-        "CAD6-W8L3",
-        "CAD7-Q5X1",
-        "CAD8-B3V6",
-        "CAD9-J2Y4",
-        "CAD0-S9D8",
-    ]
+    # Deployment-owned private-beta invite codes. Keep the source default empty:
+    # publishing usable codes in the repository would make the invite gate public.
+    default_invite_codes: list[str] = []
     # Legacy single invite seed. Prefer DEFAULT_INVITE_CODES for new deployments.
     default_invite_code: str = ""
     default_invite_max_uses: int = 1

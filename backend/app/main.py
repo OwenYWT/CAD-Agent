@@ -43,6 +43,7 @@ from app.fusion360.agent_api import router as fusion360_agent_router
 logger = logging.getLogger(__name__)
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+STARTUP_DEPENDENCY_TIMEOUT_S = 5.0
 
 
 def _cleanup_old_files():
@@ -75,20 +76,34 @@ def _startup_self_check():
     if settings.sandbox_runtime.strip().lower() == "podman":
         import subprocess
         command = settings.sandbox_command or "podman"
-        result = subprocess.run(
-            [command, "image", "exists", settings.sandbox_image],
-            capture_output=True, text=True,
-        )
-        if result.returncode != 0:
-            problems.append(
-                f"Sandbox image '{settings.sandbox_image}' not found for Podman. "
-                "Run: cd backend/sandbox && podman build -t cad-agent-sandbox:latest ."
+        try:
+            result = subprocess.run(
+                [command, "image", "exists", settings.sandbox_image],
+                capture_output=True,
+                text=True,
+                timeout=STARTUP_DEPENDENCY_TIMEOUT_S,
             )
+        except subprocess.TimeoutExpired:
+            problems.append(
+                f"Podman 自检超时（{STARTUP_DEPENDENCY_TIMEOUT_S:g} 秒）。"
+                "请检查 Podman machine 是否正常运行。"
+            )
+        except OSError as exc:
+            problems.append(f"Podman 不可用: {exc}")
+        else:
+            if result.returncode == 1:
+                problems.append(
+                    f"Sandbox image '{settings.sandbox_image}' not found for Podman. "
+                    "Run: cd backend/sandbox && podman build -t cad-agent-sandbox:latest ."
+                )
+            elif result.returncode != 0:
+                detail = (result.stderr or result.stdout or "未知错误").strip()[:300]
+                problems.append(f"Podman runtime unavailable: {detail}")
     else:
         try:
             import docker
             try:
-                client = docker.from_env()
+                client = docker.from_env(timeout=STARTUP_DEPENDENCY_TIMEOUT_S)
                 client.ping()
                 try:
                     client.images.get(settings.sandbox_image)

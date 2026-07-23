@@ -22,6 +22,37 @@ class CodeGenerator:
             self._client = make_llm_client()
         return self._client
 
+
+    @staticmethod
+    def _format_design_brief_context(plan: CADPlan) -> str:
+        brief = plan.design_brief
+        if not brief:
+            return ""
+
+        dimension_lines = [
+            f"- {item.name}={item.value} {item.unit}: {item.reason}"
+            if item.value is not None
+            else f"- {item.name}: {item.reason}"
+            for item in brief.critical_dimensions
+        ]
+        sections = [
+            "Engineering Brief:",
+            f"Intent: {brief.intent_summary}",
+            f"Artifact type: {brief.artifact_type}",
+            f"Manufacturing posture: {brief.manufacturing_posture}",
+        ]
+        if brief.assumptions:
+            sections.append("Assumptions:\n" + "\n".join(f"- {item}" for item in brief.assumptions))
+        if dimension_lines:
+            sections.append("Critical dimensions:\n" + "\n".join(dimension_lines))
+        if brief.functional_requirements:
+            sections.append("Functional requirements:\n" + "\n".join(f"- {item}" for item in brief.functional_requirements))
+        if brief.printability_targets:
+            sections.append("Printability targets:\n" + "\n".join(f"- {item}" for item in brief.printability_targets))
+        if brief.acceptance_criteria:
+            sections.append("Acceptance criteria:\n" + "\n".join(f"- {item}" for item in brief.acceptance_criteria))
+        return "\n\n".join(sections)
+
     async def generate(
         self, plan: CADPlan, examples: list[dict], conversation: list[dict],
         extra_context: str = "",
@@ -40,6 +71,10 @@ class CodeGenerator:
         )
         if plan.ambiguities:
             user_content += f"注意: {plan.ambiguities}\n"
+
+        brief_context = self._format_design_brief_context(plan)
+        if brief_context:
+            user_content += f"\n{brief_context}\n"
 
         messages = conversation + [{"role": "user", "content": user_content}]
         # Ensure messages alternate correctly: just use the last user message
@@ -70,6 +105,10 @@ class CodeGenerator:
             f"特征: {plan.features}\n"
         )
 
+        brief_context = self._format_design_brief_context(plan)
+        if brief_context:
+            user_content += f"\n{brief_context}\n"
+
         messages = [{"role": "user", "content": user_content}]
 
         t0 = time.time()
@@ -96,6 +135,10 @@ class CodeGenerator:
             f"尺寸: {plan.dimensions}\n"
             f"特征: {plan.features}\n"
         )
+
+        brief_context = self._format_design_brief_context(plan)
+        if brief_context:
+            user_content += f"\n{brief_context}\n"
 
         messages = [{"role": "user", "content": user_content}]
 
@@ -439,8 +482,21 @@ class CodeGenerator:
     def _format_examples(self, examples: list[dict]) -> str:
         if not examples:
             return ""
-        parts = ["\n## 相似案例参考\n"]
-        for i, ex in enumerate(examples, 1):
-            parts.append(f"### 案例 {i}: {ex['description']}")
-            parts.append(f"```python\n{ex['code']}\n```\n")
+        parts = ["\n## 可复用 CAD 案例\n"]
+        for index, example in enumerate(examples, 1):
+            parts.append(f"### 案例 {index}: {example['description']}")
+            if example.get("part_type") or example.get("category"):
+                parts.append(f"- Type: {example.get('part_type') or example.get('category', '')}")
+            if example.get("features_used"):
+                parts.append(f"- Proven features: {', '.join(example['features_used'])}")
+            if example.get("modeling_hints"):
+                parts.append(f"- Modeling hints: {', '.join(example['modeling_hints'])}")
+            if example.get("manufacturing_notes"):
+                parts.append("- Manufacturing notes: " + "; ".join(example["manufacturing_notes"]))
+            if example.get("failure_modes"):
+                parts.append("- Common failure modes: " + "; ".join(example["failure_modes"]))
+            if example.get("print_profile"):
+                parts.append(f"- Print profile: {example['print_profile']}")
+            parts.append(f"```python\n{example['code']}\n```\n")
+        parts.append("将这些案例作为建模模式和 DFM 约束参考。只复用方法，不要照搬无关尺寸。")
         return "\n".join(parts)

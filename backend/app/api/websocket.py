@@ -88,6 +88,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             msg_type = data.get("type")
             panel_id = data.get("panel_id", "default")
 
+            if msg_type in {"user_message", "modify_part", "execute_code"}:
+                if not await history.panel_writable_by_session(panel_id, session_id, user_id):
+                    await websocket.close(code=4003, reason="Panel belongs to another session")
+                    return
+
             # Rate limit per WebSocket message
             try:
                 await rate_limiter.check(websocket, token)
@@ -105,6 +110,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             if msg_type == "user_message":
                 text = data.get("text", "")
                 capability = data.get("capability", "auto")
+                manufacturing_profile = data.get("manufacturing_profile")
                 if not text or len(text) > 10000:
                     await websocket.send_json({
                         "type": "generation_result",
@@ -147,7 +153,17 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 await history.save_message(panel_id, "user", text)
 
                 try:
-                    result = await orchestrator.handle_message(context, effective_text, on_step=on_step)
+                    if manufacturing_profile is not None:
+                        result = await orchestrator.handle_message(
+                            context,
+                            effective_text,
+                            on_step=on_step,
+                            manufacturing_profile=manufacturing_profile,
+                        )
+                    else:
+                        result = await orchestrator.handle_message(
+                            context, effective_text, on_step=on_step
+                        )
                 except WebSocketDisconnect:
                     raise
                 except Exception as e:
@@ -157,18 +173,33 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         "error": public_generation_error(e),
                         "panel_id": panel_id,
                     }
+                    await history.save_message(
+                        panel_id,
+                        "assistant",
+                        f"生成失败: {error_data['error']['message']}",
+                        result=error_data,
+                    )
+                    await history.touch_session(session_id)
                     await websocket.send_json({"type": "generation_result", "data": error_data})
                     continue
 
                 result_data = result.model_dump()
                 result_data["panel_id"] = panel_id
                 claim_request_owner(result.request_id, principal)
+                if result.success and result.code:
+                    snapshot = await history.create_model_snapshot(
+                        panel_id, result_data, source="generation", prompt=text
+                    )
+                    result_data["snapshot_id"] = snapshot["id"]
+                    result_data["version"] = snapshot["version"]
 
-                assistant_content = (
-                    "CAD 模型已生成"
-                    if result.success
-                    else f"生成失败: {result.error.get('message', '') if result.error else '未知错误'}"
-                )
+                if result.needs_confirmation:
+                    assistant_content = "设计简报需要确认"
+                elif result.success:
+                    assistant_content = "CAD 模型已生成"
+                else:
+                    error_message = result.error.get("message", "") if result.error else "未知错误"
+                    assistant_content = f"生成失败: {error_message}"
                 await history.save_message(panel_id, "assistant", assistant_content, result=result_data)
                 if result.success and result.code:
                     params_dict = (
@@ -212,19 +243,33 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     raise
                 except Exception as e:
                     logger.error(f"modify_part error for {session_id}/{panel_id}: {e}", exc_info=True)
-                    await websocket.send_json({
-                        "type": "generation_result",
-                        "data": {
-                            "success": False,
-                            "error": public_generation_error(e),
-                            "panel_id": panel_id,
-                        },
-                    })
+                    error_data = {
+                        "success": False,
+                        "error": public_generation_error(e),
+                        "panel_id": panel_id,
+                    }
+                    await history.save_message(
+                        panel_id,
+                        "assistant",
+                        f"零件修改失败: {error_data['error']['message']}",
+                        result=error_data,
+                    )
+                    await history.touch_session(session_id)
+                    await websocket.send_json({"type": "generation_result", "data": error_data})
                     continue
 
                 result_data = result.model_dump()
                 result_data["panel_id"] = panel_id
                 claim_request_owner(result.request_id, principal)
+                if result.success and result.code:
+                    snapshot = await history.create_model_snapshot(
+                        panel_id,
+                        result_data,
+                        source="modify_part",
+                        prompt=f"修改零件 {part_name}: {instruction}",
+                    )
+                    result_data["snapshot_id"] = snapshot["id"]
+                    result_data["version"] = snapshot["version"]
 
                 msg_content = (
                     f"零件 {part_name} 已修改"
@@ -241,6 +286,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             elif msg_type == "execute_code":
                 code = data.get("code", "")
                 if not code or len(code) > 50000:
+                    await websocket.send_json({
+                        "type": "generation_result",
+                        "data": {
+                            "success": False,
+                            "error": {"type": "ValidationError", "message": "代码为空或超过长度限制"},
+                            "panel_id": panel_id,
+                        },
+                    })
                     continue
                 context = _get_context(session_id, panel_id)
                 await history.create_session(session_id, title="", user_id=user_id)
@@ -276,6 +329,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 result_data = response.model_dump()
                 result_data["panel_id"] = panel_id
                 claim_request_owner(response.request_id, principal)
+                if response.success and response.code:
+                    snapshot = await history.create_model_snapshot(
+                        panel_id, result_data, source="execute_code", prompt="manual code execution"
+                    )
+                    result_data["snapshot_id"] = snapshot["id"]
+                    result_data["version"] = snapshot["version"]
                 assistant_content = (
                     "参数修改已执行"
                     if response.success

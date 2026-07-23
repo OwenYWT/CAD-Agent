@@ -3,6 +3,7 @@ import type { AuthUser } from "../../auth";
 import { adaptEngineeringProject } from "../../adapters/projectAdapter";
 import { useWebSocket } from "../../hooks/useWebSocket";
 import { useSessionStore } from "../../stores/sessionStore";
+import type { ManufacturingProfile, ModelSnapshotDetail } from "../../types";
 import type { EngineeringDomain, EngineeringStage } from "../../types/engineering";
 import AgentDrawer from "../agent/AgentDrawer";
 import ExportDialog from "../export/ExportDialog";
@@ -39,8 +40,8 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const [checksOpen, setChecksOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
-  const startProject = (prompt: string) => {
-    if (!sendMessage(prompt)) return false;
+  const startProject = (prompt: string, profile: ManufacturingProfile | null = null) => {
+    if (!sendMessage(prompt, "auto", profile)) return false;
     useSessionStore.getState().beginGeneration();
     useSessionStore.getState().addMessage({ role: "user", content: prompt });
     setView("overview");
@@ -50,6 +51,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const navigate = (next: string) => setView(next as EngineeringDomain);
   const openStage = (stage: EngineeringStage) => {
     if (!stage.available) return;
+    if (stage.id === "requirements" && model.result?.design_brief) { setChecksOpen(true); return; }
     if (stage.id === "manufacturing") { setChecksOpen(true); return; }
     if (stage.id === "release") { setExportOpen(true); return; }
     if (stage.domain) setView(stage.domain);
@@ -59,6 +61,17 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
     if (!executeCode(code)) return false;
     useSessionStore.getState().beginGeneration();
     return true;
+  };
+
+  const latestUserPrompt = panel.messages.filter((message) => message.role === "user").at(-1)?.content || "";
+  const restoreSnapshot = (snapshot: ModelSnapshotDetail) => {
+    const restoredResult = {
+      ...snapshot.result,
+      snapshot_id: snapshot.id,
+      version: snapshot.version,
+    };
+    useSessionStore.getState().restorePanelResult(panel.id, restoredResult, snapshot.code);
+    restoreContext(panel.id, snapshot.code);
   };
 
   if (!hasProject) {
@@ -87,7 +100,22 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
 
       <ParameterDrawer isGenerating={panel.isGenerating} key={`parameters:${model.result?.request_id || "empty"}:${parametersOpen}`} onClose={() => setParametersOpen(false)} onExecute={executeWithProgress} open={parametersOpen} parameters={model.parameters} result={model.result} />
       <AgentDrawer connection={connectionState} context={view} key={`${view}:${agentPrompt}:${agentOpen}`} onClose={() => { setAgentOpen(false); setAgentPrompt(""); }} onSend={sendMessage} open={agentOpen} suggestedPrompt={agentPrompt} />
-      <ValidationDialog description={panel.messages.filter((message) => message.role === "user").at(-1)?.content || ""} key={`validation:${model.result?.request_id || "empty"}:${checksOpen}`} onAskAgent={(prompt) => { setChecksOpen(false); askAgent(prompt); }} onClose={() => setChecksOpen(false)} open={checksOpen} result={model.result} />
+      <ValidationDialog
+        activeSnapshotId={model.result?.snapshot_id}
+        description={latestUserPrompt}
+        isGenerating={panel.isGenerating}
+        key={"validation:" + (model.result?.request_id || "empty") + ":" + checksOpen}
+        onAskAgent={(prompt) => { setChecksOpen(false); askAgent(prompt); }}
+        onClose={() => setChecksOpen(false)}
+        onRerunCode={() => model.result?.code ? executeWithProgress(model.result.code) : undefined}
+        onRestore={restoreSnapshot}
+        onRetryPrompt={() => latestUserPrompt ? startProject(latestUserPrompt, model.result?.manufacturing_profile || null) : false}
+        open={checksOpen}
+        panelId={panel.id}
+        refreshKey={model.result?.snapshot_id}
+        result={model.result}
+        steps={panel.stepHistory}
+      />
       <ExportDialog jobs={model.exports} onClose={() => setExportOpen(false)} open={exportOpen} />
       <SettingsDrawer onClose={() => setSettingsOpen(false)} open={settingsOpen} />
     </div>

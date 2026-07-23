@@ -42,7 +42,7 @@ cp backend/.env.example backend/.env
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-把输出写入 `backend/.env` 的 `AUTH_TOKEN_SECRET`，再按所选 provider 填写 `MOONSHOT_API_KEY`、Azure OpenAI 或其他 OpenAI-compatible 配置。生产环境还必须更换默认邀请码并限制 CORS；完整要求见 [部署指南](DEPLOY.md)。
+把输出写入 `backend/.env` 的 `AUTH_TOKEN_SECRET`，再按所选 provider 填写 `MOONSHOT_API_KEY`、Azure OpenAI 或其他 OpenAI-compatible 配置。生产环境还必须通过 `DEFAULT_INVITE_CODES` 配置私有邀请码并限制 CORS；完整要求见 [部署指南](DEPLOY.md)。
 
 2. 构建 CAD 沙箱：
 

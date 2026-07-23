@@ -8,6 +8,8 @@ interface DesignAnalysisProps {
   description: string;
   hasResult: boolean;
   is2D: boolean;
+  canAnalyze?: boolean;
+  disabledReason?: string;
   onAnnotationsReady?: (annotations: Annotation3D[]) => void;
   selectedAnnotation?: string | null;
   onSelectAnnotation?: (id: string | null) => void;
@@ -317,6 +319,8 @@ export default function DesignAnalysis({
   description,
   hasResult,
   is2D,
+  canAnalyze = true,
+  disabledReason = '生成 CAD 模型后才能进行 AI 设计审查。请先回答待确认问题，并完成模型生成。',
   onAnnotationsReady,
   selectedAnnotation,
   onSelectAnnotation,
@@ -327,6 +331,16 @@ export default function DesignAnalysis({
   const [subTab, setSubTab] = useState<SubTab>("issues");
 
   if (!hasResult || !requestId || is2D) return null;
+
+  if (!canAnalyze) {
+    return (
+      <div className="p-4">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+          {disabledReason}
+        </div>
+      </div>
+    );
+  }
 
   const handleAnalyze = async () => {
     setLoading(true);

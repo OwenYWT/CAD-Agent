@@ -191,7 +191,7 @@ class FakeRenderer:
 class FakeRetriever:
     examples: list = field(default_factory=list)
 
-    async def find_similar(self, query, top_k=3):
+    async def find_similar(self, query, top_k=3, **criteria):
         return self.examples
 
 

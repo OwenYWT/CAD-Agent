@@ -144,20 +144,16 @@ def _sandbox_assets_available() -> bool:
 
 
 def _cad_dependencies() -> list[CapabilityDependency]:
+    # CapabilityRuntime invokes the vendored CAD CLI in this Python environment.
+    # The conversational CAD pipeline has a separate container sandbox, but this
+    # registry must not claim that unrelated sandbox as an execution backend.
     local = _module_available("build123d") and _module_available("OCP")
-    sandbox = _sandbox_assets_available()
-    engine = _container_engine_dependency(required=sandbox and not local)
-    backend_available = local or (sandbox and engine.available)
-    if local:
-        detail = "Local build123d and OCP modules are importable."
-    elif sandbox:
-        detail = "Existing backend/sandbox CAD runtime definition found; it requires the configured container engine."
-    else:
-        detail = "Neither local build123d/OCP nor the repository CAD sandbox definition is available."
-    return [
-        _dependency("cad-runtime", "STEP CAD execution runtime", "runtime", True, backend_available, detail),
-        engine,
-    ]
+    detail = (
+        "Local build123d and OCP modules are importable for the vendored CAD CLI."
+        if local
+        else "The vendored CAD CLI requires local build123d and OCP modules; the conversational backend sandbox is not used by capability actions."
+    )
+    return [_dependency("cad-runtime", "STEP CAD execution runtime", "runtime", True, local, detail)]
 
 
 def _dxf_dependencies() -> list[CapabilityDependency]:
@@ -263,7 +259,7 @@ def _gcode_dependencies() -> list[CapabilityDependency]:
             "slicer-cli",
             "FDM slicer CLI",
             "executable",
-            True,
+            False,
             path is not None,
             f"Compatible slicer found at {path}." if path else "No OrcaSlicer, PrusaSlicer, or CuraEngine CLI was found.",
         ),
@@ -537,11 +533,23 @@ def _build_manifest(spec: dict[str, Any]) -> CapabilityManifest:
             elif action.id == "validate":
                 action.available = False
                 action.blocked_reason = "当前 vendored DXF 包没有独立验证器 CLI。"
+    elif spec["id"] == "gcode":
+        slicer = next(dependency for dependency in dependencies if dependency.id == "slicer-cli")
+        if not slicer.available:
+            for action in actions:
+                if action.id in {"dry-run", "slice"}:
+                    action.available = False
+                    action.blocked_reason = slicer.detail
+    has_available_action = any(action.available for action in actions)
+    if not blocked_reasons and not has_available_action:
+        blocked_reasons = list(dict.fromkeys(
+            action.blocked_reason for action in actions if action.blocked_reason
+        ))
     return CapabilityManifest(
         **{key: value for key, value in spec.items() if key not in {"actions", "dependencies"}},
         actions=actions,
         dependencies=dependencies,
-        available=not blocked_reasons,
+        available=not blocked_reasons and has_available_action,
         blocked_reasons=blocked_reasons,
         upstream=_upstream(),
     )

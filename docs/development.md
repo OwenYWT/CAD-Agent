@@ -72,7 +72,7 @@ SANDBOX_COMMAND=podman
 
 ```bash
 cd backend
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 python -m uvicorn app.main:app --reload --port 8000
 ```
 

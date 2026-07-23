@@ -24,8 +24,11 @@ async def generate(req: GenerateRequest, request: Request, api_key: str | None =
         orchestrator = _get_orchestrator()
         # Hard overall deadline: planning + N×LLM + N×sandbox can otherwise run for
         # minutes. Fail fast instead of hanging the tester's request.
+        generate_kwargs = {}
+        if req.manufacturing_profile is not None:
+            generate_kwargs["manufacturing_profile"] = req.manufacturing_profile
         response = await asyncio.wait_for(
-            orchestrator.generate(req.prompt, req.output_formats),
+            orchestrator.generate(req.prompt, req.output_formats, **generate_kwargs),
             timeout=settings.generate_deadline_s,
         )
         claim_request_owner(response.request_id, api_key)

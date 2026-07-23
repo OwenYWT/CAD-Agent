@@ -11,6 +11,42 @@ export interface StepHistoryEntry extends StepUpdate {
   timestamp: number;
 }
 
+function hasTerminalStep(history: StepHistoryEntry[]) {
+  return history.some(
+    (entry) =>
+      entry.step === "complete" ||
+      entry.step === "failed" ||
+      entry.status === "failed" ||
+      entry.stage_id === "design_confirmation",
+  );
+}
+
+function terminalStepFromResult(success: boolean, needsConfirmation = false): StepHistoryEntry {
+  const timestamp = Date.now();
+  if (needsConfirmation) {
+    return {
+      step: "planning",
+      message: "\u8bbe\u8ba1\u7b80\u62a5\u9700\u8981\u5148\u786e\u8ba4",
+      status: "warn",
+      stage_id: "design_confirmation",
+      started_at: new Date(timestamp).toISOString(),
+      duration_ms: null,
+      detail: { source: "frontend_result" },
+      timestamp,
+    };
+  }
+  return {
+    step: success ? "complete" : "failed",
+    message: success ? "\u751f\u6210\u5b8c\u6210" : "\u751f\u6210\u5931\u8d25",
+    status: success ? "success" : "failed",
+    stage_id: success ? "complete" : "failed",
+    started_at: new Date(timestamp).toISOString(),
+    duration_ms: null,
+    detail: { source: "frontend_result" },
+    timestamp,
+  };
+}
+
 export interface PanelState {
   id: string;
   title: string;
@@ -60,6 +96,7 @@ interface SessionState {
   beginGeneration: () => void;
   setStep: (step: StepUpdate | null, panelId?: string) => void;
   setResult: (result: GenerationResult, panelId?: string) => void;
+  restorePanelResult: (panelId: string, result: GenerationResult, code: string) => void;
   setError: (error: string, panelId?: string) => void;
   reset: () => void;
 
@@ -237,24 +274,51 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         panels: updatePanel(state.panels, targetId, (p) => {
           const assistantMsg: ChatMessage = {
             role: "assistant",
-            content: result.success
-              ? "CAD 模型已生成"
+            content: result.needs_confirmation
+              ? "设计简报需要确认"
+              : result.success
+                ? "CAD 模型已生成"
               : `生成失败: ${result.error?.message || "未知错误"}`,
             result,
           };
+          const nextStepHistory = hasTerminalStep(p.stepHistory)
+            ? p.stepHistory
+            : [...p.stepHistory, terminalStepFromResult(Boolean(result.success), Boolean(result.needs_confirmation))];
+
           return {
-            result: result.success ? result : p.result,
-            lastError: result.success ? null : result.error?.message || "任务执行失败",
+            result: result.success || result.needs_confirmation ? result : p.result,
+            lastError: result.success || result.needs_confirmation ? null : result.error?.message || "任务执行失败",
             isGenerating: false,
             currentStep: null,
             multiStepProgress: null,
-            stepHistory: [],
+            stepHistory: nextStepHistory,
             generationStartTime: null,
             messages: [...p.messages, assistantMsg],
           };
         }),
       };
     }),
+
+  restorePanelResult: (panelId, result, code) =>
+    set((state) => ({
+      panels: updatePanel(state.panels, panelId, (panel) => {
+        const restoredResult = { ...result, code };
+        const restoreMessage: ChatMessage = {
+          role: "assistant",
+          content: `\u5df2\u6062\u590d\u7248\u672c ${result.version ?? ""}`.trim(),
+          result: restoredResult,
+        };
+        return {
+          result: restoredResult,
+          isGenerating: false,
+          currentStep: null,
+          multiStepProgress: null,
+          stepHistory: [],
+          generationStartTime: null,
+          messages: [...panel.messages, restoreMessage],
+        };
+      }),
+    })),
 
   setError: (error, panelId) =>
     set((state) => {
@@ -265,10 +329,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             role: "assistant",
             content: `错误: ${error}`,
           };
+          const nextStepHistory = hasTerminalStep(p.stepHistory)
+            ? p.stepHistory
+            : [...p.stepHistory, terminalStepFromResult(false)];
+
           return {
             isGenerating: false,
             currentStep: null,
-            stepHistory: [],
+            stepHistory: nextStepHistory,
             generationStartTime: null,
             lastError: error,
             messages: [...p.messages, errorMsg],

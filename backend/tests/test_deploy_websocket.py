@@ -18,7 +18,7 @@ from starlette.websockets import WebSocketDisconnect
 import app.api.websocket as ws_mod
 from app.config import settings
 from app.main import app
-from app.models.schemas import GenerateResponse, GenerationResult, StepUpdate
+from app.models.schemas import GenerateResponse, GenerationResult, InspectReport, StepUpdate
 from app.storage import history
 
 
@@ -41,8 +41,8 @@ class FakeOrchestrator:
     async def handle_message(self, context, text, on_step=None):
         self.handle_calls.append(text)
         if on_step:
-            await on_step(StepUpdate(step="planning", message="规划中..."))
-            await on_step(StepUpdate(step="generating_code", message="生成代码..."))
+            await on_step(StepUpdate(step="planning", message="正在规划..."))
+            await on_step(StepUpdate(step="generating_code", message="正在生成代码..."))
         return GenerationResult(
             success=self.succeed,
             request_id="req-handle",
@@ -55,7 +55,7 @@ class FakeOrchestrator:
     async def modify_assembly_part(self, context, part_name, instruction, on_step=None):
         self.modify_calls.append((part_name, instruction))
         if on_step:
-            await on_step(StepUpdate(step="assembly_part", message="修改零件...", part_name=part_name))
+            await on_step(StepUpdate(step="assembly_part", message="正在修改零件...", part_name=part_name))
         return GenerationResult(
             success=self.succeed,
             request_id="req-modify",
@@ -73,6 +73,12 @@ class FakeOrchestrator:
             code=code if self.succeed else None,
             execution_time_ms=5,
             attempts=1,
+            inspect_report=InspectReport(
+                verdict="pass",
+                available_exports=["stl"],
+                repair_attempts=0,
+                source="geometry_validator",
+            ) if self.succeed else None,
             error=None if self.succeed else {"type": "ExecutionError", "message": "boom"},
         )
 
@@ -131,6 +137,22 @@ def test_user_message_streams_steps_then_success_result(client, fake_orch):
     assert fake_orch.handle_calls == ["make a box"]
 
 
+def test_user_message_exception_is_persisted_in_history(client, fake_orch):
+    async def fail_handle(*args, **kwargs):
+        raise RuntimeError("upstream unavailable")
+
+    fake_orch.handle_message = fail_handle
+    with client.websocket_connect("/ws/sess-error-history") as wsk:
+        wsk.send_json({"type": "user_message", "text": "make a box", "panel_id": "p-error"})
+        final = wsk.receive_json()
+
+    assert final["type"] == "generation_result"
+    assert final["data"]["success"] is False
+    messages = asyncio.run(history.get_messages("p-error"))
+    assert [message["role"] for message in messages] == ["user", "assistant"]
+    assert messages[-1]["result"]["error"] == final["data"]["error"]
+
+
 def test_user_message_default_panel_id(client, fake_orch):
     with client.websocket_connect("/ws/sess-defpanel") as wsk:
         wsk.send_json({"type": "user_message", "text": "hello"})
@@ -181,19 +203,20 @@ def test_execute_code_returns_generation_result(client, fake_orch):
     assert msg["data"]["request_id"] == "req-exec"
     assert msg["data"]["code"] == code
     assert msg["data"]["panel_id"] == "pX"
+    assert msg["data"]["inspect_report"]["available_exports"] == ["stl"]
+    assert msg["data"]["inspect_report"]["repair_attempts"] == 0
+    assert msg["data"]["snapshot_id"] is not None
+    assert msg["data"]["version"] == 1
     assert fake_orch.execute_calls == [code]
 
 
-def test_execute_code_empty_is_silently_ignored(client, fake_orch):
-    """Empty code hits `continue` with no response — so a follow-up cancel is what
-    we actually receive back (proves the empty execute produced nothing)."""
+def test_execute_code_empty_returns_validation_error(client, fake_orch):
     with client.websocket_connect("/ws/sess-4b") as wsk:
         wsk.send_json({"type": "execute_code", "code": "", "panel_id": "p1"})
-        wsk.send_json({"type": "cancel", "panel_id": "p1"})
         msg = wsk.receive_json()
 
     assert msg["type"] == "generation_result"
-    assert msg["data"]["error"]["type"] == "Cancelled"
+    assert msg["data"]["error"]["type"] == "ValidationError"
     assert fake_orch.execute_calls == []
 
 

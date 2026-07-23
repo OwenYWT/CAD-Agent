@@ -4,12 +4,12 @@ Previously duplicated (and drifted) between Orchestrator and MultiStepExecutor â
 the multi-step copy lost output formats because the "also copy other formats" fix
 (commit 2cb1bd9) only landed in the orchestrator. Single source of truth now.
 """
-import re
 import shutil
 from pathlib import Path
 
 from app.config import settings
 from app.models.schemas import ParamConfig
+from app.parameters import extract_parameters
 
 _FORMAT_EXTENSIONS = {
     "step": ".step",
@@ -66,22 +66,9 @@ def copy_output_files(
 
 def extract_params(code: str) -> dict[str, ParamConfig]:
     params: dict[str, ParamConfig] = {}
-    pattern = re.compile(
-        r"^([a-z_][a-z0-9_]*)\s*=\s*([0-9]+\.?[0-9]*)\s*(?:#\s*(.+))?$"
-    )
-    for line in code.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or line.startswith("import"):
-            continue
-        m = pattern.match(line)
-        if m:
-            name, value, comment = m.groups()
-            params[name] = ParamConfig(
-                value=float(value),
-                comment=comment.strip() if comment else name,
-            )
-        elif line.startswith("result") or line.startswith("show_object"):
-            break
-        elif "=" in line and not line.startswith(" "):
-            break
+    for parameter in extract_parameters(code):
+        params[parameter.name] = ParamConfig(
+            value=parameter.value,
+            comment=parameter.comment or parameter.display_name,
+        )
     return params

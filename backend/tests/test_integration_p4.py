@@ -73,8 +73,8 @@ def test_web_client_files():
     frontend = PROJECT_ROOT / "frontend" / "src"
     assert (frontend / "App.tsx").exists()
     assert (frontend / "hooks" / "useWebSocket.ts").exists()
-    assert (frontend / "components" / "ChatPanel.tsx").exists()
-    assert (frontend / "components" / "DownloadPanel.tsx").exists()
+    assert (frontend / "components" / "workspace" / "EngineeringWorkspace.tsx").exists()
+    assert (frontend / "components" / "export" / "ExportDialog.tsx").exists()
 
 
 def test_legacy_client_directory_removed_from_product_surface():

@@ -33,7 +33,12 @@ def _check_from_rule(rule) -> InspectCheck:
 
 
 def build_inspect_report(
-    geo: GeometryValidation, dfm: dict | None = None
+    geo: GeometryValidation,
+    dfm: dict | None = None,
+    *,
+    available_exports: list[str] | None = None,
+    repair_attempts: int = 0,
+    source: str = "geometry_validator",
 ) -> InspectReport:
     """Build the evidence report from a GeometryValidation and an optional DFM dict.
 
@@ -50,6 +55,9 @@ def build_inspect_report(
         min_wall_thickness=geo.min_wall_thickness,
         checks=checks,
         print_warnings=list(geo.print_warnings),
+        available_exports=list(available_exports or []),
+        repair_attempts=repair_attempts,
+        source=source,
     )
 
     # Optional DFM enrichment — reuse the already-computed dict, do not re-analyze.
