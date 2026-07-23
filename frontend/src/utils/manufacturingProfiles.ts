@@ -49,7 +49,7 @@ export const MANUFACTURING_PROFILE_PRESETS: ManufacturingProfilePreset[] = [
   {
     id: "generic",
     label: "Generic",
-    description: "\u9002\u5408\u9ad8\u7ec6\u8282\u6811\u8102\u6253\u5370",
+    description: "不预设特定制造工艺",
     profile: {
       process: "generic",
       material: "Generic",

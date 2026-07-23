@@ -71,13 +71,13 @@ def test_ensure_design_brief_builds_fallback_from_cad_plan():
     assert brief.intent_summary == "Adjustable phone stand"
     assert brief.artifact_type == "stand"
     assert brief.manufacturing_posture == "printable"
-    assert "Prototype use with metric dimensions" in brief.assumptions
+    assert "按原型件用途和公制尺寸进行设计" in brief.assumptions
     assert [item.name for item in brief.critical_dimensions] == ["width", "height", "wall_thickness"]
-    assert brief.critical_dimensions[0].reason == "User-provided or planner-inferred dimension"
+    assert brief.critical_dimensions[0].reason == "用户提供或需求分析推断的关键尺寸"
     assert "tilted back support" in brief.functional_requirements
     assert "print without support" in brief.functional_requirements
-    assert "Geometry is watertight" in brief.acceptance_criteria
-    assert brief.open_questions == ["phone thickness not specified"]
+    assert "几何体封闭且适合继续做打印检查" in brief.acceptance_criteria
+    assert brief.open_questions == ["需要适配的手机厚度是多少？"]
     assert plan.design_brief == brief
 
 
@@ -130,7 +130,9 @@ def test_planner_parse_preserves_design_brief_from_json():
     }
 
     plan = Planner._parse_plan_payload(payload)
+    instance_plan = Planner()._parse_plan_payload(payload)
 
+    assert instance_plan == plan
     assert plan.design_brief is not None
     assert plan.design_brief.intent_summary.startswith("A small 3D-printable clip")
     assert plan.design_brief.critical_dimensions[0].reason.startswith("Six 0.4 mm")
@@ -188,4 +190,3 @@ def test_generate_response_can_embed_plan_and_brief_together():
 
     assert payload["plan"]["design_brief"]["artifact_type"] == "hook"
     assert payload["design_brief"]["artifact_type"] == "hook"
-

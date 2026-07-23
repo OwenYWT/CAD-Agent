@@ -1,4 +1,4 @@
-﻿"""Hermetic WebSocket end-to-end tests for app.api.websocket.websocket_endpoint.
+"""Hermetic WebSocket end-to-end tests for app.api.websocket.websocket_endpoint.
 
 Drives the REAL FastAPI WS route via TestClient.websocket_connect, with a FAKE
 orchestrator injected (set websocket._orchestrator). The fake's
@@ -41,8 +41,8 @@ class FakeOrchestrator:
     async def handle_message(self, context, text, on_step=None):
         self.handle_calls.append(text)
         if on_step:
-            await on_step(StepUpdate(step="planning", message="瑙勫垝涓?.."))
-            await on_step(StepUpdate(step="generating_code", message="鐢熸垚浠ｇ爜..."))
+            await on_step(StepUpdate(step="planning", message="正在规划..."))
+            await on_step(StepUpdate(step="generating_code", message="正在生成代码..."))
         return GenerationResult(
             success=self.succeed,
             request_id="req-handle",
@@ -55,7 +55,7 @@ class FakeOrchestrator:
     async def modify_assembly_part(self, context, part_name, instruction, on_step=None):
         self.modify_calls.append((part_name, instruction))
         if on_step:
-            await on_step(StepUpdate(step="assembly_part", message="淇敼闆朵欢...", part_name=part_name))
+            await on_step(StepUpdate(step="assembly_part", message="正在修改零件...", part_name=part_name))
         return GenerationResult(
             success=self.succeed,
             request_id="req-modify",
@@ -137,6 +137,22 @@ def test_user_message_streams_steps_then_success_result(client, fake_orch):
     assert fake_orch.handle_calls == ["make a box"]
 
 
+def test_user_message_exception_is_persisted_in_history(client, fake_orch):
+    async def fail_handle(*args, **kwargs):
+        raise RuntimeError("upstream unavailable")
+
+    fake_orch.handle_message = fail_handle
+    with client.websocket_connect("/ws/sess-error-history") as wsk:
+        wsk.send_json({"type": "user_message", "text": "make a box", "panel_id": "p-error"})
+        final = wsk.receive_json()
+
+    assert final["type"] == "generation_result"
+    assert final["data"]["success"] is False
+    messages = asyncio.run(history.get_messages("p-error"))
+    assert [message["role"] for message in messages] == ["user", "assistant"]
+    assert messages[-1]["result"]["error"] == final["data"]["error"]
+
+
 def test_user_message_default_panel_id(client, fake_orch):
     with client.websocket_connect("/ws/sess-defpanel") as wsk:
         wsk.send_json({"type": "user_message", "text": "hello"})
@@ -194,16 +210,13 @@ def test_execute_code_returns_generation_result(client, fake_orch):
     assert fake_orch.execute_calls == [code]
 
 
-def test_execute_code_empty_is_silently_ignored(client, fake_orch):
-    """Empty code hits `continue` with no response 鈥?so a follow-up cancel is what
-    we actually receive back (proves the empty execute produced nothing)."""
+def test_execute_code_empty_returns_validation_error(client, fake_orch):
     with client.websocket_connect("/ws/sess-4b") as wsk:
         wsk.send_json({"type": "execute_code", "code": "", "panel_id": "p1"})
-        wsk.send_json({"type": "cancel", "panel_id": "p1"})
         msg = wsk.receive_json()
 
     assert msg["type"] == "generation_result"
-    assert msg["data"]["error"]["type"] == "Cancelled"
+    assert msg["data"]["error"]["type"] == "ValidationError"
     assert fake_orch.execute_calls == []
 
 
@@ -314,4 +327,3 @@ def test_panel_id_isolation_results_echo_correct_panel(client, fake_orch):
     assert set(panels.keys()) == {"A", "B"}
     assert panels["A"] is not panels["B"]
     assert fake_orch.handle_calls == ["panel A msg", "panel B msg"]
-

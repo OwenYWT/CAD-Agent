@@ -71,14 +71,14 @@ You MUST declare every user-editable numeric dimension as a top-level Python ass
 
 ```python
 # [Body]
-# ????
+# 主体宽度
 width_mm = 80  # [40:1:160]
 
-# ????
+# 主体深度
 depth_mm = 50  # [30:1:120]
 
 # [Holes]
-# ?????
+# 安装孔直径
 hole_diameter_mm = 3.4  # [2:0.1:8]
 ```
 

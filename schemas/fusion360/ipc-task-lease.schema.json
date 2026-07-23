@@ -1,0 +1,124 @@
+{
+  "$defs": {
+    "ExecutionContext": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_dir": {
+          "title": "Artifact Dir",
+          "type": "string"
+        },
+        "artifact_root_fingerprint": {
+          "title": "Artifact Root Fingerprint",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_dir",
+        "artifact_root_fingerprint"
+      ],
+      "title": "ExecutionContext",
+      "type": "object"
+    },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$id": "https://cad-agent.local/schemas/fusion360/ipc-task-lease/1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempt": {
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "deadline": {
+      "title": "Deadline",
+      "type": "number"
+    },
+    "execution_context": {
+      "$ref": "#/$defs/ExecutionContext"
+    },
+    "intent_hash": {
+      "title": "Intent Hash",
+      "type": "string"
+    },
+    "lease_id": {
+      "format": "uuid",
+      "title": "Lease Id",
+      "type": "string"
+    },
+    "leased_until": {
+      "title": "Leased Until",
+      "type": "number"
+    },
+    "operation": {
+      "enum": [
+        "context",
+        "execute",
+        "verify"
+      ],
+      "title": "Operation",
+      "type": "string"
+    },
+    "payload": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Payload",
+      "type": "object"
+    },
+    "protocol_version": {
+      "default": 1,
+      "title": "Protocol Version",
+      "type": "integer"
+    },
+    "request_id": {
+      "format": "uuid",
+      "title": "Request Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "operation",
+    "intent_hash",
+    "lease_id",
+    "attempt",
+    "leased_until",
+    "deadline",
+    "payload",
+    "execution_context"
+  ],
+  "title": "TaskLease",
+  "type": "object",
+  "x-contract-version": "1.0.0"
+}

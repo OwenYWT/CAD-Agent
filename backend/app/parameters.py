@@ -66,6 +66,17 @@ def _unit_for(name: str) -> str | None:
     return None
 
 
+def _comment_for(suffix: str, pending_comment: str | None) -> str | None:
+    if pending_comment:
+        return pending_comment
+    if "#" not in suffix:
+        return None
+    inline = suffix.split("#", 1)[1].strip()
+    if not inline or inline.startswith("["):
+        return None
+    return inline
+
+
 def _parse_range(suffix: str) -> tuple[float | None, float | None, float | None]:
     match = _RANGE_RE.search(suffix)
     if not match:
@@ -121,7 +132,7 @@ def extract_parameters(code: str) -> list[CADParameter]:
                 step=step,
                 unit=_unit_for(name),
                 group=current_group,
-                comment=pending_comment,
+                comment=_comment_for(match.group("suffix") or "", pending_comment),
                 line=line_number,
             )
         )
@@ -153,4 +164,3 @@ def apply_parameter_values(code: str, values: dict[str, float]) -> str:
         )
 
     return _ASSIGNMENT_RE.sub(replace, code)
-

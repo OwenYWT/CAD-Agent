@@ -87,10 +87,10 @@ function printableLabel(inspectReport: InspectReport) {
   return "\u672a\u77e5";
 }
 
-export default function AgentRunTimeline({ steps, isGenerating, result, repairHistory, inspectReport, onRetryPrompt, onRerunCode }: AgentRunTimelineProps) {
+export default function AgentRunTimeline({ steps = [], isGenerating, result, repairHistory, inspectReport, onRetryPrompt, onRerunCode }: AgentRunTimelineProps) {
   if (steps.length === 0 && !repairHistory?.length && !inspectReport) return null;
 
-  const hasFailed = result?.success === false || steps.some((step) => normalizeStatus(step, false, false) === "failed");
+  const hasFailed = (result?.success === false && !result.needs_confirmation) || steps.some((step) => normalizeStatus(step, false, false) === "failed");
   const hasCode = Boolean(result?.code);
 
   return (

@@ -402,6 +402,16 @@ async def issue_verification_code(phone: str, purpose: str) -> str:
     return code
 
 
+async def delete_verification_code(phone: str, purpose: str, code: str) -> None:
+    normalized = normalize_phone(phone)
+    db = await get_db()
+    await db.execute(
+        "DELETE FROM verification_codes WHERE phone = ? AND purpose = ? AND code_hash = ? AND consumed_at IS NULL",
+        (normalized, purpose, _hash_value(code)),
+    )
+    await db.commit()
+
+
 async def consume_verification_code(phone: str, purpose: str, code: str) -> bool:
     normalized = normalize_phone(phone)
     db = await get_db()
@@ -439,22 +449,41 @@ async def consume_verification_code(phone: str, purpose: str, code: str) -> bool
     return False
 
 
+def _seed_invite_codes() -> list[str]:
+    codes: list[str] = []
+    for code in settings.default_invite_codes:
+        normalized = code.strip().upper()
+        if normalized and normalized not in codes:
+            codes.append(normalized)
+    if codes:
+        return codes
+    legacy = settings.default_invite_code.strip().upper()
+    if legacy and legacy not in codes:
+        codes.append(legacy)
+    return codes
+
+
 async def ensure_default_invite_code():
-    code = settings.default_invite_code.strip()
-    if not code:
+    codes = _seed_invite_codes()
+    if not codes:
         return
     db = await get_db()
-    await db.execute(
-        "INSERT OR IGNORE INTO invite_codes (code, max_uses, used_count, expires_at, disabled_at, created_at) VALUES (?, ?, 0, NULL, NULL, ?)",
-        (code, settings.default_invite_max_uses, _now_text()),
-    )
+    now = _now_text()
+    for code in codes:
+        await db.execute(
+            "INSERT OR IGNORE INTO invite_codes (code, max_uses, used_count, expires_at, disabled_at, created_at) VALUES (?, ?, 0, NULL, NULL, ?)",
+            (code, settings.default_invite_max_uses, now),
+        )
     await db.commit()
 
 
 async def consume_invite_code(code: str) -> bool:
     await ensure_default_invite_code()
-    normalized = code.strip()
+    normalized = code.strip().upper()
     if not normalized:
+        return False
+    allowed = _seed_invite_codes()
+    if allowed and normalized not in allowed:
         return False
     db = await get_db()
     # Pre-check expiry separately: SQLite can't reliably compare arbitrary ISO

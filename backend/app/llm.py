@@ -9,6 +9,10 @@ def _is_gpt5_model(model: str) -> bool:
     return model.lower().startswith("gpt-5")
 
 
+def _is_moonshot_provider(llm_settings: Settings) -> bool:
+    return llm_settings.normalized_llm_provider == "moonshot"
+
+
 def build_chat_params(
     *,
     model: str,
@@ -21,10 +25,10 @@ def build_chat_params(
     params: dict[str, Any] = {"model": model, "messages": messages}
     params.update(extra)
 
-    if _is_gpt5_model(model):
+    if _is_gpt5_model(model) or _is_moonshot_provider(llm_settings):
         if max_tokens is not None and "max_completion_tokens" not in params:
             params["max_completion_tokens"] = max_tokens
-        if llm_settings.llm_reasoning_effort and "reasoning_effort" not in params:
+        if _is_gpt5_model(model) and llm_settings.llm_reasoning_effort and "reasoning_effort" not in params:
             params["reasoning_effort"] = llm_settings.llm_reasoning_effort
         params.pop("max_tokens", None)
         params.pop("temperature", None)
@@ -32,7 +36,7 @@ def build_chat_params(
 
     if max_tokens is not None:
         params["max_tokens"] = max_tokens
-    if temperature is not None:
+    if temperature is not None and not _is_moonshot_provider(llm_settings):
         params["temperature"] = temperature
     return params
 
@@ -66,6 +70,9 @@ class LLMClientAdapter:
         self.raw_client = raw_client
         self.chat = ChatAdapter(raw_client.chat, llm_settings)
 
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.raw_client, name)
+
 
 def create_llm_client(llm_settings: Settings = settings):
     if not llm_settings.has_llm_credentials:
@@ -81,7 +88,7 @@ def create_llm_client(llm_settings: Settings = settings):
         )
     else:
         raw_client = AsyncOpenAI(
-            api_key=llm_settings.dashscope_api_key,
+            api_key=llm_settings.llm_api_key,
             base_url=llm_settings.llm_base_url,
             timeout=llm_settings.llm_timeout_s,
             max_retries=llm_settings.llm_max_retries,

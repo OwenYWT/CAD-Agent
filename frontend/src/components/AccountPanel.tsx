@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { AuthUser } from "../auth";
 import { authFetch, deleteAuthAccount, refreshAuthSession } from "../auth";
+import { Icon } from "./ui/Icon";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
@@ -38,9 +39,12 @@ export function AccountPanel({ user, onUserUpdate, onLogout }: AccountPanelProps
     }
   };
 
-  useEffect(() => {
-    if (open) loadInvites();
-  }, [open, user.is_admin]);
+  const togglePanel = () => {
+    const nextOpen = !open;
+    setOpen(nextOpen);
+    setError(null);
+    if (nextOpen && user.is_admin) void loadInvites();
+  };
 
   const createInvite = async () => {
     setError(null);
@@ -97,14 +101,17 @@ export function AccountPanel({ user, onUserUpdate, onLogout }: AccountPanelProps
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen((value) => !value)}
-        className="px-2 py-1 rounded-md border border-gray-200 hover:bg-gray-50"
+        aria-label="打开账号管理"
+        onClick={togglePanel}
+        className="icon-button text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+        title="账号管理"
+        type="button"
       >
-        账号
+        <Icon name="user" size={18} />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-8 z-50 w-96 max-h-[75vh] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-xl p-4 space-y-4">
+        <div className="fixed left-3 right-3 top-16 z-50 max-h-[78vh] space-y-4 overflow-y-auto rounded-md border border-slate-200 bg-white p-4 shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-11 sm:w-96">
           <div>
             <div className="text-sm font-semibold text-gray-800">账号管理</div>
             <div className="text-xs text-gray-500 mt-1">账号：{user.phone}</div>
@@ -113,13 +120,13 @@ export function AccountPanel({ user, onUserUpdate, onLogout }: AccountPanelProps
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={refreshToken}
-              className="rounded-lg bg-indigo-50 text-indigo-700 text-sm py-2 hover:bg-indigo-100"
+              className="min-h-10 rounded-md bg-sky-50 text-sky-700 text-sm py-2 hover:bg-sky-100"
             >
               刷新登录状态
             </button>
             <button
               onClick={onLogout}
-              className="rounded-lg border border-gray-200 text-gray-700 text-sm py-2 hover:bg-gray-50"
+              className="min-h-10 rounded-md border border-gray-200 text-gray-700 text-sm py-2 hover:bg-gray-50"
             >
               退出登录
             </button>
@@ -128,7 +135,7 @@ export function AccountPanel({ user, onUserUpdate, onLogout }: AccountPanelProps
           {!user.is_admin && (
             <button
               onClick={deleteAccount}
-              className="w-full rounded-lg border border-red-200 bg-red-50 text-red-700 text-sm py-2 hover:bg-red-100"
+              className="min-h-10 w-full rounded-md border border-red-200 bg-red-50 text-red-700 text-sm py-2 hover:bg-red-100"
             >
               注销账号
             </button>
@@ -137,12 +144,13 @@ export function AccountPanel({ user, onUserUpdate, onLogout }: AccountPanelProps
           {user.is_admin && (
             <div className="border-t border-gray-100 pt-3 space-y-2">
               <div className="text-sm font-medium text-gray-700">邀请码管理</div>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-[minmax(0,1fr)_80px] gap-2 sm:grid-cols-[minmax(0,1fr)_80px_auto]">
                 <input
                   value={newCode}
                   onChange={(event) => setNewCode(event.target.value)}
                   placeholder="留空自动生成"
-                  className="min-w-0 flex-1 rounded-lg border border-gray-200 px-3 py-2 text-xs"
+                  aria-label="邀请码内容"
+                  className="min-h-10 min-w-0 rounded-md border border-gray-200 px-3 py-2 text-xs"
                 />
                 <input
                   type="number"
@@ -150,9 +158,10 @@ export function AccountPanel({ user, onUserUpdate, onLogout }: AccountPanelProps
                   max={10000}
                   value={maxUses}
                   onChange={(event) => setMaxUses(Number(event.target.value))}
-                  className="w-20 rounded-lg border border-gray-200 px-2 py-2 text-xs"
+                  aria-label="邀请码最大使用次数"
+                  className="min-h-10 w-20 rounded-md border border-gray-200 px-2 py-2 text-xs"
                 />
-                <button onClick={createInvite} className="rounded-lg bg-gray-900 text-white text-xs px-3">
+                <button onClick={createInvite} className="min-h-10 rounded-md bg-gray-900 px-3 text-xs text-white max-sm:col-span-2">
                   创建
                 </button>
               </div>

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.auth import verify_api_key
 from app.config import settings
+from app.storage.file_ownership import request_belongs_to
 from app.models.schemas import (
     AnalyzeRequest,
     Annotation3D,
@@ -115,10 +116,12 @@ def _build_annotations(result) -> list[Annotation3D]:
 async def analyze_design(
     request_id: str,
     body: AnalyzeRequest,
-    _=Depends(verify_api_key),
+    credential=Depends(verify_api_key),
 ):
     if not _SAFE_ID_RE.match(request_id):
         raise HTTPException(400, "Invalid request_id")
+    if not request_belongs_to(request_id, credential):
+        raise HTTPException(404, "Request ID not found")
 
     # Find the STL file
     storage = Path(settings.file_storage_dir) / request_id

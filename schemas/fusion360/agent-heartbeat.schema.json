@@ -1,0 +1,157 @@
+{
+  "$defs": {
+    "CadCapabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Actions",
+          "type": "array"
+        },
+        "adapter": {
+          "const": "fusion360",
+          "default": "fusion360",
+          "title": "Adapter",
+          "type": "string"
+        },
+        "available": {
+          "default": false,
+          "title": "Available",
+          "type": "boolean"
+        },
+        "connector_online": {
+          "default": false,
+          "title": "Connector Online",
+          "type": "boolean"
+        },
+        "context_sections": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Context Sections",
+          "type": "array"
+        },
+        "contract_version": {
+          "default": "1.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "fusion_running": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fusion Running"
+        },
+        "fusion_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fusion Version"
+        },
+        "last_heartbeat_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Heartbeat At"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Limitations",
+          "type": "array"
+        },
+        "protocol_versions": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Protocol Versions",
+          "type": "array"
+        },
+        "runtime_online": {
+          "default": false,
+          "title": "Runtime Online",
+          "type": "boolean"
+        }
+      },
+      "title": "CadCapabilities",
+      "type": "object"
+    }
+  },
+  "$id": "https://cad-agent.local/schemas/fusion360/agent-heartbeat/1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "addin_version": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Addin Version",
+      "type": "string"
+    },
+    "capabilities": {
+      "$ref": "#/$defs/CadCapabilities"
+    },
+    "connector_instance_id": {
+      "format": "uuid",
+      "title": "Connector Instance Id",
+      "type": "string"
+    },
+    "contract_version": {
+      "const": "1.0.0",
+      "default": "1.0.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "fusion_version": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Fusion Version",
+      "type": "string"
+    },
+    "platform": {
+      "enum": [
+        "windows",
+        "macos"
+      ],
+      "title": "Platform",
+      "type": "string"
+    },
+    "sent_at": {
+      "format": "date-time",
+      "title": "Sent At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "connector_instance_id",
+    "fusion_version",
+    "addin_version",
+    "platform",
+    "capabilities",
+    "sent_at"
+  ],
+  "title": "AgentHeartbeatRequest",
+  "type": "object",
+  "x-contract-version": "1.0.0"
+}

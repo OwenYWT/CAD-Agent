@@ -24,7 +24,10 @@ class SandboxResult:
 
 class PodmanRuntime:
     def __init__(self):
-        self.command = settings.sandbox_command or "podman"
+        configured = (settings.sandbox_command or "").strip()
+        # SANDBOX_RUNTIME is authoritative. A stale template value such as
+        # SANDBOX_COMMAND=docker must not make the Podman adapter invoke Docker.
+        self.command = "podman" if configured in {"", "docker", "podman"} else configured
         self._ensure_image_exists()
 
     def _ensure_image_exists(self):

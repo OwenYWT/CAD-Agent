@@ -1,0 +1,101 @@
+{
+  "$id": "https://cad-agent.local/schemas/fusion360/capabilities/1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "actions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Actions",
+      "type": "array"
+    },
+    "adapter": {
+      "const": "fusion360",
+      "default": "fusion360",
+      "title": "Adapter",
+      "type": "string"
+    },
+    "available": {
+      "default": false,
+      "title": "Available",
+      "type": "boolean"
+    },
+    "connector_online": {
+      "default": false,
+      "title": "Connector Online",
+      "type": "boolean"
+    },
+    "context_sections": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Context Sections",
+      "type": "array"
+    },
+    "contract_version": {
+      "default": "1.0.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "fusion_running": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fusion Running"
+    },
+    "fusion_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fusion Version"
+    },
+    "last_heartbeat_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Heartbeat At"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    },
+    "protocol_versions": {
+      "items": {
+        "type": "integer"
+      },
+      "title": "Protocol Versions",
+      "type": "array"
+    },
+    "runtime_online": {
+      "default": false,
+      "title": "Runtime Online",
+      "type": "boolean"
+    }
+  },
+  "title": "CadCapabilities",
+  "type": "object",
+  "x-contract-version": "1.0.0"
+}

@@ -1,0 +1,569 @@
+{
+  "$defs": {
+    "Approval": {
+      "additionalProperties": false,
+      "properties": {
+        "approval_id": {
+          "format": "uuid",
+          "title": "Approval Id",
+          "type": "string"
+        },
+        "connector_instance_id": {
+          "format": "uuid",
+          "title": "Connector Instance Id",
+          "type": "string"
+        },
+        "document_id": {
+          "title": "Document Id",
+          "type": "string"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "intent_hash": {
+          "title": "Intent Hash",
+          "type": "string"
+        },
+        "risk": {
+          "enum": [
+            "medium",
+            "high"
+          ],
+          "title": "Risk",
+          "type": "string"
+        }
+      },
+      "required": [
+        "approval_id",
+        "intent_hash",
+        "risk",
+        "expires_at",
+        "connector_instance_id",
+        "document_id"
+      ],
+      "title": "Approval",
+      "type": "object"
+    },
+    "CadArtifact": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "download_url": {
+          "title": "Download Url",
+          "type": "string"
+        },
+        "filename": {
+          "title": "Filename",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "media_type": {
+          "title": "Media Type",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "minimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "kind",
+        "filename",
+        "media_type",
+        "size_bytes",
+        "sha256",
+        "download_url"
+      ],
+      "title": "CadArtifact",
+      "type": "object"
+    },
+    "CadError": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "title": "Category",
+          "type": "string"
+        },
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Details",
+          "type": "object"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "category",
+        "retryable"
+      ],
+      "title": "CadError",
+      "type": "object"
+    },
+    "Change": {
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "before": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "kind": {
+          "enum": [
+            "created",
+            "updated",
+            "deleted"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "target_id": {
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id",
+        "path",
+        "kind"
+      ],
+      "title": "Change",
+      "type": "object"
+    },
+    "ExportData": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Ids",
+          "type": "array"
+        },
+        "format": {
+          "enum": [
+            "step",
+            "stl",
+            "dxf",
+            "f3d",
+            "png"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "kind": {
+          "const": "export",
+          "default": "export",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "format",
+        "artifact_ids"
+      ],
+      "title": "ExportData",
+      "type": "object"
+    },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "MutationData": {
+      "additionalProperties": false,
+      "properties": {
+        "compensation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Compensation"
+        },
+        "created_or_updated_entity_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Created Or Updated Entity Ids",
+          "type": "array"
+        },
+        "kind": {
+          "const": "mutation",
+          "default": "mutation",
+          "title": "Kind",
+          "type": "string"
+        },
+        "snapshot_id": {
+          "title": "Snapshot Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "snapshot_id"
+      ],
+      "title": "MutationData",
+      "type": "object"
+    },
+    "PreviewData": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "preview",
+          "default": "preview",
+          "title": "Kind",
+          "type": "string"
+        },
+        "planned_changes": {
+          "items": {
+            "$ref": "#/$defs/Change"
+          },
+          "title": "Planned Changes",
+          "type": "array"
+        },
+        "verification_plan": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Verification Plan",
+          "type": "array"
+        }
+      },
+      "required": [
+        "planned_changes",
+        "verification_plan"
+      ],
+      "title": "PreviewData",
+      "type": "object"
+    },
+    "SaveData": {
+      "additionalProperties": false,
+      "properties": {
+        "after_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "After Version"
+        },
+        "before_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Before Version"
+        },
+        "cloud_version_processing": {
+          "enum": [
+            "not_applicable",
+            "pending",
+            "complete",
+            "failed"
+          ],
+          "title": "Cloud Version Processing",
+          "type": "string"
+        },
+        "kind": {
+          "const": "save",
+          "default": "save",
+          "title": "Kind",
+          "type": "string"
+        },
+        "local_save_accepted": {
+          "title": "Local Save Accepted",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "local_save_accepted",
+        "cloud_version_processing"
+      ],
+      "title": "SaveData",
+      "type": "object"
+    },
+    "VerificationCheckResult": {
+      "additionalProperties": false,
+      "properties": {
+        "actual": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "check": {
+          "title": "Check",
+          "type": "string"
+        },
+        "expected": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "target_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        }
+      },
+      "required": [
+        "check",
+        "passed"
+      ],
+      "title": "VerificationCheckResult",
+      "type": "object"
+    },
+    "VerificationData": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/VerificationCheckResult"
+          },
+          "title": "Checks",
+          "type": "array"
+        },
+        "compute_completed": {
+          "default": false,
+          "title": "Compute Completed",
+          "type": "boolean"
+        },
+        "new_feature_errors": {
+          "items": {
+            "type": "string"
+          },
+          "title": "New Feature Errors",
+          "type": "array"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "passed"
+      ],
+      "title": "VerificationData",
+      "type": "object"
+    }
+  },
+  "$id": "https://cad-agent.local/schemas/fusion360/action-result/1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "title": "Action",
+      "type": "string"
+    },
+    "approval": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Approval"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/CadArtifact"
+      },
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "changes": {
+      "items": {
+        "$ref": "#/$defs/Change"
+      },
+      "title": "Changes",
+      "type": "array"
+    },
+    "data": {
+      "anyOf": [
+        {
+          "discriminator": {
+            "mapping": {
+              "export": "#/$defs/ExportData",
+              "mutation": "#/$defs/MutationData",
+              "preview": "#/$defs/PreviewData",
+              "save": "#/$defs/SaveData"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/PreviewData"
+            },
+            {
+              "$ref": "#/$defs/MutationData"
+            },
+            {
+              "$ref": "#/$defs/SaveData"
+            },
+            {
+              "$ref": "#/$defs/ExportData"
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Data"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CadError"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "request_id": {
+      "format": "uuid",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "queued",
+        "running",
+        "success",
+        "failed",
+        "cancelled",
+        "timeout",
+        "approval_required",
+        "offline",
+        "indeterminate"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "verification": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VerificationData"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "request_id",
+    "status",
+    "action"
+  ],
+  "title": "CadResult[Annotated[Union[PreviewData, MutationData, SaveData, ExportData], FieldInfo(annotation=NoneType, required=True, discriminator='kind')]]",
+  "type": "object",
+  "x-contract-version": "1.0.0"
+}

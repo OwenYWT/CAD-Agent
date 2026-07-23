@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 
 import pytest
 import pytest_asyncio
@@ -69,6 +69,24 @@ async def test_create_and_list_model_snapshots_versions_per_panel():
     assert snapshots[0]["available_exports"] == ["stl"]
 
 @pytest.mark.asyncio
+async def test_concurrent_snapshots_get_unique_monotonic_versions():
+    await history.create_session("session-concurrent", user_id="user-1")
+    await history.create_panel("session-concurrent", "panel-concurrent", user_id="user-1")
+    result = {"success": True, "request_id": "req", "code": "result = None"}
+
+    snapshots = await asyncio.gather(*(
+        history.create_model_snapshot(
+            "panel-concurrent",
+            {**result, "request_id": f"req-{index}"},
+            source="execute_code",
+        )
+        for index in range(10)
+    ))
+
+    assert sorted(snapshot["version"] for snapshot in snapshots) == list(range(1, 11))
+
+
+@pytest.mark.asyncio
 async def test_restore_model_snapshot_updates_panel_current_code():
     await history.create_session("session-1", user_id="user-1")
     await history.create_panel("session-1", "panel-1", user_id="user-1")
@@ -132,4 +150,3 @@ def test_snapshot_api_list_detail_and_restore(monkeypatch, tmp_path):
     assert detail.json()["result"]["code"] == "result = api"
     assert restored.status_code == 200
     assert restored.json()["code"] == "result = api"
-

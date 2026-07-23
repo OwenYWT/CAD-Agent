@@ -73,4 +73,3 @@ test("keeps all parameters standard when no design brief exists", () => {
   assert.deepEqual(result.critical, []);
   assert.deepEqual(result.standard.map((item) => item.name), ["height_mm"]);
 });
-

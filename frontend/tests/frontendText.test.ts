@@ -8,12 +8,9 @@ const FRONTEND_SRC = join(import.meta.dirname, "..", "src");
 const FILES_TO_CHECK = [
   "components/AgentRunTimeline.tsx",
   "components/RepairHistory.tsx",
-  "components/ParameterPanel.tsx",
   "components/VersionHistoryPanel.tsx",
   "components/DesignBriefPanel.tsx",
-  "components/DownloadPanel.tsx",
   "components/InspectReportPanel.tsx",
-  "components/ChatPanel.tsx",
   "components/DesignAnalysis.tsx",
   "utils/manufacturingProfiles.ts",
   "utils/suggestions.ts",

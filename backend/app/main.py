@@ -34,12 +34,17 @@ from app.api.dfm_rules import router as dfm_rules_router
 from app.api.knowledge import router as knowledge_router
 from app.api.feedback import router as feedback_router
 from app.api.login import router as login_router
+from app.api.capabilities import router as capabilities_router
+from app.api.capability_actions import router as capability_actions_router
 from app.api.onshape import router as onshape_router
 from app.api.websocket import websocket_endpoint
+from app.fusion360.api import router as fusion360_router
+from app.fusion360.agent_api import router as fusion360_agent_router
 
 logger = logging.getLogger(__name__)
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+STARTUP_DEPENDENCY_TIMEOUT_S = 5.0
 
 
 def _cleanup_old_files():
@@ -65,27 +70,41 @@ def _startup_self_check():
 
     if not settings.has_llm_credentials:
         problems.append(
-            "DASHSCOPE_API_KEY 未设置 — planner/codegen 的第一次 LLM 调用会失败。"
-            "请在 backend/.env 写入 dashscope_api_key。"
+            f"{settings.llm_credentials_error} — planner/codegen 的第一次 LLM 调用会失败。"
+            "请在 backend/.env 写入对应的模型 API key。"
         )
 
     if settings.sandbox_runtime.strip().lower() == "podman":
         import subprocess
         command = settings.sandbox_command or "podman"
-        result = subprocess.run(
-            [command, "image", "exists", settings.sandbox_image],
-            capture_output=True, text=True,
-        )
-        if result.returncode != 0:
-            problems.append(
-                f"Sandbox image '{settings.sandbox_image}' not found for Podman. "
-                "Run: cd backend/sandbox && podman build -t cad-agent-sandbox:latest ."
+        try:
+            result = subprocess.run(
+                [command, "image", "exists", settings.sandbox_image],
+                capture_output=True,
+                text=True,
+                timeout=STARTUP_DEPENDENCY_TIMEOUT_S,
             )
+        except subprocess.TimeoutExpired:
+            problems.append(
+                f"Podman 自检超时（{STARTUP_DEPENDENCY_TIMEOUT_S:g} 秒）。"
+                "请检查 Podman machine 是否正常运行。"
+            )
+        except OSError as exc:
+            problems.append(f"Podman 不可用: {exc}")
+        else:
+            if result.returncode == 1:
+                problems.append(
+                    f"Sandbox image '{settings.sandbox_image}' not found for Podman. "
+                    "Run: cd backend/sandbox && podman build -t cad-agent-sandbox:latest ."
+                )
+            elif result.returncode != 0:
+                detail = (result.stderr or result.stdout or "未知错误").strip()[:300]
+                problems.append(f"Podman runtime unavailable: {detail}")
     else:
         try:
             import docker
             try:
-                client = docker.from_env()
+                client = docker.from_env(timeout=STARTUP_DEPENDENCY_TIMEOUT_S)
                 client.ping()
                 try:
                     client.images.get(settings.sandbox_image)
@@ -177,6 +196,10 @@ def create_app() -> FastAPI:
     app.include_router(knowledge_router, prefix="/api")
     app.include_router(feedback_router)
     app.include_router(login_router)
+    app.include_router(capabilities_router)
+    app.include_router(capability_actions_router)
+    app.include_router(fusion360_router)
+    app.include_router(fusion360_agent_router)
     app.include_router(onshape_router)
 
     # WebSocket
@@ -205,6 +228,13 @@ def create_app() -> FastAPI:
 
         @app.get("/{full_path:path}", include_in_schema=False)
         def serve_web_app(full_path: str):
+            # Never disguise an unknown API/WebSocket path as a successful SPA page.
+            # Apart from confusing clients, returning index.html with 200 makes path
+            # traversal probes appear to succeed after URL normalization.
+            if full_path == "api" or full_path.startswith(("api/", "ws/")):
+                from fastapi import HTTPException
+
+                raise HTTPException(status_code=404, detail="Not found")
             requested = (FRONTEND_DIST / full_path).resolve()
             dist_root = FRONTEND_DIST.resolve()
             if requested.is_file() and str(requested).startswith(str(dist_root)):

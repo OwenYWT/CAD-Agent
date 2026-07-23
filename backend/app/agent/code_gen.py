@@ -482,9 +482,9 @@ class CodeGenerator:
     def _format_examples(self, examples: list[dict]) -> str:
         if not examples:
             return ""
-        parts = ["\n## Reusable CAD Examples\n"]
+        parts = ["\n## 可复用 CAD 案例\n"]
         for index, example in enumerate(examples, 1):
-            parts.append(f"### Example {index}: {example['description']}")
+            parts.append(f"### 案例 {index}: {example['description']}")
             if example.get("part_type") or example.get("category"):
                 parts.append(f"- Type: {example.get('part_type') or example.get('category', '')}")
             if example.get("features_used"):
@@ -498,5 +498,5 @@ class CodeGenerator:
             if example.get("print_profile"):
                 parts.append(f"- Print profile: {example['print_profile']}")
             parts.append(f"```python\n{example['code']}\n```\n")
-        parts.append("Use these examples as modeling patterns and DFM guardrails. Reuse the approach, not unrelated dimensions.")
+        parts.append("将这些案例作为建模模式和 DFM 约束参考。只复用方法，不要照搬无关尺寸。")
         return "\n".join(parts)

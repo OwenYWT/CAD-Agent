@@ -125,5 +125,3 @@ async def test_execute_with_retry_records_execution_repair_history(tmp_path):
             "status": "repaired",
         }
     ]
-
-

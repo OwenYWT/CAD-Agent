@@ -54,7 +54,8 @@ export default function VersionHistoryPanel({
   }, [panelId]);
 
   useEffect(() => {
-    loadSnapshots();
+    const timer = window.setTimeout(() => void loadSnapshots(), 0);
+    return () => window.clearTimeout(timer);
   }, [loadSnapshots, refreshKey]);
 
   const restoreSnapshot = async (snapshotId: string) => {
@@ -65,11 +66,11 @@ export default function VersionHistoryPanel({
         `${API_BASE}/api/history/snapshots/${snapshotId}/restore`,
         { method: "POST" },
       );
-      if (!response.ok) throw new Error("\u672a\u8bb0\u5f55\u63d0\u793a\u8bcd");
+      if (!response.ok) throw new Error("版本恢复失败");
       onRestore(await response.json());
       await loadSnapshots();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "\u672a\u8bb0\u5f55\u63d0\u793a\u8bcd");
+      setError(err instanceof Error ? err.message : "版本恢复失败");
     } finally {
       setRestoringId(null);
     }
@@ -89,7 +90,7 @@ export default function VersionHistoryPanel({
           onClick={loadSnapshots}
           disabled={loading}
         >
-          Refresh
+          刷新
         </button>
       </div>
 

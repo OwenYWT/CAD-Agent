@@ -101,13 +101,13 @@ class TestLazyClientInit:
         gen = CodeGenerator()
         assert gen._client is None
 
-    def test_client_raises_without_api_key(self):
+    def test_client_raises_without_api_key(self, monkeypatch):
+        from app.config import settings
+        monkeypatch.setattr(settings, "llm_provider", "moonshot")
+        monkeypatch.setattr(settings, "moonshot_api_key", None)
         gen = CodeGenerator()
-        # If ANTHROPIC_API_KEY is not set, accessing client should raise
-        import os
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
-                _ = gen.client
+        with pytest.raises(RuntimeError, match="MOONSHOT_API_KEY"):
+            _ = gen.client
 
 
 # === Prompt construction (without calling LLM) ===

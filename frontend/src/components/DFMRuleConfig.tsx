@@ -1,15 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import type { DFMRuleData } from "../types";
 
 import { authFetch } from "../auth";
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 const PROCESS_LABELS: Record<string, string> = {
-  CNC: "CNC \u52A0\u5DE5",
-  FDM: "FDM \u6253\u5370",
-  SLA: "SLA \u6253\u5370",
-  injection_mold: "\u6CE8\u5851\u6210\u578B",
-  sheet_metal: "\u9488\u91D1\u52A0\u5DE5",
+  CNC: "CNC 加工",
+  FDM: "FDM 打印",
+  SLA: "SLA 打印",
+  injection_mold: "注塑成型",
+  sheet_metal: "针金加工",
 };
 
 interface RuleSet {
@@ -42,12 +42,6 @@ export default function DFMRuleConfig() {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (open && ruleSets.length === 0) {
-      fetchRuleSets();
-    }
-  }, [open]);
 
   const handleToggleRule = async (ruleId: string, enabled: boolean) => {
     const res = await authFetch(`${API_BASE}/api/dfm/rules/${ruleId}`, {
@@ -92,10 +86,13 @@ export default function DFMRuleConfig() {
   if (!open) {
     return (
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setOpen(true);
+          if (ruleSets.length === 0) void fetchRuleSets();
+        }}
         className="text-xs text-gray-400 hover:text-gray-600 mt-1"
       >
-        DFM \u89C4\u5219\u914D\u7F6E
+        DFM 规则配置
       </button>
     );
   }
@@ -106,17 +103,17 @@ export default function DFMRuleConfig() {
   return (
     <div className="bg-gray-50 border-t border-gray-200 p-3 space-y-2">
       <div className="flex items-center justify-between">
-        <h4 className="text-xs font-medium text-gray-700">DFM \u89C4\u5219\u914D\u7F6E</h4>
+        <h4 className="text-xs font-medium text-gray-700">DFM 规则配置</h4>
         <button
           onClick={() => setOpen(false)}
           className="text-xs text-gray-400 hover:text-gray-600"
         >
-          \u6536\u8D77
+          收起
         </button>
       </div>
 
       {loading ? (
-        <p className="text-xs text-gray-400">\u52A0\u8F7D\u4E2D...</p>
+        <p className="text-xs text-gray-400">加载中...</p>
       ) : (
         <>
           {/* Process tabs */}
@@ -159,14 +156,14 @@ export default function DFMRuleConfig() {
                       {rule.description}
                     </div>
                     <div className="text-gray-400">
-                      {rule.check_type === "geometric" ? "\u7CBE\u786E\u8BA1\u7B97" : "AI \u63A8\u7406"}
-                      {" \u00B7 "}
+                      {rule.check_type === "geometric" ? "精确计算" : "AI 推理"}
+                      {" · "}
                       {rule.severity}
                     </div>
                   </div>
                   {rule.check_type === "geometric" && rule.threshold_min !== null && (
                     <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-gray-400">\u2265</span>
+                      <span className="text-gray-400">≥</span>
                       <input
                         type="number"
                         value={rule.threshold_min}
@@ -185,7 +182,7 @@ export default function DFMRuleConfig() {
                   )}
                   {rule.check_type === "geometric" && rule.threshold_max !== null && (
                     <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-gray-400">\u2264</span>
+                      <span className="text-gray-400">≤</span>
                       <input
                         type="number"
                         value={rule.threshold_max}

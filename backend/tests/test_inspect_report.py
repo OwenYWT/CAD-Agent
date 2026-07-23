@@ -205,4 +205,3 @@ async def test_build_inspect_report_includes_exports_repairs_and_source():
     assert report.available_exports == ["stl", "step"]
     assert report.repair_attempts == 1
     assert report.source == "geometry_validator"
-

@@ -173,12 +173,12 @@ class Orchestrator:
         planner_prompt = self._prompt_with_manufacturing_profile(prompt, profile)
         cache_key = planner_prompt
 
-        # Cache hit: identical prompt already produced working code 鈥?skip the 2 LLM
+        # Cache hit: identical prompt already produced working code — skip the 2 LLM
         # calls (plan + codegen) and re-execute the cached code (fresh files/validation).
         cache = getattr(self, "code_cache", None)
         cached_code = cache.get(cache_key) if cache else None
         if cached_code:
-            logger.info("Code cache hit 鈥?skipping LLM plan+codegen")
+            logger.info("Code cache hit — skipping LLM plan+codegen")
             if on_step:
                 await _call_step(on_step, StepUpdate(step="executing", message="\u547d\u4e2d\u7f13\u5b58\uff0c\u6b63\u5728\u6267\u884c\u5df2\u6709\u6a21\u578b\u4ee3\u7801..."))
             is_2d_cached = "ezdxf" in cached_code or "result.dxf" in cached_code
@@ -188,7 +188,7 @@ class Orchestrator:
             if cached_result.success:
                 cached_result.manufacturing_profile = profile
                 return cached_result
-            # cache produced stale/broken code 鈥?fall through to a fresh generation
+            # cache produced stale/broken code — fall through to a fresh generation
             logger.info("Cached code failed on re-execution, regenerating")
 
         # Step 1: Planning
@@ -256,7 +256,7 @@ class Orchestrator:
             assy_planner = AssemblyPlanner()
             assy_plan = await assy_planner.plan_assembly(plan)
             total_parts = len(assy_plan.parts)
-            logger.info(f"Assembly plan: {total_parts} parts 鈥?{[p.name for p in assy_plan.parts]}")
+            logger.info(f"Assembly plan: {total_parts} parts — {[p.name for p in assy_plan.parts]}")
 
             if on_step:
                 await _call_step(on_step, StepUpdate(
@@ -401,7 +401,7 @@ class Orchestrator:
                 result.plan = plan  # surface the requirement brief (A2)
                 return result
 
-            # Simple part 鈥?single-step generation
+            # Simple part — single-step generation
             if on_step:
                 await _call_step(on_step, StepUpdate(step="generating_code", message="\u6b63\u5728\u751f\u6210 CadQuery \u4ee3\u7801..."))
             parts_info = self._lookup_standard_parts(plan)
@@ -438,7 +438,7 @@ class Orchestrator:
         if _assy_parts_info:
             result.assembly_parts = _assy_parts_info
 
-        # Populate the code cache on success (skip assemblies 鈥?richer multi-part state).
+        # Populate the code cache on success (skip assemblies — richer multi-part state).
         if result.success and result.code and not is_assembly and cache:
             cache.put(cache_key, result.code)
 
@@ -470,11 +470,11 @@ class Orchestrator:
             except Exception as e:
                 logger.warning(f"Auto-DFM skipped: {e}")
 
-        # Step 6: Strategy fallback 鈥?if failed, try alternative modeling approach
+        # Step 6: Strategy fallback — if failed, try alternative modeling approach
         if not result.success and not is_2d and not is_assembly:
             alt_hint = self._get_fallback_hint(plan.modeling_hint, result.error)
             if alt_hint:
-                logger.info(f"Strategy fallback: {plan.modeling_hint} 鈫?{alt_hint}")
+                logger.info(f"Strategy fallback: {plan.modeling_hint} → {alt_hint}")
                 if on_step:
                     await _call_step(on_step, StepUpdate(
                         step="generating_code",
@@ -560,7 +560,7 @@ class Orchestrator:
             response.recovery_actions = build_recovery_actions(response)
             return response
 
-        # Execute directly 鈥?no LLM
+        # Execute directly — no LLM
         exec_mode = "2d" if is_2d else "3d"
         result = await self.executor.execute(code, mode=exec_mode)
         try:
@@ -752,7 +752,7 @@ class Orchestrator:
         if any(kw in message for kw in generate_keywords):
             return "generate"
 
-        # Has code + selection 鈫?likely modification
+        # Has code + selection → likely modification
         if has_code and has_selection:
             return "modify"
 
@@ -783,7 +783,7 @@ class Orchestrator:
         if target_idx is None:
             return GenerationResult(
                 success=False,
-                error={"type": "ValidationError", "message": f"鏈壘鍒伴浂浠? {part_name}"},
+                error={"type": "ValidationError", "message": f"未找到零件: {part_name}"},
             )
 
         target_part = context.assembly_parts[target_idx]
@@ -935,7 +935,7 @@ class Orchestrator:
                     design_brief=plan.design_brief if plan else None,
                 )
 
-            # Static analysis 鈥?catch CadQuery anti-patterns before sandbox
+            # Static analysis — catch CadQuery anti-patterns before sandbox
             analysis_warnings = analyze_code(code)
             if analysis_warnings and attempt < self.MAX_RETRIES:
                 logger.info(f"Static analysis warnings: {analysis_warnings}")
@@ -1036,7 +1036,7 @@ class Orchestrator:
                             min_wall_thickness=geo_validation.min_wall_thickness,
                             print_warnings=geo_validation.print_warnings,
                         )
-                        # Evidence inspect report 鈥?aggregate the facts just computed
+                        # Evidence inspect report — aggregate the facts just computed
                         # (built on every successful 3D gen; DFM enrichment added later).
                         inspect_report = build_inspect_report(
                             geo_validation,
@@ -1081,11 +1081,11 @@ class Orchestrator:
                                 renders_dir = result.work_dir / "renders"
                                 render_paths = self.renderer.render_stl(stl_path, renders_dir)
                                 if not render_paths:
-                                    # No renders 鈫?vision is INDETERMINATE, not skipped silently.
+                                    # No renders → vision is INDETERMINATE, not skipped silently.
                                     # Surface it honestly instead of letting it pass invisibly.
                                     logger.warning("No render images produced, vision validation indeterminate")
                                     self._add_indeterminate_vision_check(
-                                        inspect_report, "鏃犳覆鏌撳浘锛岃瑙夋牎楠屾湭鎵ц"
+                                        inspect_report, "没有生成渲染图，视觉校验未执行"
                                     )
                                 else:
                                     vision_result = await self.vision_validator.validate(
@@ -1117,12 +1117,12 @@ class Orchestrator:
                                     if vision_result.is_match is None:
                                         self._add_indeterminate_vision_check(
                                             inspect_report,
-                                            "; ".join(vision_result.issues) or "Vision validation result is indeterminate",
+                                            "; ".join(vision_result.issues) or "视觉校验结果不确定",
                                         )
                             except Exception as e:
                                 logger.warning(f"Vision validation skipped: {e}")
                                 self._add_indeterminate_vision_check(
-                                    inspect_report, "Vision validation raised an exception and was not executed"
+                                    inspect_report, "视觉校验发生异常，未执行"
                                 )
 
                     except Exception as e:
@@ -1143,14 +1143,14 @@ class Orchestrator:
                     repair_history=repair_history,
                 )
 
-            # Failed 鈥?classify the failure to decide how (or whether) to retry.
+            # Failed — classify the failure to decide how (or whether) to retry.
             shutil.rmtree(result.work_dir, ignore_errors=True)
             fc = classify(
                 result.error_type, result.error_message, result.traceback, gate="exec"
             )
 
             # HARD_STOP: infra failures (Docker down / image missing / no output) can't be
-            # fixed by re-prompting the LLM 鈥?abort immediately instead of burning retries.
+            # fixed by re-prompting the LLM — abort immediately instead of burning retries.
             if fc.fix_path is FixPath.HARD_STOP:
                 logger.info(f"Non-recoverable failure ({fc.key}), stopping retries")
                 break
@@ -1215,12 +1215,12 @@ class Orchestrator:
             design_brief=plan.design_brief if plan else None,
         )
 
-    # Fallback strategy map: current_hint 鈫?alternative to try
+    # Fallback strategy map: current_hint → alternative to try
     _FALLBACK_MAP = {
-        "revolve": "extrude_cut",      # revolve 澶辫触 鈫?鎷変几+鍒囧壊
-        "sweep": "extrude_cut",        # sweep 澶辫触 鈫?鎷変几+鍒囧壊
-        "loft": "extrude_cut",         # loft 澶辫触 鈫?鎷変几+鍒囧壊
-        "extrude_cut": "revolve",      # 鎷変几澶辫触 鈫?璇曡瘯鍥炶浆
+        "revolve": "extrude_cut",      # 回转失败 → 拉伸切除
+        "sweep": "extrude_cut",        # 扫掠失败 → 拉伸切除
+        "loft": "extrude_cut",         # 放样失败 → 拉伸切除
+        "extrude_cut": "revolve",      # 拉伸失败 → 尝试回转
         "boolean_combine": "extrude_cut",
     }
 
@@ -1255,7 +1255,7 @@ class Orchestrator:
                 parts_info.append(info)
 
         if parts_info:
-            return "\n\n## 鏍囧噯浠跺弬鏁癨n" + "\n".join(parts_info)
+            return "\n\n## 标准件参数\n" + "\n".join(parts_info)
         return ""
 
     def _extract_params(self, code: str) -> dict[str, ParamConfig]:
@@ -1331,7 +1331,7 @@ class Orchestrator:
     def _add_indeterminate_vision_check(report, message: str) -> None:
         """Record an honest 'vision indeterminate' check (warn) on the inspect report.
 
-        Indeterminate means the visual self-check could not run / be trusted 鈥?it must
+        Indeterminate means the visual self-check could not run / be trusted — it must
         never read as a pass, so we surface it as a warning rather than hiding it."""
         if report is None:
             return

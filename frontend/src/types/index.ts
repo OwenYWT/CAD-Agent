@@ -271,3 +271,64 @@ export type WSMessage =
   | { type: "step_update"; data: StepUpdate & { panel_id?: string } }
   | { type: "generation_result"; data: GenerationResult & { panel_id?: string } }
   | { type: "assistant_message"; data: { content: string } };
+
+export type CapabilityId =
+  | "cad"
+  | "cad-viewer"
+  | "step-parts"
+  | "dxf"
+  | "urdf"
+  | "srdf"
+  | "sdf"
+  | "sendcutsend"
+  | "gcode"
+  | "bambu-labs"
+  | "implicit-cad";
+
+/** Capabilities currently routed by the conversational WebSocket entry point. */
+export type ChatCapabilityId = Extract<CapabilityId, "cad" | "dxf">;
+export type CapabilitySelection = "auto" | ChatCapabilityId;
+
+export type CapabilityRiskLevel =
+  | "read_only"
+  | "compute"
+  | "external_write"
+  | "physical_action";
+
+export interface CapabilityAction {
+  id: string;
+  name: string;
+  mode?: CapabilityRiskLevel;
+  requires_confirmation?: boolean;
+  available?: boolean;
+  blocked_reason?: string | null;
+}
+
+export interface CapabilityDependency {
+  id: string;
+  label: string;
+  kind: string;
+  required: boolean;
+  available?: boolean;
+  detail?: string | null;
+}
+
+export interface CapabilityDefinition {
+  id: CapabilityId;
+  name: string;
+  group: string;
+  summary: string;
+  maturity: "stable" | "beta" | "experimental";
+  risk_level: CapabilityRiskLevel;
+  actions: CapabilityAction[];
+  accepts: string[];
+  produces: string[];
+  dependencies: CapabilityDependency[];
+  available?: boolean;
+  blocked_reasons?: string[];
+  upstream?: {
+    version: string;
+    commit: string;
+    url: string;
+  };
+}

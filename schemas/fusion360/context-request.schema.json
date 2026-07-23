@@ -1,0 +1,83 @@
+{
+  "$defs": {
+    "ContextQuery": {
+      "additionalProperties": false,
+      "properties": {
+        "connector_instance_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Connector Instance Id"
+        },
+        "include_suppressed": {
+          "default": false,
+          "title": "Include Suppressed",
+          "type": "boolean"
+        },
+        "max_depth": {
+          "default": 8,
+          "maximum": 32,
+          "minimum": 0,
+          "title": "Max Depth",
+          "type": "integer"
+        },
+        "sections": {
+          "items": {
+            "enum": [
+              "application",
+              "document",
+              "design",
+              "components",
+              "occurrences",
+              "selection",
+              "parameters",
+              "materials",
+              "mass_properties",
+              "sketches",
+              "features",
+              "timeline",
+              "bodies",
+              "assembly",
+              "cloud"
+            ],
+            "type": "string"
+          },
+          "title": "Sections",
+          "type": "array"
+        }
+      },
+      "title": "ContextQuery",
+      "type": "object"
+    }
+  },
+  "$id": "https://cad-agent.local/schemas/fusion360/context-request/1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "query": {
+      "$ref": "#/$defs/ContextQuery"
+    },
+    "request_id": {
+      "format": "uuid",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "timeout_ms": {
+      "default": 30000,
+      "maximum": 300000,
+      "minimum": 1000,
+      "title": "Timeout Ms",
+      "type": "integer"
+    }
+  },
+  "title": "ContextRequest",
+  "type": "object",
+  "x-contract-version": "1.0.0"
+}

@@ -1,0 +1,30 @@
+{
+  "$id": "https://cad-agent.local/schemas/fusion360/ipc-register-response/1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "heartbeat_interval_ms": {
+      "default": 5000,
+      "title": "Heartbeat Interval Ms",
+      "type": "integer"
+    },
+    "heartbeat_ttl_ms": {
+      "default": 15000,
+      "title": "Heartbeat Ttl Ms",
+      "type": "integer"
+    },
+    "lease_duration_ms": {
+      "default": 30000,
+      "title": "Lease Duration Ms",
+      "type": "integer"
+    },
+    "protocol_version": {
+      "default": 1,
+      "title": "Protocol Version",
+      "type": "integer"
+    }
+  },
+  "title": "RegisterResponse",
+  "type": "object",
+  "x-contract-version": "1.0.0"
+}

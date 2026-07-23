@@ -124,4 +124,3 @@ class RunStageTimer:
             part_index=self.part_index,
             total_parts=self.total_parts,
         )
-

@@ -149,7 +149,7 @@ def _find_step_file(request_id: str, filename: str | None = None) -> Path:
         raise ValueError("Invalid request_id")
     storage_dir = Path(settings.file_storage_dir).resolve()
     request_dir = (storage_dir / request_id).resolve()
-    if not str(request_dir).startswith(str(storage_dir)):
+    if request_dir.parent != storage_dir:
         raise ValueError("Invalid request_id path")
     if not request_dir.exists():
         raise FileNotFoundError(f"Generated file directory not found for request_id={request_id}")
@@ -157,14 +157,19 @@ def _find_step_file(request_id: str, filename: str | None = None) -> Path:
         if not _SAFE_FILENAME_PATTERN.match(filename) or ".." in filename or "/" in filename or "\\" in filename:
             raise ValueError("Invalid step_filename")
         candidate = (request_dir / filename).resolve()
-        if not str(candidate).startswith(str(request_dir)):
+        if not candidate.is_relative_to(request_dir):
             raise ValueError("Invalid step_filename path")
         if candidate.suffix.lower() not in {".step", ".stp"}:
             raise ValueError("step_filename must be a .step or .stp file")
-        if not candidate.exists():
+        if not candidate.is_file():
             raise FileNotFoundError(f"STEP file not found: {filename}")
         return candidate
-    candidates = sorted([*request_dir.glob("*.step"), *request_dir.glob("*.stp")])
+    candidates = sorted(
+        candidate.resolve()
+        for pattern in ("*.step", "*.stp")
+        for candidate in request_dir.glob(pattern)
+        if candidate.resolve().is_relative_to(request_dir) and candidate.resolve().is_file()
+    )
     if not candidates:
         raise FileNotFoundError(f"No STEP file found for request_id={request_id}")
     return candidates[0]

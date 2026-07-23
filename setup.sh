@@ -1,6 +1,6 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # CAD Agent Web one-shot local setup.
-# Defaults to Podman + Azure OpenAI. Copy backend/.env.example to backend/.env first.
+# Defaults to Podman + the provider configured in backend/.env.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -21,10 +21,7 @@ if ! command -v python >/dev/null 2>&1; then PYTHON_BIN="python3"; fi
 say "Preparing backend .env"
 if [ ! -f backend/.env ]; then
   cp backend/.env.example backend/.env
-  die "Created backend/.env from template. Edit Azure OpenAI values, then run this script again."
-fi
-if grep -q "replace-with-your-azure-openai-key" backend/.env; then
-  die "Edit backend/.env and set AZURE_OPENAI_API_KEY first."
+  die "Created backend/.env from template. Fill the LLM and auth values, then run this script again."
 fi
 
 say "Building sandbox image with $RUNTIME"

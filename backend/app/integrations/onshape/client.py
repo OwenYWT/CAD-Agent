@@ -41,7 +41,10 @@ class OnshapeClient:
 
     @property
     def configured(self) -> bool:
-        return bool(self.access_key and self.secret_key)
+        access_key = (self.access_key or "").strip()
+        secret_key = (self.secret_key or "").strip()
+        placeholders = {"<ONSHAPE_ACCESS_KEY>", "<ONSHAPE_SECRET_KEY>"}
+        return bool(access_key and secret_key and access_key not in placeholders and secret_key not in placeholders)
 
     def _ensure_configured(self):
         if not self.configured:
@@ -101,7 +104,13 @@ class OnshapeClient:
                 headers=headers,
             )
             self._apply_auth(request)
-            response = await client.send(request)
+            try:
+                response = await client.send(request)
+            except httpx.RequestError as exc:
+                raise OnshapeAPIError(
+                    502,
+                    {"type": type(exc).__name__, "message": "Onshape request failed"},
+                ) from exc
 
         if response.status_code >= 400:
             try:

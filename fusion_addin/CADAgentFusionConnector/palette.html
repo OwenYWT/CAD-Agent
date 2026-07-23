@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CAD Agent</title>
+  <script src="palette.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>CAD Agent for Fusion</h1>
+    <p id="status" role="status">Ready</p>
+    <label for="prompt">Describe one CAD change</label>
+    <textarea id="prompt" maxlength="4000" rows="5"></textarea>
+    <label><input id="upload-consent" type="checkbox"> Allow upload of an explicitly exported artifact for this request</label>
+    <label><input id="f3d-consent" type="checkbox"> Separately allow a full F3D upload for this request</label>
+    <button id="plan" type="button">Read context and plan</button>
+    <button id="cancel" type="button">Cancel</button>
+    <section aria-labelledby="proposal-heading">
+      <h2 id="proposal-heading">Proposal</h2>
+      <pre id="proposal"></pre>
+    </section>
+    <section aria-labelledby="preview-heading">
+      <h2 id="preview-heading">Native preview</h2>
+      <pre id="preview"></pre>
+    </section>
+    <button id="approve-f3d" type="button" hidden>Separately authorize F3D upload</button>
+    <button id="approve" type="button" hidden>Approve this exact preview</button>
+    <section aria-labelledby="result-heading">
+      <h2 id="result-heading">Result</h2>
+      <pre id="result"></pre>
+    </section>
+    <p id="error" role="alert"></p>
+  </main>
+</body>
+</html>

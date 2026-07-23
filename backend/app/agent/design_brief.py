@@ -52,7 +52,7 @@ def _localized_text(value: str, fallback: str) -> str:
     cleaned = value.strip() if value else ""
     if not cleaned:
         return fallback
-    return cleaned if _has_cjk(cleaned) else fallback
+    return cleaned
 
 
 def localize_user_question(value: str) -> str:
@@ -65,6 +65,10 @@ def localize_user_question(value: str) -> str:
     lowered = cleaned.lower()
     if "desk" in lowered and "thickness" in lowered:
         return "夹具需要适配的桌面厚度是多少？"
+    if "phone" in lowered and "thickness" in lowered:
+        return "需要适配的手机厚度是多少？"
+    if "cable" in lowered and "diameter" in lowered:
+        return "需要适配的线缆直径是多少？"
     if "screw" in lowered and "diameter" in lowered:
         return "螺丝孔直径需要是多少？"
     if "wall" in lowered and "thickness" in lowered:
@@ -86,8 +90,7 @@ def _localized_list(values: list[str], fallback: list[str] | None = None, limit:
         cleaned = value.strip() if value else ""
         if not cleaned:
             continue
-        if _has_cjk(cleaned):
-            localized.append(cleaned)
+        localized.append(cleaned)
     return localized[:limit] or list(fallback or [])[:limit]
 
 
@@ -95,7 +98,7 @@ def _localized_questions(values: list[str], limit: int = 8) -> list[str]:
     questions: list[str] = []
     for value in values:
         question = localize_user_question(value)
-        if question not in questions:
+        if question and question not in questions:
             questions.append(question)
     return questions[:limit]
 
@@ -147,8 +150,8 @@ def ensure_design_brief(plan: CADPlan) -> DesignBrief:
     raw_artifact_type = plan.part_type if existing.artifact_type == "custom" else existing.artifact_type
     brief = DesignBrief(
         intent_summary=_localized_text(existing.intent_summary, plan.description),
-        artifact_type=_ARTIFACT_TYPE_LABELS.get(raw_artifact_type, raw_artifact_type),
-        manufacturing_posture=_POSTURE_LABELS.get(existing.manufacturing_posture, existing.manufacturing_posture or "面向 3D 打印"),
+        artifact_type=raw_artifact_type,
+        manufacturing_posture=existing.manufacturing_posture or "printable",
         assumptions=assumptions,
         critical_dimensions=critical_dimensions,
         functional_requirements=functional_requirements,

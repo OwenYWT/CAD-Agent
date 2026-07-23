@@ -1,0 +1,17 @@
+{
+  "mode": "cloud_agent",
+  "agent_url": "https://your-agent.example.com",
+  "agent_token_file": "/replace/with/user-only/config/path/agent.token",
+  "runtime_url": "http://127.0.0.1:8765",
+  "connector_secret_file": "/replace/with/user-only/config/path/connector.secret",
+  "connector_instance_id": "replace-with-a-stable-uuid",
+  "artifact_root": "/replace/with/user/data/path/artifacts",
+  "journal_path": "/replace/with/user/data/path/execution-journal.json",
+  "request_timeout_s": 10,
+  "max_request_bytes": 1048576,
+  "max_response_bytes": 1048576,
+  "max_artifact_bytes": 67108864,
+  "queue_size": 16,
+  "retry_attempts": 3,
+  "approval_ttl_s": 600
+}

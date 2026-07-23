@@ -187,8 +187,22 @@ async def create_session(session_id: str, title: str = "", user_id: str | None =
             "UPDATE sessions SET user_id = COALESCE(user_id, ?) WHERE id = ?",
             (user_id, session_id),
         )
+    if title.strip():
+        await db.execute(
+            """
+            UPDATE sessions
+            SET title = ?, updated_at = ?
+            WHERE id = ? AND (title IS NULL OR TRIM(title) = '')
+            """,
+            (title, now, session_id),
+        )
     await db.commit()
-    return {"id": session_id, "user_id": user_id, "title": title, "created_at": now, "updated_at": now}
+    cursor = await db.execute(
+        "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE id = ?",
+        (session_id,),
+    )
+    row = await cursor.fetchone()
+    return dict(row)
 
 
 async def list_sessions(user_id: str | None = None) -> list[dict]:
@@ -232,6 +246,34 @@ async def session_writable_by_user(session_id: str, user_id: str | None) -> bool
     return row["user_id"] is None or row["user_id"] == user_id
 
 
+async def panel_writable_by_session(
+    panel_id: str,
+    session_id: str,
+    user_id: str | None,
+) -> bool:
+    """Allow a new panel ID, or the existing panel only in its original session.
+
+    Panel IDs are global primary keys. Reusing one in another session would make
+    INSERT OR IGNORE route later messages into the old session.
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        """
+        SELECT p.session_id, s.user_id
+        FROM panels p
+        JOIN sessions s ON s.id = p.session_id
+        WHERE p.id = ?
+        """,
+        (panel_id,),
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        return True
+    if row["session_id"] != session_id:
+        return False
+    return not user_id or row["user_id"] is None or row["user_id"] == user_id
+
+
 async def panel_belongs_to_user(panel_id: str, user_id: str | None) -> bool:
     if not user_id:
         return True
@@ -265,15 +307,29 @@ async def touch_session(session_id: str):
 
 async def create_panel(session_id: str, panel_id: str, title: str = "", user_id: str | None = None) -> dict:
     db = await get_db()
+    existing = await db.execute(
+        "SELECT id, session_id, title, created_at FROM panels WHERE id = ?",
+        (panel_id,),
+    )
+    existing_row = await existing.fetchone()
+    if existing_row is not None and existing_row["session_id"] != session_id:
+        raise ValueError("panel_id already belongs to another session")
+
     now = _now()
-    # Ensure session exists
     await create_session(session_id, user_id=user_id)
     await db.execute(
         "INSERT OR IGNORE INTO panels (id, session_id, title, created_at) VALUES (?, ?, ?, ?)",
         (panel_id, session_id, title, now),
     )
     await db.commit()
-    return {"id": panel_id, "session_id": session_id, "title": title, "created_at": now}
+    cursor = await db.execute(
+        "SELECT id, session_id, title, created_at FROM panels WHERE id = ?",
+        (panel_id,),
+    )
+    row = await cursor.fetchone()
+    if row is None or row["session_id"] != session_id:
+        raise ValueError("panel_id already belongs to another session")
+    return dict(row)
 
 
 async def list_panels(session_id: str) -> list[dict]:
@@ -332,12 +388,6 @@ async def create_model_snapshot(
     parent_snapshot_id: str | None = None,
 ) -> dict:
     db = await get_db()
-    cursor = await db.execute(
-        "SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM model_snapshots WHERE panel_id = ?",
-        (panel_id,),
-    )
-    row = await cursor.fetchone()
-    version = int(row["next_version"])
     snapshot_id = str(uuid.uuid4())
     now = _now()
     status = _snapshot_status(result)
@@ -354,13 +404,15 @@ async def create_model_snapshot(
             id, panel_id, parent_snapshot_id, version, source, prompt, code,
             result, files, params, parameters, validation, inspect_report,
             repair_history, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        )
+        SELECT ?, ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        FROM model_snapshots
+        WHERE panel_id = ?
         """,
         (
             snapshot_id,
             panel_id,
             parent_snapshot_id,
-            version,
             source,
             prompt,
             code,
@@ -373,6 +425,7 @@ async def create_model_snapshot(
             json.dumps(repair_history),
             status,
             now,
+            panel_id,
         ),
     )
     await db.commit()
@@ -532,7 +585,7 @@ async def get_onshape_links(request_id: str, user_id: str | None = None) -> list
                    element_id, translation_id, document_name, step_filename,
                    mode, created_at, updated_at
             FROM onshape_links
-            WHERE request_id = ? AND (user_id = ? OR user_id IS NULL)
+            WHERE request_id = ? AND user_id = ?
             ORDER BY updated_at DESC, id DESC
             """,
             (request_id, user_id),
@@ -561,7 +614,7 @@ async def get_latest_onshape_link(request_id: str, user_id: str | None = None) -
                    element_id, translation_id, document_name, step_filename,
                    mode, created_at, updated_at
             FROM onshape_links
-            WHERE request_id = ? AND (user_id = ? OR user_id IS NULL)
+            WHERE request_id = ? AND user_id = ?
             ORDER BY updated_at DESC, id DESC
             LIMIT 1
             """,
@@ -579,6 +632,41 @@ async def get_latest_onshape_link(request_id: str, user_id: str | None = None) -
             LIMIT 1
             """,
             (request_id,),
+        )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def get_onshape_link_by_translation(
+    translation_id: str,
+    user_id: str | None = None,
+) -> dict | None:
+    db = await get_db()
+    if user_id:
+        cursor = await db.execute(
+            """
+            SELECT id, request_id, status, onshape_url, document_id, workspace_id,
+                   element_id, translation_id, document_name, step_filename,
+                   mode, created_at, updated_at
+            FROM onshape_links
+            WHERE translation_id = ? AND user_id = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (translation_id, user_id),
+        )
+    else:
+        cursor = await db.execute(
+            """
+            SELECT id, request_id, status, onshape_url, document_id, workspace_id,
+                   element_id, translation_id, document_name, step_filename,
+                   mode, created_at, updated_at
+            FROM onshape_links
+            WHERE translation_id = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (translation_id,),
         )
     row = await cursor.fetchone()
     return dict(row) if row else None

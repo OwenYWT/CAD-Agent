@@ -79,10 +79,11 @@ class TestPlanDecomposerInit:
         decomposer = PlanDecomposer()
         assert decomposer._client is None
 
-    def test_lazy_client_raises_without_key(self):
-        import os
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            from app.agent.multi_step import PlanDecomposer
-            decomposer = PlanDecomposer()
-            with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
-                _ = decomposer.client
+    def test_lazy_client_raises_without_key(self, monkeypatch):
+        from app.config import settings
+        monkeypatch.setattr(settings, "llm_provider", "moonshot")
+        monkeypatch.setattr(settings, "moonshot_api_key", None)
+        from app.agent.multi_step import PlanDecomposer
+        decomposer = PlanDecomposer()
+        with pytest.raises(RuntimeError, match="MOONSHOT_API_KEY"):
+            _ = decomposer.client

@@ -1,0 +1,923 @@
+{
+  "$defs": {
+    "ApplicationContext": {
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "user_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Name"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "title": "ApplicationContext",
+      "type": "object"
+    },
+    "CadCapabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Actions",
+          "type": "array"
+        },
+        "adapter": {
+          "const": "fusion360",
+          "default": "fusion360",
+          "title": "Adapter",
+          "type": "string"
+        },
+        "available": {
+          "default": false,
+          "title": "Available",
+          "type": "boolean"
+        },
+        "connector_online": {
+          "default": false,
+          "title": "Connector Online",
+          "type": "boolean"
+        },
+        "context_sections": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Context Sections",
+          "type": "array"
+        },
+        "contract_version": {
+          "default": "1.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "fusion_running": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fusion Running"
+        },
+        "fusion_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fusion Version"
+        },
+        "last_heartbeat_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Heartbeat At"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Limitations",
+          "type": "array"
+        },
+        "protocol_versions": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Protocol Versions",
+          "type": "array"
+        },
+        "runtime_online": {
+          "default": false,
+          "title": "Runtime Online",
+          "type": "boolean"
+        }
+      },
+      "title": "CadCapabilities",
+      "type": "object"
+    },
+    "CloudContext": {
+      "additionalProperties": false,
+      "properties": {
+        "data_file_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Data File Id"
+        },
+        "folder_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Folder Id"
+        },
+        "is_complete": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Is Complete"
+        },
+        "is_read_only": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Is Read Only"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "version_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version Id"
+        },
+        "version_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version Number"
+        }
+      },
+      "title": "CloudContext",
+      "type": "object"
+    },
+    "ContextData": {
+      "additionalProperties": false,
+      "properties": {
+        "application": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApplicationContext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "assembly": {
+          "items": {
+            "$ref": "#/$defs/EntitySummary"
+          },
+          "title": "Assembly",
+          "type": "array"
+        },
+        "bodies": {
+          "items": {
+            "$ref": "#/$defs/EntitySummary"
+          },
+          "title": "Bodies",
+          "type": "array"
+        },
+        "cloud": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CloudContext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "components": {
+          "items": {
+            "$ref": "#/$defs/EntitySummary"
+          },
+          "title": "Components",
+          "type": "array"
+        },
+        "design": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DesignContext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "document": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DocumentContext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "features": {
+          "items": {
+            "$ref": "#/$defs/EntitySummary"
+          },
+          "title": "Features",
+          "type": "array"
+        },
+        "mass_properties": {
+          "items": {
+            "$ref": "#/$defs/MassPropertiesSummary"
+          },
+          "title": "Mass Properties",
+          "type": "array"
+        },
+        "materials": {
+          "items": {
+            "$ref": "#/$defs/MaterialSummary"
+          },
+          "title": "Materials",
+          "type": "array"
+        },
+        "occurrences": {
+          "items": {
+            "$ref": "#/$defs/EntitySummary"
+          },
+          "title": "Occurrences",
+          "type": "array"
+        },
+        "parameters": {
+          "items": {
+            "$ref": "#/$defs/ParameterSummary"
+          },
+          "title": "Parameters",
+          "type": "array"
+        },
+        "selection": {
+          "items": {
+            "$ref": "#/$defs/EntitySummary"
+          },
+          "title": "Selection",
+          "type": "array"
+        },
+        "sketches": {
+          "items": {
+            "$ref": "#/$defs/EntitySummary"
+          },
+          "title": "Sketches",
+          "type": "array"
+        },
+        "timeline": {
+          "items": {
+            "$ref": "#/$defs/TimelineSummary"
+          },
+          "title": "Timeline",
+          "type": "array"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
+        },
+        "vendor_extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Vendor Extensions",
+          "type": "object"
+        }
+      },
+      "title": "ContextData",
+      "type": "object"
+    },
+    "DesignContext": {
+      "additionalProperties": false,
+      "properties": {
+        "design_type": {
+          "enum": [
+            "parametric",
+            "direct",
+            "unknown"
+          ],
+          "title": "Design Type",
+          "type": "string"
+        },
+        "root_component_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Root Component Id"
+        },
+        "units": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Units"
+        }
+      },
+      "required": [
+        "design_type"
+      ],
+      "title": "DesignContext",
+      "type": "object"
+    },
+    "DocumentContext": {
+      "additionalProperties": false,
+      "properties": {
+        "document_id": {
+          "title": "Document Id",
+          "type": "string"
+        },
+        "document_type": {
+          "title": "Document Type",
+          "type": "string"
+        },
+        "is_modified": {
+          "title": "Is Modified",
+          "type": "boolean"
+        },
+        "is_read_only": {
+          "title": "Is Read Only",
+          "type": "boolean"
+        },
+        "is_saved": {
+          "title": "Is Saved",
+          "type": "boolean"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id",
+        "name",
+        "document_type",
+        "is_saved",
+        "is_modified",
+        "is_read_only"
+      ],
+      "title": "DocumentContext",
+      "type": "object"
+    },
+    "EntitySummary": {
+      "additionalProperties": false,
+      "properties": {
+        "component_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Component Id"
+        },
+        "health_state": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Health State"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "parent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Id"
+        },
+        "suppressed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Suppressed"
+        },
+        "vendor_extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Vendor Extensions",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind"
+      ],
+      "title": "EntitySummary",
+      "type": "object"
+    },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "MassPropertiesSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "center_of_mass": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Center Of Mass"
+        },
+        "density": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Density"
+        },
+        "mass": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mass"
+        },
+        "target_id": {
+          "title": "Target Id",
+          "type": "string"
+        },
+        "volume": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Volume"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "MassPropertiesSummary",
+      "type": "object"
+    },
+    "MaterialSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "component_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Component Id"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "library_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Library Id"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "MaterialSummary",
+      "type": "object"
+    },
+    "ParameterSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "component_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Component Id"
+        },
+        "created_by_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Created By Id"
+        },
+        "expression": {
+          "title": "Expression",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "is_user_parameter": {
+          "title": "Is User Parameter",
+          "type": "boolean"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "expression",
+        "is_user_parameter"
+      ],
+      "title": "ParameterSummary",
+      "type": "object"
+    },
+    "TimelineParentSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "title": "Index",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "index",
+        "name"
+      ],
+      "title": "TimelineParentSummary",
+      "type": "object"
+    },
+    "TimelineSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "entity_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entity Id"
+        },
+        "error_or_warning": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Or Warning"
+        },
+        "health_state": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Health State"
+        },
+        "index": {
+          "title": "Index",
+          "type": "integer"
+        },
+        "is_group": {
+          "default": false,
+          "title": "Is Group",
+          "type": "boolean"
+        },
+        "is_rolled_back": {
+          "default": false,
+          "title": "Is Rolled Back",
+          "type": "boolean"
+        },
+        "is_suppressed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Is Suppressed"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimelineParentSummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "index",
+        "name",
+        "kind"
+      ],
+      "title": "TimelineSummary",
+      "type": "object"
+    }
+  },
+  "$id": "https://cad-agent.local/schemas/fusion360/agent-turn/1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "capabilities": {
+      "$ref": "#/$defs/CadCapabilities"
+    },
+    "connector_instance_id": {
+      "format": "uuid",
+      "title": "Connector Instance Id",
+      "type": "string"
+    },
+    "context": {
+      "$ref": "#/$defs/ContextData"
+    },
+    "context_fingerprint": {
+      "pattern": "^ctx-c14n-1:[0-9a-f]{64}$",
+      "title": "Context Fingerprint",
+      "type": "string"
+    },
+    "contract_version": {
+      "const": "1.0.0",
+      "default": "1.0.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "export_artifact_upload_consent": {
+      "default": false,
+      "title": "Export Artifact Upload Consent",
+      "type": "boolean"
+    },
+    "f3d_upload_authorized": {
+      "default": false,
+      "title": "F3D Upload Authorized",
+      "type": "boolean"
+    },
+    "prompt": {
+      "maxLength": 8000,
+      "minLength": 1,
+      "title": "Prompt",
+      "type": "string"
+    },
+    "request_id": {
+      "format": "uuid",
+      "title": "Request Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "connector_instance_id",
+    "prompt",
+    "context",
+    "context_fingerprint",
+    "capabilities"
+  ],
+  "title": "AgentTurnRequest",
+  "type": "object",
+  "x-contract-version": "1.0.0"
+}

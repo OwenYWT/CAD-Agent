@@ -1,4 +1,4 @@
-﻿from typing import Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -126,7 +126,7 @@ class InspectCheck(BaseModel):
 class InspectReport(BaseModel):
     """Aggregated, deterministic evidence report for a produced model.
 
-    Pure aggregation of already-computed facts (GeometryValidation + optional DFM) 鈥?
+    Pure aggregation of already-computed facts (GeometryValidation + optional DFM) —
     no geometry is recomputed. `verdict` is the worst status across `checks`.
     success = "model produced"; this report = honest per-check evidence.
     """
@@ -385,7 +385,7 @@ class Annotation3D(BaseModel):
     severity: str  # "critical" | "warning" | "info"
     position: list[float]  # [x, y, z] world coordinates
     normal: list[float] | None = None
-    label: str  # short label e.g. "澹佸帤 0.6mm"
+    label: str  # short label e.g. "壁厚 0.6mm"
     detail: str = ""  # full description
     category: str = ""  # DFM issue category
     face_ids: list[int] | None = None  # STEP face IDs for highlighting
@@ -419,9 +419,8 @@ class DesignAnalysisResponse(BaseModel):
     annotations: list[Annotation3D] = []
 
 
-# Resolve forward references: InspectReport鈫扲uleViolationModel, and the two response
-# models鈫扖ADPlan (defined between them). All target types now exist.
+# Resolve forward references: InspectReport -> RuleViolationModel, and the two response
+# models -> CADPlan (defined between them). All target types now exist.
 InspectReport.model_rebuild()
 GenerationResult.model_rebuild()
 GenerateResponse.model_rebuild()
-

@@ -7,8 +7,10 @@ from fastapi.responses import JSONResponse
 
 from app.api.websocket import _get_orchestrator
 from app.api.auth import verify_api_key, rate_limiter
+from app.api.error_messages import public_generation_error
 from app.config import settings
 from app.models.schemas import GenerateRequest, GenerateResponse, ModifyRequest
+from app.storage.file_ownership import claim_request_owner
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -29,6 +31,7 @@ async def generate(req: GenerateRequest, request: Request, api_key: str | None =
             orchestrator.generate(req.prompt, req.output_formats, **generate_kwargs),
             timeout=settings.generate_deadline_s,
         )
+        claim_request_owner(response.request_id, api_key)
         if not response.success:
             return JSONResponse(
                 status_code=500,
@@ -48,12 +51,13 @@ async def generate(req: GenerateRequest, request: Request, api_key: str | None =
     except Exception as e:
         logger.exception("Generate failed")
         request_id = str(uuid.uuid4())
+        error = public_generation_error(e)
         return JSONResponse(
-            status_code=500,
+            status_code=504 if error["type"] == "TimeoutError" else 500,
             content=GenerateResponse(
                 request_id=request_id,
                 success=False,
-                error={"type": type(e).__name__, "message": str(e)},
+                error=error,
             ).model_dump(),
         )
 
@@ -65,6 +69,7 @@ async def modify(req: ModifyRequest, request: Request, api_key: str | None = Dep
     try:
         orchestrator = _get_orchestrator()
         response = await orchestrator.modify(req.code, req.prompt, req.output_formats)
+        claim_request_owner(response.request_id, api_key)
         if not response.success:
             return JSONResponse(
                 status_code=500,
@@ -74,11 +79,12 @@ async def modify(req: ModifyRequest, request: Request, api_key: str | None = Dep
     except Exception as e:
         logger.exception("Modify failed")
         request_id = str(uuid.uuid4())
+        error = public_generation_error(e)
         return JSONResponse(
-            status_code=500,
+            status_code=504 if error["type"] == "TimeoutError" else 500,
             content=GenerateResponse(
                 request_id=request_id,
                 success=False,
-                error={"type": type(e).__name__, "message": str(e)},
+                error=error,
             ).model_dump(),
         )

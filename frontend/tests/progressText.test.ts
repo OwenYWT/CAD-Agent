@@ -8,9 +8,10 @@ const PROJECT_ROOT = join(import.meta.dirname, "..", "..");
 const FILES_TO_CHECK = [
   "frontend/src/stores/sessionStore.ts",
   "frontend/src/components/MultiStepProgress.tsx",
-  "frontend/src/components/ChatPanel.tsx",
   "frontend/src/components/AgentRunTimeline.tsx",
   "backend/app/api/websocket.py",
+  "backend/app/agent/multi_step.py",
+  "backend/app/models/schemas.py",
   "backend/app/agent/orchestrator.py",
 ];
 
@@ -20,6 +21,11 @@ const FORBIDDEN_SNIPPETS = [
   "?????????",
   "????:",
   "Generation completed",
+  "鈥",
+  "鈫",
+  "姝ラ",
+  "鏈",
+  "鏍￠",
   "Generation failed",
   "Design brief needs confirmation",
   "\u93e2\u677f",

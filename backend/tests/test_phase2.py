@@ -195,8 +195,11 @@ def test_dxf_renderer_import():
 
 # === Orchestrator with vector retriever ===
 
-def test_orchestrator_uses_vector_retriever():
+def test_orchestrator_uses_vector_retriever(monkeypatch):
     _skip_if_no_chromadb()
     from app.agent.orchestrator import Orchestrator
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "example_retriever", "vector")
     o = Orchestrator()
     assert type(o.retriever).__name__ == "VectorExampleRetriever"

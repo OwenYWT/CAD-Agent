@@ -1,66 +1,61 @@
-import { useState, useEffect, useRef } from "react";
-import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { useEffect, useRef, useState } from "react";
 import type { BufferGeometry, Box3 } from "three";
 import { Box3 as ThreeBox3, Vector3 } from "three";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { authFetch } from "../auth";
 
-export function useCADModel(stlUrl: string | null) {
+const API_BASE = import.meta.env.VITE_API_BASE || "";
+
+export function useCADModel(stlUrl: string) {
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null);
   const [boundingBox, setBoundingBox] = useState<Box3 | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [centerOffset, setCenterOffset] = useState<[number, number, number]>([0, 0, 0]);
-  const prevGeoRef = useRef<BufferGeometry | null>(null);
+  const geometryRef = useRef<BufferGeometry | null>(null);
 
   useEffect(() => {
-    if (!stlUrl) {
-      if (prevGeoRef.current) {
-        prevGeoRef.current.dispose();
-        prevGeoRef.current = null;
-      }
-      setGeometry(null);
-      setBoundingBox(null);
-      setCenterOffset([0, 0, 0]);
-      return;
-    }
-
-    setIsLoading(true);
+    let active = true;
+    const controller = new AbortController();
     const loader = new STLLoader();
+    const target = /^https?:\/\//.test(stlUrl) ? stlUrl : `${API_BASE}${stlUrl}`;
 
-    loader.load(
-      stlUrl,
-      (geo) => {
-        // Dispose previous geometry to free GPU memory
-        if (prevGeoRef.current) {
-          prevGeoRef.current.dispose();
+    void authFetch(target, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.arrayBuffer();
+      })
+      .then((buffer) => {
+        const nextGeometry = loader.parse(buffer);
+        if (!active) {
+          nextGeometry.dispose();
+          return;
         }
-
-        geo.computeBoundingBox();
-        const bb = geo.boundingBox as ThreeBox3;
+        nextGeometry.computeBoundingBox();
+        const box = nextGeometry.boundingBox as ThreeBox3;
         const center = new Vector3();
-        bb.getCenter(center);
-        geo.translate(-center.x, -center.y, -center.z);
+        box.getCenter(center);
+        nextGeometry.translate(-center.x, -center.y, -center.z);
+        nextGeometry.computeBoundingBox();
+        geometryRef.current = nextGeometry;
         setCenterOffset([-center.x, -center.y, -center.z]);
-
-        geo.computeBoundingBox();
-        prevGeoRef.current = geo;
-        setGeometry(geo);
-        setBoundingBox(geo.boundingBox);
+        setGeometry(nextGeometry);
+        setBoundingBox(nextGeometry.boundingBox);
         setIsLoading(false);
-      },
-      undefined,
-      (err) => {
-        console.error("STL load error:", err);
+      })
+      .catch((reason: unknown) => {
+        if (!active || (reason instanceof Error && reason.name === "AbortError")) return;
+        setError("模型文件无法加载");
         setIsLoading(false);
-      },
-    );
+      });
 
     return () => {
-      // Cleanup on unmount
-      if (prevGeoRef.current) {
-        prevGeoRef.current.dispose();
-        prevGeoRef.current = null;
-      }
+      active = false;
+      controller.abort();
+      geometryRef.current?.dispose();
+      geometryRef.current = null;
     };
   }, [stlUrl]);
 
-  return { geometry, boundingBox, isLoading, centerOffset };
+  return { geometry, boundingBox, isLoading, error, centerOffset };
 }

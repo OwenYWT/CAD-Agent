@@ -1,25 +1,25 @@
-"""Phase 3 web app integration tests."""
+"""Current browser-workspace integration tests."""
 from pathlib import Path
 
 
 def test_frontend_web_app_files_exist():
     root = Path(__file__).resolve().parents[2]
-    frontend = root / "frontend"
+    frontend = root / "frontend" / "src"
 
-    assert (frontend / "src" / "App.tsx").exists()
-    assert (frontend / "src" / "components" / "ChatPanel.tsx").exists()
-    assert (frontend / "src" / "components" / "Viewer3D.tsx").exists()
-    assert (frontend / "src" / "components" / "Viewer2D.tsx").exists()
-    assert (frontend / "src" / "components" / "DownloadPanel.tsx").exists()
+    assert (frontend / "App.tsx").exists()
+    assert (frontend / "components" / "workspace" / "EngineeringWorkspace.tsx").exists()
+    assert (frontend / "components" / "project" / "ProjectStart.tsx").exists()
+    assert (frontend / "components" / "viewer" / "MechanicalWorkspace.tsx").exists()
+    assert (frontend / "components" / "export" / "ExportDialog.tsx").exists()
 
 
-def test_download_panel_describes_web_workflow():
+def test_export_dialog_uses_real_artifact_download_service():
     root = Path(__file__).resolve().parents[2]
-    content = (root / "frontend" / "src" / "components" / "DownloadPanel.tsx").read_text(encoding="utf-8")
+    content = (root / "frontend" / "src" / "components" / "export" / "ExportDialog.tsx").read_text(encoding="utf-8")
 
-    assert "Web {" in content
-    assert "\\u4e0b\\u8f7d" in content
-    assert "/api/export" not in content
+    assert "downloadEngineeringArtifact" in content
+    assert "不可用格式不会创建假下载" in content
+    assert "buildArtifactManifest" not in content
 
 
 def test_backend_app_exposes_factory_for_web_hosting():
