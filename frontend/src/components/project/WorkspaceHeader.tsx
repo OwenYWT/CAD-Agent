@@ -28,8 +28,8 @@ export default function WorkspaceHeader(props: HeaderProps) {
       <span className={`workspace-status hidden xl:inline-flex ${props.connection === "connected" ? "text-emerald-700" : "text-amber-700"}`}><span className={props.connection === "connected" ? "bg-emerald-500" : "bg-amber-500"} />{props.connection === "connected" ? "已自动保存" : "实时连接中"}</span>
       <div className="ml-auto flex items-center gap-1">
         <button className="workspace-button hidden sm:inline-flex" onClick={props.onAgent} type="button"><Icon name="message" size={15} />询问 Agent</button>
-        <button className="workspace-button" onClick={props.onChecks} type="button"><Icon name="shield-check" size={15} /><span className="hidden sm:inline">检查</span></button>
-        <button className="workspace-button workspace-button--primary" onClick={props.onExport} type="button"><Icon name="download" size={15} /><span className="hidden sm:inline">导出</span></button>
+        <button aria-label="检查" className="workspace-button" onClick={props.onChecks} type="button"><Icon name="shield-check" size={15} /><span className="hidden sm:inline">检查</span></button>
+        <button aria-label="导出" className="workspace-button workspace-button--primary" onClick={props.onExport} type="button"><Icon name="download" size={15} /><span className="hidden sm:inline">导出</span></button>
         <button aria-label="设置" className="workspace-icon-button" onClick={props.onSettings} type="button"><Icon name="settings" size={16} /></button>
         <AccountPanel onLogout={props.onLogout} onUserUpdate={props.onUserUpdate} user={props.user} />
       </div>

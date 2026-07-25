@@ -65,3 +65,10 @@ test("removed explanatory copy stays absent from live surfaces", () => {
     assert.equal(liveSurfaceText.includes(removed), false, removed);
   }
 });
+
+test("workspace header keeps icon-only mobile actions accessible", () => {
+  const workspaceHeader = read("src/components/project/WorkspaceHeader.tsx");
+
+  assert.match(workspaceHeader, /aria-label="检查"/);
+  assert.match(workspaceHeader, /aria-label="导出"/);
+});
