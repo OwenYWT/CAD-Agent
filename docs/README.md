@@ -34,6 +34,11 @@ Fusion 自动化测试与真实桌面验收必须分开表述。没有完成 Win
 - `schemas/fusion360/**` 是由 `backend/app/fusion360/contract.py` 等源码生成的 wire schema，不手工编辑。
 - `.gstack/qa-reports/**`、`frontend/qa/**`、测试截图和 benchmark reports 是测试证据或 harness，不是产品文档入口；其中 `.gstack` 与 benchmark 输出已被 Git 忽略。
 
+## 当前架构改造
+
+- [`superpowers/specs/2026-07-25-commercial-mcad-execution-design.md`](superpowers/specs/2026-07-25-commercial-mcad-execution-design.md)
+  定义 M0 本地 MCAD、M1 持久控制平面和 M2 隔离计算扩展的已批准目标、边界与真实验收要求。
+
 ## 历史归档
 
 - [`archive/forgecad-roadmap-2026-07.md`](archive/forgecad-roadmap-2026-07.md)：从旧 `NEXT.md` 提炼的产品研究和候选路线。它不是当前实现清单、排期或接口合同。
