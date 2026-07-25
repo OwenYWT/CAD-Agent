@@ -34,6 +34,13 @@ The design is implemented as three independently testable milestones:
 Every milestone has a real-runtime acceptance gate. Fakes and mocks remain valid
 for isolated unit tests but never count as milestone completion evidence.
 
+M0 keeps the existing SQLite `model_snapshots` records as the compatibility
+version mechanism used by the current UI. It does not introduce the commercial
+Revision schema. M1 migrates those snapshots into immutable `ProjectRevision`
+rows and changes the compatibility adapter to read and write the new model.
+This keeps M0 independently usable without building two competing Revision
+systems.
+
 ## Target architecture
 
 ```text
@@ -110,6 +117,16 @@ selects a fixed capability such as `mcad.generate`, `mcad.modify`,
 `mcad.validate`, or `mcad.export`; it cannot inject arbitrary container flags or
 shell commands.
 
+Canonicalization uses RFC 8785 JSON Canonicalization Scheme after Pydantic has
+materialized every declared default and validated every string as Unicode NFC.
+Optional fields are present as JSON `null`; unset fields cannot silently
+disappear. Spec fields use integers, booleans, strings, arrays, and objects.
+Non-finite numbers are rejected, and values requiring decimal precision are
+encoded as normalized decimal strings rather than binary floats. The
+`spec_hash` is lowercase SHA-256 over the canonical UTF-8 bytes. The same
+versioned conformance vectors must pass in Python and every private worker
+implementation before protocol negotiation succeeds.
+
 ### ExecutionLeaseEnvelope
 
 `ExecutionLeaseEnvelope` is short-lived and excluded from `spec_hash`.
@@ -146,21 +163,42 @@ One complete user operation. It owns ordered `StepRun` records and is the unit
 users query, cancel, audit, and resume.
 
 ```text
+PENDING ─────────────────────────────────────────→ CANCELLED
 PENDING → RUNNING → WAITING_CONFIRMATION → RUNNING
-RUNNING → CANCELLING → CANCELLED
-RUNNING → SUCCEEDED
-RUNNING → FAILED
+             │              └────────────→ CANCELLED
+             ├──────────────→ CANCELLING → CANCELLED
+             ├──────────────→ SUCCEEDED
+             ├──────────────→ FAILED
+             └──────────────→ INTERRUPTED → RECONCILING
+                                                 ├→ SUCCEEDED
+                                                 ├→ FAILED
+                                                 └→ CANCELLED
 ```
+
+Cancellation of `SUCCEEDED`, `FAILED`, or `CANCELLED` is an idempotent no-op
+that returns the stored terminal state.
+
+`INTERRUPTED` and `RECONCILING` are M0 compatibility states, not a promise of
+durable workflow resumption. On startup M0 atomically marks non-terminal
+process-owned runs `INTERRUPTED`, then moves each to `RECONCILING`. Reconciliation
+may resolve to `SUCCEEDED` only when an already accepted terminal result and its
+committed artifacts can be verified. An existing cancellation resolves to
+`CANCELLED`; every other interrupted run resolves to `FAILED` with
+`process_restarted`. M1 Temporal recovery normally keeps runs in their logical
+state and does not use these compatibility transitions.
 
 ### StepRun
 
 A logical planning, modeling, validation, modification, or export step.
 
 ```text
-PENDING → READY → RUNNING → SUCCEEDED
-                    ├────→ FAILED
-                    ├────→ CANCELLED
-                    └────→ WAITING_CONFIRMATION → READY
+PENDING ────────────→ CANCELLED
+PENDING → READY ────→ CANCELLED
+READY → RUNNING → SUCCEEDED
+          ├─────→ FAILED
+          ├─────→ CANCELLING → CANCELLED
+          └─────→ WAITING_CONFIRMATION → READY
+                         └──────────────→ CANCELLED
 ```
 
 ### ExecutionAttempt
@@ -169,11 +207,29 @@ One physical execution try for a Step. Retrying always creates a new Attempt;
 previous rows are never reset or overwritten.
 
 ```text
-QUEUED → LEASED → RUNNING → UPLOADING → SUCCEEDED
-             │       │          ├────→ ARTIFACT_REJECTED
-             │       ├──────────→ FAILED / TIMED_OUT / OOM
-             └──────────────────→ LEASE_LOST / CANCELLED
+QUEUED ───────────────→ CANCELLED / FAILED / TIMED_OUT
+QUEUED → LEASED ──────→ FAILED / TIMED_OUT / LEASE_LOST
+             ├────────→ CANCELLING → CANCELLED
+             └→ RUNNING ───────────→ FAILED / TIMED_OUT / OOM / LEASE_LOST
+                    ├───────────────→ CANCELLING → CANCELLED
+                    └→ UPLOADING ───→ FAILED / TIMED_OUT / LEASE_LOST
+                              ├─────→ ARTIFACT_REJECTED
+                              ├─────→ CANCELLING → CANCELLED
+                              └─────→ SUCCEEDED
 ```
+
+Cancellation invalidates the active lease before requesting backend
+termination. Uploads from cancelled Attempts remain uncommitted and are cleaned
+as orphans. Any late completion or upload-finalization request is rejected by
+the lease/fencing check.
+
+Queue expiry produces `TIMED_OUT`; dispatch or runtime-launch failure produces
+`FAILED`; heartbeat expiry produces `LEASE_LOST`; runtime deadline and memory
+enforcement produce `TIMED_OUT` and `OOM`; upload deadline, object-store
+unavailability, and verification failure produce `TIMED_OUT`, `FAILED`, and
+`ARTIFACT_REJECTED`, respectively. The stored normalized error category records
+the precise cause while the state remains one of the legal terminal values
+above. A retry always creates a new `ExecutionAttempt`.
 
 ## Lease, fencing, and idempotency
 
@@ -261,6 +317,23 @@ product-visible events. No interim custom workflow engine is permitted.
 - Cross-tenant operator actions use separate audited endpoints and credentials.
 - Object grants are issued only after PostgreSQL authorization.
 
+Legacy principals migrate as follows:
+
+- A registered login user receives a personal Tenant and owner Membership on
+  first M1 migration or login. Existing `user_id` values map through that
+  Membership rather than becoming Tenant IDs directly.
+- A configured legacy API key maps to a dedicated service principal and Tenant
+  through a database record keyed by a SHA-256 credential fingerprint. Raw API
+  keys are never persisted.
+- `AUTH_REQUIRED=false` with no configured API keys is supported only outside
+  production and maps to one explicit `local-dev` Tenant.
+- Legacy rows with a `user_id` inherit that user's personal Tenant. Ownerless
+  rows map to `local-dev` only in auth-disabled development; otherwise they are
+  placed in an admin-only quarantine Tenant and remain hidden from normal
+  history and file APIs until claimed.
+- Migration reconciles session ownership, panel ownership, file ownership,
+  Fusion/Onshape records, and request principals before RLS becomes enforcing.
+
 ## Worker and sandbox trust boundary
 
 The trusted Worker Supervisor handles network communication, Lease state,
@@ -287,6 +360,15 @@ Kubernetes requirements:
 - deny-all egress except a narrowly scoped Artifact Gateway where required
 - trusted transfer sidecar/supervisor with attempt-scoped credentials
 - gVisor only after CadQuery/OCP compatibility and performance tests
+
+gVisor becomes the default only when the complete deterministic Runtime suite
+passes without a semantic geometry, export, rendering, filesystem,
+cancellation, or resource-limit regression, and its P95 runtime overhead is at
+most 25% with peak memory overhead at most 20% against the same
+node/image/workload. If it fails, M2 uses a dedicated hardened node pool with
+the Restricted Pod Security profile, seccomp, deny-all egress, and the same
+credential boundary; deployments report `sandbox_tier=restricted-runc` instead
+of claiming gVisor isolation.
 
 Private workers enroll with an organization-approved identity, declare
 capabilities and Runtime digests, pull outbound, heartbeat, renew leases, obey
@@ -377,6 +459,15 @@ integration, failure cases, and full regression. MCAD must never display a
 success state without backend artifacts. ECAD remains visible and truthfully
 states that it is not connected.
 
+M0 uses the existing versioned 50-case `backend/benchmark/eval_cases.py` suite
+with three runs per case. Before changing execution semantics, the same Runtime,
+model, temperature, RAG setting, and case-set hash produce the baseline. The M0
+candidate must make `benchmark.compare` exit zero, contain no hard regression,
+have no net broken cases, and not reduce aggregate pass@1 by more than one
+baseline standard deviation. Every successful 3D case must include readable
+STEP/STL, geometry evidence, and four rendered views; a false success fails the
+gate regardless of aggregate score.
+
 ### M1
 
 The gate uses real PostgreSQL, S3-compatible storage, and Temporal. It kills and
@@ -390,6 +481,23 @@ The gate uses real Kubernetes Jobs and a separately hosted private worker. It
 tests duplicate Pods, node failure, cancellation, worker revocation, disconnect
 recovery, sandbox escape controls, gVisor compatibility, autoscaling,
 backpressure, and canary rollback.
+
+The M2 capacity gate uses a checked-in workload manifest:
+
+- 50 simultaneous EPHEMERAL_JOB submissions on the declared staging capacity:
+  at least 95% leave `QUEUED` within 60 seconds, every request reaches a truthful
+  terminal state, and no Step commits more than one accepted result.
+- A burst of 500 workflow-create requests: no unexplained 5xx response, API P95
+  below 500 ms, bounded queue/memory growth, and explicit `429` responses after
+  the configured tenant quota.
+- A 5% canary over at least 100 representative MCAD tasks: zero cross-tenant,
+  authorization, artifact-integrity, or duplicate-Revision errors; terminal
+  failure rate may not exceed the stable pool by more than one percentage point,
+  and P95 execution latency may not regress by more than 25%.
+
+The workload manifest, node types, quotas, image digest, raw measurements, and
+pass/fail calculation are stored with release evidence. Merely running the load
+test is not acceptance.
 
 ## Required regression gates
 
