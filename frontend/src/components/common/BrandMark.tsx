@@ -5,6 +5,7 @@ interface BrandMarkProps {
   className?: string;
   description?: string;
   descriptionClassName?: string;
+  nameAs?: "span" | "h1";
   nameClassName?: string;
   showName?: boolean;
   size?: "default" | "login";
@@ -15,12 +16,14 @@ export function BrandMark({
   className = "",
   description,
   descriptionClassName = "",
+  nameAs = "span",
   nameClassName = "",
   showName = true,
   size = "default",
   tone = "default",
 }: BrandMarkProps) {
   const [failed, setFailed] = useState(false);
+  const Name = nameAs;
   const markSize = size === "login" ? "h-8 w-8 rounded-lg" : "h-6 w-6 rounded-lg";
   const fallbackTone = tone === "inverse"
     ? "bg-white text-slate-950"
@@ -45,7 +48,7 @@ export function BrandMark({
       )}
       {showName ? (
         <span className="min-w-0">
-          <span className={`block font-semibold ${nameClassName}`}>WordsWave</span>
+          <Name className={`block font-semibold ${nameClassName}`}>WordsWave</Name>
           {description ? <span className={`block ${descriptionClassName}`}>{description}</span> : null}
         </span>
       ) : null}

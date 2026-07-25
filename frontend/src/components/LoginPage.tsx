@@ -92,9 +92,10 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     <main className="flex min-h-[100dvh] items-center justify-center bg-slate-950 p-4 sm:p-6">
       <div className="w-full max-w-[420px]">
         <BrandMark
-          className="mb-6 justify-center text-white"
+          className="mb-6 w-full justify-center text-white"
           description="参数化建模工作台"
           descriptionClassName="text-sm text-slate-400"
+          nameAs="h1"
           nameClassName="text-xl"
           size="login"
           tone="inverse"
