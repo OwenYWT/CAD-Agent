@@ -35,15 +35,13 @@ export default function ProjectStart({ connectionState, onStart, onOpenHistory }
   return (
     <div className="flex h-[100dvh] min-w-[320px] flex-col bg-[var(--canvas)] text-[var(--ink)]">
       <header className="flex h-[56px] shrink-0 items-center px-5 sm:px-7">
-        <BrandMark className="text-sm" />
+        <BrandMark className="text-base" />
         <button className="workspace-button ml-auto" onClick={onOpenHistory} type="button"><Icon name="history" size={15} />历史项目</button>
       </header>
       <main className="grid min-h-0 flex-1 place-items-center overflow-y-auto px-5 pb-16 pt-8">
         <div className="w-full max-w-[780px]">
           <div className="text-center">
-            <p className="text-xs font-medium text-[var(--accent)]">AI 工程工作台</p>
-            <h1 className="mt-3 text-[clamp(30px,4vw,40px)] font-semibold leading-tight tracking-[-0.045em]">今天要创建什么工程？</h1>
-            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-[var(--muted)]">描述硬件需求，系统会逐步生成设计、参数、验证和可导出的工程产物。</p>
+            <h1 className="text-[clamp(30px,4vw,40px)] font-semibold leading-tight tracking-[-0.045em]">今天要创建什么工程？</h1>
           </div>
 
           <div className="mt-8 rounded-xl border border-[var(--line-strong)] bg-white p-3 shadow-[0_10px_28px_rgba(35,35,31,0.06)] focus-within:border-[var(--focus)]">

@@ -96,7 +96,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           description="参数化建模工作台"
           descriptionClassName="text-sm text-slate-400"
           nameAs="h1"
-          nameClassName="text-xl"
+          nameClassName="text-[22px]"
           size="login"
           tone="inverse"
         />

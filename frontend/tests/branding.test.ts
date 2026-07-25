@@ -16,10 +16,11 @@ test("WordsWave branding is centralized and covers every product surface", () =>
   assert.match(brand, /onError/);
   assert.match(brand, /setFailed\(true\)/);
   assert.match(brand, /aria-label=\{showName \? undefined : "WordsWave"\}/);
-  assert.match(brand, /h-6 w-6/);
-  assert.match(brand, /h-8 w-8/);
+  assert.match(brand, /h-7 w-7/);
+  assert.match(brand, /h-9 w-9/);
+  assert.match(brand, />W<\/span>/);
 
-  assert.match(read("src/components/project/ProjectStart.tsx"), /<BrandMark/);
+  assert.match(read("src/components/project/ProjectStart.tsx"), /<BrandMark className="text-base"/);
   const workspaceHeader = read("src/components/project/WorkspaceHeader.tsx");
   assert.match(workspaceHeader, /<BrandMark[^>]*showName=\{false\}/);
   assert.match(workspaceHeader, /aria-label=\{`WordsWave，返回项目流程：\$\{props\.project\.name\}`\}/);
@@ -27,10 +28,13 @@ test("WordsWave branding is centralized and covers every product surface", () =>
   const loginPage = read("src/components/LoginPage.tsx");
   assert.match(loginPage, /<BrandMark/);
   assert.match(loginPage, /className="mb-6 w-full justify-center text-white"/);
+  assert.match(loginPage, /description="参数化建模工作台"/);
   assert.match(loginPage, /nameAs="h1"/);
+  assert.match(loginPage, /nameClassName="text-\[22px\]"/);
 
   const html = read("index.html");
-  assert.match(html, /<title>WordsWave \| AI 工程工作台<\/title>/);
+  assert.match(html, /<title>WordsWave<\/title>/);
+  assert.equal(html.includes("AI 工程工作台"), false);
   assert.match(html, /rel="icon" type="image\/jpeg" href="\/src\/assets\/wordswave-logo\.jpg"/);
 });
 
@@ -42,5 +46,22 @@ test("live frontend surfaces no longer render the old product name", () => {
     "src/components/LoginPage.tsx",
   ]) {
     assert.equal(read(path).includes("CAD Agent"), false, path);
+  }
+});
+
+
+test("removed explanatory copy stays absent from live surfaces", () => {
+  const liveSurfaceText = [
+    read("index.html"),
+    read("src/components/project/ProjectStart.tsx"),
+    read("src/components/project/ProjectFlow.tsx"),
+  ].join("\n");
+
+  for (const removed of [
+    "AI 工程工作台",
+    "描述硬件需求，系统会逐步生成设计、参数、验证和可导出的工程产物。",
+    "默认只展示项目阶段和下一步。工程模型、参数、检查和文件会在进入对应工作区后展开。",
+  ]) {
+    assert.equal(liveSurfaceText.includes(removed), false, removed);
   }
 });

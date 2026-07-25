@@ -24,7 +24,7 @@ export function BrandMark({
 }: BrandMarkProps) {
   const [failed, setFailed] = useState(false);
   const Name = nameAs;
-  const markSize = size === "login" ? "h-8 w-8 rounded-lg" : "h-6 w-6 rounded-lg";
+  const markSize = size === "login" ? "h-9 w-9 rounded-lg" : "h-7 w-7 rounded-lg";
   const fallbackTone = tone === "inverse"
     ? "bg-white text-slate-950"
     : "bg-[var(--ink)] text-white";
