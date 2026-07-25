@@ -3,6 +3,9 @@ import logoUrl from "../../assets/wordswave-logo.jpg";
 
 interface BrandMarkProps {
   className?: string;
+  description?: string;
+  descriptionClassName?: string;
+  nameClassName?: string;
   showName?: boolean;
   size?: "default" | "login";
   tone?: "default" | "inverse";
@@ -10,6 +13,9 @@ interface BrandMarkProps {
 
 export function BrandMark({
   className = "",
+  description,
+  descriptionClassName = "",
+  nameClassName = "",
   showName = true,
   size = "default",
   tone = "default",
@@ -37,7 +43,12 @@ export function BrandMark({
           src={logoUrl}
         />
       )}
-      {showName ? <span className="font-semibold">WordsWave</span> : null}
+      {showName ? (
+        <span className="min-w-0">
+          <span className={`block font-semibold ${nameClassName}`}>WordsWave</span>
+          {description ? <span className={`block ${descriptionClassName}`}>{description}</span> : null}
+        </span>
+      ) : null}
     </span>
   );
 }

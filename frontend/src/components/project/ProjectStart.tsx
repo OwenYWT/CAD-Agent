@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ConnectionState } from "../../hooks/useWebSocket";
 import type { ManufacturingProfile } from "../../types";
 import { MANUFACTURING_PROFILE_PRESETS, getManufacturingProfilePreset } from "../../utils/manufacturingProfiles";
+import { BrandMark } from "../common/BrandMark";
 import { Icon } from "../ui/Icon";
 
 const EXAMPLES = [
@@ -34,7 +35,7 @@ export default function ProjectStart({ connectionState, onStart, onOpenHistory }
   return (
     <div className="flex h-[100dvh] min-w-[320px] flex-col bg-[var(--canvas)] text-[var(--ink)]">
       <header className="flex h-[56px] shrink-0 items-center px-5 sm:px-7">
-        <div className="flex items-center gap-2.5 text-sm font-semibold"><span className="workspace-brand">C</span>CAD Agent</div>
+        <BrandMark className="text-sm" />
         <button className="workspace-button ml-auto" onClick={onOpenHistory} type="button"><Icon name="history" size={15} />历史项目</button>
       </header>
       <main className="grid min-h-0 flex-1 place-items-center overflow-y-auto px-5 pb-16 pt-8">

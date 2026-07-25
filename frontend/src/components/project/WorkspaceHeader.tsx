@@ -2,6 +2,7 @@ import type { AuthUser } from "../../auth";
 import type { ConnectionState } from "../../hooks/useWebSocket";
 import type { Project } from "../../types/engineering";
 import { AccountPanel } from "../AccountPanel";
+import { BrandMark } from "../common/BrandMark";
 import { Icon } from "../ui/Icon";
 
 interface HeaderProps {
@@ -22,7 +23,7 @@ export default function WorkspaceHeader(props: HeaderProps) {
   return (
     <header className="workspace-header">
       <button aria-label="打开项目导航" className="workspace-icon-button lg:hidden" onClick={props.onMenu} type="button"><Icon name="layers" size={17} /></button>
-      <button className="flex min-w-0 items-center gap-2" onClick={props.onBack} title="返回项目流程" type="button"><span className="workspace-brand">C</span><span className="hidden max-w-52 truncate text-sm font-semibold sm:inline">{props.project.name}</span></button>
+      <button className="flex min-w-0 items-center gap-2" onClick={props.onBack} title="返回项目流程" type="button"><BrandMark showName={false} /><span className="hidden max-w-52 truncate text-sm font-semibold sm:inline">{props.project.name}</span></button>
       <span className="workspace-branch hidden md:inline-flex"><Icon name="history" size={13} />{props.project.branch}</span>
       <span className={`workspace-status hidden xl:inline-flex ${props.connection === "connected" ? "text-emerald-700" : "text-amber-700"}`}><span className={props.connection === "connected" ? "bg-emerald-500" : "bg-amber-500"} />{props.connection === "connected" ? "已自动保存" : "实时连接中"}</span>
       <div className="ml-auto flex items-center gap-1">
