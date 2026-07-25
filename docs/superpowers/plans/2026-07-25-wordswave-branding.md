@@ -299,3 +299,185 @@ git status --short
 ```
 
 Expected: no whitespace errors, a clean worktree, and the complete changed-path list contains only the eight planned frontend paths above. The path-scoped diff contains no business-logic, API, authentication, WebSocket, or data-model changes.
+
+
+---
+
+## Second-pass visual refinement
+
+### Task 5: Strengthen the visual hierarchy contract
+
+**Files:**
+- Modify: `frontend/tests/branding.test.ts`
+
+- [ ] **Step 1: Update the contract test**
+
+Change the size assertions to `h-7 w-7` and `h-9 w-9`. Add assertions that:
+
+```ts
+assert.match(brand, /h-7 w-7/);
+assert.match(brand, /h-9 w-9/);
+assert.match(read("src/components/project/ProjectStart.tsx"), /<BrandMark className="text-base"/);
+assert.match(read("src/components/LoginPage.tsx"), /nameClassName="text-\[22px\]"/);
+assert.match(read("index.html"), /<title>WordsWave<\/title>/);
+```
+
+Read `ProjectStart.tsx`, `ProjectFlow.tsx`, and `index.html`, then assert that none contains:
+
+```text
+AI 工程工作台
+描述硬件需求，系统会逐步生成设计、参数、验证和可导出的工程产物。
+默认只展示项目阶段和下一步。工程模型、参数、检查和文件会在进入对应工作区后展开。
+```
+
+Add explicit assertions that `LoginPage.tsx` still contains `description="参数化建模工作台"`, the failed branch in `BrandMark.tsx` still renders `>W</span>`, and compact mode retains `aria-label={showName ? undefined : "WordsWave"}`. Keep the existing favicon, title semantics, workspace action label, and old-brand removal assertions.
+
+- [ ] **Step 2: Run the focused test and verify failure**
+
+Run:
+
+```bash
+cd frontend
+node --test --experimental-strip-types tests/branding.test.ts
+```
+
+Expected: FAIL on the current 24/32px size classes, existing body copy, and document title.
+
+### Task 6: Apply coordinated size and copy changes
+
+**Files:**
+- Modify: `frontend/src/components/common/BrandMark.tsx`
+- Modify: `frontend/src/components/project/ProjectStart.tsx`
+- Modify: `frontend/src/components/project/ProjectFlow.tsx`
+- Modify: `frontend/src/components/LoginPage.tsx`
+- Modify: `frontend/index.html`
+- Test: `frontend/tests/branding.test.ts`
+
+- [ ] **Step 1: Increase centralized logo sizes**
+
+In `BrandMark.tsx`, change:
+
+```tsx
+const markSize = size === "login" ? "h-9 w-9 rounded-lg" : "h-7 w-7 rounded-lg";
+```
+
+This produces 36px login and 28px default/compact marks without changing Header height.
+
+- [ ] **Step 2: Increase product-name sizes**
+
+In `ProjectStart.tsx`, use:
+
+```tsx
+<BrandMark className="text-base" />
+```
+
+In `LoginPage.tsx`, use:
+
+```tsx
+nameClassName="text-[22px]"
+```
+
+Do not render the product name in compact workspace mode; only the 28px logo changes there.
+
+- [ ] **Step 3: Remove start-page copy and close the gap**
+
+Replace the start-page heading group with:
+
+```tsx
+<div className="text-center">
+  <h1 className="text-[clamp(30px,4vw,40px)] font-semibold leading-tight tracking-[-0.045em]">今天要创建什么工程？</h1>
+</div>
+```
+
+Keep the prompt card at `mt-8`; removing the eyebrow and description naturally moves it upward while preserving a 32px title-to-input interval.
+
+- [ ] **Step 4: Remove project-flow copy and close the gap**
+
+Render only the existing `<h1>` inside the heading row. Remove the explanatory paragraph, then change the engineering-flow section from `mt-7` to `mt-5`.
+
+- [ ] **Step 5: Remove the phrase from metadata**
+
+Set:
+
+```html
+<meta name="description" content="WordsWave 自然语言硬件设计工作区" />
+<title>WordsWave</title>
+```
+
+Keep the login subtitle `参数化建模工作台`, dynamic status text, stage names, and buttons unchanged.
+
+- [ ] **Step 6: Run the focused contract**
+
+Run:
+
+```bash
+cd frontend
+node --test --experimental-strip-types tests/branding.test.ts
+```
+
+Expected: PASS.
+
+- [ ] **Step 7: Commit the refinement**
+
+```bash
+git add frontend/index.html frontend/src/components/common/BrandMark.tsx frontend/src/components/project/ProjectStart.tsx frontend/src/components/project/ProjectFlow.tsx frontend/src/components/LoginPage.tsx frontend/tests/branding.test.ts
+git commit -m "refactor: strengthen WordsWave visual hierarchy"
+```
+
+### Task 7: Verify coordination at every target width
+
+**Files:**
+- Test: `frontend/tests/*.test.ts`
+- Build output: `frontend/dist/`
+
+- [ ] **Step 1: Run the complete frontend gate**
+
+Run:
+
+```bash
+cd frontend
+npm run lint
+node --test --experimental-strip-types tests/*.test.ts
+npx tsc --noEmit -p tsconfig.app.json
+npx vite build
+```
+
+Expected: all checks pass; only the pre-existing Viewer3D chunk-size warning is accepted.
+
+- [ ] **Step 2: Verify real browser geometry**
+
+Against the real local backend and frontend, inspect 1440 × 900, 1280 × 800, and 375 × 812:
+
+- start Header remains exactly 56px;
+- project workspace Header remains exactly 52px;
+- logo natural dimensions are valid and its rendered box is 28px, or 36px on login;
+- no logo is clipped;
+- document width never exceeds viewport width;
+- at 375px the project name and non-essential button text remain hidden, while menu, Agent, checks, export, settings, and account actions retain accessible names;
+- removed copy is absent;
+- heading-to-input and heading-to-stage spacing has no empty placeholder;
+- browser title equals `WordsWave`;
+- console contains no new errors.
+
+- [ ] **Step 3: Re-run failure fallback checks**
+
+Force the image request to fail and confirm labeled variants retain visible `WordsWave`, compact workspace mode displays `W`, and Header heights remain 56px/52px.
+
+- [ ] **Step 4: Inspect the scoped diff**
+
+Use the commit before Task 5 as `<REFINEMENT_BASE>`. Run:
+
+```bash
+git diff --check <REFINEMENT_BASE>..HEAD
+git diff --name-only <REFINEMENT_BASE>..HEAD
+git diff <REFINEMENT_BASE>..HEAD -- \
+  frontend/index.html \
+  frontend/src/components/common/BrandMark.tsx \
+  frontend/src/components/project/ProjectStart.tsx \
+  frontend/src/components/project/ProjectFlow.tsx \
+  frontend/src/components/LoginPage.tsx \
+  frontend/tests/branding.test.ts
+git status --short
+```
+
+Expected: the committed diff has no whitespace errors, the complete path list contains only those six paths, the path-scoped diff contains no business logic, and the worktree is clean.
