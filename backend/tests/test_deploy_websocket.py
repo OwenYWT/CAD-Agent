@@ -16,10 +16,19 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import app.api.websocket as ws_mod
+from app.agent import run_store
 from app.config import settings
 from app.main import app
 from app.models.schemas import GenerateResponse, GenerationResult, InspectReport, StepUpdate
 from app.storage import history
+
+
+def receive_until(wsk, message_type: str, limit: int = 10):
+    for _ in range(limit):
+        message = wsk.receive_json()
+        if message["type"] == message_type:
+            return message
+    raise AssertionError(f"WebSocket did not emit {message_type}")
 
 
 # --- fake orchestrator --------------------------------------------------------
@@ -37,8 +46,9 @@ class FakeOrchestrator:
     handle_calls: list = field(default_factory=list)
     modify_calls: list = field(default_factory=list)
     execute_calls: list = field(default_factory=list)
+    resume_calls: list = field(default_factory=list)
 
-    async def handle_message(self, context, text, on_step=None):
+    async def handle_message(self, context, text, on_step=None, **kwargs):
         self.handle_calls.append(text)
         if on_step:
             await on_step(StepUpdate(step="planning", message="正在规划..."))
@@ -52,7 +62,7 @@ class FakeOrchestrator:
             error=None if self.succeed else {"type": "ExecutionError", "message": "boom"},
         )
 
-    async def modify_assembly_part(self, context, part_name, instruction, on_step=None):
+    async def modify_assembly_part(self, context, part_name, instruction, on_step=None, **kwargs):
         self.modify_calls.append((part_name, instruction))
         if on_step:
             await on_step(StepUpdate(step="assembly_part", message="正在修改零件...", part_name=part_name))
@@ -64,7 +74,7 @@ class FakeOrchestrator:
             error=None if self.succeed else {"type": "ExecutionError", "message": "boom"},
         )
 
-    async def execute_code(self, code, output_formats=None):
+    async def execute_code(self, code, output_formats=None, **kwargs):
         self.execute_calls.append(code)
         return GenerateResponse(
             request_id="req-exec",
@@ -80,6 +90,17 @@ class FakeOrchestrator:
                 source="geometry_validator",
             ) if self.succeed else None,
             error=None if self.succeed else {"type": "ExecutionError", "message": "boom"},
+        )
+
+    async def resume_run(self, run_id):
+        self.resume_calls.append(run_id)
+        return GenerateResponse(
+            request_id="req-resume",
+            success=True,
+            files={"stl": "/api/files/req-resume/result.stl"},
+            code=self.code,
+            execution_time_ms=5,
+            attempts=1,
         )
 
 
@@ -118,23 +139,53 @@ def test_user_message_streams_steps_then_success_result(client, fake_orch):
     with client.websocket_connect("/ws/sess-1") as wsk:
         wsk.send_json({"type": "user_message", "text": "make a box", "panel_id": "p1"})
 
+        run_created = wsk.receive_json()
         m1 = wsk.receive_json()
+        a1 = wsk.receive_json()
         m2 = wsk.receive_json()
+        a2 = wsk.receive_json()
+        artifact = wsk.receive_json()
         final = wsk.receive_json()
+
+    assert run_created["type"] == "run_created"
+    assert run_created["data"]["panel_id"] == "p1"
+    assert run_created["data"]["status"] == "running"
 
     assert m1["type"] == "step_update"
     assert m1["data"]["step"] == "planning"
     assert m1["data"]["panel_id"] == "p1"
+    assert a1["type"] == "agent_step"
+    assert a1["data"]["step_type"] == "planning"
+    assert a1["data"]["status"] == "running"
+    assert a1["data"]["panel_id"] == "p1"
 
     assert m2["type"] == "step_update"
     assert m2["data"]["step"] == "generating_code"
     assert m2["data"]["panel_id"] == "p1"
+    assert a2["type"] == "agent_step"
+    assert a2["data"]["step_type"] == "generating_code"
+    assert a2["data"]["status"] == "running"
+    assert a2["data"]["panel_id"] == "p1"
+    assert artifact["type"] == "artifact_update"
+    assert artifact["data"]["artifact_type"] == "stl"
 
     assert final["type"] == "generation_result"
     assert final["data"]["success"] is True
     assert final["data"]["panel_id"] == "p1"
     assert final["data"]["code"] == fake_orch.code
     assert fake_orch.handle_calls == ["make a box"]
+
+
+def test_user_message_success_emits_artifact_update(client, fake_orch):
+    with client.websocket_connect("/ws/sess-artifact") as wsk:
+        wsk.send_json({"type": "user_message", "text": "make a box", "panel_id": "p-artifact"})
+        messages = [wsk.receive_json() for _ in range(7)]
+
+    artifact_messages = [message for message in messages if message["type"] == "artifact_update"]
+    assert artifact_messages
+    assert artifact_messages[0]["data"]["panel_id"] == "p-artifact"
+    assert artifact_messages[0]["data"]["artifact_type"] == "stl"
+    assert artifact_messages[0]["data"]["path"] == "/api/files/req-handle/result.stl"
 
 
 def test_user_message_exception_is_persisted_in_history(client, fake_orch):
@@ -144,7 +195,7 @@ def test_user_message_exception_is_persisted_in_history(client, fake_orch):
     fake_orch.handle_message = fail_handle
     with client.websocket_connect("/ws/sess-error-history") as wsk:
         wsk.send_json({"type": "user_message", "text": "make a box", "panel_id": "p-error"})
-        final = wsk.receive_json()
+        final = receive_until(wsk, "generation_result")
 
     assert final["type"] == "generation_result"
     assert final["data"]["success"] is False
@@ -156,10 +207,7 @@ def test_user_message_exception_is_persisted_in_history(client, fake_orch):
 def test_user_message_default_panel_id(client, fake_orch):
     with client.websocket_connect("/ws/sess-defpanel") as wsk:
         wsk.send_json({"type": "user_message", "text": "hello"})
-        # drain the two step_updates
-        wsk.receive_json()
-        wsk.receive_json()
-        final = wsk.receive_json()
+        final = receive_until(wsk, "generation_result")
     assert final["type"] == "generation_result"
     assert final["data"]["panel_id"] == "default"
 
@@ -196,7 +244,7 @@ def test_execute_code_returns_generation_result(client, fake_orch):
     code = "result = box(5, 5)\nshow_object(result)"
     with client.websocket_connect("/ws/sess-4") as wsk:
         wsk.send_json({"type": "execute_code", "code": code, "panel_id": "pX"})
-        msg = wsk.receive_json()
+        msg = receive_until(wsk, "generation_result")
 
     assert msg["type"] == "generation_result"
     assert msg["data"]["success"] is True
@@ -249,8 +297,8 @@ def test_modify_part_valid_streams_step_then_result(client, fake_orch):
             "type": "modify_part", "part_name": "bolt",
             "instruction": "make it longer", "panel_id": "p2",
         })
-        step = wsk.receive_json()
-        final = wsk.receive_json()
+        step = receive_until(wsk, "step_update")
+        final = receive_until(wsk, "generation_result")
 
     assert step["type"] == "step_update"
     assert step["data"]["step"] == "assembly_part"
@@ -293,6 +341,116 @@ def test_restore_context_no_response_then_still_alive(client, fake_orch):
     assert ctx.current_code == "result = box(1,1)"
 
 
+def test_restore_context_replays_latest_run_timeline(client, fake_orch):
+    run = asyncio.run(run_store.create_run("sess-replay", "make a replay box", panel_id="p-replay"))
+    step = asyncio.run(run_store.start_step(run["id"], "execute_code", {"mode": "3d"}))
+    asyncio.run(run_store.fail_step(step["id"], {"type": "InterruptedRun", "message": "stale run"}))
+
+    with client.websocket_connect("/ws/sess-replay") as wsk:
+        wsk.send_json({"type": "restore_context", "code": "result = box(1,1)", "panel_id": "p-replay"})
+        run_event = receive_until(wsk, "run_created")
+        step_event = receive_until(wsk, "agent_step")
+
+    assert run_event["data"]["run_id"] == run["id"]
+    assert run_event["data"]["status"] == "failed"
+    assert step_event["data"]["run_id"] == run["id"]
+    assert step_event["data"]["step_type"] == "execute_code"
+    assert step_event["data"]["status"] == "failed"
+
+
+def test_restore_context_sanitizes_terminal_run_with_running_step(client, fake_orch):
+    run = asyncio.run(run_store.create_run("sess-sanitize-ws", "sanitize", panel_id="p-sanitize"))
+    step = asyncio.run(run_store.start_step(run["id"], "execute_code", {"mode": "3d"}))
+    asyncio.run(run_store.complete_run(run["id"], status="failed"))
+
+    with client.websocket_connect("/ws/sess-sanitize-ws") as wsk:
+        wsk.send_json({"type": "restore_context", "code": "result = box(1,1)", "panel_id": "p-sanitize"})
+        run_event = receive_until(wsk, "run_created")
+        step_event = receive_until(wsk, "agent_step")
+
+    stored_step = asyncio.run(run_store.get_step(step["id"]))
+    assert run_event["data"]["run_id"] == run["id"]
+    assert step_event["data"]["status"] == "failed"
+    assert step_event["data"]["detail"]["error"]["type"] == "IncompleteStep"
+    assert stored_step["status"] == "failed"
+
+
+def test_restore_context_marks_running_execute_step_resumable(client, fake_orch):
+    run = asyncio.run(run_store.create_run("sess-resume-replay", "resume replay", panel_id="p-resume-replay"))
+    step = asyncio.run(run_store.start_step(
+        run["id"],
+        "execute_cad_code",
+        {
+            "attempt": 1,
+            "mode": "3d",
+            "code": "print('resume from replay')",
+            "output_formats": ["step"],
+            "user_prompt": "resume replay",
+            "is_2d": False,
+        },
+    ))
+
+    with client.websocket_connect("/ws/sess-resume-replay") as wsk:
+        wsk.send_json({"type": "restore_context", "code": "result = box(1,1)", "panel_id": "p-resume-replay"})
+        run_event = receive_until(wsk, "run_created")
+        first_step = receive_until(wsk, "agent_step")
+        resume_step = receive_until(wsk, "agent_step")
+
+    stored_original = asyncio.run(run_store.get_step(step["id"]))
+    stored_steps = asyncio.run(run_store.list_steps(run["id"]))
+    assert run_event["data"]["status"] == "blocked"
+    assert first_step["data"]["step_type"] == "execute_cad_code"
+    assert first_step["data"]["status"] == "failed"
+    assert resume_step["data"]["step_type"] == "resume_available"
+    assert resume_step["data"]["status"] == "blocked"
+    assert stored_original["status"] == "failed"
+    assert stored_steps[-1]["output"]["resume_input"]["code"] == "print('resume from replay')"
+
+
+
+def test_restore_context_replays_latest_resumable_when_panel_has_no_run(client, fake_orch):
+    run = asyncio.run(run_store.create_run("old-resume-session", "old resumable", panel_id="old-resume-panel"))
+    step = asyncio.run(run_store.start_step(run["id"], "resume_available", {"next_step": "execute_cad_code"}))
+    asyncio.run(run_store.complete_step(
+        step["id"],
+        {
+            "resumable": True,
+            "next_step": "execute_cad_code",
+            "message": "可以继续上次任务",
+            "resume_input": {"code": "print('old resume')", "output_formats": ["step"]},
+        },
+        status="blocked",
+    ))
+    asyncio.run(run_store.complete_run(run["id"], status="blocked"))
+
+    with client.websocket_connect("/ws/new-resume-session") as wsk:
+        wsk.send_json({"type": "restore_context", "panel_id": "new-resume-panel"})
+        run_event = receive_until(wsk, "run_created")
+        resume_step = receive_until(wsk, "agent_step")
+
+    assert run_event["data"]["run_id"] == run["id"]
+    assert run_event["data"]["panel_id"] == "new-resume-panel"
+    assert run_event["data"]["status"] == "blocked"
+    assert resume_step["data"]["panel_id"] == "new-resume-panel"
+    assert resume_step["data"]["step_type"] == "resume_available"
+    assert resume_step["data"]["status"] == "blocked"
+
+
+
+def test_resume_run_message_returns_generation_result(client, fake_orch):
+    run = asyncio.run(run_store.create_run("sess-resume-ws", "resume", panel_id="p-resume"))
+
+    with client.websocket_connect("/ws/sess-resume-ws") as wsk:
+        wsk.send_json({"type": "resume_run", "run_id": run["id"], "panel_id": "p-resume"})
+        artifact = receive_until(wsk, "artifact_update")
+        final = receive_until(wsk, "generation_result")
+
+    assert fake_orch.resume_calls == [run["id"]]
+    assert artifact["data"]["request_id"] == "req-resume"
+    assert final["data"]["success"] is True
+    assert final["data"]["panel_id"] == "p-resume"
+
+
 # --- (7) invalid session_id -> close 4001 ------------------------------------
 
 def test_invalid_session_id_closes_4001(client, fake_orch):
@@ -308,14 +466,14 @@ def test_invalid_session_id_closes_4001(client, fake_orch):
 def test_panel_id_isolation_results_echo_correct_panel(client, fake_orch):
     with client.websocket_connect("/ws/sess-8") as wsk:
         wsk.send_json({"type": "user_message", "text": "panel A msg", "panel_id": "A"})
-        a1 = wsk.receive_json()
-        a2 = wsk.receive_json()
-        a_final = wsk.receive_json()
+        a1 = receive_until(wsk, "step_update")
+        a2 = receive_until(wsk, "step_update")
+        a_final = receive_until(wsk, "generation_result")
 
         wsk.send_json({"type": "user_message", "text": "panel B msg", "panel_id": "B"})
-        b1 = wsk.receive_json()
-        b2 = wsk.receive_json()
-        b_final = wsk.receive_json()
+        b1 = receive_until(wsk, "step_update")
+        b2 = receive_until(wsk, "step_update")
+        b_final = receive_until(wsk, "generation_result")
 
     for m in (a1, a2, a_final):
         assert m["data"]["panel_id"] == "A"

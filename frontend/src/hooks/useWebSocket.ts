@@ -8,11 +8,31 @@ const BASE_RECONNECT_DELAY_MS = 1000;
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "disconnected";
 
+function requestPanelReplay(ws: WebSocket) {
+  const state = useSessionStore.getState();
+  const panelIds = new Set<string>();
+  if (state.activePanelId) {
+    panelIds.add(state.activePanelId);
+  }
+  for (const panel of state.panels) {
+    panelIds.add(panel.id);
+  }
+
+  for (const panelId of panelIds) {
+    const panel = state.panels.find((item) => item.id === panelId);
+    ws.send(JSON.stringify({
+      type: "restore_context",
+      panel_id: panelId,
+      code: panel?.result?.code || "",
+    }));
+  }
+}
+
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { sessionId, setStep, setResult, setError } = useSessionStore();
+  const { sessionId, setRunCreated, setStep, setAgentStep, addArtifactUpdate, setResult, setError } = useSessionStore();
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
 
   useEffect(() => {
@@ -33,11 +53,12 @@ export function useWebSocket() {
       ws.onopen = () => {
         if (disposed) return;
         setConnectionState("connected");
+        requestPanelReplay(ws);
         if (reconnectAttemptRef.current > 0) {
           const state = useSessionStore.getState();
           for (const panel of state.panels) {
             if (panel.isGenerating) {
-              state.setError("连接中断，本次生成已丢失，请重试", panel.id);
+              state.setError("\u8fde\u63a5\u4e2d\u65ad\uff0c\u672c\u6b21\u751f\u6210\u5df2\u6682\u505c\uff0c\u8bf7\u67e5\u770b\u662f\u5426\u53ef\u4ee5\u7ee7\u7eed\u4e0a\u6b21\u4efb\u52a1", panel.id);
             }
           }
         }
@@ -47,8 +68,14 @@ export function useWebSocket() {
       ws.onmessage = (event) => {
         try {
           const msg: WSMessage = JSON.parse(event.data);
-          if (msg.type === "step_update") {
+          if (msg.type === "run_created") {
+            setRunCreated(msg.data, msg.data.panel_id);
+          } else if (msg.type === "step_update") {
             setStep(msg.data, msg.data.panel_id);
+          } else if (msg.type === "agent_step") {
+            setAgentStep(msg.data, msg.data.panel_id);
+          } else if (msg.type === "artifact_update") {
+            addArtifactUpdate(msg.data, msg.data.panel_id);
           } else if (msg.type === "generation_result") {
             setResult(msg.data, msg.data.panel_id);
           }
@@ -76,7 +103,7 @@ export function useWebSocket() {
           reconnectTimerRef.current = setTimeout(openSocket, delay);
         } else {
           setConnectionState("disconnected");
-          setError("连接已断开，请刷新页面后重试");
+          setError("\u8fde\u63a5\u5df2\u65ad\u5f00\uff0c\u8bf7\u5237\u65b0\u9875\u9762\u540e\u91cd\u8bd5");
         }
       };
     };
@@ -94,7 +121,7 @@ export function useWebSocket() {
       wsRef.current = null;
       ws?.close(1000);
     };
-  }, [sessionId, setStep, setResult, setError]);
+  }, [sessionId, setRunCreated, setStep, setAgentStep, addArtifactUpdate, setResult, setError]);
 
   const sendMessage = useCallback((
     text: string,
@@ -122,6 +149,14 @@ export function useWebSocket() {
     return true;
   }, []);
 
+  const resumeRun = useCallback((runId: string) => {
+    const ws = wsRef.current;
+    if (ws?.readyState !== WebSocket.OPEN) return false;
+    const panelId = useSessionStore.getState().activePanelId;
+    ws.send(JSON.stringify({ type: "resume_run", run_id: runId, panel_id: panelId }));
+    return true;
+  }, []);
+
   const cancelGeneration = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       const panelId = useSessionStore.getState().activePanelId;
@@ -134,7 +169,7 @@ export function useWebSocket() {
       const panelId = useSessionStore.getState().activePanelId;
       useSessionStore.getState().addMessage({
         role: "user",
-        content: `修改零件 ${partName}: ${instruction}`,
+        content: `\u4fee\u6539\u96f6\u4ef6 ${partName}: ${instruction}`,
       });
       wsRef.current.send(JSON.stringify({
         type: "modify_part",
@@ -145,7 +180,7 @@ export function useWebSocket() {
     }
   }, []);
 
-  const restoreContext = useCallback((panelId: string, code: string) => {
+  const restoreContext = useCallback((panelId: string, code = "") => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "restore_context", panel_id: panelId, code }));
     }
@@ -155,6 +190,7 @@ export function useWebSocket() {
     connectionState,
     sendMessage,
     executeCode,
+    resumeRun,
     cancelGeneration,
     modifyPart,
     restoreContext,

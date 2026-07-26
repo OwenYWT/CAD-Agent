@@ -1,5 +1,6 @@
-import type { GenerationResult, InspectReport, RepairStep, StepStatus, StepUpdate } from "../types";
-import type { StepHistoryEntry } from "../stores/sessionStore";
+import { useState } from "react";
+import type { GenerationResult, InspectReport, RepairStep, RunCreatedEvent, StepStatus, StepUpdate } from "../types";
+import type { ArtifactHistoryEntry, StepHistoryEntry } from "../stores/sessionStore";
 
 interface AgentRunTimelineProps {
   steps: StepHistoryEntry[];
@@ -7,8 +8,11 @@ interface AgentRunTimelineProps {
   result: GenerationResult | null;
   repairHistory?: RepairStep[] | null;
   inspectReport?: InspectReport | null;
+  activeRun?: RunCreatedEvent | null;
+  artifacts?: ArtifactHistoryEntry[];
   onRetryPrompt?: () => void;
   onRerunCode?: () => void;
+  onResumeRun?: (runId: string) => void;
 }
 
 const STATUS_STYLES: Record<StepStatus, string> = {
@@ -39,6 +43,14 @@ const STATUS_LABEL: Record<StepStatus, string> = {
 };
 
 const STEP_LABELS: Record<string, string> = {
+  plan_design: "\u9700\u6c42\u89c4\u5212",
+  generate_cad_code: "\u751f\u6210 CAD \u4ee3\u7801",
+  executing_code: "\u6267\u884c\u5efa\u6a21",
+  execute_code: "\u6267\u884c\u4ee3\u7801",
+  execute_cad_code: "\u6267\u884c CAD \u4ee3\u7801",
+  repair_code: "\u81ea\u52a8\u4fee\u590d\u4ee3\u7801",
+  resume_available: "\u53ef\u7ee7\u7eed\u4efb\u52a1",
+  finalize_result: "\u6574\u7406\u7ed3\u679c",
   intent_detection: "\u610f\u56fe\u8bc6\u522b",
   planning: "\u9700\u6c42\u89c4\u5212",
   retrieving_examples: "\u68c0\u7d22\u6848\u4f8b",
@@ -54,6 +66,15 @@ const STEP_LABELS: Record<string, string> = {
   assembly_part: "\u88c5\u914d\u96f6\u4ef6",
   complete: "\u5b8c\u6210",
   failed: "\u5931\u8d25",
+};
+
+const RUN_STATUS_LABELS: Record<string, string> = {
+  running: "\u8fd0\u884c\u4e2d",
+  succeeded: "\u5df2\u6210\u529f",
+  failed: "\u5df2\u5931\u8d25",
+  blocked: "\u5f85\u5904\u7406",
+  cancelled: "\u5df2\u53d6\u6d88",
+  observed: "\u5df2\u89c2\u6d4b",
 };
 
 function normalizeStatus(step: StepUpdate, isLast: boolean, isGenerating: boolean): StepStatus {
@@ -74,6 +95,11 @@ function stageLabel(step: StepUpdate) {
   return STEP_LABELS[step.step] || step.step.replace(/_/g, " ");
 }
 
+function runStatusLabel(status?: string | null) {
+  if (!status) return RUN_STATUS_LABELS.observed;
+  return RUN_STATUS_LABELS[status] || status;
+}
+
 function detailText(step: StepUpdate) {
   if (!step.detail) return "";
   const source = typeof step.detail.source === "string" ? step.detail.source : "";
@@ -87,20 +113,45 @@ function printableLabel(inspectReport: InspectReport) {
   return "\u672a\u77e5";
 }
 
-export default function AgentRunTimeline({ steps = [], isGenerating, result, repairHistory, inspectReport, onRetryPrompt, onRerunCode }: AgentRunTimelineProps) {
-  if (steps.length === 0 && !repairHistory?.length && !inspectReport) return null;
+function shortId(value?: string | null) {
+  return value ? value.slice(0, 8) : "-";
+}
+
+export default function AgentRunTimeline({ steps = [], isGenerating, result, repairHistory, inspectReport, activeRun, artifacts = [], onRetryPrompt, onRerunCode, onResumeRun }: AgentRunTimelineProps) {
+  const [collapsed, setCollapsed] = useState(true);
+  const hasContent = steps.length > 0 || Boolean(repairHistory?.length) || Boolean(inspectReport) || Boolean(activeRun) || artifacts.length > 0;
+  if (!hasContent) return null;
 
   const hasFailed = (result?.success === false && !result.needs_confirmation) || steps.some((step) => normalizeStatus(step, false, false) === "failed");
   const hasCode = Boolean(result?.code);
-
+  const canResume = Boolean(activeRun?.run_id && steps.some((step) => step.step === "resume_available"));
+  const latestStep = steps.at(-1);
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">{"Agent \u8fd0\u884c\u65f6\u95f4\u7ebf"}</h3>
-          <p className="text-xs text-gray-500 mt-0.5">{"\u5c55\u793a CADAM \u98ce\u683c\u7684\u8fc7\u7a0b\u8fdb\u5ea6\uff0c\u5e76\u4fdd\u7559 ForgeCAD \u98ce\u683c\u7684\u68c0\u67e5\u4e0e\u4fee\u590d\u8bc1\u636e\u3002"}</p>
+          <h3 className="text-sm font-semibold text-gray-900">{"\u667a\u80fd\u4f53\u8fd0\u884c\u65f6\u95f4\u7ebf"}</h3>
+          <p className="text-xs text-gray-500 mt-0.5">{"\u8bb0\u5f55\u672c\u6b21\u4efb\u52a1\u7684\u6267\u884c\u8fdb\u5ea6\u3001\u81ea\u52a8\u4fee\u590d\u3001\u68c0\u67e5\u8bc1\u636e\u548c\u4ea7\u7269\u4fe1\u606f\u3002"}</p>
+          {(activeRun || artifacts.length > 0 || latestStep) && (
+            <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+              {activeRun ? <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-indigo-700">{"\u8fd0\u884c"} {shortId(activeRun.run_id)} {"\u00b7"} {runStatusLabel(activeRun.status)}</span> : null}
+              {latestStep ? <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-700">{"\u6700\u65b0\u6b65\u9aa4"} {stageLabel(latestStep)}</span> : null}
+              {steps.length > 0 ? <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-gray-600">{steps.length} {"\u4e2a\u6b65\u9aa4"}</span> : null}
+              {artifacts.slice(-6).map((artifact, index) => (
+                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700" key={`${artifact.path}:${index}`}>{"\u4ea7\u7269"} {artifact.artifact_type.toUpperCase()}</span>
+              ))}
+            </div>
+          )}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+          <button type="button" onClick={() => setCollapsed((value) => !value)} className="px-2.5 py-1 text-xs rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50" aria-expanded={!collapsed}>
+            {collapsed ? "\u5c55\u5f00\u8be6\u60c5" : "\u6536\u8d77\u65f6\u95f4\u7ebf"}
+          </button>
+          {canResume && onResumeRun && activeRun?.run_id && (
+            <button type="button" onClick={() => onResumeRun(activeRun.run_id)} disabled={isGenerating} className="px-2.5 py-1 text-xs rounded-md border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">
+              {"\u7ee7\u7eed\u4e0a\u6b21\u4efb\u52a1"}
+            </button>
+          )}
           {hasFailed && onRetryPrompt && (
             <button type="button" onClick={onRetryPrompt} disabled={isGenerating} className="px-2.5 py-1 text-xs rounded-md border border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50">
               {"\u91cd\u8bd5\u63d0\u793a\u8bcd"}
@@ -114,7 +165,7 @@ export default function AgentRunTimeline({ steps = [], isGenerating, result, rep
         </div>
       </div>
 
-      <div className="p-4 space-y-3">
+      {!collapsed && <div className="p-4 space-y-3 max-h-[42vh] overflow-y-auto">
         {steps.map((step, index) => {
           const isLast = index === steps.length - 1;
           const status = normalizeStatus(step, isLast, isGenerating);
@@ -147,7 +198,7 @@ export default function AgentRunTimeline({ steps = [], isGenerating, result, rep
             {inspectReport ? <p className="text-xs text-gray-600">{"\u68c0\u67e5\u8bc1\u636e\uff1a\u7ed3\u8bba"} {inspectReport.verdict}{"\uff0c\u53ef\u6253\u5370\u6027"} {printableLabel(inspectReport)}{"\u3002"}</p> : null}
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

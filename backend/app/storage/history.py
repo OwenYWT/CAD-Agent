@@ -110,21 +110,38 @@ async def _init_tables(db: aiosqlite.Connection):
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
-        CREATE TABLE IF NOT EXISTS agent_tool_audit_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            request_id TEXT,
-            session_id TEXT,
+        CREATE TABLE IF NOT EXISTS agent_runs (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
             panel_id TEXT,
-            user_id TEXT,
-            tool_name TEXT NOT NULL,
+            user_prompt TEXT NOT NULL,
+            capability TEXT NOT NULL DEFAULT 'auto',
             status TEXT NOT NULL,
-            safety_level TEXT NOT NULL,
-            arguments TEXT NOT NULL DEFAULT '{}',
-            summary TEXT NOT NULL DEFAULT '{}',
-            error_type TEXT,
-            error_message TEXT,
-            duration_ms INTEGER NOT NULL DEFAULT 0,
-            needs_confirmation INTEGER NOT NULL DEFAULT 0,
+            current_step_id TEXT,
+            result_request_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            completed_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS agent_steps (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+            step_index INTEGER NOT NULL,
+            step_type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            input_json TEXT NOT NULL,
+            output_json TEXT,
+            error_json TEXT,
+            started_at TEXT,
+            completed_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS agent_artifacts (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+            step_id TEXT NOT NULL REFERENCES agent_steps(id) ON DELETE CASCADE,
+            artifact_type TEXT NOT NULL,
+            path TEXT NOT NULL,
+            metadata_json TEXT,
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_panels_session ON panels(session_id);
@@ -134,9 +151,11 @@ async def _init_tables(db: aiosqlite.Connection):
         CREATE INDEX IF NOT EXISTS idx_feedback_request ON feedback(request_id);
         CREATE INDEX IF NOT EXISTS idx_onshape_links_request ON onshape_links(request_id, updated_at);
         CREATE INDEX IF NOT EXISTS idx_onshape_links_user ON onshape_links(user_id, updated_at);
-        CREATE INDEX IF NOT EXISTS idx_agent_tool_audit_request ON agent_tool_audit_logs(request_id, created_at);
-        CREATE INDEX IF NOT EXISTS idx_agent_tool_audit_session ON agent_tool_audit_logs(session_id, panel_id, created_at);
-        CREATE INDEX IF NOT EXISTS idx_agent_tool_audit_user ON agent_tool_audit_logs(user_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_agent_runs_session_panel ON agent_runs(session_id, panel_id, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_agent_steps_run_index ON agent_steps(run_id, step_index);
+        CREATE INDEX IF NOT EXISTS idx_agent_steps_status ON agent_steps(status, started_at);
+        CREATE INDEX IF NOT EXISTS idx_agent_artifacts_run ON agent_artifacts(run_id, created_at);
     """)
     columns = await db.execute_fetchall("PRAGMA table_info(sessions)")
     if "user_id" not in {row["name"] for row in columns}:
@@ -532,68 +551,6 @@ async def get_feedback(request_id: str) -> list[dict]:
         (request_id,),
     )
     return [dict(r) for r in rows]
-
-
-async def save_agent_tool_audit(
-    *,
-    tool_name: str,
-    status: str,
-    safety_level: str,
-    arguments: dict | None = None,
-    summary: dict | None = None,
-    error_type: str | None = None,
-    error_message: str | None = None,
-    duration_ms: int = 0,
-    needs_confirmation: bool = False,
-    request_id: str | None = None,
-    session_id: str | None = None,
-    panel_id: str | None = None,
-    user_id: str | None = None,
-) -> dict:
-    db = await get_db()
-    now = _now()
-    await db.execute(
-        """
-        INSERT INTO agent_tool_audit_logs (
-            request_id, session_id, panel_id, user_id, tool_name, status,
-            safety_level, arguments, summary, error_type, error_message,
-            duration_ms, needs_confirmation, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            request_id,
-            session_id,
-            panel_id,
-            user_id,
-            tool_name,
-            status,
-            safety_level,
-            json.dumps(arguments or {}, ensure_ascii=False, default=str),
-            json.dumps(summary or {}, ensure_ascii=False, default=str),
-            error_type,
-            error_message,
-            duration_ms,
-            1 if needs_confirmation else 0,
-            now,
-        ),
-    )
-    await db.commit()
-    return {
-        "request_id": request_id,
-        "session_id": session_id,
-        "panel_id": panel_id,
-        "user_id": user_id,
-        "tool_name": tool_name,
-        "status": status,
-        "safety_level": safety_level,
-        "arguments": arguments or {},
-        "summary": summary or {},
-        "error_type": error_type,
-        "error_message": error_message,
-        "duration_ms": duration_ms,
-        "needs_confirmation": needs_confirmation,
-        "created_at": now,
-    }
 
 
 # ---- Onshape links ----

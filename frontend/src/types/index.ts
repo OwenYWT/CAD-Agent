@@ -43,6 +43,35 @@ export interface StepUpdate {
   total_parts?: number;
 }
 
+export interface RunCreatedEvent {
+  run_id: string;
+  session_id: string;
+  panel_id?: string;
+  status: "pending" | "running" | "succeeded" | "failed" | "blocked" | "cancelled" | string;
+  capability?: string | null;
+  user_prompt?: string | null;
+  created_at?: string | null;
+}
+
+export interface AgentStepEvent {
+  run_id?: string | null;
+  panel_id?: string;
+  step_type: string;
+  status: StepStatus | "succeeded" | "pending" | "blocked" | "cancelled" | string;
+  message: string;
+  started_at?: string | null;
+  duration_ms?: number | null;
+  detail?: Record<string, unknown> | null;
+  legacy_step?: StepUpdate;
+}
+
+export interface ArtifactUpdateEvent {
+  request_id?: string | null;
+  panel_id?: string;
+  artifact_type: string;
+  path: string;
+}
+
 export interface BoundingBox {
   x_min: number;
   x_max: number;
@@ -269,6 +298,10 @@ export interface Annotation3D {
 
 export type WSMessage =
   | { type: "step_update"; data: StepUpdate & { panel_id?: string } }
+  | { type: "run_created"; data: RunCreatedEvent }
+  | { type: "agent_step"; data: AgentStepEvent }
+  | { type: "artifact_update"; data: ArtifactUpdateEvent }
+  | { type: "diagnostics"; data: { panel_id?: string; message: string; detail?: Record<string, unknown> | null } }
   | { type: "generation_result"; data: GenerationResult & { panel_id?: string } }
   | { type: "assistant_message"; data: { content: string } };
 

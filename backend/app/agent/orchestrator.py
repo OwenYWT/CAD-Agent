@@ -4,37 +4,28 @@ import shutil
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
+from app.agent import run_store
 from app.agent.code_gen import CodeGenerator
 from app.agent.design_brief import ensure_design_brief
-from app.agent.failure_taxonomy import FixPath, classify
-from app.agent.onshape_tools import build_onshape_tool_registry
 from app.agent.planner import Planner
 from app.agent.run_steps import ensure_timeline_fields, make_step
 from app.agent.recovery_actions import build_recovery_actions
-from app.agent.tool_executor import ToolExecutor
-from app.agent.tool_types import ToolExecutionContext, ToolExecutionResult
+from app.agent.state_machine import ExecutionStateMachine
 from app.config import settings
 from app.logging_context import set_request_id
 from app.models.schemas import (
     AssemblyPartInfo,
-    BoundingBox,
     DesignBrief,
     GenerateResponse,
     GenerationResult,
     ManufacturingProfile,
     ParamConfig,
-    RepairStep,
     StepUpdate,
-    ValidationResult,
 )
 from app.rendering.renderer import CADRenderer
-from app.sandbox.code_analyzer import analyze_code
-from app.sandbox.code_filter import validate_code
 from app.sandbox.executor import CadQueryExecutor
 from app.validation.geometry_validator import GeometryValidator
-from app.validation.inspect import build_inspect_report
 from app.validation.vision_validator import VisionValidator
 
 logger = logging.getLogger(__name__)
@@ -85,8 +76,74 @@ class Orchestrator:
         self.vision_validator = VisionValidator()
         from app.agent.code_cache import CodeCache
         self.code_cache = CodeCache()
-        self.tool_registry = build_onshape_tool_registry()
-        self.tool_executor = ToolExecutor(self.tool_registry, audit_handler=self._audit_tool_execution)
+        self.run_store = run_store
+
+    async def _start_run_step(self, run_id: str | None, step_type: str, input_data: dict | None = None):
+        if not run_id:
+            return None
+        try:
+            return await self.run_store.start_step(run_id, step_type, input_data or {})
+        except Exception:
+            logger.warning("Failed to start agent run step", exc_info=True)
+            return None
+
+    async def _complete_run_step(self, step: dict | None, output_data: dict | None = None, *, status: str = "succeeded"):
+        if not step:
+            return None
+        try:
+            return await self.run_store.complete_step(step["id"], output_data or {}, status=status)
+        except Exception:
+            logger.warning("Failed to complete agent run step", exc_info=True)
+            return None
+
+    async def _fail_run_step(self, step: dict | None, error_data: dict | None = None, *, status: str = "failed"):
+        if not step:
+            return None
+        try:
+            return await self.run_store.fail_step(step["id"], error_data or {}, status=status)
+        except Exception:
+            logger.warning("Failed to fail agent run step", exc_info=True)
+            return None
+
+    async def _record_run_artifacts(
+        self,
+        run_id: str | None,
+        step_id: str | None,
+        response: GenerateResponse | GenerationResult,
+    ) -> None:
+        if not run_id:
+            return
+        files = getattr(response, "files", None) or {}
+        for artifact_type, artifact_path in files.items():
+            try:
+                await self.run_store.record_artifact(
+                    run_id,
+                    step_id or "",
+                    artifact_type,
+                    artifact_path,
+                    {"request_id": getattr(response, "request_id", None)},
+                )
+            except Exception:
+                logger.warning("Failed to record agent run artifact", exc_info=True)
+
+    async def _complete_run(self, run_id: str | None, response: GenerateResponse | GenerationResult):
+        if not run_id:
+            return None
+        if getattr(response, "needs_confirmation", False):
+            status = "blocked"
+        else:
+            status = "succeeded" if response.success else "failed"
+        try:
+            run = await self.run_store.complete_run(
+                run_id,
+                status=status,
+                result_request_id=getattr(response, "request_id", None),
+            )
+            await self._record_run_artifacts(run_id, run.get("current_step_id"), response)
+            return run
+        except Exception:
+            logger.warning("Failed to complete agent run", exc_info=True)
+            return None
 
     @property
     def retriever(self):
@@ -97,54 +154,6 @@ class Orchestrator:
     @retriever.setter
     def retriever(self, value):
         self._retriever = value
-
-    def list_agent_tools(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "safety_level": tool.safety_level,
-                "requires_confirmation": tool.requires_confirmation,
-                "parameters": tool.args_model.model_json_schema(),
-            }
-            for tool in self.tool_registry.list_tools()
-        ]
-
-    def agent_tool_schemas(self, *, read_only: bool = False) -> list[dict[str, Any]]:
-        safety_levels = {"read"} if read_only else None
-        return self.tool_registry.to_openai_tools(safety_levels=safety_levels)
-
-    async def execute_agent_tool(
-        self,
-        name: str,
-        arguments: dict[str, Any] | str | None = None,
-        context: ToolExecutionContext | None = None,
-    ) -> ToolExecutionResult:
-        return await self.tool_executor.execute(name, arguments, context)
-
-    async def _audit_tool_execution(
-        self,
-        result: ToolExecutionResult,
-        arguments: dict[str, Any],
-        context: ToolExecutionContext,
-    ) -> None:
-        from app.storage import history
-
-        await history.save_agent_tool_audit(
-            tool_name=result.tool_name,
-            status=result.status,
-            safety_level=result.safety_level,
-            arguments=arguments,
-            summary=result.summary,
-            error_type=result.error_type,
-            error_message=result.error_message,
-            duration_ms=result.duration_ms,
-            needs_confirmation=result.needs_confirmation,
-            request_id=context.request_id,
-            session_id=context.session_id,
-            panel_id=context.panel_id,
-            user_id=context.user_id,
-        )
 
     def _create_retriever(self):
         if settings.example_retriever.strip().lower() == "vector":
@@ -216,6 +225,7 @@ class Orchestrator:
         output_formats: list[str] = None,
         on_step=None,
         manufacturing_profile: ManufacturingProfile | dict | None = None,
+        run_id: str | None = None,
     ) -> GenerateResponse:
         if output_formats is None:
             output_formats = ["step", "stl"]
@@ -236,8 +246,9 @@ class Orchestrator:
             if on_step:
                 await _call_step(on_step, StepUpdate(step="executing", message="\u547d\u4e2d\u7f13\u5b58\uff0c\u6b63\u5728\u6267\u884c\u5df2\u6709\u6a21\u578b\u4ee3\u7801..."))
             is_2d_cached = "ezdxf" in cached_code or "result.dxf" in cached_code
+            execute_kwargs = {"run_id": run_id} if run_id else {}
             cached_result = await self._execute_with_retry(
-                request_id, cached_code, None, output_formats, on_step, prompt, is_2d=is_2d_cached
+                request_id, cached_code, None, output_formats, on_step, prompt, is_2d=is_2d_cached, **execute_kwargs
             )
             if cached_result.success:
                 cached_result.manufacturing_profile = profile
@@ -480,9 +491,15 @@ class Orchestrator:
             ]
 
         # Step 4: Execute with retry loop + validation
+        execute_step = await self._start_run_step(run_id, "executing_code", {"code": code, "code_preview": code[:500], "is_2d": is_2d, "output_formats": output_formats, "user_prompt": prompt})
+        execute_kwargs = {"run_id": run_id} if run_id else {}
         result = await self._execute_with_retry(
-            request_id, code, plan, output_formats, on_step, prompt, is_2d=is_2d
+            request_id, code, plan, output_formats, on_step, prompt, is_2d=is_2d, **execute_kwargs
         )
+        if result.success:
+            await self._complete_run_step(execute_step, {"success": True, "attempts": result.attempts, "request_id": result.request_id})
+        else:
+            await self._fail_run_step(execute_step, result.error or {"message": "\u6267\u884c\u5931\u8d25"})
 
         # Surface the understood requirement brief (A2)
         result.plan = plan
@@ -495,6 +512,8 @@ class Orchestrator:
         # Populate the code cache on success (skip assemblies — richer multi-part state).
         if result.success and result.code and not is_assembly and cache:
             cache.put(cache_key, result.code)
+
+        await self._complete_run(run_id, result)
 
         # Step 5: Auto-DFM analysis (when process/material keywords detected)
         if result.success and not is_2d and self._should_auto_dfm(prompt):
@@ -541,7 +560,7 @@ class Orchestrator:
                 )
                 fallback_result = await self._execute_with_retry(
                     str(uuid.uuid4()), fallback_code, plan, output_formats,
-                    on_step, prompt, is_2d=is_2d,
+                    on_step, prompt, is_2d=is_2d, **execute_kwargs
                 )
                 if fallback_result.success:
                     fallback_result.plan = plan  # surface the requirement brief (A2)
@@ -557,6 +576,7 @@ class Orchestrator:
         prompt: str,
         output_formats: list[str] = None,
         on_step=None,
+        run_id: str | None = None,
     ) -> GenerateResponse:
         if output_formats is None:
             output_formats = ["step", "stl"]
@@ -583,16 +603,24 @@ class Orchestrator:
         # Detect if original code is 2D (ezdxf) or 3D (CadQuery)
         is_2d = "ezdxf" in code or "result.dxf" in code
 
+        execute_step = await self._start_run_step(run_id, "execute_code", {"code": new_code, "code_preview": new_code[:500], "mode": "2d" if is_2d else "3d", "source": "modify", "output_formats": output_formats, "user_prompt": prompt, "is_2d": is_2d})
+        execute_kwargs = {"run_id": run_id} if run_id else {}
         response = await self._execute_with_retry(
-            request_id, new_code, None, output_formats, on_step, prompt, is_2d=is_2d
+            request_id, new_code, None, output_formats, on_step, prompt, is_2d=is_2d, **execute_kwargs
         )
+        if response.success:
+            await self._complete_run_step(execute_step, {"request_id": response.request_id, "success": True})
+        else:
+            await self._fail_run_step(execute_step, response.error or {"message": "modify execution failed"})
         response.recovery_actions = build_recovery_actions(response)
+        await self._complete_run(run_id, response)
         return response
 
     async def execute_code(
         self,
         code: str,
         output_formats: list[str] = None,
+        run_id: str | None = None,
     ) -> GenerateResponse:
         if output_formats is None:
             output_formats = ["step", "stl"]
@@ -600,87 +628,74 @@ class Orchestrator:
         request_id = str(uuid.uuid4())
         set_request_id(request_id)
 
-        # Detect 2D vs 3D from code content
         is_2d = "ezdxf" in code or "result.dxf" in code
+        execute_step = await self._start_run_step(
+            run_id,
+            "execute_code",
+            {"code": code, "code_preview": code[:500], "mode": "2d" if is_2d else "3d", "output_formats": output_formats, "is_2d": is_2d},
+        )
+        state_machine = ExecutionStateMachine(
+            orchestrator=self,
+            request_id=request_id,
+            code=code,
+            plan=None,
+            output_formats=output_formats,
+            is_2d=is_2d,
+            max_retries=1,
+        )
+        response = await state_machine.run()
+        response.recovery_actions = build_recovery_actions(response)
 
-        # Validate code
-        is_valid, error_msg = validate_code(code)
-        if not is_valid:
-            response = GenerateResponse(
-                request_id=request_id,
-                success=False,
-                error={"type": "ValidationError", "message": error_msg},
+        if response.success:
+            await self._complete_run_step(
+                execute_step,
+                {"request_id": request_id, "files": sorted((response.files or {}).keys()), "success": True},
             )
-            response.recovery_actions = build_recovery_actions(response)
-            return response
+        else:
+            await self._fail_run_step(execute_step, response.error or {"message": "\u6267\u884c\u5931\u8d25"})
+        await self._complete_run(run_id, response)
+        return response
 
-        # Execute directly — no LLM
-        exec_mode = "2d" if is_2d else "3d"
-        result = await self.executor.execute(code, mode=exec_mode)
-        try:
-            if result.success:
-                files = self._copy_output_files(
-                    result.work_dir, request_id, output_formats
-                )
-                params = self._extract_params(code)
-
-                # Run the same printability gate as /api/generate so parameter edits
-                # don't silently produce an un-printable model (3D only; 2D has no STL).
-                validation_data = None
-                inspect_report = None
-                if not is_2d:
-                    stl_path = self._find_stl_in_output(result.work_dir)
-                    if stl_path:
-                        try:
-                            geo = await self.geometry_validator.validate(stl_path)
-                            validation_data = ValidationResult(
-                                is_watertight=geo.is_watertight,
-                                bounding_box=BoundingBox(**geo.bounding_box),
-                                volume=geo.volume,
-                                printable=geo.printable,
-                                fits_build_volume=geo.fits_build_volume,
-                                min_wall_thickness=geo.min_wall_thickness,
-                                print_warnings=geo.print_warnings,
-                            )
-                            inspect_report = build_inspect_report(
-                                geo,
-                                available_exports=sorted(files.keys()),
-                                repair_attempts=0,
-                                source="geometry_validator",
-                            )
-                        except Exception as e:
-                            logger.warning(f"execute_code geometry validation skipped: {e}")
-
-                response = GenerateResponse(
-                    request_id=request_id,
-                    success=True,
-                    files=files,
-                    code=code,
-                    params=params if params else None,
-                    execution_time_ms=result.execution_time_ms,
-                    attempts=1,
-                    validation=validation_data,
-                    inspect_report=inspect_report,
-                )
-                response.recovery_actions = build_recovery_actions(response)
-                return response
-            else:
-                response = GenerateResponse(
-                    request_id=request_id,
-                    success=False,
-                    code=code,
-                    error={
-                        "type": result.error_type or "ExecutionError",
-                        "message": result.error_message or "Unknown error",
-                    },
-                    execution_time_ms=result.execution_time_ms,
-                    attempts=1,
-                )
-                response.recovery_actions = build_recovery_actions(response)
-                return response
-        finally:
-            shutil.rmtree(result.work_dir, ignore_errors=True)
-
+    async def resume_run(self, run_id: str) -> GenerateResponse:
+        run = await self.run_store.get_run(run_id)
+        if not run:
+            raise ValueError("\u672a\u627e\u5230\u8981\u7ee7\u7eed\u7684\u4efb\u52a1")
+        steps = await self.run_store.list_steps(run_id)
+        resume_step = next((step for step in reversed(steps) if step["step_type"] == "resume_available"), None)
+        if not resume_step or resume_step["status"] != "blocked":
+            raise ValueError("\u5f53\u524d\u4efb\u52a1\u6ca1\u6709\u53ef\u7ee7\u7eed\u7684\u6b65\u9aa4")
+        resume_output = resume_step.get("output") or {}
+        if resume_output.get("next_step") != "execute_cad_code":
+            raise ValueError("\u5f53\u524d\u53ea\u652f\u6301\u7ee7\u7eed\u6267\u884c CAD \u4ee3\u7801")
+        resume_input = resume_output.get("resume_input") or {}
+        code = resume_input.get("code")
+        if not code:
+            raise ValueError("\u7eed\u8dd1\u8f93\u5165\u7f3a\u5c11\u5b8c\u6574\u4ee3\u7801")
+        claimed_step = await self.run_store.mark_blocked_step_running(resume_step["id"])
+        if not claimed_step.get("claimed") or claimed_step["status"] != "running":
+            raise ValueError("\u5f53\u524d\u4efb\u52a1\u6ca1\u6709\u53ef\u7ee7\u7eed\u7684\u6b65\u9aa4")
+        await self.run_store.complete_step(
+            claimed_step["id"],
+            {"resumed": True, "next_step": "execute_cad_code"},
+        )
+        output_formats = resume_input.get("output_formats") or ["step", "stl"]
+        user_prompt = resume_input.get("user_prompt") or run.get("user_prompt") or ""
+        is_2d = bool(resume_input.get("is_2d", "ezdxf" in code or "result.dxf" in code))
+        request_id = str(uuid.uuid4())
+        set_request_id(request_id)
+        response = await self._execute_with_retry(
+            request_id,
+            code,
+            None,
+            output_formats,
+            None,
+            user_prompt,
+            is_2d=is_2d,
+            run_id=run_id,
+        )
+        response.recovery_actions = build_recovery_actions(response)
+        await self._complete_run(run_id, response)
+        return response
     # === Stateful WebSocket method (Web frontend streaming) ===
 
     def _prompt_with_pending_design_brief(
@@ -704,6 +719,7 @@ class Orchestrator:
         user_message: str,
         on_step=None,
         manufacturing_profile: ManufacturingProfile | dict | None = None,
+        run_id: str | None = None,
     ) -> GenerationResult:
         context.messages.append({"role": "user", "content": user_message})
 
@@ -712,7 +728,7 @@ class Orchestrator:
 
         if intent == "modify" and context.current_code:
             response = await self.modify(
-                context.current_code, user_message, on_step=on_step
+                context.current_code, user_message, on_step=on_step, run_id=run_id
             )
         else:
             # generate or generate_relative both go through generate
@@ -721,6 +737,7 @@ class Orchestrator:
                 generation_prompt,
                 on_step=on_step,
                 manufacturing_profile=manufacturing_profile or getattr(context, "current_manufacturing_profile", None),
+                run_id=run_id,
             )
 
         # Update context
@@ -819,10 +836,16 @@ class Orchestrator:
         part_name: str,
         instruction: str,
         on_step=None,
+        run_id: str | None = None,
     ) -> GenerationResult:
         """Modify a single part within an assembly and rebuild."""
+        modify_step = await self._start_run_step(
+            run_id,
+            "modify_assembly_part",
+            {"part_name": part_name, "instruction": instruction},
+        )
         if not context.assembly_parts:
-            return GenerationResult(
+            result = GenerationResult(
                 success=False,
                 error={"type": "ValidationError", "message": "\u5f53\u524d\u4ee3\u7801\u4e0d\u5305\u542b\u88c5\u914d\u4f53\u96f6\u4ef6"},
             )
@@ -942,332 +965,22 @@ class Orchestrator:
     # === Internal methods ===
 
     async def _execute_with_retry(
-        self, request_id, code, plan, output_formats, on_step, user_prompt="", is_2d=False
+        self, request_id, code, plan, output_formats, on_step, user_prompt="", is_2d=False, run_id: str | None = None
     ) -> GenerateResponse:
-        vision_retry_count = 0
-        result = None
-        # Oscillation guard: if fix_error keeps returning the same code, or the same
-        # error type repeats, retrying just burns LLM calls without converging.
-        last_error_sig: str | None = None
-        repeat_error_count = 0
-        repair_history: list[RepairStep] = []
-
-        for attempt in range(1, self.MAX_RETRIES + 1):
-            # Validate code (import whitelist)
-            is_valid, error_msg = validate_code(code)
-            if not is_valid:
-                if attempt < self.MAX_RETRIES:
-                    if on_step:
-                        await _call_step(
-                            on_step,
-                            StepUpdate(
-                                step="fixing_error",
-                                message=f"\u4ee3\u7801\u6821\u9a8c\u5931\u8d25\uff0c\u6b63\u5728\u4fee\u590d... (\u5c1d\u8bd5 {attempt}/{self.MAX_RETRIES})",
-                            ),
-                        )
-                    repair_history.append(RepairStep(
-                        attempt=attempt,
-                        stage="validation",
-                        error_type="ValidationError",
-                        message=error_msg or "Code validation failed",
-                        action="fix_error",
-                        status="repaired",
-                    ))
-                    code = await self.code_gen.fix_error(
-                        code,
-                        {"type": "ValidationError", "message": error_msg, "gate": "ValidationError"},
-                        plan,
-                    )
-                    continue
-                return GenerateResponse(
-                    request_id=request_id,
-                    success=False,
-                    code=code,
-                    error={"type": "ValidationError", "message": error_msg},
-                    attempts=attempt,
-                    repair_history=repair_history,
-                    design_brief=plan.design_brief if plan else None,
-                )
-
-            # Static analysis — catch CadQuery anti-patterns before sandbox
-            analysis_warnings = analyze_code(code)
-            if analysis_warnings and attempt < self.MAX_RETRIES:
-                logger.info(f"Static analysis warnings: {analysis_warnings}")
-                if on_step:
-                    await _call_step(
-                        on_step,
-                        StepUpdate(
-                            step="fixing_error",
-                            message="\u9759\u6001\u5206\u6790\u53d1\u73b0\u95ee\u9898\uff0c\u6b63\u5728\u4fee\u590d...",
-                        ),
-                    )
-                repair_history.append(RepairStep(
-                    attempt=attempt,
-                    stage="static_analysis",
-                    error_type="StaticAnalysis",
-                    message="; ".join(analysis_warnings),
-                    action="fix_error",
-                    status="repaired",
-                ))
-                code = await self.code_gen.fix_error(
-                    code,
-                    {
-                        "type": "StaticAnalysis",
-                        "message": "; ".join(analysis_warnings),
-                        "gate": "StaticAnalysis",
-                    },
-                    plan,
-                )
-                continue
-
-            # Execute
-            if on_step:
-                await _call_step(
-                    on_step,
-                    StepUpdate(step="executing", message=f"\u6b63\u5728\u6267\u884c\u4ee3\u7801... (\u5c1d\u8bd5 {attempt}/{self.MAX_RETRIES})"),
-                )
-
-            exec_mode = "2d" if is_2d else "3d"
-            result = await self.executor.execute(code, mode=exec_mode)
-
-            if result.success:
-                files = self._copy_output_files(
-                    result.work_dir, request_id, output_formats
-                )
-                params = self._extract_params(code)
-
-                # === 2D: ensure DXF in files + generate SVG preview ===
-                if is_2d:
-                    dxf_path = self._find_file_in_output(result.work_dir, ".dxf")
-                    if dxf_path:
-                        # Ensure DXF is in files dict (copy if not already)
-                        if "dxf" not in files:
-                            dest_dir = Path(settings.file_storage_dir) / request_id
-                            dest_dir.mkdir(parents=True, exist_ok=True)
-                            dest_dxf = dest_dir / dxf_path.name
-                            shutil.copy2(dxf_path, dest_dxf)
-                            files["dxf"] = f"/api/files/{request_id}/{dxf_path.name}"
-
-                        try:
-                            from app.rendering.dxf_renderer import dxf_to_svg
-                            svg_dir = Path(settings.file_storage_dir) / request_id
-                            svg_dir.mkdir(parents=True, exist_ok=True)
-                            svg_path = svg_dir / "result.svg"
-                            dxf_to_svg(dxf_path, svg_path)
-                            files["svg"] = f"/api/files/{request_id}/result.svg"
-                        except Exception as e:
-                            logger.warning(f"SVG generation failed: {e}")
-
-                    shutil.rmtree(result.work_dir, ignore_errors=True)
-                    return GenerateResponse(
-                        request_id=request_id,
-                        success=True,
-                        files=files,
-                        code=code,
-                        params=params if params else None,
-                        execution_time_ms=result.execution_time_ms,
-                        attempts=attempt,
-                    design_brief=plan.design_brief if plan else None,
-                        repair_history=repair_history,
-                    )
-
-                # === Geometry validation ===
-                validation_data = None
-                inspect_report = None
-                stl_path = self._find_stl_in_output(result.work_dir)
-                if stl_path:
-                    try:
-                        expected_dims = plan.dimensions if plan else None
-                        geo_validation = await self.geometry_validator.validate(
-                            stl_path, expected_dims
-                        )
-                        validation_data = ValidationResult(
-                            is_watertight=geo_validation.is_watertight,
-                            bounding_box=BoundingBox(**geo_validation.bounding_box),
-                            volume=geo_validation.volume,
-                            printable=geo_validation.printable,
-                            fits_build_volume=geo_validation.fits_build_volume,
-                            min_wall_thickness=geo_validation.min_wall_thickness,
-                            print_warnings=geo_validation.print_warnings,
-                        )
-                        # Evidence inspect report — aggregate the facts just computed
-                        # (built on every successful 3D gen; DFM enrichment added later).
-                        inspect_report = build_inspect_report(
-                            geo_validation,
-                            available_exports=sorted(files.keys()),
-                            repair_attempts=len(repair_history),
-                            source="geometry_validator",
-                        )
-
-                        if not geo_validation.passed and attempt < self.MAX_RETRIES:
-                            error_messages = "; ".join(
-                                r.message for r in geo_validation.rules if not r.passed
-                            )
-                            shutil.rmtree(result.work_dir, ignore_errors=True)
-                            if on_step:
-                                await _call_step(
-                                    on_step,
-                                    StepUpdate(step="fixing_error", message=f"\u51e0\u4f55\u9a8c\u8bc1\u5931\u8d25: {error_messages}"),
-                                )
-                            repair_history.append(RepairStep(
-                                attempt=attempt,
-                                stage="geometry",
-                                error_type="GeometryError",
-                                message=error_messages,
-                                action="fix_error",
-                                status="repaired",
-                            ))
-                            code = await self.code_gen.fix_error(
-                                code,
-                                {"type": "GeometryError", "message": error_messages, "gate": "GeometryError"},
-                                plan,
-                            )
-                            continue
-
-                        # === Vision validation (max 2 retries) ===
-                        if vision_retry_count < 2 and stl_path:
-                            try:
-                                if on_step:
-                                    await _call_step(
-                                        on_step,
-                                        StepUpdate(step="executing", message="\u6b63\u5728\u8fdb\u884c\u89c6\u89c9\u6821\u9a8c..."),
-                                    )
-                                renders_dir = result.work_dir / "renders"
-                                render_paths = self.renderer.render_stl(stl_path, renders_dir)
-                                if not render_paths:
-                                    # No renders → vision is INDETERMINATE, not skipped silently.
-                                    # Surface it honestly instead of letting it pass invisibly.
-                                    logger.warning("No render images produced, vision validation indeterminate")
-                                    self._add_indeterminate_vision_check(
-                                        inspect_report, "没有生成渲染图，视觉校验未执行"
-                                    )
-                                else:
-                                    vision_result = await self.vision_validator.validate(
-                                        user_prompt, render_paths, code
-                                    )
-                                    # Only an EXPLICIT mismatch (is_match is False) triggers a fix.
-                                    # Indeterminate (None) never retries and never passes silently.
-                                    if vision_result.is_match is False and attempt < self.MAX_RETRIES:
-                                        vision_retry_count += 1
-                                        shutil.rmtree(result.work_dir, ignore_errors=True)
-                                        if on_step:
-                                            await _call_step(
-                                                on_step,
-                                                StepUpdate(step="fixing_error", message="\u89c6\u89c9\u6821\u9a8c\u4e0d\u901a\u8fc7\uff0c\u6b63\u5728\u4fee\u590d..."),
-                                            )
-                                        repair_history.append(RepairStep(
-                                            attempt=attempt,
-                                            stage="vision",
-                                            error_type="VisionMismatch",
-                                            message="; ".join(vision_result.issues),
-                                            action="fix_visual_issues",
-                                            status="repaired",
-                                        ))
-                                        code = await self.code_gen.fix_visual_issues(
-                                            code, vision_result.issues, vision_result.suggestions,
-                                            on_step=on_step,
-                                        )
-                                        continue
-                                    if vision_result.is_match is None:
-                                        self._add_indeterminate_vision_check(
-                                            inspect_report,
-                                            "; ".join(vision_result.issues) or "视觉校验结果不确定",
-                                        )
-                            except Exception as e:
-                                logger.warning(f"Vision validation skipped: {e}")
-                                self._add_indeterminate_vision_check(
-                                    inspect_report, "视觉校验发生异常，未执行"
-                                )
-
-                    except Exception as e:
-                        logger.warning(f"Geometry validation skipped: {e}")
-
-                shutil.rmtree(result.work_dir, ignore_errors=True)
-                return GenerateResponse(
-                    request_id=request_id,
-                    success=True,
-                    files=files,
-                    code=code,
-                    params=params if params else None,
-                    execution_time_ms=result.execution_time_ms,
-                    attempts=attempt,
-                    validation=validation_data,
-                    design_brief=plan.design_brief if plan else None,
-                    inspect_report=inspect_report,
-                    repair_history=repair_history,
-                )
-
-            # Failed — classify the failure to decide how (or whether) to retry.
-            shutil.rmtree(result.work_dir, ignore_errors=True)
-            fc = classify(
-                result.error_type, result.error_message, result.traceback, gate="exec"
-            )
-
-            # HARD_STOP: infra failures (Docker down / image missing / no output) can't be
-            # fixed by re-prompting the LLM — abort immediately instead of burning retries.
-            if fc.fix_path is FixPath.HARD_STOP:
-                logger.info(f"Non-recoverable failure ({fc.key}), stopping retries")
-                break
-
-            # Oscillation guard: normalize on the FAILURE CLASS (not the raw message tail),
-            # so the same OCCT error with varying coordinates is recognized as a repeat.
-            error_sig = fc.key
-            if error_sig == last_error_sig:
-                repeat_error_count += 1
-            else:
-                repeat_error_count = 0
-                last_error_sig = error_sig
-            if repeat_error_count >= 2:
-                logger.info(f"Retry oscillation detected ({error_sig} 脳{repeat_error_count+1}), stopping early")
-                break
-
-            if attempt < self.MAX_RETRIES:
-                if on_step:
-                    await _call_step(
-                        on_step,
-                        StepUpdate(
-                            step="fixing_error",
-                            message=f"\u6267\u884c\u51fa\u9519\uff0c\u6b63\u5728\u4fee\u590d... (\u5c1d\u8bd5 {attempt}/{self.MAX_RETRIES})",
-                        ),
-                    )
-                repair_history.append(RepairStep(
-                    attempt=attempt,
-                    stage="execution",
-                    error_type=result.error_type or "ExecutionError",
-                    message=result.error_message or "Execution failed",
-                    action="fix_error",
-                    status="repaired",
-                ))
-                prev_code = code
-                code = await self.code_gen.fix_error(
-                    code,
-                    {
-                        "type": result.error_type,
-                        "message": result.error_message,
-                        "traceback": result.traceback,
-                        "gate": "exec",
-                    },
-                    plan,
-                )
-                # If the fixer returned identical code, further retries can't help.
-                if code.strip() == prev_code.strip():
-                    logger.info("fix_error returned identical code, stopping early")
-                    break
-
-        # All retries exhausted
-        return GenerateResponse(
+        state_machine = ExecutionStateMachine(
+            orchestrator=self,
             request_id=request_id,
-            success=False,
             code=code,
-            error={
-                "type": result.error_type or "ExecutionError",
-                "message": result.error_message or "Max retries exceeded",
-            },
-            execution_time_ms=result.execution_time_ms if result else 0,
-            attempts=self.MAX_RETRIES,
-            repair_history=repair_history,
-            design_brief=plan.design_brief if plan else None,
+            plan=plan,
+            output_formats=output_formats,
+            on_step=on_step,
+            user_prompt=user_prompt,
+            is_2d=is_2d,
+            max_retries=self.MAX_RETRIES,
+            run_id=run_id,
         )
+        return await state_machine.run()
+
 
     # Fallback strategy map: current_hint → alternative to try
     _FALLBACK_MAP = {

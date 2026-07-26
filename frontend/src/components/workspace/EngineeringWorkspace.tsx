@@ -5,6 +5,7 @@ import { useWebSocket } from "../../hooks/useWebSocket";
 import { useSessionStore } from "../../stores/sessionStore";
 import type { ManufacturingProfile, ModelSnapshotDetail } from "../../types";
 import type { EngineeringDomain, EngineeringStage } from "../../types/engineering";
+import AgentRunTimeline from "../AgentRunTimeline";
 import AgentDrawer from "../agent/AgentDrawer";
 import ExportDialog from "../export/ExportDialog";
 import ParameterDrawer from "../parameters/ParameterDrawer";
@@ -26,7 +27,7 @@ interface EngineeringWorkspaceProps {
 export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: EngineeringWorkspaceProps) {
   const sessionId = useSessionStore((state) => state.sessionId);
   const panel = useSessionStore((state) => state.getActivePanel());
-  const { connectionState, sendMessage, executeCode, restoreContext } = useWebSocket();
+  const { connectionState, sendMessage, executeCode, resumeRun, restoreContext } = useWebSocket();
   const model = useMemo(() => adaptEngineeringProject(sessionId, panel), [panel, sessionId]);
   const hasProject = panel.messages.length > 0 || panel.result !== null || panel.isGenerating;
   const [view, setView] = useState<EngineeringDomain>("overview");
@@ -62,6 +63,11 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
     useSessionStore.getState().beginGeneration();
     return true;
   };
+  const resumeWithProgress = (runId: string) => {
+    if (!resumeRun(runId)) return false;
+    useSessionStore.getState().beginGeneration();
+    return true;
+  };
 
   const latestUserPrompt = panel.messages.filter((message) => message.role === "user").at(-1)?.content || "";
   const restoreSnapshot = (snapshot: ModelSnapshotDetail) => {
@@ -91,7 +97,23 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
       <WorkspaceHeader connection={connectionState} onAgent={() => askAgent()} onBack={() => setView("overview")} onChecks={() => setChecksOpen(true)} onExport={() => setExportOpen(true)} onLogout={onLogout} onMenu={() => setMobileSidebar(true)} onSettings={() => setSettingsOpen(true)} onUserUpdate={onUserUpdate} project={model.project} user={user} />
       <div className="flex min-h-0 flex-1">
         <ProjectSidebar activeView={view} collapsed={sidebarCollapsed} mobileOpen={mobileSidebar} onCollapse={() => setSidebarCollapsed((value) => !value)} onMobileClose={() => setMobileSidebar(false)} onNavigate={navigate} restoreContext={restoreContext} />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 overflow-y-auto">
+          {(panel.activeRun || panel.stepHistory.length > 0 || panel.artifactUpdates.length > 0) ? (
+            <div className="p-4 pb-0 sm:p-6 sm:pb-0">
+              <AgentRunTimeline
+                activeRun={panel.activeRun}
+                artifacts={panel.artifactUpdates}
+                inspectReport={model.result?.inspect_report}
+                isGenerating={panel.isGenerating}
+                onRerunCode={() => { if (model.result?.code) executeWithProgress(model.result.code); }}
+                onResumeRun={resumeWithProgress}
+                onRetryPrompt={() => { if (latestUserPrompt) startProject(latestUserPrompt, model.result?.manufacturing_profile || null); }}
+                repairHistory={model.result?.repair_history}
+                result={model.result}
+                steps={panel.stepHistory}
+              />
+            </div>
+          ) : null}
           {view === "overview" ? <ProjectFlow onOpenStage={openStage} project={model.project} stages={model.stages} task={model.task} /> : null}
           {view === "mechanical" ? <MechanicalWorkspace onAgent={() => askAgent()} onBack={() => setView("overview")} onProperties={() => setParametersOpen(true)} result={model.result} /> : null}
         </div>
@@ -102,6 +124,8 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
       <AgentDrawer connection={connectionState} context={view} key={`${view}:${agentPrompt}:${agentOpen}`} onClose={() => { setAgentOpen(false); setAgentPrompt(""); }} onSend={sendMessage} open={agentOpen} suggestedPrompt={agentPrompt} />
       <ValidationDialog
         activeSnapshotId={model.result?.snapshot_id}
+        activeRun={panel.activeRun}
+        artifacts={panel.artifactUpdates}
         description={latestUserPrompt}
         isGenerating={panel.isGenerating}
         key={"validation:" + (model.result?.request_id || "empty") + ":" + checksOpen}
@@ -109,6 +133,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
         onClose={() => setChecksOpen(false)}
         onRerunCode={() => model.result?.code ? executeWithProgress(model.result.code) : undefined}
         onRestore={restoreSnapshot}
+        onResumeRun={resumeWithProgress}
         onRetryPrompt={() => latestUserPrompt ? startProject(latestUserPrompt, model.result?.manufacturing_profile || null) : false}
         open={checksOpen}
         panelId={panel.id}
