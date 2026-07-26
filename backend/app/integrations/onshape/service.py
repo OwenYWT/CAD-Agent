@@ -28,6 +28,41 @@ class OnshapeService:
         documents = raw.get("items") or raw.get("documents") or raw.get("data") or []
         return OnshapeDocumentsResponse(documents=documents if isinstance(documents, list) else [], raw=raw)
 
+    async def list_elements(self, document_id: str, workspace_id: str) -> dict[str, Any]:
+        document_id = _validate_onshape_id(document_id, "document_id")
+        workspace_id = _validate_onshape_id(workspace_id, "workspace_id")
+        raw = await self.client.list_elements(document_id, workspace_id)
+        elements = raw.get("items") or raw.get("elements") or raw.get("data") or []
+        if not isinstance(elements, list):
+            elements = []
+        return {
+            "document_id": document_id,
+            "workspace_id": workspace_id,
+            "elements": [_summarize_element(item) for item in elements if isinstance(item, dict)],
+            "raw": raw,
+        }
+
+    async def list_partstudio_features(
+        self,
+        document_id: str,
+        workspace_id: str,
+        element_id: str,
+    ) -> dict[str, Any]:
+        document_id = _validate_onshape_id(document_id, "document_id")
+        workspace_id = _validate_onshape_id(workspace_id, "workspace_id")
+        element_id = _validate_onshape_id(element_id, "element_id")
+        raw = await self.client.list_partstudio_features(document_id, workspace_id, element_id)
+        features = raw.get("features") or raw.get("items") or raw.get("data") or []
+        if not isinstance(features, list):
+            features = []
+        return {
+            "document_id": document_id,
+            "workspace_id": workspace_id,
+            "element_id": element_id,
+            "features": [_summarize_feature(item) for item in features if isinstance(item, dict)],
+            "raw": raw,
+        }
+
     async def create_document(self, req: OnshapeCreateDocumentRequest) -> OnshapeDocumentResponse:
         raw = await self.client.create_document(
             req.name,
@@ -173,6 +208,36 @@ def _find_step_file(request_id: str, filename: str | None = None) -> Path:
     if not candidates:
         raise FileNotFoundError(f"No STEP file found for request_id={request_id}")
     return candidates[0]
+
+
+def _validate_onshape_id(value: str, name: str) -> str:
+    cleaned = str(value or "").strip()
+    if not cleaned or not _SAFE_ID_PATTERN.fullmatch(cleaned):
+        raise ValueError(f"Invalid {name}")
+    return cleaned
+
+
+def _summarize_element(raw: dict[str, Any]) -> dict[str, Any]:
+    element_id = raw.get("id") or raw.get("elementId") or raw.get("eid")
+    element_type = raw.get("elementType") or raw.get("type")
+    return {
+        "element_id": str(element_id or ""),
+        "name": str(raw.get("name") or ""),
+        "type": str(element_type or ""),
+    }
+
+
+def _summarize_feature(raw: dict[str, Any]) -> dict[str, Any]:
+    message = raw.get("message") if isinstance(raw.get("message"), dict) else {}
+    feature_id = raw.get("featureId") or raw.get("id") or message.get("featureId")
+    feature_type = raw.get("featureType") or raw.get("type") or message.get("featureType")
+    name = message.get("name") or raw.get("name") or ""
+    return {
+        "id": str(feature_id or ""),
+        "name": str(name),
+        "feature_type": str(feature_type or ""),
+        "suppressed": bool(raw.get("suppressed") or message.get("suppressed") or False),
+    }
 
 
 def _extract_document_id(raw: dict[str, Any]) -> str | None:

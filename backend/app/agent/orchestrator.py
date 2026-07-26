@@ -4,13 +4,17 @@ import shutil
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from app.agent.code_gen import CodeGenerator
 from app.agent.design_brief import ensure_design_brief
 from app.agent.failure_taxonomy import FixPath, classify
+from app.agent.onshape_tools import build_onshape_tool_registry
 from app.agent.planner import Planner
 from app.agent.run_steps import ensure_timeline_fields, make_step
 from app.agent.recovery_actions import build_recovery_actions
+from app.agent.tool_executor import ToolExecutor
+from app.agent.tool_types import ToolExecutionContext, ToolExecutionResult
 from app.config import settings
 from app.logging_context import set_request_id
 from app.models.schemas import (
@@ -81,6 +85,8 @@ class Orchestrator:
         self.vision_validator = VisionValidator()
         from app.agent.code_cache import CodeCache
         self.code_cache = CodeCache()
+        self.tool_registry = build_onshape_tool_registry()
+        self.tool_executor = ToolExecutor(self.tool_registry, audit_handler=self._audit_tool_execution)
 
     @property
     def retriever(self):
@@ -91,6 +97,54 @@ class Orchestrator:
     @retriever.setter
     def retriever(self, value):
         self._retriever = value
+
+    def list_agent_tools(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "safety_level": tool.safety_level,
+                "requires_confirmation": tool.requires_confirmation,
+                "parameters": tool.args_model.model_json_schema(),
+            }
+            for tool in self.tool_registry.list_tools()
+        ]
+
+    def agent_tool_schemas(self, *, read_only: bool = False) -> list[dict[str, Any]]:
+        safety_levels = {"read"} if read_only else None
+        return self.tool_registry.to_openai_tools(safety_levels=safety_levels)
+
+    async def execute_agent_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any] | str | None = None,
+        context: ToolExecutionContext | None = None,
+    ) -> ToolExecutionResult:
+        return await self.tool_executor.execute(name, arguments, context)
+
+    async def _audit_tool_execution(
+        self,
+        result: ToolExecutionResult,
+        arguments: dict[str, Any],
+        context: ToolExecutionContext,
+    ) -> None:
+        from app.storage import history
+
+        await history.save_agent_tool_audit(
+            tool_name=result.tool_name,
+            status=result.status,
+            safety_level=result.safety_level,
+            arguments=arguments,
+            summary=result.summary,
+            error_type=result.error_type,
+            error_message=result.error_message,
+            duration_ms=result.duration_ms,
+            needs_confirmation=result.needs_confirmation,
+            request_id=context.request_id,
+            session_id=context.session_id,
+            panel_id=context.panel_id,
+            user_id=context.user_id,
+        )
 
     def _create_retriever(self):
         if settings.example_retriever.strip().lower() == "vector":

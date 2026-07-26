@@ -1,9 +1,11 @@
 import logging
 import re
+import hashlib
 
 from fastapi import WebSocket, WebSocketDisconnect
 
 from app.agent.orchestrator import ConversationContext, Orchestrator
+from app.agent.tool_types import ToolExecutionContext
 from app.api.auth import verify_ws_token, get_ws_user_id, rate_limiter
 from app.api.error_messages import public_generation_error
 from app.models.schemas import StepUpdate
@@ -32,6 +34,24 @@ def _get_orchestrator() -> Orchestrator:
     if _orchestrator is None:
         _orchestrator = Orchestrator()
     return _orchestrator
+
+
+def _ws_owner_key(token: str | None, user_id: str | None) -> str | None:
+    if user_id:
+        return user_id
+    if token:
+        digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        return f"api-key:{digest}"
+    return None
+
+
+async def _ws_can_access_shared_onshape(user_id: str | None) -> bool:
+    if not user_id:
+        return True
+    from app.storage import auth as auth_store
+
+    user = await auth_store.get_user(user_id)
+    return bool(user and user.get("is_admin"))
 
 
 def _get_context(session_id: str, panel_id: str) -> ConversationContext:
@@ -88,7 +108,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             msg_type = data.get("type")
             panel_id = data.get("panel_id", "default")
 
-            if msg_type in {"user_message", "modify_part", "execute_code"}:
+            if msg_type in {"user_message", "modify_part", "execute_code", "agent_tool_call"}:
                 if not await history.panel_writable_by_session(panel_id, session_id, user_id):
                     await websocket.close(code=4003, reason="Panel belongs to another session")
                     return
@@ -211,6 +231,44 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 await history.touch_session(session_id)
 
                 await websocket.send_json({"type": "generation_result", "data": result_data})
+
+            elif msg_type == "agent_tool_call":
+                tool_name = data.get("tool_name", "")
+                arguments = data.get("arguments", {})
+                confirmed = bool(data.get("confirmed", False))
+                if not isinstance(tool_name, str) or not tool_name or len(tool_name) > 128:
+                    await websocket.send_json({
+                        "type": "agent_tool_result",
+                        "data": {
+                            "status": "failure",
+                            "error_type": "ValidationError",
+                            "error_message": "工具名为空或超过长度限制",
+                            "panel_id": panel_id,
+                        },
+                    })
+                    continue
+
+                await history.create_session(session_id, title="", user_id=user_id)
+                await history.create_panel(session_id, panel_id, user_id=user_id)
+                tool_context = ToolExecutionContext(
+                    session_id=session_id,
+                    panel_id=panel_id,
+                    user_id=_ws_owner_key(token, user_id),
+                    auth_principal=principal,
+                    allow_shared_onshape=await _ws_can_access_shared_onshape(user_id),
+                    confirmed=confirmed,
+                )
+                result = await orchestrator.execute_agent_tool(tool_name, arguments, tool_context)
+                result_data = result.model_dump()
+                result_data["panel_id"] = panel_id
+                await history.save_message(
+                    panel_id,
+                    "assistant",
+                    f"工具 {tool_name}: {result.status}",
+                    result=result_data,
+                )
+                await history.touch_session(session_id)
+                await websocket.send_json({"type": "agent_tool_result", "data": result_data})
 
             elif msg_type == "modify_part":
                 part_name = data.get("part_name", "")

@@ -71,6 +71,55 @@ class FakeOnshapeClient:
         return {"id": "tid-1", "requestState": "DONE", "resultElementIds": ["eid-1"]}
 
 
+class FakeOnshapeReadClient:
+    async def list_elements(self, document_id, workspace_id):
+        assert document_id == "did-1"
+        assert workspace_id == "wid-1"
+        return {"items": [{"id": "eid-1", "name": "Part Studio 1", "elementType": "PARTSTUDIO"}]}
+
+    async def list_partstudio_features(self, document_id, workspace_id, element_id):
+        assert document_id == "did-1"
+        assert workspace_id == "wid-1"
+        assert element_id == "eid-1"
+        return {"features": [{"featureId": "fid-1", "message": {"name": "Extrude 1", "featureType": "extrude"}}]}
+
+
+class CapturingOnshapeClient(OnshapeClient):
+    def __init__(self):
+        super().__init__(access_key="access", secret_key="secret")
+        self.calls = []
+
+    async def request(self, method, path, **kwargs):
+        self.calls.append((method, path, kwargs))
+        return {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_list_partstudio_features_uses_allowlisted_path():
+    client = CapturingOnshapeClient()
+
+    await client.list_partstudio_features("did-1", "wid-1", "eid-1")
+
+    assert client.calls == [
+        ("GET", "/api/partstudios/d/did-1/w/wid-1/e/eid-1/features", {})
+    ]
+
+
+@pytest.mark.asyncio
+async def test_onshape_service_summarizes_elements_and_features():
+    service = OnshapeService(client=FakeOnshapeReadClient())
+
+    elements = await service.list_elements("did-1", "wid-1")
+    features = await service.list_partstudio_features("did-1", "wid-1", "eid-1")
+
+    assert elements["elements"] == [
+        {"element_id": "eid-1", "name": "Part Studio 1", "type": "PARTSTUDIO"}
+    ]
+    assert features["features"] == [
+        {"id": "fid-1", "name": "Extrude 1", "feature_type": "extrude", "suppressed": False}
+    ]
+
+
 def test_publish_step_records_onshape_link(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "file_storage_dir", str(tmp_path / "files"))
     monkeypatch.setattr(settings, "history_db_path", str(tmp_path / "history.db"))
