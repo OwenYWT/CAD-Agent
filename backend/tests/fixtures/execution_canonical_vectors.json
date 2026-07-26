@@ -1,0 +1,20 @@
+[
+  {
+    "name": "object-key-order",
+    "value": {"b": 1, "a": 2},
+    "canonical": "{\"a\":2,\"b\":1}",
+    "sha256": "d3626ac30a87e6f7a6428233b3c68299976865fa5508e4267c5415c76af7a772"
+  },
+  {
+    "name": "unicode-nfc",
+    "value": {"text": "é"},
+    "canonical": "{\"text\":\"é\"}",
+    "sha256": "42d3cbf59fdccced04e5dff14433fb52d34d58e385e9770ffd896ff517d63b92"
+  },
+  {
+    "name": "null-and-primitives",
+    "value": {"values": [3, 2, 1], "nothing": null, "flag": true},
+    "canonical": "{\"flag\":true,\"nothing\":null,\"values\":[3,2,1]}",
+    "sha256": "848519c1d2d54e5038dfd53828817de9b9e857ed303863d220a28da50f5ed748"
+  }
+]
