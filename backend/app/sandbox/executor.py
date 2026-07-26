@@ -23,22 +23,23 @@ class SandboxResult:
 
 
 class PodmanRuntime:
-    def __init__(self):
-        configured = (settings.sandbox_command or "").strip()
+    def __init__(self, image_ref: str, sandbox_command: str | None = None):
+        configured = (sandbox_command or settings.sandbox_command or "").strip()
         # SANDBOX_RUNTIME is authoritative. A stale template value such as
         # SANDBOX_COMMAND=docker must not make the Podman adapter invoke Docker.
         self.command = "podman" if configured in {"", "docker", "podman"} else configured
+        self.image_ref = image_ref
         self._ensure_image_exists()
 
     def _ensure_image_exists(self):
         result = subprocess.run(
-            [self.command, "image", "exists", settings.sandbox_image],
+            [self.command, "image", "exists", self.image_ref],
             capture_output=True,
             text=True,
         )
         if result.returncode != 0:
             raise RuntimeError(
-                f"Sandbox image '{settings.sandbox_image}' not found for Podman. "
+                f"Sandbox image '{self.image_ref}' not found for Podman. "
                 "Run: cd backend/sandbox && podman build -t cad-agent-sandbox:latest ."
             )
 
@@ -55,33 +56,41 @@ class PodmanRuntime:
             "--tmpfs", "/tmp:rw,size=64m,noexec,nosuid",
             "-v", f"{input_dir.as_posix()}:/sandbox/input:ro",
             "-v", f"{output_dir.as_posix()}:/sandbox/output:rw",
-            settings.sandbox_image,
+            self.image_ref,
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
         return result.returncode, result.stdout, result.stderr
 
 
 class CadQueryExecutor:
-    def __init__(self):
+    def __init__(
+        self,
+        runtime_name: str | None = None,
+        image_ref: str | None = None,
+        sandbox_command: str | None = None,
+    ):
         self._client = None
         self._semaphore: asyncio.Semaphore | None = None
+        self._runtime_name = (runtime_name or settings.sandbox_runtime).strip().lower()
+        self.image_ref = image_ref or settings.sandbox_image
+        self.sandbox_command = sandbox_command
 
     @property
     def runtime(self) -> str:
-        return settings.sandbox_runtime.strip().lower()
+        return self._runtime_name
 
     @property
     def client(self):
         if self._client is None:
             if self.runtime == "podman":
-                self._client = PodmanRuntime()
+                self._client = PodmanRuntime(self.image_ref, self.sandbox_command)
             elif self.runtime == "docker":
                 self._client = docker.from_env()
                 try:
-                    self._client.images.get(settings.sandbox_image)
+                    self._client.images.get(self.image_ref)
                 except docker.errors.ImageNotFound:
                     raise RuntimeError(
-                        f"Sandbox image '{settings.sandbox_image}' not found. "
+                        f"Sandbox image '{self.image_ref}' not found. "
                         "Run: cd backend/sandbox && docker build -t cad-agent-sandbox:latest ."
                     )
             else:
@@ -102,11 +111,16 @@ class CadQueryExecutor:
         code: str,
         mode: str = "3d",
         extra_files: dict[str, Path] | None = None,
+        timeout_s: int | None = None,
     ) -> SandboxResult:
         async with self._get_semaphore():
             loop = asyncio.get_event_loop()
+            if timeout_s is None:
+                return await loop.run_in_executor(
+                    None, self._execute_sync, code, mode, extra_files
+                )
             return await loop.run_in_executor(
-                None, self._execute_sync, code, mode, extra_files
+                None, self._execute_sync, code, mode, extra_files, timeout_s
             )
 
     def _execute_sync(
@@ -114,7 +128,9 @@ class CadQueryExecutor:
         code: str,
         mode: str = "3d",
         extra_files: dict[str, Path] | None = None,
+        timeout_s: int | None = None,
     ) -> SandboxResult:
+        effective_timeout = timeout_s or settings.sandbox_timeout_s
         work_dir = Path(tempfile.mkdtemp(prefix="cad_"))
         input_dir = work_dir / "input"
         output_dir = work_dir / "output"
@@ -153,16 +169,16 @@ class CadQueryExecutor:
 
         if self.runtime == "podman":
             try:
-                returncode, stdout, stderr = client.run(input_dir, output_dir, settings.sandbox_timeout_s)
+                returncode, stdout, stderr = client.run(input_dir, output_dir, effective_timeout)
             except subprocess.TimeoutExpired:
                 elapsed = int((time.time() - start_time) * 1000)
                 return SandboxResult(
                     success=False, files={},
                     error_type="TimeoutError",
-                    error_message=f"Execution timed out after {settings.sandbox_timeout_s}s",
+                    error_message=f"Execution timed out after {effective_timeout}s",
                     traceback=None, execution_time_ms=elapsed, work_dir=work_dir,
                 )
-            if returncode != 0:
+            if returncode != 0 and not (output_dir / "result.json").exists():
                 elapsed = int((time.time() - start_time) * 1000)
                 return SandboxResult(
                     success=False, files={},
@@ -175,7 +191,7 @@ class CadQueryExecutor:
         try:
             try:
                 container = client.containers.run(
-                    image=settings.sandbox_image,
+                    image=self.image_ref,
                     detach=True,
                     volumes={
                         str(input_dir): {"bind": "/sandbox/input", "mode": "ro"},
@@ -213,7 +229,7 @@ class CadQueryExecutor:
 
             # Wait for completion
             try:
-                container.wait(timeout=settings.sandbox_timeout_s)
+                container.wait(timeout=effective_timeout)
             except Exception:
                 try:
                     container.kill()
@@ -224,7 +240,7 @@ class CadQueryExecutor:
                     success=False,
                     files={},
                     error_type="TimeoutError",
-                    error_message=f"Execution timed out after {settings.sandbox_timeout_s}s",
+                    error_message=f"Execution timed out after {effective_timeout}s",
                     traceback=None,
                     execution_time_ms=elapsed,
                     work_dir=work_dir,
