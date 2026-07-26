@@ -1,0 +1,86 @@
+{
+  "schema_version": "mcad-runtime-verification.v1",
+  "recorded_at": "2026-07-26T17:43:36Z",
+  "base_commit": "44500037c627847b664866bec6d034c4500c3dbe",
+  "image": {
+    "reference": "cad-agent-sandbox:m0-unified",
+    "id": "6976b38d5b26a9f0f8efbf0d3df93aa588518810d5d57d0c0d95623105aa8ff2",
+    "digest": "sha256:10aefd8fe317074026cf8689243044cef19d15150ffdcc0012a8040f88508f08",
+    "architecture": "arm64",
+    "os": "linux",
+    "size_bytes": 3431661596
+  },
+  "isolation": {
+    "network": "none",
+    "root_filesystem": "read-only",
+    "linux_capabilities": "all dropped",
+    "no_new_privileges": true,
+    "pid_limit": 512,
+    "memory_limit_mib": 1536,
+    "cpu_limit": 2
+  },
+  "runtime_probe": {
+    "status": "success",
+    "verified_operations": [
+      "cadquery_generate",
+      "build123d_generate",
+      "implicit_cad_export",
+      "step_export",
+      "stl_export",
+      "dxf_export",
+      "svg_export",
+      "png_snapshot",
+      "cad_inspect"
+    ],
+    "artifacts": {
+      "cad_snapshot_png": 18976,
+      "dxf": 15538,
+      "implicit_snapshot_png": 10145,
+      "implicit_stl": 583284,
+      "inspect_json": 390,
+      "build123d_step": 16386,
+      "cadquery_step": 20235,
+      "cadquery_stl": 26084,
+      "cadquery_svg": 11474
+    },
+    "versions": {
+      "python": "3.12.10",
+      "node": "22.17.0",
+      "cadquery": "2.8.0",
+      "build123d": "0.11.1",
+      "cadquery-ocp": "7.9.3.1.1",
+      "cadquery-ocp-proxy": "7.9.3.1.1",
+      "cadpy": "0.3.9",
+      "ezdxf": "1.4.2",
+      "numpy": "2.4.6",
+      "pillow": "11.2.1",
+      "playwright": "1.60.0",
+      "scipy": "1.18.0",
+      "trimesh": "4.12.2",
+      "vtk": "9.6.2",
+      "node_playwright": "1.60.0",
+      "three": "0.160.0",
+      "gifenc": "1.0.3"
+    }
+  },
+  "tests": {
+    "real_sandbox_and_execution": {
+      "passed": 18,
+      "failed": 0,
+      "duration_seconds": 18.39,
+      "includes": [
+        "real build123d STEP and STL export",
+        "host file access denial",
+        "network API denial",
+        "process execution denial"
+      ]
+    },
+    "module_regression": {
+      "passed": 40,
+      "failed": 0,
+      "skipped": 7,
+      "duration_seconds": 1.79
+    },
+    "git_diff_check": "passed"
+  }
+}

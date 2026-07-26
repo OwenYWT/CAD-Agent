@@ -95,7 +95,8 @@ def _startup_self_check():
             if result.returncode == 1:
                 problems.append(
                     f"Sandbox image '{settings.sandbox_image}' not found for Podman. "
-                    "Run: cd backend/sandbox && podman build -t cad-agent-sandbox:latest ."
+                    "Run: podman build -f backend/sandbox/Dockerfile "
+                    "-t cad-agent-sandbox:dev ."
                 )
             elif result.returncode != 0:
                 detail = (result.stderr or result.stdout or "未知错误").strip()[:300]
@@ -111,7 +112,8 @@ def _startup_self_check():
                 except docker.errors.ImageNotFound:
                     problems.append(
                         f"Sandbox image '{settings.sandbox_image}' not found. "
-                        "Run: cd backend/sandbox && docker build -t cad-agent-sandbox:latest ."
+                        "Run: docker build -f backend/sandbox/Dockerfile "
+                        "-t cad-agent-sandbox:dev ."
                     )
             except Exception:
                 problems.append("Docker daemon unavailable. Start Docker or set SANDBOX_RUNTIME=podman.")
@@ -148,6 +150,7 @@ async def lifespan(app: FastAPI):
     # Refuse to boot with an unsafe auth config (empty/placeholder token secret,
     # dev code exposure on). This is a hard gate, not a warning.
     settings.assert_auth_config_safe()
+    settings.assert_sandbox_config_safe()
     _cleanup_old_files()
     app.state.startup_problems = _startup_self_check()
     # Provision admin + default invite eagerly so misconfig surfaces at boot, not

@@ -1,6 +1,7 @@
 # CAD Agent — minimal single-host deploy.
-# Prereq: build the sandbox image first (the backend spawns it per generation):
-#   cd backend/sandbox && docker build -t cad-agent-sandbox:latest .
+# Prereq: build the sandbox image from the repository root (the backend spawns
+# it per generation):
+#   docker build -f backend/sandbox/Dockerfile -t cad-agent-sandbox:dev .
 # Then: docker compose up -d
 #
 # NOTE: backend mounts the host docker.sock to run sandbox containers (sibling mode).
@@ -11,8 +12,10 @@ services:
     build: ./backend
     env_file: ./backend/.env
     environment:
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT:-development}
       # the sandbox image lives on the HOST docker, reachable via the mounted socket
-      SANDBOX_IMAGE: cad-agent-sandbox:latest
+      # Production must override this with registry/path@sha256:<digest>.
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-cad-agent-sandbox:dev}
       FILE_STORAGE_DIR: /app/data/files
       HISTORY_DB_PATH: /app/data/history.db
     volumes:

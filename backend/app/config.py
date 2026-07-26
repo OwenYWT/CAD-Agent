@@ -1,8 +1,11 @@
+import re
+
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    app_environment: str = "development"
     dashscope_api_key: str | None = None
     moonshot_api_key: str | None = None
     llm_provider: str = "moonshot"
@@ -15,7 +18,7 @@ class Settings(BaseSettings):
     azure_openai_api_version: str = "2025-03-01-preview"
     sandbox_runtime: str = "docker"
     sandbox_command: str | None = None
-    sandbox_image: str = "cad-agent-sandbox:latest"
+    sandbox_image: str = "cad-agent-sandbox:dev"
     sandbox_timeout_s: int = 60
     sandbox_memory_limit: str = "512m"
     sandbox_max_concurrent: int = 4  # cap simultaneous container spawns (each = CPU+RAM)
@@ -194,6 +197,28 @@ class Settings(BaseSettings):
                 "Unsafe auth configuration (set AUTH_REQUIRED=false only for local dev):\n  - "
                 + "\n  - ".join(problems)
             )
+
+    def sandbox_config_problems(self) -> list[str]:
+        """Validate the worker image reference at the deployment boundary.
+
+        Local development may use a human-readable tag while production-like
+        environments must identify the exact OCI manifest that was validated.
+        """
+        environment = self.app_environment.strip().lower()
+        if environment in {"development", "dev", "local", "test"}:
+            return []
+        if not re.fullmatch(r"[^@\s]+@sha256:[0-9a-f]{64}", self.sandbox_image.strip()):
+            return [
+                "SANDBOX_IMAGE must use an immutable digest outside local development "
+                "(for example registry.example/cad-agent-sandbox@sha256:<64 hex chars>); "
+                "mutable tags such as latest are not allowed."
+            ]
+        return []
+
+    def assert_sandbox_config_safe(self) -> None:
+        problems = self.sandbox_config_problems()
+        if problems:
+            raise RuntimeError("Unsafe sandbox configuration:\n  - " + "\n  - ".join(problems))
 
     def sms_config_problem(self) -> str | None:
         if not self.auth_required:

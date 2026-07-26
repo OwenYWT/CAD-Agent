@@ -40,7 +40,8 @@ class PodmanRuntime:
         if result.returncode != 0:
             raise RuntimeError(
                 f"Sandbox image '{self.image_ref}' not found for Podman. "
-                "Run: cd backend/sandbox && podman build -t cad-agent-sandbox:latest ."
+                "Run: podman build -f backend/sandbox/Dockerfile "
+                "-t cad-agent-sandbox:dev ."
             )
 
     def run(self, input_dir: Path, output_dir: Path, timeout_s: int) -> tuple[int, str, str]:
@@ -91,7 +92,8 @@ class CadQueryExecutor:
                 except docker.errors.ImageNotFound:
                     raise RuntimeError(
                         f"Sandbox image '{self.image_ref}' not found. "
-                        "Run: cd backend/sandbox && docker build -t cad-agent-sandbox:latest ."
+                        "Run: docker build -f backend/sandbox/Dockerfile "
+                        "-t cad-agent-sandbox:dev ."
                     )
             else:
                 raise RuntimeError(
