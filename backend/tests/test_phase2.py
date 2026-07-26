@@ -186,6 +186,30 @@ def test_cad_renderer_init():
     assert renderer is not None
 
 
+def test_cad_renderer_writes_four_real_views(tmp_path):
+    import trimesh
+    from PIL import Image, ImageStat
+
+    from app.rendering.renderer import CADRenderer
+
+    stl_path = tmp_path / "box.stl"
+    trimesh.creation.box(extents=(20, 10, 5)).export(stl_path)
+
+    rendered = CADRenderer().render_stl(stl_path, tmp_path / "renders")
+
+    assert {path.name for path in rendered} == {
+        "front.png",
+        "right.png",
+        "top.png",
+        "isometric.png",
+    }
+    for path in rendered:
+        with Image.open(path) as image:
+            assert image.size == (512, 512)
+            assert image.format == "PNG"
+            assert ImageStat.Stat(image.convert("RGB")).var != [0.0, 0.0, 0.0]
+
+
 # === DXF renderer ===
 
 def test_dxf_renderer_import():

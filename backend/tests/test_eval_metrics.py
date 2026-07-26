@@ -181,6 +181,78 @@ def test_extract_assembly_should_not_be_printable():
     assert m["passed"] is True
 
 
+# --- immutable artifact gate -------------------------------------------------
+
+def test_artifact_gate_requires_all_real_3d_evidence():
+    row = {"passed": True}
+    evidence = {
+        "step_readable": True,
+        "stl_readable": True,
+        "geometry_nonempty": True,
+        "rendered_views": 4,
+    }
+
+    gated = M.apply_artifact_gate(row, {"path": "extrude_cut"}, evidence)
+
+    assert gated["passed"] is True
+    assert gated["artifact_gate"]["passed"] is True
+
+
+@pytest.mark.parametrize(
+    ("missing_key", "value"),
+    [
+        ("step_readable", False),
+        ("stl_readable", False),
+        ("geometry_nonempty", False),
+        ("rendered_views", 3),
+    ],
+)
+def test_artifact_gate_rejects_false_success_for_3d(missing_key, value):
+    evidence = {
+        "step_readable": True,
+        "stl_readable": True,
+        "geometry_nonempty": True,
+        "rendered_views": 4,
+    }
+    evidence[missing_key] = value
+
+    gated = M.apply_artifact_gate({"passed": True}, {"path": "extrude_cut"}, evidence)
+
+    assert gated["passed"] is False
+    assert gated["artifact_gate"]["passed"] is False
+
+
+def test_artifact_gate_requires_parseable_dxf_for_2d():
+    accepted = M.apply_artifact_gate(
+        {"passed": True},
+        {"path": "2d"},
+        {"dxf_readable": True},
+    )
+    rejected = M.apply_artifact_gate(
+        {"passed": True},
+        {"path": "2d"},
+        {"dxf_readable": False},
+    )
+
+    assert accepted["passed"] is True
+    assert rejected["passed"] is False
+
+
+def test_artifact_gate_never_turns_failed_geometry_into_success():
+    gated = M.apply_artifact_gate(
+        {"passed": False},
+        {"path": "extrude_cut"},
+        {
+            "step_readable": True,
+            "stl_readable": True,
+            "geometry_nonempty": True,
+            "rendered_views": 4,
+        },
+    )
+
+    assert gated["passed"] is False
+
+
 # --- aggregation --------------------------------------------------------------
 
 def _row(passed, verdict_pass=None, printable=None, one_shot=False, attempts=1, wall=100):

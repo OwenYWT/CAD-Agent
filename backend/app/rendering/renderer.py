@@ -1,9 +1,22 @@
-import math
+import logging
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+_RENDER_CACHE_DIR = Path(tempfile.gettempdir()) / "cad-agent-render-cache"
+os.environ.setdefault("MPLCONFIGDIR", str(_RENDER_CACHE_DIR / "matplotlib"))
+os.environ.setdefault("XDG_CACHE_HOME", str(_RENDER_CACHE_DIR))
+
+import matplotlib
 import numpy as np
 import trimesh
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -31,66 +44,58 @@ class CADRenderer:
     ) -> list[Path]:
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        mesh = trimesh.load(stl_path)
+        mesh = trimesh.load(stl_path, force="mesh")
+        if not isinstance(mesh, trimesh.Trimesh) or mesh.is_empty:
+            raise ValueError(f"STL contains no renderable mesh: {stl_path}")
         mesh.apply_translation(-mesh.centroid)
-
-        auto_distance = float(max(mesh.bounding_box.extents) * 2.5)
 
         result_paths = []
         for angle in angles:
-            distance = angle.distance if angle.distance > 0 else auto_distance
-
-            # Compute camera position from spherical coordinates
-            elev_rad = math.radians(angle.elevation)
-            azim_rad = math.radians(angle.azimuth)
-
-            cam_x = distance * math.cos(elev_rad) * math.sin(azim_rad)
-            cam_y = distance * math.cos(elev_rad) * math.cos(azim_rad)
-            cam_z = distance * math.sin(elev_rad)
-
-            scene = trimesh.Scene(mesh)
-
-            # Build camera transform: look from (cam_x, cam_y, cam_z) toward origin
-            camera_pos = np.array([cam_x, cam_y, cam_z])
-            target = np.array([0.0, 0.0, 0.0])
-            up = np.array([0.0, 0.0, 1.0])
-
-            # Compute look-at transform
-            forward = target - camera_pos
-            forward = forward / np.linalg.norm(forward)
-
-            right = np.cross(forward, up)
-            if np.linalg.norm(right) < 1e-6:
-                # Camera is looking straight down or up
-                up = np.array([0.0, 1.0, 0.0])
-                right = np.cross(forward, up)
-            right = right / np.linalg.norm(right)
-
-            cam_up = np.cross(right, forward)
-            cam_up = cam_up / np.linalg.norm(cam_up)
-
-            # Camera transform matrix (4x4)
-            transform = np.eye(4)
-            transform[:3, 0] = right
-            transform[:3, 1] = cam_up
-            transform[:3, 2] = -forward
-            transform[:3, 3] = camera_pos
-
-            scene.camera_transform = transform
-
             out_path = output_dir / f"{angle.name}.png"
+            figure = plt.figure(figsize=(5.12, 5.12), dpi=100, facecolor="#f8fafc")
             try:
-                png_data = scene.save_image(resolution=(512, 512), visible=False)
-                if png_data and len(png_data) > 100:
-                    with open(out_path, "wb") as f:
-                        f.write(png_data)
+                axis = figure.add_subplot(111, projection="3d")
+                triangles = mesh.vertices[mesh.faces]
+                collection = Poly3DCollection(
+                    triangles,
+                    facecolor="#b8c6d1",
+                    edgecolor="#52606d",
+                    linewidth=0.18,
+                    alpha=1.0,
+                )
+                axis.add_collection3d(collection)
+
+                bounds = mesh.bounds
+                center = bounds.mean(axis=0)
+                extents = np.maximum(bounds[1] - bounds[0], 1e-3)
+                radius = float(max(extents) * 0.58)
+                axis.set_xlim(center[0] - radius, center[0] + radius)
+                axis.set_ylim(center[1] - radius, center[1] + radius)
+                axis.set_zlim(center[2] - radius, center[2] + radius)
+                axis.set_box_aspect((1, 1, 1))
+                axis.set_proj_type("ortho")
+                axis.view_init(elev=angle.elevation, azim=angle.azimuth)
+                axis.set_axis_off()
+                figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
+                figure.savefig(
+                    out_path,
+                    format="png",
+                    dpi=100,
+                    facecolor=figure.get_facecolor(),
+                )
+                if out_path.stat().st_size > 100:
                     result_paths.append(out_path)
                 else:
-                    # Empty or trivially small render — treat as failure, skip this angle
-                    pass
-            except Exception:
-                # Render failed for this angle (e.g., no display available)
-                # Do NOT create a placeholder — skip this angle entirely
-                pass
+                    out_path.unlink(missing_ok=True)
+            except Exception as exc:
+                out_path.unlink(missing_ok=True)
+                logger.warning(
+                    "CAD render failed for %s view of %s: %s",
+                    angle.name,
+                    stl_path,
+                    exc,
+                )
+            finally:
+                plt.close(figure)
 
         return result_paths
