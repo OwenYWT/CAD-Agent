@@ -1,7 +1,13 @@
 """Tests for LLM provider configuration."""
 
+from types import SimpleNamespace
+
+import httpx
+import pytest
+from openai import APIConnectionError, RateLimitError
+
 from app.config import Settings
-from app.llm import build_chat_params, create_llm_client
+from app.llm import ChatCompletionAdapter, build_chat_params, create_llm_client
 
 
 def test_azure_credentials_are_detected():
@@ -57,6 +63,7 @@ def test_moonshot_client_uses_async_openai():
 
     assert client.raw_client.__class__.__name__ == "AsyncOpenAI"
     assert str(client.raw_client.base_url).startswith("https://api.moonshot.cn/v1")
+    assert client.raw_client.max_retries == 0
 
 
 def test_gpt5_uses_max_completion_tokens_and_reasoning_effort():
@@ -103,3 +110,61 @@ def test_moonshot_drops_temperature_param():
     assert params["max_completion_tokens"] == 1234
     assert "max_tokens" not in params
     assert "temperature" not in params
+
+
+@pytest.mark.asyncio
+async def test_chat_adapter_never_retries_quota_failure():
+    request = httpx.Request("POST", "https://api.example.test/v1/chat/completions")
+    response = httpx.Response(429, request=request)
+
+    class QuotaCompletions:
+        calls = 0
+
+        async def create(self, **_kwargs):
+            self.calls += 1
+            raise RateLimitError(
+                "insufficient balance",
+                response=response,
+                body={"error": {"type": "exceeded_current_quota_error"}},
+            )
+
+    raw = QuotaCompletions()
+    adapter = ChatCompletionAdapter(
+        raw,
+        Settings(_env_file=None, llm_max_retries=2),
+    )
+
+    with pytest.raises(RateLimitError):
+        await adapter.create(
+            model="qwen-plus",
+            messages=[{"role": "user", "content": "hello"}],
+        )
+    assert raw.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_chat_adapter_retries_transient_connection_failure_with_bound():
+    request = httpx.Request("POST", "https://api.example.test/v1/chat/completions")
+
+    class TransientCompletions:
+        calls = 0
+
+        async def create(self, **_kwargs):
+            self.calls += 1
+            if self.calls < 3:
+                raise APIConnectionError(request=request)
+            return SimpleNamespace(choices=[])
+
+    raw = TransientCompletions()
+    adapter = ChatCompletionAdapter(
+        raw,
+        Settings(_env_file=None, llm_max_retries=2),
+    )
+
+    result = await adapter.create(
+        model="qwen-plus",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    assert result.choices == []
+    assert raw.calls == 3

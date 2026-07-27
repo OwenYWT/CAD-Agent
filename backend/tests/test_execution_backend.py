@@ -6,9 +6,15 @@ from pathlib import Path
 import pytest
 
 from app.execution.backend import MaterializedExecutionOutcome
-from app.execution.compat_executor import CompatibilityExecutor
+from app.execution.compat_executor import (
+    CompatibilityExecutor,
+    _normalized_error_type,
+)
 from app.execution.contracts import (
     ArtifactInput,
+    ExecutionError,
+    ExecutionErrorCategory,
+    ExecutionResult,
     ExecutionSource,
     ExecutionSpec,
     ExecutionStatus,
@@ -25,6 +31,40 @@ from app.sandbox.executor import SandboxResult
 
 
 IMAGE_DIGEST = f"sha256:{'b' * 64}"
+
+
+@pytest.mark.parametrize(
+    ("status", "category", "runtime_type", "expected"),
+    [
+        (ExecutionStatus.FAILED, ExecutionErrorCategory.INFRASTRUCTURE, "SandboxUnavailable", "SandboxUnavailable"),
+        (ExecutionStatus.FAILED, ExecutionErrorCategory.INFRASTRUCTURE, "DockerError", "ContainerLaunchError"),
+        (ExecutionStatus.TIMED_OUT, ExecutionErrorCategory.TIMEOUT, "TimeoutError", "ExecutionTimeout"),
+        (ExecutionStatus.OOM, ExecutionErrorCategory.RESOURCE, "MemoryError", "ExecutionOOM"),
+        (ExecutionStatus.FAILED, ExecutionErrorCategory.USER_CODE, "SyntaxError", "InvalidCode"),
+        (ExecutionStatus.FAILED, ExecutionErrorCategory.CAD_KERNEL, "StandardFailure", "CADKernelError"),
+        (ExecutionStatus.ARTIFACT_REJECTED, ExecutionErrorCategory.ARTIFACT, None, "ArtifactRejected"),
+        (ExecutionStatus.CANCELLED, ExecutionErrorCategory.CANCELLATION, None, "ExecutionCancelled"),
+    ],
+)
+def test_compatibility_boundary_normalizes_execution_failures(
+    status,
+    category,
+    runtime_type,
+    expected,
+):
+    evidence = {"runtime_error_type": runtime_type} if runtime_type else {}
+    result = ExecutionResult(
+        execution_attempt_id="attempt-normalized-error",
+        status=status,
+        error=ExecutionError(
+            category=category,
+            code="normalized_test",
+            message="failure",
+            evidence=evidence,
+        ),
+    )
+
+    assert _normalized_error_type(result) == expected
 
 
 def _spec(code: str = "result = cq.Workplane('XY').box(1, 1, 1)", **updates):
@@ -100,6 +140,25 @@ def _successful_sandbox(tmp_path: Path):
         execution_time_ms=17,
         work_dir=work_dir,
     )
+
+
+@pytest.mark.asyncio
+async def test_compatibility_executor_normalizes_runtime_probe_failure(tmp_path):
+    class UnavailableBackend:
+        def runtime_snapshot(self):
+            raise RuntimeError("podman socket secret-detail unavailable")
+
+        async def execute(self, *_args, **_kwargs):
+            pytest.fail("execution must not be submitted without a runtime snapshot")
+
+    result = await CompatibilityExecutor(UnavailableBackend()).execute(
+        "result = cq.Workplane('XY').box(1, 1, 1)"
+    )
+
+    assert result.success is False
+    assert result.error_type == "SandboxUnavailable"
+    assert "MCAD execution runtime is unavailable" in result.error_message
+    assert result.work_dir.is_dir()
 
 
 @pytest.mark.asyncio

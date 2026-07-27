@@ -112,7 +112,36 @@
         "provider": "moonshot",
         "provider_http_status": 429,
         "reason": "insufficient balance",
-        "api_error_mapping_pending_task": 6
+        "api_http_status": 503,
+        "api_error_type": "ProviderQuotaError",
+        "provider_requests_per_api_call": 1,
+        "public_message_redacted": true,
+        "application_log_redacted": true
+      },
+      "runtime_unavailable": {
+        "ready_http_status": 503,
+        "execute_http_status": 500,
+        "error_type": "SandboxUnavailable",
+        "attempts": 1,
+        "llm_repairs": 0
+      }
+    },
+    "failure_normalization": {
+      "unit": {
+        "passed": 102,
+        "failed": 0,
+        "skipped": 1
+      },
+      "real_podman": {
+        "passed": 1,
+        "failed": 0,
+        "duration_seconds": 11.19,
+        "verified": [
+          "InvalidCode",
+          "CADKernelError",
+          "ExecutionTimeout",
+          "ExecutionOOM"
+        ]
       }
     },
     "git_diff_check": "passed"

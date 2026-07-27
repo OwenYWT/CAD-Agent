@@ -7,6 +7,7 @@ import time
 from app.agent.design_brief import ensure_design_brief
 from app.agent.prompts import PLANNER_SYSTEM_PROMPT
 from app.config import settings, make_llm_client
+from app.llm import find_provider_exception
 from app.models.schemas import CADPlan, ModificationPlan
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,12 @@ class Planner:
                 # Missing credentials / unrecoverable config — propagate, don't mask.
                 raise
             except Exception as e:
+                if find_provider_exception(e) is not None:
+                    logger.warning(
+                        "Planner provider request is non-retryable: %s",
+                        type(e).__name__,
+                    )
+                    raise
                 # Recoverable: malformed JSON, schema validation, transient API errors.
                 # Log unexpected types with traceback so real bugs aren't hidden.
                 if isinstance(e, (json.JSONDecodeError, ValueError, TypeError)):
@@ -140,6 +147,12 @@ class Planner:
             except RuntimeError:
                 raise
             except Exception as e:
+                if find_provider_exception(e) is not None:
+                    logger.warning(
+                        "Modification planner provider request is non-retryable: %s",
+                        type(e).__name__,
+                    )
+                    raise
                 if isinstance(e, (json.JSONDecodeError, ValueError, TypeError)):
                     logger.warning(f"Modification planner attempt {attempt + 1} parse/validation failed: {e}")
                 else:

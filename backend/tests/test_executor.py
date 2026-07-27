@@ -225,3 +225,24 @@ class TestPodmanRuntime:
                 _ = CadQueryExecutor().client
         finally:
             settings.sandbox_runtime = original_runtime
+
+    def test_podman_exit_137_is_reported_as_oom(self, monkeypatch):
+        from app.config import settings
+        import app.sandbox.executor as executor_module
+
+        original_runtime = settings.sandbox_runtime
+        settings.sandbox_runtime = "podman"
+
+        def fake_run(cmd, capture_output=True, text=True, timeout=None):
+            if cmd[:3] == ["podman", "image", "exists"]:
+                return MagicMock(returncode=0, stdout="", stderr="")
+            return MagicMock(returncode=137, stdout="", stderr="Killed")
+
+        monkeypatch.setattr(executor_module.subprocess, "run", fake_run)
+        try:
+            result = CadQueryExecutor()._execute_sync("code")
+        finally:
+            settings.sandbox_runtime = original_runtime
+
+        assert result.success is False
+        assert result.error_type == "OOMError"

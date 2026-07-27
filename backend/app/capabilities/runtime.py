@@ -461,7 +461,10 @@ class CapabilityRuntime:
                 action,
                 request,
                 status="failed",
-                error=f"MCAD execution could not be submitted: {exc}",
+                error=(
+                    "MCAD execution could not be submitted: "
+                    f"{type(exc).__name__}"
+                ),
             )
         finally:
             if work_dir is not None:

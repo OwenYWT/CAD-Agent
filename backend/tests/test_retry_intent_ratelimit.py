@@ -1,9 +1,16 @@
 """Tests for retry oscillation guard (#25), intent detection (#27),
 rate limiter proxy handling (#30). Hermetic."""
 import pytest
+from types import SimpleNamespace
 
 from app.config import settings
 from app.models.schemas import CADPlan
+from app.agent.multi_step import (
+    BuildPhase,
+    BuildPlan,
+    BuildStep,
+    MultiStepExecutor,
+)
 from app.agent.orchestrator import ConversationContext
 from tests.e2e_harness import build_orchestrator, patch_single_step
 
@@ -66,18 +73,115 @@ async def test_oscillation_key_normalized_on_failure_class():
 
 
 @pytest.mark.asyncio
-async def test_hard_stop_on_docker_unavailable_no_llm_burn():
-    """A1: infra failures (Docker down) are non-recoverable — abort on attempt 1 with
-    ZERO fix_error calls instead of burning MAX_RETRIES LLM round-trips."""
+@pytest.mark.parametrize(
+    "error_type",
+    [
+        "SandboxUnavailable",
+        "ContainerLaunchError",
+        "ArtifactRejected",
+        "ExecutionCancelled",
+    ],
+)
+async def test_hard_stop_execution_failures_make_one_attempt_and_no_llm_burn(
+    error_type,
+):
     orch = build_orchestrator(
-        executor_outcomes=[{"success": False, "error_type": "DockerUnavailable", "error_message": "daemon not running"}],
+        executor_outcomes=[{"success": False, "error_type": error_type, "error_message": "unrecoverable"}],
         fix_queue=[f"v{i} = {i}" for i in range(10)],
     )
     r = await orch._execute_with_retry("rid", "w = 1\nresult = x\nshow_object(result)", None, ["stl"], None, "零件")
     assert r.success is False
-    assert len(orch.executor.calls) == 1          # stopped after the first failure
+    assert r.attempts == 1
+    assert len(orch.executor.calls) == 1
     visual_or_code_fixes = [c for c in orch.code_gen.fix_calls]
-    assert visual_or_code_fixes == []             # never re-prompted the LLM
+    assert visual_or_code_fixes == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", ["ExecutionTimeout", "ExecutionOOM"])
+async def test_bounded_resource_failure_gets_at_most_one_simplification(error_type):
+    orch = build_orchestrator(
+        executor_outcomes=[
+            {"success": False, "error_type": error_type, "error_message": "resource limit"},
+            {"success": False, "error_type": error_type, "error_message": "resource limit"},
+        ],
+        fix_queue=["w = 2\nresult = x\nshow_object(result)"],
+    )
+
+    result = await orch._execute_with_retry(
+        "rid",
+        "w = 1\nresult = x\nshow_object(result)",
+        None,
+        ["stl"],
+        None,
+        "零件",
+    )
+
+    assert result.success is False
+    assert result.attempts == 2
+    assert len(orch.executor.calls) == 2
+    assert len(orch.code_gen.fix_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_multi_step_stops_on_infrastructure_failure_without_llm_fix(
+    tmp_path,
+):
+    class CodeGen:
+        def __init__(self):
+            self.fix_calls = 0
+
+        async def generate_step(self, *_args, **_kwargs):
+            return "result = cq.Workplane('XY').box(1, 1, 1)"
+
+        async def fix_error(self, *_args, **_kwargs):
+            self.fix_calls += 1
+            return "result = cq.Workplane('XY').box(2, 2, 2)"
+
+    class Executor:
+        def __init__(self):
+            self.calls = 0
+
+        async def execute(self, _code):
+            self.calls += 1
+            work_dir = tmp_path / f"attempt-{self.calls}"
+            work_dir.mkdir()
+            return SimpleNamespace(
+                success=False,
+                error_type="SandboxUnavailable",
+                error_message="runtime unavailable",
+                traceback=None,
+                work_dir=work_dir,
+                execution_time_ms=1,
+            )
+
+    code_gen = CodeGen()
+    executor = Executor()
+    multi_step = MultiStepExecutor(code_gen, executor)
+    result = await multi_step.execute_plan(
+        BuildPlan(
+            steps=[
+                BuildStep(
+                    phase=BuildPhase.BASE,
+                    description="创建基础块",
+                )
+            ],
+            complexity="simple",
+        ),
+        CADPlan(
+            description="基础块",
+            part_type="box",
+            dimensions={},
+            features=[],
+        ),
+        [],
+    )
+
+    assert result.success is False
+    assert result.error["type"] == "SandboxUnavailable"
+    assert result.attempts == 1
+    assert executor.calls == 1
+    assert code_gen.fix_calls == 0
 
 
 # === #27 intent detection ===

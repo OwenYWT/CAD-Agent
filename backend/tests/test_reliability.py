@@ -143,6 +143,40 @@ async def test_planner_retries_truncated_output_with_configured_budget(monkeypat
     assert all(call["max_tokens"] == 8192 for call in completions.calls)
 
 
+@pytest.mark.asyncio
+async def test_planner_does_not_retry_nonrecoverable_provider_quota():
+    import httpx
+    from openai import RateLimitError
+    from app.agent.planner import Planner
+
+    request = httpx.Request("POST", "https://api.example.test/v1/chat/completions")
+    response = httpx.Response(429, request=request)
+
+    class QuotaCompletions:
+        def __init__(self):
+            self.calls = 0
+
+        async def create(self, **_kwargs):
+            self.calls += 1
+            raise RateLimitError(
+                "insufficient balance",
+                response=response,
+                body={"error": {"type": "exceeded_current_quota_error"}},
+            )
+
+    completions = QuotaCompletions()
+    planner = Planner()
+    planner._client = type(
+        "Client",
+        (),
+        {"chat": type("Chat", (), {"completions": completions})()},
+    )()
+
+    with pytest.raises(RateLimitError):
+        await planner.plan_new([{"role": "user", "content": "一个盒子"}])
+    assert completions.calls == 1
+
+
 # === overall deadline (#17) at the REST layer ===
 
 @pytest.mark.asyncio

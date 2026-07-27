@@ -238,6 +238,16 @@ class CadQueryExecutor:
                 )
             if returncode != 0 and not (output_dir / "result.json").exists():
                 elapsed = int((time.time() - start_time) * 1000)
+                if returncode == 137:
+                    return SandboxResult(
+                        success=False,
+                        files={},
+                        error_type="OOMError",
+                        error_message="Execution exceeded the sandbox memory limit",
+                        traceback=None,
+                        execution_time_ms=elapsed,
+                        work_dir=work_dir,
+                    )
                 return SandboxResult(
                     success=False, files={},
                     error_type="RuntimeError",
@@ -320,6 +330,17 @@ class CadQueryExecutor:
             # Wait for completion
             try:
                 container.wait(timeout=effective_timeout)
+                state = getattr(container, "attrs", {}).get("State", {})
+                if isinstance(state, dict) and state.get("OOMKilled") is True:
+                    return SandboxResult(
+                        success=False,
+                        files={},
+                        error_type="OOMError",
+                        error_message="Execution exceeded the sandbox memory limit",
+                        traceback=None,
+                        execution_time_ms=int((time.time() - start_time) * 1000),
+                        work_dir=work_dir,
+                    )
             except Exception:
                 try:
                     container.kill()

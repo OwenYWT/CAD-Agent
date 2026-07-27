@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from app.config import Settings
+from app.config import Settings, settings
+from app.execution.compat_executor import CompatibilityExecutor
+from app.execution.podman_backend import PodmanExecutionBackend
 from app.sandbox.executor import CadQueryExecutor
 
 
@@ -202,3 +204,37 @@ async def test_real_sandbox_blocks_file_network_and_process_access(
     assert result.success is False
     assert expected_error in (result.error_message or "")
     assert result.files == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("RUN_REAL_PODMAN") != "1",
+    reason="set RUN_REAL_PODMAN=1 to exercise normalized real failures",
+)
+async def test_real_execution_failures_are_normalized_and_bounded(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "sandbox_timeout_s", 10)
+    executor = CompatibilityExecutor(
+        PodmanExecutionBackend(os.environ["SANDBOX_IMAGE"])
+    )
+
+    invalid = await executor.execute("result =")
+    assert invalid.success is False
+    assert invalid.error_type == "InvalidCode"
+
+    kernel = await executor.execute(
+        "result = cq.Workplane('XY').box(10, 10, 10).edges().fillet(100)"
+    )
+    assert kernel.success is False
+    assert kernel.error_type == "CADKernelError"
+
+    monkeypatch.setattr(settings, "sandbox_timeout_s", 1)
+    timeout = await executor.execute("while True:\n    pass")
+    assert timeout.success is False
+    assert timeout.error_type == "ExecutionTimeout"
+
+    monkeypatch.setattr(settings, "sandbox_timeout_s", 10)
+    oom = await executor.execute("result = np.ones((20000, 20000))")
+    assert oom.success is False
+    assert oom.error_type == "ExecutionOOM"

@@ -115,9 +115,13 @@ def _redact(message: str | None, values: tuple[str, ...]) -> str:
 
 def _failure_mapping(result: SandboxResult) -> tuple[ExecutionStatus, ExecutionErrorCategory, str]:
     error_type = result.error_type or "ExecutionError"
+    normalized_error_type = error_type.lower()
     if error_type in {"TimeoutError", "APITimeoutError"}:
         return ExecutionStatus.TIMED_OUT, ExecutionErrorCategory.TIMEOUT, "execution_timeout"
-    if error_type in {"OOMError", "OutOfMemoryError", "MemoryError"}:
+    if (
+        error_type in {"OOMError", "OutOfMemoryError", "MemoryError"}
+        or ("memory" in normalized_error_type and "error" in normalized_error_type)
+    ):
         return ExecutionStatus.OOM, ExecutionErrorCategory.RESOURCE, "execution_oom"
     if error_type in {
         "SandboxUnavailable",

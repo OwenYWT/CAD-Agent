@@ -14,6 +14,8 @@ from app.config import settings
 from app.execution.backend import ExecutionBackend
 from app.execution.contracts import (
     ArtifactInput,
+    ExecutionErrorCategory,
+    ExecutionResult,
     ExecutionSource,
     ExecutionSpec,
     ExecutionStatus,
@@ -65,6 +67,48 @@ def _output_declarations(mode: str) -> tuple[OutputDeclaration, ...]:
     )
 
 
+def _normalized_error_type(result: ExecutionResult) -> str:
+    error = result.error
+    runtime_error_type = error.evidence.get("runtime_error_type") if error else None
+    if result.status is ExecutionStatus.TIMED_OUT:
+        return "ExecutionTimeout"
+    if result.status is ExecutionStatus.OOM:
+        return "ExecutionOOM"
+    if result.status is ExecutionStatus.CANCELLED:
+        return "ExecutionCancelled"
+    if result.status is ExecutionStatus.ARTIFACT_REJECTED:
+        return "ArtifactRejected"
+    if result.status is ExecutionStatus.LEASE_LOST:
+        return "SandboxUnavailable"
+    if error is None:
+        return "ExecutionError"
+    if error.category is ExecutionErrorCategory.INFRASTRUCTURE:
+        if runtime_error_type in {
+            "ContainerLaunchError",
+            "DockerError",
+            "PodmanError",
+        }:
+            return "ContainerLaunchError"
+        return "SandboxUnavailable"
+    if error.category in {
+        ExecutionErrorCategory.USER_INPUT,
+        ExecutionErrorCategory.USER_CODE,
+        ExecutionErrorCategory.VALIDATION,
+    }:
+        return "InvalidCode"
+    if error.category is ExecutionErrorCategory.CAD_KERNEL:
+        return "CADKernelError"
+    if error.category is ExecutionErrorCategory.ARTIFACT:
+        return "ArtifactRejected"
+    if error.category is ExecutionErrorCategory.CANCELLATION:
+        return "ExecutionCancelled"
+    if error.category is ExecutionErrorCategory.TIMEOUT:
+        return "ExecutionTimeout"
+    if error.category is ExecutionErrorCategory.RESOURCE:
+        return "ExecutionOOM"
+    return str(runtime_error_type or error.code or "ExecutionError")
+
+
 class CompatibilityExecutor:
     def __init__(self, backend: ExecutionBackend | None = None):
         self.backend = backend or _default_backend()
@@ -75,7 +119,19 @@ class CompatibilityExecutor:
         mode: str = "3d",
         extra_files: dict[str, Path] | None = None,
     ) -> SandboxResult:
-        snapshot = self.backend.runtime_snapshot()
+        try:
+            snapshot = self.backend.runtime_snapshot()
+        except Exception:
+            work_dir = Path(tempfile.mkdtemp(prefix="cad_compat_"))
+            return SandboxResult(
+                success=False,
+                files={},
+                error_type="SandboxUnavailable",
+                error_message="MCAD execution runtime is unavailable",
+                traceback=None,
+                execution_time_ms=0,
+                work_dir=work_dir,
+            )
         context = _context.get()
         local_id = str(uuid.uuid4())
         if context is None:
@@ -145,17 +201,10 @@ class CompatibilityExecutor:
             )
 
         error = outcome.result.error
-        runtime_error_type = error.evidence.get("runtime_error_type") if error else None
-        if outcome.result.status is ExecutionStatus.TIMED_OUT:
-            error_type = "TimeoutError"
-        elif outcome.result.status is ExecutionStatus.OOM:
-            error_type = "MemoryError"
-        else:
-            error_type = str(runtime_error_type or (error.code if error else "ExecutionError"))
         return SandboxResult(
             success=False,
             files={},
-            error_type=error_type,
+            error_type=_normalized_error_type(outcome.result),
             error_message=error.message if error else "Execution failed",
             traceback=None,
             execution_time_ms=execution_time,

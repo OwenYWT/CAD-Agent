@@ -7,7 +7,10 @@ from fastapi.responses import JSONResponse
 
 from app.api.websocket import _get_orchestrator
 from app.api.auth import verify_api_key, rate_limiter
-from app.api.error_messages import public_generation_error
+from app.api.error_messages import (
+    generation_error_http_status,
+    public_generation_error,
+)
 from app.config import settings
 from app.models.schemas import GenerateRequest, GenerateResponse, ModifyRequest
 from app.storage.file_ownership import claim_request_owner
@@ -49,11 +52,14 @@ async def generate(req: GenerateRequest, request: Request, api_key: str | None =
             ).model_dump(),
         )
     except Exception as e:
-        logger.exception("Generate failed")
         request_id = str(uuid.uuid4())
         error = public_generation_error(e)
+        if error["type"].startswith("Provider"):
+            logger.warning("Generate provider failure: %s", error["type"])
+        else:
+            logger.exception("Generate failed")
         return JSONResponse(
-            status_code=504 if error["type"] == "TimeoutError" else 500,
+            status_code=generation_error_http_status(error),
             content=GenerateResponse(
                 request_id=request_id,
                 success=False,
@@ -77,11 +83,14 @@ async def modify(req: ModifyRequest, request: Request, api_key: str | None = Dep
             )
         return response
     except Exception as e:
-        logger.exception("Modify failed")
         request_id = str(uuid.uuid4())
         error = public_generation_error(e)
+        if error["type"].startswith("Provider"):
+            logger.warning("Modify provider failure: %s", error["type"])
+        else:
+            logger.exception("Modify failed")
         return JSONResponse(
-            status_code=504 if error["type"] == "TimeoutError" else 500,
+            status_code=generation_error_http_status(error),
             content=GenerateResponse(
                 request_id=request_id,
                 success=False,

@@ -303,6 +303,34 @@ class Orchestrator:
                         ))
                     shutil.rmtree(part_result.work_dir, ignore_errors=True)
                 else:
+                    failure = classify(
+                        part_result.error_type,
+                        part_result.error_message,
+                        part_result.traceback,
+                        gate="exec",
+                    )
+                    if failure.fix_path is FixPath.HARD_STOP:
+                        failed_parts.append(apart.name)
+                        logger.warning(
+                            "Part %s stopped on non-recoverable failure: %s",
+                            apart.name,
+                            failure.key,
+                        )
+                        shutil.rmtree(part_result.work_dir, ignore_errors=True)
+                        clean_code = "\n".join(
+                            line
+                            for line in part_code.splitlines()
+                            if not line.strip().startswith("show_object")
+                        )
+                        part_codes.append({
+                            "name": apart.name,
+                            "description": apart.description,
+                            "code": clean_code,
+                            "position": apart.position,
+                            "color": apart.color,
+                            "status": "failed",
+                        })
+                        continue
                     if on_step:
                         await _call_step(on_step, StepUpdate(
                             step="fixing_error",
@@ -474,7 +502,16 @@ class Orchestrator:
                 logger.warning(f"Auto-DFM skipped: {e}")
 
         # Step 6: Strategy fallback — if failed, try alternative modeling approach
-        if not result.success and not is_2d and not is_assembly:
+        result_failure = classify(
+            (result.error or {}).get("type"),
+            (result.error or {}).get("message"),
+        )
+        if (
+            not result.success
+            and not is_2d
+            and not is_assembly
+            and result_failure.fix_path is not FixPath.HARD_STOP
+        ):
             alt_hint = self._get_fallback_hint(plan.modeling_hint, result.error)
             if alt_hint:
                 logger.info(f"Strategy fallback: {plan.modeling_hint} → {alt_hint}")
@@ -493,9 +530,11 @@ class Orchestrator:
                     on_step, prompt, is_2d=is_2d,
                 )
                 if fallback_result.success:
+                    fallback_result.attempts += result.attempts
                     fallback_result.plan = plan  # surface the requirement brief (A2)
                     fallback_result.recovery_actions = build_recovery_actions(fallback_result)
                     return fallback_result
+                result.attempts += fallback_result.attempts
 
         result.recovery_actions = build_recovery_actions(result)
         return result
@@ -813,6 +852,21 @@ class Orchestrator:
         # Validate the new part code
         part_result = await self.executor.execute(new_part_code)
         if not part_result.success:
+            failure = classify(
+                part_result.error_type,
+                part_result.error_message,
+                part_result.traceback,
+                gate="exec",
+            )
+            if failure.fix_path is FixPath.HARD_STOP:
+                shutil.rmtree(part_result.work_dir, ignore_errors=True)
+                return GenerationResult(
+                    success=False,
+                    error={
+                        "type": part_result.error_type or "ExecutionError",
+                        "message": part_result.error_message or "Execution failed",
+                    },
+                )
             if on_step:
                 await _call_step(on_step, StepUpdate(
                     step="fixing_error",
@@ -900,8 +954,11 @@ class Orchestrator:
         last_error_sig: str | None = None
         repeat_error_count = 0
         repair_history: list[RepairStep] = []
+        failure_retries: dict[str, int] = {}
+        last_attempt = 0
 
         for attempt in range(1, self.MAX_RETRIES + 1):
+            last_attempt = attempt
             # Validate code (import whitelist)
             is_valid, error_msg = validate_code(code)
             if not is_valid:
@@ -1158,6 +1215,15 @@ class Orchestrator:
                 logger.info(f"Non-recoverable failure ({fc.key}), stopping retries")
                 break
 
+            retries_used = failure_retries.get(fc.key, 0)
+            if fc.retry_budget is not None and retries_used >= fc.retry_budget:
+                logger.info(
+                    "Retry budget exhausted for %s (%d)",
+                    fc.key,
+                    fc.retry_budget,
+                )
+                break
+
             # Oscillation guard: normalize on the FAILURE CLASS (not the raw message tail),
             # so the same OCCT error with varying coordinates is recognized as a repeat.
             error_sig = fc.key
@@ -1198,6 +1264,7 @@ class Orchestrator:
                     },
                     plan,
                 )
+                failure_retries[fc.key] = retries_used + 1
                 # If the fixer returned identical code, further retries can't help.
                 if code.strip() == prev_code.strip():
                     logger.info("fix_error returned identical code, stopping early")
@@ -1213,7 +1280,7 @@ class Orchestrator:
                 "message": result.error_message or "Max retries exceeded",
             },
             execution_time_ms=result.execution_time_ms if result else 0,
-            attempts=self.MAX_RETRIES,
+            attempts=last_attempt,
             repair_history=repair_history,
             design_brief=plan.design_brief if plan else None,
         )
