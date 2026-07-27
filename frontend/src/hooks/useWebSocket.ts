@@ -33,12 +33,13 @@ export function useWebSocket() {
       ws.onopen = () => {
         if (disposed) return;
         setConnectionState("connected");
-        if (reconnectAttemptRef.current > 0) {
-          const state = useSessionStore.getState();
-          for (const panel of state.panels) {
-            if (panel.isGenerating) {
-              state.setError("连接中断，本次生成已丢失，请重试", panel.id);
-            }
+        const state = useSessionStore.getState();
+        for (const panel of state.panels) {
+          if (panel.isGenerating) {
+            ws.send(JSON.stringify({
+              type: "restore_task",
+              panel_id: panel.id,
+            }));
           }
         }
         reconnectAttemptRef.current = 0;
@@ -51,6 +52,8 @@ export function useWebSocket() {
             setStep(msg.data, msg.data.panel_id);
           } else if (msg.type === "generation_result") {
             setResult(msg.data, msg.data.panel_id);
+          } else if (msg.type === "task_status" && msg.data.status === "not_found") {
+            setError("未找到可恢复的任务，请重新提交", msg.data.panel_id);
           }
         } catch {
           console.error("Failed to parse WebSocket message");

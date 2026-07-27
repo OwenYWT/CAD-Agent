@@ -2,7 +2,9 @@ import asyncio
 import json
 import subprocess
 import tempfile
+import threading
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,6 +31,8 @@ class PodmanRuntime:
         # SANDBOX_COMMAND=docker must not make the Podman adapter invoke Docker.
         self.command = "podman" if configured in {"", "docker", "podman"} else configured
         self.image_ref = image_ref
+        self._active: dict[int, tuple[str, subprocess.Popen]] = {}
+        self._active_lock = threading.Lock()
         self._ensure_image_exists()
 
     def _ensure_image_exists(self):
@@ -50,6 +54,7 @@ class PodmanRuntime:
         output_dir: Path,
         timeout_s: int,
         resource_limits=None,
+        cancel_event: threading.Event | None = None,
     ) -> tuple[int, str, str]:
         if resource_limits is None:
             memory = settings.sandbox_memory_limit
@@ -67,8 +72,12 @@ class PodmanRuntime:
             )
             tmpfs_size = f"{tmpfs_bytes // (1024 * 1024)}m"
             output_bytes = resource_limits.output_bytes
+        container_name = f"cad-agent-{uuid.uuid4().hex}"
+        if cancel_event is not None and cancel_event.is_set():
+            return 130, "", "cancelled"
         cmd = [
             self.command, "run", "--rm",
+            "--name", container_name,
             "--network", "none",
             "--memory", memory,
             "--cpus", cpus,
@@ -83,8 +92,65 @@ class PodmanRuntime:
             "-v", f"{output_dir.as_posix()}:/sandbox/output:rw",
             self.image_ref,
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
-        return result.returncode, result.stdout, result.stderr
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if cancel_event is not None:
+            with self._active_lock:
+                self._active[id(cancel_event)] = (container_name, process)
+        try:
+            stdout, stderr = process.communicate(timeout=timeout_s)
+            return process.returncode, stdout, stderr
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            try:
+                process.wait(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=1)
+            self._force_remove(container_name)
+            raise
+        finally:
+            if cancel_event is not None:
+                with self._active_lock:
+                    self._active.pop(id(cancel_event), None)
+
+    def _force_remove(self, container_name: str) -> None:
+        try:
+            subprocess.run(
+                [self.command, "rm", "-f", container_name],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+        except Exception:
+            # The container may already have exited and --rm may already have
+            # removed it.  The original execution result remains authoritative.
+            pass
+
+    def cancel(self, cancel_event: threading.Event) -> None:
+        """Stop the one physical container associated with this execution."""
+        cancel_event.set()
+        active = None
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline:
+            with self._active_lock:
+                active = self._active.get(id(cancel_event))
+            if active is not None:
+                break
+            time.sleep(0.01)
+        if active is not None:
+            container_name, process = active
+            process.terminate()
+            try:
+                process.wait(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=1)
+            self._force_remove(container_name)
 
 
 class CadQueryExecutor:
@@ -143,24 +209,53 @@ class CadQueryExecutor:
     ) -> SandboxResult:
         async with self._get_semaphore():
             loop = asyncio.get_event_loop()
-            if timeout_s is None and task is None and resource_limits is None:
-                return await loop.run_in_executor(
+            cancel_event = threading.Event() if self.runtime == "podman" else None
+            if (
+                cancel_event is None
+                and timeout_s is None
+                and task is None
+                and resource_limits is None
+            ):
+                execution = loop.run_in_executor(
                     None,
                     self._execute_sync,
                     code,
                     mode,
                     extra_files,
                 )
-            return await loop.run_in_executor(
-                None,
-                self._execute_sync,
-                code,
-                mode,
-                extra_files,
-                timeout_s,
-                task,
-                resource_limits,
-            )
+            else:
+                execution = loop.run_in_executor(
+                    None,
+                    self._execute_sync,
+                    code,
+                    mode,
+                    extra_files,
+                    timeout_s,
+                    task,
+                    resource_limits,
+                    cancel_event,
+                )
+            if cancel_event is None:
+                return await execution
+            try:
+                # Shield keeps the thread future alive long enough for us to stop
+                # the physical container and wait for the Podman CLI to return.
+                return await asyncio.shield(execution)
+            except asyncio.CancelledError:
+                cancellation = loop.run_in_executor(
+                    None,
+                    self.client.cancel,
+                    cancel_event,
+                )
+                try:
+                    await asyncio.shield(cancellation)
+                except asyncio.CancelledError:
+                    pass
+                try:
+                    await asyncio.shield(execution)
+                except (asyncio.CancelledError, Exception):
+                    pass
+                raise
 
     def _execute_sync(
         self,
@@ -170,6 +265,7 @@ class CadQueryExecutor:
         timeout_s: int | None = None,
         task: dict | None = None,
         resource_limits=None,
+        cancel_event: threading.Event | None = None,
     ) -> SandboxResult:
         effective_timeout = timeout_s or settings.sandbox_timeout_s
         work_dir = Path(tempfile.mkdtemp(prefix="cad_"))
@@ -227,6 +323,7 @@ class CadQueryExecutor:
                     output_dir,
                     effective_timeout,
                     resource_limits,
+                    cancel_event,
                 )
             except subprocess.TimeoutExpired:
                 elapsed = int((time.time() - start_time) * 1000)

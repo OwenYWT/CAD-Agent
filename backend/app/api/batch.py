@@ -6,15 +6,12 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app.agent.orchestrator import Orchestrator
 from app.api.auth import verify_api_key, rate_limiter
 from app.models.schemas import GenerateResponse, ManufacturingProfile
 from app.storage.file_ownership import claim_request_owner
+from app.workflows.local import get_local_workflow_manager
 
 router = APIRouter(prefix="/api", tags=["batch"])
-
-# In-memory task store (production would use Redis/DB)
-_tasks: dict[str, dict] = {}
 
 
 # ── Request/Response Models ────────────────────────────────
@@ -115,19 +112,33 @@ async def generate_async(
     request: Request,
     api_key: str | None = Depends(verify_api_key),
 ):
-    """异步生成 — 立即返回 task_id，后台执行"""
+    """异步生成 — 状态持久化，计算在当前 API 进程中后台执行。"""
     await rate_limiter.check(request, api_key)
 
-    task_id = str(uuid.uuid4())
+    from app.api.websocket import _get_orchestrator
 
-    _tasks[task_id] = {
-        "status": "pending",
-        "result": None,
-        "owner": api_key,
-    }
+    orchestrator = _get_orchestrator()
 
-    # Launch background task
-    asyncio.create_task(_run_async_generate(task_id, req, api_key))
+    async def runner(on_progress):
+        kwargs = {}
+        if req.manufacturing_profile is not None:
+            kwargs["manufacturing_profile"] = req.manufacturing_profile
+        result = await orchestrator.generate(
+            prompt=req.prompt,
+            output_formats=req.output_formats,
+            on_step=on_progress,
+            **kwargs,
+        )
+        claim_request_owner(result.request_id, api_key)
+        return result
+
+    manager = get_local_workflow_manager()
+    task_id = await manager.submit(
+        kind="generate",
+        owner=api_key,
+        request=req.model_dump(mode="json"),
+        runner=runner,
+    )
 
     return AsyncTaskStatus(task_id=task_id, status="pending")
 
@@ -138,42 +149,27 @@ async def get_task_status(
     api_key: str | None = Depends(verify_api_key),
 ):
     """查询异步任务状态"""
-    task = _tasks.get(task_id)
-    if task is None or task.get("owner") != api_key:
+    task = await get_local_workflow_manager().get(task_id, owner=api_key)
+    if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    status = {
+        "PENDING": "pending",
+        "RUNNING": "running",
+        "INTERRUPTED": "running",
+        "RECONCILING": "running",
+        "CANCEL_REQUESTED": "running",
+        "COMPLETED": "completed",
+        "FAILED": "failed",
+        "CANCELLED": "failed",
+    }[task["state"]]
+    result = (
+        GenerateResponse.model_validate(task["result"])
+        if task["result"] is not None
+        else None
+    )
     return AsyncTaskStatus(
         task_id=task_id,
-        status=task["status"],
-        result=task["result"],
+        status=status,
+        result=result,
     )
-
-
-async def _run_async_generate(
-    task_id: str,
-    req: AsyncGenerateRequest,
-    principal: str | None,
-):
-    """后台执行生成任务"""
-    _tasks[task_id]["status"] = "running"
-
-    try:
-        orchestrator = Orchestrator()
-        kwargs = {}
-        if req.manufacturing_profile is not None:
-            kwargs["manufacturing_profile"] = req.manufacturing_profile
-        result = await orchestrator.generate(
-            prompt=req.prompt,
-            output_formats=req.output_formats,
-            **kwargs,
-        )
-        claim_request_owner(result.request_id, principal)
-        _tasks[task_id]["status"] = "completed"
-        _tasks[task_id]["result"] = result
-    except Exception as e:
-        _tasks[task_id]["status"] = "failed"
-        _tasks[task_id]["result"] = GenerateResponse(
-            request_id=task_id,
-            success=False,
-            error={"type": type(e).__name__, "message": str(e)},
-        )

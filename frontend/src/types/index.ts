@@ -270,6 +270,14 @@ export interface Annotation3D {
 export type WSMessage =
   | { type: "step_update"; data: StepUpdate & { panel_id?: string } }
   | { type: "generation_result"; data: GenerationResult & { panel_id?: string } }
+  | {
+      type: "task_status";
+      data: {
+        task_id?: string | null;
+        panel_id?: string;
+        status: string;
+      };
+    }
   | { type: "assistant_message"; data: { content: string } };
 
 export type CapabilityId =

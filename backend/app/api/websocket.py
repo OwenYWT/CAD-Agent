@@ -1,3 +1,5 @@
+import asyncio
+import hashlib
 import logging
 import re
 
@@ -7,8 +9,9 @@ from app.agent.orchestrator import ConversationContext, Orchestrator
 from app.api.auth import verify_ws_token, get_ws_user_id, rate_limiter
 from app.api.error_messages import public_generation_error
 from app.models.schemas import StepUpdate
-from app.storage import history
+from app.storage import history, local_runs
 from app.storage.file_ownership import claim_request_owner
+from app.workflows.local import LocalWorkflowOutcome, get_local_workflow_manager
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +28,10 @@ _SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9\-]{1,128}$")
 
 # Shared orchestrator singleton
 _orchestrator: Orchestrator | None = None
+
+
+def _workflow_scope(session_id: str, panel_id: str) -> str:
+    return f"ws:{session_id}:{panel_id}"
 
 
 def _get_orchestrator() -> Orchestrator:
@@ -74,13 +81,57 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()
 
     orchestrator = _get_orchestrator()
+    workflow_manager = get_local_workflow_manager()
+    send_lock = asyncio.Lock()
+    delivery_tasks: set[asyncio.Task] = set()
 
-    async def make_on_step(panel_id: str):
+    async def send_json(message: dict) -> None:
+        async with send_lock:
+            await websocket.send_json(message)
+
+    async def make_on_step(panel_id: str, task_ref: dict | None = None):
         async def on_step(step: StepUpdate):
             payload = step.model_dump()
             payload["panel_id"] = panel_id
-            await websocket.send_json({"type": "step_update", "data": payload})
+            if task_ref and task_ref.get("id"):
+                payload["task_id"] = task_ref["id"]
+            await send_json({"type": "step_update", "data": payload})
         return on_step
+
+    def launch_result_delivery(
+        task_id: str,
+        panel_id: str,
+        *,
+        progress_delivery=None,
+    ) -> None:
+        async def deliver() -> None:
+            try:
+                result_data = await workflow_manager.wait(task_id, owner=principal)
+                result_data = dict(result_data)
+                result_data["panel_id"] = panel_id
+                result_data["task_id"] = task_id
+                await send_json({
+                    "type": "generation_result",
+                    "data": result_data,
+                })
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # The terminal result is durable before this delivery begins.
+                logger.info("Result delivery stopped for workflow %s", task_id)
+            finally:
+                if progress_delivery is not None:
+                    workflow_manager.detach_progress_delivery(
+                        task_id,
+                        progress_delivery,
+                    )
+
+        delivery_task = asyncio.create_task(
+            deliver(),
+            name=f"ws-result-delivery:{task_id}",
+        )
+        delivery_tasks.add(delivery_task)
+        delivery_task.add_done_callback(delivery_tasks.discard)
 
     try:
         while True:
@@ -88,7 +139,13 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             msg_type = data.get("type")
             panel_id = data.get("panel_id", "default")
 
-            if msg_type in {"user_message", "modify_part", "execute_code"}:
+            if msg_type in {
+                "user_message",
+                "modify_part",
+                "execute_code",
+                "restore_task",
+                "cancel",
+            }:
                 if not await history.panel_writable_by_session(panel_id, session_id, user_id):
                     await websocket.close(code=4003, reason="Panel belongs to another session")
                     return
@@ -97,7 +154,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             try:
                 await rate_limiter.check(websocket, token)
             except Exception:
-                await websocket.send_json({
+                await send_json({
                     "type": "generation_result",
                     "data": {
                         "success": False,
@@ -112,7 +169,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 capability = data.get("capability", "auto")
                 manufacturing_profile = data.get("manufacturing_profile")
                 if not text or len(text) > 10000:
-                    await websocket.send_json({
+                    await send_json({
                         "type": "generation_result",
                         "data": {
                             "success": False,
@@ -122,7 +179,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     })
                     continue
                 if capability not in {"auto", "cad", "dxf"}:
-                    await websocket.send_json({
+                    await send_json({
                         "type": "generation_result",
                         "data": {
                             "success": False,
@@ -146,77 +203,101 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     )
 
                 context = _get_context(session_id, panel_id)
-                on_step = await make_on_step(panel_id)
+                task_ref: dict[str, str] = {}
+                on_step = await make_on_step(panel_id, task_ref)
 
                 await history.create_session(session_id, title=text[:80], user_id=user_id)
                 await history.create_panel(session_id, panel_id, user_id=user_id)
                 await history.save_message(panel_id, "user", text)
 
-                try:
-                    if manufacturing_profile is not None:
-                        result = await orchestrator.handle_message(
-                            context,
-                            effective_text,
-                            on_step=on_step,
-                            manufacturing_profile=manufacturing_profile,
+                async def run_generation(progress):
+                    try:
+                        if manufacturing_profile is not None:
+                            result = await orchestrator.handle_message(
+                                context,
+                                effective_text,
+                                on_step=progress,
+                                manufacturing_profile=manufacturing_profile,
+                            )
+                        else:
+                            result = await orchestrator.handle_message(
+                                context, effective_text, on_step=progress
+                            )
+                        result_data = result.model_dump(mode="json")
+                    except Exception as exc:
+                        logger.error(
+                            "Generation failed for %s/%s with %s",
+                            session_id,
+                            panel_id,
+                            type(exc).__name__,
                         )
+                        result_data = {
+                            "request_id": task_ref["id"],
+                            "success": False,
+                            "error": public_generation_error(exc),
+                        }
+
+                    result_data["panel_id"] = panel_id
+                    result_data["task_id"] = task_ref["id"]
+                    claim_request_owner(result_data.get("request_id"), principal)
+                    if result_data.get("success") and result_data.get("code"):
+                        snapshot = await history.create_model_snapshot(
+                            panel_id, result_data, source="generation", prompt=text
+                        )
+                        result_data["snapshot_id"] = snapshot["id"]
+                        result_data["version"] = snapshot["version"]
+
+                    if result_data.get("needs_confirmation"):
+                        assistant_content = "设计简报需要确认"
+                    elif result_data.get("success"):
+                        assistant_content = "CAD 模型已生成"
                     else:
-                        result = await orchestrator.handle_message(
-                            context, effective_text, on_step=on_step
+                        error_message = (result_data.get("error") or {}).get(
+                            "message", "未知错误"
                         )
-                except WebSocketDisconnect:
-                    raise
-                except Exception as e:
-                    logger.error(f"Generation error for {session_id}/{panel_id}: {e}", exc_info=True)
-                    error_data = {
-                        "success": False,
-                        "error": public_generation_error(e),
-                        "panel_id": panel_id,
-                    }
+                        assistant_content = f"生成失败: {error_message}"
                     await history.save_message(
                         panel_id,
                         "assistant",
-                        f"生成失败: {error_data['error']['message']}",
-                        result=error_data,
+                        assistant_content,
+                        result=result_data,
                     )
+                    if result_data.get("success") and result_data.get("code"):
+                        params = result_data.get("params")
+                        await history.update_panel_code(
+                            panel_id,
+                            result_data["code"],
+                            params,
+                        )
                     await history.touch_session(session_id)
-                    await websocket.send_json({"type": "generation_result", "data": error_data})
-                    continue
+                    if not result_data.get("success") and result_data.get(
+                        "request_id"
+                    ) == task_ref["id"]:
+                        return LocalWorkflowOutcome(result_data, state="FAILED")
+                    return result_data
 
-                result_data = result.model_dump()
-                result_data["panel_id"] = panel_id
-                claim_request_owner(result.request_id, principal)
-                if result.success and result.code:
-                    snapshot = await history.create_model_snapshot(
-                        panel_id, result_data, source="generation", prompt=text
-                    )
-                    result_data["snapshot_id"] = snapshot["id"]
-                    result_data["version"] = snapshot["version"]
-
-                if result.needs_confirmation:
-                    assistant_content = "设计简报需要确认"
-                elif result.success:
-                    assistant_content = "CAD 模型已生成"
-                else:
-                    error_message = result.error.get("message", "") if result.error else "未知错误"
-                    assistant_content = f"生成失败: {error_message}"
-                await history.save_message(panel_id, "assistant", assistant_content, result=result_data)
-                if result.success and result.code:
-                    params_dict = (
-                        {k: v.model_dump() for k, v in result.params.items()}
-                        if result.params
-                        else None
-                    )
-                    await history.update_panel_code(panel_id, result.code, params_dict)
-                await history.touch_session(session_id)
-
-                await websocket.send_json({"type": "generation_result", "data": result_data})
+                task_id = await workflow_manager.submit(
+                    kind="generate",
+                    owner=principal,
+                    request={
+                        "session_id": session_id,
+                        "panel_id": panel_id,
+                        "text": text,
+                        "capability": capability,
+                        "manufacturing_profile": manufacturing_profile,
+                    },
+                    runner=run_generation,
+                    progress_delivery=on_step,
+                    scope_key=_workflow_scope(session_id, panel_id),
+                )
+                task_ref["id"] = task_id
+                launch_result_delivery(task_id, panel_id)
 
             elif msg_type == "modify_part":
                 part_name = data.get("part_name", "")
                 instruction = data.get("instruction", "")
                 if not part_name or not instruction or len(instruction) > 10000:
-                    await websocket.send_json({
+                    await send_json({
                         "type": "generation_result",
                         "data": {
                             "success": False,
@@ -227,7 +308,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     continue
 
                 context = _get_context(session_id, panel_id)
-                on_step = await make_on_step(panel_id)
+                task_ref: dict[str, str] = {}
+                on_step = await make_on_step(panel_id, task_ref)
 
                 # Ensure session+panel rows exist before saving a message — otherwise
                 # the FK on messages.panel_id rejects the insert. (user_message does this too.)
@@ -235,58 +317,78 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 await history.create_panel(session_id, panel_id, user_id=user_id)
                 await history.save_message(panel_id, "user", f"修改零件 {part_name}: {instruction}")
 
-                try:
-                    result = await orchestrator.modify_assembly_part(
-                        context, part_name, instruction, on_step=on_step
+                async def run_part_modification(progress):
+                    try:
+                        result = await orchestrator.modify_assembly_part(
+                            context, part_name, instruction, on_step=progress
+                        )
+                        result_data = result.model_dump(mode="json")
+                    except Exception as exc:
+                        logger.error(
+                            "Part modification failed for %s/%s with %s",
+                            session_id,
+                            panel_id,
+                            type(exc).__name__,
+                        )
+                        result_data = {
+                            "request_id": task_ref["id"],
+                            "success": False,
+                            "error": public_generation_error(exc),
+                        }
+                    result_data["panel_id"] = panel_id
+                    result_data["task_id"] = task_ref["id"]
+                    claim_request_owner(result_data.get("request_id"), principal)
+                    if result_data.get("success") and result_data.get("code"):
+                        snapshot = await history.create_model_snapshot(
+                            panel_id,
+                            result_data,
+                            source="modify_part",
+                            prompt=f"修改零件 {part_name}: {instruction}",
+                        )
+                        result_data["snapshot_id"] = snapshot["id"]
+                        result_data["version"] = snapshot["version"]
+
+                    msg_content = (
+                        f"零件 {part_name} 已修改"
+                        if result_data.get("success")
+                        else "零件修改失败: "
+                        + (result_data.get("error") or {}).get("message", "未知错误")
                     )
-                except WebSocketDisconnect:
-                    raise
-                except Exception as e:
-                    logger.error(f"modify_part error for {session_id}/{panel_id}: {e}", exc_info=True)
-                    error_data = {
-                        "success": False,
-                        "error": public_generation_error(e),
-                        "panel_id": panel_id,
-                    }
                     await history.save_message(
                         panel_id,
                         "assistant",
-                        f"零件修改失败: {error_data['error']['message']}",
-                        result=error_data,
+                        msg_content,
+                        result=result_data,
                     )
+                    if result_data.get("success") and result_data.get("code"):
+                        await history.update_panel_code(panel_id, result_data["code"])
                     await history.touch_session(session_id)
-                    await websocket.send_json({"type": "generation_result", "data": error_data})
-                    continue
+                    if not result_data.get("success") and result_data.get(
+                        "request_id"
+                    ) == task_ref["id"]:
+                        return LocalWorkflowOutcome(result_data, state="FAILED")
+                    return result_data
 
-                result_data = result.model_dump()
-                result_data["panel_id"] = panel_id
-                claim_request_owner(result.request_id, principal)
-                if result.success and result.code:
-                    snapshot = await history.create_model_snapshot(
-                        panel_id,
-                        result_data,
-                        source="modify_part",
-                        prompt=f"修改零件 {part_name}: {instruction}",
-                    )
-                    result_data["snapshot_id"] = snapshot["id"]
-                    result_data["version"] = snapshot["version"]
-
-                msg_content = (
-                    f"零件 {part_name} 已修改"
-                    if result.success
-                    else f"零件修改失败: {result.error.get('message', '') if result.error else '未知错误'}"
+                task_id = await workflow_manager.submit(
+                    kind="modify_part",
+                    owner=principal,
+                    request={
+                        "session_id": session_id,
+                        "panel_id": panel_id,
+                        "part_name": part_name,
+                        "instruction": instruction,
+                    },
+                    runner=run_part_modification,
+                    progress_delivery=on_step,
+                    scope_key=_workflow_scope(session_id, panel_id),
                 )
-                await history.save_message(panel_id, "assistant", msg_content, result=result_data)
-                if result.success and result.code:
-                    await history.update_panel_code(panel_id, result.code)
-                await history.touch_session(session_id)
-
-                await websocket.send_json({"type": "generation_result", "data": result_data})
+                task_ref["id"] = task_id
+                launch_result_delivery(task_id, panel_id)
 
             elif msg_type == "execute_code":
                 code = data.get("code", "")
                 if not code or len(code) > 50000:
-                    await websocket.send_json({
+                    await send_json({
                         "type": "generation_result",
                         "data": {
                             "success": False,
@@ -298,56 +400,77 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 context = _get_context(session_id, panel_id)
                 await history.create_session(session_id, title="", user_id=user_id)
                 await history.create_panel(session_id, panel_id, user_id=user_id)
-                try:
-                    response = await orchestrator.execute_code(code)
-                except Exception as e:
-                    logger.error(f"Execute error: {e}", exc_info=True)
-                    result_data = {
-                        "success": False,
-                        "error": public_generation_error(e),
-                        "panel_id": panel_id,
-                    }
+                task_ref: dict[str, str] = {}
+
+                async def run_code_execution(_progress):
+                    try:
+                        response = await orchestrator.execute_code(code)
+                        result_data = response.model_dump(mode="json")
+                    except Exception as exc:
+                        logger.error(
+                            "Code execution failed for %s/%s with %s",
+                            session_id,
+                            panel_id,
+                            type(exc).__name__,
+                        )
+                        result_data = {
+                            "request_id": task_ref["id"],
+                            "success": False,
+                            "error": public_generation_error(exc),
+                        }
+
+                    if result_data.get("success") and result_data.get("code"):
+                        context.current_code = result_data["code"]
+                        await history.update_panel_code(
+                            panel_id,
+                            result_data["code"],
+                            result_data.get("params"),
+                        )
+
+                    result_data["panel_id"] = panel_id
+                    result_data["task_id"] = task_ref["id"]
+                    claim_request_owner(result_data.get("request_id"), principal)
+                    if result_data.get("success") and result_data.get("code"):
+                        snapshot = await history.create_model_snapshot(
+                            panel_id,
+                            result_data,
+                            source="execute_code",
+                            prompt="manual code execution",
+                        )
+                        result_data["snapshot_id"] = snapshot["id"]
+                        result_data["version"] = snapshot["version"]
+                    assistant_content = (
+                        "参数修改已执行"
+                        if result_data.get("success")
+                        else "参数修改失败: "
+                        + (result_data.get("error") or {}).get("message", "未知错误")
+                    )
                     await history.save_message(
                         panel_id,
                         "assistant",
-                        "参数修改执行失败",
+                        assistant_content,
                         result=result_data,
                     )
                     await history.touch_session(session_id)
-                    await websocket.send_json({"type": "generation_result", "data": result_data})
-                    continue
+                    if not result_data.get("success") and result_data.get(
+                        "request_id"
+                    ) == task_ref["id"]:
+                        return LocalWorkflowOutcome(result_data, state="FAILED")
+                    return result_data
 
-                if response.success and response.code:
-                    context.current_code = response.code
-                    params_dict = (
-                        {k: v.model_dump() for k, v in response.params.items()}
-                        if response.params
-                        else None
-                    )
-                    await history.update_panel_code(panel_id, response.code, params_dict)
-
-                result_data = response.model_dump()
-                result_data["panel_id"] = panel_id
-                claim_request_owner(response.request_id, principal)
-                if response.success and response.code:
-                    snapshot = await history.create_model_snapshot(
-                        panel_id, result_data, source="execute_code", prompt="manual code execution"
-                    )
-                    result_data["snapshot_id"] = snapshot["id"]
-                    result_data["version"] = snapshot["version"]
-                assistant_content = (
-                    "参数修改已执行"
-                    if response.success
-                    else f"参数修改失败: {response.error.get('message', '') if response.error else '未知错误'}"
+                task_id = await workflow_manager.submit(
+                    kind="execute_code",
+                    owner=principal,
+                    request={
+                        "session_id": session_id,
+                        "panel_id": panel_id,
+                        "code_sha256": hashlib.sha256(code.encode("utf-8")).hexdigest(),
+                    },
+                    runner=run_code_execution,
+                    scope_key=_workflow_scope(session_id, panel_id),
                 )
-                await history.save_message(
-                    panel_id,
-                    "assistant",
-                    assistant_content,
-                    result=result_data,
-                )
-                await history.touch_session(session_id)
-                await websocket.send_json({"type": "generation_result", "data": result_data})
+                task_ref["id"] = task_id
+                launch_result_delivery(task_id, panel_id)
 
             elif msg_type == "restore_context":
                 # Restore backend context from history for a panel
@@ -357,21 +480,106 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     context.current_code = restore_code
                     logger.info(f"Restored context for {session_id}/{panel_id}")
 
+            elif msg_type == "restore_task":
+                task_id = data.get("task_id")
+                if task_id:
+                    run = await workflow_manager.get(task_id, owner=principal)
+                else:
+                    run = await workflow_manager.get_latest_for_scope(
+                        _workflow_scope(session_id, panel_id),
+                        owner=principal,
+                    )
+                if run is None:
+                    await send_json({
+                        "type": "task_status",
+                        "data": {
+                            "task_id": task_id,
+                            "panel_id": panel_id,
+                            "status": "not_found",
+                        },
+                    })
+                    continue
+
+                task_id = run["id"]
+                replay_delivery = await make_on_step(
+                    panel_id,
+                    {"id": task_id},
+                )
+                for event in await local_runs.list_events(task_id):
+                    if event["event_type"] != "progress":
+                        continue
+                    step = StepUpdate.model_validate(event["payload"])
+                    await replay_delivery(step)
+                await send_json({
+                    "type": "task_status",
+                    "data": {
+                        "task_id": task_id,
+                        "panel_id": panel_id,
+                        "status": run["state"].lower(),
+                    },
+                })
+                if run["state"] not in local_runs.TERMINAL_STATES:
+                    workflow_manager.attach_progress_delivery(
+                        task_id,
+                        replay_delivery,
+                    )
+                    launch_result_delivery(
+                        task_id,
+                        panel_id,
+                        progress_delivery=replay_delivery,
+                    )
+                else:
+                    result_data = run["result"]
+                    if result_data is not None:
+                        result_data = dict(result_data)
+                        result_data["panel_id"] = panel_id
+                        result_data["task_id"] = task_id
+                        await send_json({
+                            "type": "generation_result",
+                            "data": result_data,
+                        })
+
             elif msg_type == "cancel":
-                # Acknowledge cancel (actual cancellation is best-effort)
-                await websocket.send_json({
+                task_id = data.get("task_id")
+                if not task_id:
+                    active = await local_runs.find_latest_for_scope(
+                        _workflow_scope(session_id, panel_id),
+                        principal,
+                        active_only=True,
+                    )
+                    task_id = active["id"] if active else None
+                if task_id:
+                    cancelled = await workflow_manager.request_cancel(
+                        task_id,
+                        owner=principal,
+                    )
+                else:
+                    cancelled = False
+                await send_json({
                     "type": "generation_result",
                     "data": {
                         "success": False,
-                        "error": {"type": "Cancelled", "message": "用户取消"},
+                        "error": (
+                            {"type": "Cancelled", "message": "用户取消"}
+                            if cancelled
+                            else {
+                                "type": "TaskNotFound",
+                                "message": "没有正在运行的任务。",
+                            }
+                        ),
                         "panel_id": panel_id,
+                        "task_id": task_id,
                     },
                 })
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected: {session_id}")
     except Exception as e:
-        logger.error(f"WebSocket error for {session_id}: {e}", exc_info=True)
+        logger.error(
+            "WebSocket error for %s with %s",
+            session_id,
+            type(e).__name__,
+        )
         try:
             await websocket.close()
         except Exception:

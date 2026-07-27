@@ -4,6 +4,8 @@ timeout handling, container cleanup.
 Unit tests mock Docker — no actual container required.
 """
 import json
+import asyncio
+import threading
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -170,6 +172,39 @@ class TestMissingResult:
 # === Podman runtime ===
 
 class TestPodmanRuntime:
+    @pytest.mark.asyncio
+    async def test_cancel_waits_until_physical_podman_execution_is_stopped(self):
+        started = threading.Event()
+        physically_stopped = threading.Event()
+
+        class CancellablePodman:
+            def run(
+                self,
+                input_dir,
+                output_dir,
+                timeout_s,
+                resource_limits=None,
+                cancel_event=None,
+            ):
+                started.set()
+                cancel_event.wait(timeout=2)
+                physically_stopped.set()
+                return 130, "", "cancelled"
+
+            def cancel(self, cancel_event):
+                cancel_event.set()
+
+        executor = CadQueryExecutor(runtime_name="podman")
+        executor._client = CancellablePodman()
+        task = asyncio.create_task(executor.execute("result = None"))
+        assert await asyncio.to_thread(started.wait, 1)
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert physically_stopped.is_set()
+
     def test_podman_runtime_writes_mode_and_invokes_podman(self, monkeypatch):
         from app.config import settings
         import app.sandbox.executor as executor_module
@@ -183,16 +218,26 @@ class TestPodmanRuntime:
             calls.append(cmd)
             if cmd[:3] == ["podman", "image", "exists"]:
                 return MagicMock(returncode=0, stdout="", stderr="")
-            output_mount = next(arg for arg in cmd if arg.endswith(":/sandbox/output:rw"))
-            input_mount = next(arg for arg in cmd if arg.endswith(":/sandbox/input:ro"))
-            output_dir = Path(output_mount.removesuffix(":/sandbox/output:rw"))
-            input_dir = Path(input_mount.removesuffix(":/sandbox/input:ro"))
-            input_dirs_seen.append(input_dir)
-            output_dir.mkdir(parents=True, exist_ok=True)
-            (output_dir / "result.json").write_text(json.dumps({"status": "success", "files": {}}))
-            return MagicMock(returncode=0, stdout="ok", stderr="")
+
+        class FakePopen:
+            def __init__(self, cmd, **_kwargs):
+                calls.append(cmd)
+                output_mount = next(arg for arg in cmd if arg.endswith(":/sandbox/output:rw"))
+                input_mount = next(arg for arg in cmd if arg.endswith(":/sandbox/input:ro"))
+                output_dir = Path(output_mount.removesuffix(":/sandbox/output:rw"))
+                input_dir = Path(input_mount.removesuffix(":/sandbox/input:ro"))
+                input_dirs_seen.append(input_dir)
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "result.json").write_text(
+                    json.dumps({"status": "success", "files": {}})
+                )
+                self.returncode = 0
+
+            def communicate(self, timeout=None):
+                return "ok", ""
 
         monkeypatch.setattr(executor_module.subprocess, "run", fake_run)
+        monkeypatch.setattr(executor_module.subprocess, "Popen", FakePopen)
 
         try:
             result = CadQueryExecutor()._execute_sync("code", mode="2d")
@@ -236,9 +281,18 @@ class TestPodmanRuntime:
         def fake_run(cmd, capture_output=True, text=True, timeout=None):
             if cmd[:3] == ["podman", "image", "exists"]:
                 return MagicMock(returncode=0, stdout="", stderr="")
-            return MagicMock(returncode=137, stdout="", stderr="Killed")
+
+        class FakePopen:
+            returncode = 137
+
+            def __init__(self, cmd, **_kwargs):
+                pass
+
+            def communicate(self, timeout=None):
+                return "", "Killed"
 
         monkeypatch.setattr(executor_module.subprocess, "run", fake_run)
+        monkeypatch.setattr(executor_module.subprocess, "Popen", FakePopen)
         try:
             result = CadQueryExecutor()._execute_sync("code")
         finally:

@@ -9,6 +9,7 @@ No Docker, no LLM, no network. DB + storage isolated per test via monkeypatched
 settings. Auth is OFF by default (settings.api_keys == []).
 """
 import asyncio
+import threading
 from dataclasses import dataclass, field
 
 import pytest
@@ -16,10 +17,11 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import app.api.websocket as ws_mod
+from app.api.auth import rate_limiter
 from app.config import settings
 from app.main import app
 from app.models.schemas import GenerateResponse, GenerationResult, InspectReport, StepUpdate
-from app.storage import history
+from app.storage import history, local_runs
 
 
 # --- fake orchestrator --------------------------------------------------------
@@ -100,11 +102,13 @@ def fake_orch(tmp_path, monkeypatch):
     monkeypatch.setattr(ws_mod, "_orchestrator", orch)
     # Clear any cached per-session context from previous tests.
     ws_mod.sessions.clear()
+    rate_limiter._windows.clear()
 
     yield orch
 
     asyncio.run(history.close_db())
     ws_mod.sessions.clear()
+    rate_limiter._windows.clear()
 
 
 @pytest.fixture
@@ -265,14 +269,14 @@ def test_modify_part_valid_streams_step_then_result(client, fake_orch):
 
 # --- (5) cancel -> Cancelled result ------------------------------------------
 
-def test_cancel_returns_cancelled_result(client, fake_orch):
+def test_cancel_without_running_task_returns_not_found(client, fake_orch):
     with client.websocket_connect("/ws/sess-6") as wsk:
         wsk.send_json({"type": "cancel", "panel_id": "p9"})
         msg = wsk.receive_json()
 
     assert msg["type"] == "generation_result"
     assert msg["data"]["success"] is False
-    assert msg["data"]["error"]["type"] == "Cancelled"
+    assert msg["data"]["error"]["type"] == "TaskNotFound"
     assert msg["data"]["panel_id"] == "p9"
 
 
@@ -287,7 +291,7 @@ def test_restore_context_no_response_then_still_alive(client, fake_orch):
         msg = wsk.receive_json()
 
     assert msg["type"] == "generation_result"
-    assert msg["data"]["error"]["type"] == "Cancelled"
+    assert msg["data"]["error"]["type"] == "TaskNotFound"
     # context was actually stored on the panel
     ctx = ws_mod.sessions["sess-7"]["pr"]
     assert ctx.current_code == "result = box(1,1)"
@@ -327,3 +331,98 @@ def test_panel_id_isolation_results_echo_correct_panel(client, fake_orch):
     assert set(panels.keys()) == {"A", "B"}
     assert panels["A"] is not panels["B"]
     assert fake_orch.handle_calls == ["panel A msg", "panel B msg"]
+
+
+def test_disconnect_does_not_cancel_and_reconnect_replays_persisted_state(
+    fake_orch,
+):
+    release = threading.Event()
+
+    async def slow_handle(context, text, on_step=None):
+        fake_orch.handle_calls.append(text)
+        await on_step(StepUpdate(step="planning", message="正在规划..."))
+        while not release.is_set():
+            await asyncio.sleep(0.01)
+        # This progress delivery happens after the first client has initiated a
+        # disconnect.  Delivery failure must not cancel the workflow.
+        await on_step(StepUpdate(step="executing", message="正在执行..."))
+        return GenerationResult(
+            success=True,
+            request_id="req-reconnect",
+            files={"stl": "/api/files/req-reconnect/result.stl"},
+            code=fake_orch.code,
+            attempts=1,
+        )
+
+    fake_orch.handle_message = slow_handle
+    timer = threading.Timer(0.1, release.set)
+    # Keep one TestClient portal alive across both sockets, matching a real API
+    # process whose event loop survives browser connections.
+    with TestClient(app) as durable_client:
+        with durable_client.websocket_connect("/ws/sess-reconnect") as wsk:
+            wsk.send_json({
+                "type": "user_message",
+                "text": "make a durable box",
+                "panel_id": "p-reconnect",
+            })
+            first = wsk.receive_json()
+            assert first["type"] == "step_update"
+            timer.start()
+
+        with durable_client.websocket_connect("/ws/sess-reconnect") as wsk:
+            wsk.send_json({"type": "restore_task", "panel_id": "p-reconnect"})
+            received = [wsk.receive_json() for _ in range(4)]
+    timer.join(timeout=2)
+
+    run = asyncio.run(
+        local_runs.find_latest_for_scope(
+            "ws:sess-reconnect:p-reconnect",
+            owner=None,
+        )
+    )
+    assert run["state"] == "COMPLETED"
+    assert run["terminal_result_committed"] is True
+
+    assert received[0]["type"] == "step_update"
+    assert received[1]["type"] == "task_status"
+    assert received[1]["data"]["status"] == "running"
+    assert received[2]["type"] == "step_update"
+    assert received[3]["type"] == "generation_result"
+    assert received[3]["data"]["request_id"] == "req-reconnect"
+    assert received[3]["data"]["task_id"] == run["id"]
+
+
+def test_cancel_message_stops_the_actual_running_workflow(client, fake_orch):
+    async def never_finishes_without_cancel(context, text, on_step=None):
+        await on_step(StepUpdate(step="executing", message="正在执行..."))
+        await asyncio.Event().wait()
+
+    fake_orch.handle_message = never_finishes_without_cancel
+    with client.websocket_connect("/ws/sess-cancel-running") as wsk:
+        wsk.send_json({
+            "type": "user_message",
+            "text": "make a cancellable box",
+            "panel_id": "p-cancel-running",
+        })
+        progress = wsk.receive_json()
+        assert progress["type"] == "step_update"
+
+        wsk.send_json({"type": "cancel", "panel_id": "p-cancel-running"})
+        messages = [wsk.receive_json(), wsk.receive_json()]
+
+    error_types = {
+        message["data"]["error"]["type"]
+        for message in messages
+        if message["type"] == "generation_result"
+    }
+    assert error_types == {"Cancelled", "ExecutionCancelled"}
+
+    run = asyncio.run(
+        local_runs.find_latest_for_scope(
+            "ws:sess-cancel-running:p-cancel-running",
+            owner=None,
+        )
+    )
+    assert run["state"] == "CANCELLED"
+    assert run["cancel_requested"] is True
+    assert run["result"]["success"] is False
