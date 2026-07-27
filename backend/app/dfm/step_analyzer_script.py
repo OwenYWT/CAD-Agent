@@ -23,17 +23,18 @@ from OCP.GeomAbs import (
     GeomAbs_Sphere, GeomAbs_Torus, GeomAbs_BSplineSurface,
     GeomAbs_Circle, GeomAbs_Line,
 )
-from OCP.BRepGProp import brepgprop
+from OCP.BRepGProp import BRepGProp
 from OCP.GProp import GProp_GProps
 from OCP.TopExp import TopExp_Explorer
 from OCP.TopAbs import TopAbs_FACE, TopAbs_EDGE, TopAbs_FORWARD
+from OCP.TopoDS import TopoDS
 from OCP.BRep import BRep_Tool
 from OCP.gp import gp_Vec, gp_Dir, gp_Pnt
 from OCP.BRepMesh import BRepMesh_IncrementalMesh
-from OCP.BRepBndLib import brepbndlib
+from OCP.BRepBndLib import BRepBndLib
 from OCP.Bnd import Bnd_Box
 
-STEP_PATH = "/tmp/model.step"
+STEP_PATH = "/sandbox/input/model.step"
 
 # -- Surface type mapping --
 SURFACE_TYPE_MAP = {
@@ -54,7 +55,7 @@ def get_face_info(face, face_id, pull_dir=(0, 0, 1)):
 
     # Face area
     props = GProp_GProps()
-    brepgprop.SurfaceProperties(face, props)
+    BRepGProp.SurfaceProperties_s(face, props)
     area = props.Mass()
 
     # Face center of mass
@@ -123,7 +124,7 @@ def get_edge_info(edge, edge_id):
 
     # Edge length
     props = GProp_GProps()
-    brepgprop.LinearProperties(edge, props)
+    BRepGProp.LinearProperties_s(edge, props)
     length = props.Mass()
 
     info = {
@@ -135,6 +136,11 @@ def get_edge_info(edge, edge_id):
         circle = adaptor.Circle()
         info["edge_type"] = "arc"
         info["radius"] = round(circle.Radius(), 3)
+        # A complete circular boundary is normally the rim of a cylindrical
+        # hole/boss, not evidence of a fillet. Keep the parameter span so
+        # feature recognition can distinguish it from a partial round.
+        span = abs(adaptor.LastParameter() - adaptor.FirstParameter())
+        info["angle_span"] = round(math.degrees(min(span, 2 * math.pi)), 2)
     elif etype == GeomAbs_Line:
         info["edge_type"] = "line"
     else:
@@ -176,7 +182,11 @@ def recognize_features(faces, edges):
             })
 
     # Detect fillets: small arc edges connecting faces
-    arc_edges = [e for e in edges if e["edge_type"] == "arc"]
+    arc_edges = [
+        e
+        for e in edges
+        if e["edge_type"] == "arc" and e.get("angle_span", 360) < 359
+    ]
     fillet_radii = set()
     for edge in arc_edges:
         r = edge.get("radius", 0)
@@ -218,7 +228,7 @@ def estimate_wall_thickness_brep(shape, n_samples=100):
     explorer = TopExp_Explorer(shape, TopAbs_FACE)
     face_list = []
     while explorer.More():
-        face_list.append(explorer.Current())
+        face_list.append(TopoDS.Face_s(explorer.Current()))
         explorer.Next()
 
     if len(face_list) < 2:
@@ -229,7 +239,7 @@ def estimate_wall_thickness_brep(shape, n_samples=100):
     for i in range(0, len(face_list), step):
         face = face_list[i]
         props = GProp_GProps()
-        brepgprop.SurfaceProperties(face, props)
+        BRepGProp.SurfaceProperties_s(face, props)
         center = props.CentreOfMass()
 
         # Find distance to nearest other face
@@ -272,16 +282,16 @@ else:
 
     # Global properties
     vol_props = GProp_GProps()
-    brepgprop.VolumeProperties(solid, vol_props)
+    BRepGProp.VolumeProperties_s(solid, vol_props)
     volume = vol_props.Mass()
 
     surf_props = GProp_GProps()
-    brepgprop.SurfaceProperties(solid, surf_props)
+    BRepGProp.SurfaceProperties_s(solid, surf_props)
     surface_area = surf_props.Mass()
 
     # Bounding box
     bbox = Bnd_Box()
-    brepbndlib.Add(solid, bbox)
+    BRepBndLib.Add_s(solid, bbox)
     xmin, ymin, zmin, xmax, ymax, zmax = bbox.Get()
 
     # Analyze faces
@@ -289,7 +299,7 @@ else:
     explorer = TopExp_Explorer(solid, TopAbs_FACE)
     fid = 0
     while explorer.More():
-        face = explorer.Current()
+        face = TopoDS.Face_s(explorer.Current())
         try:
             info = get_face_info(face, fid)
             faces.append(info)
@@ -303,7 +313,7 @@ else:
     explorer = TopExp_Explorer(solid, TopAbs_EDGE)
     eid = 0
     while explorer.More():
-        edge = explorer.Current()
+        edge = TopoDS.Edge_s(explorer.Current())
         try:
             info = get_edge_info(edge, eid)
             edges.append(info)

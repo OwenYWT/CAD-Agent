@@ -21,7 +21,6 @@ from app.execution.contracts import (
     ResourceLimits,
     RuntimeRequirement,
 )
-from app.execution.podman_backend import DockerExecutionBackend, PodmanExecutionBackend
 from app.sandbox.executor import SandboxResult
 
 
@@ -50,14 +49,9 @@ def bind_execution_context(context: CompatibilityExecutionContext):
 
 
 def _default_backend():
-    runtime = settings.sandbox_runtime.strip().lower()
-    if runtime == "podman":
-        return PodmanExecutionBackend(settings.sandbox_image)
-    if runtime == "docker":
-        return DockerExecutionBackend(settings.sandbox_image)
-    raise RuntimeError(
-        f"Unsupported SANDBOX_RUNTIME '{settings.sandbox_runtime}'. Use docker or podman."
-    )
+    from app.execution.composition import get_execution_backend
+
+    return get_execution_backend()
 
 
 def _output_declarations(mode: str) -> tuple[OutputDeclaration, ...]:

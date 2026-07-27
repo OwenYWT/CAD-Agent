@@ -44,17 +44,41 @@ class PodmanRuntime:
                 "-t cad-agent-sandbox:dev ."
             )
 
-    def run(self, input_dir: Path, output_dir: Path, timeout_s: int) -> tuple[int, str, str]:
+    def run(
+        self,
+        input_dir: Path,
+        output_dir: Path,
+        timeout_s: int,
+        resource_limits=None,
+    ) -> tuple[int, str, str]:
+        if resource_limits is None:
+            memory = settings.sandbox_memory_limit
+            cpus = "1"
+            pids = "128"
+            tmpfs_size = "64m"
+            output_bytes = 64 * 1024 * 1024
+        else:
+            memory = str(resource_limits.memory_bytes)
+            cpus = f"{resource_limits.cpu_millis / 1000:g}"
+            pids = str(resource_limits.pids)
+            tmpfs_bytes = min(
+                768 * 1024 * 1024,
+                max(64 * 1024 * 1024, resource_limits.memory_bytes // 2),
+            )
+            tmpfs_size = f"{tmpfs_bytes // (1024 * 1024)}m"
+            output_bytes = resource_limits.output_bytes
         cmd = [
             self.command, "run", "--rm",
             "--network", "none",
-            "--memory", settings.sandbox_memory_limit,
-            "--cpus", "1",
+            "--memory", memory,
+            "--cpus", cpus,
             "--security-opt", "no-new-privileges",
             "--cap-drop", "ALL",
-            "--pids-limit", "128",
+            "--pids-limit", pids,
+            "--ulimit", "nofile=256:512",
+            "--ulimit", f"fsize={output_bytes}:{output_bytes}",
             "--read-only",
-            "--tmpfs", "/tmp:rw,size=64m,noexec,nosuid",
+            "--tmpfs", f"/tmp:rw,size={tmpfs_size},noexec,nosuid",
             "-v", f"{input_dir.as_posix()}:/sandbox/input:ro",
             "-v", f"{output_dir.as_posix()}:/sandbox/output:rw",
             self.image_ref,
@@ -114,15 +138,28 @@ class CadQueryExecutor:
         mode: str = "3d",
         extra_files: dict[str, Path] | None = None,
         timeout_s: int | None = None,
+        task: dict | None = None,
+        resource_limits=None,
     ) -> SandboxResult:
         async with self._get_semaphore():
             loop = asyncio.get_event_loop()
-            if timeout_s is None:
+            if timeout_s is None and task is None and resource_limits is None:
                 return await loop.run_in_executor(
-                    None, self._execute_sync, code, mode, extra_files
+                    None,
+                    self._execute_sync,
+                    code,
+                    mode,
+                    extra_files,
                 )
             return await loop.run_in_executor(
-                None, self._execute_sync, code, mode, extra_files, timeout_s
+                None,
+                self._execute_sync,
+                code,
+                mode,
+                extra_files,
+                timeout_s,
+                task,
+                resource_limits,
             )
 
     def _execute_sync(
@@ -131,6 +168,8 @@ class CadQueryExecutor:
         mode: str = "3d",
         extra_files: dict[str, Path] | None = None,
         timeout_s: int | None = None,
+        task: dict | None = None,
+        resource_limits=None,
     ) -> SandboxResult:
         effective_timeout = timeout_s or settings.sandbox_timeout_s
         work_dir = Path(tempfile.mkdtemp(prefix="cad_"))
@@ -144,11 +183,23 @@ class CadQueryExecutor:
         # Write input code and execution mode
         (input_dir / "input.py").write_text(code,encoding="utf-8")
         (input_dir / "mode.txt").write_text(mode,encoding="utf-8")
+        if task is not None:
+            (input_dir / "task.json").write_text(
+                json.dumps(task, ensure_ascii=False, sort_keys=True),
+                encoding="utf-8",
+            )
 
         # Copy extra files into the sandbox input directory
         if extra_files:
             import shutil
             for name, src_path in extra_files.items():
+                if (
+                    Path(name).name != name
+                    or name.startswith(("-", "."))
+                    or "/" in name
+                    or "\\" in name
+                ):
+                    raise ValueError(f"unsafe sandbox input filename: {name}")
                 if src_path.exists():
                     shutil.copy2(str(src_path), str(input_dir / name))
 
@@ -171,7 +222,12 @@ class CadQueryExecutor:
 
         if self.runtime == "podman":
             try:
-                returncode, stdout, stderr = client.run(input_dir, output_dir, effective_timeout)
+                returncode, stdout, stderr = client.run(
+                    input_dir,
+                    output_dir,
+                    effective_timeout,
+                    resource_limits,
+                )
             except subprocess.TimeoutExpired:
                 elapsed = int((time.time() - start_time) * 1000)
                 return SandboxResult(
@@ -192,6 +248,34 @@ class CadQueryExecutor:
 
         try:
             try:
+                memory_limit = (
+                    resource_limits.memory_bytes
+                    if resource_limits is not None
+                    else settings.sandbox_memory_limit
+                )
+                cpu_millis = (
+                    resource_limits.cpu_millis
+                    if resource_limits is not None
+                    else 1000
+                )
+                pids_limit = (
+                    resource_limits.pids
+                    if resource_limits is not None
+                    else 128
+                )
+                output_bytes = (
+                    resource_limits.output_bytes
+                    if resource_limits is not None
+                    else 64 * 1024 * 1024
+                )
+                tmpfs_bytes = (
+                    min(
+                        768 * 1024 * 1024,
+                        max(64 * 1024 * 1024, resource_limits.memory_bytes // 2),
+                    )
+                    if resource_limits is not None
+                    else 64 * 1024 * 1024
+                )
                 container = client.containers.run(
                     image=self.image_ref,
                     detach=True,
@@ -200,22 +284,26 @@ class CadQueryExecutor:
                         str(output_dir): {"bind": "/sandbox/output", "mode": "rw"},
                     },
                     network_mode="none",
-                    mem_limit=settings.sandbox_memory_limit,
-                    nano_cpus=1_000_000_000,
+                    mem_limit=memory_limit,
+                    nano_cpus=cpu_millis * 1_000_000,
                     # === Hardening: the container runs untrusted LLM-generated code ===
                     # rootfs is read-only; the only writable paths are the rw output mount
                     # and an in-memory /tmp (CadQuery/OCP scratch space). This blocks an
                     # escaped payload from persisting to or tampering with the image.
                     read_only=True,
-                    tmpfs={"/tmp": "rw,size=64m,noexec,nosuid"},
+                    tmpfs={"/tmp": f"rw,size={tmpfs_bytes},noexec,nosuid"},
                     # drop every Linux capability — sandbox needs none of them
                     cap_drop=["ALL"],
                     security_opt=["no-new-privileges"],
                     # bound process count (fork-bomb) and open files / file size
-                    pids_limit=128,
+                    pids_limit=pids_limit,
                     ulimits=[
                         docker.types.Ulimit(name="nofile", soft=256, hard=512),
-                        docker.types.Ulimit(name="fsize", soft=64 * 1024 * 1024, hard=64 * 1024 * 1024),
+                        docker.types.Ulimit(
+                            name="fsize",
+                            soft=output_bytes,
+                            hard=output_bytes,
+                        ),
                     ],
                 )
             except docker.errors.DockerException as e:

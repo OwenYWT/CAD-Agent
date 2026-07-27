@@ -1,23 +1,31 @@
 {
   "schema_version": "mcad-runtime-verification.v1",
-  "recorded_at": "2026-07-26T17:43:36Z",
-  "base_commit": "44500037c627847b664866bec6d034c4500c3dbe",
+  "recorded_at": "2026-07-27T14:06:47Z",
+  "base_commit": "940cf47dd495252c1f97272bea29693db967f34f",
   "image": {
     "reference": "cad-agent-sandbox:m0-unified",
-    "id": "6976b38d5b26a9f0f8efbf0d3df93aa588518810d5d57d0c0d95623105aa8ff2",
-    "digest": "sha256:10aefd8fe317074026cf8689243044cef19d15150ffdcc0012a8040f88508f08",
+    "id": "93f5ccaaa89b74d8fbfb30b50d5ff10deb05396fe64043d75f1ff5f72dc65cb6",
+    "digest": "sha256:71d372fc6d5f87f3483d3b797f091ece9f849222930519870bee7ed668c11c2e",
     "architecture": "arm64",
     "os": "linux",
-    "size_bytes": 3431661596
+    "size_bytes": 3431693954
   },
   "isolation": {
+    "profile": "full multi-engine diagnostic probe",
     "network": "none",
     "root_filesystem": "read-only",
     "linux_capabilities": "all dropped",
     "no_new_privileges": true,
     "pid_limit": 512,
-    "memory_limit_mib": 1536,
+    "memory_limit_mib": 2048,
     "cpu_limit": 2
+  },
+  "execution_attempt_limits": {
+    "default_memory_mib": 1024,
+    "snapshot_memory_mib": 1536,
+    "cpu_limit": 2,
+    "network": "none",
+    "root_filesystem": "read-only"
   },
   "runtime_probe": {
     "status": "success",
@@ -34,7 +42,7 @@
     ],
     "artifacts": {
       "cad_snapshot_png": 18976,
-      "dxf": 15538,
+      "dxf": 15536,
       "implicit_snapshot_png": 10145,
       "implicit_stl": 583284,
       "inspect_json": 390,
@@ -65,21 +73,47 @@
   },
   "tests": {
     "real_sandbox_and_execution": {
-      "passed": 18,
+      "passed": 36,
       "failed": 0,
-      "duration_seconds": 18.39,
+      "duration_seconds": 32.56,
       "includes": [
-        "real build123d STEP and STL export",
+        "real build123d STEP with a through-hole",
+        "OCP DFM face, edge, wall, hole, and feature extraction",
+        "CAD inspect, STL export, PNG snapshot, DXF generation, and implicit-CAD export",
         "host file access denial",
         "network API denial",
         "process execution denial"
       ]
     },
-    "module_regression": {
-      "passed": 40,
+    "business_execution_wiring": {
+      "passed": 86,
       "failed": 0,
-      "skipped": 7,
-      "duration_seconds": 1.79
+      "skipped": 2,
+      "duration_seconds": 1.88,
+      "direct_container_imports": 0
+    },
+    "real_rest": {
+      "health": 200,
+      "ready": 200,
+      "execute": {
+        "http_status": 200,
+        "step_sha256": "f6d8240e1990fb6560e02ffb34cdfa0bc78b28094288895408ffe4637843d9d3",
+        "stl_sha256": "1f6eb33434dc55c7e9e13e02386cea1d69e55c4d835a5135c46484921e958367"
+      },
+      "capability_generate_inspect_export": "succeeded",
+      "dfm": {
+        "face_count": 7,
+        "edge_count": 30,
+        "hole_diameter_mm": 4.0,
+        "false_fillet_detected": false
+      },
+      "generate_modify": {
+        "status": "blocked_by_external_service",
+        "provider": "moonshot",
+        "provider_http_status": 429,
+        "reason": "insufficient balance",
+        "api_error_mapping_pending_task": 6
+      }
     },
     "git_diff_check": "passed"
   }

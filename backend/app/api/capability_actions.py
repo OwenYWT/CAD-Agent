@@ -7,7 +7,6 @@ commands from typed action parameters.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import re
 import uuid
@@ -67,7 +66,7 @@ def _owner_root(api_key: str | None) -> Path:
     return owner
 
 
-def _runtime(api_key: str | None) -> CapabilityRuntime:
+def _runtime(api_key: str | None, execution_backend=None) -> CapabilityRuntime:
     owner = _owner_root(api_key)
     return CapabilityRuntime(
         RuntimeConfig(
@@ -75,7 +74,10 @@ def _runtime(api_key: str | None) -> CapabilityRuntime:
             artifact_root=owner / "runs",
             isolated_executor=tuple(settings.cadskills_isolated_executor) or None,
             allow_bambu_lan=settings.cadskills_enable_bambu_lan,
-        )
+            tenant_id=_owner_id(api_key),
+            project_id=f"capability-{_owner_id(api_key)}",
+        ),
+        execution_backend=execution_backend,
     )
 
 
@@ -207,9 +209,11 @@ async def run_capability_action(
     await rate_limiter.check(request, api_key)
     if get_capability(capability_id) is None:
         raise HTTPException(status_code=404, detail=f"Capability '{capability_id}' not found")
-    runtime = _runtime(api_key)
-    result = await asyncio.to_thread(
-        runtime.execute,
+    runtime = _runtime(
+        api_key,
+        getattr(request.app.state, "execution_backend", None),
+    )
+    result = await runtime.execute_async(
         capability_id,
         action_id,
         payload.params,

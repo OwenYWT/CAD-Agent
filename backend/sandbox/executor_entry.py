@@ -18,6 +18,12 @@ os.makedirs("/sandbox/output", exist_ok=True)
 
 def main():
     try:
+        task_path = "/sandbox/input/task.json"
+        if os.path.exists(task_path):
+            from capability_entry import main as capability_main
+
+            raise SystemExit(capability_main())
+
         # Read input code
         with open("/sandbox/input/input.py", "r") as f:
             code = f.read()
@@ -118,6 +124,7 @@ def main():
             "ValueError": ValueError,
             "TypeError": TypeError,
             "RuntimeError": RuntimeError,
+            "Exception": Exception,
             "KeyError": KeyError,
             "IndexError": IndexError,
             "AttributeError": AttributeError,

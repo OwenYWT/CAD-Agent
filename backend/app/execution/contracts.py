@@ -47,7 +47,7 @@ class ExecutionErrorCategory(str, Enum):
 
 
 class ExecutionSource(FrozenContract):
-    language: Literal["python", "javascript"]
+    language: Literal["python", "javascript", "json"]
     code: str = Field(min_length=1, max_length=2_000_000)
     sha256: Sha256
 

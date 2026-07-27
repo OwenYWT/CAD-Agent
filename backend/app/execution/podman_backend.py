@@ -203,6 +203,23 @@ class PodmanExecutionBackend:
             return MaterializedExecutionOutcome(result=result, files={}, work_dir=None)
 
         try:
+            task = self._validated_task(spec)
+        except Exception as exc:
+            result = ExecutionResult(
+                execution_attempt_id=spec.execution_attempt_id,
+                status=ExecutionStatus.FAILED,
+                error=ExecutionError(
+                    category=ExecutionErrorCategory.USER_INPUT,
+                    code="invalid_execution_task",
+                    message=_redact(str(exc), redacted_values),
+                ),
+                provenance=self._provenance(spec, snapshot),
+                started_at=started_at,
+                finished_at=datetime.now(timezone.utc),
+            )
+            return MaterializedExecutionOutcome(result=result, files={}, work_dir=None)
+
+        try:
             extra_files = self._validated_inputs(spec, materialized_inputs or {})
         except Exception as exc:
             result = ExecutionResult(
@@ -219,11 +236,17 @@ class PodmanExecutionBackend:
             )
             return MaterializedExecutionOutcome(result=result, files={}, work_dir=None)
 
+        execute_kwargs = {
+            "mode": spec.mode,
+            "extra_files": extra_files,
+            "timeout_s": spec.limits.timeout_seconds,
+            "resource_limits": spec.limits,
+        }
+        if task is not None:
+            execute_kwargs["task"] = task
         sandbox_result = await self._sandbox.execute(
             spec.source.code,
-            mode=spec.mode,
-            extra_files=extra_files,
-            timeout_s=spec.limits.timeout_seconds,
+            **execute_kwargs,
         )
         if not sandbox_result.success:
             status, category, code = _failure_mapping(sandbox_result)
@@ -307,6 +330,26 @@ class PodmanExecutionBackend:
         )
 
     @staticmethod
+    def _validated_task(spec: ExecutionSpec) -> dict | None:
+        if spec.source.language != "json":
+            return None
+        parsed = json.loads(spec.source.code)
+        if not isinstance(parsed, dict):
+            raise ValueError("JSON execution source must be an object")
+        if parsed.get("schema_version") != "mcad-capability-task.v1":
+            raise ValueError("unsupported MCAD capability task schema")
+        capability = parsed.get("capability")
+        operation = parsed.get("operation")
+        if spec.capability != f"mcad.{capability}" or spec.operation != operation:
+            raise ValueError("MCAD capability task does not match ExecutionSpec")
+        if not isinstance(parsed.get("params"), dict) or not isinstance(
+            parsed.get("inputs"),
+            dict,
+        ):
+            raise ValueError("MCAD capability task params and inputs must be objects")
+        return parsed
+
+    @staticmethod
     def _validated_inputs(
         spec: ExecutionSpec,
         materialized: Mapping[str, Path],
@@ -317,6 +360,16 @@ class PodmanExecutionBackend:
         extra_files: dict[str, Path] = {}
         for artifact_id, path in materialized.items():
             declaration = by_artifact[artifact_id]
+            filename = declaration.filename
+            if (
+                Path(filename).name != filename
+                or filename.startswith(("-", "."))
+                or "/" in filename
+                or "\\" in filename
+            ):
+                raise ValueError(
+                    f"input artifact filename is not a safe basename: {artifact_id}"
+                )
             if not path.is_file() or path.is_symlink():
                 raise ValueError(f"input artifact is not a regular file: {artifact_id}")
             data = path.read_bytes()
@@ -324,7 +377,7 @@ class PodmanExecutionBackend:
                 raise ValueError(f"input artifact size mismatch: {artifact_id}")
             if hashlib.sha256(data).hexdigest() != declaration.sha256:
                 raise ValueError(f"input artifact hash mismatch: {artifact_id}")
-            extra_files[declaration.filename] = path
+            extra_files[filename] = path
         return extra_files
 
     @staticmethod

@@ -28,7 +28,8 @@ from app.models.schemas import (
 from app.rendering.renderer import CADRenderer
 from app.sandbox.code_analyzer import analyze_code
 from app.sandbox.code_filter import validate_code
-from app.sandbox.executor import CadQueryExecutor
+from app.execution.compat_executor import CompatibilityExecutor
+from app.execution.composition import get_execution_backend
 from app.validation.geometry_validator import GeometryValidator
 from app.validation.inspect import build_inspect_report
 from app.validation.vision_validator import VisionValidator
@@ -71,10 +72,12 @@ class ConversationContext:
 class Orchestrator:
     MAX_RETRIES = 5
 
-    def __init__(self):
+    def __init__(self, execution_backend=None):
         self.planner = Planner()
         self.code_gen = CodeGenerator()
-        self.executor = CadQueryExecutor()
+        self.executor = CompatibilityExecutor(
+            execution_backend or get_execution_backend()
+        )
         self._retriever = None
         self.renderer = CADRenderer()
         self.geometry_validator = GeometryValidator()

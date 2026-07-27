@@ -70,12 +70,14 @@ RUN python -m pip install --no-cache-dir --no-deps \
     chmod -R a+rX /opt/cadskills /opt/cad-agent /ms-playwright
 
 COPY backend/sandbox/executor_entry.py /opt/cad-agent/executor_entry.py
+COPY backend/sandbox/capability_entry.py /opt/cad-agent/capability_entry.py
 COPY backend/sandbox/runtime_probe.py /opt/cad-agent/runtime_probe.py
 
 RUN groupadd --gid 1000 sandbox && \
     useradd --uid 1000 --gid 1000 --no-create-home \
       --home-dir /tmp --shell /usr/sbin/nologin sandbox && \
-    chown 1000:1000 /opt/cad-agent/executor_entry.py /opt/cad-agent/runtime_probe.py
+    chown 1000:1000 /opt/cad-agent/executor_entry.py \
+      /opt/cad-agent/capability_entry.py /opt/cad-agent/runtime_probe.py
 
 USER 1000:1000
 

@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app.execution.composition import get_execution_backend
 
 # Configure logging with request-id correlation
 from app.logging_context import RequestIdFilter
@@ -44,7 +45,6 @@ from app.fusion360.agent_api import router as fusion360_agent_router
 logger = logging.getLogger(__name__)
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
-STARTUP_DEPENDENCY_TIMEOUT_S = 5.0
 
 
 def _cleanup_old_files():
@@ -62,10 +62,8 @@ def _cleanup_old_files():
         logger.info(f"Cleaned up {count} old file directories")
 
 
-def _startup_self_check():
-    """Fail loud at boot if the core can't actually generate, instead of dying on the
-    first tester prompt. Checks the three things the audit found missing on a fresh host:
-    LLM key, Docker daemon, sandbox image."""
+def _startup_self_check(execution_backend=None):
+    """Report missing LLM or MCAD execution dependencies before the first request."""
     problems = []
 
     if not settings.has_llm_credentials:
@@ -74,51 +72,11 @@ def _startup_self_check():
             "请在 backend/.env 写入对应的模型 API key。"
         )
 
-    if settings.sandbox_runtime.strip().lower() == "podman":
-        import subprocess
-        command = settings.sandbox_command or "podman"
-        try:
-            result = subprocess.run(
-                [command, "image", "exists", settings.sandbox_image],
-                capture_output=True,
-                text=True,
-                timeout=STARTUP_DEPENDENCY_TIMEOUT_S,
-            )
-        except subprocess.TimeoutExpired:
-            problems.append(
-                f"Podman 自检超时（{STARTUP_DEPENDENCY_TIMEOUT_S:g} 秒）。"
-                "请检查 Podman machine 是否正常运行。"
-            )
-        except OSError as exc:
-            problems.append(f"Podman 不可用: {exc}")
-        else:
-            if result.returncode == 1:
-                problems.append(
-                    f"Sandbox image '{settings.sandbox_image}' not found for Podman. "
-                    "Run: podman build -f backend/sandbox/Dockerfile "
-                    "-t cad-agent-sandbox:dev ."
-                )
-            elif result.returncode != 0:
-                detail = (result.stderr or result.stdout or "未知错误").strip()[:300]
-                problems.append(f"Podman runtime unavailable: {detail}")
-    else:
-        try:
-            import docker
-            try:
-                client = docker.from_env(timeout=STARTUP_DEPENDENCY_TIMEOUT_S)
-                client.ping()
-                try:
-                    client.images.get(settings.sandbox_image)
-                except docker.errors.ImageNotFound:
-                    problems.append(
-                        f"Sandbox image '{settings.sandbox_image}' not found. "
-                        "Run: docker build -f backend/sandbox/Dockerfile "
-                        "-t cad-agent-sandbox:dev ."
-                    )
-            except Exception:
-                problems.append("Docker daemon unavailable. Start Docker or set SANDBOX_RUNTIME=podman.")
-        except Exception:
-            problems.append("docker SDK unavailable. Run: pip install -r requirements.txt")
+    try:
+        backend = execution_backend or get_execution_backend()
+        backend.runtime_snapshot()
+    except Exception as exc:
+        problems.append(f"MCAD ExecutionBackend 不可用: {str(exc)[:300]}")
 
     if problems:
         logger.error(
@@ -126,7 +84,7 @@ def _startup_self_check():
             len(problems), "\n  - ".join(problems),
         )
     else:
-        logger.info("启动自检通过: LLM key + Docker + 沙箱镜像就绪")
+        logger.info("启动自检通过: LLM key + MCAD ExecutionBackend 就绪")
     return problems
 
 
@@ -152,7 +110,8 @@ async def lifespan(app: FastAPI):
     settings.assert_auth_config_safe()
     settings.assert_sandbox_config_safe()
     _cleanup_old_files()
-    app.state.startup_problems = _startup_self_check()
+    app.state.execution_backend = get_execution_backend()
+    app.state.startup_problems = _startup_self_check(app.state.execution_backend)
     # Provision admin + default invite eagerly so misconfig surfaces at boot, not
     # on the first request. Both are no-ops when their config is unset/empty.
     from app.storage.auth import ensure_admin_user, ensure_default_invite_code

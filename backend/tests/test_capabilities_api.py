@@ -1,6 +1,7 @@
 """Contract tests for the read-only cadskills capability registry."""
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,6 +25,16 @@ EXPECTED_IDS = [
     "bambu-labs",
     "implicit-cad",
 ]
+
+
+def _ready_backend():
+    return SimpleNamespace(
+        runtime_snapshot=lambda: SimpleNamespace(
+            image_digest=f"sha256:{'b' * 64}",
+            platform="linux/arm64",
+            versions={"cadquery": "2.8.0", "ezdxf": "1.4.2"},
+        )
+    )
 
 
 @pytest.fixture
@@ -121,6 +132,11 @@ def test_vendored_runtime_is_located_from_repo_not_cwd(monkeypatch, tmp_path):
 def test_missing_required_dependency_never_reports_available(monkeypatch):
     monkeypatch.setattr(registry, "_command_path", lambda *names: None)
     monkeypatch.setattr(registry, "_module_available", lambda name: False)
+    monkeypatch.setattr(
+        registry,
+        "get_execution_backend",
+        lambda: (_ for _ in ()).throw(RuntimeError("runtime unavailable")),
+    )
     manifests = {item.id: item for item in registry.list_capabilities()}
 
     assert manifests["cad"].available is False
@@ -128,20 +144,17 @@ def test_missing_required_dependency_never_reports_available(monkeypatch):
     assert manifests["implicit-cad"].available is False
 
 
-def test_dxf_without_any_runnable_action_is_not_reported_available(monkeypatch):
-    monkeypatch.setattr(registry, "_module_available", lambda name: name == "ezdxf")
-    monkeypatch.setattr(registry, "_command_path", lambda *names: None)
+def test_dxf_generate_is_available_through_execution_backend(monkeypatch):
+    monkeypatch.setattr(registry, "get_execution_backend", _ready_backend)
 
     dxf = registry.get_capability("dxf")
     assert dxf is not None
     runtime = next(dep for dep in dxf.dependencies if dep.id == "dxf-runtime")
     assert runtime.available is True
-    assert "ezdxf" in runtime.detail
-    assert dxf.available is False
-    assert all(action.available is False for action in dxf.actions)
-    assert dxf.blocked_reasons == list(dict.fromkeys(
-        action.blocked_reason for action in dxf.actions if action.blocked_reason
-    ))
+    availability = {action.id: action.available for action in dxf.actions}
+    assert availability == {"generate": True, "validate": False}
+    assert dxf.available is True
+    assert dxf.blocked_reasons == []
 
 
 def test_gcode_read_only_actions_remain_available_without_slicer(monkeypatch):
@@ -162,17 +175,16 @@ def test_gcode_read_only_actions_remain_available_without_slicer(monkeypatch):
     assert gcode.blocked_reasons == []
 
 
-def test_unrelated_conversational_sandbox_is_not_claimed_as_capability_backend(monkeypatch):
-    monkeypatch.setattr(registry, "_module_available", lambda name: False)
-    monkeypatch.setattr(registry, "_sandbox_assets_available", lambda: True)
-    monkeypatch.setattr(registry, "_command_path", lambda *names: "/usr/bin/docker")
+def test_cad_manifest_reports_the_shared_execution_backend(monkeypatch):
+    backend = _ready_backend()
+    monkeypatch.setattr(registry, "get_execution_backend", lambda: backend)
 
     cad = registry.get_capability("cad")
     assert cad is not None
     runtime = next(dep for dep in cad.dependencies if dep.id == "cad-runtime")
-    assert runtime.available is False
-    assert "not used by capability actions" in runtime.detail
-    assert cad.available is False
+    assert runtime.available is True
+    assert "ExecutionBackend ready" in runtime.detail
+    assert cad.available is True
 
 
 def test_optional_viewer_reuse_launcher_does_not_block_server(monkeypatch):
@@ -194,9 +206,11 @@ def test_python_dependency_uses_project_311_baseline():
 
 def test_uploaded_generators_are_not_reported_available_without_isolator(monkeypatch):
     monkeypatch.setattr(settings, "cadskills_isolated_executor", [])
+    monkeypatch.setattr(registry, "get_execution_backend", _ready_backend)
     manifests = {item.id: item for item in registry.list_capabilities()}
 
-    for capability_id in ("urdf", "srdf", "sdf", "implicit-cad"):
+    for capability_id in ("urdf", "srdf", "sdf"):
         manifest = manifests[capability_id]
         assert manifest.available is False
         assert any("CADSKILLS_ISOLATED_EXECUTOR" in reason for reason in manifest.blocked_reasons)
+    assert manifests["implicit-cad"].available is True

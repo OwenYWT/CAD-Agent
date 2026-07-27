@@ -21,6 +21,7 @@ from app.capabilities.models import (
     UpstreamProvenance,
 )
 from app.config import settings
+from app.execution.composition import get_execution_backend
 
 
 UPSTREAM_URL = "https://github.com/earthtojake/text-to-cad"
@@ -39,7 +40,6 @@ def _find_repo_root() -> Path:
 REPO_ROOT = _find_repo_root()
 VENDORED_ROOT = REPO_ROOT / "third_party" / "cadskills"
 SKILLS_ROOT = VENDORED_ROOT / "skills"
-SANDBOX_ROOT = REPO_ROOT / "backend" / "sandbox"
 
 
 def _upstream() -> UpstreamProvenance:
@@ -125,52 +125,55 @@ def _vendored_dependency(skill_id: str) -> CapabilityDependency:
     return _dependency("vendored-runtime", "Pinned cadskills runtime", "vendored", True, available, detail)
 
 
-def _container_engine_dependency(*, required: bool) -> CapabilityDependency:
-    runtime = settings.sandbox_runtime.strip().lower() or "docker"
-    command = settings.sandbox_command or runtime
-    path = _command_path(command)
-    return _dependency(
-        "container-engine",
-        f"{runtime.title()} sandbox engine",
-        "executable",
-        required,
-        path is not None,
-        f"Executable found at {path}." if path else f"Configured sandbox command '{command}' was not found.",
-    )
-
-
-def _sandbox_assets_available() -> bool:
-    return (SANDBOX_ROOT / "Dockerfile").is_file() and (SANDBOX_ROOT / "executor_entry.py").is_file()
-
-
 def _cad_dependencies() -> list[CapabilityDependency]:
-    # CapabilityRuntime invokes the vendored CAD CLI in this Python environment.
-    # The conversational CAD pipeline has a separate container sandbox, but this
-    # registry must not claim that unrelated sandbox as an execution backend.
-    local = _module_available("build123d") and _module_available("OCP")
-    detail = (
-        "Local build123d and OCP modules are importable for the vendored CAD CLI."
-        if local
-        else "The vendored CAD CLI requires local build123d and OCP modules; the conversational backend sandbox is not used by capability actions."
-    )
-    return [_dependency("cad-runtime", "STEP CAD execution runtime", "runtime", True, local, detail)]
+    return [
+        _execution_backend_dependency(
+            "cad-runtime",
+            "Unified STEP CAD execution runtime",
+        )
+    ]
 
 
 def _dxf_dependencies() -> list[CapabilityDependency]:
-    local = _module_available("ezdxf")
-    sandbox = _sandbox_assets_available()
-    engine = _container_engine_dependency(required=sandbox and not local)
-    backend_available = local or (sandbox and engine.available)
-    if local:
-        detail = "Local ezdxf module is importable."
-    elif sandbox:
-        detail = "Existing backend/sandbox DXF runtime definition found; it requires the configured container engine."
-    else:
-        detail = "Neither local ezdxf nor the repository DXF sandbox definition is available."
     return [
-        _dependency("dxf-runtime", "ezdxf execution runtime", "runtime", True, backend_available, detail),
-        engine,
+        _execution_backend_dependency(
+            "dxf-runtime",
+            "Unified ezdxf execution runtime",
+        )
     ]
+
+
+def _execution_backend_dependency(
+    dependency_id: str,
+    label: str,
+) -> CapabilityDependency:
+    try:
+        snapshot = get_execution_backend().runtime_snapshot()
+    except Exception as exc:
+        return _dependency(
+            dependency_id,
+            label,
+            "runtime",
+            True,
+            False,
+            f"Configured ExecutionBackend is unavailable: {str(exc)[:240]}",
+        )
+    versions = ", ".join(
+        f"{name}={version}"
+        for name, version in sorted(snapshot.versions.items())
+    )
+    detail = (
+        f"ExecutionBackend ready at {snapshot.image_digest} "
+        f"({snapshot.platform}; {versions or 'runtime versions recorded by worker'})."
+    )
+    return _dependency(
+        dependency_id,
+        label,
+        "runtime",
+        True,
+        True,
+        detail,
+    )
 
 
 def _node_dependency() -> CapabilityDependency:
@@ -232,20 +235,10 @@ def _viewer_dependencies() -> list[CapabilityDependency]:
 
 
 def _implicit_dependencies() -> list[CapabilityDependency]:
-    package_root = SKILLS_ROOT / "implicit-cad" / "scripts" / "packages" / "implicitjs"
-    installed = (package_root / "node_modules").is_dir()
     return [
-        _node_dependency(),
-        _isolated_executor_dependency(),
-        _dependency(
-            "implicitjs-packages",
-            "implicitjs npm dependencies",
-            "runtime",
-            True,
-            installed,
-            f"npm dependencies found at {package_root / 'node_modules'}."
-            if installed
-            else "implicitjs sources are vendored, but npm dependencies are not installed.",
+        _execution_backend_dependency(
+            "implicit-runtime",
+            "Unified implicit-CAD execution runtime",
         ),
     ]
 
@@ -527,10 +520,7 @@ def _build_manifest(spec: dict[str, Any]) -> CapabilityManifest:
             action.blocked_reason = reason
     elif spec["id"] == "dxf":
         for action in actions:
-            if action.id == "generate" and not settings.cadskills_isolated_executor:
-                action.available = False
-                action.blocked_reason = "未配置 CADSKILLS_ISOLATED_EXECUTOR，不能执行上传的 Python 生成器。"
-            elif action.id == "validate":
+            if action.id == "validate":
                 action.available = False
                 action.blocked_reason = "当前 vendored DXF 包没有独立验证器 CLI。"
     elif spec["id"] == "gcode":

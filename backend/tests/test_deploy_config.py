@@ -156,69 +156,52 @@ def test_startup_self_check_reports_missing_key(monkeypatch):
     monkeypatch.setattr(config.settings, "dashscope_api_key", None)
     monkeypatch.setattr(config.settings, "moonshot_api_key", None)
     monkeypatch.setattr(config.settings, "llm_provider", "moonshot")
-    problems = main._startup_self_check()
+    backend = type("Backend", (), {"runtime_snapshot": lambda self: object()})()
+    problems = main._startup_self_check(backend)
     assert any("MOONSHOT_API_KEY" in p for p in problems)
 
 
 def test_startup_self_check_reports_docker_problem(monkeypatch):
-    """No Docker daemon in this env -> a docker/sandbox problem string is emitted."""
+    """An unavailable execution backend degrades readiness with its real error."""
     from app import config, main
     monkeypatch.setattr(config.settings, "llm_provider", "moonshot")
     monkeypatch.setattr(config.settings, "moonshot_api_key", "sk-present")
-    problems = main._startup_self_check()
-    assert any(("Docker" in p) or ("沙箱" in p) or ("docker" in p) for p in problems)
+    backend = type(
+        "Backend",
+        (),
+        {"runtime_snapshot": lambda self: (_ for _ in ()).throw(RuntimeError("runtime down"))},
+    )()
+    problems = main._startup_self_check(backend)
+    assert any("ExecutionBackend" in p and "runtime down" in p for p in problems)
 
 
-def test_startup_self_check_reports_podman_timeout(monkeypatch):
-    """A stuck Podman VM must degrade readiness instead of blocking API startup."""
+def test_startup_self_check_reports_execution_backend_timeout(monkeypatch):
+    """A stuck runtime must degrade readiness instead of blocking API startup."""
     from app import config, main
 
     monkeypatch.setattr(config.settings, "llm_provider", "moonshot")
     monkeypatch.setattr(config.settings, "moonshot_api_key", "sk-present")
-    monkeypatch.setattr(config.settings, "sandbox_runtime", "podman")
-    monkeypatch.setattr(config.settings, "sandbox_command", "podman")
-
-    def _timed_out(*args, **kwargs):
-        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs["timeout"])
-
-    monkeypatch.setattr(subprocess, "run", _timed_out)
-
-    problems = main._startup_self_check()
-    assert any("Podman" in problem and "超时" in problem for problem in problems)
+    backend = type(
+        "Backend",
+        (),
+        {"runtime_snapshot": lambda self: (_ for _ in ()).throw(TimeoutError("runtime probe timed out"))},
+    )()
+    problems = main._startup_self_check(backend)
+    assert any(
+        "ExecutionBackend" in problem and "timed out" in problem
+        for problem in problems
+    )
 
 
 def test_startup_self_check_clean_when_key_and_docker_ok(monkeypatch):
-    """When the key is present AND docker reports healthy + image present, no
-    problems are returned. We fake the docker SDK so the test stays hermetic."""
-    import sys
-    import types
+    """When the key and shared execution backend are healthy, readiness is clean."""
     from app import config, main
 
     monkeypatch.setattr(config.settings, "llm_provider", "moonshot")
     monkeypatch.setattr(config.settings, "moonshot_api_key", "sk-present")
 
-    fake_docker = types.ModuleType("docker")
-
-    class _FakeImages:
-        def get(self, name):
-            return object()  # image found
-
-    class _FakeClient:
-        images = _FakeImages()
-        def ping(self):
-            return True
-
-    fake_docker.from_env = lambda **kwargs: _FakeClient()
-    fake_errors = types.ModuleType("docker.errors")
-    class ImageNotFound(Exception):
-        pass
-    fake_errors.ImageNotFound = ImageNotFound
-    fake_docker.errors = fake_errors
-
-    monkeypatch.setitem(sys.modules, "docker", fake_docker)
-    monkeypatch.setitem(sys.modules, "docker.errors", fake_errors)
-
-    problems = main._startup_self_check()
+    backend = type("Backend", (), {"runtime_snapshot": lambda self: object()})()
+    problems = main._startup_self_check(backend)
     assert problems == []
 
 

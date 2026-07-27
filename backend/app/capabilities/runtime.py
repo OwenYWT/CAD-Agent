@@ -8,10 +8,10 @@ the server.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import shutil
-import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -20,6 +20,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
+
+from app.execution.composition import get_execution_backend
+from app.execution import host_process
+from app.execution.capability_adapter import CapabilityExecutionAdapter
+from app.execution.contracts import ExecutionStatus
 
 from .artifacts import ArtifactPathError, ArtifactStore, sha256_file
 
@@ -37,6 +42,9 @@ class RuntimeConfig:
     network_timeout_seconds: float = 30.0
     max_output_bytes: int = 256 * 1024
     max_fetch_bytes: int = 12 * 1024 * 1024
+    max_artifact_bytes: int = 64 * 1024 * 1024
+    tenant_id: str = "local-tenant"
+    project_id: str = "local-capability-workspace"
     # Deployment-level device-network gate.  API params cannot override it.
     allow_bambu_lan: bool = False
     # A deployment-owned prefix, for example a locked-down container runner.
@@ -74,6 +82,30 @@ _MISSING_DEPENDENCY_MARKERS = (
     "playwright install",
     "browser executable",
 )
+
+_LOCAL_MCAD_ACTIONS = {
+    ("implicit-cad", "export"),
+    ("implicit-cad", "snapshot"),
+    ("cad", "step"),
+    ("cad", "generate"),
+    ("cad", "export"),
+    ("cad", "inspect"),
+    ("cad", "snapshot"),
+    ("dxf", "generate"),
+}
+
+_ASYNC_ACTIONS = _LOCAL_MCAD_ACTIONS | {
+    ("sendcutsend", "preflight"),
+}
+
+
+@dataclass(frozen=True)
+class LocalExecutionPlan:
+    params: dict[str, Any]
+    inputs: dict[str, Path]
+    artifact_media_type: str
+    mode: str
+    timeout_seconds: int
 
 
 def _plain_params(params: Mapping[str, Any] | object | None) -> dict[str, Any]:
@@ -180,6 +212,7 @@ class CapabilityRuntime:
         config: RuntimeConfig | None = None,
         *,
         artifact_store: ArtifactStore | None = None,
+        execution_backend=None,
     ) -> None:
         self.config = config or RuntimeConfig()
         default_repo = Path(__file__).resolve().parents[3]
@@ -189,6 +222,12 @@ class CapabilityRuntime:
             self.config.artifact_root or self.repo_root / "backend" / "data" / "capability_artifacts"
         )
         self.artifacts = artifact_store or ArtifactStore(artifact_root, workspace_root=self.workspace_root)
+        self.execution_backend = execution_backend or get_execution_backend()
+        self.capability_executor = CapabilityExecutionAdapter(
+            self.execution_backend,
+            tenant_id=self.config.tenant_id,
+            project_id=self.config.project_id,
+        )
         self.vendor_root = self.repo_root / "third_party" / "cadskills" / "skills"
         self._dispatch: dict[tuple[str, str], Callable[[dict[str, Any], str], dict[str, Any]]] = {
             ("step-parts", "search"): self._step_parts_search,
@@ -218,23 +257,78 @@ class CapabilityRuntime:
             ("srdf", "generate"): lambda p, r: self._xml_generator("srdf", p, r),
             ("sdf", "generate"): lambda p, r: self._xml_generator("sdf", p, r),
             ("sdf", "gz-check"): self._sdf_gz_check,
-            ("implicit-cad", "export"): self._implicit_export,
-            ("implicit-cad", "snapshot"): self._implicit_snapshot,
-            ("cad", "step"): self._cad_step,
-            ("cad", "generate"): lambda p, r: self._alias_result("generate", self._cad_step(p, r)),
-            ("cad", "export"): self._cad_export,
-            ("cad", "inspect"): self._cad_inspect,
-            ("cad", "snapshot"): self._cad_snapshot,
-            ("dxf", "generate"): self._dxf_generate,
             ("dxf", "validate"): self._dxf_validate,
             ("cad-viewer", "status"): self._viewer_status,
             ("cad-viewer", "start"): self._viewer_start,
             ("cad-viewer", "review"): self._viewer_review,
             ("sendcutsend", "fetch"): self._sendcutsend_fetch,
-            ("sendcutsend", "preflight"): self._sendcutsend_preflight,
         }
 
     def execute(
+        self,
+        capability: str,
+        action: str,
+        params: Mapping[str, Any] | object | None,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        capability_id = _CAPABILITY_ALIASES.get(
+            str(capability).strip(),
+            str(capability).strip(),
+        )
+        action_id = str(action).strip()
+        if (capability_id, action_id) in _ASYNC_ACTIONS:
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                return asyncio.run(
+                    self.execute_async(
+                        capability_id,
+                        action_id,
+                        params,
+                        request_id=request_id,
+                    )
+                )
+            raise RuntimeError(
+                "local MCAD actions are asynchronous; await CapabilityRuntime.execute_async()"
+            )
+        return self._execute_sync(capability_id, action_id, params, request_id)
+
+    async def execute_async(
+        self,
+        capability: str,
+        action: str,
+        params: Mapping[str, Any] | object | None,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        capability_id = _CAPABILITY_ALIASES.get(
+            str(capability).strip(),
+            str(capability).strip(),
+        )
+        action_id = str(action).strip()
+        if (capability_id, action_id) in _LOCAL_MCAD_ACTIONS:
+            return await self._execute_local(
+                capability_id,
+                action_id,
+                params,
+                request_id,
+            )
+        if (capability_id, action_id) == ("sendcutsend", "preflight"):
+            request = self.artifacts.validate_request_id(
+                request_id or uuid.uuid4().hex
+            )
+            return await self._sendcutsend_preflight(
+                _plain_params(params),
+                request,
+            )
+        return await asyncio.to_thread(
+            self._execute_sync,
+            capability_id,
+            action_id,
+            params,
+            request_id,
+        )
+
+    def _execute_sync(
         self,
         capability: str,
         action: str,
@@ -274,6 +368,476 @@ class CapabilityRuntime:
                 status="failed",
                 error=f"capability runtime error: {type(exc).__name__}",
             )
+
+    async def _execute_local(
+        self,
+        capability: str,
+        action: str,
+        params: Mapping[str, Any] | object | None,
+        request_id: str | None,
+    ) -> dict[str, Any]:
+        request = request_id or uuid.uuid4().hex
+        work_dir: Path | None = None
+        try:
+            request = self.artifacts.validate_request_id(request)
+            plan = self._prepare_local_execution(
+                capability,
+                action,
+                _plain_params(params),
+            )
+            outcome = await self.capability_executor.execute(
+                capability=capability,
+                operation=action,
+                request_id=request,
+                params=plan.params,
+                inputs=plan.inputs,
+                artifact_media_type=plan.artifact_media_type,
+                mode=plan.mode,
+                timeout_seconds=plan.timeout_seconds,
+                output_bytes=self.config.max_artifact_bytes,
+            )
+            work_dir = outcome.execution.work_dir
+            execution_result = outcome.execution.result
+            if execution_result.status is not ExecutionStatus.SUCCEEDED:
+                error = execution_result.error
+                return self._base(
+                    capability,
+                    action,
+                    request,
+                    status="failed",
+                    data={
+                        "execution_attempt_id": execution_result.execution_attempt_id,
+                        "execution_status": execution_result.status.value,
+                        "error_code": error.code if error else None,
+                    },
+                    error=error.message if error else "MCAD execution failed",
+                )
+
+            artifact = outcome.execution.files.get("artifact")
+            if artifact is None or not artifact.is_file():
+                return self._base(
+                    capability,
+                    action,
+                    request,
+                    status="failed",
+                    error="MCAD execution returned no materialized artifact",
+                )
+            self.artifacts.write_bytes(
+                request,
+                artifact.name,
+                artifact.read_bytes(),
+                suffixes={artifact.suffix.lower()},
+            )
+            data = dict(outcome.metadata)
+            data["execution_attempt_id"] = execution_result.execution_attempt_id
+            data["execution_status"] = execution_result.status.value
+            if execution_result.provenance:
+                data["runtime"] = {
+                    "image_digest": execution_result.provenance.image_digest,
+                    "platform": execution_result.provenance.platform,
+                    "code_hash": execution_result.provenance.code_hash,
+                    "input_hash": execution_result.provenance.input_hash,
+                }
+            return self._base(
+                capability,
+                action,
+                request,
+                status="succeeded",
+                data=data,
+                files=self.artifacts.list_request(request),
+                command_preview=["ExecutionBackend", capability, action],
+            )
+        except (CapabilityRequestError, ArtifactPathError) as exc:
+            return self._base(
+                capability,
+                action,
+                request,
+                status="failed",
+                error=str(exc),
+            )
+        except Exception as exc:
+            return self._base(
+                capability,
+                action,
+                request,
+                status="failed",
+                error=f"MCAD execution could not be submitted: {exc}",
+            )
+        finally:
+            if work_dir is not None:
+                shutil.rmtree(work_dir, ignore_errors=True)
+
+    def _prepare_local_execution(
+        self,
+        capability: str,
+        action: str,
+        params: dict[str, Any],
+    ) -> LocalExecutionPlan:
+        if capability == "implicit-cad" and action == "export":
+            _validate_keys(
+                params,
+                {"input", "output", "format", "resolution", "max_cells", "parameters"},
+                required={"input"},
+            )
+            source = self._input(
+                params["input"],
+                suffixes={".implicit.js", ".implicit.mjs"},
+            )
+            export_format = _choice(
+                params.get("format"),
+                "format",
+                {"stl", "3mf", "glb"},
+                default="stl",
+            )
+            normalized: dict[str, Any] = {
+                "output": _safe_filename(
+                    params.get("output", f"output.{export_format}"),
+                    "output",
+                    suffixes={f".{export_format}"},
+                ),
+                "format": export_format,
+            }
+            if "resolution" in params:
+                normalized["resolution"] = _integer(
+                    params["resolution"],
+                    "resolution",
+                    minimum=8,
+                    maximum=512,
+                )
+            if "max_cells" in params:
+                normalized["max_cells"] = _integer(
+                    params["max_cells"],
+                    "max_cells",
+                    minimum=1000,
+                    maximum=8_000_000,
+                )
+            if "parameters" in params:
+                if not isinstance(params["parameters"], dict):
+                    raise CapabilityRequestError("parameters must be an object")
+                encoded = json.dumps(params["parameters"], separators=(",", ":"))
+                if len(encoded) > 32_000:
+                    raise CapabilityRequestError("parameters JSON is too large")
+                normalized["parameters"] = params["parameters"]
+            media_type = {
+                "stl": "model/stl",
+                "3mf": "model/3mf",
+                "glb": "model/gltf-binary",
+            }[export_format]
+            return LocalExecutionPlan(
+                params=normalized,
+                inputs={"input": source},
+                artifact_media_type=media_type,
+                mode="3d",
+                timeout_seconds=int(self.config.timeout_seconds),
+            )
+
+        if capability == "implicit-cad" and action == "snapshot":
+            _validate_keys(
+                params,
+                {"input", "output", "mode", "camera", "width", "height", "parameters"},
+                required={"input"},
+            )
+            source = self._input(
+                params["input"],
+                suffixes={".implicit.js", ".implicit.mjs"},
+            )
+            render_mode = _choice(
+                params.get("mode"),
+                "mode",
+                {"view", "orbit", "animate"},
+                default="view",
+            )
+            suffix = ".gif" if render_mode in {"orbit", "animate"} else ".png"
+            normalized = {
+                "output": _safe_filename(
+                    params.get("output", f"snapshot{suffix}"),
+                    "output",
+                    suffixes={".png", ".gif"},
+                ),
+                "mode": render_mode,
+            }
+            if params.get("camera"):
+                normalized["camera"] = _text(
+                    params["camera"],
+                    "camera",
+                    max_length=120,
+                )
+            for key in ("width", "height"):
+                if key in params:
+                    normalized[key] = _integer(
+                        params[key],
+                        key,
+                        minimum=64,
+                        maximum=4096,
+                    )
+            if "parameters" in params:
+                if not isinstance(params["parameters"], dict):
+                    raise CapabilityRequestError("parameters must be an object")
+                normalized["parameters"] = params["parameters"]
+            return LocalExecutionPlan(
+                params=normalized,
+                inputs={"input": source},
+                artifact_media_type="image/gif" if suffix == ".gif" else "image/png",
+                mode="3d",
+                timeout_seconds=300,
+            )
+
+        if capability == "cad" and action in {"step", "generate"}:
+            _validate_keys(
+                params,
+                {"input", "kind", "output", "force", "mesh_tolerance", "mesh_angular_tolerance"},
+                required={"input"},
+            )
+            source = self._input(params["input"], suffixes={".step", ".stp", ".py"})
+            normalized = {
+                "output": _safe_filename(
+                    params.get("output", "output.step"),
+                    "output",
+                    suffixes={".step", ".stp"},
+                ),
+                "kind": _choice(
+                    params.get("kind"),
+                    "kind",
+                    {"part", "assembly"},
+                    default="part",
+                ),
+                "force": _boolean(params.get("force"), "force"),
+            }
+            for key in ("mesh_tolerance", "mesh_angular_tolerance"):
+                if key in params:
+                    normalized[key] = _number(
+                        params[key],
+                        key,
+                        minimum=0.00001,
+                        maximum=10,
+                    )
+            return LocalExecutionPlan(
+                params=normalized,
+                inputs={"input": source},
+                artifact_media_type="model/step",
+                mode="3d",
+                timeout_seconds=int(self.config.timeout_seconds),
+            )
+
+        if capability == "cad" and action == "export":
+            _validate_keys(
+                params,
+                {"input", "format", "output", "kind", "force", "mesh_tolerance", "mesh_angular_tolerance"},
+                required={"input", "format"},
+            )
+            source = self._input(params["input"], suffixes={".step", ".stp"})
+            export_format = _choice(params["format"], "format", {"stl", "3mf", "glb"})
+            normalized = {
+                "format": export_format,
+                "output": _safe_filename(
+                    params.get("output", f"output.{export_format}"),
+                    "output",
+                    suffixes={f".{export_format}"},
+                ),
+                "kind": _choice(
+                    params.get("kind"),
+                    "kind",
+                    {"part", "assembly"},
+                    default="part",
+                ),
+                "force": _boolean(params.get("force"), "force"),
+            }
+            for key in ("mesh_tolerance", "mesh_angular_tolerance"):
+                if key in params:
+                    normalized[key] = _number(
+                        params[key],
+                        key,
+                        minimum=0.00001,
+                        maximum=10,
+                    )
+            media_type = {
+                "stl": "model/stl",
+                "3mf": "model/3mf",
+                "glb": "model/gltf-binary",
+            }[export_format]
+            return LocalExecutionPlan(
+                params=normalized,
+                inputs={"input": source},
+                artifact_media_type=media_type,
+                mode="3d",
+                timeout_seconds=int(self.config.timeout_seconds),
+            )
+
+        if capability == "cad" and action == "inspect":
+            allowed = {
+                "operation", "input", "right", "selectors", "detail", "facts",
+                "positioning", "planes", "topology", "from_selector", "to_selector",
+                "selector", "moving", "target", "axis", "mode", "offset",
+            }
+            _validate_keys(params, allowed, required={"input"})
+            operation = _choice(
+                params.get("operation"),
+                "operation",
+                {"refs", "diff", "frame", "measure", "align"},
+                default="refs",
+            )
+            normalized: dict[str, Any] = {"operation": operation, "output": "inspect.json"}
+            inputs = {
+                "input": self._input(params["input"], suffixes={".step", ".stp"})
+            }
+            if operation == "refs":
+                normalized["selectors"] = [
+                    self._selector(value, "selector")
+                    for value in _string_list(
+                        params.get("selectors"),
+                        "selectors",
+                        maximum=100,
+                    )
+                ]
+                for key in ("detail", "facts", "positioning", "planes", "topology"):
+                    normalized[key] = _boolean(params.get(key), key)
+            elif operation == "diff":
+                if "right" not in params:
+                    raise CapabilityRequestError("diff requires right")
+                inputs["right"] = self._input(
+                    params["right"],
+                    suffixes={".step", ".stp"},
+                )
+                normalized["planes"] = _boolean(params.get("planes"), "planes")
+            elif operation == "frame":
+                if params.get("selector"):
+                    normalized["selector"] = self._selector(
+                        params["selector"],
+                        "selector",
+                    )
+            elif operation == "measure":
+                if not params.get("from_selector") or not params.get("to_selector"):
+                    raise CapabilityRequestError(
+                        "measure requires from_selector and to_selector"
+                    )
+                normalized["from_selector"] = self._selector(
+                    params["from_selector"],
+                    "from_selector",
+                )
+                normalized["to_selector"] = self._selector(
+                    params["to_selector"],
+                    "to_selector",
+                )
+                if params.get("axis"):
+                    normalized["axis"] = _choice(
+                        params["axis"],
+                        "axis",
+                        {"x", "y", "z"},
+                    )
+            else:
+                if not params.get("moving") or not params.get("target"):
+                    raise CapabilityRequestError("align requires moving and target")
+                normalized["moving"] = self._selector(params["moving"], "moving")
+                normalized["target"] = self._selector(params["target"], "target")
+                normalized["mode"] = _choice(
+                    params.get("mode"),
+                    "mode",
+                    {"flush", "center"},
+                    default="flush",
+                )
+                if params.get("axis"):
+                    normalized["axis"] = _choice(
+                        params["axis"],
+                        "axis",
+                        {"x", "y", "z"},
+                    )
+                if "offset" in params:
+                    normalized["offset"] = _number(
+                        params["offset"],
+                        "offset",
+                        minimum=-1_000_000,
+                        maximum=1_000_000,
+                    )
+            return LocalExecutionPlan(
+                params=normalized,
+                inputs=inputs,
+                artifact_media_type="application/json",
+                mode="analysis",
+                timeout_seconds=int(self.config.timeout_seconds),
+            )
+
+        if capability == "cad" and action == "snapshot":
+            _validate_keys(
+                params,
+                {"input", "output", "mode", "camera", "width", "height", "size_profile", "focus", "hide"},
+                required={"input"},
+            )
+            source = self._input(params["input"], suffixes={".step", ".stp"})
+            render_mode = _choice(
+                params.get("mode"),
+                "mode",
+                {"view", "orbit", "section", "list"},
+                default="view",
+            )
+            normalized = {
+                "output": _safe_filename(
+                    params.get("output", "snapshot.png"),
+                    "output",
+                    suffixes={".png", ".gif"},
+                ),
+                "mode": render_mode,
+            }
+            if params.get("camera"):
+                normalized["camera"] = _text(
+                    params["camera"],
+                    "camera",
+                    max_length=120,
+                )
+            if params.get("size_profile"):
+                normalized["size_profile"] = _text(
+                    params["size_profile"],
+                    "size_profile",
+                    max_length=64,
+                    pattern=r"[A-Za-z0-9_-]+",
+                )
+            for key in ("width", "height"):
+                if key in params:
+                    normalized[key] = _integer(
+                        params[key],
+                        key,
+                        minimum=64,
+                        maximum=4096,
+                    )
+            focus = [
+                self._selector(value, "focus")
+                for value in _string_list(params.get("focus"), "focus", maximum=50)
+            ]
+            hide = [
+                self._selector(value, "hide")
+                for value in _string_list(params.get("hide"), "hide", maximum=50)
+            ]
+            if focus and hide:
+                raise CapabilityRequestError("focus and hide cannot be combined")
+            normalized["focus"] = focus
+            normalized["hide"] = hide
+            suffix = Path(normalized["output"]).suffix.lower()
+            return LocalExecutionPlan(
+                params=normalized,
+                inputs={"input": source},
+                artifact_media_type="image/gif" if suffix == ".gif" else "image/png",
+                mode="3d",
+                timeout_seconds=300,
+            )
+
+        if capability == "dxf" and action == "generate":
+            _validate_keys(params, {"source", "output", "verbose"}, required={"source"})
+            source = self._input(params["source"], suffixes={".py"})
+            return LocalExecutionPlan(
+                params={
+                    "output": _safe_filename(
+                        params.get("output", "output.dxf"),
+                        "output",
+                        suffixes={".dxf"},
+                    ),
+                    "verbose": _boolean(params.get("verbose"), "verbose"),
+                },
+                inputs={"source": source},
+                artifact_media_type="image/vnd.dxf",
+                mode="2d",
+                timeout_seconds=int(self.config.timeout_seconds),
+            )
+
+        raise CapabilityRequestError("unsupported local MCAD capability/action")
 
     @staticmethod
     def _base(
@@ -351,15 +915,10 @@ class CapabilityRuntime:
     ) -> dict[str, Any]:
         preview = self._preview(command, secrets)
         try:
-            completed = subprocess.run(
-                [str(part) for part in command],
-                cwd=str(cwd or self.workspace_root),
-                shell=False,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+            completed = host_process.run(
+                command,
+                cwd=cwd or self.workspace_root,
                 timeout=timeout or self.config.timeout_seconds,
-                check=False,
             )
         except FileNotFoundError:
             return self._base(
@@ -370,7 +929,7 @@ class CapabilityRuntime:
                 command_preview=preview,
                 blocked_reasons=["Required executable or vendored tool is not installed."],
             )
-        except subprocess.TimeoutExpired:
+        except host_process.TimeoutExpired:
             return self._base(
                 capability,
                 action,
@@ -761,192 +1320,9 @@ class CapabilityRuntime:
         source = self._input(params["input"], suffixes={".sdf"})
         return self._run("sdf", "gz-check", request_id, ["gz", "sdf", "--check", str(source)])
 
-    def _implicit_export(self, params: dict[str, Any], request_id: str) -> dict[str, Any]:
-        allowed = {"input", "output", "format", "resolution", "max_cells", "parameters"}
-        _validate_keys(params, allowed, required={"input"})
-        source = self._input(params["input"], suffixes={".implicit.js", ".implicit.mjs"})
-        export_format = _choice(params.get("format"), "format", {"stl", "3mf", "glb"}, default="stl")
-        output_name = _safe_filename(params.get("output", f"output.{export_format}"), "output", suffixes={f".{export_format}"})
-        output = self.artifacts.output_path(request_id, output_name, suffixes={f".{export_format}"})
-        command = [
-            "node", str(self._script("implicit-cad", "export.mjs")), "--input", str(source), "--output", str(output),
-            "--format", export_format, "--json",
-        ]
-        if "resolution" in params:
-            command.extend(["--resolution", str(_integer(params["resolution"], "resolution", minimum=8, maximum=512))])
-        if "max_cells" in params:
-            command.extend(["--max-cells", str(_integer(params["max_cells"], "max_cells", minimum=1000, maximum=8_000_000))])
-        if "parameters" in params:
-            if not isinstance(params["parameters"], dict):
-                raise CapabilityRequestError("parameters must be an object")
-            encoded = json.dumps(params["parameters"], separators=(",", ":"))
-            if len(encoded) > 32_000:
-                raise CapabilityRequestError("parameters JSON is too large")
-            command.extend(["--params", encoded])
-        return self._generator_run("implicit-cad", "export", request_id, command)
-
-    def _implicit_snapshot(self, params: dict[str, Any], request_id: str) -> dict[str, Any]:
-        allowed = {"input", "output", "mode", "camera", "width", "height", "parameters"}
-        _validate_keys(params, allowed, required={"input"})
-        source = self._input(params["input"], suffixes={".implicit.js", ".implicit.mjs"})
-        mode = _choice(params.get("mode"), "mode", {"view", "orbit", "animate"}, default="view")
-        default_suffix = ".gif" if mode in {"orbit", "animate"} else ".png"
-        output_name = _safe_filename(params.get("output", f"snapshot{default_suffix}"), "output", suffixes={".png", ".gif"})
-        output = self.artifacts.output_path(request_id, output_name, suffixes={".png", ".gif"})
-        command = ["node", str(self._script("implicit-cad", "snapshot.mjs")), "--input", str(source), "--output", str(output), "--mode", mode, "--json"]
-        if params.get("camera"):
-            command.extend(["--camera", _text(params["camera"], "camera", max_length=120)])
-        for key in ("width", "height"):
-            if key in params:
-                command.extend([f"--{key}", str(_integer(params[key], key, minimum=64, maximum=4096))])
-        if "parameters" in params:
-            if not isinstance(params["parameters"], dict):
-                raise CapabilityRequestError("parameters must be an object")
-            command.extend(["--params", json.dumps(params["parameters"], separators=(",", ":"))])
-        return self._generator_run("implicit-cad", "snapshot", request_id, command)
-
-    # -- CAD STEP / inspect / snapshot ---------------------------------
-
-    def _cad_step(self, params: dict[str, Any], request_id: str) -> dict[str, Any]:
-        allowed = {"input", "kind", "output", "force", "mesh_tolerance", "mesh_angular_tolerance"}
-        _validate_keys(params, allowed, required={"input"})
-        raw_input = str(params["input"])
-        source = self._input(raw_input, suffixes={".step", ".stp", ".py"})
-        is_generator = source.suffix.lower() == ".py"
-        output_name = _safe_filename(params.get("output", "output.step"), "output", suffixes={".step", ".stp"})
-        output = self.artifacts.output_path(request_id, output_name, suffixes={".step", ".stp"})
-        step_cli = str(self._script("cad", "step", "__main__.py"))
-        if is_generator:
-            command = [sys.executable, step_cli, str(source), "--output", str(output)]
-        else:
-            # Process a request-scoped copy so hidden viewer artifacts never
-            # mutate the user's source directory.
-            shutil.copy2(source, output)
-            kind = _choice(params.get("kind"), "kind", {"part", "assembly"}, default="part")
-            command = [sys.executable, step_cli, str(output), "--kind", kind]
-        if _boolean(params.get("force"), "force"):
-            command.append("--force")
-        for key, flag in (("mesh_tolerance", "--mesh-tolerance"), ("mesh_angular_tolerance", "--mesh-angular-tolerance")):
-            if key in params:
-                command.extend([flag, str(_number(params[key], key, minimum=0.00001, maximum=10))])
-        if is_generator:
-            return self._generator_run("cad", "step", request_id, command)
-        return self._run("cad", "step", request_id, command)
-
-    def _cad_export(self, params: dict[str, Any], request_id: str) -> dict[str, Any]:
-        _validate_keys(
-            params,
-            {"input", "format", "output", "kind", "force", "mesh_tolerance", "mesh_angular_tolerance"},
-            required={"input", "format"},
-        )
-        source = self._input(params["input"], suffixes={".step", ".stp"})
-        export_format = _choice(params["format"], "format", {"stl", "3mf", "glb"})
-        output_name = _safe_filename(
-            params.get("output", f"output.{export_format}"), "output", suffixes={f".{export_format}"}
-        )
-        request_dir = self.artifacts.request_dir(request_id)
-        local_source = self.artifacts.output_path(request_id, source.name, suffixes={".step", ".stp"})
-        if not local_source.exists():
-            shutil.copy2(source, local_source)
-        flag = {"stl": "--stl", "3mf": "--3mf", "glb": "--glb"}[export_format]
-        command = [
-            sys.executable, str(self._script("cad", "step", "__main__.py")), str(local_source),
-            "--kind", _choice(params.get("kind"), "kind", {"part", "assembly"}, default="part"),
-            flag, output_name,
-        ]
-        if _boolean(params.get("force"), "force"):
-            command.append("--force")
-        for key, option in (("mesh_tolerance", "--mesh-tolerance"), ("mesh_angular_tolerance", "--mesh-angular-tolerance")):
-            if key in params:
-                command.extend([option, str(_number(params[key], key, minimum=0.00001, maximum=10))])
-        return self._run("cad", "export", request_id, command, cwd=request_dir)
-
     @staticmethod
     def _selector(value: object, name: str) -> str:
         return _text(value, name, max_length=120, pattern=r"#[A-Za-z0-9_.:-]+")
-
-    def _cad_inspect(self, params: dict[str, Any], request_id: str) -> dict[str, Any]:
-        allowed = {
-            "operation", "input", "right", "selectors", "detail", "facts", "positioning", "planes", "topology",
-            "from_selector", "to_selector", "selector", "moving", "target", "axis", "mode", "offset",
-        }
-        _validate_keys(params, allowed, required={"input"})
-        operation = _choice(params.get("operation"), "operation", {"refs", "diff", "frame", "measure", "align"}, default="refs")
-        entry = self._input(params["input"], suffixes={".step", ".stp"})
-        command = [sys.executable, str(self._script("cad", "inspect", "__main__.py")), operation]
-        if operation == "refs":
-            command.append(str(entry))
-            for selector in _string_list(params.get("selectors"), "selectors", maximum=100):
-                command.append(self._selector(selector, "selector"))
-            for key, flag in (("detail", "--detail"), ("facts", "--facts"), ("positioning", "--positioning"), ("planes", "--planes"), ("topology", "--topology")):
-                if _boolean(params.get(key), key):
-                    command.append(flag)
-        elif operation == "diff":
-            if "right" not in params:
-                raise CapabilityRequestError("diff requires right")
-            right = self._input(params["right"], suffixes={".step", ".stp"})
-            command.extend([str(entry), str(right)])
-            if _boolean(params.get("planes"), "planes"):
-                command.append("--planes")
-        elif operation == "frame":
-            command.append(str(entry))
-            if params.get("selector"):
-                command.append(self._selector(params["selector"], "selector"))
-        elif operation == "measure":
-            if not params.get("from_selector") or not params.get("to_selector"):
-                raise CapabilityRequestError("measure requires from_selector and to_selector")
-            command.extend([str(entry), "--from", self._selector(params["from_selector"], "from_selector"), "--to", self._selector(params["to_selector"], "to_selector")])
-            if params.get("axis"):
-                command.extend(["--axis", _choice(params["axis"], "axis", {"x", "y", "z"})])
-        else:
-            if not params.get("moving") or not params.get("target"):
-                raise CapabilityRequestError("align requires moving and target")
-            command.extend([str(entry), "--moving", self._selector(params["moving"], "moving"), "--target", self._selector(params["target"], "target")])
-            command.extend(["--mode", _choice(params.get("mode"), "mode", {"flush", "center"}, default="flush")])
-            if params.get("axis"):
-                command.extend(["--axis", _choice(params["axis"], "axis", {"x", "y", "z"})])
-            if "offset" in params:
-                command.extend(["--offset", str(_number(params["offset"], "offset", minimum=-1_000_000, maximum=1_000_000))])
-        command.extend(["--format", "json", "--quiet"])
-        return self._run("cad", "inspect", request_id, command)
-
-    def _cad_snapshot(self, params: dict[str, Any], request_id: str) -> dict[str, Any]:
-        allowed = {"input", "output", "mode", "camera", "width", "height", "size_profile", "focus", "hide"}
-        _validate_keys(params, allowed, required={"input"})
-        source = self._input(params["input"], suffixes={".step", ".stp"})
-        local_source = self.artifacts.output_path(request_id, source.name, suffixes={".step", ".stp"})
-        if not local_source.exists():
-            shutil.copy2(source, local_source)
-        mode = _choice(params.get("mode"), "mode", {"view", "orbit", "section", "list"}, default="view")
-        suffixes = {".png", ".gif"}
-        output_name = _safe_filename(params.get("output", "snapshot.png"), "output", suffixes=suffixes)
-        output = self.artifacts.output_path(request_id, output_name, suffixes=suffixes)
-        command = [sys.executable, str(self._script("cad", "snapshot", "__main__.py")), "--input", str(local_source), "--output", str(output), "--mode", mode, "--json"]
-        if params.get("camera"):
-            command.extend(["--camera", _text(params["camera"], "camera", max_length=120)])
-        if params.get("size_profile"):
-            command.extend(["--size-profile", _text(params["size_profile"], "size_profile", max_length=64, pattern=r"[A-Za-z0-9_-]+")])
-        for key in ("width", "height"):
-            if key in params:
-                command.extend([f"--{key}", str(_integer(params[key], key, minimum=64, maximum=4096))])
-        focus = _string_list(params.get("focus"), "focus", maximum=50)
-        hide = _string_list(params.get("hide"), "hide", maximum=50)
-        if focus and hide:
-            raise CapabilityRequestError("focus and hide cannot be combined")
-        for key, values in (("focus", focus), ("hide", hide)):
-            for selector in values:
-                command.extend([f"--{key}", self._selector(selector, key)])
-        return self._run("cad", "snapshot", request_id, command, timeout=300)
-
-    def _dxf_generate(self, params: dict[str, Any], request_id: str) -> dict[str, Any]:
-        _validate_keys(params, {"source", "output", "verbose"}, required={"source"})
-        source = self._input(params["source"], suffixes={".py"})
-        output_name = _safe_filename(params.get("output", "output.dxf"), "output", suffixes={".dxf"})
-        output = self.artifacts.output_path(request_id, output_name, suffixes={".dxf"})
-        command = [sys.executable, str(self._script("dxf", "dxf", "__main__.py")), str(source), "--output", str(output)]
-        if _boolean(params.get("verbose"), "verbose"):
-            command.append("--verbose")
-        return self._generator_run("dxf", "generate", request_id, command)
 
     def _dxf_validate(self, params: dict[str, Any], request_id: str) -> dict[str, Any]:
         _validate_keys(params, {"input"}, required={"input"})
@@ -1002,14 +1378,9 @@ class CapabilityRuntime:
         if shutil.which("node") is None:
             return self._base("cad-viewer", "start", request_id, status="blocked", command_preview=preview, blocked_reasons=["Node.js is not installed."])
         try:
-            process = subprocess.Popen(
+            process = host_process.start_detached(
                 command,
-                cwd=str(directory),
-                shell=False,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
+                cwd=directory,
             )
         except OSError:
             return self._base("cad-viewer", "start", request_id, status="blocked", command_preview=preview, blocked_reasons=["CAD Viewer could not be started."])
@@ -1092,13 +1463,21 @@ class CapabilityRuntime:
             checks=[{"name": "official_origins_only", "passed": True}],
         )
 
-    def _sendcutsend_preflight(self, params: dict[str, Any], request_id: str) -> dict[str, Any]:
+    async def _sendcutsend_preflight(
+        self,
+        params: dict[str, Any],
+        request_id: str,
+    ) -> dict[str, Any]:
         allowed = {
             "input", "process", "material_sku", "thickness_mm", "quantity",
             "services", "finish", "hardware",
         }
         _validate_keys(params, allowed)
-        fetched = self._sendcutsend_fetch({"source": "all"}, request_id)
+        fetched = await asyncio.to_thread(
+            self._sendcutsend_fetch,
+            {"source": "all"},
+            request_id,
+        )
         fetched["action"] = "preflight"
         if fetched["status"] != "succeeded":
             return fetched
@@ -1194,9 +1573,17 @@ class CapabilityRuntime:
                     "source": "Direct file inspection",
                 })
         else:
-            inspected = self._cad_inspect(
-                {"input": str(source), "operation": "refs", "facts": True, "planes": True, "positioning": True},
-                request_id,
+            inspected = await self._execute_local(
+                "cad",
+                "inspect",
+                {
+                    "input": str(source),
+                    "operation": "refs",
+                    "facts": True,
+                    "planes": True,
+                    "positioning": True,
+                },
+                f"{request_id}-step-inspection",
             )
             facts["step_inspection"] = inspected.get("data")
             checks.append({

@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import pytest
 from app.execution.backend import MaterializedExecutionOutcome
 from app.execution.compat_executor import CompatibilityExecutor
 from app.execution.contracts import (
+    ArtifactInput,
     ExecutionSource,
     ExecutionSpec,
     ExecutionStatus,
@@ -60,8 +62,16 @@ class RecordingSandboxExecutor:
         self.result = result
         self.calls = []
 
-    async def execute(self, code, mode="3d", extra_files=None, timeout_s=None):
-        self.calls.append((code, mode, extra_files or {}, timeout_s))
+    async def execute(
+        self,
+        code,
+        mode="3d",
+        extra_files=None,
+        timeout_s=None,
+        task=None,
+        resource_limits=None,
+    ):
+        self.calls.append((code, mode, extra_files or {}, timeout_s, task))
         return self.result
 
 
@@ -127,6 +137,87 @@ async def test_backend_rejects_success_with_missing_required_artifact(tmp_path):
     assert outcome.result.status is ExecutionStatus.ARTIFACT_REJECTED
     assert outcome.result.error.code == "missing_required_output"
     assert outcome.files == {}
+
+
+@pytest.mark.asyncio
+async def test_backend_forwards_only_typed_json_capability_task(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    artifact = work / "inspect.json"
+    artifact.write_text('{"solids":1}', encoding="utf-8")
+    metadata = work / "capability-result.json"
+    metadata.write_text('{"exit_code":0}', encoding="utf-8")
+    sandbox = RecordingSandboxExecutor(
+        SandboxResult(
+            success=True,
+            files={"artifact": artifact, "capability-result": metadata},
+            error_type=None,
+            error_message=None,
+            traceback=None,
+            execution_time_ms=4,
+            work_dir=work,
+        )
+    )
+    backend = PodmanExecutionBackend(
+        image_ref="cad-agent-sandbox:test",
+        sandbox_executor=sandbox,
+        runtime_inspector=lambda: _runtime_snapshot(),
+    )
+    task = {
+        "schema_version": "mcad-capability-task.v1",
+        "capability": "cad",
+        "operation": "inspect",
+        "params": {"operation": "refs", "output": "inspect.json"},
+        "inputs": {"input": "input-part.step"},
+    }
+    source_code = json.dumps(task, sort_keys=True, separators=(",", ":"))
+    spec = _spec(
+        capability="mcad.cad",
+        operation="inspect",
+        mode="analysis",
+        source=ExecutionSource(
+            language="json",
+            code=source_code,
+            sha256=hashlib.sha256(source_code.encode()).hexdigest(),
+        ),
+        outputs=(
+            OutputDeclaration(name="artifact", media_type="application/json"),
+            OutputDeclaration(name="capability-result", media_type="application/json"),
+        ),
+    )
+
+    outcome = await backend.execute(spec)
+
+    assert outcome.result.status is ExecutionStatus.SUCCEEDED
+    assert sandbox.calls[0][4] == task
+
+
+@pytest.mark.asyncio
+async def test_backend_rejects_traversal_in_materialized_input_filename(tmp_path):
+    source = tmp_path / "part.step"
+    source.write_bytes(b"STEP")
+    declaration = ArtifactInput(
+        artifact_id="input-traversal",
+        filename="../part.step",
+        sha256=hashlib.sha256(b"STEP").hexdigest(),
+        size_bytes=4,
+        media_type="model/step",
+    )
+    sandbox = RecordingSandboxExecutor(_successful_sandbox(tmp_path))
+    backend = PodmanExecutionBackend(
+        image_ref="cad-agent-sandbox:test",
+        sandbox_executor=sandbox,
+        runtime_inspector=lambda: _runtime_snapshot(),
+    )
+
+    outcome = await backend.execute(
+        _spec(inputs=(declaration,)),
+        materialized_inputs={"input-traversal": source},
+    )
+
+    assert outcome.result.status is ExecutionStatus.ARTIFACT_REJECTED
+    assert "filename" in outcome.result.error.message
+    assert sandbox.calls == []
 
 
 @pytest.mark.asyncio
