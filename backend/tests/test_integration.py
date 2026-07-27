@@ -72,4 +72,6 @@ async def test_rest_api_endpoints():
 
         # Generate endpoint exists (may fail due to no Docker, but 422 = route exists)
         r = await client.post("/api/generate", json={"prompt": "test"})
-        assert r.status_code in (200, 500)  # 200 if Docker available, 500 if not
+        # Provider outages/quota/configuration are intentionally normalized to
+        # 503; runtime/internal failures remain 500.
+        assert r.status_code in (200, 500, 503)

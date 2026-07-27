@@ -85,6 +85,24 @@ class PlanDecomposer:
         return self._client
 
     async def decompose(self, plan: CADPlan) -> BuildPlan:
+        # Most parameterized parts do not benefit from a second LLM planning
+        # round-trip.  Keep decomposition for genuinely feature-rich/custom
+        # geometry; this also makes provider use explicit and bounded.
+        if (
+            plan.part_type not in {"custom", "organic", "assembly"}
+            and len(plan.features) <= 2
+            and len(plan.constraints) <= 2
+        ):
+            return BuildPlan(
+                steps=[
+                    BuildStep(
+                        phase=BuildPhase.BASE,
+                        description=plan.description,
+                    )
+                ],
+                complexity="simple",
+            )
+
         user_content = (
             f"零件描述: {plan.description}\n"
             f"类型: {plan.part_type}\n"
