@@ -65,3 +65,28 @@ jobs:
           node --test --experimental-strip-types tests/*.test.ts
           npx tsc --noEmit -p tsconfig.app.json
           npx vite build
+
+  mcad-runtime:
+    name: Real MCAD runtime build + probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build pinned MCAD worker image
+        run: docker build -f backend/sandbox/Dockerfile -t cad-agent-sandbox:ci .
+
+      - name: Probe real CAD, inspect, render, and export operations
+        run: |
+          docker run --rm \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --pids-limit 512 \
+            --memory 4g \
+            --cpus 2 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=2g \
+            --entrypoint python \
+            cad-agent-sandbox:ci \
+            /opt/cad-agent/runtime_probe.py --json

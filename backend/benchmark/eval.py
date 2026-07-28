@@ -361,6 +361,8 @@ def main():
         print("=" * 70)
         diff = compare_reports(base, report)
         print_comparison(diff)
+        if not diff["gate_passed"]:
+            raise SystemExit(1)
 
 
 def _print_summary(report: dict):
