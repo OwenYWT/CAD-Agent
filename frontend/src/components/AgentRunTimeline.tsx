@@ -1,5 +1,9 @@
 import type { GenerationResult, InspectReport, RepairStep, StepStatus, StepUpdate } from "../types";
 import type { StepHistoryEntry } from "../stores/sessionStore";
+import {
+  engineeringSourceLabel,
+  engineeringStatusLabel,
+} from "../utils/engineeringLabels";
 
 interface AgentRunTimelineProps {
   steps: StepHistoryEntry[];
@@ -78,7 +82,7 @@ function detailText(step: StepUpdate) {
   if (!step.detail) return "";
   const source = typeof step.detail.source === "string" ? step.detail.source : "";
   const errorType = typeof step.detail.error_type === "string" ? step.detail.error_type : "";
-  return [source, errorType].filter(Boolean).join(" - ");
+  return [source ? engineeringSourceLabel(source) : "", errorType].filter(Boolean).join(" - ");
 }
 
 function printableLabel(inspectReport: InspectReport) {
@@ -144,7 +148,7 @@ export default function AgentRunTimeline({ steps = [], isGenerating, result, rep
         {(repairHistory?.length || inspectReport) && (
           <div className="rounded-lg bg-gray-50 border border-gray-100 p-3 space-y-1">
             {repairHistory?.length ? <p className="text-xs text-gray-600">{"\u4fee\u590d\u8bc1\u636e\uff1a\u5df2\u8bb0\u5f55"} {repairHistory.length} {"\u4e2a\u81ea\u52a8\u4fee\u590d\u6b65\u9aa4\u3002"}</p> : null}
-            {inspectReport ? <p className="text-xs text-gray-600">{"\u68c0\u67e5\u8bc1\u636e\uff1a\u7ed3\u8bba"} {inspectReport.verdict}{"\uff0c\u53ef\u6253\u5370\u6027"} {printableLabel(inspectReport)}{"\u3002"}</p> : null}
+            {inspectReport ? <p className="text-xs text-gray-600">{"\u68c0\u67e5\u8bc1\u636e\uff1a\u7ed3\u8bba"} {engineeringStatusLabel(inspectReport.verdict)}{"\uff0c\u53ef\u6253\u5370\u6027"} {printableLabel(inspectReport)}{"\u3002"}</p> : null}
           </div>
         )}
       </div>

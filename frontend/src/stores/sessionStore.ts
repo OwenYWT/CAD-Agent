@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 import type {
   ChatMessage,
   GenerationResult,
@@ -78,9 +79,11 @@ function createPanel(title = "新对话"): PanelState {
 }
 
 interface SessionState {
+  ownerId: string | null;
   sessionId: string;
   panels: PanelState[];
   activePanelId: string;
+  bindOwner: (ownerId: string | null) => void;
 
   // Panel management
   addPanel: (title?: string) => string; // returns new panel id
@@ -93,7 +96,7 @@ interface SessionState {
 
   // Actions (operate on active panel)
   addMessage: (msg: ChatMessage) => void;
-  beginGeneration: () => void;
+  beginGeneration: (message?: string) => void;
   setStep: (step: StepUpdate | null, panelId?: string) => void;
   setResult: (result: GenerationResult, panelId?: string) => void;
   restorePanelResult: (panelId: string, result: GenerationResult, code: string) => void;
@@ -148,10 +151,28 @@ function restoreLastError(messages: ChatMessage[]): string | null {
 
 const defaultPanel = createPanel("对话 1");
 
-export const useSessionStore = create<SessionState>((set, get) => ({
+function freshSession(ownerId: string | null) {
+  const panel = createPanel("对话 1");
+  return {
+    ownerId,
+    sessionId: createId(),
+    panels: [panel],
+    activePanelId: panel.id,
+  };
+}
+
+export const useSessionStore = create<SessionState>()(persist((set, get) => ({
+  ownerId: null,
   sessionId: createId(),
   panels: [defaultPanel],
   activePanelId: defaultPanel.id,
+
+  bindOwner: (ownerId) =>
+    set((state) => (
+      state.ownerId === ownerId
+        ? state
+        : freshSession(ownerId)
+    )),
 
   getActivePanel: () => {
     const state = get();
@@ -195,11 +216,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       })),
     })),
 
-  beginGeneration: () =>
+  beginGeneration: (message = "正在理解建模需求") =>
     set((state) => ({
       panels: updatePanel(state.panels, state.activePanelId, (panel) => ({
         isGenerating: true,
-        currentStep: { step: "planning", message: "正在理解建模需求" },
+        currentStep: { step: "planning", message },
         stepHistory: [],
         generationStartTime: Date.now(),
         baselineVersion: panel.baselineVersion + 1,
@@ -346,12 +367,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }),
 
   reset: () => {
-    const panel = createPanel("对话 1");
-    set({
-      sessionId: createId(),
-      panels: [panel],
-      activePanelId: panel.id,
-    });
+    set(freshSession(get().ownerId));
   },
 
   hydratePanel: (panelId, messages, code) =>
@@ -379,4 +395,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       activePanelId: panelStates.length > 0 ? panelStates[0].id : createId(),
     });
   },
+}), {
+  name: "wordswave-engineering-session",
+  storage: createJSONStorage(() => sessionStorage),
+  partialize: (state) => ({
+    ownerId: state.ownerId,
+    sessionId: state.sessionId,
+    panels: state.panels,
+    activePanelId: state.activePanelId,
+  }),
 }));

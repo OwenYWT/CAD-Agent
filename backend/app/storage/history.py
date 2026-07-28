@@ -405,7 +405,18 @@ async def create_model_snapshot(
             result, files, params, parameters, validation, inspect_report,
             repair_history, status, created_at
         )
-        SELECT ?, ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        SELECT ?, ?,
+            COALESCE(
+                ?,
+                (
+                    SELECT parent.id
+                    FROM model_snapshots AS parent
+                    WHERE parent.panel_id = ?
+                    ORDER BY parent.version DESC
+                    LIMIT 1
+                )
+            ),
+            COALESCE(MAX(version), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         FROM model_snapshots
         WHERE panel_id = ?
         """,
@@ -413,6 +424,7 @@ async def create_model_snapshot(
             snapshot_id,
             panel_id,
             parent_snapshot_id,
+            panel_id,
             source,
             prompt,
             code,
@@ -476,7 +488,37 @@ async def restore_model_snapshot(snapshot_id: str, user_id: str | None = None) -
     snapshot = await get_model_snapshot(snapshot_id)
     if snapshot is None:
         return None
-    await update_panel_code(snapshot["panel_id"], snapshot["code"], snapshot.get("params"))
+    restored_result = {
+        **snapshot["result"],
+        "snapshot_id": snapshot["id"],
+        "version": snapshot["version"],
+        "panel_id": snapshot["panel_id"],
+    }
+    db = await get_db()
+    try:
+        await db.execute(
+            "UPDATE panels SET current_code = ?, current_params = ? WHERE id = ?",
+            (
+                snapshot["code"],
+                _json_dump(snapshot.get("params")),
+                snapshot["panel_id"],
+            ),
+        )
+        await db.execute(
+            "INSERT INTO messages (panel_id, role, content, result, created_at) VALUES (?, ?, ?, ?, ?)",
+            (
+                snapshot["panel_id"],
+                "assistant",
+                f"已恢复模型版本 v{snapshot['version']}",
+                json.dumps(restored_result),
+                _now(),
+            ),
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    snapshot["result"] = restored_result
     return snapshot
 
 

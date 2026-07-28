@@ -1,5 +1,10 @@
 import { authFetch } from "../auth";
-import type { DesignAnalysis, GenerationResult } from "../types";
+import type {
+  DesignAnalysis,
+  GenerationResult,
+  ModelSnapshotDetail,
+  ModelSnapshotSummary,
+} from "../types";
 import type { HistoryProject, OnshapeConfig, OnshapeLink } from "../types/engineering";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
@@ -64,6 +69,34 @@ export async function restoreHistoryProject(sessionId: string): Promise<Restored
 export async function deleteHistoryProject(sessionId: string): Promise<void> {
   const response = await authFetch(`${API_BASE}/api/history/sessions/${sessionId}`, { method: "DELETE" });
   if (!response.ok) throw new Error("删除项目失败，请重试");
+}
+
+export async function listModelSnapshots(
+  panelId: string,
+): Promise<ModelSnapshotSummary[]> {
+  const response = await authFetch(
+    `${API_BASE}/api/history/panels/${encodeURIComponent(panelId)}/snapshots`,
+  );
+  return readJson<ModelSnapshotSummary[]>(response, "版本列表加载失败");
+}
+
+export async function getModelSnapshot(
+  snapshotId: string,
+): Promise<ModelSnapshotDetail> {
+  const response = await authFetch(
+    `${API_BASE}/api/history/snapshots/${encodeURIComponent(snapshotId)}`,
+  );
+  return readJson<ModelSnapshotDetail>(response, "版本证据加载失败");
+}
+
+export async function restoreModelSnapshot(
+  snapshotId: string,
+): Promise<ModelSnapshotDetail> {
+  const response = await authFetch(
+    `${API_BASE}/api/history/snapshots/${encodeURIComponent(snapshotId)}/restore`,
+    { method: "POST" },
+  );
+  return readJson<ModelSnapshotDetail>(response, "版本恢复失败");
 }
 
 export async function analyzeEngineeringResult(requestId: string, code: string, description: string): Promise<DesignAnalysis> {

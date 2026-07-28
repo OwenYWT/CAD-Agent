@@ -17,6 +17,7 @@ export function useWebSocket() {
 
   useEffect(() => {
     let disposed = false;
+    let startupTimer: ReturnType<typeof setTimeout> | null = null;
 
     const openSocket = () => {
       if (disposed) return;
@@ -85,10 +86,17 @@ export function useWebSocket() {
     };
 
     reconnectAttemptRef.current = 0;
-    openSocket();
+    // React StrictMode mounts, cleans up, then mounts effects again in development.
+    // Defer the initial socket by one task so the throwaway effect is cancelled
+    // before it creates a CONNECTING socket that Chrome reports as a warning.
+    startupTimer = setTimeout(openSocket, 0);
 
     return () => {
       disposed = true;
+      if (startupTimer) {
+        clearTimeout(startupTimer);
+        startupTimer = null;
+      }
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;

@@ -226,7 +226,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         result_data = result.model_dump(mode="json")
                     except Exception as exc:
                         logger.error(
-                            "Generation failed for %s/%s with %s",
+                            "生成任务 %s/%s 失败，错误类型 %s",
                             session_id,
                             panel_id,
                             type(exc).__name__,

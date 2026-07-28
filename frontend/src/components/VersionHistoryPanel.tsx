@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { authFetch } from "../auth";
+import {
+  listModelSnapshots,
+  restoreModelSnapshot,
+} from "../services/engineeringService";
 import type { ModelSnapshotDetail, ModelSnapshotSummary } from "../types";
-
-const API_BASE = import.meta.env.VITE_API_BASE || "";
+import {
+  engineeringPromptLabel,
+  engineeringSourceLabel,
+  engineeringStatusLabel,
+} from "../utils/engineeringLabels";
 
 interface VersionHistoryPanelProps {
   panelId: string;
@@ -41,11 +47,7 @@ export default function VersionHistoryPanel({
     setLoading(true);
     setError(null);
     try {
-      const response = await authFetch(
-        `${API_BASE}/api/history/panels/${panelId}/snapshots`,
-      );
-      if (!response.ok) throw new Error("\u7248\u672c\u5217\u8868\u52a0\u8f7d\u5931\u8d25");
-      setSnapshots(await response.json());
+      setSnapshots(await listModelSnapshots(panelId));
     } catch (err) {
       setError(err instanceof Error ? err.message : "\u7248\u672c\u5217\u8868\u52a0\u8f7d\u5931\u8d25");
     } finally {
@@ -62,12 +64,7 @@ export default function VersionHistoryPanel({
     setRestoringId(snapshotId);
     setError(null);
     try {
-      const response = await authFetch(
-        `${API_BASE}/api/history/snapshots/${snapshotId}/restore`,
-        { method: "POST" },
-      );
-      if (!response.ok) throw new Error("版本恢复失败");
-      onRestore(await response.json());
+      onRestore(await restoreModelSnapshot(snapshotId));
       await loadSnapshots();
     } catch (err) {
       setError(err instanceof Error ? err.message : "版本恢复失败");
@@ -117,10 +114,10 @@ export default function VersionHistoryPanel({
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <div className="text-xs font-semibold text-gray-800">
-                    v{snapshot.version} - {snapshot.source}
+                    v{snapshot.version} · {engineeringSourceLabel(snapshot.source)}
                   </div>
                   <div className="truncate text-[11px] text-gray-500">
-                    {snapshot.prompt || "\u672a\u8bb0\u5f55\u63d0\u793a\u8bcd"}
+                    {engineeringPromptLabel(snapshot.prompt)}
                   </div>
                 </div>
                 <span
@@ -128,7 +125,7 @@ export default function VersionHistoryPanel({
                     STATUS_CLASS[snapshot.status] || STATUS_CLASS.unknown
                   }`}
                 >
-                  {snapshot.status}
+                  {engineeringStatusLabel(snapshot.status)}
                 </span>
               </div>
               <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-gray-500">

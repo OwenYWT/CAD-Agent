@@ -73,6 +73,57 @@ export interface ParameterChange {
   unit?: string;
 }
 
+export type ChangeEvidenceStatus = "changed" | "unchanged" | "unknown";
+
+export interface GeometryMetricChange {
+  label: string;
+  before: number;
+  after: number;
+  unit: string;
+}
+
+export interface FileChange {
+  format: string;
+  kind: "added" | "removed" | "replaced";
+  beforeUrl?: string;
+  afterUrl?: string;
+  evidence: "reference_only";
+}
+
+export interface ChangeSet {
+  id: string;
+  panelId: string;
+  objective: string | null;
+  baseRevisionId: string | null;
+  targetRevisionId: string;
+  baseVersion: number | null;
+  targetVersion: number;
+  requestId: string | null;
+  taskId: string | null;
+  modifiedObjectCount: number | null;
+  parameterChanges: ParameterChange[];
+  code: {
+    status: ChangeEvidenceStatus;
+    beforeLines: number | null;
+    afterLines: number | null;
+  };
+  geometry: {
+    status: ChangeEvidenceStatus;
+    metrics: GeometryMetricChange[];
+  };
+  files: FileChange[];
+  validation: {
+    status: "pass" | "warning" | "fail" | "unknown";
+    summary: string;
+  };
+  risk: {
+    level: "low" | "medium" | "high" | "unknown";
+    reasons: string[];
+  };
+  agentLogs: string[];
+  createdAt: string;
+}
+
 export interface ExportJob {
   id: string;
   label: string;

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import type { AuthSession, AuthUser } from "./auth";
-import { clearAuthSession, fetchAuthConfig, fetchCurrentUser, getAuthUser, LOCAL_DEV_USER, logoutAuthSession, onSessionCleared } from "./auth";
+import { clearAuthSession, fetchAuthConfig, fetchCurrentUser, getAuthToken, getAuthUser, LOCAL_DEV_USER, logoutAuthSession, onSessionCleared } from "./auth";
 import EngineeringWorkspace from "./components/workspace/EngineeringWorkspace";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { LoginPage } from "./components/LoginPage";
+import { useSessionStore } from "./stores/sessionStore";
 
 function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
@@ -18,7 +19,7 @@ function App() {
       const disabled = Boolean(config?.auth_disabled);
       setAuthDisabled(disabled);
       if (disabled) {
-        clearAuthSession();
+        if (getAuthToken() || getAuthUser()) clearAuthSession();
         setAuthUser(LOCAL_DEV_USER);
       } else if (getAuthUser()) {
         setAuthUser(await fetchCurrentUser());
@@ -30,7 +31,10 @@ function App() {
   }, []);
 
   useEffect(
-    () => onSessionCleared(() => setAuthUser(authDisabled ? LOCAL_DEV_USER : null)),
+    () => onSessionCleared(() => {
+      if (!authDisabled) useSessionStore.getState().bindOwner(null);
+      setAuthUser(authDisabled ? LOCAL_DEV_USER : null);
+    }),
     [authDisabled],
   );
 

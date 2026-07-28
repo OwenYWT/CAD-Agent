@@ -144,6 +144,7 @@ export interface CADPlanBrief {
 
 export interface GenerationResult {
   request_id?: string;
+  task_id?: string;
   needs_confirmation?: boolean;
   manufacturing_profile?: ManufacturingProfile | null;
   snapshot_id?: string;
@@ -181,6 +182,12 @@ export interface ModelSnapshotSummary {
 export interface ModelSnapshotDetail extends ModelSnapshotSummary {
   code: string;
   result: GenerationResult;
+  files?: Record<string, string>;
+  params?: Record<string, ParamConfig> | null;
+  parameters?: CADParameter[] | null;
+  validation?: ValidationData | null;
+  inspect_report?: InspectReport | null;
+  repair_history?: RepairStep[];
 }
 
 export interface ChatMessage {

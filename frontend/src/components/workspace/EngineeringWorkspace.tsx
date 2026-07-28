@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AuthUser } from "../../auth";
 import { adaptEngineeringProject } from "../../adapters/projectAdapter";
 import { useWebSocket } from "../../hooks/useWebSocket";
@@ -6,6 +6,7 @@ import { useSessionStore } from "../../stores/sessionStore";
 import type { ManufacturingProfile, ModelSnapshotDetail } from "../../types";
 import type { EngineeringDomain, EngineeringStage } from "../../types/engineering";
 import AgentDrawer from "../agent/AgentDrawer";
+import ChangeSetDialog from "../changes/ChangeSetDialog";
 import ExportDialog from "../export/ExportDialog";
 import ParameterDrawer from "../parameters/ParameterDrawer";
 import ProjectFlow from "../project/ProjectFlow";
@@ -24,6 +25,8 @@ interface EngineeringWorkspaceProps {
 }
 
 export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: EngineeringWorkspaceProps) {
+  const ownerId = useSessionStore((state) => state.ownerId);
+  const bindOwner = useSessionStore((state) => state.bindOwner);
   const sessionId = useSessionStore((state) => state.sessionId);
   const panel = useSessionStore((state) => state.getActivePanel());
   const { connectionState, sendMessage, executeCode, restoreContext } = useWebSocket();
@@ -38,7 +41,12 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const [agentPrompt, setAgentPrompt] = useState("");
   const [parametersOpen, setParametersOpen] = useState(false);
   const [checksOpen, setChecksOpen] = useState(false);
+  const [changesOpen, setChangesOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+
+  useEffect(() => {
+    bindOwner(user.id);
+  }, [bindOwner, user.id]);
 
   const startProject = (prompt: string, profile: ManufacturingProfile | null = null) => {
     if (!sendMessage(prompt, "auto", profile)) return false;
@@ -59,7 +67,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const askAgent = (prompt = "") => { setAgentPrompt(prompt); setAgentOpen(true); };
   const executeWithProgress = (code: string) => {
     if (!executeCode(code)) return false;
-    useSessionStore.getState().beginGeneration();
+    useSessionStore.getState().beginGeneration("正在重新计算模型");
     return true;
   };
 
@@ -73,6 +81,10 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
     useSessionStore.getState().restorePanelResult(panel.id, restoredResult, snapshot.code);
     restoreContext(panel.id, snapshot.code);
   };
+
+  if (ownerId !== user.id) {
+    return <div className="grid min-h-screen place-items-center text-sm text-[var(--muted)]">正在恢复工程会话...</div>;
+  }
 
   if (!hasProject) {
     return <>
@@ -88,12 +100,12 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
 
   return (
     <div className="flex h-[100dvh] min-w-[320px] flex-col overflow-hidden bg-white text-[var(--ink)]">
-      <WorkspaceHeader connection={connectionState} onAgent={() => askAgent()} onBack={() => setView("overview")} onChecks={() => setChecksOpen(true)} onExport={() => setExportOpen(true)} onLogout={onLogout} onMenu={() => setMobileSidebar(true)} onSettings={() => setSettingsOpen(true)} onUserUpdate={onUserUpdate} project={model.project} user={user} />
+      <WorkspaceHeader connection={connectionState} onAgent={() => askAgent()} onBack={() => setView("overview")} onChanges={() => setChangesOpen(true)} onChecks={() => setChecksOpen(true)} onExport={() => setExportOpen(true)} onLogout={onLogout} onMenu={() => setMobileSidebar(true)} onSettings={() => setSettingsOpen(true)} onUserUpdate={onUserUpdate} project={model.project} user={user} />
       <div className="flex min-h-0 flex-1">
         <ProjectSidebar activeView={view} collapsed={sidebarCollapsed} mobileOpen={mobileSidebar} onCollapse={() => setSidebarCollapsed((value) => !value)} onMobileClose={() => setMobileSidebar(false)} onNavigate={navigate} restoreContext={restoreContext} />
         <div className="min-w-0 flex-1">
           {view === "overview" ? <ProjectFlow onOpenStage={openStage} project={model.project} stages={model.stages} task={model.task} /> : null}
-          {view === "mechanical" ? <MechanicalWorkspace onAgent={() => askAgent()} onBack={() => setView("overview")} onProperties={() => setParametersOpen(true)} result={model.result} /> : null}
+          {view === "mechanical" ? <MechanicalWorkspace currentStep={panel.currentStep} isGenerating={panel.isGenerating} onAgent={() => askAgent()} onBack={() => setView("overview")} onProperties={() => setParametersOpen(true)} result={model.result} /> : null}
         </div>
       </div>
       <button aria-label="询问 Agent" className="fixed bottom-4 right-4 z-30 grid h-12 w-12 place-items-center rounded-full bg-[var(--ink)] text-white shadow-xl sm:hidden" onClick={() => askAgent()} type="button"><Icon name="message" size={18} /></button>
@@ -115,6 +127,14 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
         refreshKey={model.result?.snapshot_id}
         result={model.result}
         steps={panel.stepHistory}
+      />
+      <ChangeSetDialog
+        activeSnapshotId={model.result?.snapshot_id}
+        onAskAgent={(prompt) => { setChangesOpen(false); askAgent(prompt); }}
+        onClose={() => setChangesOpen(false)}
+        onRestore={restoreSnapshot}
+        open={changesOpen}
+        panelId={panel.id}
       />
       <ExportDialog jobs={model.exports} onClose={() => setExportOpen(false)} open={exportOpen} requestId={model.result?.request_id} />
       <SettingsDrawer onClose={() => setSettingsOpen(false)} open={settingsOpen} />

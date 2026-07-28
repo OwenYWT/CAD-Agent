@@ -68,6 +68,37 @@ async def test_create_and_list_model_snapshots_versions_per_panel():
     assert snapshots[0]["status"] == "pass"
     assert snapshots[0]["available_exports"] == ["stl"]
 
+
+@pytest.mark.asyncio
+async def test_snapshot_automatically_links_to_latest_panel_revision():
+    await history.create_session("session-lineage", user_id="user-1")
+    await history.create_panel(
+        "session-lineage",
+        "panel-lineage",
+        user_id="user-1",
+    )
+    first = await history.create_model_snapshot(
+        "panel-lineage",
+        {
+            "success": True,
+            "request_id": "req-first",
+            "code": "width = 20",
+        },
+        source="generation",
+    )
+    second = await history.create_model_snapshot(
+        "panel-lineage",
+        {
+            "success": True,
+            "request_id": "req-second",
+            "code": "width = 24",
+        },
+        source="execute_code",
+    )
+
+    assert first["parent_snapshot_id"] is None
+    assert second["parent_snapshot_id"] == first["id"]
+
 @pytest.mark.asyncio
 async def test_concurrent_snapshots_get_unique_monotonic_versions():
     await history.create_session("session-concurrent", user_id="user-1")
@@ -104,10 +135,16 @@ async def test_restore_model_snapshot_updates_panel_current_code():
     )
     restored = await history.restore_model_snapshot(snapshot["id"], user_id="user-1")
     panels = await history.list_panels("session-1")
+    messages = await history.get_messages("panel-1")
     assert restored["code"] == "result = restored"
     assert restored["result"]["code"] == "result = restored"
+    assert restored["result"]["snapshot_id"] == snapshot["id"]
+    assert restored["result"]["version"] == 1
     assert restored["status"] == "warn"
     assert panels[0]["current_code"] == "result = restored"
+    assert messages[-1]["content"] == "已恢复模型版本 v1"
+    assert messages[-1]["result"]["snapshot_id"] == snapshot["id"]
+    assert messages[-1]["result"]["code"] == "result = restored"
 
 
 @pytest.mark.asyncio

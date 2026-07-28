@@ -1,5 +1,6 @@
 import { Grid, OrbitControls } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
+import { useState } from "react";
 import type { BufferGeometry } from "three";
 import { useCADModel } from "../hooks/useCADModel";
 import type { Annotation3D } from "../types";
@@ -13,6 +14,25 @@ interface Viewer3DProps {
   selectedAnnotation?: string | null;
   onSelectAnnotation?: (id: string | null) => void;
   onToggleAnnotations?: () => void;
+}
+
+function useWebGLAvailability() {
+  const [available] = useState(() => {
+    const canvas = document.createElement("canvas");
+    try {
+      const context = canvas.getContext("webgl2")
+        || canvas.getContext("webgl");
+      const isAvailable = Boolean(context);
+      context
+        ?.getExtension("WEBGL_lose_context")
+        ?.loseContext();
+      return isAvailable;
+    } catch {
+      return false;
+    }
+  });
+
+  return available;
 }
 
 function Scene({
@@ -58,6 +78,7 @@ function LoadedViewer({
   onToggleAnnotations?: () => void;
 }) {
   const { geometry, isLoading, error, centerOffset } = useCADModel(stlUrl);
+  const webGLAvailable = useWebGLAvailability();
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#f4f4f1]">
@@ -76,6 +97,18 @@ function LoadedViewer({
             <Icon className="mx-auto text-red-400" name="box" size={32} />
             <p className="mt-3 text-sm font-medium text-red-700">3D 模型加载失败</p>
             <p className="mt-1 text-xs leading-5 text-slate-500">模型文件可能已过期或不可访问，请重新生成后再试。</p>
+          </div>
+        </div>
+      ) : webGLAvailable === false ? (
+        <div className="flex h-full items-center justify-center px-6 text-center" role="status">
+          <div className="max-w-md">
+            <Icon className="mx-auto text-amber-500" name="box" size={32} />
+            <p className="mt-3 text-sm font-medium text-slate-700">当前浏览器无法创建 3D 画布</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              {geometry
+                ? "STL 文件已成功读取，但 WebGL 不可用。请启用浏览器硬件加速后重新打开模型。"
+                : "正在验证 STL 文件；请启用浏览器硬件加速后重新打开模型。"}
+            </p>
           </div>
         </div>
       ) : (

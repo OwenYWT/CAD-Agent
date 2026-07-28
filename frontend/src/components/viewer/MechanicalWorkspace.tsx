@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from "react";
-import type { GenerationResult } from "../../types";
+import type { GenerationResult, StepUpdate } from "../../types";
 import { Icon } from "../ui/Icon";
 import Viewer2D from "../Viewer2D";
 
@@ -7,12 +7,21 @@ const Viewer3D = lazy(() => import("../Viewer3D"));
 
 interface MechanicalWorkspaceProps {
   result: GenerationResult | null;
+  isGenerating: boolean;
+  currentStep: StepUpdate | null;
   onBack: () => void;
   onProperties: () => void;
   onAgent: () => void;
 }
 
-export default function MechanicalWorkspace({ result, onBack, onProperties, onAgent }: MechanicalWorkspaceProps) {
+export default function MechanicalWorkspace({
+  result,
+  isGenerating,
+  currentStep,
+  onBack,
+  onProperties,
+  onAgent,
+}: MechanicalWorkspaceProps) {
   const [viewerKey, setViewerKey] = useState(0);
   const [toolMessage, setToolMessage] = useState<string | null>(null);
   const stlUrl = result?.files?.stl || null;
@@ -37,6 +46,15 @@ export default function MechanicalWorkspace({ result, onBack, onProperties, onAg
       </header>
       <div className="relative min-h-0 flex-1 bg-[#f4f4f1]">
         <div className="absolute left-3 top-3 z-10 flex gap-2"><span className="workspace-chip bg-white">{result?.request_id ? `任务 ${result.request_id.slice(0, 8)}` : "尚无模型"}</span>{result?.validation?.is_watertight ? <span className="workspace-chip bg-white text-emerald-700">网格闭合</span> : null}</div>
+        {isGenerating ? (
+          <div className="absolute left-1/2 top-4 z-20 flex w-[min(92%,520px)] -translate-x-1/2 items-center gap-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sky-900 shadow-lg" role="status">
+            <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-sky-600 border-t-transparent" />
+            <div className="min-w-0">
+              <p className="text-xs font-medium">正在重新计算模型</p>
+              <p className="mt-0.5 truncate text-[11px] text-sky-700">{currentStep?.message || "正在等待执行进度"}</p>
+            </div>
+          </div>
+        ) : null}
         {toolMessage ? <div className="absolute left-1/2 top-16 z-20 w-[min(92%,520px)] -translate-x-1/2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 shadow-lg" role="status">{toolMessage}<button className="ml-3 underline" onClick={() => setToolMessage(null)} type="button">关闭</button></div> : null}
         {is2D ? <Viewer2D key={svgUrl} svgUrl={svgUrl} /> : <Suspense fallback={<div className="grid h-full place-items-center text-sm text-[var(--muted)]">正在载入 Three.js 工作区…</div>}><Viewer3D key={`${stlUrl}:${viewerKey}`} stlUrl={stlUrl} /></Suspense>}
         {!result?.success ? <div className="pointer-events-none absolute inset-x-0 bottom-7 flex justify-center"><button className="workspace-button pointer-events-auto" onClick={onAgent} type="button">询问 Agent 如何开始</button></div> : null}
