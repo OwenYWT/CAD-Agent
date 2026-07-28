@@ -17,6 +17,9 @@ class Permission(StrEnum):
     RUN_VALIDATION = "run_validation"
     EXPORT_ARTIFACT = "export_artifact"
     MANAGE_MEMBERS = "manage_members"
+    REVIEW_CHANGE = "review_change"
+    COMMIT_VERSION = "commit_version"
+    ROLLBACK_VERSION = "rollback_version"
     DELETE_PROJECT = "delete_project"
 
 
@@ -29,6 +32,9 @@ _ROLE_PERMISSIONS: dict[ProjectRole, frozenset[Permission]] = {
             Permission.RUN_VALIDATION,
             Permission.EXPORT_ARTIFACT,
             Permission.MANAGE_MEMBERS,
+            Permission.REVIEW_CHANGE,
+            Permission.COMMIT_VERSION,
+            Permission.ROLLBACK_VERSION,
         }
     ),
     ProjectRole.EDITOR: frozenset(
@@ -37,6 +43,7 @@ _ROLE_PERMISSIONS: dict[ProjectRole, frozenset[Permission]] = {
             Permission.MODIFY_DESIGN,
             Permission.RUN_VALIDATION,
             Permission.EXPORT_ARTIFACT,
+            Permission.REVIEW_CHANGE,
         }
     ),
     ProjectRole.VIEWER: frozenset({Permission.VIEW_PROJECT}),
