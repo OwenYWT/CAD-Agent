@@ -82,12 +82,128 @@ async def get_object(key: str) -> bytes:
         body.close()
 
 
+async def sha256_object(key: str, *, chunk_size: int = 8 * 1024 * 1024) -> dict:
+    """Stream an object's bytes through SHA-256 without loading it into RAM."""
+    def _hash() -> dict:
+        response = get_object_store_client().get_object(
+            Bucket=settings.object_store_bucket,
+            Key=key,
+        )
+        body = response["Body"]
+        digest = hashlib.sha256()
+        size_bytes = 0
+        try:
+            while True:
+                chunk = body.read(chunk_size)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                size_bytes += len(chunk)
+        finally:
+            body.close()
+        return {
+            "key": key,
+            "size_bytes": size_bytes,
+            "sha256": digest.hexdigest(),
+        }
+
+    return await asyncio.to_thread(_hash)
+
+
 async def delete_object(key: str) -> None:
     await _call(
         get_object_store_client().delete_object,
         Bucket=settings.object_store_bucket,
         Key=key,
     )
+
+
+async def head_object(key: str) -> dict:
+    response = await _call(
+        get_object_store_client().head_object,
+        Bucket=settings.object_store_bucket,
+        Key=key,
+    )
+    return {
+        "key": key,
+        "size_bytes": int(response["ContentLength"]),
+        "content_type": response.get("ContentType"),
+        "metadata": dict(response.get("Metadata") or {}),
+        "etag": str(response.get("ETag") or "").strip('"'),
+        "last_modified": response.get("LastModified"),
+    }
+
+
+async def copy_object(source_key: str, destination_key: str) -> dict:
+    await _call(
+        get_object_store_client().copy_object,
+        Bucket=settings.object_store_bucket,
+        Key=destination_key,
+        CopySource={
+            "Bucket": settings.object_store_bucket,
+            "Key": source_key,
+        },
+        MetadataDirective="COPY",
+    )
+    return await head_object(destination_key)
+
+
+async def list_objects(prefix: str) -> list[dict]:
+    def _list() -> list[dict]:
+        paginator = get_object_store_client().get_paginator("list_objects_v2")
+        items: list[dict] = []
+        for page in paginator.paginate(
+            Bucket=settings.object_store_bucket,
+            Prefix=prefix,
+        ):
+            for item in page.get("Contents") or []:
+                last_modified = item.get("LastModified")
+                items.append(
+                    {
+                        "key": item["Key"],
+                        "size_bytes": int(item["Size"]),
+                        "etag": str(item.get("ETag") or "").strip('"'),
+                        "last_modified": last_modified,
+                    }
+                )
+        return items
+
+    return await asyncio.to_thread(_list)
+
+
+def create_presigned_upload(
+    key: str,
+    *,
+    content_type: str,
+    sha256: str,
+    expires_in: int | None = None,
+) -> dict:
+    ttl = expires_in or settings.object_store_presign_ttl_s
+    params = {
+        "Bucket": settings.object_store_bucket,
+        "Key": key,
+        "ContentType": content_type,
+        "Metadata": {"sha256": sha256},
+    }
+    return {
+        "url": get_object_store_client().generate_presigned_url(
+            "put_object",
+            Params=params,
+            ExpiresIn=ttl,
+            HttpMethod="PUT",
+        ),
+        "headers": {
+            "Content-Type": content_type,
+            "x-amz-meta-sha256": sha256,
+        },
+        "expires_in": ttl,
+    }
+
+
+def reset_object_store_client() -> None:
+    """Drop the cached client after a settings change or process shutdown."""
+    global _client
+    _client = None
 
 
 async def object_store_round_trip() -> dict:

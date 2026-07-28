@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     object_store_bucket: str = "cad-agent-artifacts"
     object_store_region: str = "us-east-1"
     object_store_presign_ttl_s: int = Field(default=900, ge=60, le=3600)
+    artifact_upload_ttl_s: int = Field(default=900, ge=60, le=3600)
+    artifact_max_upload_bytes: int = Field(
+        default=2 * 1024 * 1024 * 1024,
+        ge=1,
+        le=10 * 1024 * 1024 * 1024,
+    )
+    artifact_orphan_grace_s: int = Field(default=3600, ge=0, le=604800)
     temporal_target: str = ""
     temporal_namespace: str = "default"
     temporal_task_queue: str = "cad-agent-mcad"
