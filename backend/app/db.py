@@ -3,14 +3,22 @@ from __future__ import annotations
 
 import asyncio
 import time
+from contextlib import asynccontextmanager
+from typing import AsyncIterator, Literal
+from uuid import UUID
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from app.config import settings
 
 
 _engine: AsyncEngine | None = None
+DatabaseRole = Literal["runtime", "worker"]
+_DATABASE_ROLES: dict[DatabaseRole, str] = {
+    "runtime": "cad_agent_runtime",
+    "worker": "cad_agent_worker",
+}
 
 
 def get_database_engine() -> AsyncEngine:
@@ -25,6 +33,34 @@ def get_database_engine() -> AsyncEngine:
             max_overflow=settings.database_max_overflow,
         )
     return _engine
+
+
+@asynccontextmanager
+async def tenant_transaction(
+    tenant_id: UUID,
+    principal_id: UUID | None = None,
+    *,
+    role: DatabaseRole = "runtime",
+) -> AsyncIterator[AsyncConnection]:
+    """Open one tenant-scoped transaction with pool-safe PostgreSQL context.
+
+    `SET LOCAL` is deliberately transaction-bound: a pooled connection cannot
+    retain one customer's tenant or principal when it is reused by another.
+    The local development migration owner assumes the same non-owner roles that
+    production connections receive directly.
+    """
+    role_name = _DATABASE_ROLES[role]
+    async with get_database_engine().begin() as connection:
+        await connection.execute(text(f"SET LOCAL ROLE {role_name}"))
+        await connection.execute(
+            text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
+            {"tenant_id": str(tenant_id)},
+        )
+        await connection.execute(
+            text("SELECT set_config('app.principal_id', :principal_id, true)"),
+            {"principal_id": str(principal_id) if principal_id else ""},
+        )
+        yield connection
 
 
 async def database_readiness() -> dict:

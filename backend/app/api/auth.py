@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import time
 from collections import defaultdict
@@ -14,7 +15,32 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
+async def _bind_authenticated_user(request: Request, user: dict) -> None:
+    if not settings.durable_control_plane_enabled:
+        return
+    from app.repositories.identity import reconcile_authenticated_user
+
+    request.state.principal_context = await reconcile_authenticated_user(user)
+
+
+async def _bind_api_key(request: Request, api_key: str) -> None:
+    if not settings.durable_control_plane_enabled:
+        return
+    from app.repositories.identity import reconcile_api_key
+
+    request.state.principal_context = await reconcile_api_key(api_key)
+
+
+async def _bind_local_anonymous(request: Request) -> None:
+    if not settings.durable_control_plane_enabled:
+        return
+    from app.repositories.identity import reconcile_local_anonymous
+
+    request.state.principal_context = await reconcile_local_anonymous()
+
+
 async def get_current_user(
+    request: Request,
     bearer: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ):
     token = bearer.credentials if bearer else None
@@ -24,10 +50,12 @@ async def get_current_user(
     user = await auth_store.get_user(user_id)
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    await _bind_authenticated_user(request, user)
     return user
 
 
 async def get_optional_user(
+    request: Request,
     bearer: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ):
     """Like get_current_user, but tolerates the local-dev auth-off mode.
@@ -43,8 +71,10 @@ async def get_optional_user(
         if user_id:
             user = await auth_store.get_user(user_id)
             if user:
+                await _bind_authenticated_user(request, user)
                 return user
     if not settings.auth_required and not settings.api_keys:
+        await _bind_local_anonymous(request)
         return None
     raise HTTPException(status_code=401, detail="Invalid or missing login token")
 
@@ -64,15 +94,22 @@ async def verify_api_key(
     if bearer:
         user_id = await auth_store.verify_session_token(bearer.credentials)
         if user_id:
+            user = await auth_store.get_user(user_id)
+            if not user:
+                raise HTTPException(status_code=401, detail="User not found")
+            await _bind_authenticated_user(request, user)
             return f"user:{user_id}"
         if bearer.credentials in settings.api_keys:
+            await _bind_api_key(request, bearer.credentials)
             return bearer.credentials
 
     if x_api_key and x_api_key in settings.api_keys:
         logger.warning("X-API-Key header is deprecated. Use 'Authorization: Bearer <key>' instead.")
+        await _bind_api_key(request, x_api_key)
         return x_api_key
 
     if not settings.auth_required and not settings.api_keys:
+        await _bind_local_anonymous(request)
         return None
 
     raise HTTPException(status_code=401, detail="Invalid or missing API key")
@@ -105,7 +142,8 @@ class RateLimiter:
 
     def _client_key(self, request: Request | WebSocket, api_key: str | None) -> str:
         if api_key:
-            return f"key:{api_key}"
+            fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+            return f"key-sha256:{fingerprint}"
         # Behind a trusted proxy, the real client IP is the first X-Forwarded-For hop;
         # otherwise request.client.host is the proxy itself (one shared bucket for all).
         if settings.trust_proxy_headers:

@@ -126,6 +126,10 @@ def _clear_failed_login(request: Request, phone: str):
 
 
 async def _auth_response(user: dict) -> dict:
+    if settings.durable_control_plane_enabled:
+        from app.repositories.identity import reconcile_authenticated_user
+
+        await reconcile_authenticated_user(user)
     return {
         "token": await auth_store.create_session_token(user["id"]),
         "user": user,
