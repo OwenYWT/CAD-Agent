@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import shutil
 import time
@@ -10,7 +11,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app.db import close_database, database_readiness
 from app.execution.composition import get_execution_backend
+from app.object_store import object_store_readiness
+from app.temporal_client import temporal_readiness
 
 # Configure logging with request-id correlation
 from app.logging_context import RequestIdFilter
@@ -101,14 +105,50 @@ async def _periodic_cleanup(interval_s: int = 3600):
             logger.warning(f"Periodic cleanup error: {e}")
 
 
+async def _durable_control_plane_readiness() -> dict:
+    if not settings.durable_control_plane_enabled:
+        return {
+            "status": "disabled",
+            "dependencies": {},
+            "problems": [],
+        }
+
+    probes = {
+        "postgresql": database_readiness,
+        "object_store": object_store_readiness,
+        "temporal": temporal_readiness,
+    }
+    results = await asyncio.gather(
+        *(probe() for probe in probes.values()),
+        return_exceptions=True,
+    )
+    dependencies = {}
+    problems = []
+    for name, result in zip(probes, results, strict=True):
+        if isinstance(result, BaseException):
+            dependencies[name] = {
+                "status": "unavailable",
+                "error_type": type(result).__name__,
+            }
+            # Provider exception messages can include connection credentials.
+            problems.append(f"{name} unavailable ({type(result).__name__})")
+        else:
+            dependencies[name] = result
+    return {
+        "status": "degraded" if problems else "ready",
+        "dependencies": dependencies,
+        "problems": problems,
+    }
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    import asyncio
     # Refuse to boot with an unsafe auth config (empty/placeholder token secret,
     # dev code exposure on). This is a hard gate, not a warning.
     settings.assert_auth_config_safe()
     settings.assert_sandbox_config_safe()
+    settings.assert_durable_control_plane_config_safe()
     _cleanup_old_files()
     app.state.execution_backend = get_execution_backend()
     app.state.startup_problems = _startup_self_check(app.state.execution_backend)
@@ -140,6 +180,7 @@ async def lifespan(app: FastAPI):
     await close_rules_db()
     from app.dfm.knowledge_graph import close_db as close_kg_db
     await close_kg_db()
+    await close_database()
 
 
 def create_app() -> FastAPI:
@@ -183,16 +224,28 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     @app.get("/ready")
-    def ready():
+    async def ready():
         from fastapi.responses import JSONResponse
 
-        problems = getattr(app.state, "startup_problems", [])
+        durable = await _durable_control_plane_readiness()
+        problems = [
+            *getattr(app.state, "startup_problems", []),
+            *durable["problems"],
+        ]
         if problems:
             return JSONResponse(
                 status_code=503,
-                content={"status": "degraded", "problems": problems},
+                content={
+                    "status": "degraded",
+                    "problems": problems,
+                    "durable_control_plane": durable,
+                },
             )
-        return {"status": "ready", "problems": []}
+        return {
+            "status": "ready",
+            "problems": [],
+            "durable_control_plane": durable,
+        }
 
     if FRONTEND_DIST.exists():
         assets_dir = FRONTEND_DIST / "assets"

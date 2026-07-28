@@ -1,4 +1,5 @@
 import re
+from urllib.parse import urlsplit
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
@@ -22,6 +23,22 @@ class Settings(BaseSettings):
     sandbox_timeout_s: int = 60
     sandbox_memory_limit: str = "512m"
     sandbox_max_concurrent: int = 4  # cap simultaneous container spawns (each = CPU+RAM)
+    # M1 durable control plane. Development keeps this disabled until its real
+    # dependencies are intentionally started; production fails closed.
+    durable_control_plane_enabled: bool = False
+    database_url: str = Field(default="", repr=False)
+    database_pool_size: int = Field(default=10, ge=1, le=100)
+    database_max_overflow: int = Field(default=20, ge=0, le=200)
+    dependency_readiness_timeout_s: float = Field(default=5.0, ge=0.5, le=30.0)
+    object_store_endpoint_url: str = ""
+    object_store_access_key: str = Field(default="", repr=False)
+    object_store_secret_key: str = Field(default="", repr=False)
+    object_store_bucket: str = "cad-agent-artifacts"
+    object_store_region: str = "us-east-1"
+    object_store_presign_ttl_s: int = Field(default=900, ge=60, le=3600)
+    temporal_target: str = ""
+    temporal_namespace: str = "default"
+    temporal_task_queue: str = "cad-agent-mcad"
     file_storage_dir: str = "./data/files"
     history_db_path: str = "./data/history.db"
     file_ttl_hours: int = 24  # generated files older than this are cleaned up
@@ -219,6 +236,106 @@ class Settings(BaseSettings):
         problems = self.sandbox_config_problems()
         if problems:
             raise RuntimeError("Unsafe sandbox configuration:\n  - " + "\n  - ".join(problems))
+
+    def durable_control_plane_config_problems(self) -> list[str]:
+        """Validate deployment-owned PostgreSQL, object-store, and Temporal config."""
+        environment = self.app_environment.strip().lower()
+        production_like = environment not in {
+            "development",
+            "dev",
+            "local",
+            "test",
+        }
+        if not self.durable_control_plane_enabled:
+            if production_like:
+                return [
+                    "DURABLE_CONTROL_PLANE_ENABLED must be true outside local "
+                    "development."
+                ]
+            return []
+
+        problems: list[str] = []
+        if not self.database_url.strip():
+            problems.append("DATABASE_URL is required.")
+        elif not self.database_url.startswith("postgresql+asyncpg://"):
+            problems.append(
+                "DATABASE_URL must use the postgresql+asyncpg driver."
+            )
+
+        required = {
+            "OBJECT_STORE_ENDPOINT_URL": self.object_store_endpoint_url,
+            "OBJECT_STORE_ACCESS_KEY": self.object_store_access_key,
+            "OBJECT_STORE_SECRET_KEY": self.object_store_secret_key,
+            "OBJECT_STORE_BUCKET": self.object_store_bucket,
+            "TEMPORAL_TARGET": self.temporal_target,
+            "TEMPORAL_NAMESPACE": self.temporal_namespace,
+            "TEMPORAL_TASK_QUEUE": self.temporal_task_queue,
+        }
+        for name, value in required.items():
+            if not value.strip():
+                problems.append(f"{name} is required.")
+
+        if self.object_store_bucket and not re.fullmatch(
+            r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]",
+            self.object_store_bucket,
+        ):
+            problems.append(
+                "OBJECT_STORE_BUCKET must be a valid lowercase S3 bucket name."
+            )
+
+        placeholders = {
+            "change-me",
+            "changeme",
+            "password",
+            "secret",
+            "minioadmin",
+            "<password>",
+            "<secret>",
+        }
+
+        def _is_placeholder(value: str) -> bool:
+            normalized = value.strip().lower()
+            return (
+                normalized in placeholders
+                or (normalized.startswith("<") and normalized.endswith(">"))
+            )
+
+        if _is_placeholder(self.object_store_access_key):
+            problems.append(
+                "OBJECT_STORE_ACCESS_KEY is a known placeholder and must be replaced."
+            )
+        if _is_placeholder(self.object_store_secret_key):
+            problems.append(
+                "OBJECT_STORE_SECRET_KEY is a known placeholder and must be replaced."
+            )
+
+        if self.database_url.startswith("postgresql+asyncpg://"):
+            try:
+                password = urlsplit(self.database_url).password or ""
+            except ValueError:
+                password = ""
+            if not password:
+                problems.append("DATABASE_URL must contain a database password.")
+            elif _is_placeholder(password):
+                problems.append(
+                    "DATABASE_URL contains a placeholder password and must be replaced."
+                )
+
+        if production_like and self.object_store_endpoint_url:
+            endpoint = urlsplit(self.object_store_endpoint_url)
+            if endpoint.scheme != "https":
+                problems.append(
+                    "OBJECT_STORE_ENDPOINT_URL must use HTTPS outside local development."
+                )
+        return problems
+
+    def assert_durable_control_plane_config_safe(self) -> None:
+        problems = self.durable_control_plane_config_problems()
+        if problems:
+            raise RuntimeError(
+                "Unsafe durable control-plane configuration:\n  - "
+                + "\n  - ".join(problems)
+            )
 
     def sms_config_problem(self) -> str | None:
         if not self.auth_required:
