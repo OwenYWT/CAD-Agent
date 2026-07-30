@@ -176,6 +176,10 @@ def _snapshot_from_row(row) -> dict:
 # ---- Sessions ----
 
 async def create_session(session_id: str, title: str = "", user_id: str | None = None) -> dict:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.create_session(session_id, title, user_id)
     db = await get_db()
     now = _now()
     await db.execute(
@@ -206,6 +210,10 @@ async def create_session(session_id: str, title: str = "", user_id: str | None =
 
 
 async def list_sessions(user_id: str | None = None) -> list[dict]:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.list_sessions(user_id)
     db = await get_db()
     if user_id:
         rows = await db.execute_fetchall(
@@ -220,6 +228,13 @@ async def list_sessions(user_id: str | None = None) -> list[dict]:
 
 
 async def session_belongs_to_user(session_id: str, user_id: str | None) -> bool:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.session_belongs_to_user(
+            session_id,
+            user_id,
+        )
     if not user_id:
         return True
     db = await get_db()
@@ -236,6 +251,13 @@ async def session_writable_by_user(session_id: str, user_id: str | None) -> bool
     already exists AND is owned by a *different* user. Sessions with a NULL owner
     (created in dev/anonymous mode) are claimable by the first authenticated writer.
     """
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.session_writable_by_user(
+            session_id,
+            user_id,
+        )
     if not user_id:
         return True
     db = await get_db()
@@ -256,6 +278,14 @@ async def panel_writable_by_session(
     Panel IDs are global primary keys. Reusing one in another session would make
     INSERT OR IGNORE route later messages into the old session.
     """
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.panel_writable_by_session(
+            panel_id,
+            session_id,
+            user_id,
+        )
     db = await get_db()
     cursor = await db.execute(
         """
@@ -275,6 +305,13 @@ async def panel_writable_by_session(
 
 
 async def panel_belongs_to_user(panel_id: str, user_id: str | None) -> bool:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.panel_belongs_to_user(
+            panel_id,
+            user_id,
+        )
     if not user_id:
         return True
     db = await get_db()
@@ -287,6 +324,10 @@ async def panel_belongs_to_user(panel_id: str, user_id: str | None) -> bool:
 
 
 async def delete_session(session_id: str, user_id: str | None = None):
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.delete_session(session_id, user_id)
     db = await get_db()
     if user_id:
         await db.execute("DELETE FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
@@ -296,6 +337,10 @@ async def delete_session(session_id: str, user_id: str | None = None):
 
 
 async def touch_session(session_id: str):
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.touch_session(session_id)
     db = await get_db()
     await db.execute(
         "UPDATE sessions SET updated_at = ? WHERE id = ?", (_now(), session_id)
@@ -306,6 +351,15 @@ async def touch_session(session_id: str):
 # ---- Panels ----
 
 async def create_panel(session_id: str, panel_id: str, title: str = "", user_id: str | None = None) -> dict:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.create_panel(
+            session_id,
+            panel_id,
+            title,
+            user_id,
+        )
     db = await get_db()
     existing = await db.execute(
         "SELECT id, session_id, title, created_at FROM panels WHERE id = ?",
@@ -333,6 +387,10 @@ async def create_panel(session_id: str, panel_id: str, title: str = "", user_id:
 
 
 async def list_panels(session_id: str) -> list[dict]:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.list_panels(session_id)
     db = await get_db()
     rows = await db.execute_fetchall(
         "SELECT id, session_id, title, current_code, created_at FROM panels WHERE session_id = ? ORDER BY created_at",
@@ -342,6 +400,10 @@ async def list_panels(session_id: str) -> list[dict]:
 
 
 async def update_panel_code(panel_id: str, code: str | None, params: dict | None = None):
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.update_panel_code(panel_id, code, params)
     db = await get_db()
     await db.execute(
         "UPDATE panels SET current_code = ?, current_params = ? WHERE id = ?",
@@ -355,6 +417,15 @@ async def update_panel_code(panel_id: str, code: str | None, params: dict | None
 async def save_message(
     panel_id: str, role: str, content: str, result: dict | None = None
 ):
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.save_message(
+            panel_id,
+            role,
+            content,
+            result,
+        )
     db = await get_db()
     await db.execute(
         "INSERT INTO messages (panel_id, role, content, result, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -364,6 +435,10 @@ async def save_message(
 
 
 async def get_messages(panel_id: str) -> list[dict]:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.get_messages(panel_id)
     db = await get_db()
     rows = await db.execute_fetchall(
         "SELECT role, content, result FROM messages WHERE panel_id = ? ORDER BY id",
@@ -387,6 +462,16 @@ async def create_model_snapshot(
     prompt: str = "",
     parent_snapshot_id: str | None = None,
 ) -> dict:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.create_model_snapshot(
+            panel_id,
+            result,
+            source,
+            prompt,
+            parent_snapshot_id,
+        )
     db = await get_db()
     snapshot_id = str(uuid.uuid4())
     now = _now()
@@ -446,6 +531,10 @@ async def create_model_snapshot(
 
 
 async def list_model_snapshots(panel_id: str) -> list[dict]:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.list_model_snapshots(panel_id)
     db = await get_db()
     rows = await db.execute_fetchall(
         "SELECT * FROM model_snapshots WHERE panel_id = ? ORDER BY version DESC",
@@ -455,6 +544,10 @@ async def list_model_snapshots(panel_id: str) -> list[dict]:
 
 
 async def get_model_snapshot(snapshot_id: str) -> dict | None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.get_model_snapshot(snapshot_id)
     db = await get_db()
     cursor = await db.execute(
         "SELECT * FROM model_snapshots WHERE id = ?",
@@ -465,6 +558,13 @@ async def get_model_snapshot(snapshot_id: str) -> dict | None:
 
 
 async def snapshot_belongs_to_user(snapshot_id: str, user_id: str | None) -> bool:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.snapshot_belongs_to_user(
+            snapshot_id,
+            user_id,
+        )
     if not user_id:
         return True
     db = await get_db()
@@ -483,6 +583,13 @@ async def snapshot_belongs_to_user(snapshot_id: str, user_id: str | None) -> boo
 
 
 async def restore_model_snapshot(snapshot_id: str, user_id: str | None = None) -> dict | None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.restore_model_snapshot(
+            snapshot_id,
+            user_id,
+        )
     if not await snapshot_belongs_to_user(snapshot_id, user_id):
         return None
     snapshot = await get_model_snapshot(snapshot_id)
@@ -530,6 +637,15 @@ async def save_feedback(
     printed: str | None = None,
     note: str | None = None,
 ) -> dict:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.save_feedback(
+            request_id,
+            rating,
+            printed,
+            note,
+        )
     db = await get_db()
     now = _now()
     await db.execute(
@@ -547,6 +663,10 @@ async def save_feedback(
 
 
 async def get_feedback(request_id: str) -> list[dict]:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.get_feedback(request_id)
     db = await get_db()
     rows = await db.execute_fetchall(
         "SELECT request_id, rating, printed, note, created_at FROM feedback "
@@ -572,6 +692,23 @@ async def save_onshape_link(
     mode: str = "import_step",
     raw_response: dict | None = None,
 ) -> dict:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.save_onshape_link(
+            request_id,
+            user_id,
+            document_id,
+            workspace_id,
+            element_id,
+            translation_id,
+            status,
+            onshape_url,
+            document_name,
+            step_filename,
+            mode,
+            raw_response,
+        )
     db = await get_db()
     now = _now()
     raw_text = json.dumps(raw_response, ensure_ascii=False) if raw_response is not None else None
@@ -619,6 +756,10 @@ async def save_onshape_link(
 
 
 async def get_onshape_links(request_id: str, user_id: str | None = None) -> list[dict]:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.get_onshape_links(request_id, user_id)
     db = await get_db()
     if user_id:
         rows = await db.execute_fetchall(
@@ -648,6 +789,13 @@ async def get_onshape_links(request_id: str, user_id: str | None = None) -> list
 
 
 async def get_latest_onshape_link(request_id: str, user_id: str | None = None) -> dict | None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.get_latest_onshape_link(
+            request_id,
+            user_id,
+        )
     db = await get_db()
     if user_id:
         cursor = await db.execute(
@@ -683,6 +831,13 @@ async def get_onshape_link_by_translation(
     translation_id: str,
     user_id: str | None = None,
 ) -> dict | None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.get_onshape_link_by_translation(
+            translation_id,
+            user_id,
+        )
     db = await get_db()
     if user_id:
         cursor = await db.execute(
@@ -721,6 +876,16 @@ async def update_onshape_link_status(
     onshape_url: str,
     raw_response: dict | None = None,
 ) -> dict | None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_history
+
+        return await postgres_history.update_onshape_link_status(
+            link_id,
+            status,
+            element_id,
+            onshape_url,
+            raw_response,
+        )
     db = await get_db()
     now = _now()
     raw_text = json.dumps(raw_response, ensure_ascii=False) if raw_response is not None else None

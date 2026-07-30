@@ -83,6 +83,24 @@ def api_key_principal(api_key: str) -> PrincipalContext:
     )
 
 
+def platform_service_principal(service_name: str) -> PrincipalContext:
+    """Return a stable first-party service identity without a reusable secret."""
+    name = service_name.strip().lower()
+    if not name:
+        raise ValueError("service_name must not be empty")
+    tenant_id = _stable_uuid(f"platform-service-tenant:{name}")
+    return PrincipalContext(
+        tenant_id=tenant_id,
+        principal_id=_stable_uuid(f"platform-service-principal:{name}"),
+        tenant_kind=TenantKind.SERVICE,
+        kind=PrincipalKind.SERVICE,
+        external_subject=f"platform-service:{name}",
+        api_key_fingerprint=hashlib.sha256(
+            f"platform-service:{name}".encode("utf-8")
+        ).hexdigest(),
+    )
+
+
 def local_anonymous_principal() -> PrincipalContext:
     return PrincipalContext(
         tenant_id=_stable_uuid("local-development-tenant"),

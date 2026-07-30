@@ -34,7 +34,7 @@ async def generate(req: GenerateRequest, request: Request, api_key: str | None =
             orchestrator.generate(req.prompt, req.output_formats, **generate_kwargs),
             timeout=settings.generate_deadline_s,
         )
-        claim_request_owner(response.request_id, api_key)
+        await claim_request_owner(response.request_id, api_key)
         if not response.success:
             return JSONResponse(
                 status_code=500,
@@ -75,7 +75,7 @@ async def modify(req: ModifyRequest, request: Request, api_key: str | None = Dep
     try:
         orchestrator = _get_orchestrator()
         response = await orchestrator.modify(req.code, req.prompt, req.output_formats)
-        claim_request_owner(response.request_id, api_key)
+        await claim_request_owner(response.request_id, api_key)
         if not response.success:
             return JSONResponse(
                 status_code=500,

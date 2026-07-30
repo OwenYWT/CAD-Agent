@@ -20,7 +20,11 @@ async def _bind_authenticated_user(request: Request, user: dict) -> None:
         return
     from app.repositories.identity import reconcile_authenticated_user
 
-    request.state.principal_context = await reconcile_authenticated_user(user)
+    context = await reconcile_authenticated_user(user)
+    request.state.principal_context = context
+    from app.principal_context import bind_principal
+
+    bind_principal(context)
 
 
 async def _bind_api_key(request: Request, api_key: str) -> None:
@@ -28,7 +32,11 @@ async def _bind_api_key(request: Request, api_key: str) -> None:
         return
     from app.repositories.identity import reconcile_api_key
 
-    request.state.principal_context = await reconcile_api_key(api_key)
+    context = await reconcile_api_key(api_key)
+    request.state.principal_context = context
+    from app.principal_context import bind_principal
+
+    bind_principal(context)
 
 
 async def _bind_local_anonymous(request: Request) -> None:
@@ -36,7 +44,11 @@ async def _bind_local_anonymous(request: Request) -> None:
         return
     from app.repositories.identity import reconcile_local_anonymous
 
-    request.state.principal_context = await reconcile_local_anonymous()
+    context = await reconcile_local_anonymous()
+    request.state.principal_context = context
+    from app.principal_context import bind_principal
+
+    bind_principal(context)
 
 
 async def get_current_user(

@@ -9,6 +9,7 @@ from app.agent.orchestrator import ConversationContext, Orchestrator
 from app.api.auth import verify_ws_token, get_ws_user_id, rate_limiter
 from app.api.error_messages import public_generation_error
 from app.models.schemas import StepUpdate
+from app.config import settings
 from app.storage import history, local_runs
 from app.storage.file_ownership import claim_request_owner
 from app.workflows.local import LocalWorkflowOutcome, get_local_workflow_manager
@@ -69,6 +70,22 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         return
     user_id = await get_ws_user_id(token)
     principal = f"user:{user_id}" if user_id else token
+    if settings.durable_control_plane_enabled:
+        from app.domain.identity import (
+            api_key_principal,
+            local_anonymous_principal,
+            user_principal,
+        )
+        from app.principal_context import bind_principal
+        from app.repositories.identity import reconcile_principal
+
+        if user_id:
+            principal_context = user_principal(user_id)
+        elif token:
+            principal_context = api_key_principal(token)
+        else:
+            principal_context = local_anonymous_principal()
+        bind_principal(await reconcile_principal(principal_context))
 
     # Ownership check: a logged-in user must not attach to a session_id that another
     # user already owns (otherwise they could write panels/messages into it). A brand
@@ -239,13 +256,17 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
                     result_data["panel_id"] = panel_id
                     result_data["task_id"] = task_ref["id"]
-                    claim_request_owner(result_data.get("request_id"), principal)
                     if result_data.get("success") and result_data.get("code"):
                         snapshot = await history.create_model_snapshot(
                             panel_id, result_data, source="generation", prompt=text
                         )
                         result_data["snapshot_id"] = snapshot["id"]
                         result_data["version"] = snapshot["version"]
+                    await claim_request_owner(
+                        result_data.get("request_id"),
+                        principal,
+                        revision_id=result_data.get("snapshot_id"),
+                    )
 
                     if result_data.get("needs_confirmation"):
                         assistant_content = "设计简报需要确认"
@@ -337,7 +358,6 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         }
                     result_data["panel_id"] = panel_id
                     result_data["task_id"] = task_ref["id"]
-                    claim_request_owner(result_data.get("request_id"), principal)
                     if result_data.get("success") and result_data.get("code"):
                         snapshot = await history.create_model_snapshot(
                             panel_id,
@@ -347,6 +367,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         )
                         result_data["snapshot_id"] = snapshot["id"]
                         result_data["version"] = snapshot["version"]
+                    await claim_request_owner(
+                        result_data.get("request_id"),
+                        principal,
+                        revision_id=result_data.get("snapshot_id"),
+                    )
 
                     msg_content = (
                         f"零件 {part_name} 已修改"
@@ -429,7 +454,6 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
                     result_data["panel_id"] = panel_id
                     result_data["task_id"] = task_ref["id"]
-                    claim_request_owner(result_data.get("request_id"), principal)
                     if result_data.get("success") and result_data.get("code"):
                         snapshot = await history.create_model_snapshot(
                             panel_id,
@@ -439,6 +463,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         )
                         result_data["snapshot_id"] = snapshot["id"]
                         result_data["version"] = snapshot["version"]
+                    await claim_request_owner(
+                        result_data.get("request_id"),
+                        principal,
+                        revision_id=result_data.get("snapshot_id"),
+                    )
                     assistant_content = (
                         "参数修改已执行"
                         if result_data.get("success")

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.auth import verify_api_key
 from app.config import settings
-from app.storage.file_ownership import request_belongs_to
+from app.storage.file_ownership import hydrate_project_files, request_belongs_to
 from app.models.schemas import (
     AnalyzeRequest,
     Annotation3D,
@@ -120,8 +120,14 @@ async def analyze_design(
 ):
     if not _SAFE_ID_RE.match(request_id):
         raise HTTPException(400, "Invalid request_id")
-    if not request_belongs_to(request_id, credential):
+    if not await request_belongs_to(request_id, credential):
         raise HTTPException(404, "Request ID not found")
+
+    if settings.durable_control_plane_enabled:
+        await hydrate_project_files(
+            request_id,
+            extensions={".stl", ".step", ".stp"},
+        )
 
     # Find the STL file
     storage = Path(settings.file_storage_dir) / request_id

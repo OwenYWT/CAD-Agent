@@ -8,6 +8,8 @@ from pathlib import Path
 import aiosqlite
 from pydantic import BaseModel
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 DB_PATH = Path("./data/knowledge_graph.db")
@@ -131,6 +133,10 @@ async def list_nodes(
     node_type: str | None = None,
     customer_id: str = "default",
 ) -> list[KGNode]:
+    if settings.durable_control_plane_enabled:
+        from app.dfm import postgres_store
+
+        return await postgres_store.list_nodes(node_type, customer_id)
     db = await _get_db()
     if node_type:
         rows = await db.execute_fetchall(
@@ -153,6 +159,10 @@ async def list_nodes(
 
 
 async def get_node(node_id: str, customer_id: str = "default") -> KGNode | None:
+    if settings.durable_control_plane_enabled:
+        from app.dfm import postgres_store
+
+        return await postgres_store.get_node(node_id, customer_id)
     db = await _get_db()
     rows = await db.execute_fetchall(
         "SELECT * FROM kg_nodes WHERE id=? AND customer_id=?",
@@ -174,6 +184,15 @@ async def get_edges(
     relationship: str | None = None,
     customer_id: str = "default",
 ) -> list[KGEdge]:
+    if settings.durable_control_plane_enabled:
+        from app.dfm import postgres_store
+
+        return await postgres_store.get_edges(
+            source_id,
+            target_id,
+            relationship,
+            customer_id,
+        )
     db = await _get_db()
     conditions = ["customer_id=?"]
     params: list = [customer_id]
@@ -311,6 +330,10 @@ async def recommend_processes(
 
 
 async def upsert_node(node: KGNode) -> KGNode:
+    if settings.durable_control_plane_enabled:
+        from app.dfm import postgres_store
+
+        return await postgres_store.upsert_node(node)
     db = await _get_db()
     await db.execute(
         """INSERT INTO kg_nodes (id, type, name, properties, customer_id)
@@ -324,6 +347,10 @@ async def upsert_node(node: KGNode) -> KGNode:
 
 
 async def add_edge(edge: KGEdge) -> KGEdge:
+    if settings.durable_control_plane_enabled:
+        from app.dfm import postgres_store
+
+        return await postgres_store.add_edge(edge)
     db = await _get_db()
     cursor = await db.execute(
         "INSERT INTO kg_edges (source_id, target_id, relationship, properties, customer_id) VALUES (?,?,?,?,?)",
@@ -335,6 +362,10 @@ async def add_edge(edge: KGEdge) -> KGEdge:
 
 
 async def delete_node(node_id: str, customer_id: str = "default") -> bool:
+    if settings.durable_control_plane_enabled:
+        from app.dfm import postgres_store
+
+        return await postgres_store.delete_node(node_id, customer_id)
     db = await _get_db()
     await db.execute(
         "DELETE FROM kg_nodes WHERE id=? AND customer_id=?",
@@ -349,6 +380,10 @@ async def delete_node(node_id: str, customer_id: str = "default") -> bool:
 
 
 async def delete_edge(edge_id: int) -> bool:
+    if settings.durable_control_plane_enabled:
+        from app.dfm import postgres_store
+
+        return await postgres_store.delete_edge(edge_id)
     db = await _get_db()
     await db.execute("DELETE FROM kg_edges WHERE id=?", (edge_id,))
     await db.commit()
@@ -357,6 +392,10 @@ async def delete_edge(edge_id: int) -> bool:
 
 async def clone_for_customer(customer_id: str) -> int:
     """Clone default knowledge graph for a customer."""
+    if settings.durable_control_plane_enabled:
+        from app.dfm import postgres_store
+
+        return await postgres_store.clone_for_customer(customer_id)
     db = await _get_db()
     # Check if customer already has nodes
     rows = await db.execute_fetchall(

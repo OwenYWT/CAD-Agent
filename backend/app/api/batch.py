@@ -92,7 +92,7 @@ async def batch_generate(
                 error={"type": type(r).__name__, "message": str(r)},
             ))
         else:
-            claim_request_owner(r.request_id, api_key)
+            await claim_request_owner(r.request_id, api_key)
             final_results.append(r)
 
     total_ms = int((time.time() - start) * 1000)
@@ -129,7 +129,7 @@ async def generate_async(
             on_step=on_progress,
             **kwargs,
         )
-        claim_request_owner(result.request_id, api_key)
+        await claim_request_owner(result.request_id, api_key)
         return result
 
     manager = get_local_workflow_manager()

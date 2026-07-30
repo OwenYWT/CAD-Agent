@@ -40,9 +40,9 @@ async def _require_document_admin(api_key: str | None) -> None:
         raise HTTPException(status_code=403, detail="Only administrators can access shared Onshape documents")
 
 
-def _require_request_owner(request_id: str, api_key: str | None) -> None:
+async def _require_request_owner(request_id: str, api_key: str | None) -> None:
     try:
-        allowed = request_belongs_to(request_id, api_key)
+        allowed = await request_belongs_to(request_id, api_key)
     except FileOwnershipError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not allowed:
@@ -116,7 +116,7 @@ async def publish_to_onshape(
     api_key: str | None = Depends(verify_api_key),
 ):
     await rate_limiter.check(request, api_key)
-    _require_request_owner(req.request_id, api_key)
+    await _require_request_owner(req.request_id, api_key)
     if req.document_id:
         await _require_document_admin(api_key)
     try:

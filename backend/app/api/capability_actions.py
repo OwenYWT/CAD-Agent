@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from app.api.auth import rate_limiter, verify_api_key
@@ -160,6 +160,16 @@ async def upload_capability_artifact(
         await file.close()
 
     digest = sha256_file(target)
+    if settings.durable_control_plane_enabled:
+        from app.storage.capability_artifacts import commit
+
+        await commit(
+            scope="uploads",
+            request_id=upload_id,
+            filename=filename,
+            path=target,
+            content_type=file.content_type,
+        )
     return {
         "id": upload_id,
         "name": filename,
@@ -180,6 +190,27 @@ async def download_capability_artifact(
     api_key: str | None = Depends(verify_api_key),
 ):
     await rate_limiter.check(request, api_key)
+    if settings.durable_control_plane_enabled:
+        from app.object_store import get_object
+        from app.storage.capability_artifacts import get
+
+        metadata = await get(scope, request_id, filename)
+        if metadata is None:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+        payload = await get_object(metadata["object_key"])
+        if len(payload) != metadata["size_bytes"]:
+            raise HTTPException(
+                status_code=503,
+                detail="Stored artifact failed size verification",
+            )
+        return Response(
+            content=payload,
+            media_type=metadata["content_type"],
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "ETag": f'"{metadata["sha256"]}"',
+            },
+        )
     owner = _owner_root(api_key)
     try:
         if scope == "runs":
@@ -209,6 +240,11 @@ async def run_capability_action(
     await rate_limiter.check(request, api_key)
     if get_capability(capability_id) is None:
         raise HTTPException(status_code=404, detail=f"Capability '{capability_id}' not found")
+    owner = _owner_root(api_key)
+    if settings.durable_control_plane_enabled:
+        from app.storage.capability_artifacts import hydrate_values
+
+        await hydrate_values(payload.params, owner)
     runtime = _runtime(
         api_key,
         getattr(request.app.state, "execution_backend", None),
@@ -219,4 +255,19 @@ async def run_capability_action(
         payload.params,
         payload.request_id,
     )
+    if settings.durable_control_plane_enabled:
+        from app.storage.capability_artifacts import commit
+
+        for item in result.get("files") or []:
+            path_value = item.get("path")
+            if not path_value:
+                continue
+            path = Path(path_value).resolve()
+            await commit(
+                scope="runs",
+                request_id=result["request_id"],
+                filename=path.name,
+                path=path,
+                content_type=item.get("media_type"),
+            )
     return _public_result(result, api_key)

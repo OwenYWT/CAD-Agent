@@ -47,6 +47,14 @@ SURFACE_TYPE_MAP = {
 }
 
 
+def cast_topods(kind, shape):
+    """Cast an explorer shape across cadquery-ocp 7.7 and 7.9 bindings."""
+    caster = getattr(TopoDS, f"{kind}_s", None) or getattr(TopoDS, kind, None)
+    if caster is None:
+        raise RuntimeError(f"OCP TopoDS has no {kind} casting API")
+    return caster(shape)
+
+
 def get_face_info(face, face_id, pull_dir=(0, 0, 1)):
     """Extract info from a single B-rep face."""
     adaptor = BRepAdaptor_Surface(face)
@@ -228,7 +236,7 @@ def estimate_wall_thickness_brep(shape, n_samples=100):
     explorer = TopExp_Explorer(shape, TopAbs_FACE)
     face_list = []
     while explorer.More():
-        face_list.append(TopoDS.Face_s(explorer.Current()))
+        face_list.append(cast_topods("Face", explorer.Current()))
         explorer.Next()
 
     if len(face_list) < 2:
@@ -299,7 +307,7 @@ else:
     explorer = TopExp_Explorer(solid, TopAbs_FACE)
     fid = 0
     while explorer.More():
-        face = TopoDS.Face_s(explorer.Current())
+        face = cast_topods("Face", explorer.Current())
         try:
             info = get_face_info(face, fid)
             faces.append(info)
@@ -313,7 +321,7 @@ else:
     explorer = TopExp_Explorer(solid, TopAbs_EDGE)
     eid = 0
     while explorer.More():
-        edge = TopoDS.Edge_s(explorer.Current())
+        edge = cast_topods("Edge", explorer.Current())
         try:
             info = get_edge_info(edge, eid)
             edges.append(info)

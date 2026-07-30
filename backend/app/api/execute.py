@@ -20,7 +20,7 @@ async def execute(req: ExecuteRequest, request: Request, api_key: str | None = D
     try:
         orchestrator = _get_orchestrator()
         response = await orchestrator.execute_code(req.code, req.output_formats)
-        claim_request_owner(response.request_id, api_key)
+        await claim_request_owner(response.request_id, api_key)
         if not response.success:
             return JSONResponse(
                 status_code=500,

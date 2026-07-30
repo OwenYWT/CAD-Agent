@@ -240,6 +240,10 @@ def _make_token(user_id: str, token_id: str, expires_at: datetime) -> str:
 
 
 async def create_session_token(user_id: str, ttl_hours: int | None = None) -> str:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.create_session_token(user_id, ttl_hours)
     expires_at = _now() + timedelta(hours=ttl_hours or settings.auth_token_ttl_hours)
     token_id = secrets.token_hex(8)
     token = _make_token(user_id, token_id, expires_at)
@@ -271,6 +275,10 @@ def parse_access_token(token: str | None) -> tuple[str, int, str] | None:
 
 
 async def verify_session_token(token: str | None) -> str | None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.verify_session_token(token)
     parsed = parse_access_token(token)
     if not parsed:
         return None
@@ -294,6 +302,10 @@ async def verify_session_token(token: str | None) -> str | None:
 
 
 async def revoke_session_token(token: str | None):
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.revoke_session_token(token)
     parsed = parse_access_token(token)
     if not parsed:
         return
@@ -304,6 +316,10 @@ async def revoke_session_token(token: str | None):
 
 
 async def refresh_session_token(token: str | None) -> str | None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.refresh_session_token(token)
     user_id = await verify_session_token(token)
     if not user_id:
         return None
@@ -324,6 +340,10 @@ def public_user(row: aiosqlite.Row | dict) -> dict:
 
 
 async def ensure_admin_user():
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.ensure_admin_user()
     # No admin password configured => do NOT auto-create an admin. (Previously this
     # shipped a default "admin123456", an instant takeover of the invite-management
     # surface.) Operators must set ADMIN_PASSWORD explicitly to provision admin.
@@ -344,6 +364,10 @@ async def ensure_admin_user():
 
 
 async def user_exists(phone: str) -> bool:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.user_exists(phone)
     normalized = normalize_phone(phone)
     db = await get_db()
     cursor = await db.execute("SELECT 1 FROM users WHERE phone = ?", (normalized,))
@@ -360,6 +384,10 @@ class VerificationThrottleError(Exception):
 
 
 async def issue_verification_code(phone: str, purpose: str) -> str:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.issue_verification_code(phone, purpose)
     normalized = normalize_phone(phone)
     if purpose not in {"register", "login", "reset_password"}:
         raise ValueError("验证码用途无效")
@@ -403,6 +431,14 @@ async def issue_verification_code(phone: str, purpose: str) -> str:
 
 
 async def delete_verification_code(phone: str, purpose: str, code: str) -> None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.delete_verification_code(
+            phone,
+            purpose,
+            code,
+        )
     normalized = normalize_phone(phone)
     db = await get_db()
     await db.execute(
@@ -413,6 +449,14 @@ async def delete_verification_code(phone: str, purpose: str, code: str) -> None:
 
 
 async def consume_verification_code(phone: str, purpose: str, code: str) -> bool:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.consume_verification_code(
+            phone,
+            purpose,
+            code,
+        )
     normalized = normalize_phone(phone)
     db = await get_db()
     rows = await db.execute_fetchall(
@@ -464,6 +508,10 @@ def _seed_invite_codes() -> list[str]:
 
 
 async def ensure_default_invite_code():
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.ensure_default_invite_code()
     codes = _seed_invite_codes()
     if not codes:
         return
@@ -478,6 +526,10 @@ async def ensure_default_invite_code():
 
 
 async def consume_invite_code(code: str) -> bool:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.consume_invite_code(code)
     await ensure_default_invite_code()
     normalized = code.strip().upper()
     if not normalized:
@@ -513,6 +565,14 @@ async def consume_invite_code(code: str) -> bool:
 
 
 async def create_invite_code(code: str | None, max_uses: int, expires_at: str | None = None) -> dict:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.create_invite_code(
+            code,
+            max_uses,
+            expires_at,
+        )
     normalized = (code or secrets.token_urlsafe(8)).strip()
     if len(normalized) < 3:
         raise ValueError("邀请码至少需要 3 个字符")
@@ -528,6 +588,10 @@ async def create_invite_code(code: str | None, max_uses: int, expires_at: str | 
 
 
 async def list_invite_codes() -> list[dict]:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.list_invite_codes()
     await ensure_default_invite_code()
     db = await get_db()
     rows = await db.execute_fetchall(
@@ -537,6 +601,10 @@ async def list_invite_codes() -> list[dict]:
 
 
 async def get_invite_code(code: str) -> dict:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.get_invite_code(code)
     db = await get_db()
     cursor = await db.execute(
         "SELECT code, max_uses, used_count, expires_at, disabled_at, created_at FROM invite_codes WHERE code = ?",
@@ -549,12 +617,24 @@ async def get_invite_code(code: str) -> dict:
 
 
 async def disable_invite_code(code: str):
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.disable_invite_code(code)
     db = await get_db()
     await db.execute("UPDATE invite_codes SET disabled_at = ? WHERE code = ?", (_now_text(), code))
     await db.commit()
 
 
 async def create_user(phone: str, password: str, registered_via: str) -> dict:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.create_user(
+            phone,
+            password,
+            registered_via,
+        )
     normalized = normalize_phone(phone)
     if normalized == "admin":
         raise ValueError("管理员账号不能通过注册创建")
@@ -582,6 +662,10 @@ async def create_user(phone: str, password: str, registered_via: str) -> dict:
 
 
 async def reset_password(phone: str, password: str) -> dict:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.reset_password(phone, password)
     normalized = normalize_phone(phone)
     if is_admin_account(normalized):
         raise ValueError("管理员账号不支持验证码流程")
@@ -601,6 +685,10 @@ async def reset_password(phone: str, password: str) -> dict:
 
 
 async def authenticate_password(phone: str, password: str) -> dict | None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.authenticate_password(phone, password)
     normalized = normalize_phone(phone)
     if normalized == "admin":
         await ensure_admin_user()
@@ -617,6 +705,10 @@ async def authenticate_password(phone: str, password: str) -> dict | None:
 
 
 async def get_user_by_phone(phone: str) -> dict | None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.get_user_by_phone(phone)
     normalized = normalize_phone(phone)
     db = await get_db()
     cursor = await db.execute(
@@ -628,12 +720,20 @@ async def get_user_by_phone(phone: str) -> dict | None:
 
 
 async def touch_login(user_id: str):
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.touch_login(user_id)
     db = await get_db()
     await db.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (_now_text(), user_id))
     await db.commit()
 
 
 async def get_user(user_id: str) -> dict | None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.get_user(user_id)
     db = await get_db()
     cursor = await db.execute(
         "SELECT id, phone, registered_via, created_at, last_login_at FROM users WHERE id = ?",
@@ -644,6 +744,10 @@ async def get_user(user_id: str) -> dict | None:
 
 
 async def delete_user(user_id: str):
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_auth
+
+        return await postgres_auth.delete_user(user_id)
     user = await get_user(user_id)
     if user and user["is_admin"]:
         raise ValueError("管理员账号不能注销")

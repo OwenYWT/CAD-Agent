@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import os
 import uuid
 from pathlib import Path
@@ -10,8 +11,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
 from fastapi.routing import APIRoute
-from fastapi.responses import JSONResponse
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import ValidationError
 
 from app.api.auth import rate_limiter, verify_api_key
@@ -27,6 +27,7 @@ from .agent_contract import (
 )
 from .agent_planner import AgentPlanner, AgentPlanningError
 from .agent_store import AgentStore, AgentStoreError
+from .postgres_agent_store import PostgresAgentStore
 from .artifacts import _has_signature
 from .contract import CAD_ACTION_ADAPTER
 from .policy import action_intent_hash, sha256_canonical
@@ -69,7 +70,7 @@ router = APIRouter(
 )
 
 _planner_cache: AgentPlanner | None = None
-_store_cache: tuple[tuple[str, str, int], AgentStore] | None = None
+_store_cache: tuple[tuple[str, str, int, bool], Any] | None = None
 
 
 def _owner_id(credential: str | None) -> str:
@@ -96,25 +97,30 @@ def get_agent_planner() -> AgentPlanner:
     return _planner_cache
 
 
-def get_agent_store() -> AgentStore:
+def get_agent_store() -> Any:
     global _store_cache
     key = (
         settings.fusion_agent_db_path,
         settings.fusion_agent_artifact_dir,
         settings.fusion_agent_artifact_max_bytes,
+        settings.durable_control_plane_enabled,
     )
     if _store_cache is not None and _store_cache[0] != key:
         _store_cache[1].close()
         _store_cache = None
     if _store_cache is None:
-        _store_cache = (
-            key,
-            AgentStore(
+        if settings.durable_control_plane_enabled:
+            store = PostgresAgentStore(
+                artifact_root=key[1],
+                max_artifact_bytes=min(key[2], MAX_AGENT_ARTIFACT_BYTES),
+            )
+        else:
+            store = AgentStore(
                 key[0],
                 artifact_root=key[1],
                 max_artifact_bytes=min(key[2], MAX_AGENT_ARTIFACT_BYTES),
-            ),
-        )
+            )
+        _store_cache = (key, store)
     return _store_cache[1]
 
 
@@ -162,6 +168,11 @@ def _reject_private_result_keys(value: Any) -> None:
             _reject_private_result_keys(child)
 
 
+async def _store_call(method, *args, **kwargs):
+    value = method(*args, **kwargs)
+    return await value if inspect.isawaitable(value) else value
+
+
 @router.get("/capabilities", response_model=AgentProtocolCapabilities)
 async def capabilities(
     request: Request,
@@ -184,7 +195,11 @@ async def heartbeat(
     try:
         await _gate(request, credential)
         heartbeat_request = AgentHeartbeatRequest.model_validate(body)
-        receipt = store.record_heartbeat(_owner_id(credential), heartbeat_request)
+        receipt = await _store_call(
+            store.record_heartbeat,
+            _owner_id(credential),
+            heartbeat_request,
+        )
         return receipt.model_dump(mode="json")
     except Exception as exc:
         return _error_response(exc)
@@ -199,7 +214,11 @@ async def connector_status(
 ):
     try:
         await _gate(request, credential)
-        status = store.connector_status(_owner_id(credential), connector_instance_id)
+        status = await _store_call(
+            store.connector_status,
+            _owner_id(credential),
+            connector_instance_id,
+        )
         return status.model_dump(mode="json")
     except Exception as exc:
         return _error_response(exc)
@@ -218,12 +237,18 @@ async def plan(
         turn = AgentTurnRequest.model_validate(body)
         owner_id = _owner_id(credential)
         turn_hash = sha256_canonical(turn.model_dump(mode="json"))
-        existing = store.find_plan(owner_id, turn.request_id, turn_hash)
+        existing = await _store_call(
+            store.find_plan,
+            owner_id,
+            turn.request_id,
+            turn_hash,
+        )
         if existing is not None:
             return existing.model_dump(mode="json")
         response = await planner.plan(turn)
         intent_hash = action_intent_hash(response.action) if response.action else None
-        stored, _ = store.save_plan(
+        stored, _ = await _store_call(
+            store.save_plan,
             owner_id=owner_id,
             turn_hash=turn_hash,
             response=response,
@@ -250,7 +275,11 @@ async def results(
         _reject_private_result_keys(body.get("result"))
         report = AgentExecutionReport.model_validate(body)
         owner_id = _owner_id(credential)
-        plan_record = store.plan_record(owner_id, report.request_id)
+        plan_record = await _store_call(
+            store.plan_record,
+            owner_id,
+            report.request_id,
+        )
         if (
             plan_record["proposal_id"] != str(report.proposal_id)
             or plan_record["connector_instance_id"] != str(report.connector_instance_id)
@@ -279,7 +308,12 @@ async def results(
                 http_status=409,
             )
         report_hash = sha256_canonical(report.model_dump(mode="json"))
-        receipt = store.save_report(owner_id=owner_id, report_hash=report_hash, report=report)
+        receipt = await _store_call(
+            store.save_report,
+            owner_id=owner_id,
+            report_hash=report_hash,
+            report=report,
+        )
         return receipt.model_dump(mode="json")
     except Exception as exc:
         return _error_response(exc)
@@ -311,7 +345,11 @@ async def artifact_upload(
                 http_status=413,
             )
         owner_id = _owner_id(credential)
-        plan_record = store.authorize_artifact(owner_id, claim)
+        plan_record = await _store_call(
+            store.authorize_artifact,
+            owner_id,
+            claim,
+        )
         temporary_path = store.staging_path(owner_id, request_id, filename)
         descriptor = os.open(temporary_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         digest = hashlib.sha256()
@@ -350,7 +388,8 @@ async def artifact_upload(
                 code="AGENT_ARTIFACT_INVALID",
                 http_status=422,
             )
-        receipt = store.commit_artifact(
+        receipt = await _store_call(
+            store.commit_artifact,
             owner_id=owner_id,
             claim=claim,
             media_type=request.headers.get("content-type", "application/octet-stream"),
@@ -384,7 +423,30 @@ async def artifact_download(
             size_bytes=1,
             sha256="0" * 64,
         )
-        record = store.artifact_record(_owner_id(credential), request_id, filename)
+        owner_id = _owner_id(credential)
+        if hasattr(store, "artifact_bytes"):
+            record, payload = await _store_call(
+                store.artifact_bytes,
+                owner_id,
+                request_id,
+                filename,
+            )
+            return Response(
+                content=payload,
+                media_type=record["media_type"],
+                headers={
+                    "Content-Disposition": (
+                        f'attachment; filename="{filename}"'
+                    ),
+                    "ETag": f'"{record["sha256"]}"',
+                },
+            )
+        record = await _store_call(
+            store.artifact_record,
+            owner_id,
+            request_id,
+            filename,
+        )
         return FileResponse(
             record["stored_path"],
             media_type=record["media_type"],

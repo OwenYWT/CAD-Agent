@@ -14,10 +14,12 @@ from app.config import settings
 
 
 _engine: AsyncEngine | None = None
-DatabaseRole = Literal["runtime", "worker"]
+DatabaseRole = Literal["runtime", "worker", "auth", "migrator"]
 _DATABASE_ROLES: dict[DatabaseRole, str] = {
     "runtime": "cad_agent_runtime",
     "worker": "cad_agent_worker",
+    "auth": "cad_agent_auth",
+    "migrator": "cad_agent_migrator",
 }
 
 
@@ -60,6 +62,19 @@ async def tenant_transaction(
             text("SELECT set_config('app.principal_id', :principal_id, true)"),
             {"principal_id": str(principal_id) if principal_id else ""},
         )
+        yield connection
+
+
+@asynccontextmanager
+async def auth_transaction() -> AsyncIterator[AsyncConnection]:
+    """Open the narrowly privileged transaction used by pre-login auth.
+
+    Authentication must find a user from a phone hash or token before a tenant is
+    known.  The dedicated role can access only the four auth tables; it has no
+    grants on projects, CAD artifacts, workflows, audit, or connector data.
+    """
+    async with get_database_engine().begin() as connection:
+        await connection.execute(text("SET LOCAL ROLE cad_agent_auth"))
         yield connection
 
 

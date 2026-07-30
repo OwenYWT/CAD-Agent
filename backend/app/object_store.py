@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from pathlib import Path
 import time
 import uuid
 from functools import partial
@@ -67,6 +68,45 @@ async def put_object(key: str, payload: bytes, *, content_type: str) -> dict:
         Metadata={"sha256": checksum},
     )
     return {"key": key, "size_bytes": len(payload), "sha256": checksum}
+
+
+async def put_file(key: str, path: str | Path, *, content_type: str) -> dict:
+    """Stream one local file into object storage and verify the stored bytes."""
+    source = Path(path)
+
+    def _upload() -> tuple[int, str]:
+        digest = hashlib.sha256()
+        size_bytes = 0
+        with source.open("rb") as handle:
+            while chunk := handle.read(8 * 1024 * 1024):
+                digest.update(chunk)
+                size_bytes += len(chunk)
+        checksum = digest.hexdigest()
+        with source.open("rb") as handle:
+            get_object_store_client().upload_fileobj(
+                handle,
+                settings.object_store_bucket,
+                key,
+                ExtraArgs={
+                    "ContentType": content_type,
+                    "Metadata": {"sha256": checksum},
+                },
+            )
+        return size_bytes, checksum
+
+    expected_size, expected_sha = await asyncio.to_thread(_upload)
+    stored = await sha256_object(key)
+    if (
+        stored["size_bytes"] != expected_size
+        or stored["sha256"] != expected_sha
+    ):
+        await delete_object(key)
+        raise RuntimeError("object-store file upload checksum mismatch")
+    return {
+        "key": key,
+        "size_bytes": expected_size,
+        "sha256": expected_sha,
+    }
 
 
 async def get_object(key: str) -> bytes:

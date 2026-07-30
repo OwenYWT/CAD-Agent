@@ -58,6 +58,10 @@ def owner_identity(owner: str | None) -> str:
 
 
 async def initialize() -> None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_runs
+
+        return await postgres_runs.initialize()
     # aiosqlite serializes statements on its worker thread; CREATE IF NOT EXISTS
     # is safe when request and workflow tasks initialize concurrently.  Avoid an
     # asyncio.Lock here because TestClient and CLI probes legitimately use
@@ -132,6 +136,16 @@ async def create_run(
     scope_key: str | None = None,
     run_id: str | None = None,
 ) -> str:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_runs
+
+        return await postgres_runs.create_run(
+            kind=kind,
+            owner=owner,
+            request=request,
+            scope_key=scope_key,
+            run_id=run_id,
+        )
     await initialize()
     run_id = run_id or str(uuid.uuid4())
     now = _now()
@@ -195,11 +209,19 @@ async def _transition(
 
 
 async def mark_running(run_id: str) -> None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_runs
+
+        return await postgres_runs.mark_running(run_id)
     await initialize()
     await _transition(run_id, "RUNNING")
 
 
 async def append_progress(run_id: str, payload: Any) -> None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_runs
+
+        return await postgres_runs.append_progress(run_id, payload)
     await initialize()
     await _append_event(run_id, "progress", payload=payload)
 
@@ -212,6 +234,16 @@ async def commit_result(
     error_code: str | None = None,
     error_message: str | None = None,
 ) -> dict:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_runs
+
+        return await postgres_runs.commit_result(
+            run_id,
+            result,
+            state=state,
+            error_code=error_code,
+            error_message=error_message,
+        )
     await initialize()
     if isinstance(result, BaseModel):
         result_data = result.model_dump(mode="json")
@@ -259,6 +291,10 @@ async def commit_result(
 
 
 async def request_cancel(run_id: str, owner: str | None) -> bool:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_runs
+
+        return await postgres_runs.request_cancel(run_id, owner)
     await initialize()
     db = await history.get_db()
     cursor = await db.execute(
@@ -298,6 +334,10 @@ def _run_from_row(row) -> dict:
 
 
 async def get_run(run_id: str, owner: str | None) -> dict | None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_runs
+
+        return await postgres_runs.get_run(run_id, owner)
     await initialize()
     db = await history.get_db()
     cursor = await db.execute(
@@ -309,6 +349,10 @@ async def get_run(run_id: str, owner: str | None) -> dict | None:
 
 
 async def get_run_internal(run_id: str) -> dict | None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_runs
+
+        return await postgres_runs.get_run_internal(run_id)
     await initialize()
     db = await history.get_db()
     cursor = await db.execute(
@@ -325,6 +369,14 @@ async def find_latest_for_scope(
     *,
     active_only: bool = False,
 ) -> dict | None:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_runs
+
+        return await postgres_runs.find_latest_for_scope(
+            scope_key,
+            owner,
+            active_only=active_only,
+        )
     await initialize()
     conditions = ""
     params: list[Any] = [owner_identity(owner), scope_key]
@@ -347,6 +399,10 @@ async def find_latest_for_scope(
 
 
 async def list_events(run_id: str) -> list[dict]:
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_runs
+
+        return await postgres_runs.list_events(run_id)
     await initialize()
     db = await history.get_db()
     rows = await db.execute_fetchall(
@@ -404,6 +460,10 @@ def _committed_result_is_verifiable(run: dict) -> bool:
 
 async def reconcile_incomplete_runs() -> list[str]:
     """Fail uncommitted process-local work; never pretend that it resumed."""
+    if settings.durable_control_plane_enabled:
+        from app.storage import postgres_runs
+
+        return await postgres_runs.reconcile_incomplete_runs()
     await initialize()
     db = await history.get_db()
     rows = await db.execute_fetchall(
