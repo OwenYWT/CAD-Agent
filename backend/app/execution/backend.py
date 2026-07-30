@@ -24,6 +24,14 @@ class MaterializedExecutionOutcome:
 
 
 class ExecutionBackend(Protocol):
+    """Replaceable compute boundary.
+
+    Implementations must propagate ``asyncio.CancelledError`` and stop the
+    corresponding physical execution before returning control. Durable
+    orchestration depends on this fencing contract when a Temporal activity is
+    cancelled or superseded.
+    """
+
     def runtime_snapshot(self): ...
 
     async def execute(

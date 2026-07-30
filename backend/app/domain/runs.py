@@ -41,7 +41,11 @@ class AttemptStatus(StrEnum):
 
 WORKFLOW_TRANSITIONS: dict[WorkflowStatus, frozenset[WorkflowStatus]] = {
     WorkflowStatus.PENDING: frozenset(
-        {WorkflowStatus.PLANNING, WorkflowStatus.CANCELLED}
+        {
+            WorkflowStatus.PLANNING,
+            WorkflowStatus.FAILED,
+            WorkflowStatus.CANCELLED,
+        }
     ),
     WorkflowStatus.PLANNING: frozenset(
         {
@@ -67,6 +71,7 @@ WORKFLOW_TRANSITIONS: dict[WorkflowStatus, frozenset[WorkflowStatus]] = {
         {
             WorkflowStatus.RUNNING,
             WorkflowStatus.CANCELLING,
+            WorkflowStatus.FAILED,
             WorkflowStatus.CANCELLED,
             WorkflowStatus.TIMED_OUT,
         }

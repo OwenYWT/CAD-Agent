@@ -1,13 +1,6 @@
-"""Workflow orchestration boundaries."""
+"""Workflow orchestration boundaries.
 
-from app.workflows.local import (
-    LocalWorkflowManager,
-    LocalWorkflowOutcome,
-    get_local_workflow_manager,
-)
-
-__all__ = [
-    "LocalWorkflowManager",
-    "LocalWorkflowOutcome",
-    "get_local_workflow_manager",
-]
+Keep package import side-effect free: Temporal imports deterministic workflow
+definitions inside its sandbox and must not transitively load the local
+orchestrator, HTTP clients, LLM SDKs, or database code.
+"""

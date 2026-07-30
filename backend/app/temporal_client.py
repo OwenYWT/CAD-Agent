@@ -27,6 +27,12 @@ async def get_temporal_client() -> Client:
     return _client
 
 
+def reset_temporal_client() -> None:
+    """Drop the cached client after configuration changes in tests or shutdown."""
+    global _client
+    _client = None
+
+
 async def temporal_readiness() -> dict:
     started = time.perf_counter()
 
