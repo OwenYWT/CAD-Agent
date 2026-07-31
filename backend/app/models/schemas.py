@@ -1,8 +1,11 @@
-from typing import Literal
+from datetime import datetime
+from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.parameters import CADParameter, extract_parameters
+from app.config import settings
 
 
 class ManufacturingProfile(BaseModel):
@@ -230,7 +233,41 @@ def _validate_output_formats(v: list[str]) -> list[str]:
     return v
 
 
-class GenerateRequest(BaseModel):
+class DurableRequestIdentity(BaseModel):
+    """Optimistic-concurrency identity shared by every public write request.
+
+    The fields are optional during the compatibility period.  Once the atomic
+    API cutover is enabled, accepting an incomplete write would silently lose
+    stale-base and idempotency guarantees, so validation fails before execution.
+    """
+
+    project_id: UUID | None = None
+    branch_id: UUID | None = None
+    expected_base_revision_id: UUID | None = None
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def require_durable_identity_after_cutover(self):
+        if not settings.durable_api_cutover_enabled:
+            return self
+        missing = [
+            name
+            for name in (
+                "project_id",
+                "branch_id",
+                "expected_base_revision_id",
+                "idempotency_key",
+            )
+            if getattr(self, name) is None
+        ]
+        if missing:
+            raise ValueError(
+                "durable API cutover requires " + ", ".join(missing)
+            )
+        return self
+
+
+class GenerateRequest(DurableRequestIdentity):
     prompt: str = Field(..., min_length=1, max_length=10000)
     manufacturing_profile: ManufacturingProfile | None = None
     output_formats: list[str] = ["step", "stl"]
@@ -238,7 +275,7 @@ class GenerateRequest(BaseModel):
     _check_formats = field_validator("output_formats")(_validate_output_formats)
 
 
-class ModifyRequest(BaseModel):
+class ModifyRequest(DurableRequestIdentity):
     code: str = Field(..., min_length=1, max_length=50000)
     prompt: str = Field(..., min_length=1, max_length=10000)
     output_formats: list[str] = ["step", "stl"]
@@ -246,7 +283,7 @@ class ModifyRequest(BaseModel):
     _check_formats = field_validator("output_formats")(_validate_output_formats)
 
 
-class ExecuteRequest(BaseModel):
+class ExecuteRequest(DurableRequestIdentity):
     code: str = Field(..., min_length=1, max_length=50000)
     output_formats: list[str] = ["step", "stl"]
 
@@ -258,6 +295,112 @@ class FeedbackRequest(BaseModel):
     rating: str | None = Field(None, pattern="^(up|down)$")
     printed: str | None = Field(None, pattern="^(yes|no|not_yet)$")
     note: str | None = Field(None, max_length=2000)
+
+
+class DurableTaskEvent(BaseModel):
+    id: UUID
+    workflow_run_id: UUID
+    sequence: int
+    event_type: str
+    payload: dict[str, Any]
+    occurred_at: datetime
+
+
+class DurableTaskEventPage(BaseModel):
+    workflow_run_id: UUID
+    events: list[DurableTaskEvent]
+    after_sequence: int
+    next_cursor: int
+    earliest_sequence: int
+    current_sequence: int
+    has_more: bool
+
+
+class DurableAttemptSnapshot(BaseModel):
+    id: UUID
+    step_run_id: UUID
+    attempt_number: int
+    status: str
+    worker_id: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+class DurableStepSnapshot(BaseModel):
+    id: UUID
+    step_key: str
+    step_index: int
+    kind: str
+    status: str
+    attempt_count: int
+    error_code: str | None = None
+    error_message: str | None = None
+    attempts: list[DurableAttemptSnapshot] = Field(default_factory=list)
+
+
+class DurableArtifactSnapshot(BaseModel):
+    id: UUID
+    revision_id: UUID
+    artifact_kind: str
+    filename: str
+    content_type: str
+    size_bytes: int
+    sha256: str
+    created_at: datetime
+
+
+class DurableChangeSetSummary(BaseModel):
+    id: UUID
+    status: str
+    base_revision_id: UUID
+    candidate_revision_id: UUID
+    objective: str
+    updated_at: datetime
+
+
+class DurableTaskSnapshot(BaseModel):
+    id: UUID
+    project_id: UUID
+    requested_by_principal_id: UUID
+    kind: str
+    status: str
+    request_payload: dict[str, Any]
+    last_event_sequence: int
+    cancellation_requested_at: datetime | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    updated_at: datetime
+    completed_at: datetime | None = None
+    steps: list[DurableStepSnapshot] = Field(default_factory=list)
+    artifacts: list[DurableArtifactSnapshot] = Field(default_factory=list)
+    change_set: DurableChangeSetSummary | None = None
+
+
+class TaskConfirmationRequest(BaseModel):
+    accepted: bool
+    note: str = Field(default="", max_length=4000)
+
+
+class TaskCancellationRequest(BaseModel):
+    reason: str = Field(default="用户取消", min_length=1, max_length=4000)
+
+
+class ChangeSetReviewRequest(BaseModel):
+    note: str = Field(default="", max_length=4000)
+
+
+class ChangeSetRequiredNoteRequest(BaseModel):
+    note: str = Field(min_length=1, max_length=4000)
+
+
+class ChangeSetActionResponse(BaseModel):
+    change_set_id: UUID
+    status: str
+    replayed: bool
 
 
 class OnshapeCreateDocumentRequest(BaseModel):

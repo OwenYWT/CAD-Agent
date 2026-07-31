@@ -49,6 +49,7 @@ def _json(value: Any) -> str:
 def _session(row: Any) -> dict:
     return {
         "id": row["id"],
+        "project_id": str(row["project_id"]),
         "user_id": row.get("legacy_user_id"),
         "title": row["title"],
         "created_at": _iso(row["created_at"]),
@@ -144,7 +145,8 @@ async def create_session(
             await connection.execute(
                 text(
                     """
-                    SELECT id, legacy_user_id, title, created_at, updated_at
+                    SELECT id, project_id, legacy_user_id, title,
+                           created_at, updated_at
                     FROM workspace_sessions
                     WHERE tenant_id=:tenant AND id=:id
                     """
@@ -165,7 +167,8 @@ async def list_sessions(user_id: str | None = None) -> list[dict]:
             await connection.execute(
                 text(
                     """
-                    SELECT id, legacy_user_id, title, created_at, updated_at
+                    SELECT id, project_id, legacy_user_id, title,
+                           created_at, updated_at
                     FROM workspace_sessions
                     ORDER BY updated_at DESC LIMIT 50
                     """
@@ -381,19 +384,60 @@ async def list_panels(session_id: str) -> list[dict]:
             await connection.execute(
                 text(
                     """
-                    SELECT id, session_id, title, current_code, created_at
-                    FROM workspace_panels
-                    WHERE tenant_id=:tenant AND session_id=:session
-                    ORDER BY created_at
+                    SELECT p.id, p.session_id, p.title, p.current_code,
+                           p.created_at, s.project_id
+                    FROM workspace_panels p
+                    JOIN workspace_sessions s
+                      ON s.tenant_id=p.tenant_id AND s.id=p.session_id
+                    WHERE p.tenant_id=:tenant AND p.session_id=:session
+                    ORDER BY p.created_at
                     """
                 ),
                 {"tenant": context.tenant_id, "session": session_id},
             )
         ).mappings().all()
-    return [
-        {**dict(row), "created_at": _iso(row["created_at"])}
-        for row in rows
-    ]
+        branch_id_by_panel = {
+            row["id"]: _stable_uuid("panel-branch", context, row["id"])
+            for row in rows
+        }
+        branch_rows = []
+        if branch_id_by_panel:
+            branch_rows = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT id, project_id, head_revision_id
+                        FROM project_branches
+                        WHERE tenant_id=:tenant
+                          AND id = ANY(CAST(:branch_ids AS uuid[]))
+                        """
+                    ),
+                    {
+                        "tenant": context.tenant_id,
+                        "branch_ids": list(branch_id_by_panel.values()),
+                    },
+                )
+            ).mappings().all()
+        branches = {
+            (branch["project_id"], branch["id"]): branch
+            for branch in branch_rows
+        }
+        result = []
+        for row in rows:
+            branch_id = branch_id_by_panel[row["id"]]
+            branch = branches.get((row["project_id"], branch_id))
+            result.append({
+                **dict(row),
+                "project_id": str(row["project_id"]),
+                "branch_id": str(branch["id"]) if branch else None,
+                "current_revision_id": (
+                    str(branch["head_revision_id"])
+                    if branch and branch["head_revision_id"]
+                    else None
+                ),
+                "created_at": _iso(row["created_at"]),
+            })
+    return result
 
 
 async def update_panel_code(
@@ -525,6 +569,9 @@ def _snapshot_from_revision(
     inspect_report = manifest.get("inspect_report")
     return {
         "id": snapshot_id or str(row["id"]),
+        "project_id": str(row["project_id"]),
+        "branch_id": str(row["branch_id"]),
+        "revision_id": str(row["id"]),
         "panel_id": manifest.get("panel_id") or details.get("panel_id"),
         "parent_snapshot_id": (
             str(row["parent_revision_id"])

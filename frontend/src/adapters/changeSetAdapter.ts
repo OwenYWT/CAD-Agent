@@ -2,6 +2,8 @@ import type { GenerationResult, ModelSnapshotDetail } from "../types";
 import { parameterDisplayLabel } from "../utils/parameterMapping.ts";
 import type {
   ChangeSet,
+  DurableArtifact,
+  DurableChangeSetDetail,
   GeometryMetricChange,
   ParameterChange,
 } from "../types/engineering";
@@ -290,5 +292,226 @@ export function buildChangeSet(
     risk: riskEvidence(result, validation),
     agentLogs: repairLogs(result),
     createdAt: current.created_at,
+    source: "snapshot",
+  };
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function durableParameterChanges(
+  summary: Record<string, unknown>,
+): ParameterChange[] {
+  const rows = Array.isArray(summary.parameter_changes)
+    ? summary.parameter_changes
+    : [];
+  return rows.flatMap((value, index) => {
+    const item = record(value);
+    if (!item) return [];
+    const before = item.before;
+    const after = item.after;
+    if (
+      !["number", "string"].includes(typeof before)
+      || !["number", "string"].includes(typeof after)
+    ) {
+      return [];
+    }
+    return [{
+      parameterId: typeof item.parameter_id === "string"
+        ? item.parameter_id
+        : `parameter-${index}`,
+      label: typeof item.label === "string"
+        ? item.label
+        : typeof item.parameter_id === "string"
+          ? parameterDisplayLabel(item.parameter_id)
+          : `参数 ${index + 1}`,
+      before: before as number | string,
+      after: after as number | string,
+      unit: typeof item.unit === "string" ? item.unit : undefined,
+    }];
+  });
+}
+
+function executionHashes(manifest: Record<string, unknown>): Map<string, string> {
+  const executions = Array.isArray(manifest.executions)
+    ? manifest.executions
+    : [];
+  const hashes = new Map<string, string>();
+  for (const value of executions) {
+    const item = record(value);
+    if (
+      item
+      && typeof item.step_key === "string"
+      && typeof item.source_sha256 === "string"
+    ) {
+      hashes.set(item.step_key, item.source_sha256);
+    }
+  }
+  return hashes;
+}
+
+function durableCodeEvidence(
+  detail: DurableChangeSetDetail,
+): ChangeSet["code"] {
+  const before = executionHashes(detail.base_manifest);
+  const after = executionHashes(detail.candidate_manifest);
+  if (!before.size || !after.size) {
+    return { status: "unknown", beforeLines: null, afterLines: null };
+  }
+  const keys = new Set([...before.keys(), ...after.keys()]);
+  return {
+    status: [...keys].some((key) => before.get(key) !== after.get(key))
+      ? "changed"
+      : "unchanged",
+    beforeLines: null,
+    afterLines: null,
+  };
+}
+
+function durableGeometryEvidence(
+  summary: Record<string, unknown>,
+): ChangeSet["geometry"] {
+  const geometry = record(summary.geometry);
+  if (!geometry) return { status: "unknown", metrics: [] };
+  const rawStatus = geometry.status;
+  const status = rawStatus === "changed"
+    || rawStatus === "unchanged"
+    || rawStatus === "unknown"
+    ? rawStatus
+    : "unknown";
+  const rawMetrics = Array.isArray(geometry.metrics) ? geometry.metrics : [];
+  const metrics = rawMetrics.flatMap((value) => {
+    const item = record(value);
+    if (!item) return [];
+    const before = finiteNumber(item.before);
+    const after = finiteNumber(item.after);
+    if (
+      before === null
+      || after === null
+      || typeof item.label !== "string"
+    ) {
+      return [];
+    }
+    return [{
+      label: item.label,
+      before,
+      after,
+      unit: typeof item.unit === "string" ? item.unit : "",
+    }];
+  });
+  return { status, metrics };
+}
+
+function artifactMap(items: DurableArtifact[]) {
+  return new Map(items.map((artifact) => [
+    `${artifact.artifact_kind}:${artifact.filename}`,
+    artifact,
+  ]));
+}
+
+function durableFileChanges(
+  detail: DurableChangeSetDetail,
+): ChangeSet["files"] {
+  const before = artifactMap(detail.base_artifacts);
+  const after = artifactMap(detail.candidate_artifacts);
+  const keys = new Set([...before.keys(), ...after.keys()]);
+  const changes: ChangeSet["files"] = [];
+  for (const key of keys) {
+    const previous = before.get(key);
+    const current = after.get(key);
+    if (previous?.sha256 === current?.sha256) continue;
+    const format = (current?.artifact_kind || previous?.artifact_kind || "file")
+      .toUpperCase();
+    changes.push({
+      format,
+      kind: previous ? current ? "replaced" : "removed" : "added",
+      beforeUrl: previous?.download_url,
+      afterUrl: current?.download_url,
+      evidence: "sha256",
+    });
+  }
+  return changes;
+}
+
+function durableValidation(
+  summary: Record<string, unknown>,
+): ChangeSet["validation"] {
+  const raw = typeof summary.status === "string"
+    ? summary.status.toLowerCase()
+    : "";
+  const status = raw === "passed" || raw === "success"
+    ? "pass"
+    : raw === "failed" || raw === "fail"
+      ? "fail"
+      : raw === "warning" || raw === "warn"
+        ? "warning"
+        : "unknown";
+  const issueCount = finiteNumber(summary.issue_count);
+  const summaryText = typeof summary.summary === "string"
+    ? summary.summary
+    : status === "unknown"
+      ? "后端未记录可判定的验证结论。"
+      : `验证状态：${raw}${issueCount === null ? "" : `，问题 ${issueCount} 项`}`;
+  return { status, summary: summaryText };
+}
+
+function durableRisk(
+  summary: Record<string, unknown>,
+): ChangeSet["risk"] {
+  const raw = typeof summary.level === "string"
+    ? summary.level.toLowerCase()
+    : "";
+  const level = raw === "low" || raw === "medium" || raw === "high"
+    ? raw
+    : "unknown";
+  const reasons = Array.isArray(summary.reasons)
+    ? summary.reasons.filter((value): value is string => typeof value === "string")
+    : [];
+  return {
+    level,
+    reasons: reasons.length
+      ? reasons
+      : ["后端未记录可判定的风险依据。"],
+  };
+}
+
+export function adaptDurableChangeSet(
+  detail: DurableChangeSetDetail,
+  panelId: string,
+): ChangeSet {
+  const operationCount = finiteNumber(detail.change_summary.modified_object_count);
+  return {
+    id: detail.id,
+    panelId,
+    objective: detail.objective || null,
+    baseRevisionId: detail.base_revision_id,
+    targetRevisionId: detail.candidate_revision_id,
+    baseVersion: detail.base_revision_number,
+    targetVersion: detail.candidate_revision_number,
+    requestId: null,
+    taskId: detail.source_workflow_run_id || null,
+    modifiedObjectCount: operationCount,
+    parameterChanges: durableParameterChanges(detail.change_summary),
+    code: durableCodeEvidence(detail),
+    geometry: durableGeometryEvidence(detail.change_summary),
+    files: durableFileChanges(detail),
+    validation: durableValidation(detail.validation_summary),
+    risk: durableRisk(detail.risk_summary),
+    agentLogs: detail.audit_log.map((entry) => {
+      const note = typeof entry.payload.note === "string"
+        ? `：${entry.payload.note}`
+        : "";
+      return `${entry.action}${note}`;
+    }),
+    createdAt: detail.created_at,
+    source: "durable",
+    reviewStatus: detail.status,
   };
 }

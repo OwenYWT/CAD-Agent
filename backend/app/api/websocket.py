@@ -8,7 +8,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from app.agent.orchestrator import ConversationContext, Orchestrator
 from app.api.auth import verify_ws_token, get_ws_user_id, rate_limiter
 from app.api.error_messages import public_generation_error
-from app.models.schemas import StepUpdate
+from app.models.schemas import DurableRequestIdentity, StepUpdate
 from app.config import settings
 from app.storage import history, local_runs
 from app.storage.file_ownership import claim_request_owner
@@ -55,6 +55,27 @@ def _get_context(session_id: str, panel_id: str) -> ConversationContext:
     if panel_id not in panel_map:
         panel_map[panel_id] = ConversationContext(session_id=f"{session_id}/{panel_id}")
     return panel_map[panel_id]
+
+
+def _durable_identity_payload(data: dict) -> dict:
+    """Validate and normalize the durable write identity at the WS boundary."""
+    identity = DurableRequestIdentity.model_validate(data)
+    return identity.model_dump(mode="json", exclude_none=True)
+
+
+def _attach_snapshot_identity(result_data: dict, snapshot: dict) -> None:
+    """Attach durable identity only when the backing store proves each value.
+
+    The compatibility SQLite store used by legacy/local deployments predates
+    project branches.  Omitting unavailable fields preserves that contract and
+    prevents a legacy snapshot ID from masquerading as a durable revision.
+    """
+    for field in ("project_id", "branch_id", "revision_id"):
+        value = snapshot.get(field)
+        if value:
+            result_data[field] = value
+    if snapshot.get("revision_id"):
+        result_data["expected_base_revision_id"] = snapshot["revision_id"]
 
 
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
@@ -167,6 +188,25 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     await websocket.close(code=4003, reason="Panel belongs to another session")
                     return
 
+            if msg_type in {"user_message", "modify_part", "execute_code"}:
+                try:
+                    durable_identity = _durable_identity_payload(data)
+                except Exception as exc:
+                    await send_json({
+                        "type": "generation_result",
+                        "data": {
+                            "success": False,
+                            "error": {
+                                "type": "ValidationError",
+                                "message": str(exc),
+                            },
+                            "panel_id": panel_id,
+                        },
+                    })
+                    continue
+            else:
+                durable_identity = {}
+
             # Rate limit per WebSocket message
             try:
                 await rate_limiter.check(websocket, token)
@@ -262,6 +302,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         )
                         result_data["snapshot_id"] = snapshot["id"]
                         result_data["version"] = snapshot["version"]
+                        _attach_snapshot_identity(result_data, snapshot)
                     await claim_request_owner(
                         result_data.get("request_id"),
                         principal,
@@ -306,6 +347,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         "text": text,
                         "capability": capability,
                         "manufacturing_profile": manufacturing_profile,
+                        **durable_identity,
                     },
                     runner=run_generation,
                     progress_delivery=on_step,
@@ -367,6 +409,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         )
                         result_data["snapshot_id"] = snapshot["id"]
                         result_data["version"] = snapshot["version"]
+                        _attach_snapshot_identity(result_data, snapshot)
                     await claim_request_owner(
                         result_data.get("request_id"),
                         principal,
@@ -402,6 +445,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         "panel_id": panel_id,
                         "part_name": part_name,
                         "instruction": instruction,
+                        **durable_identity,
                     },
                     runner=run_part_modification,
                     progress_delivery=on_step,
@@ -463,6 +507,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         )
                         result_data["snapshot_id"] = snapshot["id"]
                         result_data["version"] = snapshot["version"]
+                        _attach_snapshot_identity(result_data, snapshot)
                     await claim_request_owner(
                         result_data.get("request_id"),
                         principal,
@@ -494,6 +539,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         "session_id": session_id,
                         "panel_id": panel_id,
                         "code_sha256": hashlib.sha256(code.encode("utf-8")).hexdigest(),
+                        **durable_identity,
                     },
                     runner=run_code_execution,
                     scope_key=_workflow_scope(session_id, panel_id),

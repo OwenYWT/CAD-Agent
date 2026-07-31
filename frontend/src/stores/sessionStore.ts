@@ -2,14 +2,49 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type {
   ChatMessage,
+  DurableTaskEvent,
+  DurableTaskSnapshot,
   GenerationResult,
   MultiStepInfo,
   StepUpdate,
 } from "../types";
 import { createId } from "../lib/createId";
+import {
+  durableResultHeadRevision,
+  durableResultTaskStatus,
+  durableChangeSetHeadRevision,
+  durableSnapshotHeadRevision,
+  durableSnapshotReplayCursor,
+  shouldApplyDurableEvent,
+} from "../adapters/durableTaskAdapter";
+import type { DurableChangeSetDetail } from "../types/engineering";
 
 export interface StepHistoryEntry extends StepUpdate {
   timestamp: number;
+}
+
+export interface DurablePanelContext {
+  projectId: string | null;
+  branchId: string | null;
+  baseRevisionId: string | null;
+  currentRevisionId: string | null;
+  workflowRunId: string | null;
+  changeSetId: string | null;
+  lastEventSequence: number;
+  taskStatus: string | null;
+}
+
+export function emptyDurableContext(): DurablePanelContext {
+  return {
+    projectId: null,
+    branchId: null,
+    baseRevisionId: null,
+    currentRevisionId: null,
+    workflowRunId: null,
+    changeSetId: null,
+    lastEventSequence: 0,
+    taskStatus: null,
+  };
 }
 
 function hasTerminalStep(history: StepHistoryEntry[]) {
@@ -60,6 +95,7 @@ export interface PanelState {
   baselineVersion: number;
   multiStepProgress: MultiStepInfo[] | null;
   lastError: string | null;
+  durable?: DurablePanelContext;
 }
 
 function createPanel(title = "新对话"): PanelState {
@@ -75,6 +111,7 @@ function createPanel(title = "新对话"): PanelState {
     baselineVersion: 0,
     multiStepProgress: null,
     lastError: null,
+    durable: emptyDurableContext(),
   };
 }
 
@@ -101,6 +138,18 @@ interface SessionState {
   setResult: (result: GenerationResult, panelId?: string) => void;
   restorePanelResult: (panelId: string, result: GenerationResult, code: string) => void;
   setError: (error: string, panelId?: string) => void;
+  applyDurableSnapshot: (snapshot: DurableTaskSnapshot, panelId?: string) => void;
+  applyDurableChangeSet: (
+    detail: DurableChangeSetDetail,
+    panelId?: string,
+  ) => void;
+  applyDurableEvent: (event: DurableTaskEvent, panelId?: string) => void;
+  setDurableTaskStatus: (
+    status: string,
+    lastEventSequence: number,
+    panelId?: string,
+  ) => void;
+  resetDurableEventCursor: (sequence: number, panelId?: string) => void;
   reset: () => void;
 
   // Hydrate a panel from history
@@ -113,7 +162,15 @@ interface SessionState {
   // Load full session from backend
   loadSession: (
     sessionId: string,
-    panels: { id: string; title: string; messages: ChatMessage[]; currentCode?: string | null }[],
+    panels: {
+      id: string;
+      title: string;
+      messages: ChatMessage[];
+      currentCode?: string | null;
+      projectId?: string | null;
+      branchId?: string | null;
+      currentRevisionId?: string | null;
+    }[],
   ) => void;
 }
 
@@ -293,6 +350,9 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
       const targetId = panelId || state.activePanelId;
       return {
         panels: updatePanel(state.panels, targetId, (p) => {
+          const previousWorkflowRunId = p.durable?.workflowRunId || null;
+          const nextWorkflowRunId = result.workflow_run_id
+            || previousWorkflowRunId;
           const assistantMsg: ChatMessage = {
             role: "assistant",
             content: result.needs_confirmation
@@ -315,6 +375,30 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
             stepHistory: nextStepHistory,
             generationStartTime: null,
             messages: [...p.messages, assistantMsg],
+            durable: {
+              ...(p.durable || emptyDurableContext()),
+              projectId: result.project_id || p.durable?.projectId || null,
+              branchId: result.branch_id || p.durable?.branchId || null,
+              baseRevisionId: result.expected_base_revision_id
+                || p.durable?.baseRevisionId
+                || null,
+              currentRevisionId: durableResultHeadRevision(
+                result,
+                p.durable?.currentRevisionId || null,
+              ),
+              workflowRunId: nextWorkflowRunId,
+              changeSetId: result.change_set_id
+                || p.durable?.changeSetId
+                || null,
+              lastEventSequence: result.workflow_run_id
+                && result.workflow_run_id !== previousWorkflowRunId
+                ? 0
+                : p.durable?.lastEventSequence || 0,
+              taskStatus: durableResultTaskStatus(
+                result,
+                p.durable?.taskStatus || null,
+              ),
+            },
           };
         }),
       };
@@ -337,6 +421,13 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
           stepHistory: [],
           generationStartTime: null,
           messages: [...panel.messages, restoreMessage],
+          durable: {
+            ...(panel.durable || emptyDurableContext()),
+            currentRevisionId: durableResultHeadRevision(
+              result,
+              panel.durable?.currentRevisionId || null,
+            ),
+          },
         };
       }),
     })),
@@ -366,6 +457,128 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
       };
     }),
 
+  applyDurableSnapshot: (snapshot, panelId) =>
+    set((state) => {
+      const targetId = panelId || state.activePanelId;
+      return {
+        panels: updatePanel(state.panels, targetId, (panel) => ({
+          durable: {
+            ...(panel.durable || emptyDurableContext()),
+            projectId: snapshot.project_id,
+            branchId: snapshot.request_payload.branch_id
+              || panel.durable?.branchId
+              || null,
+            baseRevisionId: snapshot.request_payload.expected_base_revision_id
+              || snapshot.change_set?.base_revision_id
+              || panel.durable?.baseRevisionId
+              || null,
+            currentRevisionId: durableSnapshotHeadRevision(
+              snapshot,
+              panel.durable?.currentRevisionId || null,
+            ),
+            workflowRunId: snapshot.id,
+            changeSetId: snapshot.change_set?.id
+              || panel.durable?.changeSetId
+              || null,
+            // A snapshot is metadata, not proof that preceding events were
+            // consumed. Keep the actual replay cursor until each event arrives.
+            lastEventSequence: durableSnapshotReplayCursor(
+              panel.durable?.workflowRunId || null,
+              panel.durable?.lastEventSequence || 0,
+              snapshot,
+            ),
+            taskStatus: snapshot.status,
+          },
+          isGenerating: ![
+            "succeeded",
+            "failed",
+            "cancelled",
+            "timed_out",
+          ].includes(snapshot.status),
+          lastError: snapshot.error_message || panel.lastError,
+        })),
+      };
+    }),
+
+  applyDurableEvent: (event, panelId) =>
+    set((state) => {
+      const targetId = panelId || state.activePanelId;
+      return {
+        panels: updatePanel(state.panels, targetId, (panel) => {
+          const durable = panel.durable || emptyDurableContext();
+          if (!shouldApplyDurableEvent(durable.lastEventSequence, event)) {
+            return {};
+          }
+          return {
+            durable: {
+              ...durable,
+              workflowRunId: event.workflow_run_id,
+              lastEventSequence: event.sequence,
+            },
+          };
+        }),
+      };
+    }),
+
+  applyDurableChangeSet: (detail, panelId) =>
+    set((state) => {
+      const targetId = panelId || state.activePanelId;
+      return {
+        panels: updatePanel(state.panels, targetId, (panel) => ({
+          durable: {
+            ...(panel.durable || emptyDurableContext()),
+            projectId: detail.project_id,
+            branchId: detail.branch_id,
+            baseRevisionId: detail.base_revision_id,
+            currentRevisionId: durableChangeSetHeadRevision(detail),
+            workflowRunId: detail.source_workflow_run_id
+              || panel.durable?.workflowRunId
+              || null,
+            changeSetId: detail.id,
+            taskStatus: detail.workflow_status
+              || panel.durable?.taskStatus
+              || null,
+          },
+        })),
+      };
+    }),
+
+  setDurableTaskStatus: (status, lastEventSequence, panelId) =>
+    set((state) => {
+      const targetId = panelId || state.activePanelId;
+      return {
+        panels: updatePanel(state.panels, targetId, (panel) => ({
+          durable: {
+            ...(panel.durable || emptyDurableContext()),
+            lastEventSequence: Math.max(
+              lastEventSequence,
+              panel.durable?.lastEventSequence || 0,
+            ),
+            taskStatus: status,
+          },
+          isGenerating: ![
+            "succeeded",
+            "failed",
+            "cancelled",
+            "timed_out",
+          ].includes(status),
+        })),
+      };
+    }),
+
+  resetDurableEventCursor: (sequence, panelId) =>
+    set((state) => {
+      const targetId = panelId || state.activePanelId;
+      return {
+        panels: updatePanel(state.panels, targetId, (panel) => ({
+          durable: {
+            ...(panel.durable || emptyDurableContext()),
+            lastEventSequence: Math.max(0, sequence),
+          },
+        })),
+      };
+    }),
+
   reset: () => {
     set(freshSession(get().ownerId));
   },
@@ -388,6 +601,12 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
       result: restoreGenerationResult(p.messages, p.currentCode),
       lastError: restoreLastError(p.messages),
       baselineVersion: 1,
+      durable: {
+        ...emptyDurableContext(),
+        projectId: p.projectId || null,
+        branchId: p.branchId || null,
+        currentRevisionId: p.currentRevisionId || null,
+      },
     }));
     set({
       sessionId,

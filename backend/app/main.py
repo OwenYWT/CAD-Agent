@@ -42,6 +42,12 @@ from app.api.login import router as login_router
 from app.api.capabilities import router as capabilities_router
 from app.api.capability_actions import router as capability_actions_router
 from app.api.onshape import router as onshape_router
+from app.api.tasks import (
+    durable_task_websocket,
+    router as durable_tasks_router,
+)
+from app.api.changes import router as changes_router
+from app.api.revisions import router as revisions_router
 from app.api.websocket import websocket_endpoint
 from app.fusion360.api import router as fusion360_router
 from app.fusion360.agent_api import router as fusion360_agent_router
@@ -215,9 +221,13 @@ def create_app() -> FastAPI:
     app.include_router(fusion360_router)
     app.include_router(fusion360_agent_router)
     app.include_router(onshape_router)
+    app.include_router(durable_tasks_router)
+    app.include_router(changes_router)
+    app.include_router(revisions_router)
 
     # WebSocket
     app.websocket("/ws/{session_id}")(websocket_endpoint)
+    app.websocket("/ws/tasks/{workflow_run_id}")(durable_task_websocket)
 
     @app.get("/health")
     def health():

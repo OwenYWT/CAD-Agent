@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AuthUser } from "../../auth";
 import { adaptEngineeringProject } from "../../adapters/projectAdapter";
 import { useWebSocket } from "../../hooks/useWebSocket";
 import { useSessionStore } from "../../stores/sessionStore";
 import type { ManufacturingProfile, ModelSnapshotDetail } from "../../types";
-import type { EngineeringDomain, EngineeringStage } from "../../types/engineering";
+import type {
+  DurableChangeSetDetail,
+  EngineeringDomain,
+  EngineeringStage,
+} from "../../types/engineering";
 import AgentDrawer from "../agent/AgentDrawer";
 import ChangeSetDialog from "../changes/ChangeSetDialog";
 import ExportDialog from "../export/ExportDialog";
@@ -29,6 +33,9 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const bindOwner = useSessionStore((state) => state.bindOwner);
   const sessionId = useSessionStore((state) => state.sessionId);
   const panel = useSessionStore((state) => state.getActivePanel());
+  const applyDurableChangeSet = useSessionStore(
+    (state) => state.applyDurableChangeSet,
+  );
   const { connectionState, sendMessage, executeCode, restoreContext } = useWebSocket();
   const model = useMemo(() => adaptEngineeringProject(sessionId, panel), [panel, sessionId]);
   const hasProject = panel.messages.length > 0 || panel.result !== null || panel.isGenerating;
@@ -70,12 +77,26 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
     useSessionStore.getState().beginGeneration("正在重新计算模型");
     return true;
   };
+  const syncDurableChangeSet = useCallback(
+    (detail: DurableChangeSetDetail) => {
+      applyDurableChangeSet(detail, panel.id);
+    },
+    [applyDurableChangeSet, panel.id],
+  );
 
   const latestUserPrompt = panel.messages.filter((message) => message.role === "user").at(-1)?.content || "";
   const restoreSnapshot = (snapshot: ModelSnapshotDetail) => {
     const restoredResult = {
       ...snapshot.result,
       snapshot_id: snapshot.id,
+      project_id: snapshot.project_id,
+      branch_id: snapshot.branch_id,
+      ...(snapshot.revision_id
+        ? {
+            revision_id: snapshot.revision_id,
+            expected_base_revision_id: snapshot.revision_id,
+          }
+        : {}),
       version: snapshot.version,
     };
     useSessionStore.getState().restorePanelResult(panel.id, restoredResult, snapshot.code);
@@ -130,8 +151,10 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
       />
       <ChangeSetDialog
         activeSnapshotId={model.result?.snapshot_id}
+        changeSetId={panel.durable?.changeSetId}
         onAskAgent={(prompt) => { setChangesOpen(false); askAgent(prompt); }}
         onClose={() => setChangesOpen(false)}
+        onDurableChangeSet={syncDurableChangeSet}
         onRestore={restoreSnapshot}
         open={changesOpen}
         panelId={panel.id}

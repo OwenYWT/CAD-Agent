@@ -148,6 +148,12 @@ export interface GenerationResult {
   needs_confirmation?: boolean;
   manufacturing_profile?: ManufacturingProfile | null;
   snapshot_id?: string;
+  project_id?: string;
+  branch_id?: string;
+  expected_base_revision_id?: string;
+  revision_id?: string;
+  workflow_run_id?: string;
+  change_set_id?: string;
   version?: number;
   success: boolean;
   files?: Record<string, string>;
@@ -168,6 +174,9 @@ export interface GenerationResult {
 
 export interface ModelSnapshotSummary {
   id: string;
+  project_id?: string;
+  branch_id?: string;
+  revision_id?: string;
   panel_id: string;
   parent_snapshot_id?: string | null;
   version: number;
@@ -286,6 +295,53 @@ export type WSMessage =
       };
     }
   | { type: "assistant_message"; data: { content: string } };
+
+export interface DurableTaskEvent {
+  id: string;
+  workflow_run_id: string;
+  sequence: number;
+  event_type: string;
+  payload: Record<string, unknown>;
+  occurred_at: string;
+}
+
+export interface DurableTaskSnapshot {
+  id: string;
+  project_id: string;
+  kind: string;
+  status: string;
+  request_payload: {
+    branch_id?: string;
+    expected_base_revision_id?: string;
+    [key: string]: unknown;
+  };
+  last_event_sequence: number;
+  error_code?: string | null;
+  error_message?: string | null;
+  change_set?: {
+    id: string;
+    status: string;
+    base_revision_id: string;
+    candidate_revision_id: string;
+    objective: string;
+  } | null;
+}
+
+export type DurableWSMessage =
+  | { type: "task_snapshot"; data: DurableTaskSnapshot }
+  | { type: "task_event"; data: DurableTaskEvent }
+  | {
+      type: "task_stream_complete";
+      data: {
+        workflow_run_id: string;
+        status: string;
+        last_event_sequence: number;
+      };
+    }
+  | {
+      type: "cursor_expired";
+      data: { earliest_sequence: number; current_sequence: number };
+    };
 
 export type CapabilityId =
   | "cad"

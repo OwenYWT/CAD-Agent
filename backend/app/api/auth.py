@@ -1,12 +1,15 @@
 import hashlib
 import logging
 import time
+from base64 import urlsafe_b64decode
+from binascii import Error as Base64Error
 from collections import defaultdict
 
 from fastapi import Request, HTTPException, Depends, WebSocket
 from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 
 from app.config import settings
+from app.domain.identity import PrincipalContext
 from app.storage import auth as auth_store
 
 logger = logging.getLogger(__name__)
@@ -127,6 +130,25 @@ async def verify_api_key(
     raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
+async def get_durable_principal(
+    request: Request,
+    _credential: str | None = Depends(verify_api_key),
+) -> PrincipalContext:
+    """Return the reconciled principal for durable control-plane APIs."""
+    if not settings.durable_control_plane_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Durable control plane is not enabled",
+        )
+    context = getattr(request.state, "principal_context", None)
+    if context is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Durable principal context is unavailable",
+        )
+    return context
+
+
 async def get_ws_user_id(token: str | None) -> str | None:
     if token:
         return await auth_store.verify_session_token(token)
@@ -140,6 +162,56 @@ async def verify_ws_token(token: str | None) -> bool:
     if not settings.auth_required and not settings.api_keys:
         return True
     return token is not None and token in settings.api_keys
+
+
+def websocket_auth_token(websocket: WebSocket) -> tuple[str | None, str | None]:
+    """Read a WebSocket credential without placing it in the request URL.
+
+    Browser WebSocket APIs cannot set an Authorization header. New clients send
+    a base64url credential in a negotiated subprotocol; the query parameter is
+    retained only for compatibility with the legacy socket.
+    """
+    prefix = "cad-agent-auth."
+    offered = websocket.headers.get("sec-websocket-protocol", "")
+    for protocol in (item.strip() for item in offered.split(",")):
+        if not protocol.startswith(prefix):
+            continue
+        encoded = protocol[len(prefix):]
+        if not encoded or len(encoded) > 8192:
+            return None, None
+        try:
+            padding = "=" * (-len(encoded) % 4)
+            token = urlsafe_b64decode(encoded + padding).decode("utf-8")
+        except (Base64Error, UnicodeDecodeError, ValueError):
+            return None, None
+        return (token or None), protocol
+    return websocket.query_params.get("token"), None
+
+
+async def resolve_ws_principal(token: str | None) -> PrincipalContext | None:
+    """Authenticate, reconcile, and bind a durable WebSocket principal."""
+    if not await verify_ws_token(token):
+        return None
+    if not settings.durable_control_plane_enabled:
+        return None
+    from app.domain.identity import (
+        api_key_principal,
+        local_anonymous_principal,
+        user_principal,
+    )
+    from app.principal_context import bind_principal
+    from app.repositories.identity import reconcile_principal
+
+    user_id = await get_ws_user_id(token)
+    if user_id:
+        context = user_principal(user_id)
+    elif token:
+        context = api_key_principal(token)
+    else:
+        context = local_anonymous_principal()
+    reconciled = await reconcile_principal(context)
+    bind_principal(reconciled)
+    return reconciled
 
 
 class RateLimiter:

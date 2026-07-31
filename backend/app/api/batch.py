@@ -7,7 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.api.auth import verify_api_key, rate_limiter
-from app.models.schemas import GenerateResponse, ManufacturingProfile
+from app.models.schemas import (
+    DurableRequestIdentity,
+    GenerateResponse,
+    ManufacturingProfile,
+)
 from app.storage.file_ownership import claim_request_owner
 from app.workflows.local import get_local_workflow_manager
 
@@ -16,7 +20,7 @@ router = APIRouter(prefix="/api", tags=["batch"])
 
 # ── Request/Response Models ────────────────────────────────
 
-class BatchItem(BaseModel):
+class BatchItem(DurableRequestIdentity):
     prompt: str
     manufacturing_profile: ManufacturingProfile | None = None
     output_formats: list[str] = ["step", "stl"]
@@ -33,7 +37,7 @@ class BatchResponse(BaseModel):
     total_time_ms: int
 
 
-class AsyncGenerateRequest(BaseModel):
+class AsyncGenerateRequest(DurableRequestIdentity):
     prompt: str
     manufacturing_profile: ManufacturingProfile | None = None
     output_formats: list[str] = ["step", "stl"]

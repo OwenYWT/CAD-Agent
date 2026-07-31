@@ -93,6 +93,7 @@ services:
       # Production must override this with registry/path@sha256:<digest>.
       SANDBOX_IMAGE: ${SANDBOX_IMAGE:-cad-agent-sandbox:dev}
       DURABLE_CONTROL_PLANE_ENABLED: ${DURABLE_CONTROL_PLANE_ENABLED:-true}
+      DURABLE_API_CUTOVER_ENABLED: ${DURABLE_API_CUTOVER_ENABLED:-false}
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL with a URL-encoded password}
       OBJECT_STORE_ENDPOINT_URL: ${OBJECT_STORE_ENDPOINT_URL:-http://minio:9000}
       OBJECT_STORE_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}

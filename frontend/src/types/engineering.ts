@@ -87,7 +87,7 @@ export interface FileChange {
   kind: "added" | "removed" | "replaced";
   beforeUrl?: string;
   afterUrl?: string;
-  evidence: "reference_only";
+  evidence: "reference_only" | "sha256";
 }
 
 export interface ChangeSet {
@@ -122,6 +122,8 @@ export interface ChangeSet {
   };
   agentLogs: string[];
   createdAt: string;
+  source?: "snapshot" | "durable";
+  reviewStatus?: string;
 }
 
 export interface ExportJob {
@@ -155,8 +157,60 @@ export interface OnshapeLink {
 
 export interface HistoryProject {
   id: string;
+  projectId: string | null;
   name: string;
   updatedAt: string;
+}
+
+export interface DurableArtifact {
+  id: string;
+  revision_id: string;
+  artifact_kind: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  sha256: string;
+  download_url: string;
+  created_at: string;
+}
+
+export interface DurableChangeSetDetail {
+  id: string;
+  project_id: string;
+  branch_id: string;
+  branch_name: string;
+  base_revision_id: string;
+  base_revision_number: number;
+  base_content_hash: string;
+  base_manifest: Record<string, unknown>;
+  candidate_revision_id: string;
+  candidate_revision_number: number;
+  candidate_content_hash: string;
+  candidate_manifest: Record<string, unknown>;
+  source_workflow_run_id?: string | null;
+  objective: string;
+  change_summary: Record<string, unknown>;
+  validation_summary: Record<string, unknown>;
+  risk_summary: Record<string, unknown>;
+  status: string;
+  workflow_status?: string | null;
+  created_at: string;
+  updated_at: string;
+  review_note?: string | null;
+  base_artifacts: DurableArtifact[];
+  candidate_artifacts: DurableArtifact[];
+  audit_log: Array<{
+    id: string;
+    action: string;
+    payload: Record<string, unknown>;
+    occurred_at: string;
+  }>;
+}
+
+export interface ChangeSetActionResult {
+  change_set_id: string;
+  status: string;
+  replayed: boolean;
 }
 
 export interface EngineeringProjectModel {

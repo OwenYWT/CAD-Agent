@@ -74,6 +74,21 @@ async def test_workspace_revisions_restore_feedback_and_tenant_isolation():
         user_id,
     )
     assert panel["session_id"] == session_id
+    secondary_panel_id = f"panel-secondary-{suffix}"
+    await history.create_panel(
+        session_id,
+        secondary_panel_id,
+        "制造检查",
+        user_id,
+    )
+    listed_panels = await history.list_panels(session_id)
+    assert {item["id"] for item in listed_panels} == {
+        panel_id,
+        secondary_panel_id,
+    }
+    assert all(item["project_id"] == session["project_id"] for item in listed_panels)
+    assert all(item["branch_id"] is None for item in listed_panels)
+    assert all(item["current_revision_id"] is None for item in listed_panels)
     await history.save_message(panel_id, "user", "创建齿轮箱")
     assert await history.get_messages(panel_id) == [
         {"role": "user", "content": "创建齿轮箱"}
@@ -111,6 +126,13 @@ async def test_workspace_revisions_restore_feedback_and_tenant_isolation():
     assert second["version"] == 2
     assert second["parent_snapshot_id"] == first["id"]
     assert [item["version"] for item in await history.list_model_snapshots(panel_id)] == [2, 1]
+    panel_by_id = {
+        item["id"]: item
+        for item in await history.list_panels(session_id)
+    }
+    assert panel_by_id[panel_id]["branch_id"] == second["branch_id"]
+    assert panel_by_id[panel_id]["current_revision_id"] == second["revision_id"]
+    assert panel_by_id[secondary_panel_id]["branch_id"] is None
 
     restored = await history.restore_model_snapshot(first["id"], user_id)
     assert restored and restored["version"] == 1

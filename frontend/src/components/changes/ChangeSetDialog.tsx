@@ -1,12 +1,24 @@
 import { useCallback, useEffect, useState } from "react";
-import { buildChangeSet } from "../../adapters/changeSetAdapter";
 import {
+  adaptDurableChangeSet,
+  buildChangeSet,
+} from "../../adapters/changeSetAdapter";
+import {
+  acceptDurableChangeSet,
+  commitDurableChangeSet,
+  getDurableChangeSet,
   getModelSnapshot,
   listModelSnapshots,
+  rejectDurableChangeSet,
+  requestDurableChangeSetModification,
   restoreModelSnapshot,
+  rollbackDurableChangeSet,
 } from "../../services/engineeringService";
 import type { ModelSnapshotDetail } from "../../types";
-import type { ChangeSet } from "../../types/engineering";
+import type {
+  ChangeSet,
+  DurableChangeSetDetail,
+} from "../../types/engineering";
 import { InlineState, WorkspaceDialog } from "../common/WorkspaceOverlay";
 
 
@@ -14,9 +26,11 @@ interface ChangeSetDialogProps {
   open: boolean;
   panelId: string;
   activeSnapshotId?: string | null;
+  changeSetId?: string | null;
   onClose: () => void;
   onRestore: (snapshot: ModelSnapshotDetail) => void;
   onAskAgent: (prompt: string) => void;
+  onDurableChangeSet: (detail: DurableChangeSetDetail) => void;
 }
 
 function statusLabel(status: ChangeSet["geometry"]["status"]) {
@@ -51,20 +65,30 @@ export default function ChangeSetDialog({
   open,
   panelId,
   activeSnapshotId,
+  changeSetId,
   onClose,
   onRestore,
   onAskAgent,
+  onDurableChangeSet,
 }: ChangeSetDialogProps) {
   const [changeSet, setChangeSet] = useState<ChangeSet | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [error, setError] = useState("");
   const [restoring, setRestoring] = useState(false);
+  const [reviewNote, setReviewNote] = useState("");
 
   const load = useCallback(async () => {
     if (!open) return;
     setStatus("loading");
     setError("");
     try {
+      if (changeSetId) {
+        const detail = await getDurableChangeSet(changeSetId);
+        onDurableChangeSet(detail);
+        setChangeSet(adaptDurableChangeSet(detail, panelId));
+        setStatus("success");
+        return;
+      }
       const snapshots = await listModelSnapshots(panelId);
       const target = activeSnapshotId
         ? snapshots.find((snapshot) => snapshot.id === activeSnapshotId)
@@ -84,7 +108,13 @@ export default function ChangeSetDialog({
       setError(reason instanceof Error ? reason.message : "变更证据加载失败");
       setStatus("error");
     }
-  }, [activeSnapshotId, open, panelId]);
+  }, [
+    activeSnapshotId,
+    changeSetId,
+    onDurableChangeSet,
+    open,
+    panelId,
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -97,6 +127,18 @@ export default function ChangeSetDialog({
     setRestoring(true);
     setError("");
     try {
+      if (changeSet.source === "durable") {
+        if (changeSet.reviewStatus === "committed") {
+          await rollbackDurableChangeSet(changeSet.id, reviewNote);
+        } else {
+          if (!reviewNote.trim()) {
+            throw new Error("拒绝变更前请填写审查意见");
+          }
+          await rejectDurableChangeSet(changeSet.id, reviewNote.trim());
+        }
+        await load();
+        return;
+      }
       const restored = await restoreModelSnapshot(changeSet.baseRevisionId);
       onRestore(restored);
       onClose();
@@ -107,8 +149,23 @@ export default function ChangeSetDialog({
     }
   };
 
-  const requestModification = () => {
+  const requestModification = async () => {
     if (!changeSet) return;
+    if (changeSet.source === "durable") {
+      if (!reviewNote.trim()) {
+        setError("请求修改前请填写审查意见");
+        return;
+      }
+      try {
+        await requestDurableChangeSetModification(
+          changeSet.id,
+          reviewNote.trim(),
+        );
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : "请求修改失败");
+        return;
+      }
+    }
     const parameterSummary = changeSet.parameterChanges.length
       ? changeSet.parameterChanges
         .map((change) => `${change.label}：${change.before} → ${change.after}${change.unit || ""}`)
@@ -121,35 +178,104 @@ export default function ChangeSetDialog({
     );
   };
 
+  const accept = async () => {
+    if (!changeSet || changeSet.source !== "durable") return;
+    setRestoring(true);
+    setError("");
+    try {
+      await acceptDurableChangeSet(changeSet.id, reviewNote.trim());
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "接受变更失败");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const commit = async () => {
+    if (!changeSet || changeSet.source !== "durable") return;
+    setRestoring(true);
+    setError("");
+    try {
+      await commitDurableChangeSet(changeSet.id);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "提交版本失败");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
   return (
     <WorkspaceDialog
       description="仅展示版本快照、任务结果、参数、几何指标、文件引用和验证记录能够证实的变化；缺失证据保持未知。"
       footer={(
         <div className="flex flex-wrap items-center justify-end gap-2">
           <span className="mr-auto text-[11px] text-[var(--faint)]">
-            接受变更和提交版本尚无后端接口，当前不可用。
+            {changeSet?.source === "durable"
+              ? `审查状态：${changeSet.reviewStatus || "未知"}`
+              : "当前为兼容快照审查；持久 Change Set 建立后可执行接受与提交。"}
           </span>
           <button className="workspace-button" onClick={onClose} type="button">关闭</button>
           <button
             className="workspace-button"
-            disabled={!changeSet}
-            onClick={requestModification}
+            disabled={
+              !changeSet
+              || restoring
+              || (
+                changeSet.source === "durable"
+                && changeSet.reviewStatus !== "pending_review"
+              )
+            }
+            onClick={() => void requestModification()}
             type="button"
           >
             请求修改
           </button>
           <button
             className="workspace-button"
-            disabled={!changeSet?.baseRevisionId || restoring}
+            disabled={
+              !changeSet?.baseRevisionId
+              || restoring
+              || (
+                changeSet.source === "durable"
+                && !["pending_review", "committed"].includes(
+                  changeSet.reviewStatus || "",
+                )
+              )
+            }
             onClick={() => void rollback()}
             type="button"
           >
-            {restoring ? "正在回滚" : "拒绝并回滚"}
+            {restoring
+              ? "正在处理"
+              : changeSet?.source === "durable"
+                && changeSet.reviewStatus !== "committed"
+                ? "拒绝变更"
+                : "回滚"}
           </button>
-          <button className="workspace-button" disabled title="后端尚无接受 Change Set 接口" type="button">
+          <button
+            className="workspace-button"
+            disabled={
+              changeSet?.source !== "durable"
+              || changeSet.reviewStatus !== "pending_review"
+              || restoring
+            }
+            onClick={() => void accept()}
+            type="button"
+          >
             接受变更
           </button>
-          <button className="workspace-button workspace-button--primary" disabled title="后端尚无提交版本接口" type="button">
+          <button
+            className="workspace-button workspace-button--primary"
+            disabled={
+              changeSet?.source !== "durable"
+              || changeSet.reviewStatus !== "accepted"
+              || restoring
+            }
+            onClick={() => void commit()}
+            type="button"
+          >
             提交版本
           </button>
         </div>
@@ -174,6 +300,18 @@ export default function ChangeSetDialog({
 
         {changeSet ? (
           <>
+            {changeSet.source === "durable" ? (
+              <label className="block text-xs text-[var(--muted)]">
+                审查意见
+                <textarea
+                  className="mt-2 min-h-20 w-full resize-y rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                  maxLength={4000}
+                  onChange={(event) => setReviewNote(event.target.value)}
+                  placeholder="拒绝或请求修改时必填；接受时可选。"
+                  value={reviewNote}
+                />
+              </label>
+            ) : null}
             <section className="border-b border-[var(--line)] pb-4">
               <div className="grid gap-3 text-xs sm:grid-cols-3">
                 <div><p className="text-[var(--faint)]">修改目标</p><p className="mt-1 text-[var(--ink)]">{changeSet.objective || "未记录"}</p></div>
@@ -227,7 +365,11 @@ export default function ChangeSetDialog({
                   {changeSet.files.map((file) => (
                     <div className="rounded-lg border border-[var(--line)] px-3 py-2 text-xs" key={`${file.format}:${file.kind}`}>
                       <p className="text-[var(--ink)]">{file.format} · {fileKindLabel(file.kind)}</p>
-                      <p className="mt-1 break-all text-[10px] text-[var(--faint)]">仅能证实文件引用变化；当前元数据没有 SHA-256，不能声称内容已变化。</p>
+                      <p className="mt-1 break-all text-[10px] text-[var(--faint)]">
+                        {file.evidence === "sha256"
+                          ? "文件内容变化已由不可变 Artifact 的 SHA-256 证实。"
+                          : "仅能证实文件引用变化；当前元数据没有 SHA-256，不能声称内容已变化。"}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -240,7 +382,7 @@ export default function ChangeSetDialog({
                 <ol className="mt-2 space-y-1 text-xs text-[var(--muted)]">
                   {changeSet.agentLogs.map((log) => <li key={log}>{log}</li>)}
                 </ol>
-              ) : <p className="mt-2 text-xs text-[var(--faint)]">当前快照没有 repair_history，未显示推测日志。</p>}
+              ) : <p className="mt-2 text-xs text-[var(--faint)]">没有已持久化的 Agent 操作日志。</p>}
             </section>
           </>
         ) : null}
