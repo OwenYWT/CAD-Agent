@@ -42,6 +42,7 @@ from app.api.login import router as login_router
 from app.api.capabilities import router as capabilities_router
 from app.api.capability_actions import router as capability_actions_router
 from app.api.onshape import router as onshape_router
+from app.api.agent_tools import router as agent_tools_router
 from app.api.tasks import (
     durable_task_websocket,
     router as durable_tasks_router,
@@ -172,6 +173,8 @@ async def lifespan(app: FastAPI):
             "Reconciled %d interrupted process-local workflow run(s) as non-resumable",
             len(reconciled_runs),
         )
+    from app.agent.recovery import recover_running_runs
+    await recover_running_runs()
     cleanup_task = asyncio.create_task(_periodic_cleanup())
     yield
     # Shutdown
@@ -221,6 +224,7 @@ def create_app() -> FastAPI:
     app.include_router(fusion360_router)
     app.include_router(fusion360_agent_router)
     app.include_router(onshape_router)
+    app.include_router(agent_tools_router)
     app.include_router(durable_tasks_router)
     app.include_router(changes_router)
     app.include_router(revisions_router)

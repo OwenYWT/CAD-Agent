@@ -5,7 +5,9 @@ import re
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from app.agent import run_store
 from app.agent.orchestrator import ConversationContext, Orchestrator
+from app.agent.recovery import ensure_run_resume_available, recover_running_run, sanitize_incomplete_steps
 from app.api.auth import verify_ws_token, get_ws_user_id, rate_limiter
 from app.api.error_messages import public_generation_error
 from app.models.schemas import DurableRequestIdentity, StepUpdate
@@ -78,6 +80,114 @@ def _attach_snapshot_identity(result_data: dict, snapshot: dict) -> None:
         result_data["expected_base_revision_id"] = snapshot["revision_id"]
 
 
+def _run_created_payload(run: dict, panel_id: str) -> dict:
+    return {
+        "run_id": run["id"],
+        "session_id": run["session_id"],
+        "panel_id": panel_id,
+        "status": run["status"],
+        "capability": run.get("capability"),
+        "user_prompt": run.get("user_prompt"),
+        "created_at": run.get("created_at"),
+    }
+
+
+def _run_payload(run: dict, panel_id: str) -> dict:
+    payload = _run_created_payload(run, panel_id)
+    payload["completed_at"] = run.get("completed_at")
+    payload["updated_at"] = run.get("updated_at")
+    payload["result_request_id"] = run.get("result_request_id")
+    return payload
+
+
+def _agent_step_payload(step: StepUpdate, panel_id: str, *, run_id: str | None = None) -> dict:
+    payload = step.model_dump()
+    return {
+        "run_id": run_id,
+        "panel_id": panel_id,
+        "step_type": step.step,
+        "status": step.status or "running",
+        "message": step.message,
+        "started_at": step.started_at,
+        "duration_ms": step.duration_ms,
+        "detail": step.detail,
+        "legacy_step": payload,
+    }
+
+
+def _artifact_update_payload(result_data: dict, panel_id: str) -> list[dict]:
+    request_id = result_data.get("request_id")
+    files = result_data.get("files") or {}
+    artifacts = []
+    for artifact_type, path in files.items():
+        artifacts.append({
+            "request_id": request_id,
+            "panel_id": panel_id,
+            "artifact_type": artifact_type,
+            "path": path,
+        })
+    return artifacts
+
+
+async def _send_artifact_updates(send_json, result_data: dict, panel_id: str) -> None:
+    for artifact in _artifact_update_payload(result_data, panel_id):
+        await send_json({"type": "artifact_update", "data": artifact})
+
+
+def _agent_step_payload_from_record(step: dict, panel_id: str) -> dict:
+    status = step.get("status") or "running"
+    error = step.get("error") or {}
+    output = step.get("output") or {}
+    message = error.get("message") or output.get("message") or step.get("step_type") or "agent step"
+    return {
+        "run_id": step.get("run_id"),
+        "panel_id": panel_id,
+        "step_type": step.get("step_type"),
+        "status": "success" if status == "succeeded" else status,
+        "message": message,
+        "started_at": step.get("started_at"),
+        "duration_ms": None,
+        "detail": {"source": "history_replay", "error": error or None, "output": output or None},
+        "legacy_step": {
+            "step": step.get("step_type"),
+            "message": message,
+            "status": "success" if status == "succeeded" else status,
+            "started_at": step.get("started_at"),
+            "duration_ms": None,
+            "detail": {"source": "history_replay", "error": error or None, "output": output or None},
+        },
+    }
+
+
+async def _replay_latest_run(send_json, session_id: str, panel_id: str) -> None:
+    run = await run_store.get_latest_run_for_panel(session_id, panel_id)
+    if not run:
+        run = await run_store.get_latest_resumable_run()
+    if not run:
+        return
+    if run.get("status") == "running":
+        await recover_running_run(run)
+        run = await run_store.get_run(run["id"]) or run
+    elif run.get("status") in {"failed", "blocked"}:
+        await ensure_run_resume_available(run["id"])
+        run = await run_store.get_run(run["id"]) or run
+    await sanitize_incomplete_steps(run["id"])
+    run = await run_store.get_latest_resumable_run_for_panel(session_id, panel_id) or await run_store.get_run(run["id"]) or run
+    await send_json({"type": "run_created", "data": _run_payload(run, panel_id)})
+    for step in await run_store.list_steps(run["id"]):
+        await send_json({"type": "agent_step", "data": _agent_step_payload_from_record(step, panel_id)})
+    for artifact in await run_store.list_artifacts(run["id"]):
+        await send_json({
+            "type": "artifact_update",
+            "data": {
+                "request_id": run.get("result_request_id"),
+                "panel_id": panel_id,
+                "artifact_type": artifact["artifact_type"],
+                "path": artifact["path"],
+            },
+        })
+
+
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     # Validate session_id format
     if not _SESSION_ID_RE.match(session_id):
@@ -127,13 +237,22 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         async with send_lock:
             await websocket.send_json(message)
 
-    async def make_on_step(panel_id: str, task_ref: dict | None = None):
+    async def make_on_step(
+        panel_id: str,
+        task_ref: dict | None = None,
+        *,
+        run_id: str | None = None,
+    ):
         async def on_step(step: StepUpdate):
             payload = step.model_dump()
             payload["panel_id"] = panel_id
             if task_ref and task_ref.get("id"):
                 payload["task_id"] = task_ref["id"]
             await send_json({"type": "step_update", "data": payload})
+            await send_json({
+                "type": "agent_step",
+                "data": _agent_step_payload(step, panel_id, run_id=run_id),
+            })
         return on_step
 
     def launch_result_delivery(
@@ -148,6 +267,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 result_data = dict(result_data)
                 result_data["panel_id"] = panel_id
                 result_data["task_id"] = task_id
+                await _send_artifact_updates(send_json, result_data, panel_id)
                 await send_json({
                     "type": "generation_result",
                     "data": result_data,
@@ -183,6 +303,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 "execute_code",
                 "restore_task",
                 "cancel",
+                "resume_run",
             }:
                 if not await history.panel_writable_by_session(panel_id, session_id, user_id):
                     await websocket.close(code=4003, reason="Panel belongs to another session")
@@ -261,7 +382,21 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
                 context = _get_context(session_id, panel_id)
                 task_ref: dict[str, str] = {}
-                on_step = await make_on_step(panel_id, task_ref)
+                run = await run_store.create_run(
+                    session_id,
+                    effective_text,
+                    panel_id=panel_id,
+                    capability=capability,
+                )
+                on_step = await make_on_step(
+                    panel_id,
+                    task_ref,
+                    run_id=run["id"],
+                )
+                await send_json({
+                    "type": "run_created",
+                    "data": _run_created_payload(run, panel_id),
+                })
 
                 await history.create_session(session_id, title=text[:80], user_id=user_id)
                 await history.create_panel(session_id, panel_id, user_id=user_id)
@@ -275,10 +410,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                                 effective_text,
                                 on_step=progress,
                                 manufacturing_profile=manufacturing_profile,
+                                run_id=run["id"],
                             )
                         else:
                             result = await orchestrator.handle_message(
-                                context, effective_text, on_step=progress
+                                context,
+                                effective_text,
+                                on_step=progress,
+                                run_id=run["id"],
                             )
                         result_data = result.model_dump(mode="json")
                     except Exception as exc:
@@ -288,6 +427,13 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                             panel_id,
                             type(exc).__name__,
                         )
+                        failed_run = await run_store.get_run(run["id"])
+                        if failed_run and failed_run.get("status") == "running":
+                            await run_store.complete_run(
+                                run["id"],
+                                status="failed",
+                                result_request_id=task_ref.get("id"),
+                            )
                         result_data = {
                             "request_id": task_ref["id"],
                             "success": False,
@@ -547,6 +693,104 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 task_ref["id"] = task_id
                 launch_result_delivery(task_id, panel_id)
 
+            elif msg_type == "resume_run":
+                run_id = data.get("run_id")
+                if not run_id:
+                    await send_json({
+                        "type": "generation_result",
+                        "data": {
+                            "success": False,
+                            "error": {
+                                "type": "ValidationError",
+                                "message": "缺少要继续的任务 ID",
+                            },
+                            "panel_id": panel_id,
+                        },
+                    })
+                    continue
+
+                context = _get_context(session_id, panel_id)
+                await history.create_session(session_id, title="", user_id=user_id)
+                await history.create_panel(session_id, panel_id, user_id=user_id)
+                task_ref: dict[str, str] = {}
+
+                async def run_resume(_progress):
+                    try:
+                        response = await orchestrator.resume_run(run_id)
+                        result_data = response.model_dump(mode="json")
+                    except Exception as exc:
+                        logger.error(
+                            "Resume run %s failed with %s",
+                            run_id,
+                            type(exc).__name__,
+                        )
+                        result_data = {
+                            "request_id": task_ref["id"],
+                            "success": False,
+                            "error": public_generation_error(exc),
+                        }
+
+                    if result_data.get("success") and result_data.get("code"):
+                        context.current_code = result_data["code"]
+                        await history.update_panel_code(
+                            panel_id,
+                            result_data["code"],
+                            result_data.get("params"),
+                        )
+
+                    result_data["panel_id"] = panel_id
+                    result_data["task_id"] = task_ref["id"]
+                    if result_data.get("success") and result_data.get("code"):
+                        snapshot = await history.create_model_snapshot(
+                            panel_id,
+                            result_data,
+                            source="resume_run",
+                            prompt="继续上次任务",
+                        )
+                        result_data["snapshot_id"] = snapshot["id"]
+                        result_data["version"] = snapshot["version"]
+                        _attach_snapshot_identity(result_data, snapshot)
+                    await claim_request_owner(
+                        result_data.get("request_id"),
+                        principal,
+                        revision_id=result_data.get("snapshot_id"),
+                    )
+                    error_message = (result_data.get("error") or {}).get(
+                        "message",
+                        "未知错误",
+                    )
+                    assistant_content = (
+                        "已继续上次任务"
+                        if result_data.get("success")
+                        else f"继续上次任务失败: {error_message}"
+                    )
+                    await history.save_message(
+                        panel_id,
+                        "assistant",
+                        assistant_content,
+                        result=result_data,
+                    )
+                    await history.touch_session(session_id)
+                    if not result_data.get("success") and result_data.get(
+                        "request_id"
+                    ) == task_ref["id"]:
+                        return LocalWorkflowOutcome(result_data, state="FAILED")
+                    return result_data
+
+                task_id = await workflow_manager.submit(
+                    kind="resume_run",
+                    owner=principal,
+                    request={
+                        "session_id": session_id,
+                        "panel_id": panel_id,
+                        "source_run_id": run_id,
+                    },
+                    runner=run_resume,
+                    scope_key=_workflow_scope(session_id, panel_id),
+                )
+                task_ref["id"] = task_id
+                launch_result_delivery(task_id, panel_id)
+
             elif msg_type == "restore_context":
                 # Restore backend context from history for a panel
                 restore_code = data.get("code")
@@ -554,6 +798,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     context = _get_context(session_id, panel_id)
                     context.current_code = restore_code
                     logger.info(f"Restored context for {session_id}/{panel_id}")
+                await _replay_latest_run(send_json, session_id, panel_id)
 
             elif msg_type == "restore_task":
                 task_id = data.get("task_id")

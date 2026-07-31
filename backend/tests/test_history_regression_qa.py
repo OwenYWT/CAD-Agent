@@ -90,7 +90,12 @@ def test_execute_code_persists_complete_result(isolated_websocket_history):
         websocket.send_json(
             {"type": "execute_code", "code": code, "panel_id": "qa-panel"}
         )
-        message = websocket.receive_json()
+        for _ in range(4):
+            message = websocket.receive_json()
+            if message["type"] == "generation_result":
+                break
+        else:
+            raise AssertionError("WebSocket did not emit generation_result")
 
     messages = asyncio.run(history.get_messages("qa-panel"))
     panels = asyncio.run(history.list_panels("qa-session"))

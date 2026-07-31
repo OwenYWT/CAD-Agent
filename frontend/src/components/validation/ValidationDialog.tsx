@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { adaptValidation } from "../../adapters/projectAdapter";
 import { analyzeEngineeringResult } from "../../services/engineeringService";
-import type { StepHistoryEntry } from "../../stores/sessionStore";
-import type { DesignAnalysis, GenerationResult, ModelSnapshotDetail } from "../../types";
+import type { ArtifactHistoryEntry, StepHistoryEntry } from "../../stores/sessionStore";
+import type { DesignAnalysis, GenerationResult, ModelSnapshotDetail, RunCreatedEvent } from "../../types";
 import type { ValidationResult } from "../../types/engineering";
 import AgentRunTimeline from "../AgentRunTimeline";
 import DesignBriefPanel from "../DesignBriefPanel";
@@ -19,6 +19,8 @@ interface ValidationDialogProps {
   description: string;
   panelId: string;
   steps: StepHistoryEntry[];
+  activeRun?: RunCreatedEvent | null;
+  artifacts?: ArtifactHistoryEntry[];
   isGenerating: boolean;
   activeSnapshotId?: string | null;
   refreshKey?: string | number | null;
@@ -27,6 +29,7 @@ interface ValidationDialogProps {
   onRestore: (snapshot: ModelSnapshotDetail) => void;
   onRetryPrompt: () => unknown;
   onRerunCode: () => unknown;
+  onResumeRun: (runId: string) => unknown;
 }
 
 function checkIconClass(status: ValidationResult["status"]) {
@@ -41,6 +44,8 @@ export default function ValidationDialog({
   description,
   panelId,
   steps,
+  activeRun,
+  artifacts = [],
   isGenerating,
   activeSnapshotId,
   refreshKey,
@@ -49,6 +54,7 @@ export default function ValidationDialog({
   onRestore,
   onRetryPrompt,
   onRerunCode,
+  onResumeRun,
 }: ValidationDialogProps) {
   const [analysis, setAnalysis] = useState<DesignAnalysis | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "error" | "success">("idle");
@@ -105,9 +111,12 @@ export default function ValidationDialog({
         ) : null}
 
         <AgentRunTimeline
+          activeRun={activeRun}
+          artifacts={artifacts}
           inspectReport={result?.inspect_report}
           isGenerating={isGenerating}
           onRerunCode={result?.code ? onRerunCode : undefined}
+          onResumeRun={onResumeRun}
           onRetryPrompt={!result?.needs_confirmation ? onRetryPrompt : undefined}
           repairHistory={result?.repair_history}
           result={result}

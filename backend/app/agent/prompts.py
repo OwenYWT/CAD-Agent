@@ -65,7 +65,7 @@ CODEGEN_SYSTEM_PROMPT = """你是一个专业的机械工程师和 CadQuery 编�
 - **loft**: 放样，适合渐变截面零件 (喇叭口/锥形过渡)。在不同高度画截面放样连接
 - **boolean_combine**: 布尔组合，适合多零件组装
 
-## CADAM-style editable parameter block
+## Editable parameter block
 
 You MUST declare every user-editable numeric dimension as a top-level Python assignment immediately after imports and before geometry code. Use this exact format so the Web UI can parse sliders without another LLM call:
 

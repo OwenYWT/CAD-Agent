@@ -28,6 +28,26 @@ export function durableIdentityPayload(panel: PanelState) {
   return durableWriteIdentity(durable);
 }
 
+function requestPanelReplay(ws: WebSocket) {
+  const state = useSessionStore.getState();
+  const panelIds = new Set<string>();
+  if (state.activePanelId) {
+    panelIds.add(state.activePanelId);
+  }
+  for (const panel of state.panels) {
+    panelIds.add(panel.id);
+  }
+
+  for (const panelId of panelIds) {
+    const panel = state.panels.find((item) => item.id === panelId);
+    ws.send(JSON.stringify({
+      type: "restore_context",
+      panel_id: panelId,
+      code: panel?.result?.code || "",
+    }));
+  }
+}
+
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const durableWsRef = useRef<WebSocket | null>(null);
@@ -35,7 +55,10 @@ export function useWebSocket() {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const {
     sessionId,
+    setRunCreated,
     setStep,
+    setAgentStep,
+    addArtifactUpdate,
     setResult,
     setError,
     applyDurableSnapshot,
@@ -70,6 +93,7 @@ export function useWebSocket() {
         if (disposed) return;
         setConnectionState("connected");
         const state = useSessionStore.getState();
+        requestPanelReplay(ws);
         for (const panel of state.panels) {
           if (panel.isGenerating) {
             ws.send(JSON.stringify({
@@ -84,8 +108,14 @@ export function useWebSocket() {
       ws.onmessage = (event) => {
         try {
           const msg: WSMessage = JSON.parse(event.data);
-          if (msg.type === "step_update") {
+          if (msg.type === "run_created") {
+            setRunCreated(msg.data, msg.data.panel_id);
+          } else if (msg.type === "step_update") {
             setStep(msg.data, msg.data.panel_id);
+          } else if (msg.type === "agent_step") {
+            setAgentStep(msg.data, msg.data.panel_id);
+          } else if (msg.type === "artifact_update") {
+            addArtifactUpdate(msg.data, msg.data.panel_id);
           } else if (msg.type === "generation_result") {
             setResult(msg.data, msg.data.panel_id);
           } else if (msg.type === "task_status" && msg.data.status === "not_found") {
@@ -115,7 +145,7 @@ export function useWebSocket() {
           reconnectTimerRef.current = setTimeout(openSocket, delay);
         } else {
           setConnectionState("disconnected");
-          setError("连接已断开，请刷新页面后重试");
+          setError("\u8fde\u63a5\u5df2\u65ad\u5f00\uff0c\u8bf7\u5237\u65b0\u9875\u9762\u540e\u91cd\u8bd5");
         }
       };
     };
@@ -140,7 +170,7 @@ export function useWebSocket() {
       wsRef.current = null;
       ws?.close(1000);
     };
-  }, [sessionId, setStep, setResult, setError]);
+  }, [sessionId, setRunCreated, setStep, setAgentStep, addArtifactUpdate, setResult, setError]);
 
   useEffect(() => {
     if (!durableWorkflowRunId) return;
@@ -273,6 +303,14 @@ export function useWebSocket() {
     return true;
   }, []);
 
+  const resumeRun = useCallback((runId: string) => {
+    const ws = wsRef.current;
+    if (ws?.readyState !== WebSocket.OPEN) return false;
+    const panelId = useSessionStore.getState().activePanelId;
+    ws.send(JSON.stringify({ type: "resume_run", run_id: runId, panel_id: panelId }));
+    return true;
+  }, []);
+
   const cancelGeneration = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       const panelId = useSessionStore.getState().activePanelId;
@@ -288,7 +326,7 @@ export function useWebSocket() {
       );
       useSessionStore.getState().addMessage({
         role: "user",
-        content: `修改零件 ${partName}: ${instruction}`,
+        content: `\u4fee\u6539\u96f6\u4ef6 ${partName}: ${instruction}`,
       });
       wsRef.current.send(JSON.stringify({
         type: "modify_part",
@@ -300,7 +338,7 @@ export function useWebSocket() {
     }
   }, []);
 
-  const restoreContext = useCallback((panelId: string, code: string) => {
+  const restoreContext = useCallback((panelId: string, code = "") => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "restore_context", panel_id: panelId, code }));
     }
@@ -310,6 +348,7 @@ export function useWebSocket() {
     connectionState,
     sendMessage,
     executeCode,
+    resumeRun,
     cancelGeneration,
     modifyPart,
     restoreContext,

@@ -110,6 +110,40 @@ async def _init_tables(db: aiosqlite.Connection):
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS agent_runs (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            panel_id TEXT,
+            user_prompt TEXT NOT NULL,
+            capability TEXT NOT NULL DEFAULT 'auto',
+            status TEXT NOT NULL,
+            current_step_id TEXT,
+            result_request_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            completed_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS agent_steps (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+            step_index INTEGER NOT NULL,
+            step_type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            input_json TEXT NOT NULL,
+            output_json TEXT,
+            error_json TEXT,
+            started_at TEXT,
+            completed_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS agent_artifacts (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+            step_id TEXT NOT NULL REFERENCES agent_steps(id) ON DELETE CASCADE,
+            artifact_type TEXT NOT NULL,
+            path TEXT NOT NULL,
+            metadata_json TEXT,
+            created_at TEXT NOT NULL
+        );
         CREATE INDEX IF NOT EXISTS idx_panels_session ON panels(session_id);
         CREATE INDEX IF NOT EXISTS idx_messages_panel ON messages(panel_id);
         CREATE INDEX IF NOT EXISTS idx_model_snapshots_panel_version ON model_snapshots(panel_id, version);
@@ -117,6 +151,11 @@ async def _init_tables(db: aiosqlite.Connection):
         CREATE INDEX IF NOT EXISTS idx_feedback_request ON feedback(request_id);
         CREATE INDEX IF NOT EXISTS idx_onshape_links_request ON onshape_links(request_id, updated_at);
         CREATE INDEX IF NOT EXISTS idx_onshape_links_user ON onshape_links(user_id, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_agent_runs_session_panel ON agent_runs(session_id, panel_id, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_agent_steps_run_index ON agent_steps(run_id, step_index);
+        CREATE INDEX IF NOT EXISTS idx_agent_steps_status ON agent_steps(status, started_at);
+        CREATE INDEX IF NOT EXISTS idx_agent_artifacts_run ON agent_artifacts(run_id, created_at);
     """)
     columns = await db.execute_fetchall("PRAGMA table_info(sessions)")
     if "user_id" not in {row["name"] for row in columns}:

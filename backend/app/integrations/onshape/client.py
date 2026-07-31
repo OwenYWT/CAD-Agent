@@ -141,6 +141,17 @@ class OnshapeClient:
     async def list_elements(self, document_id: str, workspace_id: str) -> dict:
         return await self.request("GET", f"/api/documents/d/{document_id}/w/{workspace_id}/elements")
 
+    async def list_partstudio_features(
+        self,
+        document_id: str,
+        workspace_id: str,
+        element_id: str,
+    ) -> dict:
+        return await self.request(
+            "GET",
+            f"/api/partstudios/d/{document_id}/w/{workspace_id}/e/{element_id}/features",
+        )
+
     async def translate_step_file(
         self,
         document_id: str,

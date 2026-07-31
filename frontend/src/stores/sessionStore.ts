@@ -1,11 +1,14 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type {
+  AgentStepEvent,
+  ArtifactUpdateEvent,
   ChatMessage,
   DurableTaskEvent,
   DurableTaskSnapshot,
   GenerationResult,
   MultiStepInfo,
+  RunCreatedEvent,
   StepUpdate,
 } from "../types";
 import { createId } from "../lib/createId";
@@ -47,6 +50,10 @@ export function emptyDurableContext(): DurablePanelContext {
   };
 }
 
+export interface ArtifactHistoryEntry extends ArtifactUpdateEvent {
+  timestamp: number;
+}
+
 function hasTerminalStep(history: StepHistoryEntry[]) {
   return history.some(
     (entry) =>
@@ -55,6 +62,16 @@ function hasTerminalStep(history: StepHistoryEntry[]) {
       entry.status === "failed" ||
       entry.stage_id === "design_confirmation",
   );
+}
+
+function isRunGenerating(status?: string | null) {
+  return status === "running" || status === "pending";
+}
+
+function isStepGenerating(step: StepUpdate | null) {
+  if (!step) return false;
+  if (step.step === "resume_available" || step.step === "complete" || step.step === "failed") return false;
+  return step.status === "running" || step.status === "queued";
 }
 
 function terminalStepFromResult(success: boolean, needsConfirmation = false): StepHistoryEntry {
@@ -96,6 +113,8 @@ export interface PanelState {
   multiStepProgress: MultiStepInfo[] | null;
   lastError: string | null;
   durable?: DurablePanelContext;
+  activeRun: RunCreatedEvent | null;
+  artifactUpdates: ArtifactHistoryEntry[];
 }
 
 function createPanel(title = "新对话"): PanelState {
@@ -112,6 +131,8 @@ function createPanel(title = "新对话"): PanelState {
     multiStepProgress: null,
     lastError: null,
     durable: emptyDurableContext(),
+    activeRun: null,
+    artifactUpdates: [],
   };
 }
 
@@ -134,7 +155,10 @@ interface SessionState {
   // Actions (operate on active panel)
   addMessage: (msg: ChatMessage) => void;
   beginGeneration: (message?: string) => void;
+  setRunCreated: (run: RunCreatedEvent, panelId?: string) => void;
   setStep: (step: StepUpdate | null, panelId?: string) => void;
+  setAgentStep: (step: AgentStepEvent, panelId?: string) => void;
+  addArtifactUpdate: (artifact: ArtifactUpdateEvent, panelId?: string) => void;
   setResult: (result: GenerationResult, panelId?: string) => void;
   restorePanelResult: (panelId: string, result: GenerationResult, code: string) => void;
   setError: (error: string, panelId?: string) => void;
@@ -282,8 +306,25 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
         generationStartTime: Date.now(),
         baselineVersion: panel.baselineVersion + 1,
         lastError: null,
+        activeRun: null,
+        artifactUpdates: [],
       })),
     })),
+
+  setRunCreated: (run, panelId) =>
+    set((state) => {
+      const targetId = panelId || run.panel_id || state.activePanelId;
+      return {
+        panels: updatePanel(state.panels, targetId, (panel) => {
+          const generating = isRunGenerating(run.status);
+          return {
+            activeRun: run,
+            isGenerating: generating,
+            generationStartTime: generating ? (panel.generationStartTime ?? Date.now()) : null,
+          };
+        }),
+      };
+    }),
 
   setStep: (step, panelId) =>
     set((state) => {
@@ -291,10 +332,11 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
       return {
         panels: updatePanel(state.panels, targetId, (p) => {
           const now = Date.now();
+          const generating = isStepGenerating(step);
           const base: Partial<PanelState> = {
             currentStep: step,
-            isGenerating: step !== null,
-            generationStartTime: p.generationStartTime ?? (step ? now : null),
+            isGenerating: generating,
+            generationStartTime: generating ? (p.generationStartTime ?? now) : null,
             stepHistory: step
               ? [...p.stepHistory, { ...step, timestamp: now }]
               : p.stepHistory,
@@ -345,6 +387,35 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
       };
     }),
 
+  setAgentStep: (agentStep, panelId) => {
+    const normalizedStatus =
+      agentStep.status === "succeeded"
+        ? "success"
+        : agentStep.status === "pending"
+          ? "queued"
+          : agentStep.status;
+    const step: StepUpdate = agentStep.legacy_step || {
+      step: agentStep.step_type,
+      message: agentStep.message,
+      status: normalizedStatus as StepUpdate["status"],
+      started_at: agentStep.started_at,
+      duration_ms: agentStep.duration_ms,
+      detail: agentStep.detail,
+    };
+    get().setStep(step, panelId || agentStep.panel_id);
+  },
+
+  addArtifactUpdate: (artifact, panelId) =>
+    set((state) => {
+      const targetId = panelId || artifact.panel_id || state.activePanelId;
+      const entry: ArtifactHistoryEntry = { ...artifact, timestamp: Date.now() };
+      return {
+        panels: updatePanel(state.panels, targetId, (panel) => ({
+          artifactUpdates: [...panel.artifactUpdates, entry],
+        })),
+      };
+    }),
+
   setResult: (result, panelId) =>
     set((state) => {
       const targetId = panelId || state.activePanelId;
@@ -370,6 +441,9 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
             result: result.success || result.needs_confirmation ? result : p.result,
             lastError: result.success || result.needs_confirmation ? null : result.error?.message || "任务执行失败",
             isGenerating: false,
+            activeRun: p.activeRun
+              ? { ...p.activeRun, status: result.success ? "succeeded" : result.needs_confirmation ? "blocked" : "failed" }
+              : p.activeRun,
             currentStep: null,
             multiStepProgress: null,
             stepHistory: nextStepHistory,
@@ -420,6 +494,8 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
           multiStepProgress: null,
           stepHistory: [],
           generationStartTime: null,
+          activeRun: null,
+          artifactUpdates: [],
           messages: [...panel.messages, restoreMessage],
           durable: {
             ...(panel.durable || emptyDurableContext()),
@@ -589,6 +665,8 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
         messages,
         result: restoreGenerationResult(messages, code),
         lastError: restoreLastError(messages),
+        activeRun: null,
+        artifactUpdates: [],
         baselineVersion: 1,
       })),
     })),
@@ -600,6 +678,8 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
       messages: p.messages,
       result: restoreGenerationResult(p.messages, p.currentCode),
       lastError: restoreLastError(p.messages),
+      activeRun: null,
+      artifactUpdates: [],
       baselineVersion: 1,
       durable: {
         ...emptyDurableContext(),
