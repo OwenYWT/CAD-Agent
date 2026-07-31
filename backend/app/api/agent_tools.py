@@ -1,9 +1,12 @@
 import hashlib
+from functools import lru_cache
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
+from app.agent.onshape_tools import build_onshape_tool_registry
+from app.agent.tool_executor import ToolExecutor
 from app.agent.tool_types import ToolExecutionContext
 from app.api.auth import rate_limiter, verify_api_key
 from app.storage import auth as auth_store
@@ -11,10 +14,45 @@ from app.storage import auth as auth_store
 router = APIRouter(prefix="/api/agent/tools", tags=["agent-tools"])
 
 
-def _get_orchestrator():
-    from app.api.websocket import _get_orchestrator as get_orchestrator
+class AgentToolRuntime:
+    """Real connector-tool runtime, independent from the MCAD orchestrator."""
 
-    return get_orchestrator()
+    def __init__(self):
+        self.registry = build_onshape_tool_registry()
+        self.executor = ToolExecutor(self.registry)
+
+    def list_agent_tools(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "safety_level": tool.safety_level,
+                "requires_confirmation": (
+                    tool.requires_confirmation
+                    or tool.safety_level in {"write", "destructive"}
+                ),
+                "parameters": tool.args_model.model_json_schema(),
+            }
+            for tool in self.registry.list_tools()
+        ]
+
+    def agent_tool_schemas(self) -> list[dict[str, Any]]:
+        return self.registry.to_openai_tools()
+
+    async def execute_agent_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any] | str,
+        context: ToolExecutionContext,
+    ):
+        return await self.executor.execute(name, arguments, context)
+
+
+@lru_cache(maxsize=1)
+def _get_orchestrator() -> AgentToolRuntime:
+    # Kept as a local compatibility name for tests and route call sites. This
+    # no longer returns the process-local CAD generation orchestrator.
+    return AgentToolRuntime()
 
 
 class AgentToolExecuteRequest(BaseModel):

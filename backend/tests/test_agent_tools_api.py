@@ -48,6 +48,19 @@ def test_agent_tools_router_is_registered_in_production_app():
     assert "/api/agent/tools/{tool_name}/execute" in paths
 
 
+def test_production_agent_tool_runtime_is_real_and_gates_writes():
+    runtime = agent_tools_api.AgentToolRuntime()
+
+    names = {tool["name"] for tool in runtime.list_agent_tools()}
+
+    assert "onshape_list_documents" in names
+    assert "onshape_create_document" in names
+    assert all(
+        schema["function"]["name"] in names
+        for schema in runtime.agent_tool_schemas()
+    )
+
+
 def test_agent_tools_api_lists_registered_tools(monkeypatch):
     fake = FakeOrchestrator()
     monkeypatch.setattr(agent_tools_api, "_get_orchestrator", lambda: fake)
@@ -85,3 +98,25 @@ def test_agent_tools_api_executes_with_request_context(monkeypatch):
     assert fake.context.session_id == "session-1"
     assert fake.context.panel_id == "panel-1"
     assert fake.context.allow_shared_onshape is True
+
+
+def test_production_agent_tool_write_requires_confirmation(monkeypatch):
+    monkeypatch.setattr(
+        agent_tools_api,
+        "_get_orchestrator",
+        agent_tools_api.AgentToolRuntime,
+    )
+
+    with TestClient(create_test_app()) as client:
+        response = client.post(
+            "/api/agent/tools/onshape_create_document/execute",
+            json={
+                "arguments": {"name": "不会实际创建"},
+                "confirmed": False,
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "consent_required"
+    assert body["needs_confirmation"] is True
