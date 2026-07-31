@@ -11,7 +11,6 @@ import {
   listModelSnapshots,
   rejectDurableChangeSet,
   requestDurableChangeSetModification,
-  restoreModelSnapshot,
   rollbackDurableChangeSet,
 } from "../../services/engineeringService";
 import type { ModelSnapshotDetail } from "../../types";
@@ -28,7 +27,7 @@ interface ChangeSetDialogProps {
   activeSnapshotId?: string | null;
   changeSetId?: string | null;
   onClose: () => void;
-  onRestore: (snapshot: ModelSnapshotDetail) => void;
+  onRestore: (snapshot: ModelSnapshotDetail) => boolean | void;
   onAskAgent: (prompt: string) => void;
   onDurableChangeSet: (detail: DurableChangeSetDetail) => void;
 }
@@ -139,8 +138,11 @@ export default function ChangeSetDialog({
         await load();
         return;
       }
-      const restored = await restoreModelSnapshot(changeSet.baseRevisionId);
-      onRestore(restored);
+      const restored = await getModelSnapshot(changeSet.baseRevisionId);
+      const accepted = onRestore(restored);
+      if (accepted === false) {
+        throw new Error("当前连接不可用，未提交回滚任务");
+      }
       onClose();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "回滚失败");

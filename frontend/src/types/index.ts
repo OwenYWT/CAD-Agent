@@ -183,6 +183,7 @@ export interface GenerationResult {
   revision_id?: string;
   workflow_run_id?: string;
   change_set_id?: string;
+  task_status?: string;
   version?: number;
   success: boolean;
   files?: Record<string, string>;
@@ -312,11 +313,24 @@ export interface Annotation3D {
   face_ids?: number[] | null;
 }
 
+export interface DurableTaskSubmittedEvent {
+  workflow_run_id: string;
+  project_id: string;
+  branch_id: string;
+  expected_base_revision_id: string;
+  panel_id: string;
+  status: string;
+}
+
 export type WSMessage =
   | { type: "step_update"; data: StepUpdate & { panel_id?: string } }
   | { type: "run_created"; data: RunCreatedEvent }
   | { type: "agent_step"; data: AgentStepEvent }
   | { type: "artifact_update"; data: ArtifactUpdateEvent }
+  | {
+      type: "task_submitted";
+      data: DurableTaskSubmittedEvent;
+    }
   | { type: "diagnostics"; data: { panel_id?: string; message: string; detail?: Record<string, unknown> | null } }
   | { type: "generation_result"; data: GenerationResult & { panel_id?: string } }
   | {
@@ -346,11 +360,25 @@ export interface DurableTaskSnapshot {
   request_payload: {
     branch_id?: string;
     expected_base_revision_id?: string;
+    primary?: {
+      source_code?: string;
+      [key: string]: unknown;
+    } | null;
     [key: string]: unknown;
   };
   last_event_sequence: number;
   error_code?: string | null;
   error_message?: string | null;
+  artifacts?: {
+    id: string;
+    revision_id: string;
+    artifact_kind: string;
+    filename: string;
+    content_type: string;
+    size_bytes: number;
+    sha256: string;
+    download_url: string;
+  }[];
   change_set?: {
     id: string;
     status: string;

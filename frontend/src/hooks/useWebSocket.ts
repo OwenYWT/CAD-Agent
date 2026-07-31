@@ -6,6 +6,7 @@ import {
   shouldApplyDurableEvent,
   webSocketAuthProtocol,
 } from "../adapters/durableTaskAdapter";
+import { createId } from "../lib/createId";
 import {
   emptyDurableContext,
   useSessionStore,
@@ -56,6 +57,7 @@ export function useWebSocket() {
   const {
     sessionId,
     setRunCreated,
+    setDurableWorkflowStarted,
     setStep,
     setAgentStep,
     addArtifactUpdate,
@@ -99,6 +101,7 @@ export function useWebSocket() {
             ws.send(JSON.stringify({
               type: "restore_task",
               panel_id: panel.id,
+              workflow_run_id: panel.durable?.workflowRunId,
             }));
           }
         }
@@ -110,6 +113,8 @@ export function useWebSocket() {
           const msg: WSMessage = JSON.parse(event.data);
           if (msg.type === "run_created") {
             setRunCreated(msg.data, msg.data.panel_id);
+          } else if (msg.type === "task_submitted") {
+            setDurableWorkflowStarted(msg.data, msg.data.panel_id);
           } else if (msg.type === "step_update") {
             setStep(msg.data, msg.data.panel_id);
           } else if (msg.type === "agent_step") {
@@ -170,7 +175,7 @@ export function useWebSocket() {
       wsRef.current = null;
       ws?.close(1000);
     };
-  }, [sessionId, setRunCreated, setStep, setAgentStep, addArtifactUpdate, setResult, setError]);
+  }, [sessionId, setRunCreated, setDurableWorkflowStarted, setStep, setAgentStep, addArtifactUpdate, setResult, setError]);
 
   useEffect(() => {
     if (!durableWorkflowRunId) return;
@@ -277,13 +282,16 @@ export function useWebSocket() {
     const state = useSessionStore.getState();
     const panelId = state.activePanelId;
     const panel = state.panels.find((candidate) => candidate.id === panelId);
+    const identity = panel ? durableIdentityPayload(panel) : {};
     ws.send(JSON.stringify({
       type: "user_message",
       text,
       capability,
       panel_id: panelId,
+      workflow_run_id: panel?.durable?.workflowRunId || undefined,
       manufacturing_profile: manufacturingProfile,
-      ...(panel ? durableIdentityPayload(panel) : {}),
+      ...identity,
+      idempotency_key: identity.idempotency_key || createId(),
     }));
     return true;
   }, []);
@@ -294,11 +302,13 @@ export function useWebSocket() {
     const state = useSessionStore.getState();
     const panelId = state.activePanelId;
     const panel = state.panels.find((candidate) => candidate.id === panelId);
+    const identity = panel ? durableIdentityPayload(panel) : {};
     ws.send(JSON.stringify({
       type: "execute_code",
       code,
       panel_id: panelId,
-      ...(panel ? durableIdentityPayload(panel) : {}),
+      ...identity,
+      idempotency_key: identity.idempotency_key || createId(),
     }));
     return true;
   }, []);
@@ -306,15 +316,33 @@ export function useWebSocket() {
   const resumeRun = useCallback((runId: string) => {
     const ws = wsRef.current;
     if (ws?.readyState !== WebSocket.OPEN) return false;
-    const panelId = useSessionStore.getState().activePanelId;
-    ws.send(JSON.stringify({ type: "resume_run", run_id: runId, panel_id: panelId }));
+    const state = useSessionStore.getState();
+    const panelId = state.activePanelId;
+    const panel = state.panels.find(
+      (candidate) => candidate.id === panelId,
+    );
+    const identity = panel ? durableIdentityPayload(panel) : {};
+    ws.send(JSON.stringify({
+      type: "resume_run",
+      run_id: runId,
+      panel_id: panelId,
+      ...identity,
+      idempotency_key: identity.idempotency_key || createId(),
+    }));
     return true;
   }, []);
 
   const cancelGeneration = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       const panelId = useSessionStore.getState().activePanelId;
-      wsRef.current.send(JSON.stringify({ type: "cancel", panel_id: panelId }));
+      const workflowRunId = useSessionStore.getState().panels.find(
+        (panel) => panel.id === panelId,
+      )?.durable?.workflowRunId;
+      wsRef.current.send(JSON.stringify({
+        type: "cancel",
+        panel_id: panelId,
+        workflow_run_id: workflowRunId,
+      }));
     }
   }, []);
 
@@ -324,6 +352,7 @@ export function useWebSocket() {
       const panel = useSessionStore.getState().panels.find(
         (candidate) => candidate.id === panelId,
       );
+      const identity = panel ? durableIdentityPayload(panel) : {};
       useSessionStore.getState().addMessage({
         role: "user",
         content: `\u4fee\u6539\u96f6\u4ef6 ${partName}: ${instruction}`,
@@ -333,7 +362,9 @@ export function useWebSocket() {
         part_name: partName,
         instruction,
         panel_id: panelId,
-        ...(panel ? durableIdentityPayload(panel) : {}),
+        code: panel?.result?.code || "",
+        ...identity,
+        idempotency_key: identity.idempotency_key || createId(),
       }));
     }
   }, []);

@@ -7,6 +7,7 @@ from typing import Any
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
+from temporalio.exceptions import ActivityError, ApplicationError
 from temporalio.workflow import ActivityCancellationType
 
 
@@ -127,6 +128,112 @@ class McadDurableWorkflow:
     @workflow.run
     async def run(self, request: dict[str, Any]) -> dict[str, Any]:
         try:
+            preparation_result: dict[str, Any] | None = None
+            step_offset = 0
+            if request.get("preparation"):
+                self._phase = "prepare_source"
+                preparation_result = await self._activity(
+                    "mcad.prepare_source",
+                    {
+                        **request,
+                        "preparation_step_key": "prepare_source",
+                        "preparation_step_index": 0,
+                    },
+                    suffix="prepare-source",
+                )
+                step_offset = 1
+                if preparation_result.get("needs_confirmation"):
+                    self._phase = "waiting_source_confirmation"
+                    await self._activity(
+                        "mcad.wait_confirmation",
+                        request,
+                        suffix="wait-source-confirmation",
+                    )
+                    try:
+                        await workflow.wait_condition(
+                            lambda: (
+                                self._confirmation is not None
+                                or self._cancel_reason is not None
+                            ),
+                            timeout=timedelta(
+                                seconds=int(
+                                    request["confirmation_timeout_seconds"]
+                                )
+                            ),
+                            timeout_summary="MCAD source clarification deadline",
+                        )
+                    except asyncio.TimeoutError:
+                        self._phase = "timed_out"
+                        return await workflow.execute_activity(
+                            "mcad.record_timeout",
+                            request,
+                            activity_id=(
+                                f"{request['workflow_run_id']}:"
+                                "source-clarification-timeout"
+                            ),
+                            start_to_close_timeout=timedelta(seconds=60),
+                            retry_policy=_CONTROL_RETRY,
+                            result_type=dict,
+                        )
+                    if self._cancel_reason is not None:
+                        return await self._record_cancel(request)
+                    if not bool(
+                        self._confirmation
+                        and self._confirmation["accepted"]
+                    ):
+                        self._cancel_reason = (
+                            str(
+                                self._confirmation.get("note")
+                                or "用户拒绝继续生成"
+                            )
+                            if self._confirmation
+                            else "用户拒绝继续生成"
+                        )
+                        return await self._record_cancel(request)
+                    clarification = str(
+                        self._confirmation.get("note") or ""
+                    ).strip()
+                    await self._activity(
+                        "mcad.resume_after_confirmation",
+                        {
+                            **request,
+                            "note": clarification,
+                        },
+                        suffix="resume-source-confirmation",
+                    )
+                    self._confirmation = None
+                    clarified_preparation = {
+                        **request["preparation"],
+                        "prompt": (
+                            f"{request['preparation']['prompt']}\n\n"
+                            f"用户补充说明：{clarification}"
+                        ),
+                    }
+                    preparation_result = await self._activity(
+                        "mcad.prepare_source",
+                        {
+                            **request,
+                            "preparation": clarified_preparation,
+                            "preparation_step_key": (
+                                "prepare_source_after_clarification"
+                            ),
+                            "preparation_step_index": 1,
+                        },
+                        suffix="prepare-source-after-clarification",
+                    )
+                    step_offset = 2
+                    if preparation_result.get("needs_confirmation"):
+                        raise ValueError(
+                            "source requirements remain ambiguous after "
+                            "the supplied clarification"
+                        )
+                request = {
+                    **request,
+                    "primary": preparation_result["execution"],
+                    "preparation_result": preparation_result,
+                    "plan_step_index": step_offset,
+                }
+
             self._phase = "planning"
             plan = await self._activity(
                 "mcad.plan",
@@ -139,7 +246,7 @@ class McadDurableWorkflow:
                 "revision_id": plan["candidate_revision_id"],
                 "change_set_id": plan["change_set_id"],
                 "execution": request["primary"],
-                "step_index": 1,
+                "step_index": step_offset + 1,
             }
             self._phase = request["primary"]["step_key"]
             primary = await self._activity(
@@ -157,7 +264,7 @@ class McadDurableWorkflow:
                     "change_set_id": plan["change_set_id"],
                     "execution_result": primary,
                     "step_key": "validate-primary",
-                    "step_index": 2,
+                    "step_index": step_offset + 2,
                 },
                 suffix="validate:primary",
             )
@@ -226,7 +333,7 @@ class McadDurableWorkflow:
                         "revision_id": plan["candidate_revision_id"],
                         "change_set_id": plan["change_set_id"],
                         "execution": followup,
-                        "step_index": 3,
+                        "step_index": step_offset + 3,
                     },
                     suffix=f"execute:{followup['step_key']}",
                     execution=True,
@@ -240,7 +347,7 @@ class McadDurableWorkflow:
                         "change_set_id": plan["change_set_id"],
                         "execution_result": followup_result,
                         "step_key": "validate-followup",
-                        "step_index": 4,
+                        "step_index": step_offset + 4,
                     },
                     suffix="validate:followup",
                 )
@@ -265,16 +372,28 @@ class McadDurableWorkflow:
                 "primary": primary,
                 "followup": followup_result,
                 "validation": validation,
+                "preparation": preparation_result,
             }
         except asyncio.CancelledError:
             return await self._record_cancel(request)
         except Exception as exc:
             self._phase = "failed"
+            error_code = "temporal_workflow_failed"
+            error_message = str(exc)[:4000]
+            if (
+                isinstance(exc, ActivityError)
+                and isinstance(exc.cause, ApplicationError)
+            ):
+                error_code = (
+                    exc.cause.type or "temporal_activity_failed"
+                )[:200]
+                error_message = str(exc.cause)[:4000]
             await workflow.execute_activity(
                 "mcad.record_failure",
                 {
                     **request,
-                    "error_message": str(exc)[:4000],
+                    "error_code": error_code,
+                    "error_message": error_message,
                 },
                 activity_id=f"{request['workflow_run_id']}:record-failure",
                 start_to_close_timeout=timedelta(seconds=60),

@@ -396,44 +396,136 @@ async def list_panels(session_id: str) -> list[dict]:
                 {"tenant": context.tenant_id, "session": session_id},
             )
         ).mappings().all()
-        branch_id_by_panel = {
-            row["id"]: _stable_uuid("panel-branch", context, row["id"])
+        branch_name_by_panel = {
+            row["id"]: (
+                "panel-"
+                + hashlib.sha256(row["id"].encode()).hexdigest()[:16]
+            )
             for row in rows
         }
         branch_rows = []
-        if branch_id_by_panel:
+        if branch_name_by_panel:
             branch_rows = (
                 await connection.execute(
                     text(
                         """
-                        SELECT id, project_id, head_revision_id
+                        SELECT id, project_id, name, head_revision_id
                         FROM project_branches
                         WHERE tenant_id=:tenant
-                          AND id = ANY(CAST(:branch_ids AS uuid[]))
+                          AND name = ANY(CAST(:branch_names AS text[]))
                         """
                     ),
                     {
                         "tenant": context.tenant_id,
-                        "branch_ids": list(branch_id_by_panel.values()),
+                        "branch_names": list(
+                            branch_name_by_panel.values()
+                        ),
                     },
                 )
             ).mappings().all()
         branches = {
-            (branch["project_id"], branch["id"]): branch
+            (branch["project_id"], branch["name"]): branch
             for branch in branch_rows
         }
+        branch_ids = [str(row["id"]) for row in branch_rows]
+        latest_workflows = {}
+        latest_code = {}
+        if branch_ids:
+            workflow_rows = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT DISTINCT ON (
+                            request_payload->>'branch_id'
+                        )
+                               id, status, request_payload, created_at
+                        FROM workflow_runs
+                        WHERE tenant_id=:tenant
+                          AND request_payload->>'branch_id'
+                              = ANY(CAST(:branch_ids AS text[]))
+                        ORDER BY request_payload->>'branch_id',
+                                 created_at DESC
+                        """
+                    ),
+                    {
+                        "tenant": context.tenant_id,
+                        "branch_ids": branch_ids,
+                    },
+                )
+            ).mappings().all()
+            latest_workflows = {
+                row["request_payload"]["branch_id"]: row
+                for row in workflow_rows
+            }
+            code_rows = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT DISTINCT ON (
+                            w.request_payload->>'branch_id'
+                        )
+                               w.request_payload->>'branch_id' AS branch_id,
+                               COALESCE(
+                                   source.payload->>'source_code',
+                                   w.request_payload
+                                     ->'primary'->>'source_code'
+                               ) AS source_code
+                        FROM workflow_runs w
+                        LEFT JOIN LATERAL (
+                            SELECT payload
+                            FROM task_events
+                            WHERE workflow_run_id=w.id
+                              AND event_type='source.prepared'
+                              AND payload->>'source_code' IS NOT NULL
+                            ORDER BY sequence DESC
+                            LIMIT 1
+                        ) source ON TRUE
+                        WHERE w.tenant_id=:tenant
+                          AND w.request_payload->>'branch_id'
+                              = ANY(CAST(:branch_ids AS text[]))
+                          AND COALESCE(
+                              source.payload->>'source_code',
+                              w.request_payload
+                                ->'primary'->>'source_code'
+                          ) IS NOT NULL
+                        ORDER BY w.request_payload->>'branch_id',
+                                 w.created_at DESC
+                        """
+                    ),
+                    {
+                        "tenant": context.tenant_id,
+                        "branch_ids": branch_ids,
+                    },
+                )
+            ).mappings().all()
+            latest_code = {
+                row["branch_id"]: row["source_code"]
+                for row in code_rows
+            }
         result = []
         for row in rows:
-            branch_id = branch_id_by_panel[row["id"]]
-            branch = branches.get((row["project_id"], branch_id))
+            branch_name = branch_name_by_panel[row["id"]]
+            branch = branches.get((row["project_id"], branch_name))
+            branch_id = str(branch["id"]) if branch else None
+            workflow = latest_workflows.get(branch_id)
             result.append({
                 **dict(row),
+                "current_code": (
+                    latest_code.get(branch_id)
+                    or row["current_code"]
+                ),
                 "project_id": str(row["project_id"]),
-                "branch_id": str(branch["id"]) if branch else None,
+                "branch_id": branch_id,
                 "current_revision_id": (
                     str(branch["head_revision_id"])
                     if branch and branch["head_revision_id"]
                     else None
+                ),
+                "active_workflow_run_id": (
+                    str(workflow["id"]) if workflow else None
+                ),
+                "active_workflow_status": (
+                    workflow["status"] if workflow else None
                 ),
                 "created_at": _iso(row["created_at"]),
             })
@@ -508,7 +600,8 @@ async def get_messages(panel_id: str) -> list[dict]:
             await connection.execute(
                 text(
                     """
-                    SELECT role, content, result FROM workspace_messages
+                    SELECT role, content, result, created_at
+                    FROM workspace_messages
                     WHERE tenant_id=:tenant AND panel_id=:panel
                     ORDER BY id
                     """
@@ -516,13 +609,212 @@ async def get_messages(panel_id: str) -> list[dict]:
                 {"tenant": context.tenant_id, "panel": panel_id},
             )
         ).mappings().all()
-    return [
+        branch = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT b.id, b.project_id
+                    FROM workspace_panels p
+                    JOIN workspace_sessions s
+                      ON s.tenant_id=p.tenant_id
+                     AND s.id=p.session_id
+                    JOIN project_branches b
+                      ON b.tenant_id=s.tenant_id
+                     AND b.project_id=s.project_id
+                     AND b.name=:branch_name
+                    WHERE p.tenant_id=:tenant AND p.id=:panel
+                    """
+                ),
+                {
+                    "tenant": context.tenant_id,
+                    "panel": panel_id,
+                    "branch_name": (
+                        "panel-"
+                        + hashlib.sha256(
+                            panel_id.encode()
+                        ).hexdigest()[:16]
+                    ),
+                },
+            )
+        ).mappings().one_or_none()
+        workflows = []
+        artifacts_by_workflow: dict[UUID, list[dict]] = {}
+        if branch is not None:
+            workflows = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT w.id, w.project_id, w.kind, w.status,
+                               w.request_payload, w.error_code,
+                               w.error_message, w.created_at,
+                               w.updated_at,
+                               source.payload AS source_payload,
+                               c.id AS change_set_id,
+                               c.base_revision_id,
+                               c.candidate_revision_id
+                        FROM workflow_runs w
+                        LEFT JOIN LATERAL (
+                            SELECT payload
+                            FROM task_events
+                            WHERE workflow_run_id=w.id
+                              AND event_type='source.prepared'
+                            ORDER BY sequence DESC
+                            LIMIT 1
+                        ) source ON TRUE
+                        LEFT JOIN change_sets c
+                          ON c.source_workflow_run_id=w.id
+                        WHERE w.tenant_id=:tenant
+                          AND w.project_id=:project_id
+                          AND w.request_payload->>'branch_id'=:branch_id
+                        ORDER BY w.created_at
+                        """
+                    ),
+                    {
+                        "tenant": context.tenant_id,
+                        "project_id": branch["project_id"],
+                        "branch_id": str(branch["id"]),
+                    },
+                )
+            ).mappings().all()
+            workflow_ids = [row["id"] for row in workflows]
+            if workflow_ids:
+                artifact_rows = (
+                    await connection.execute(
+                        text(
+                            """
+                            SELECT workflow_run_id, artifact_kind, filename
+                            FROM artifacts
+                            WHERE workflow_run_id
+                                  = ANY(CAST(:workflow_ids AS uuid[]))
+                            ORDER BY created_at, filename
+                            """
+                        ),
+                        {"workflow_ids": workflow_ids},
+                    )
+                ).mappings().all()
+                for artifact in artifact_rows:
+                    artifacts_by_workflow.setdefault(
+                        artifact["workflow_run_id"],
+                        [],
+                    ).append(dict(artifact))
+
+    entries = [
         {
             "role": row["role"],
             "content": row["content"],
-            **({"result": row["result"]} if row["result"] is not None else {}),
+            "_created_at": row["created_at"],
+            **(
+                {"result": row["result"]}
+                if row["result"] is not None
+                else {}
+            ),
         }
         for row in rows
+    ]
+    represented_workflows = {
+        str(entry["result"].get("workflow_run_id"))
+        for entry in entries
+        if isinstance(entry.get("result"), dict)
+        and entry["result"].get("workflow_run_id")
+    }
+    terminal = {"succeeded", "failed", "cancelled", "timed_out"}
+    for workflow in workflows:
+        workflow_id = str(workflow["id"])
+        if workflow_id in represented_workflows:
+            continue
+        request_payload = dict(workflow["request_payload"])
+        objective = str(request_payload.get("objective") or "")
+        source = dict(workflow["source_payload"] or {})
+        primary = dict(request_payload.get("primary") or {})
+        source_code = (
+            source.get("source_code")
+            or primary.get("source_code")
+        )
+        entries.append({
+            "role": "user",
+            "content": objective,
+            "_created_at": workflow["created_at"],
+        })
+        waiting_for_source = (
+            workflow["status"] == "waiting_confirmation"
+            and workflow["change_set_id"] is None
+            and source.get("needs_confirmation") is True
+        )
+        if workflow["status"] not in terminal and not waiting_for_source:
+            continue
+        files = {
+            artifact["artifact_kind"]: (
+                f"/api/files/{workflow_id}/{artifact['filename']}"
+            )
+            for artifact in artifacts_by_workflow.get(
+                workflow["id"],
+                [],
+            )
+        }
+        success = workflow["status"] == "succeeded"
+        result = {
+            "request_id": workflow_id,
+            "success": success,
+            "needs_confirmation": waiting_for_source,
+            "project_id": str(workflow["project_id"]),
+            "branch_id": request_payload.get("branch_id"),
+            "expected_base_revision_id": request_payload.get(
+                "expected_base_revision_id"
+            ),
+            "revision_id": (
+                str(workflow["candidate_revision_id"])
+                if workflow["candidate_revision_id"]
+                else None
+            ),
+            "workflow_run_id": workflow_id,
+            "change_set_id": (
+                str(workflow["change_set_id"])
+                if workflow["change_set_id"]
+                else None
+            ),
+            "task_status": workflow["status"],
+            "files": files,
+            "code": source_code,
+            "plan": source.get("plan"),
+            "design_brief": source.get("design_brief"),
+            "manufacturing_profile": source.get(
+                "manufacturing_profile"
+            ),
+            "error": (
+                None
+                if success or waiting_for_source
+                else {
+                    "type": (
+                        workflow["error_code"]
+                        or "WorkflowFailed"
+                    ),
+                    "message": (
+                        workflow["error_message"]
+                        or "持久任务执行失败"
+                    ),
+                }
+            ),
+        }
+        entries.append({
+            "role": "assistant",
+            "content": (
+                "设计简报需要确认"
+                if waiting_for_source
+                else "CAD 模型已生成"
+                if success
+                else "CAD 任务执行失败"
+            ),
+            "result": result,
+            "_created_at": workflow["updated_at"],
+        })
+    entries.sort(key=lambda item: item["_created_at"])
+    return [
+        {
+            key: value
+            for key, value in entry.items()
+            if key != "_created_at"
+        }
+        for entry in entries
     ]
 
 
@@ -755,11 +1047,33 @@ async def create_model_snapshot(
 
 async def list_model_snapshots(panel_id: str) -> list[dict]:
     context = current_principal()
-    branch_id = _stable_uuid("panel-branch", context, panel_id)
+    branch_name = (
+        "panel-" + hashlib.sha256(panel_id.encode()).hexdigest()[:16]
+    )
     async with tenant_transaction(
         context.tenant_id,
         context.principal_id,
     ) as connection:
+        branch_id = await connection.scalar(
+            text(
+                """
+                SELECT b.id
+                FROM workspace_panels p
+                JOIN workspace_sessions s
+                  ON s.tenant_id=p.tenant_id AND s.id=p.session_id
+                JOIN project_branches b
+                  ON b.tenant_id=s.tenant_id
+                 AND b.project_id=s.project_id
+                 AND b.name=:branch_name
+                WHERE p.tenant_id=:tenant AND p.id=:panel
+                """
+            ),
+            {
+                "tenant": context.tenant_id,
+                "panel": panel_id,
+                "branch_name": branch_name,
+            },
+        )
         live = (
             await connection.execute(
                 text(
@@ -771,7 +1085,7 @@ async def list_model_snapshots(panel_id: str) -> list[dict]:
                 ),
                 {"tenant": context.tenant_id, "branch": branch_id},
             )
-        ).mappings().all()
+        ).mappings().all() if branch_id else []
         imported = (
             await connection.execute(
                 text(

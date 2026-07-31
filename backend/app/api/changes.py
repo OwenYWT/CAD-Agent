@@ -26,6 +26,7 @@ from app.services.change_sets import (
 from app.services.event_relay import (
     change_set_workflow_id,
     get_change_set_detail,
+    get_task_snapshot,
 )
 from app.workflows.temporal import confirm_mcad_workflow
 
@@ -47,12 +48,24 @@ def _operation_error(exc: Exception) -> HTTPException:
 
 
 async def _signal_review(
+    principal: PrincipalContext,
     workflow_run_id: UUID | None,
     *,
     accepted: bool,
     note: str,
 ) -> None:
     if workflow_run_id is None:
+        return
+    snapshot = await get_task_snapshot(principal, workflow_run_id)
+    if snapshot["status"] in {
+        "succeeded",
+        "failed",
+        "cancelled",
+        "timed_out",
+    }:
+        # Compatibility workflows finish with a pending-review Change Set.
+        # Their review is a control-plane transition and has no live Temporal
+        # history to wake.
         return
     await confirm_mcad_workflow(
         workflow_run_id,
@@ -90,6 +103,7 @@ async def accept_change(
         # retrying this endpoint replays the state transition and re-sends the
         # idempotent workflow signal.
         await _signal_review(
+            principal,
             workflow_id,
             accepted=True,
             note=body.note,
@@ -123,6 +137,7 @@ async def reject_change(
             review_note=body.note,
         )
         await _signal_review(
+            principal,
             workflow_id,
             accepted=False,
             note=body.note,
@@ -159,6 +174,7 @@ async def request_change(
             review_note=body.note,
         )
         await _signal_review(
+            principal,
             workflow_id,
             accepted=False,
             note=body.note,

@@ -24,6 +24,8 @@ interface PanelSummary {
   project_id?: string | null;
   branch_id?: string | null;
   current_revision_id?: string | null;
+  active_workflow_run_id?: string | null;
+  active_workflow_status?: string | null;
 }
 
 interface MessageData {
@@ -42,6 +44,8 @@ export interface RestoredProject {
     projectId: string | null;
     branchId: string | null;
     currentRevisionId: string | null;
+    workflowRunId: string | null;
+    workflowStatus: string | null;
   }>;
 }
 
@@ -94,6 +98,8 @@ export async function restoreHistoryProject(sessionId: string): Promise<Restored
       projectId: panel.project_id || null,
       branchId: panel.branch_id || null,
       currentRevisionId: panel.current_revision_id || null,
+      workflowRunId: panel.active_workflow_run_id || null,
+      workflowStatus: panel.active_workflow_status || null,
     };
   }));
   return { sessionId, panels: hydrated };
@@ -189,16 +195,6 @@ export async function getModelSnapshot(
     `${API_BASE}/api/history/snapshots/${encodeURIComponent(snapshotId)}`,
   );
   return readJson<ModelSnapshotDetail>(response, "版本证据加载失败");
-}
-
-export async function restoreModelSnapshot(
-  snapshotId: string,
-): Promise<ModelSnapshotDetail> {
-  const response = await authFetch(
-    `${API_BASE}/api/history/snapshots/${encodeURIComponent(snapshotId)}/restore`,
-    { method: "POST" },
-  );
-  return readJson<ModelSnapshotDetail>(response, "版本恢复失败");
 }
 
 export async function analyzeEngineeringResult(requestId: string, code: string, description: string): Promise<DesignAnalysis> {

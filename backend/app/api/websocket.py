@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import logging
 import re
+from uuid import UUID
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -14,7 +15,17 @@ from app.models.schemas import DurableRequestIdentity, StepUpdate
 from app.config import settings
 from app.storage import history, local_runs
 from app.storage.file_ownership import claim_request_owner
+from app.services.durable_submission import (
+    ensure_workspace_identity,
+    submit_durable_workflow,
+)
+from app.services.event_relay import get_task_snapshot, workflow_project_id
+from app.domain.projects import Permission
 from app.workflows.local import LocalWorkflowOutcome, get_local_workflow_manager
+from app.workflows.temporal import (
+    cancel_mcad_workflow,
+    confirm_mcad_workflow,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +199,49 @@ async def _replay_latest_run(send_json, session_id: str, panel_id: str) -> None:
         })
 
 
+async def _legacy_resume_input(
+    run_id: str,
+    *,
+    session_id: str,
+    panel_id: str,
+) -> tuple[str, list[str], str]:
+    """Read a legacy recovery record without mutating its process-local state."""
+    run = await run_store.get_run(run_id)
+    if (
+        run is None
+        or run.get("session_id") != session_id
+        or run.get("panel_id") != panel_id
+    ):
+        raise ValueError("未找到当前面板可继续的旧任务")
+    steps = await run_store.list_steps(run_id)
+    resume_step = next(
+        (
+            step
+            for step in reversed(steps)
+            if step.get("step_type") == "resume_available"
+        ),
+        None,
+    )
+    if resume_step is None or resume_step.get("status") != "blocked":
+        raise ValueError("当前旧任务没有可继续的步骤")
+    output = resume_step.get("output") or {}
+    if output.get("next_step") != "execute_cad_code":
+        raise ValueError("当前只支持继续执行 MCAD 代码")
+    resume_input = output.get("resume_input") or {}
+    code = str(resume_input.get("code") or "")
+    if not code:
+        raise ValueError("续跑输入缺少完整 MCAD 代码")
+    output_formats = list(
+        resume_input.get("output_formats") or ["step", "stl"]
+    )
+    objective = str(
+        resume_input.get("user_prompt")
+        or run.get("user_prompt")
+        or "继续执行旧 MCAD 任务"
+    )
+    return code, output_formats, objective
+
+
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     # Validate session_id format
     if not _SESSION_ID_RE.match(session_id):
@@ -201,6 +255,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         return
     user_id = await get_ws_user_id(token)
     principal = f"user:{user_id}" if user_id else token
+    principal_context = None
     if settings.durable_control_plane_enabled:
         from app.domain.identity import (
             api_key_principal,
@@ -216,7 +271,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             principal_context = api_key_principal(token)
         else:
             principal_context = local_anonymous_principal()
-        bind_principal(await reconcile_principal(principal_context))
+        principal_context = await reconcile_principal(principal_context)
+        bind_principal(principal_context)
 
     # Ownership check: a logged-in user must not attach to a session_id that another
     # user already owns (otherwise they could write panels/messages into it). A brand
@@ -228,8 +284,16 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
     await websocket.accept()
 
-    orchestrator = _get_orchestrator()
-    workflow_manager = get_local_workflow_manager()
+    orchestrator = (
+        None
+        if settings.durable_api_cutover_enabled
+        else _get_orchestrator()
+    )
+    workflow_manager = (
+        None
+        if settings.durable_api_cutover_enabled
+        else get_local_workflow_manager()
+    )
     send_lock = asyncio.Lock()
     delivery_tasks: set[asyncio.Task] = set()
 
@@ -261,6 +325,9 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         *,
         progress_delivery=None,
     ) -> None:
+        if workflow_manager is None:
+            raise RuntimeError("legacy workflow manager is disabled")
+
         async def deliver() -> None:
             try:
                 result_data = await workflow_manager.wait(task_id, owner=principal)
@@ -291,6 +358,225 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         delivery_tasks.add(delivery_task)
         delivery_task.add_done_callback(delivery_tasks.discard)
 
+    async def submit_cutover_message(
+        data: dict,
+        *,
+        msg_type: str,
+        panel_id: str,
+        durable_identity: dict,
+    ) -> None:
+        if principal_context is None:
+            raise RuntimeError("durable principal context is unavailable")
+        if msg_type == "user_message":
+            text = str(data.get("text") or "")
+            capability = data.get("capability", "auto")
+            if not text or len(text) > 10000:
+                raise ValueError("提示词为空或超过长度限制")
+            if capability not in {"auto", "cad", "dxf"}:
+                raise ValueError(
+                    "该能力需要结构化输入或已有产物，请使用 "
+                    "/api/capability-actions"
+                )
+        elif msg_type == "modify_part":
+            part_name = str(data.get("part_name") or "")
+            instruction = str(data.get("instruction") or "")
+            existing_code = str(data.get("code") or "")
+            if (
+                not part_name
+                or not instruction
+                or len(instruction) > 10000
+                or not existing_code
+                or len(existing_code) > 50000
+            ):
+                raise ValueError(
+                    "零件名、修改指令或当前 MCAD 代码无效"
+                )
+        elif msg_type == "execute_code":
+            submitted_code = str(data.get("code") or "")
+            if not submitted_code or len(submitted_code) > 50000:
+                raise ValueError("代码为空或超过长度限制")
+
+        if not durable_identity.get("project_id"):
+            if msg_type != "user_message":
+                raise ValueError(
+                    "project_id, branch_id and expected_base_revision_id "
+                    "are required after the first project prompt"
+                )
+            workspace = await ensure_workspace_identity(
+                principal_context,
+                session_id=session_id,
+                panel_id=panel_id,
+                title=str(data.get("text") or "")[:80],
+                user_id=user_id,
+            )
+            project_id = workspace.project_id
+            branch_id = workspace.branch_id
+            expected_base_revision_id = workspace.head_revision_id
+        else:
+            project_id = UUID(str(durable_identity["project_id"]))
+            branch_id = UUID(str(durable_identity["branch_id"]))
+            expected_base_revision_id = UUID(
+                str(durable_identity["expected_base_revision_id"])
+            )
+
+        if msg_type == "user_message":
+            current_workflow_id = data.get("workflow_run_id")
+            if current_workflow_id:
+                workflow_run_id = UUID(str(current_workflow_id))
+                snapshot = await get_task_snapshot(
+                    principal_context,
+                    workflow_run_id,
+                )
+                if (
+                    snapshot["status"] == "waiting_confirmation"
+                    and snapshot.get("change_set") is None
+                ):
+                    await workflow_project_id(
+                        principal_context,
+                        workflow_run_id,
+                        permission=Permission.REVIEW_CHANGE,
+                    )
+                    request_payload = snapshot["request_payload"]
+                    if (
+                        UUID(str(snapshot["project_id"])) != project_id
+                        or UUID(str(request_payload["branch_id"]))
+                        != branch_id
+                        or UUID(
+                            str(
+                                request_payload[
+                                    "expected_base_revision_id"
+                                ]
+                            )
+                        )
+                        != expected_base_revision_id
+                    ):
+                        raise PermissionError(
+                            "任务身份与当前项目上下文不一致"
+                        )
+                    await confirm_mcad_workflow(
+                        workflow_run_id,
+                        accepted=True,
+                        note=text,
+                    )
+                    await send_json({
+                        "type": "task_submitted",
+                        "data": {
+                            "workflow_run_id": str(workflow_run_id),
+                            "project_id": str(project_id),
+                            "branch_id": str(branch_id),
+                            "expected_base_revision_id": str(
+                                expected_base_revision_id
+                            ),
+                            "panel_id": panel_id,
+                            "status": "running",
+                        },
+                    })
+                    return
+            operation = "generate"
+            objective = text
+            if data.get("capability", "auto") == "dxf":
+                objective = (
+                    "只生成 1:1 的二维 DXF 图纸，不生成三维模型。"
+                    "请将下述需求规划为 profile_2d，并输出 DXF：\n"
+                    + text
+                )
+            code = None
+            output_formats = (
+                ["dxf"]
+                if data.get("capability", "auto") == "dxf"
+                else ["step", "stl"]
+            )
+            profile = data.get("manufacturing_profile")
+        elif msg_type == "modify_part":
+            operation = "modify"
+            objective = (
+                f"修改零件 {data.get('part_name', '')}: "
+                f"{data.get('instruction', '')}"
+            )
+            code = existing_code
+            output_formats = ["step", "stl"]
+            profile = None
+        elif msg_type == "execute_code":
+            operation = "execute"
+            objective = "执行用户提交的 MCAD 代码"
+            code = str(data.get("code") or "")
+            output_formats = ["step", "stl"]
+            profile = None
+        else:
+            raise ValueError(f"unsupported cutover message: {msg_type}")
+
+        submission = await submit_durable_workflow(
+            principal_context,
+            project_id=project_id,
+            branch_id=branch_id,
+            expected_base_revision_id=expected_base_revision_id,
+            idempotency_key=str(durable_identity["idempotency_key"]),
+            operation=operation,
+            objective=objective,
+            output_formats=output_formats,
+            code=code,
+            manufacturing_profile=profile,
+        )
+        await send_json({
+            "type": "task_submitted",
+            "data": {
+                "workflow_run_id": str(submission.workflow_run_id),
+                "project_id": str(project_id),
+                "branch_id": str(branch_id),
+                "expected_base_revision_id": str(
+                    expected_base_revision_id
+                ),
+                "panel_id": panel_id,
+                "status": "pending",
+            },
+        })
+
+    async def submit_cutover_resume(
+        data: dict,
+        *,
+        panel_id: str,
+        durable_identity: dict,
+    ) -> None:
+        if principal_context is None:
+            raise RuntimeError("durable principal context is unavailable")
+        run_id = str(data.get("run_id") or "")
+        if not run_id:
+            raise ValueError("缺少要继续的任务 ID")
+        code, output_formats, objective = await _legacy_resume_input(
+            run_id,
+            session_id=session_id,
+            panel_id=panel_id,
+        )
+        project_id = UUID(str(durable_identity["project_id"]))
+        branch_id = UUID(str(durable_identity["branch_id"]))
+        expected_base_revision_id = UUID(
+            str(durable_identity["expected_base_revision_id"])
+        )
+        submission = await submit_durable_workflow(
+            principal_context,
+            project_id=project_id,
+            branch_id=branch_id,
+            expected_base_revision_id=expected_base_revision_id,
+            idempotency_key=str(durable_identity["idempotency_key"]),
+            operation="execute",
+            objective=objective,
+            output_formats=output_formats,
+            code=code,
+        )
+        await send_json({
+            "type": "task_submitted",
+            "data": {
+                "workflow_run_id": str(submission.workflow_run_id),
+                "project_id": str(project_id),
+                "branch_id": str(branch_id),
+                "expected_base_revision_id": str(
+                    expected_base_revision_id
+                ),
+                "panel_id": panel_id,
+                "status": "pending",
+            },
+        })
+
     try:
         while True:
             data = await websocket.receive_json()
@@ -309,9 +595,31 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     await websocket.close(code=4003, reason="Panel belongs to another session")
                     return
 
-            if msg_type in {"user_message", "modify_part", "execute_code"}:
+            if msg_type in {
+                "user_message",
+                "modify_part",
+                "execute_code",
+                "resume_run",
+            }:
                 try:
-                    durable_identity = _durable_identity_payload(data)
+                    if (
+                        settings.durable_api_cutover_enabled
+                        and msg_type == "user_message"
+                        and not data.get("project_id")
+                    ):
+                        idempotency_key = str(
+                            data.get("idempotency_key") or ""
+                        ).strip()
+                        if not idempotency_key or len(idempotency_key) > 500:
+                            raise ValueError(
+                                "idempotency_key is required for the first "
+                                "durable project prompt"
+                            )
+                        durable_identity = {
+                            "idempotency_key": idempotency_key,
+                        }
+                    else:
+                        durable_identity = _durable_identity_payload(data)
                 except Exception as exc:
                     await send_json({
                         "type": "generation_result",
@@ -341,6 +649,132 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     },
                 })
                 continue
+
+            if (
+                settings.durable_api_cutover_enabled
+                and msg_type
+                in {"user_message", "modify_part", "execute_code"}
+            ):
+                try:
+                    await submit_cutover_message(
+                        data,
+                        msg_type=msg_type,
+                        panel_id=panel_id,
+                        durable_identity=durable_identity,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Durable WebSocket submission failed for %s/%s: %s",
+                        session_id,
+                        panel_id,
+                        type(exc).__name__,
+                    )
+                    await send_json({
+                        "type": "generation_result",
+                        "data": {
+                            "success": False,
+                            "error": public_generation_error(exc),
+                            "panel_id": panel_id,
+                        },
+                    })
+                continue
+
+            if (
+                settings.durable_api_cutover_enabled
+                and msg_type == "resume_run"
+            ):
+                try:
+                    await submit_cutover_resume(
+                        data,
+                        panel_id=panel_id,
+                        durable_identity=durable_identity,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Durable legacy resume failed for %s/%s: %s",
+                        session_id,
+                        panel_id,
+                        type(exc).__name__,
+                    )
+                    await send_json({
+                        "type": "generation_result",
+                        "data": {
+                            "success": False,
+                            "error": public_generation_error(exc),
+                            "panel_id": panel_id,
+                        },
+                    })
+                continue
+
+            if settings.durable_api_cutover_enabled and msg_type == "cancel":
+                workflow_run_id = data.get("workflow_run_id")
+                if not workflow_run_id or principal_context is None:
+                    await send_json({
+                        "type": "generation_result",
+                        "data": {
+                            "success": False,
+                            "error": {
+                                "type": "TaskNotFound",
+                                "message": "没有可取消的持久任务。",
+                            },
+                            "panel_id": panel_id,
+                        },
+                    })
+                    continue
+                try:
+                    await cancel_mcad_workflow(
+                        tenant_id=principal_context.tenant_id,
+                        principal_id=principal_context.principal_id,
+                        workflow_run_id=UUID(str(workflow_run_id)),
+                        reason="用户取消",
+                    )
+                    await send_json({
+                        "type": "task_status",
+                        "data": {
+                            "task_id": str(workflow_run_id),
+                            "panel_id": panel_id,
+                            "status": "cancellation_requested",
+                        },
+                    })
+                except Exception as exc:
+                    await send_json({
+                        "type": "generation_result",
+                        "data": {
+                            "success": False,
+                            "error": public_generation_error(exc),
+                            "panel_id": panel_id,
+                        },
+                    })
+                continue
+
+            if (
+                settings.durable_api_cutover_enabled
+                and msg_type == "restore_task"
+            ):
+                await send_json({
+                    "type": "task_status",
+                    "data": {
+                        "task_id": data.get("workflow_run_id"),
+                        "panel_id": panel_id,
+                        "status": "durable_subscription",
+                    },
+                })
+                continue
+
+            if (
+                msg_type
+                in {
+                    "user_message",
+                    "modify_part",
+                    "execute_code",
+                    "resume_run",
+                    "restore_task",
+                }
+                and (orchestrator is None or workflow_manager is None)
+            ):
+                raise RuntimeError(
+                    "legacy workflow dependencies are unavailable"
+                )
 
             if msg_type == "user_message":
                 text = data.get("text", "")
@@ -798,7 +1232,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     context = _get_context(session_id, panel_id)
                     context.current_code = restore_code
                     logger.info(f"Restored context for {session_id}/{panel_id}")
-                await _replay_latest_run(send_json, session_id, panel_id)
+                if not settings.durable_api_cutover_enabled:
+                    await _replay_latest_run(send_json, session_id, panel_id)
 
             elif msg_type == "restore_task":
                 task_id = data.get("task_id")

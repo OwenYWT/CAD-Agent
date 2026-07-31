@@ -96,14 +96,29 @@ async def request_belongs_to(request_id: str, principal: str | None) -> bool:
                 await connection.scalar(
                     text(
                         """
-                        SELECT 1 FROM project_files
-                        WHERE tenant_id=:tenant AND request_id=:request
+                        SELECT 1
+                        FROM (
+                            SELECT project_id
+                            FROM project_files
+                            WHERE tenant_id=:tenant
+                              AND request_id=:request
+                            UNION ALL
+                            SELECT project_id
+                            FROM artifacts
+                            WHERE tenant_id=:tenant
+                              AND workflow_run_id::text=:request
+                        ) owned
+                        JOIN project_memberships membership
+                          ON membership.tenant_id=:tenant
+                         AND membership.project_id=owned.project_id
+                         AND membership.principal_id=:principal
                         LIMIT 1
                         """
                     ),
                     {
                         "tenant": context.tenant_id,
                         "request": request_id,
+                        "principal": context.principal_id,
                     },
                 )
             )
@@ -150,6 +165,33 @@ async def get_project_file(request_id: str, filename: str) -> dict | None:
                 },
             )
         ).mappings().one_or_none()
+        if row is None:
+            row = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT a.id, a.project_id, a.revision_id,
+                               a.workflow_run_id::text AS request_id,
+                               a.filename, a.content_type, a.size_bytes,
+                               a.sha256, a.object_key
+                        FROM artifacts a
+                        JOIN project_memberships membership
+                          ON membership.tenant_id=a.tenant_id
+                         AND membership.project_id=a.project_id
+                         AND membership.principal_id=:principal
+                        WHERE a.tenant_id=:tenant
+                          AND a.workflow_run_id::text=:request
+                          AND a.filename=:filename
+                        """
+                    ),
+                    {
+                        "tenant": context.tenant_id,
+                        "principal": context.principal_id,
+                        "request": request_id,
+                        "filename": filename,
+                    },
+                )
+            ).mappings().one_or_none()
     return dict(row) if row else None
 
 
@@ -179,6 +221,32 @@ async def list_project_files(request_id: str) -> list[dict]:
                 {"tenant": context.tenant_id, "request": request_id},
             )
         ).mappings().all()
+        if not rows:
+            rows = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT a.id, a.project_id, a.revision_id,
+                               a.workflow_run_id::text AS request_id,
+                               a.filename, a.content_type, a.size_bytes,
+                               a.sha256, a.object_key
+                        FROM artifacts a
+                        JOIN project_memberships membership
+                          ON membership.tenant_id=a.tenant_id
+                         AND membership.project_id=a.project_id
+                         AND membership.principal_id=:principal
+                        WHERE a.tenant_id=:tenant
+                          AND a.workflow_run_id::text=:request
+                        ORDER BY a.filename
+                        """
+                    ),
+                    {
+                        "tenant": context.tenant_id,
+                        "principal": context.principal_id,
+                        "request": request_id,
+                    },
+                )
+            ).mappings().all()
     return [dict(row) for row in rows]
 
 

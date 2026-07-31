@@ -6,6 +6,7 @@ import type {
   ChatMessage,
   DurableTaskEvent,
   DurableTaskSnapshot,
+  DurableTaskSubmittedEvent,
   GenerationResult,
   MultiStepInfo,
   RunCreatedEvent,
@@ -35,6 +36,7 @@ export interface DurablePanelContext {
   changeSetId: string | null;
   lastEventSequence: number;
   taskStatus: string | null;
+  preparedResult: GenerationResult | null;
 }
 
 export function emptyDurableContext(): DurablePanelContext {
@@ -47,6 +49,7 @@ export function emptyDurableContext(): DurablePanelContext {
     changeSetId: null,
     lastEventSequence: 0,
     taskStatus: null,
+    preparedResult: null,
   };
 }
 
@@ -136,6 +139,24 @@ function createPanel(title = "新对话"): PanelState {
   };
 }
 
+function normalizePersistedPanel(
+  panel: Partial<PanelState>,
+): PanelState {
+  const fallback = createPanel(panel.title || "新对话");
+  return {
+    ...fallback,
+    ...panel,
+    messages: panel.messages || [],
+    stepHistory: panel.stepHistory || [],
+    activeRun: panel.activeRun || null,
+    artifactUpdates: panel.artifactUpdates || [],
+    durable: {
+      ...emptyDurableContext(),
+      ...(panel.durable || {}),
+    },
+  };
+}
+
 interface SessionState {
   ownerId: string | null;
   sessionId: string;
@@ -156,6 +177,10 @@ interface SessionState {
   addMessage: (msg: ChatMessage) => void;
   beginGeneration: (message?: string) => void;
   setRunCreated: (run: RunCreatedEvent, panelId?: string) => void;
+  setDurableWorkflowStarted: (
+    task: DurableTaskSubmittedEvent,
+    panelId?: string,
+  ) => void;
   setStep: (step: StepUpdate | null, panelId?: string) => void;
   setAgentStep: (step: AgentStepEvent, panelId?: string) => void;
   addArtifactUpdate: (artifact: ArtifactUpdateEvent, panelId?: string) => void;
@@ -194,6 +219,8 @@ interface SessionState {
       projectId?: string | null;
       branchId?: string | null;
       currentRevisionId?: string | null;
+      workflowRunId?: string | null;
+      workflowStatus?: string | null;
     }[],
   ) => void;
 }
@@ -214,7 +241,11 @@ function restoreGenerationResult(
 ): GenerationResult | null {
   const stored = [...messages]
     .reverse()
-    .find((message) => message.result?.success)
+    .find(
+      (message) =>
+        message.result?.success
+        || message.result?.needs_confirmation,
+    )
     ?.result;
   if (stored) {
     return currentCode && !stored.code ? { ...stored, code: currentCode } : stored;
@@ -226,8 +257,31 @@ function restoreGenerationResult(
 
 function restoreLastError(messages: ChatMessage[]): string | null {
   const latest = [...messages].reverse().find((message) => message.result);
-  if (!latest?.result || latest.result.success) return null;
+  if (
+    !latest?.result
+    || latest.result.success
+    || latest.result.needs_confirmation
+    || [
+      "pending",
+      "planning",
+      "running",
+      "waiting_confirmation",
+      "cancelling",
+    ].includes(latest.result.task_status || "")
+  ) {
+    return null;
+  }
   return latest.result.error?.message || "任务执行失败";
+}
+
+function isDurableTaskActive(status?: string | null): boolean {
+  return [
+    "pending",
+    "planning",
+    "running",
+    "waiting_confirmation",
+    "cancelling",
+  ].includes(status || "");
 }
 
 const defaultPanel = createPanel("对话 1");
@@ -405,6 +459,43 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
     get().setStep(step, panelId || agentStep.panel_id);
   },
 
+  setDurableWorkflowStarted: (task, panelId) =>
+    set((state) => {
+      const targetId = panelId || task.panel_id || state.activePanelId;
+      return {
+        panels: updatePanel(state.panels, targetId, (panel) => {
+          const sameWorkflow = (
+            panel.durable?.workflowRunId === task.workflow_run_id
+          );
+          return {
+            isGenerating: true,
+            generationStartTime: Date.now(),
+            currentStep: {
+              step: "workflow.created",
+              message: "持久任务已提交",
+              status: "queued",
+            },
+            lastError: null,
+            durable: {
+              ...emptyDurableContext(),
+              projectId: task.project_id,
+              branchId: task.branch_id,
+              baseRevisionId: task.expected_base_revision_id,
+              currentRevisionId: task.expected_base_revision_id,
+              workflowRunId: task.workflow_run_id,
+              lastEventSequence: sameWorkflow
+                ? panel.durable?.lastEventSequence || 0
+                : 0,
+              taskStatus: task.status,
+              preparedResult: sameWorkflow
+                ? panel.durable?.preparedResult || null
+                : null,
+            },
+          };
+        }),
+      };
+    }),
+
   addArtifactUpdate: (artifact, panelId) =>
     set((state) => {
       const targetId = panelId || artifact.panel_id || state.activePanelId;
@@ -537,7 +628,55 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
     set((state) => {
       const targetId = panelId || state.activePanelId;
       return {
-        panels: updatePanel(state.panels, targetId, (panel) => ({
+        panels: updatePanel(state.panels, targetId, (panel) => {
+          const terminal = [
+            "succeeded",
+            "failed",
+            "cancelled",
+            "timed_out",
+          ].includes(snapshot.status);
+          const prepared = (
+            panel.durable?.preparedResult
+            || (
+              typeof snapshot.request_payload.primary?.source_code
+                === "string"
+                ? {
+                    success: false,
+                    code: snapshot.request_payload.primary.source_code,
+                  } as GenerationResult
+                : null
+            )
+          );
+          const files = Object.fromEntries(
+            (snapshot.artifacts || []).map((artifact) => [
+              artifact.artifact_kind,
+              artifact.download_url,
+            ]),
+          );
+          const terminalResult = terminal
+            ? {
+                ...(prepared || { success: false }),
+                request_id: snapshot.id,
+                success: snapshot.status === "succeeded",
+                files,
+                project_id: snapshot.project_id,
+                branch_id: snapshot.request_payload.branch_id,
+                expected_base_revision_id:
+                  snapshot.request_payload.expected_base_revision_id,
+                revision_id:
+                  snapshot.change_set?.candidate_revision_id,
+                workflow_run_id: snapshot.id,
+                change_set_id: snapshot.change_set?.id,
+                task_status: snapshot.status,
+                error: snapshot.status === "succeeded"
+                  ? undefined
+                  : {
+                      type: snapshot.error_code || "WorkflowFailed",
+                      message: snapshot.error_message || "持久任务执行失败",
+                    },
+              } as GenerationResult
+            : panel.result;
+          return {
           durable: {
             ...(panel.durable || emptyDurableContext()),
             projectId: snapshot.project_id,
@@ -565,14 +704,17 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
             ),
             taskStatus: snapshot.status,
           },
-          isGenerating: ![
-            "succeeded",
-            "failed",
-            "cancelled",
-            "timed_out",
-          ].includes(snapshot.status),
-          lastError: snapshot.error_message || panel.lastError,
-        })),
+          result: terminalResult,
+          isGenerating: !terminal,
+          lastError: terminal
+            ? (
+                snapshot.status === "succeeded"
+                  ? null
+                  : snapshot.error_message || "持久任务执行失败"
+              )
+            : panel.lastError,
+          };
+        }),
       };
     }),
 
@@ -585,12 +727,46 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
           if (!shouldApplyDurableEvent(durable.lastEventSequence, event)) {
             return {};
           }
+          const preparedPayload = event.event_type === "source.prepared"
+            ? {
+                success: false,
+                needs_confirmation:
+                  event.payload.needs_confirmation === true,
+                code: typeof event.payload.source_code === "string"
+                  ? event.payload.source_code
+                  : undefined,
+                plan: typeof event.payload.plan === "object"
+                  ? event.payload.plan
+                  : undefined,
+                design_brief:
+                  typeof event.payload.design_brief === "object"
+                    ? event.payload.design_brief
+                    : undefined,
+                manufacturing_profile:
+                  typeof event.payload.manufacturing_profile === "object"
+                    ? event.payload.manufacturing_profile
+                    : undefined,
+                workflow_run_id: event.workflow_run_id,
+                project_id: durable.projectId || undefined,
+                branch_id: durable.branchId || undefined,
+                expected_base_revision_id:
+                  durable.baseRevisionId || undefined,
+              } as GenerationResult
+            : null;
           return {
             durable: {
               ...durable,
               workflowRunId: event.workflow_run_id,
               lastEventSequence: event.sequence,
+              preparedResult:
+                preparedPayload || durable.preparedResult,
             },
+            result: preparedPayload?.needs_confirmation
+              ? preparedPayload
+              : panel.result,
+            isGenerating: preparedPayload?.needs_confirmation
+              ? false
+              : panel.isGenerating,
           };
         }),
       };
@@ -672,22 +848,46 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
     })),
 
   loadSession: (sessionId, panels) => {
-    const panelStates = panels.map((p) => ({
-      ...createPanel(p.title),
-      id: p.id,
-      messages: p.messages,
-      result: restoreGenerationResult(p.messages, p.currentCode),
-      lastError: restoreLastError(p.messages),
-      activeRun: null,
-      artifactUpdates: [],
-      baselineVersion: 1,
-      durable: {
-        ...emptyDurableContext(),
-        projectId: p.projectId || null,
-        branchId: p.branchId || null,
-        currentRevisionId: p.currentRevisionId || null,
-      },
-    }));
+    const panelStates = panels.map((p) => {
+      const result = restoreGenerationResult(
+        p.messages,
+        p.currentCode,
+      );
+      const workflowStatus = (
+        p.workflowStatus
+        || result?.task_status
+        || null
+      );
+      return {
+        ...createPanel(p.title),
+        id: p.id,
+        messages: p.messages,
+        result,
+        isGenerating: isDurableTaskActive(workflowStatus),
+        generationStartTime: isDurableTaskActive(workflowStatus)
+          ? Date.now()
+          : null,
+        lastError: restoreLastError(p.messages),
+        activeRun: null,
+        artifactUpdates: [],
+        baselineVersion: 1,
+        durable: {
+          ...emptyDurableContext(),
+          projectId: p.projectId || null,
+          branchId: p.branchId || null,
+          baseRevisionId: p.currentRevisionId || null,
+          currentRevisionId: p.currentRevisionId || null,
+          workflowRunId: (
+            p.workflowRunId
+            || result?.workflow_run_id
+            || null
+          ),
+          changeSetId: result?.change_set_id || null,
+          taskStatus: workflowStatus,
+          preparedResult: result,
+        },
+      };
+    });
     set({
       sessionId,
       panels: panelStates.length > 0 ? panelStates : [createPanel("对话 1")],
@@ -703,4 +903,22 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
     panels: state.panels,
     activePanelId: state.activePanelId,
   }),
+  merge: (persistedState, currentState) => {
+    const saved = persistedState as Partial<SessionState>;
+    const panels = Array.isArray(saved.panels) && saved.panels.length > 0
+      ? saved.panels.map((panel) => normalizePersistedPanel(panel))
+      : currentState.panels;
+    const requestedActivePanelId = saved.activePanelId;
+    const activePanelId = panels.some(
+      (panel) => panel.id === requestedActivePanelId,
+    )
+      ? requestedActivePanelId as string
+      : panels[0].id;
+    return {
+      ...currentState,
+      ...saved,
+      panels,
+      activePanelId,
+    };
+  },
 }));

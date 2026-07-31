@@ -1,7 +1,7 @@
 """Public boundary for starting and controlling durable MCAD workflows."""
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -89,6 +89,31 @@ class McadExecutionRequest(BaseModel):
         object.__setattr__(self, "outputs", defaults)
 
 
+class McadSourcePreparationRequest(BaseModel):
+    """LLM-backed source preparation executed by a Temporal activity."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    operation: Literal["generate", "modify"]
+    prompt: str = Field(min_length=1, max_length=10_000)
+    existing_code: str | None = Field(default=None, max_length=50_000)
+    output_formats: tuple[Literal["step", "stl", "dxf", "svg"], ...] = (
+        "step",
+        "stl",
+    )
+    manufacturing_profile: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_operation_inputs(self) -> "McadSourcePreparationRequest":
+        if self.operation == "modify" and not self.existing_code:
+            raise ValueError("modify source preparation requires existing_code")
+        if self.operation == "generate" and self.existing_code is not None:
+            raise ValueError("generate source preparation cannot include existing_code")
+        if not self.output_formats:
+            raise ValueError("output_formats cannot be empty")
+        return self
+
+
 class McadWorkflowRequest(BaseModel):
     """Serializable input whose workflow ID is derived from WorkflowRun."""
 
@@ -101,7 +126,8 @@ class McadWorkflowRequest(BaseModel):
     branch_id: UUID
     expected_base_revision_id: UUID
     objective: str = Field(min_length=1, max_length=4000)
-    primary: McadExecutionRequest
+    primary: McadExecutionRequest | None = None
+    preparation: McadSourcePreparationRequest | None = None
     followup: McadExecutionRequest | None = None
     require_confirmation: bool = True
     confirmation_timeout_seconds: int = Field(default=3600, ge=1, le=604800)
@@ -109,6 +135,10 @@ class McadWorkflowRequest(BaseModel):
 
     @model_validator(mode="after")
     def require_review_before_commit(self) -> "McadWorkflowRequest":
+        if (self.primary is None) == (self.preparation is None):
+            raise ValueError(
+                "exactly one of primary or preparation must be provided"
+            )
         if self.commit_after_confirmation and not self.require_confirmation:
             raise ValueError(
                 "commit_after_confirmation requires explicit confirmation"
@@ -123,6 +153,34 @@ def temporal_workflow_id(workflow_run_id: UUID | str) -> str:
     return f"mcad-workflow-{workflow_run_id}"
 
 
+def mcad_workflow_request_payload(
+    *,
+    branch_id: UUID,
+    expected_base_revision_id: UUID,
+    objective: str,
+    primary: McadExecutionRequest | None,
+    preparation: McadSourcePreparationRequest | None,
+    followup: McadExecutionRequest | None,
+    require_confirmation: bool,
+    confirmation_timeout_seconds: int,
+    commit_after_confirmation: bool,
+) -> dict[str, Any]:
+    """Canonical immutable payload used for idempotency comparisons."""
+    return {
+        "objective": objective,
+        "branch_id": str(branch_id),
+        "expected_base_revision_id": str(expected_base_revision_id),
+        "primary": primary.model_dump(mode="json") if primary else None,
+        "preparation": (
+            preparation.model_dump(mode="json") if preparation else None
+        ),
+        "followup": followup.model_dump(mode="json") if followup else None,
+        "require_confirmation": require_confirmation,
+        "confirmation_timeout_seconds": confirmation_timeout_seconds,
+        "commit_after_confirmation": commit_after_confirmation,
+    }
+
+
 async def start_mcad_workflow(
     *,
     tenant_id: UUID,
@@ -133,7 +191,8 @@ async def start_mcad_workflow(
     kind: str,
     idempotency_key: str,
     objective: str,
-    primary: McadExecutionRequest,
+    primary: McadExecutionRequest | None = None,
+    preparation: McadSourcePreparationRequest | None = None,
     followup: McadExecutionRequest | None = None,
     require_confirmation: bool = True,
     confirmation_timeout_seconds: int = 3600,
@@ -159,16 +218,21 @@ async def start_mcad_workflow(
         raise ValueError(
             "commit_after_confirmation requires explicit confirmation"
         )
-    request_payload = {
-        "objective": objective,
-        "branch_id": str(branch_id),
-        "expected_base_revision_id": str(expected_base_revision_id),
-        "primary": primary.model_dump(mode="json"),
-        "followup": followup.model_dump(mode="json") if followup else None,
-        "require_confirmation": require_confirmation,
-        "confirmation_timeout_seconds": confirmation_timeout_seconds,
-        "commit_after_confirmation": commit_after_confirmation,
-    }
+    if (primary is None) == (preparation is None):
+        raise ValueError(
+            "exactly one of primary or preparation must be provided"
+        )
+    request_payload = mcad_workflow_request_payload(
+        branch_id=branch_id,
+        expected_base_revision_id=expected_base_revision_id,
+        objective=objective,
+        primary=primary,
+        preparation=preparation,
+        followup=followup,
+        require_confirmation=require_confirmation,
+        confirmation_timeout_seconds=confirmation_timeout_seconds,
+        commit_after_confirmation=commit_after_confirmation,
+    )
     async with tenant_transaction(tenant_id, principal_id) as connection:
         created = await create_workflow(
             connection,
@@ -189,6 +253,7 @@ async def start_mcad_workflow(
         expected_base_revision_id=expected_base_revision_id,
         objective=objective,
         primary=primary,
+        preparation=preparation,
         followup=followup,
         require_confirmation=require_confirmation,
         confirmation_timeout_seconds=confirmation_timeout_seconds,

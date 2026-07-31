@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  getModelSnapshot,
   listModelSnapshots,
-  restoreModelSnapshot,
 } from "../services/engineeringService";
 import type { ModelSnapshotDetail, ModelSnapshotSummary } from "../types";
 import {
@@ -14,7 +14,7 @@ interface VersionHistoryPanelProps {
   panelId: string;
   activeSnapshotId?: string | null;
   refreshKey?: string | number | null;
-  onRestore: (snapshot: ModelSnapshotDetail) => void;
+  onRestore: (snapshot: ModelSnapshotDetail) => boolean | void;
 }
 
 const STATUS_CLASS: Record<string, string> = {
@@ -64,8 +64,10 @@ export default function VersionHistoryPanel({
     setRestoringId(snapshotId);
     setError(null);
     try {
-      onRestore(await restoreModelSnapshot(snapshotId));
-      await loadSnapshots();
+      const accepted = onRestore(await getModelSnapshot(snapshotId));
+      if (accepted === false) {
+        throw new Error("当前连接不可用，未提交版本恢复任务");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "版本恢复失败");
     } finally {
@@ -79,7 +81,7 @@ export default function VersionHistoryPanel({
         <div>
           <h3 className="text-sm font-semibold text-gray-900">{"\u7248\u672c\u5386\u53f2"}</h3>
           <p className="text-xs text-gray-500">
-            {"\u65e0\u9700\u518d\u6b21\u8c03\u7528 LLM\uff0c\u5373\u53ef\u6062\u590d\u5df2\u4fdd\u5b58\u7684 CAD \u68c0\u67e5\u70b9\u3002"}
+            恢复会重新执行已保存代码，并生成可审查的 Change Set。
           </p>
         </div>
         <button

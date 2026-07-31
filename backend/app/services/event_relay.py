@@ -182,7 +182,15 @@ async def get_task_snapshot(
     return {
         **dict(workflow),
         "steps": steps,
-        "artifacts": [dict(row) for row in artifact_rows],
+        "artifacts": [
+            {
+                **dict(row),
+                "download_url": (
+                    f"/api/files/{workflow_run_id}/{row['filename']}"
+                ),
+            }
+            for row in artifact_rows
+        ],
         "change_set": dict(change_set) if change_set else None,
     }
 

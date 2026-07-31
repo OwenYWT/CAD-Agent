@@ -175,6 +175,13 @@ class GenerationResult(BaseModel):
     request_id: str | None = None
     snapshot_id: str | None = None
     version: int | None = None
+    project_id: UUID | None = None
+    branch_id: UUID | None = None
+    expected_base_revision_id: UUID | None = None
+    revision_id: UUID | None = None
+    workflow_run_id: UUID | None = None
+    change_set_id: UUID | None = None
+    task_status: str | None = None
     files: dict[str, str] = {}
     code: str | None = None
     params: dict[str, ParamConfig] | None = None
@@ -348,6 +355,7 @@ class DurableArtifactSnapshot(BaseModel):
     content_type: str
     size_bytes: int
     sha256: str
+    download_url: str
     created_at: datetime
 
 
@@ -468,6 +476,13 @@ class GenerateResponse(BaseModel):
     manufacturing_profile: ManufacturingProfile | None = None
     snapshot_id: str | None = None
     version: int | None = None
+    project_id: UUID | None = None
+    branch_id: UUID | None = None
+    expected_base_revision_id: UUID | None = None
+    revision_id: UUID | None = None
+    workflow_run_id: UUID | None = None
+    change_set_id: UUID | None = None
+    task_status: str | None = None
     files: dict[str, str] = {}
     code: str | None = None
     params: dict[str, ParamConfig] | None = None

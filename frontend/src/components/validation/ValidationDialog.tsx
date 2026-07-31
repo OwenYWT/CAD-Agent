@@ -26,7 +26,7 @@ interface ValidationDialogProps {
   refreshKey?: string | number | null;
   onClose: () => void;
   onAskAgent: (prompt: string) => void;
-  onRestore: (snapshot: ModelSnapshotDetail) => void;
+  onRestore: (snapshot: ModelSnapshotDetail) => boolean | void;
   onRetryPrompt: () => unknown;
   onRerunCode: () => unknown;
   onResumeRun: (runId: string) => unknown;

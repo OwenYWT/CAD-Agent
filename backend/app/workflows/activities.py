@@ -16,6 +16,8 @@ from sqlalchemy import text
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
+from app.agent.orchestrator import Orchestrator
+from app.api.error_messages import public_generation_error
 from app.db import tenant_transaction
 from app.domain.runs import AttemptStatus, StepStatus, WorkflowStatus
 from app.execution.backend import ExecutionBackend, MaterializedExecutionOutcome
@@ -55,6 +57,9 @@ from app.services.run_state import (
     transition_step,
     transition_workflow,
 )
+from app.llm import is_nonretryable_provider_error
+from app.workflows.source_preparation import SourcePreparer
+from app.workflows.temporal import McadSourcePreparationRequest
 
 
 def _uuid(payload: dict[str, Any], key: str) -> UUID:
@@ -482,8 +487,208 @@ async def _mark_execution_failure(
 
 
 class McadWorkflowActivities:
-    def __init__(self, backend: ExecutionBackend | None = None):
+    def __init__(
+        self,
+        backend: ExecutionBackend | None = None,
+        *,
+        source_preparer: SourcePreparer | None = None,
+    ):
         self.backend = backend or get_execution_backend()
+        self.source_preparer = source_preparer or SourcePreparer(
+            Orchestrator(execution_backend=self.backend)
+        )
+
+    @activity.defn(name="mcad.prepare_source")
+    async def prepare_source(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        tenant_id = _uuid(payload, "tenant_id")
+        principal_id = _uuid(payload, "principal_id")
+        workflow_id = _uuid(payload, "workflow_run_id")
+        step_key = str(
+            payload.get("preparation_step_key") or "prepare_source"
+        )
+        preparation = McadSourcePreparationRequest.model_validate(
+            payload["preparation"]
+        )
+
+        async with tenant_transaction(
+            tenant_id,
+            principal_id,
+        ) as connection:
+            replay = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT payload FROM task_events
+                        WHERE workflow_run_id=:workflow_id
+                          AND event_type='source.prepared'
+                          AND payload->>'step_key'=:step_key
+                        ORDER BY sequence DESC
+                        LIMIT 1
+                        """
+                    ),
+                    {
+                        "workflow_id": workflow_id,
+                        "step_key": step_key,
+                    },
+                )
+            ).mappings().one_or_none()
+            if replay is not None:
+                return {**dict(replay["payload"]), "replayed": True}
+
+            status = await _workflow_status(connection, workflow_id)
+            if status == WorkflowStatus.PENDING:
+                await transition_workflow(
+                    connection,
+                    workflow_id,
+                    expected=WorkflowStatus.PENDING,
+                    target=WorkflowStatus.PLANNING,
+                )
+            elif status not in {
+                WorkflowStatus.PLANNING,
+                WorkflowStatus.RUNNING,
+            }:
+                raise ApplicationError(
+                    f"workflow cannot prepare source in {status.value}",
+                    type="workflow_state_conflict",
+                    non_retryable=True,
+                )
+
+            created = await create_step(
+                connection,
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                step_key=step_key,
+                step_index=int(payload.get("preparation_step_index", 0)),
+                kind=f"source_{preparation.operation}",
+            )
+            row = await _step_row(connection, workflow_id, step_key)
+            step_status = StepStatus(row["status"])
+            if step_status in {
+                StepStatus.FAILED,
+                StepStatus.TIMED_OUT,
+            }:
+                await transition_step(
+                    connection,
+                    created.step_id,
+                    expected=step_status,
+                    target=StepStatus.READY,
+                )
+                step_status = StepStatus.READY
+            if step_status == StepStatus.PENDING:
+                await transition_step(
+                    connection,
+                    created.step_id,
+                    expected=StepStatus.PENDING,
+                    target=StepStatus.READY,
+                )
+                step_status = StepStatus.READY
+            if step_status == StepStatus.READY:
+                await transition_step(
+                    connection,
+                    created.step_id,
+                    expected=StepStatus.READY,
+                    target=StepStatus.RUNNING,
+                )
+            elif step_status != StepStatus.RUNNING:
+                raise ApplicationError(
+                    f"source step is terminal in {step_status.value}",
+                    type="source_step_terminal",
+                    non_retryable=True,
+                )
+            await append_workflow_event(
+                connection,
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                event_type="source.preparation_started",
+                payload={
+                    "step_key": step_key,
+                    "operation": preparation.operation,
+                },
+            )
+
+        try:
+            prepared = await self.source_preparer.prepare(preparation)
+        except asyncio.CancelledError:
+            async with tenant_transaction(
+                tenant_id,
+                principal_id,
+            ) as connection:
+                row = await _step_row(connection, workflow_id, step_key)
+                if row and row["status"] == StepStatus.RUNNING.value:
+                    await transition_step(
+                        connection,
+                        row["id"],
+                        expected=StepStatus.RUNNING,
+                        target=StepStatus.CANCELLED,
+                        error_code="source_preparation_cancelled",
+                        error_message="MCAD source preparation was cancelled.",
+                    )
+            raise
+        except Exception as exc:
+            public_error = public_generation_error(exc)
+            provider_failure = public_error["type"].startswith("Provider")
+            error_code = (
+                public_error["type"]
+                if provider_failure
+                else "source_preparation_failed"
+            )
+            error_message = (
+                public_error["message"]
+                if provider_failure
+                else str(exc)[:4000]
+            )
+            async with tenant_transaction(
+                tenant_id,
+                principal_id,
+            ) as connection:
+                row = await _step_row(connection, workflow_id, step_key)
+                if row and row["status"] == StepStatus.RUNNING.value:
+                    await transition_step(
+                        connection,
+                        row["id"],
+                        expected=StepStatus.RUNNING,
+                        target=StepStatus.FAILED,
+                        error_code=error_code,
+                        error_message=error_message,
+                    )
+            raise ApplicationError(
+                error_message,
+                {"cause": type(exc).__name__},
+                type=error_code,
+                non_retryable=(
+                    isinstance(exc, (RuntimeError, ValueError))
+                    or is_nonretryable_provider_error(exc)
+                ),
+            ) from exc
+
+        event_payload = {
+            **prepared,
+            "step_key": step_key,
+            "operation": preparation.operation,
+        }
+        async with tenant_transaction(
+            tenant_id,
+            principal_id,
+        ) as connection:
+            row = await _step_row(connection, workflow_id, step_key)
+            if row and row["status"] == StepStatus.RUNNING.value:
+                await transition_step(
+                    connection,
+                    row["id"],
+                    expected=StepStatus.RUNNING,
+                    target=StepStatus.SUCCEEDED,
+                )
+            await append_workflow_event(
+                connection,
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                event_type="source.prepared",
+                payload=event_payload,
+            )
+        return event_payload
 
     @activity.defn(name="mcad.plan")
     async def plan(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -508,6 +713,7 @@ class McadWorkflowActivities:
                     "source_sha256": hashlib.sha256(
                         item["source_code"].encode("utf-8")
                     ).hexdigest(),
+                    "source_code": item["source_code"],
                     "outputs": item["outputs"],
                 }
                 for item in executions
@@ -537,7 +743,7 @@ class McadWorkflowActivities:
                     tenant_id=tenant_id,
                     workflow_id=workflow_id,
                     step_key="plan",
-                    step_index=0,
+                    step_index=int(payload.get("plan_step_index", 0)),
                     kind="mcad_plan",
                 )
                 candidate = await create_candidate_change_set(
@@ -1229,6 +1435,9 @@ class McadWorkflowActivities:
         principal_id = _uuid(payload, "principal_id")
         workflow_id = _uuid(payload, "workflow_run_id")
         message = str(payload.get("error_message") or "workflow failed")[:4000]
+        error_code = str(
+            payload.get("error_code") or "temporal_workflow_failed"
+        )[:200]
         async with tenant_transaction(tenant_id, principal_id) as connection:
             status = await _workflow_status(connection, workflow_id)
             if status in {
@@ -1242,7 +1451,7 @@ class McadWorkflowActivities:
                     workflow_id,
                     expected=status,
                     target=WorkflowStatus.FAILED,
-                    error_code="temporal_workflow_failed",
+                    error_code=error_code,
                     error_message=message,
                 )
             elif status not in {
@@ -1256,10 +1465,15 @@ class McadWorkflowActivities:
                     type="workflow_state_conflict",
                     non_retryable=True,
                 )
-        return {"status": "failed", "error_message": message}
+        return {
+            "status": "failed",
+            "error_code": error_code,
+            "error_message": message,
+        }
 
     def registered(self) -> list:
         return [
+            self.prepare_source,
             self.plan,
             self.execute,
             self.validate,

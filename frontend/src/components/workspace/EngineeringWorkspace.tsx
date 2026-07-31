@@ -92,21 +92,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
 
   const latestUserPrompt = panel.messages.filter((message) => message.role === "user").at(-1)?.content || "";
   const restoreSnapshot = (snapshot: ModelSnapshotDetail) => {
-    const restoredResult = {
-      ...snapshot.result,
-      snapshot_id: snapshot.id,
-      project_id: snapshot.project_id,
-      branch_id: snapshot.branch_id,
-      ...(snapshot.revision_id
-        ? {
-            revision_id: snapshot.revision_id,
-            expected_base_revision_id: snapshot.revision_id,
-          }
-        : {}),
-      version: snapshot.version,
-    };
-    useSessionStore.getState().restorePanelResult(panel.id, restoredResult, snapshot.code);
-    restoreContext(panel.id, snapshot.code);
+    return executeWithProgress(snapshot.code);
   };
 
   if (ownerId !== user.id) {
