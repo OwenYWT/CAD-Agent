@@ -6,6 +6,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const SOURCE_LABELS: Record<string, string> = {
+  initial: "项目初始化",
   generation: "自然语言生成",
   execute_code: "参数化代码执行",
   parameter_edit: "参数修改",
@@ -50,6 +51,15 @@ const TASK_EVENT_LABELS: Record<string, string> = {
   "artifact.committed": "工程产物已保存",
   "artifact.rejected": "工程产物校验失败",
   "validation.completed": "工程验证已完成",
+  "change_set.evidence_updated": "变更证据已更新",
+  "change_set.accepted": "变更已接受",
+  "change_set.changes_requested": "已请求修改变更",
+  "change_set.rejected": "变更已拒绝",
+  "change_set.committed": "版本已提交",
+  "change_set.rolled_back": "版本已回滚",
+  "compat.progress": "兼容任务进度已更新",
+  "compat.result": "兼容任务结果已更新",
+  "compat.state": "兼容任务状态已更新",
 };
 
 function displayLabel(value: string | null | undefined, labels: Record<string, string>, fallback: string) {

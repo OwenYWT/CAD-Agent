@@ -16,6 +16,7 @@ from app.domain.identity import (
     user_principal,
 )
 from app.execution.canonical import canonical_sha256
+from app.parameters import extract_parameters
 from app.principal_context import current_principal
 from app.repositories.identity import ensure_principal
 
@@ -44,6 +45,58 @@ def _json(value: Any) -> str:
         sort_keys=True,
         separators=(",", ":"),
     )
+
+
+def _source_parameters(source_code: str | None) -> list[dict] | None:
+    if not source_code:
+        return None
+    parameters = [
+        parameter.model_dump(mode="json")
+        for parameter in extract_parameters(source_code)
+    ]
+    return parameters or None
+
+
+def _durable_revision_projection(
+    manifest: dict[str, Any],
+) -> dict[str, Any] | None:
+    if manifest.get("schema_version") != "mcad-revision-manifest.v1":
+        return None
+    executions = [
+        execution
+        for execution in manifest.get("executions") or []
+        if isinstance(execution, dict)
+    ]
+    if not executions:
+        return {
+            "source": "initial",
+            "prompt": "项目初始化",
+            "code": "",
+            "parameters": None,
+            "available_exports": [],
+        }
+    latest = executions[-1]
+    operation = str(latest.get("operation") or "")
+    source = {
+        "generate": "generation",
+        "modify": "modify_part",
+        "execute": "execute_code",
+        "analyze": "dfm",
+    }.get(operation, operation or "execute_code")
+    source_code = str(latest.get("source_code") or "")
+    available_exports = list(dict.fromkeys(
+        str(output.get("name"))
+        for execution in executions
+        for output in execution.get("outputs") or []
+        if isinstance(output, dict) and output.get("name")
+    ))
+    return {
+        "source": source,
+        "prompt": str(manifest.get("objective") or ""),
+        "code": source_code,
+        "parameters": _source_parameters(source_code),
+        "available_exports": available_exports,
+    }
 
 
 def _session(row: Any) -> dict:
@@ -775,6 +828,7 @@ async def get_messages(panel_id: str) -> list[dict]:
             "task_status": workflow["status"],
             "files": files,
             "code": source_code,
+            "parameters": _source_parameters(source_code),
             "plan": source.get("plan"),
             "design_brief": source.get("design_brief"),
             "manufacturing_profile": source.get(
@@ -858,7 +912,16 @@ def _snapshot_from_revision(
 ) -> dict:
     manifest = dict(row["manifest"])
     details = metadata or {}
+    durable = _durable_revision_projection(manifest) or {}
     inspect_report = manifest.get("inspect_report")
+    workflow_status = row.get("workflow_status")
+    durable_status = (
+        "pass"
+        if workflow_status == "succeeded"
+        else "fail"
+        if workflow_status in {"failed", "cancelled", "timed_out"}
+        else "unknown"
+    )
     return {
         "id": snapshot_id or str(row["id"]),
         "project_id": str(row["project_id"]),
@@ -871,22 +934,44 @@ def _snapshot_from_revision(
             else manifest.get("legacy_parent_snapshot_id")
         ),
         "version": details.get("legacy_version") or row["revision_number"],
-        "source": details.get("source") or manifest.get("source") or "legacy",
-        "prompt": details.get("prompt") or manifest.get("prompt") or "",
-        "code": manifest.get("code") or "",
-        "result": manifest.get("result") or {},
+        "source": (
+            details.get("source")
+            or manifest.get("source")
+            or durable.get("source")
+            or "legacy"
+        ),
+        "prompt": (
+            details.get("prompt")
+            or manifest.get("prompt")
+            or durable.get("prompt")
+            or ""
+        ),
+        "code": manifest.get("code") or durable.get("code") or "",
+        "result": manifest.get("result") or {
+            "success": workflow_status == "succeeded",
+            "code": durable.get("code") or "",
+            "parameters": durable.get("parameters"),
+        },
         "files": manifest.get("files") or {},
         "params": manifest.get("params"),
-        "parameters": manifest.get("parameters"),
+        "parameters": (
+            manifest.get("parameters")
+            or durable.get("parameters")
+        ),
         "validation": manifest.get("validation"),
         "inspect_report": inspect_report,
         "repair_history": manifest.get("repair_history") or [],
-        "status": details.get("status") or manifest.get("status")
-        or manifest.get("legacy_status") or "unknown",
+        "status": (
+            details.get("status")
+            or manifest.get("status")
+            or manifest.get("legacy_status")
+            or durable_status
+        ),
         "created_at": _iso(row["created_at"]),
-        "available_exports": (inspect_report or {}).get(
-            "available_exports",
-            [],
+        "available_exports": (
+            (inspect_report or {}).get("available_exports")
+            or durable.get("available_exports")
+            or []
         ),
         "inspect_verdict": (inspect_report or {}).get("verdict"),
     }
@@ -1078,8 +1163,15 @@ async def list_model_snapshots(panel_id: str) -> list[dict]:
             await connection.execute(
                 text(
                     """
-                    SELECT * FROM project_revisions
-                    WHERE tenant_id=:tenant AND branch_id=:branch
+                    SELECT r.*, w.status AS workflow_status
+                    FROM project_revisions r
+                    LEFT JOIN change_sets c
+                      ON c.tenant_id=r.tenant_id
+                     AND c.candidate_revision_id=r.id
+                    LEFT JOIN workflow_runs w
+                      ON w.tenant_id=c.tenant_id
+                     AND w.id=c.source_workflow_run_id
+                    WHERE r.tenant_id=:tenant AND r.branch_id=:branch
                     ORDER BY revision_number DESC
                     """
                 ),
@@ -1135,8 +1227,17 @@ async def get_model_snapshot(snapshot_id: str) -> dict | None:
             row = (
                 await connection.execute(
                     text(
-                        "SELECT * FROM project_revisions "
-                        "WHERE tenant_id=:tenant AND id=:id"
+                        """
+                        SELECT r.*, w.status AS workflow_status
+                        FROM project_revisions r
+                        LEFT JOIN change_sets c
+                          ON c.tenant_id=r.tenant_id
+                         AND c.candidate_revision_id=r.id
+                        LEFT JOIN workflow_runs w
+                          ON w.tenant_id=c.tenant_id
+                         AND w.id=c.source_workflow_run_id
+                        WHERE r.tenant_id=:tenant AND r.id=:id
+                        """
                     ),
                     {"tenant": context.tenant_id, "id": revision_id},
                 )
