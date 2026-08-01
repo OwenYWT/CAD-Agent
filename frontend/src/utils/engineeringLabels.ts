@@ -31,6 +31,27 @@ const PROMPT_LABELS: Record<string, string> = {
   "manual code execution": "手动执行参数化建模代码",
 };
 
+const TASK_EVENT_LABELS: Record<string, string> = {
+  "workflow.created": "持久任务已创建",
+  "workflow.state_changed": "任务状态已更新",
+  "workflow.cancellation_requested": "已请求取消任务",
+  "workflow.plan_recorded": "建模计划已记录",
+  "workflow.confirmed": "任务确认已记录",
+  "step.created": "执行步骤已创建",
+  "step.state_changed": "步骤状态已更新",
+  "attempt.created": "执行尝试已创建",
+  "attempt.state_changed": "执行尝试状态已更新",
+  "attempt.leased": "计算资源已分配",
+  "attempt.started": "隔离计算已开始",
+  "attempt.heartbeat": "隔离计算运行中",
+  "attempt.completed": "隔离计算已完成",
+  "source.preparation_started": "正在准备建模代码",
+  "source.prepared": "建模代码已准备",
+  "artifact.committed": "工程产物已保存",
+  "artifact.rejected": "工程产物校验失败",
+  "validation.completed": "工程验证已完成",
+};
+
 function displayLabel(value: string | null | undefined, labels: Record<string, string>, fallback: string) {
   const normalized = value?.trim();
   if (!normalized) return fallback;
@@ -51,4 +72,10 @@ export function engineeringCheckLabel(value: string | null | undefined) {
 
 export function engineeringPromptLabel(value: string | null | undefined) {
   return displayLabel(value, PROMPT_LABELS, "未记录提示词");
+}
+
+export function engineeringTaskEventLabel(
+  value: string | null | undefined,
+) {
+  return displayLabel(value, TASK_EVENT_LABELS, "任务事件");
 }

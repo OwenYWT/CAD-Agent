@@ -14,6 +14,7 @@ import type {
 import {
   engineeringSourceLabel,
   engineeringStatusLabel,
+  engineeringTaskEventLabel,
 } from "../utils/engineeringLabels";
 
 interface AgentRunTimelineProps {
@@ -106,7 +107,7 @@ function formatDuration(durationMs?: number | null) {
 }
 
 function stageLabel(step: StepUpdate) {
-  return STEP_LABELS[step.step] || step.step.replace(/_/g, " ");
+  return STEP_LABELS[step.step] || engineeringTaskEventLabel(step.step);
 }
 
 function runStatusLabel(status?: string | null) {
