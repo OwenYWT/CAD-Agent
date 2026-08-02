@@ -149,8 +149,33 @@ class McadWorkflowRequest(BaseModel):
         return self.model_dump(mode="json")
 
 
+class McadCheckRequest(BaseModel):
+    """Serializable request for one durable, read-only engineering check."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    workflow_run_id: UUID
+    source_workflow_run_id: UUID
+    source_revision_id: UUID
+    tenant_id: UUID
+    project_id: UUID
+    principal_id: UUID
+    code: str = Field(default="", max_length=50_000)
+    description: str = Field(default="", max_length=5_000)
+    process: str | None = Field(default=None, max_length=200)
+    material: str | None = Field(default=None, max_length=200)
+    timeout_seconds: int = Field(default=120, ge=1, le=3600)
+
+    def temporal_payload(self) -> dict:
+        return self.model_dump(mode="json")
+
+
 def temporal_workflow_id(workflow_run_id: UUID | str) -> str:
     return f"mcad-workflow-{workflow_run_id}"
+
+
+def temporal_check_workflow_id(workflow_run_id: UUID | str) -> str:
+    return f"mcad-check-workflow-{workflow_run_id}"
 
 
 def mcad_workflow_request_payload(
@@ -275,6 +300,74 @@ async def start_mcad_workflow(
     return created.workflow_id, handle
 
 
+async def start_mcad_check_workflow(
+    *,
+    tenant_id: UUID,
+    project_id: UUID,
+    principal_id: UUID,
+    source_workflow_run_id: UUID,
+    source_revision_id: UUID,
+    idempotency_key: str,
+    code: str = "",
+    description: str = "",
+    process: str | None = None,
+    material: str | None = None,
+    timeout_seconds: int = 120,
+) -> tuple[UUID, WorkflowHandle]:
+    """Persist and idempotently start a read-only engineering-check run."""
+    idempotency_key = idempotency_key.strip()
+    if not idempotency_key or len(idempotency_key) > 500:
+        raise ValueError(
+            "idempotency_key must contain 1 to 500 characters"
+        )
+    request_payload = {
+        "source_workflow_run_id": str(source_workflow_run_id),
+        "source_revision_id": str(source_revision_id),
+        "code": code,
+        "description": description,
+        "process": process,
+        "material": material,
+        "timeout_seconds": timeout_seconds,
+    }
+    async with tenant_transaction(tenant_id, principal_id) as connection:
+        created = await create_workflow(
+            connection,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            requested_by_principal_id=principal_id,
+            kind="mcad.check",
+            idempotency_key=idempotency_key,
+            request_payload=request_payload,
+        )
+    durable_request = McadCheckRequest(
+        workflow_run_id=created.workflow_id,
+        source_workflow_run_id=source_workflow_run_id,
+        source_revision_id=source_revision_id,
+        tenant_id=tenant_id,
+        project_id=project_id,
+        principal_id=principal_id,
+        code=code,
+        description=description,
+        process=process,
+        material=material,
+        timeout_seconds=timeout_seconds,
+    )
+    client = await get_temporal_client()
+    workflow_id = temporal_check_workflow_id(created.workflow_id)
+    try:
+        handle = await client.start_workflow(
+            "McadCheckWorkflow",
+            durable_request.temporal_payload(),
+            id=workflow_id,
+            task_queue=settings.temporal_task_queue,
+            id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
+            id_conflict_policy=WorkflowIDConflictPolicy.USE_EXISTING,
+        )
+    except WorkflowAlreadyStartedError:
+        handle = client.get_workflow_handle(workflow_id)
+    return created.workflow_id, handle
+
+
 async def confirm_mcad_workflow(
     workflow_run_id: UUID,
     *,
@@ -298,6 +391,12 @@ async def cancel_mcad_workflow(
 ) -> None:
     """Persist cancellation intent before notifying Temporal."""
     async with tenant_transaction(tenant_id, principal_id) as connection:
+        workflow_kind = await connection.scalar(
+            text("SELECT kind FROM workflow_runs WHERE id=:id"),
+            {"id": workflow_run_id},
+        )
+        if workflow_kind is None:
+            raise KeyError(workflow_run_id)
         try:
             await request_workflow_cancellation(connection, workflow_run_id)
         except IllegalTransition:
@@ -317,5 +416,10 @@ async def cancel_mcad_workflow(
         if status in {"succeeded", "failed", "cancelled", "timed_out"}:
             return
     client = await get_temporal_client()
-    handle = client.get_workflow_handle(temporal_workflow_id(workflow_run_id))
+    workflow_id = (
+        temporal_check_workflow_id(workflow_run_id)
+        if workflow_kind == "mcad.check"
+        else temporal_workflow_id(workflow_run_id)
+    )
+    handle = client.get_workflow_handle(workflow_id)
     await handle.signal("cancel_requested", reason[:4000])

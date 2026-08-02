@@ -1,5 +1,6 @@
 """Deterministic design-review / DFM analysis (rule engine + geometry, NO LLM)."""
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -64,11 +65,12 @@ class DFMAnalyzer:
         process: str | None = None,
         step_path: Path | None = None,
         material: str | None = None,
+        precomputed_step_data: object | None = None,
     ) -> DesignAnalysis:
         # Step 1: Geometry analysis
         # Use STEP-based precise analysis if available, fall back to trimesh
-        step_result = None
-        if step_path and step_path.exists():
+        step_result = precomputed_step_data
+        if step_result is None and step_path and step_path.exists():
             try:
                 from app.dfm.models import StepAnalysisResult
                 step_result = await self.step_analyzer.analyze(step_path)
@@ -84,7 +86,10 @@ class DFMAnalyzer:
                 logger.warning(f"STEP analysis error: {e}, falling back to trimesh")
 
         # Always run trimesh analysis (geometry metrics for the rule engine + fallback)
-        geo_result = self._geo_analyzer.analyze(stl_path)
+        geo_result = await asyncio.to_thread(
+            self._geo_analyzer.analyze,
+            stl_path,
+        )
 
         # Enrich geo_result with STEP-derived precision data
         if step_result:
@@ -179,4 +184,3 @@ class DFMAnalyzer:
                 geo.material_ratio = round(gp.volume / bbox_vol, 3)
 
         return geo
-

@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import socket
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -19,10 +20,13 @@ from temporalio.exceptions import ApplicationError
 from app.agent.orchestrator import Orchestrator
 from app.api.error_messages import public_generation_error
 from app.db import tenant_transaction
+from app.dfm.models import StepAnalysisResult
+from app.dfm.step_analyzer_script import STEP_ANALYSIS_SCRIPT
 from app.domain.runs import AttemptStatus, StepStatus, WorkflowStatus
 from app.execution.backend import ExecutionBackend, MaterializedExecutionOutcome
 from app.execution.composition import get_execution_backend
 from app.execution.contracts import (
+    ArtifactInput,
     ExecutionSource,
     ExecutionSpec,
     ExecutionStatus,
@@ -30,7 +34,7 @@ from app.execution.contracts import (
     ResourceLimits,
     RuntimeRequirement,
 )
-from app.object_store import put_file, sha256_object
+from app.object_store import get_object, put_file, sha256_object
 from app.repositories.revisions import (
     StaleBaseRevision,
     create_candidate_change_set,
@@ -46,6 +50,7 @@ from app.services.change_sets import (
     reject_change_set,
     update_change_set_evidence,
 )
+from app.services.design_analysis import build_design_analysis_response
 from app.services.run_state import (
     create_attempt,
     create_step,
@@ -57,6 +62,7 @@ from app.services.run_state import (
     transition_step,
     transition_workflow,
 )
+from app.validation.dfm_analyzer import DFMAnalyzer
 from app.llm import is_nonretryable_provider_error
 from app.workflows.source_preparation import SourcePreparer
 from app.workflows.temporal import McadSourcePreparationRequest
@@ -366,8 +372,14 @@ async def _run_backend_with_heartbeats(
     attempt_id: UUID,
     lease_token: str,
     lease_generation: int,
+    materialized_inputs: dict[str, Path] | None = None,
 ) -> MaterializedExecutionOutcome:
-    execution_task = asyncio.create_task(backend.execute(spec))
+    execution_task = asyncio.create_task(
+        backend.execute(
+            spec,
+            materialized_inputs=materialized_inputs,
+        )
+    )
     heartbeat_task = asyncio.create_task(
         _heartbeat_loop(
             tenant_id=tenant_id,
@@ -484,6 +496,136 @@ async def _mark_execution_failure(
                     ),
                 },
             )
+
+
+async def _complete_check_workflow(
+    payload: dict[str, Any],
+    *,
+    report_artifact: dict[str, Any],
+    analysis: dict[str, Any],
+    replayed: bool,
+) -> dict[str, Any]:
+    tenant_id = _uuid(payload, "tenant_id")
+    principal_id = _uuid(payload, "principal_id")
+    workflow_id = _uuid(payload, "workflow_run_id")
+    violation_severities = {
+        str(item.get("severity") or "").lower()
+        for item in analysis.get("rule_violations") or []
+    }
+    validation_status = (
+        "failed"
+        if "critical" in violation_severities
+        else "warning"
+        if "warning" in violation_severities
+        else "passed"
+    )
+    async with tenant_transaction(tenant_id, principal_id) as connection:
+        row = await _step_row(
+            connection,
+            workflow_id,
+            "engineering_check",
+        )
+        if row is None:
+            raise ApplicationError(
+                "Engineering check has no persisted StepRun.",
+                type="check_step_missing",
+                non_retryable=True,
+            )
+        step_status = StepStatus(row["status"])
+        if step_status in {StepStatus.FAILED, StepStatus.TIMED_OUT}:
+            await transition_step(
+                connection,
+                row["id"],
+                expected=step_status,
+                target=StepStatus.READY,
+            )
+            step_status = StepStatus.READY
+        if step_status == StepStatus.READY:
+            await transition_step(
+                connection,
+                row["id"],
+                expected=StepStatus.READY,
+                target=StepStatus.RUNNING,
+            )
+            step_status = StepStatus.RUNNING
+        if step_status == StepStatus.RUNNING:
+            await transition_step(
+                connection,
+                row["id"],
+                expected=StepStatus.RUNNING,
+                target=StepStatus.SUCCEEDED,
+            )
+        event_exists = await connection.scalar(
+            text(
+                """
+                SELECT 1 FROM task_events
+                WHERE workflow_run_id=:workflow_id
+                  AND event_type='validation.completed'
+                  AND payload->>'report_artifact_id'=:artifact_id
+                """
+            ),
+            {
+                "workflow_id": workflow_id,
+                "artifact_id": str(report_artifact["artifact_id"]),
+            },
+        )
+        if event_exists is None:
+            await append_workflow_event(
+                connection,
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                event_type="validation.completed",
+                payload={
+                    "step_key": "engineering_check",
+                    "scope": "geometry_and_dfm",
+                    "status": validation_status,
+                    "design_score": analysis.get("design_score"),
+                    "issue_count": len(
+                        analysis.get("rule_violations") or []
+                    ),
+                    "report_artifact_id": str(
+                        report_artifact["artifact_id"]
+                    ),
+                    "report_sha256": report_artifact["sha256"],
+                },
+            )
+        workflow_status = await _workflow_status(connection, workflow_id)
+        if workflow_status == WorkflowStatus.PENDING:
+            await transition_workflow(
+                connection,
+                workflow_id,
+                expected=WorkflowStatus.PENDING,
+                target=WorkflowStatus.PLANNING,
+            )
+            workflow_status = WorkflowStatus.PLANNING
+        if workflow_status == WorkflowStatus.PLANNING:
+            await transition_workflow(
+                connection,
+                workflow_id,
+                expected=WorkflowStatus.PLANNING,
+                target=WorkflowStatus.RUNNING,
+            )
+            workflow_status = WorkflowStatus.RUNNING
+        if workflow_status == WorkflowStatus.RUNNING:
+            await transition_workflow(
+                connection,
+                workflow_id,
+                expected=WorkflowStatus.RUNNING,
+                target=WorkflowStatus.SUCCEEDED,
+            )
+        elif workflow_status != WorkflowStatus.SUCCEEDED:
+            raise ApplicationError(
+                f"check workflow cannot complete in {workflow_status.value}",
+                type="check_workflow_state_conflict",
+                non_retryable=True,
+            )
+    return {
+        "status": "succeeded",
+        "workflow_run_id": str(workflow_id),
+        "analysis": analysis,
+        "report_artifact": report_artifact,
+        "replayed": replayed,
+    }
 
 
 class McadWorkflowActivities:
@@ -1048,6 +1190,521 @@ class McadWorkflowActivities:
                     True,
                 )
 
+    @activity.defn(name="mcad.check")
+    async def check(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Run one durable engineering check against immutable CAD artifacts."""
+        info = activity.info()
+        tenant_id = _uuid(payload, "tenant_id")
+        principal_id = _uuid(payload, "principal_id")
+        project_id = _uuid(payload, "project_id")
+        workflow_id = _uuid(payload, "workflow_run_id")
+        source_workflow_id = _uuid(payload, "source_workflow_run_id")
+        source_revision_id = _uuid(payload, "source_revision_id")
+
+        async with tenant_transaction(
+            tenant_id,
+            principal_id,
+        ) as connection:
+            revision_source = await connection.scalar(
+                text(
+                    """
+                    SELECT source_workflow_run_id
+                    FROM project_revisions
+                    WHERE tenant_id=:tenant_id
+                      AND project_id=:project_id
+                      AND id=:revision_id
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "project_id": project_id,
+                    "revision_id": source_revision_id,
+                },
+            )
+            if revision_source is None:
+                raise ApplicationError(
+                    "The source revision does not exist in this project.",
+                    type="check_source_revision_missing",
+                    non_retryable=True,
+                )
+            if revision_source != source_workflow_id:
+                raise ApplicationError(
+                    "The source workflow does not own the source revision.",
+                    type="check_source_revision_mismatch",
+                    non_retryable=True,
+                )
+
+            persisted_report = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT id AS artifact_id, filename, artifact_kind,
+                               object_key, size_bytes, sha256, content_type
+                        FROM artifacts
+                        WHERE tenant_id=:tenant_id
+                          AND project_id=:project_id
+                          AND workflow_run_id=:workflow_id
+                          AND revision_id=:revision_id
+                          AND artifact_kind='dfm_report'
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT 1
+                        """
+                    ),
+                    {
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                        "workflow_id": workflow_id,
+                        "revision_id": source_revision_id,
+                    },
+                )
+            ).mappings().one_or_none()
+
+        if persisted_report is not None:
+            report_bytes = await get_object(persisted_report["object_key"])
+            if (
+                len(report_bytes) != int(persisted_report["size_bytes"])
+                or hashlib.sha256(report_bytes).hexdigest()
+                != persisted_report["sha256"]
+            ):
+                raise ApplicationError(
+                    "The persisted engineering-check report failed integrity verification.",
+                    type="check_report_integrity_failed",
+                    non_retryable=True,
+                )
+            report_document = json.loads(report_bytes)
+            analysis = dict(report_document["analysis"])
+            return await _complete_check_workflow(
+                payload,
+                report_artifact={
+                    **dict(persisted_report),
+                    "artifact_id": str(
+                        persisted_report["artifact_id"]
+                    ),
+                },
+                analysis=analysis,
+                replayed=True,
+            )
+
+        async with tenant_transaction(
+            tenant_id,
+            principal_id,
+        ) as connection:
+            source_rows = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT id AS artifact_id, artifact_kind, filename,
+                               content_type, size_bytes, sha256, object_key
+                        FROM artifacts
+                        WHERE tenant_id=:tenant_id
+                          AND project_id=:project_id
+                          AND workflow_run_id=:source_workflow_id
+                          AND revision_id=:revision_id
+                          AND artifact_kind IN ('step', 'stl')
+                        ORDER BY created_at DESC, id DESC
+                        """
+                    ),
+                    {
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                        "source_workflow_id": source_workflow_id,
+                        "revision_id": source_revision_id,
+                    },
+                )
+            ).mappings().all()
+            status = await _workflow_status(connection, workflow_id)
+            if status == WorkflowStatus.PENDING:
+                await transition_workflow(
+                    connection,
+                    workflow_id,
+                    expected=WorkflowStatus.PENDING,
+                    target=WorkflowStatus.PLANNING,
+                )
+                status = WorkflowStatus.PLANNING
+            if status == WorkflowStatus.PLANNING:
+                await transition_workflow(
+                    connection,
+                    workflow_id,
+                    expected=WorkflowStatus.PLANNING,
+                    target=WorkflowStatus.RUNNING,
+                )
+            elif status not in {
+                WorkflowStatus.RUNNING,
+                WorkflowStatus.SUCCEEDED,
+            }:
+                raise ApplicationError(
+                    f"check workflow cannot run in {status.value}",
+                    type="check_workflow_state_conflict",
+                    non_retryable=True,
+                )
+
+        source_artifacts: dict[str, dict[str, Any]] = {}
+        for row in source_rows:
+            kind = str(row["artifact_kind"]).lower()
+            source_artifacts.setdefault(kind, dict(row))
+        if "stl" not in source_artifacts:
+            raise ApplicationError(
+                "The source revision has no immutable STL artifact.",
+                type="check_source_stl_missing",
+                non_retryable=True,
+            )
+
+        source_code = (
+            STEP_ANALYSIS_SCRIPT
+            if "step" in source_artifacts
+            else "result = {'error': 'No STEP artifact is available.'}"
+        )
+        execution = {
+            "step_key": "engineering_check",
+            "kind": "dfm_check",
+            "capability": "mcad.local",
+            "operation": "analyze",
+            "mode": "analysis",
+            "source_language": "python",
+            "source_code": source_code,
+            "outputs": [
+                {
+                    "name": "json",
+                    "media_type": "application/json",
+                    "required": True,
+                    "max_size_bytes": 16 * 1024 * 1024,
+                }
+            ],
+            "timeout_seconds": int(payload.get("timeout_seconds", 120)),
+        }
+        attempt_payload = {
+            **payload,
+            "revision_id": str(source_revision_id),
+            "step_index": 0,
+            "execution": execution,
+        }
+        attempt_id, step_id, lease_token, lease_generation = (
+            await _prepare_execution_attempt(
+                attempt_payload,
+                temporal_attempt=info.attempt,
+            )
+        )
+        if step_id.int == 0:
+            raise ApplicationError(
+                "A completed engineering check is missing its report artifact.",
+                type="check_report_missing",
+                non_retryable=True,
+            )
+
+        temp_dir = Path(tempfile.mkdtemp(prefix="cad_check_"))
+        outcome: MaterializedExecutionOutcome | None = None
+        report_committed = False
+        post_heartbeat: asyncio.Task | None = None
+        try:
+            materialized: dict[str, Path] = {}
+            for kind, row in source_artifacts.items():
+                data = await get_object(row["object_key"])
+                if (
+                    len(data) != int(row["size_bytes"])
+                    or hashlib.sha256(data).hexdigest() != row["sha256"]
+                ):
+                    raise ApplicationError(
+                        f"The source {kind.upper()} artifact failed integrity verification.",
+                        type="check_source_artifact_integrity_failed",
+                        non_retryable=True,
+                    )
+                path = temp_dir / f"source.{kind}"
+                path.write_bytes(data)
+                row["local_path"] = path
+                if kind == "step":
+                    materialized[str(row["artifact_id"])] = path
+
+            snapshot = await asyncio.to_thread(
+                self.backend.runtime_snapshot
+            )
+            input_declarations: tuple[ArtifactInput, ...] = ()
+            if "step" in source_artifacts:
+                step_artifact = source_artifacts["step"]
+                input_declarations = (
+                    ArtifactInput(
+                        artifact_id=str(step_artifact["artifact_id"]),
+                        filename="model.step",
+                        sha256=str(step_artifact["sha256"]),
+                        size_bytes=int(step_artifact["size_bytes"]),
+                        media_type=str(step_artifact["content_type"]),
+                    ),
+                )
+            spec = ExecutionSpec(
+                execution_attempt_id=str(attempt_id),
+                workflow_run_id=str(workflow_id),
+                step_run_id=str(step_id),
+                tenant_id=str(tenant_id),
+                project_id=str(project_id),
+                expected_base_revision_id=str(source_revision_id),
+                idempotency_key=(
+                    f"temporal:{workflow_id}:engineering_check:{info.attempt}"
+                ),
+                capability="mcad.local",
+                operation="analyze",
+                mode="analysis",
+                source=ExecutionSource(
+                    language="python",
+                    code=source_code,
+                    sha256=hashlib.sha256(
+                        source_code.encode("utf-8")
+                    ).hexdigest(),
+                ),
+                inputs=input_declarations,
+                outputs=(
+                    OutputDeclaration(
+                        name="json",
+                        media_type="application/json",
+                        max_size_bytes=16 * 1024 * 1024,
+                    ),
+                ),
+                runtime=RuntimeRequirement(
+                    image_digest=snapshot.image_digest,
+                    platform=snapshot.platform,
+                    sandbox_tier="ephemeral-job",
+                ),
+                limits=ResourceLimits(
+                    timeout_seconds=int(
+                        payload.get("timeout_seconds", 120)
+                    )
+                ),
+                metadata={
+                    "revision_id": str(source_revision_id),
+                    "source_workflow_run_id": str(source_workflow_id),
+                    "temporal_activity_id": info.activity_id,
+                    "temporal_attempt": info.attempt,
+                },
+            )
+            outcome = await _run_backend_with_heartbeats(
+                self.backend,
+                spec,
+                tenant_id=tenant_id,
+                principal_id=principal_id,
+                attempt_id=attempt_id,
+                lease_token=lease_token,
+                lease_generation=lease_generation,
+                materialized_inputs=materialized,
+            )
+
+            if activity.is_cancelled():
+                raise asyncio.CancelledError
+            async with tenant_transaction(
+                tenant_id,
+                principal_id,
+            ) as connection:
+                cancellation_requested = await connection.scalar(
+                    text(
+                        """
+                        SELECT cancellation_requested_at IS NOT NULL
+                        FROM workflow_runs WHERE id=:id
+                        """
+                    ),
+                    {"id": workflow_id},
+                )
+            if cancellation_requested:
+                raise asyncio.CancelledError
+
+            step_analysis_error: str | None = None
+            step_data: StepAnalysisResult | None = None
+            if outcome.result.status == ExecutionStatus.SUCCEEDED:
+                analysis_path = outcome.files.get("json")
+                if analysis_path is None:
+                    step_analysis_error = (
+                        "The isolated runtime returned no STEP analysis JSON."
+                    )
+                else:
+                    try:
+                        step_data = StepAnalysisResult.model_validate_json(
+                            analysis_path.read_text(encoding="utf-8")
+                        )
+                        step_analysis_error = step_data.error
+                    except Exception as exc:
+                        step_analysis_error = (
+                            "The isolated STEP analysis result was invalid: "
+                            f"{type(exc).__name__}"
+                        )
+            else:
+                error = outcome.result.error
+                step_analysis_error = (
+                    error.message
+                    if error
+                    else "The isolated STEP analysis failed."
+                )
+
+            post_heartbeat = asyncio.create_task(
+                _heartbeat_loop(
+                    tenant_id=tenant_id,
+                    principal_id=principal_id,
+                    attempt_id=attempt_id,
+                    lease_token=lease_token,
+                    lease_generation=lease_generation,
+                )
+            )
+            analyzer = DFMAnalyzer()
+            design_analysis = await analyzer.analyze(
+                stl_path=source_artifacts["stl"]["local_path"],
+                code=str(payload.get("code") or ""),
+                description=str(payload.get("description") or ""),
+                process=payload.get("process"),
+                material=payload.get("material"),
+                precomputed_step_data=step_data,
+            )
+            response = build_design_analysis_response(design_analysis)
+            analysis = response.model_dump(mode="json")
+            report_document = {
+                "schema_version": "dfm-report.v1",
+                "workflow_run_id": str(workflow_id),
+                "source_workflow_run_id": str(source_workflow_id),
+                "source_revision_id": str(source_revision_id),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "step_analysis_error": step_analysis_error,
+                "analysis": analysis,
+            }
+            report_path = temp_dir / (
+                f"engineering-check-{workflow_id}.json"
+            )
+            report_path.write_text(
+                json.dumps(
+                    report_document,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                encoding="utf-8",
+            )
+            report_bytes = report_path.read_bytes()
+            report_sha = hashlib.sha256(report_bytes).hexdigest()
+            authorization = await authorize_artifact_upload(
+                tenant_id=tenant_id,
+                principal_id=principal_id,
+                project_id=project_id,
+                revision_id=source_revision_id,
+                attempt_id=attempt_id,
+                lease_token=lease_token,
+                lease_generation=lease_generation,
+                filename=report_path.name,
+                artifact_kind="dfm_report",
+                content_type="application/json",
+                declared_size_bytes=len(report_bytes),
+                declared_sha256=report_sha,
+            )
+            await put_file(
+                authorization.staging_object_key,
+                report_path,
+                content_type="application/json",
+            )
+            if post_heartbeat.done():
+                heartbeat_error = post_heartbeat.exception()
+                if heartbeat_error is not None:
+                    raise heartbeat_error
+            else:
+                post_heartbeat.cancel()
+                try:
+                    await post_heartbeat
+                except asyncio.CancelledError:
+                    pass
+            post_heartbeat = None
+            runtime_metadata = {
+                "check_engine": "deterministic-dfm.v1",
+                "source_artifacts": {
+                    kind: {
+                        "artifact_id": str(row["artifact_id"]),
+                        "sha256": str(row["sha256"]),
+                    }
+                    for kind, row in source_artifacts.items()
+                },
+                "isolated_step_analysis": {
+                    "status": outcome.result.status.value,
+                    "error": step_analysis_error,
+                    "provenance": (
+                        outcome.result.provenance.model_dump(mode="json")
+                        if outcome.result.provenance
+                        else None
+                    ),
+                },
+            }
+            committed = await commit_artifacts(
+                tenant_id=tenant_id,
+                principal_id=principal_id,
+                attempt_id=attempt_id,
+                revision_id=source_revision_id,
+                upload_ids=[authorization.upload_id],
+                lease_token=lease_token,
+                lease_generation=lease_generation,
+                runtime_metadata=runtime_metadata,
+            )
+            artifact = committed.artifacts[0]
+            report_artifact = {
+                "artifact_id": str(artifact.artifact_id),
+                "filename": artifact.filename,
+                "artifact_kind": artifact.artifact_kind,
+                "object_key": artifact.object_key,
+                "size_bytes": artifact.size_bytes,
+                "sha256": artifact.sha256,
+                "content_type": artifact.content_type,
+            }
+            report_committed = True
+            return await _complete_check_workflow(
+                payload,
+                report_artifact=report_artifact,
+                analysis=analysis,
+                replayed=committed.replayed,
+            )
+        except asyncio.CancelledError:
+            if not report_committed:
+                await _mark_execution_failure(
+                    attempt_payload,
+                    attempt_id=attempt_id,
+                    step_id=step_id,
+                    status=ExecutionStatus.CANCELLED,
+                    error_code="check_cancelled",
+                    error_message="The engineering check was cancelled.",
+                )
+            raise
+        except ApplicationError:
+            if not report_committed:
+                await _mark_execution_failure(
+                    attempt_payload,
+                    attempt_id=attempt_id,
+                    step_id=step_id,
+                    status=ExecutionStatus.FAILED,
+                    error_code="check_activity_failed",
+                    error_message="The engineering check did not commit a report.",
+                )
+            raise
+        except Exception as exc:
+            if not report_committed:
+                await _mark_execution_failure(
+                    attempt_payload,
+                    attempt_id=attempt_id,
+                    step_id=step_id,
+                    status=ExecutionStatus.FAILED,
+                    error_code="check_activity_failed",
+                    error_message=str(exc)[:4000],
+                )
+            raise ApplicationError(
+                "Engineering check failed before a report was committed.",
+                {
+                    "execution_attempt_id": str(attempt_id),
+                    "cause": type(exc).__name__,
+                },
+                type="check_activity_failed",
+                non_retryable=False,
+            ) from exc
+        finally:
+            if post_heartbeat is not None:
+                post_heartbeat.cancel()
+                try:
+                    await post_heartbeat
+                except asyncio.CancelledError:
+                    pass
+            if outcome and outcome.work_dir:
+                await asyncio.to_thread(
+                    shutil.rmtree,
+                    outcome.work_dir,
+                    True,
+                )
+            await asyncio.to_thread(shutil.rmtree, temp_dir, True)
+
     @activity.defn(name="mcad.validate")
     async def validate(self, payload: dict[str, Any]) -> dict[str, Any]:
         tenant_id = _uuid(payload, "tenant_id")
@@ -1476,6 +2133,7 @@ class McadWorkflowActivities:
             self.prepare_source,
             self.plan,
             self.execute,
+            self.check,
             self.validate,
             self.wait_confirmation,
             self.resume_after_confirmation,

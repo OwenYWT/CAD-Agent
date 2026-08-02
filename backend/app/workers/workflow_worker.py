@@ -10,7 +10,7 @@ from app.config import settings
 from app.execution.backend import ExecutionBackend
 from app.temporal_client import get_temporal_client
 from app.workflows.activities import McadWorkflowActivities
-from app.workflows.definitions import McadDurableWorkflow
+from app.workflows.definitions import McadCheckWorkflow, McadDurableWorkflow
 
 
 def build_workflow_worker(
@@ -22,7 +22,7 @@ def build_workflow_worker(
     return Worker(
         client,
         task_queue=settings.temporal_task_queue,
-        workflows=[McadDurableWorkflow],
+        workflows=[McadDurableWorkflow, McadCheckWorkflow],
         activities=activities.registered(),
     )
 

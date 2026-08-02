@@ -114,7 +114,8 @@ async def _locked_attempt_context(connection, attempt_id: UUID):
                 """
                 SELECT a.tenant_id, a.workflow_run_id, a.status AS attempt_status,
                        a.lease_generation, a.lease_token_hash, a.leased_until,
-                       w.project_id, w.status AS workflow_status,
+                       w.project_id, w.kind AS workflow_kind,
+                       w.request_payload, w.status AS workflow_status,
                        w.cancellation_requested_at
                 FROM execution_attempts a
                 JOIN workflow_runs w ON w.id=a.workflow_run_id
@@ -186,7 +187,19 @@ async def authorize_artifact_upload(
                 "revision_id": revision_id,
             },
         )
-        if revision_source != attempt["workflow_run_id"]:
+        request_payload = dict(attempt["request_payload"] or {})
+        is_declared_check_evidence = (
+            attempt["workflow_kind"] == "mcad.check"
+            and request_payload.get("source_revision_id")
+            == str(revision_id)
+            and request_payload.get("source_workflow_run_id")
+            == str(revision_source)
+            and kind == "dfm_report"
+        )
+        if (
+            revision_source != attempt["workflow_run_id"]
+            and not is_declared_check_evidence
+        ):
             raise IllegalTransition(
                 "revision is not owned by the attempt workflow"
             )

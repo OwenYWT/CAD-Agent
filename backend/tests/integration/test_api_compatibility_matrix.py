@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import socket
@@ -401,6 +402,137 @@ async def test_execute_replay_download_review_and_stale_base_matrix():
     ]
     assert messages[1]["result"]["code"] == request["code"]
     assert set(messages[1]["result"]["files"]) == {"step", "stl"}
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_engineering_check_is_durable_downloadable_and_idempotent():
+    owner = api_key_principal(OWNER_KEY)
+    bind_principal(owner)
+    workspace = await ensure_workspace_identity(
+        owner,
+        session_id=f"task11-check-{uuid4()}",
+        panel_id=f"task11-check-panel-{uuid4()}",
+        title="持久工程检查真实链路",
+        user_id=None,
+    )
+    temporal = await get_temporal_client()
+    transport = httpx.ASGITransport(app=create_app())
+    headers = {"Authorization": f"Bearer {OWNER_KEY}"}
+    execute_request = {
+        "project_id": str(workspace.project_id),
+        "branch_id": str(workspace.branch_id),
+        "expected_base_revision_id": str(workspace.head_revision_id),
+        "idempotency_key": f"durable-check-source-{uuid4()}",
+        "code": (
+            "import cadquery as cq\n"
+            "result = cq.Workplane('XY').box(30, 20, 10)\n"
+        ),
+        "output_formats": ["step", "stl"],
+    }
+    check_request = {
+        "code": execute_request["code"],
+        "description": "真实持久工程检查",
+        "process": "CNC",
+        "material": "aluminum",
+    }
+
+    async with (
+        build_workflow_worker(temporal),
+        httpx.AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            timeout=180,
+        ) as client,
+    ):
+        generated = await client.post(
+            "/api/execute",
+            headers=headers,
+            json=execute_request,
+        )
+        assert generated.status_code == 200, generated.text
+        source = generated.json()
+        assert source["success"] is True
+
+        checked = await client.post(
+            f"/api/analyze/{source['workflow_run_id']}",
+            headers=headers,
+            json=check_request,
+        )
+        assert checked.status_code == 200, checked.text
+        check_workflow_id = checked.headers["x-workflow-run-id"]
+        result = checked.json()
+        assert result["step_analysis"]["available"] is True
+        assert result["geometry"]["volume"] == pytest.approx(6000.0)
+
+        snapshot = await client.get(
+            f"/api/tasks/{check_workflow_id}/snapshot",
+            headers=headers,
+        )
+        assert snapshot.status_code == 200, snapshot.text
+        snapshot_body = snapshot.json()
+        assert snapshot_body["kind"] == "mcad.check"
+        assert snapshot_body["status"] == "succeeded"
+        assert len(snapshot_body["steps"]) == 1
+        assert snapshot_body["steps"][0]["status"] == "succeeded"
+        assert len(snapshot_body["steps"][0]["attempts"]) == 1
+        assert (
+            snapshot_body["steps"][0]["attempts"][0]["status"]
+            == "succeeded"
+        )
+        assert len(snapshot_body["artifacts"]) == 1
+        report_metadata = snapshot_body["artifacts"][0]
+        assert report_metadata["artifact_kind"] == "dfm_report"
+
+        report = await client.get(
+            report_metadata["download_url"],
+            headers=headers,
+        )
+        assert report.status_code == 200, report.text
+        report_sha = hashlib.sha256(report.content).hexdigest()
+        assert report.headers["etag"] == f'"{report_sha}"'
+        report_body = report.json()
+        assert report_body["schema_version"] == "dfm-report.v1"
+        assert report_body["workflow_run_id"] == check_workflow_id
+        assert (
+            report_body["source_workflow_run_id"]
+            == source["workflow_run_id"]
+        )
+        assert report_body["analysis"] == result
+
+        replay = await client.post(
+            f"/api/analyze/{source['workflow_run_id']}",
+            headers=headers,
+            json=check_request,
+        )
+        assert replay.status_code == 200, replay.text
+        assert replay.headers["x-workflow-run-id"] == check_workflow_id
+        assert replay.json() == result
+
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        counts = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT
+                      (SELECT count(*) FROM workflow_runs
+                       WHERE kind='mcad.check') AS check_workflows,
+                      (SELECT count(*) FROM execution_attempts
+                       WHERE workflow_run_id=:workflow_id) AS attempts,
+                      (SELECT count(*) FROM artifacts
+                       WHERE workflow_run_id=:workflow_id) AS reports
+                    """
+                ),
+                {"workflow_id": check_workflow_id},
+            )
+        ).mappings().one()
+    assert dict(counts) == {
+        "check_workflows": 1,
+        "attempts": 1,
+        "reports": 1,
+    }
 
 
 @pytest.mark.asyncio(loop_scope="module")

@@ -401,3 +401,128 @@ class McadDurableWorkflow:
                 result_type=dict,
             )
             raise
+
+
+@workflow.defn(name="McadCheckWorkflow")
+class McadCheckWorkflow:
+    """Read-only, durable engineering check with persisted cancellation."""
+
+    def __init__(self) -> None:
+        self._cancel_reason: str | None = None
+        self._phase = "pending"
+
+    @workflow.signal(name="cancel_requested")
+    async def cancel_requested(self, reason: str) -> None:
+        if self._cancel_reason is None:
+            self._cancel_reason = str(reason or "cancelled")[:4000]
+
+    @workflow.query(name="phase")
+    def phase(self) -> str:
+        return self._phase
+
+    @workflow.run
+    async def run(self, request: dict[str, Any]) -> dict[str, Any]:
+        try:
+            self._phase = "engineering_check"
+            activity_task = asyncio.create_task(
+                workflow.execute_activity(
+                    "mcad.check",
+                    request,
+                    activity_id=(
+                        f"{request['workflow_run_id']}:engineering-check"
+                    ),
+                    start_to_close_timeout=timedelta(
+                        seconds=max(
+                            180,
+                            int(request.get("timeout_seconds", 120)) + 120,
+                        )
+                    ),
+                    heartbeat_timeout=timedelta(seconds=15),
+                    retry_policy=_EXECUTION_RETRY,
+                    cancellation_type=(
+                        ActivityCancellationType.WAIT_CANCELLATION_COMPLETED
+                    ),
+                    result_type=dict,
+                )
+            )
+            cancel_wait = asyncio.create_task(
+                workflow.wait_condition(
+                    lambda: self._cancel_reason is not None
+                )
+            )
+            done, _ = await workflow.wait(
+                {activity_task, cancel_wait},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if cancel_wait in done and not activity_task.done():
+                activity_task.cancel()
+                try:
+                    await activity_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                self._phase = "cancelling"
+                cancelled = await workflow.execute_activity(
+                    "mcad.record_cancel",
+                    {
+                        **request,
+                        "reason": self._cancel_reason or "cancelled",
+                    },
+                    activity_id=(
+                        f"{request['workflow_run_id']}:record-cancel"
+                    ),
+                    start_to_close_timeout=timedelta(seconds=60),
+                    retry_policy=_CONTROL_RETRY,
+                    result_type=dict,
+                )
+                self._phase = "cancelled"
+                return cancelled
+            cancel_wait.cancel()
+            try:
+                await cancel_wait
+            except asyncio.CancelledError:
+                pass
+            result = await activity_task
+            self._phase = "succeeded"
+            return result
+        except asyncio.CancelledError:
+            self._phase = "cancelling"
+            cancelled = await workflow.execute_activity(
+                "mcad.record_cancel",
+                {
+                    **request,
+                    "reason": self._cancel_reason or "cancelled",
+                },
+                activity_id=f"{request['workflow_run_id']}:record-cancel",
+                start_to_close_timeout=timedelta(seconds=60),
+                retry_policy=_CONTROL_RETRY,
+                result_type=dict,
+            )
+            self._phase = "cancelled"
+            return cancelled
+        except Exception as exc:
+            self._phase = "failed"
+            error_code = "temporal_check_failed"
+            error_message = str(exc)[:4000]
+            if (
+                isinstance(exc, ActivityError)
+                and isinstance(exc.cause, ApplicationError)
+            ):
+                error_code = (
+                    exc.cause.type or "temporal_check_activity_failed"
+                )[:200]
+                error_message = str(exc.cause)[:4000]
+            await workflow.execute_activity(
+                "mcad.record_failure",
+                {
+                    **request,
+                    "error_code": error_code,
+                    "error_message": error_message,
+                },
+                activity_id=(
+                    f"{request['workflow_run_id']}:record-failure"
+                ),
+                start_to_close_timeout=timedelta(seconds=60),
+                retry_policy=_CONTROL_RETRY,
+                result_type=dict,
+            )
+            raise

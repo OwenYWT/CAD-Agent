@@ -18,13 +18,14 @@ MEDIA_TYPES = {
     ".dxf": "application/dxf",
     ".svg": "image/svg+xml",
     ".png": "image/png",
+    ".json": "application/json",
     ".py": "text/x-python",
     ".bas": "text/plain",
 }
 
 # Allowed file extensions for download
 _ALLOWED_EXTENSIONS = frozenset({
-    ".step", ".stp", ".stl", ".dxf", ".svg", ".png", ".py", ".bas",
+    ".step", ".stp", ".stl", ".dxf", ".svg", ".png", ".json", ".py", ".bas",
 })
 
 # request_id must be a UUID-like string (hex + hyphens)
