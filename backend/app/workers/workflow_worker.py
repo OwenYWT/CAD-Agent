@@ -7,7 +7,10 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 from app.config import settings
+from app.db import database_readiness
 from app.execution.backend import ExecutionBackend
+from app.execution.composition import get_execution_backend
+from app.object_store import object_store_readiness
 from app.temporal_client import get_temporal_client
 from app.workflows.activities import McadWorkflowActivities
 from app.workflows.definitions import McadCheckWorkflow, McadDurableWorkflow
@@ -28,8 +31,14 @@ def build_workflow_worker(
 
 
 async def run_worker() -> None:
+    settings.assert_sandbox_config_safe()
+    settings.assert_durable_control_plane_config_safe()
+    await database_readiness()
+    await object_store_readiness()
+    backend = get_execution_backend()
+    await asyncio.to_thread(backend.runtime_snapshot)
     client = await get_temporal_client()
-    worker = build_workflow_worker(client)
+    worker = build_workflow_worker(client, backend=backend)
     await worker.run()
 
 

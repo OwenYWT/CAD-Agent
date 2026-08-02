@@ -25,6 +25,7 @@ def _settings(**overrides) -> Settings:
         "_env_file": None,
         "app_environment": "development",
         "durable_control_plane_enabled": True,
+        "durable_api_cutover_enabled": True,
         "database_url": "postgresql+asyncpg://cad_agent:local-secret@postgres:5432/cad_agent",
         "object_store_endpoint_url": "http://minio:9000",
         "object_store_access_key": "cad-agent-local",
@@ -59,7 +60,10 @@ def test_enabled_durable_control_plane_requires_every_dependency(override, expec
 
 
 def test_development_may_keep_durable_control_plane_disabled_during_cutover():
-    settings = _settings(durable_control_plane_enabled=False)
+    settings = _settings(
+        durable_control_plane_enabled=False,
+        durable_api_cutover_enabled=False,
+    )
 
     assert settings.durable_control_plane_config_problems() == []
 
@@ -73,6 +77,17 @@ def test_production_fails_closed_when_durable_control_plane_is_disabled():
     problems = settings.durable_control_plane_config_problems()
 
     assert any("DURABLE_CONTROL_PLANE_ENABLED" in problem for problem in problems)
+
+
+def test_production_fails_closed_before_atomic_api_cutover():
+    settings = _settings(
+        app_environment="production",
+        durable_api_cutover_enabled=False,
+    )
+
+    problems = settings.durable_control_plane_config_problems()
+
+    assert any("DURABLE_API_CUTOVER_ENABLED" in problem for problem in problems)
 
 
 @pytest.mark.parametrize(
@@ -151,10 +166,23 @@ async def test_readiness_reports_each_real_dependency(monkeypatch):
     async def temporal():
         return {"status": "ready", "latency_ms": 3}
 
+    async def temporal_worker():
+        return {
+            "status": "ready",
+            "latency_ms": 4,
+            "workflow_pollers": 1,
+            "activity_pollers": 1,
+        }
+
     monkeypatch.setattr(main.settings, "durable_control_plane_enabled", True)
     monkeypatch.setattr(main, "database_readiness", database)
     monkeypatch.setattr(main, "object_store_readiness", object_store)
     monkeypatch.setattr(main, "temporal_readiness", temporal)
+    monkeypatch.setattr(
+        main,
+        "temporal_worker_readiness",
+        temporal_worker,
+    )
 
     result = await main._durable_control_plane_readiness()
 
@@ -163,6 +191,12 @@ async def test_readiness_reports_each_real_dependency(monkeypatch):
         "postgresql": {"status": "ready", "latency_ms": 1},
         "object_store": {"status": "ready", "latency_ms": 2},
         "temporal": {"status": "ready", "latency_ms": 3},
+        "temporal_worker": {
+            "status": "ready",
+            "latency_ms": 4,
+            "workflow_pollers": 1,
+            "activity_pollers": 1,
+        },
     }
     assert result["problems"] == []
 
@@ -183,6 +217,7 @@ async def test_readiness_is_fail_closed_and_sanitizes_dependency_error(monkeypat
     monkeypatch.setattr(main, "database_readiness", database)
     monkeypatch.setattr(main, "object_store_readiness", healthy)
     monkeypatch.setattr(main, "temporal_readiness", healthy)
+    monkeypatch.setattr(main, "temporal_worker_readiness", healthy)
 
     result = await main._durable_control_plane_readiness()
 
@@ -196,7 +231,14 @@ async def test_readiness_is_fail_closed_and_sanitizes_dependency_error(monkeypat
 def test_compose_declares_durable_services_with_healthchecks_and_volumes():
     services = yaml.safe_load(COMPOSE.read_text())["services"]
 
-    for name in ("postgres", "minio", "minio-init", "temporal"):
+    for name in (
+        "postgres",
+        "minio",
+        "minio-init",
+        "temporal",
+        "migrate",
+        "workflow-worker",
+    ):
         assert name in services
     for name in ("postgres", "minio", "temporal"):
         assert services[name].get("healthcheck"), name
@@ -204,6 +246,23 @@ def test_compose_declares_durable_services_with_healthchecks_and_volumes():
     volumes = yaml.safe_load(COMPOSE.read_text())["volumes"]
     assert "postgres_data" in volumes
     assert "minio_data" in volumes
+
+    assert services["migrate"]["command"] == [
+        "alembic",
+        "upgrade",
+        "head",
+    ]
+    assert services["workflow-worker"]["command"] == [
+        "python",
+        "-m",
+        "app.workers.workflow_worker",
+    ]
+    assert (
+        services["backend"]["environment"][
+            "DURABLE_API_CUTOVER_ENABLED"
+        ]
+        == "${DURABLE_API_CUTOVER_ENABLED:-true}"
+    )
 
 
 def test_compose_requires_operator_supplied_local_credentials():

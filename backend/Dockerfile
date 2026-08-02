@@ -11,6 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 COPY examples ./examples
+COPY alembic.ini .
+COPY alembic ./alembic
 
 # data dir for sqlite + generated files (mount a volume over this in compose)
 RUN mkdir -p /app/data

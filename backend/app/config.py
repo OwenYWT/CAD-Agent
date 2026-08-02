@@ -272,6 +272,11 @@ class Settings(BaseSettings):
             return []
 
         problems: list[str] = []
+        if production_like and not self.durable_api_cutover_enabled:
+            problems.append(
+                "DURABLE_API_CUTOVER_ENABLED must be true outside local "
+                "development so production has one durable write path."
+            )
         if not self.database_url.strip():
             problems.append("DATABASE_URL is required.")
         elif not self.database_url.startswith("postgresql+asyncpg://"):

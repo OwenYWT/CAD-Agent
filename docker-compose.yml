@@ -84,6 +84,17 @@ services:
       timeout: 5s
       retries: 30
 
+  migrate:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL with a URL-encoded password}
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   backend:
     build: ./backend
     env_file: ./backend/.env
@@ -93,7 +104,7 @@ services:
       # Production must override this with registry/path@sha256:<digest>.
       SANDBOX_IMAGE: ${SANDBOX_IMAGE:-cad-agent-sandbox:dev}
       DURABLE_CONTROL_PLANE_ENABLED: ${DURABLE_CONTROL_PLANE_ENABLED:-true}
-      DURABLE_API_CUTOVER_ENABLED: ${DURABLE_API_CUTOVER_ENABLED:-false}
+      DURABLE_API_CUTOVER_ENABLED: ${DURABLE_API_CUTOVER_ENABLED:-true}
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL with a URL-encoded password}
       OBJECT_STORE_ENDPOINT_URL: ${OBJECT_STORE_ENDPOINT_URL:-http://minio:9000}
       OBJECT_STORE_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
@@ -111,6 +122,8 @@ services:
         condition: service_completed_successfully
       temporal:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - cad_data:/app/data
@@ -118,17 +131,49 @@ services:
       - "8000"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/ready').status==200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+  workflow-worker:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT:-development}
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-cad-agent-sandbox:dev}
+      DURABLE_CONTROL_PLANE_ENABLED: ${DURABLE_CONTROL_PLANE_ENABLED:-true}
+      DURABLE_API_CUTOVER_ENABLED: ${DURABLE_API_CUTOVER_ENABLED:-true}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL with a URL-encoded password}
+      OBJECT_STORE_ENDPOINT_URL: ${OBJECT_STORE_ENDPOINT_URL:-http://minio:9000}
+      OBJECT_STORE_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      OBJECT_STORE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      OBJECT_STORE_BUCKET: ${OBJECT_STORE_BUCKET:-cad-agent-artifacts}
+      TEMPORAL_TARGET: ${TEMPORAL_TARGET:-temporal:7233}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-cad-agent-mcad}
+      FILE_STORAGE_DIR: /app/data/files
+      HISTORY_DB_PATH: /app/data/history.db
+    command: ["python", "-m", "app.workers.workflow_worker"]
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - cad_data:/app/data
+    restart: unless-stopped
 
   frontend:
     build: ./frontend
     ports:
       - "8080:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

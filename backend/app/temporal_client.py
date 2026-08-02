@@ -4,7 +4,11 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from datetime import datetime, timezone
 
+from temporalio.api.enums.v1 import TaskQueueType
+from temporalio.api.taskqueue.v1 import TaskQueue
+from temporalio.api.workflowservice.v1 import DescribeTaskQueueRequest
 from temporalio import workflow
 from temporalio.client import Client
 from temporalio.worker import Worker
@@ -47,6 +51,66 @@ async def temporal_readiness() -> dict:
     return {
         "status": "ready",
         "latency_ms": round((time.perf_counter() - started) * 1000),
+    }
+
+
+async def temporal_worker_readiness() -> dict:
+    """Require recent workflow and activity pollers on the product queue."""
+    started = time.perf_counter()
+
+    async def _probe() -> dict[str, int | float]:
+        client = await get_temporal_client()
+        counts: dict[str, int | float] = {}
+        now = datetime.now(timezone.utc)
+        for name, queue_type in (
+            ("workflow", TaskQueueType.TASK_QUEUE_TYPE_WORKFLOW),
+            ("activity", TaskQueueType.TASK_QUEUE_TYPE_ACTIVITY),
+        ):
+            result = await client.workflow_service.describe_task_queue(
+                DescribeTaskQueueRequest(
+                    namespace=settings.temporal_namespace,
+                    task_queue=TaskQueue(
+                        name=settings.temporal_task_queue,
+                    ),
+                    task_queue_type=queue_type,
+                    report_pollers=True,
+                )
+            )
+            if not result.pollers:
+                raise RuntimeError(
+                    f"Temporal {name} worker has no active poller"
+                )
+            ages = [
+                max(
+                    0.0,
+                    (
+                        now
+                        - poller.last_access_time.ToDatetime(
+                            tzinfo=timezone.utc
+                        )
+                    ).total_seconds(),
+                )
+                for poller in result.pollers
+            ]
+            # Temporal workflow-task long polls can legitimately remain open for
+            # about one minute. Ninety seconds catches a lost worker without
+            # marking a healthy idle queue unavailable.
+            if min(ages) > 90:
+                raise RuntimeError(
+                    f"Temporal {name} worker poller is stale"
+                )
+            counts[f"{name}_pollers"] = len(result.pollers)
+            counts[f"{name}_newest_age_ms"] = round(min(ages) * 1000)
+        return counts
+
+    counts = await asyncio.wait_for(
+        _probe(),
+        timeout=settings.dependency_readiness_timeout_s,
+    )
+    return {
+        "status": "ready",
+        "latency_ms": round((time.perf_counter() - started) * 1000),
+        **counts,
     }
 
 

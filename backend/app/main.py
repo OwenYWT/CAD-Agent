@@ -14,7 +14,10 @@ from app.config import settings
 from app.db import close_database, database_readiness
 from app.execution.composition import get_execution_backend
 from app.object_store import object_store_readiness
-from app.temporal_client import temporal_readiness
+from app.temporal_client import (
+    temporal_readiness,
+    temporal_worker_readiness,
+)
 
 # Configure logging with request-id correlation
 from app.logging_context import RequestIdFilter
@@ -124,6 +127,7 @@ async def _durable_control_plane_readiness() -> dict:
         "postgresql": database_readiness,
         "object_store": object_store_readiness,
         "temporal": temporal_readiness,
+        "temporal_worker": temporal_worker_readiness,
     }
     results = await asyncio.gather(
         *(probe() for probe in probes.values()),
