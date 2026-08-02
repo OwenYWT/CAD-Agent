@@ -125,7 +125,8 @@ def test_legacy_client_directory_removed_from_product_surface():
 def test_readme_is_web_first():
     """README documents the browser app, not plugin installation."""
     content = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
-    assert "Web App" in content or "CAD Agent Web" in content
+    assert "# WordsWave CAD Agent" in content
+    assert "浏览器工作区" in content
     assert "plugins/" not in content
     assert "SolidWorks" not in content
 
