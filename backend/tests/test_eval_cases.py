@@ -3,9 +3,13 @@
 Hermetic — guards against a malformed case set landing (this runs in CI so a typo
 in eval_cases.py fails fast, even though the expensive eval itself does not run in CI).
 """
+import asyncio
+
 import pytest
 
 from benchmark.compare import compare_reports
+from benchmark.deadline_baseline import apply_pipeline_deadline
+from benchmark.eval import _generate_with_deadline
 from benchmark.eval_cases import EVAL_CASES, EVAL_CASES_BY_ID, case_set_hash
 
 pytestmark = pytest.mark.unit
@@ -59,6 +63,25 @@ def test_difficulty_spread():
 def test_case_set_hash_stable():
     assert case_set_hash() == case_set_hash()  # deterministic
     assert len(case_set_hash()) == 12
+
+
+def test_real_pipeline_eval_enforces_the_product_deadline():
+    class HangingOrchestrator:
+        cancelled = False
+
+        async def generate(self, *_args, **_kwargs):
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                self.cancelled = True
+                raise
+
+    orchestrator = HangingOrchestrator()
+
+    with pytest.raises(TimeoutError):
+        asyncio.run(_generate_with_deadline(orchestrator, "test", 0.01))
+
+    assert orchestrator.cancelled is True
 
 
 # --- compare.py ---------------------------------------------------------------
@@ -121,6 +144,7 @@ def _release_report(
         "n_repeats": 1,
         "n_cases": 1,
         "concurrency": 4,
+        "pipeline_deadline_s": 180.0,
         "sandbox_runtime": "podman",
         "runtime_identity": {
             "image_digest": "sha256:" + "a" * 64,
@@ -168,6 +192,7 @@ def test_compare_noise_not_counted_as_change():
         ({"rag_enabled": False}, "rag_enabled"),
         ({"n_repeats": 3}, "n_repeats"),
         ({"concurrency": 8}, "concurrency"),
+        ({"pipeline_deadline_s": 240.0}, "pipeline_deadline_s"),
         ({"case_set_hash": "different"}, "case_set_hash"),
         (
             {"runtime_identity": {
@@ -280,3 +305,60 @@ def test_release_gate_rejects_claimed_success_without_execution():
 
     assert diff["false_successes"]
     assert diff["gate_passed"] is False
+
+
+def test_deadline_baseline_rejects_only_post_deadline_results_and_reaggregates():
+    def run(passed, wall_ms):
+        return {
+            "executed": passed,
+            "verdict": "pass" if passed else None,
+            "verdict_pass": passed,
+            "watertight": passed,
+            "printable": passed,
+            "dim_match": passed,
+            "part_type_match": None,
+            "feature_match": None,
+            "dfm_score": None,
+            "attempts": 1 if passed else 0,
+            "one_shot": passed,
+            "exec_time_ms": 100,
+            "wall_time_ms": wall_ms,
+            "error": None,
+            "passed": passed,
+            "artifact_gate": {
+                "step_readable": passed,
+                "stl_readable": passed,
+                "geometry_nonempty": passed,
+                "rendered_views": 4 if passed else 0,
+                "passed": passed,
+            },
+            "rendered_views": 4 if passed else 0,
+            "request_id": "request-id" if passed else None,
+        }
+
+    report = {
+        "meta": {"run_id": "raw", "total_wall_s": 999},
+        "summary": {},
+        "cases": [{
+            "id": "P01",
+            "difficulty": "simple",
+            "path": "extrude_cut",
+            "description": "test",
+            "runs": [run(True, 100_000), run(True, 200_000)],
+            "agg": {},
+        }],
+    }
+
+    normalized = apply_pipeline_deadline(report, 180.0)
+
+    assert report["cases"][0]["runs"][1]["passed"] is True
+    assert normalized["meta"]["pipeline_deadline_s"] == 180.0
+    assert normalized["meta"]["derived_from_run_id"] == "raw"
+    assert normalized["cases"][0]["runs"][0]["passed"] is True
+    timed_out = normalized["cases"][0]["runs"][1]
+    assert timed_out["executed"] is False
+    assert timed_out["passed"] is False
+    assert timed_out["error"] == "pipeline deadline exceeded after 180s"
+    assert timed_out["observed_post_deadline_wall_ms"] == 200_000
+    assert normalized["cases"][0]["agg"]["pass@1"]["mean"] == 0.5
+    assert normalized["summary"]["overall"]["pass@1"]["mean"] == 0.5

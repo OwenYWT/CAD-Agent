@@ -37,6 +37,7 @@ _COMPARABLE_META_PATHS = (
     ("n_repeats", ("n_repeats",)),
     ("n_cases", ("n_cases",)),
     ("concurrency", ("concurrency",)),
+    ("pipeline_deadline_s", ("pipeline_deadline_s",)),
     ("case_set_hash", ("case_set_hash",)),
     ("sandbox_runtime", ("sandbox_runtime",)),
     (

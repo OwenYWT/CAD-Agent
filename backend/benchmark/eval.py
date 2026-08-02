@@ -51,6 +51,20 @@ class _EmptyRetriever:
         return []
 
 
+async def _generate_with_deadline(orch, description: str, timeout_s: float):
+    """Run the real pipeline with the same whole-request deadline as the API.
+
+    The OpenAI-compatible client's timeout is an inactivity timeout, not a wall
+    clock deadline. Providers that emit transport data while still computing can
+    therefore keep a request alive indefinitely unless the pipeline is bounded
+    here as it is in the public FastAPI routes.
+    """
+    return await asyncio.wait_for(
+        orch.generate(description, output_formats=["step", "stl"]),
+        timeout=timeout_s,
+    )
+
+
 def _git_sha() -> str:
     try:
         out = subprocess.run(
@@ -230,13 +244,26 @@ async def run_eval(
             logger.info(f"[{cid} run {rep+1}/{n}] {case['description'][:40]}")
             t0 = time.time()
             response = None
+            pipeline_error = None
             try:
-                response = await orch.generate(case["description"], output_formats=["step", "stl"])
+                response = await _generate_with_deadline(
+                    orch,
+                    case["description"],
+                    settings.generate_deadline_s,
+                )
+            except TimeoutError:
+                pipeline_error = (
+                    f"pipeline deadline exceeded after {settings.generate_deadline_s:g}s"
+                )
+                logger.error(f"[{cid} run {rep+1}] {pipeline_error}")
             except Exception as e:
+                pipeline_error = f"{type(e).__name__}: {e}"
                 logger.error(f"[{cid} run {rep+1}] pipeline raised: {e}")
             wall_ms = int((time.time() - t0) * 1000)
 
             row = M.extract_metrics(response, case, wall_time_ms=wall_ms)
+            if pipeline_error is not None:
+                row["error"] = pipeline_error
 
             # render for human spot-check (best-effort, doesn't affect metrics)
             rendered = 0
@@ -323,6 +350,7 @@ def main():
         "rag_enabled": not args.no_rag,
         "n_repeats": args.n,
         "concurrency": args.concurrency,
+        "pipeline_deadline_s": settings.generate_deadline_s,
         "n_cases": len(cases),
         "case_set_hash": case_set_hash(),
         "sandbox_runtime": settings.sandbox_runtime,
