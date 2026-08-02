@@ -12,6 +12,13 @@
 | [`CLAUDE.md`](../CLAUDE.md) | 代码代理 | 本仓库工作边界、验证命令和文档维护规则 |
 | [`backend/benchmark/README.md`](../backend/benchmark/README.md) | 模型/生成链路维护者 | 真实 LLM + sandbox 的手动评测基线 |
 
+## MCAD 架构验收
+
+| 文档 | 作用 |
+| --- | --- |
+| [`qa/mcad-m0-report.md`](qa/mcad-m0-report.md) | 固定 Runtime、统一 ExecutionBackend 与隔离执行的 M0 证据 |
+| [`qa/mcad-m1-report.md`](qa/mcad-m1-report.md) | PostgreSQL、Temporal、不可变 Artifact、Revision、WebSocket 和真实 Podman 的 M1 验收结果 |
+
 ## Fusion 360 Connector
 
 这些文档各自承担不同职责，不互相复制完整内容：

@@ -1,4 +1,4 @@
-# CAD Agent Web
+# WordsWave CAD Agent
 
 面向硬件工程的 AI Engineering Workspace。用户通过自然语言创建或修改 CAD 设计，系统通过 REST 与 WebSocket 展示任务进度、模型、参数、工程检查、历史记录和可下载文件。
 
@@ -21,19 +21,22 @@
 React / TypeScript / Three.js
         │ REST + WebSocket
         ▼
-FastAPI ── SQLite / owner-scoped files
+FastAPI 控制平面
    │
-   ├── Docker / Podman CAD sandbox
-   ├── configured LLM provider
-   ├── vendored CAD Skills adapters
-   └── optional Fusion 360 Connector / APS
+   ├── PostgreSQL：项目、版本、任务、事件、审计与产物元数据
+   ├── Temporal：WorkflowRun → StepRun → ExecutionAttempt
+   ├── S3 兼容对象存储：不可变 CAD 产物、日志与检查报告
+   └── ExecutionBackend
+          └── Docker / Podman 隔离 MCAD Worker
 ```
 
-主要技术栈：Python 3.11+、FastAPI、React 19、TypeScript、Vite、Tailwind CSS、Three.js、Zustand、SQLite、Docker/Podman。
+WebSocket 只订阅和回放持久任务事件，不承担任务生命周期。浏览器断线、API 重启或 Worker 重试不会覆盖已有运行记录；修改通过 `expected_base_revision_id` 防止并发覆盖。配置的 LLM provider、CAD Skills adapter 和可选 Fusion 360 / APS Connector 位于上述控制平面边界之外。
+
+主要技术栈：Python 3.11+、FastAPI、React 19、TypeScript、Vite、Tailwind CSS、Three.js、Zustand、PostgreSQL、Temporal、S3/MinIO、Docker/Podman。
 
 ## 本地启动
 
-前置条件：Python 3.11+、Node.js 20+、npm，以及 Docker 或 Podman。
+最短可复现路径使用 Docker Compose。前置条件：Python 3.11+、Node.js 20+、npm、Docker Engine 与 Compose。
 
 1. 创建后端配置，并至少设置模型凭据和认证密钥：
 
@@ -44,33 +47,28 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 把输出写入 `backend/.env` 的 `AUTH_TOKEN_SECRET`，再按所选 provider 填写 `MOONSHOT_API_KEY`、Azure OpenAI 或其他 OpenAI-compatible 配置。生产环境还必须通过 `DEFAULT_INVITE_CODES` 配置私有邀请码并限制 CORS；完整要求见 [部署指南](DEPLOY.md)。
 
-2. 构建 CAD 沙箱：
+2. 从仓库根目录构建 CAD 沙箱：
 
 ```bash
-docker build -t cad-agent-sandbox:latest backend/sandbox
+docker build -f backend/sandbox/Dockerfile -t cad-agent-sandbox:dev .
 ```
 
-使用 Podman 时把命令中的 `docker` 替换为 `podman`，并在 `backend/.env` 设置 `SANDBOX_RUNTIME=podman`、`SANDBOX_COMMAND=podman`。
+本地使用 Podman 时把命令中的 `docker` 替换为 `podman`，并在 `backend/.env` 设置 `SANDBOX_RUNTIME=podman`、`SANDBOX_COMMAND=podman`。生产环境必须把 Runtime 推送到 Registry，并使用 `registry/path@sha256:<digest>`。
 
-3. 启动后端：
+3. 为 Compose 设置数据库和对象存储凭据，再启动完整控制平面：
 
 ```bash
-cd backend
-python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --reload --port 8000
+export POSTGRES_PASSWORD='<strong-database-password>'
+export DATABASE_URL='postgresql+asyncpg://cad_agent:<url-encoded-password>@postgres:5432/cad_agent'
+export MINIO_ROOT_USER='<object-store-access-key>'
+export MINIO_ROOT_PASSWORD='<strong-object-store-secret>'
+docker compose config --quiet
+docker compose up -d --build
 ```
 
-4. 另开终端启动前端：
+访问 `http://localhost:8080`。`GET /health` 只表示 API 进程在线；`GET /ready` 返回 `ready` 才表示 PostgreSQL、对象存储、Temporal、Workflow/Activity poller、模型凭据和 MCAD Runtime 均可用。
 
-```bash
-cd frontend
-npm ci
-npm run dev
-```
-
-访问 `http://localhost:5173`。`GET http://localhost:8000/health` 只表示进程在线；`GET /ready` 返回 `ready` 才表示模型凭据、容器守护进程和沙箱镜像都可用于生成。
-
-需要单服务运行时，先执行 `cd frontend && npm run build`，再从 `backend/` 启动 Uvicorn，访问 `http://localhost:8000`。
+需要 Vite 热更新或 Podman 本地开发时，按 [本地开发与交接](docs/development.md) 分别启动基础设施、数据库迁移、Workflow Worker、Uvicorn 和 Vite。只启动 Uvicorn 不能执行当前持久化 MCAD 工作流。
 
 ## CAD Skills
 
