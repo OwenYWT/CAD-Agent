@@ -44,7 +44,7 @@ REST / conversational WebSocket
 | 前端 lint | `npm run lint`：通过 |
 | TypeScript | `npx tsc --noEmit -p tsconfig.app.json`：通过 |
 | 前端生产构建 | `npm run build`：通过 |
-| 前端契约测试 | `node --test --experimental-strip-types tests/*.test.ts`：`37 passed` |
+| 前端契约测试 | `node --test --experimental-strip-types tests/*.test.ts`：`39 passed` |
 
 89 个普通测试 skip 来自按依赖/平台显式隔离的专项场景，不被统计为已验证能力。生产构建仍报告 Three.js Viewer chunk 大于 500 kB；它已动态分包，不影响正确性，但属于后续性能优化项。
 
@@ -113,6 +113,7 @@ REST / conversational WebSocket
 | 生产仍可关闭 durable API cutover | 非开发环境对两个 durable 开关 fail closed |
 | MinIO 曾返回表面上的 403 | 定位为 Podman VM 时钟漂移导致 `RequestTimeTooSkewed`；同步时钟后恢复，并由对象存储 readiness 阻止错误接流量 |
 | 崩溃恢复测试第一次被常驻开发 Worker 抢占 | 隔离测试 task consumer 后失败单项及完整整组均重新通过；产品代码无需规避正确的多 Worker 消费行为 |
+| 二维 SVG 预览使用正则清洗后写入 `dangerouslySetInnerHTML`，未加引号的事件属性仍可穿透 | 改为 Blob URL 的 `<img>` 隔离上下文渲染，保留鉴权加载和缩放，并增加禁止可执行 DOM 注入及 URL 回收的回归测试 |
 
 ## 尚存风险与后续门槛
 
