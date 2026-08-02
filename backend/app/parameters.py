@@ -82,10 +82,17 @@ def _parse_range(suffix: str) -> tuple[float | None, float | None, float | None]
     if not match:
         return None, None, None
     pieces = [piece.strip() for piece in match.group(1).split(":")]
-    if len(pieces) == 2 and all(pieces):
-        return _to_number(pieces[0]), _to_number(pieces[1]), None
-    if len(pieces) == 3 and all(pieces):
-        return _to_number(pieces[0]), _to_number(pieces[2]), _to_number(pieces[1])
+    try:
+        if len(pieces) == 2 and all(pieces):
+            return _to_number(pieces[0]), _to_number(pieces[1]), None
+        if len(pieces) == 3 and all(pieces):
+            return _to_number(pieces[0]), _to_number(pieces[2]), _to_number(pieces[1])
+    except ValueError:
+        # Range comments are LLM-authored UI metadata. A non-literal bound must
+        # not discard an otherwise valid numeric parameter or successful model.
+        # Ignore the whole malformed range rather than evaluating generated code
+        # or exposing partially trustworthy slider limits.
+        return None, None, None
     return None, None, None
 
 

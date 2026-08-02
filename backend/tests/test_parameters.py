@@ -67,3 +67,19 @@ def test_apply_parameter_values_rejects_out_of_range_values():
         assert "range" in str(exc)
     else:
         raise AssertionError("expected range validation failure")
+
+
+def test_extract_parameters_ignores_non_literal_range_without_losing_parameter():
+    code = (
+        "height_mm = 20  # [5:1:50]\n"
+        "wall_mm = 2  # [0.5:0.1:height_mm - 1.0]\n"
+    )
+
+    params = extract_parameters(code)
+
+    assert [parameter.name for parameter in params] == ["height_mm", "wall_mm"]
+    wall = params[1]
+    assert wall.value == 2
+    assert wall.min is None
+    assert wall.step is None
+    assert wall.max is None
