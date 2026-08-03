@@ -49,7 +49,38 @@ class Planner:
 
     @staticmethod
     def _parse_plan_payload(data: dict) -> CADPlan:
-        plan = CADPlan(**data)
+        normalized = dict(data)
+        raw_brief = data.get("design_brief")
+        if isinstance(raw_brief, dict):
+            brief = dict(raw_brief)
+            dimensions = []
+            invalid_values = 0
+            for raw_dimension in raw_brief.get("critical_dimensions") or []:
+                if not isinstance(raw_dimension, dict):
+                    dimensions.append(raw_dimension)
+                    continue
+                dimension = dict(raw_dimension)
+                value = dimension.get("value")
+                if value is not None:
+                    try:
+                        float(value)
+                    except (TypeError, ValueError):
+                        # The optional brief sometimes describes a composite
+                        # envelope such as "120×90×60" in one value. The primary
+                        # CADPlan dimensions remain the numeric source of truth;
+                        # preserve the label/reason but mark this scalar unknown.
+                        dimension["value"] = None
+                        invalid_values += 1
+                dimensions.append(dimension)
+            brief["critical_dimensions"] = dimensions
+            normalized["design_brief"] = brief
+            if invalid_values:
+                logger.warning(
+                    "Planner ignored %d non-scalar optional brief dimension value(s)",
+                    invalid_values,
+                )
+
+        plan = CADPlan(**normalized)
         ensure_design_brief(plan)
         return plan
 

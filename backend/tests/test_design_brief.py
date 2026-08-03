@@ -138,6 +138,36 @@ def test_planner_parse_preserves_design_brief_from_json():
     assert plan.design_brief.critical_dimensions[0].reason.startswith("Six 0.4 mm")
 
 
+def test_planner_keeps_valid_plan_when_optional_brief_dimension_is_composite():
+    payload = {
+        "description": "Desktop organizer",
+        "part_type": "enclosure",
+        "dimensions": {"width": 120, "depth": 90, "height": 60},
+        "features": ["three compartments"],
+        "constraints": [],
+        "ambiguities": [],
+        "modeling_hint": "extrude_cut",
+        "design_brief": {
+            "intent_summary": "A three-compartment organizer",
+            "critical_dimensions": [{
+                "name": "overall_size",
+                "value": "120×90×60",
+                "unit": "mm",
+                "reason": "Overall envelope",
+            }],
+        },
+    }
+
+    plan = Planner._parse_plan_payload(payload)
+
+    assert plan.dimensions == {"width": 120, "depth": 90, "height": 60}
+    assert plan.design_brief is not None
+    dimension = plan.design_brief.critical_dimensions[0]
+    assert dimension.name == "overall_size"
+    assert dimension.value is None
+    assert dimension.reason == "Overall envelope"
+
+
 from app.agent.code_gen import CodeGenerator
 
 
