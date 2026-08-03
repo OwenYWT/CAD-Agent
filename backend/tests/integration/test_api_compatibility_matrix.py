@@ -704,7 +704,10 @@ async def test_real_generate_runs_llm_inside_temporal_before_podman():
         ]
         assert "source.preparation_started" in event_types
         assert "source.prepared" in event_types
-        assert "attempt.succeeded" in event_types
+        # Attempt completion is the immutable, lease-fenced success event used by
+        # the run-state service and frontend event adapter.  The status itself is
+        # persisted as ``succeeded`` on execution_attempts.
+        assert "attempt.completed" in event_types
 
     async with tenant_transaction(
         owner.tenant_id,
