@@ -109,3 +109,57 @@ async def test_degenerate_tiny_volume_fails(validator):
     vol_rule = _rule(result, "volume")
     assert vol_rule.passed is False and vol_rule.severity == "error"
     assert result.passed is False
+
+
+@pytest.mark.asyncio
+async def test_semantic_dimensions_are_not_treated_as_bounding_box_axes(validator):
+    """Diameters describe features, not three independent XYZ box extents.
+
+    A frustum/ring plan commonly contains exactly three numeric values such as
+    outer diameter, inner diameter and thickness.  Their count alone must not
+    turn them into a bounding-box contract.
+    """
+    mesh = trimesh.creation.cylinder(radius=15, height=25)
+    result = await validator.validate(
+        _save(mesh),
+        expected_dimensions={
+            "top_diameter": 30,
+            "bottom_diameter": 18,
+            "height": 25,
+        },
+    )
+
+    expected = _rule(result, "expected_dimensions")
+    assert expected.passed is True
+    assert expected.severity == "info"
+    assert "包围盒" in expected.message
+    assert result.passed is True
+
+
+@pytest.mark.asyncio
+async def test_explicit_bounding_box_dimensions_still_reject_mismatch(validator):
+    """The semantic-dimension fix must not weaken an explicit XYZ-size gate."""
+    mesh = trimesh.creation.box(extents=(30, 30, 25))
+    result = await validator.validate(
+        _save(mesh),
+        expected_dimensions={"width": 30, "depth": 18, "height": 25},
+    )
+
+    expected = _rule(result, "expected_dimensions")
+    assert expected.passed is False
+    assert expected.severity == "error"
+    assert result.passed is False
+
+
+@pytest.mark.asyncio
+async def test_plate_length_width_thickness_are_bounding_box_axes(validator):
+    """Plate-style axis names remain a strict three-dimensional contract."""
+    mesh = trimesh.creation.box(extents=(90, 20, 3))
+    result = await validator.validate(
+        _save(mesh),
+        expected_dimensions={"length": 90, "width": 20, "thickness": 3},
+    )
+
+    expected = _rule(result, "expected_dimensions")
+    assert expected.passed is True
+    assert "尺寸匹配" in expected.message
