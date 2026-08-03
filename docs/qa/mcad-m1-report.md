@@ -1,10 +1,10 @@
 # MCAD M1 真实链路验收报告
 
-验收日期：2026-08-02
+验收日期：2026-08-03
 
 验收范围：本地单机 M1 控制平面与 `PodmanExecutionBackend`
 
-基线：`main` 上 `f617d4b` 及其之前的 M0/M1 提交
+候选版本：`fb845e5` 及其之前的 M0/M1 提交
 
 ## 结论
 
@@ -40,7 +40,7 @@ REST / conversational WebSocket
 
 | 范围 | 命令/结果 |
 | --- | --- |
-| 后端完整测试 | `python -m pytest -q`：`1032 passed, 89 skipped` |
+| 后端完整测试 | `python -m pytest -q`：`1040 passed, 89 skipped` |
 | 前端 lint | `npm run lint`：通过 |
 | TypeScript | `npx tsc --noEmit -p tsconfig.app.json`：通过 |
 | 前端生产构建 | `npm run build`：通过 |
@@ -58,9 +58,9 @@ REST / conversational WebSocket
 - `test_postgres_project_files.py`
 - `test_api_compatibility_matrix.py`
 
-结果：`14 passed, 1 skipped in 114.77s`。
+使用独立于持续运行开发 Worker 的 Temporal task queue，并显式启用真实 provider 测试。结果：`15 passed in 142.95s`，无 skip。
 
-唯一 skip 是需要显式 `CAD_AGENT_TEST_LLM=1` 和可用付费 provider 的真实 Planner/Codegen 测试。本次 Moonshot 账户额度耗尽，因此没有把模型失败替换成假结果；确定性 `/api/execute` 与其余真实链路全部通过。恢复有效模型额度后必须补跑该单项。
+其中自然语言用例真实完成了 Planner/Codegen → Temporal Workflow/Activity → Podman → PostgreSQL/MinIO 全链路，并返回可读取的 STEP、STL、生成代码、计划、持久事件和成功执行记录；没有以确定性代码、Mock 或固定成功返回替代模型调用。
 
 真实回归覆盖：
 
@@ -114,13 +114,14 @@ REST / conversational WebSocket
 | MinIO 曾返回表面上的 403 | 定位为 Podman VM 时钟漂移导致 `RequestTimeTooSkewed`；同步时钟后恢复，并由对象存储 readiness 阻止错误接流量 |
 | 崩溃恢复测试第一次被常驻开发 Worker 抢占 | 隔离测试 task consumer 后失败单项及完整整组均重新通过；产品代码无需规避正确的多 Worker 消费行为 |
 | 二维 SVG 预览使用正则清洗后写入 `dangerouslySetInnerHTML`，未加引号的事件属性仍可穿透 | 改为 Blob URL 的 `<img>` 隔离上下文渲染，保留鉴权加载和缩放，并增加禁止可执行 DOM 注入及 URL 回收的回归测试 |
+| 真实 LLM 用例仍断言不存在的旧事件名 `attempt.succeeded` | 与运行状态服务和前端事件适配器统一为持久事件 `attempt.completed`，并继续断言数据库 Attempt 状态为 `succeeded`；真实链路重跑通过 |
+| 暂停开发 Worker 后首个测试仍可能被其未完成的长轮询抢占 | 真实集成测试改用独立 Temporal task queue；失败用例由 60 秒超时恢复为 10.10 秒通过，完整 15 项随后全部通过 |
 
 ## 尚存风险与后续门槛
 
-1. 恢复可用 LLM 额度后，必须运行带 `CAD_AGENT_TEST_LLM=1` 的真实自然语言 Planner/Codegen → Temporal → Podman 测试。
-2. Headless QA 环境无 WebGL；发布前仍需在有 GPU/WebGL 的 Chrome、Safari 和 Edge 检查模型旋转、适应视图、爆炸、剖切与测量。
-3. 当前执行器为单机 Docker/Podman socket，适合 M1 和受信节点；它不是多租户强隔离终态。Kubernetes/gVisor 与 Private Worker 仍需按统一 ExecutionBackend 契约实现和验收。
-4. Compose 的 Temporal auto-setup 不是正式生产集群方案；生产需托管 Temporal 或运维管理的高可用部署。
-5. Podman VM、对象存储签名和 TLS 对系统时间敏感，应配置 NTP/时钟漂移监控。
-6. 生产必须使用 Registry image digest，不能把本地可变 tag 带入 staging/production。
-7. PostgreSQL 与对象存储必须联合备份、恢复演练和一致性校验；S3 Versioning 不能替代 ProjectRevision。
+1. Headless QA 环境无 WebGL；发布前仍需在有 GPU/WebGL 的 Chrome、Safari 和 Edge 检查模型旋转、适应视图、爆炸、剖切与测量。
+2. 当前执行器为单机 Docker/Podman socket，适合 M1 和受信节点；它不是多租户强隔离终态。Kubernetes/gVisor 与 Private Worker 仍需按统一 ExecutionBackend 契约实现和验收。
+3. Compose 的 Temporal auto-setup 不是正式生产集群方案；生产需托管 Temporal 或运维管理的高可用部署。
+4. Podman VM、对象存储签名和 TLS 对系统时间敏感，应配置 NTP/时钟漂移监控。
+5. 生产必须使用 Registry image digest，不能把本地可变 tag 带入 staging/production。
+6. PostgreSQL 与对象存储必须联合备份、恢复演练和一致性校验；S3 Versioning 不能替代 ProjectRevision。

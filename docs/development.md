@@ -175,6 +175,7 @@ CAD_AGENT_TEST_DATABASE_URL='postgresql+asyncpg://...' \
 CAD_AGENT_TEST_OBJECT_STORE=1 \
 CAD_AGENT_TEST_TEMPORAL=1 \
 TEMPORAL_TARGET='127.0.0.1:57233' \
+TEMPORAL_TASK_QUEUE='cad-agent-m1-test' \
 OBJECT_STORE_ENDPOINT_URL='http://127.0.0.1:59000' \
 SANDBOX_RUNTIME=podman \
 SANDBOX_COMMAND=podman \
@@ -186,6 +187,8 @@ python -m pytest -q \
   tests/integration/test_postgres_project_files.py \
   tests/integration/test_api_compatibility_matrix.py
 ```
+
+测试队列必须与持续运行的开发 Worker 队列不同；否则已有 Worker 的长轮询可能抢占测试 Workflow/Activity，造成无法复现的超时。并行运行多组真实集成测试时，每组还应使用不同的测试队列名。
 
 真实 LLM 测试还需显式设置 `CAD_AGENT_TEST_LLM=1` 和有效 provider 凭据；不设置时会明确跳过，不用固定返回替代。最近一次完整 M1 验收见 [`qa/mcad-m1-report.md`](qa/mcad-m1-report.md)。
 
