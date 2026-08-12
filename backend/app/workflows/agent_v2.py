@@ -27,6 +27,7 @@ class McadAgentWorkflowV2:
         self._cancel_reason: str | None = None
         self._phase = "pending"
         self._plan: dict[str, Any] | None = None
+        self._candidate_build_id: str | None = None
 
     @workflow.signal(name="confirmation")
     async def confirmation(self, decision: dict[str, Any]) -> None:
@@ -67,6 +68,16 @@ class McadAgentWorkflowV2:
 
     async def _record_cancel(self, request: dict[str, Any]) -> dict[str, Any]:
         self._phase = "cancelling"
+        if self._candidate_build_id is not None:
+            await self._activity(
+                "agent_v2.terminate_candidate",
+                {
+                    **request,
+                    "candidate_build_id": self._candidate_build_id,
+                    "target_status": "cancelled",
+                },
+                suffix="cancel-candidate",
+            )
         result = await self._activity(
             "mcad.record_cancel",
             {
@@ -165,9 +176,20 @@ class McadAgentWorkflowV2:
                     suffix="resume-confirmation",
                 )
 
+            self._phase = "allocating_candidate"
+            candidate = await self._activity(
+                "agent_v2.allocate_candidate",
+                {
+                    **request,
+                    "plan": self._plan,
+                },
+                suffix="allocate-candidate",
+            )
+            self._candidate_build_id = str(candidate["candidate_build_id"])
             self._phase = "modeling_not_enabled"
             raise ApplicationError(
-                "Durable Agent modeling is not enabled yet.",
+                "Durable Agent modeling is not enabled yet for candidate "
+                f"{candidate['candidate_build_id']}.",
                 type="agent_v2_modeling_not_enabled",
                 non_retryable=True,
             )
@@ -185,6 +207,18 @@ class McadAgentWorkflowV2:
                 error_message = str(exc.cause)[:4000]
             elif isinstance(exc, ApplicationError):
                 error_code = (exc.type or error_code)[:200]
+            if self._candidate_build_id is not None:
+                await self._activity(
+                    "agent_v2.terminate_candidate",
+                    {
+                        **request,
+                        "candidate_build_id": self._candidate_build_id,
+                        "target_status": "failed",
+                        "error_code": error_code,
+                        "error_message": error_message,
+                    },
+                    suffix="fail-candidate",
+                )
             await self._activity(
                 "mcad.record_failure",
                 {

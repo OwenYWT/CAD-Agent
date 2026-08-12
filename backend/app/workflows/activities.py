@@ -41,6 +41,11 @@ from app.repositories.revisions import (
     StaleBaseRevision,
     create_candidate_change_set,
 )
+from app.repositories.agent_candidates import (
+    create_agent_candidate_build,
+    transition_agent_candidate_build,
+)
+from app.domain.revisions import CandidateBuildStatus
 from app.repositories.runs import append_workflow_event
 from app.services.artifact_commit import (
     authorize_artifact_upload,
@@ -1041,6 +1046,71 @@ class McadWorkflowActivities:
                 result=result,
                 enter_running=True,
             )
+
+    @activity.defn(name="agent_v2.allocate_candidate")
+    async def agent_allocate_candidate(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        request = _agent_v2_request(payload)
+        plan = AgentPlan.model_validate(payload["plan"])
+        async with tenant_transaction(
+            request.tenant_id,
+            request.principal_id,
+        ) as connection:
+            created = await create_agent_candidate_build(
+                connection,
+                tenant_id=request.tenant_id,
+                project_id=request.project_id,
+                branch_id=request.branch_id,
+                base_revision_id=request.expected_base_revision_id,
+                workflow_id=request.workflow_run_id,
+                created_by_principal_id=request.principal_id,
+                plan=plan.temporal_payload(),
+            )
+        return {
+            "candidate_build_id": str(created.candidate_build_id),
+            "status": created.status.value,
+            "replayed": created.replayed,
+        }
+
+    @activity.defn(name="agent_v2.terminate_candidate")
+    async def agent_terminate_candidate(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        request = _agent_v2_request(payload)
+        target = CandidateBuildStatus(str(payload["target_status"]))
+        if target not in {
+            CandidateBuildStatus.FAILED,
+            CandidateBuildStatus.CANCELLED,
+            CandidateBuildStatus.ABANDONED,
+        }:
+            raise ApplicationError(
+                "unsupported candidate terminal status",
+                type="invalid_candidate_terminal_status",
+                non_retryable=True,
+            )
+        async with tenant_transaction(
+            request.tenant_id,
+            request.principal_id,
+        ) as connection:
+            result = await transition_agent_candidate_build(
+                connection,
+                tenant_id=request.tenant_id,
+                candidate_build_id=_uuid(payload, "candidate_build_id"),
+                expected=CandidateBuildStatus.BUILDING,
+                target=target,
+                failure_code=str(payload.get("error_code") or "") or None,
+                failure_message=(
+                    str(payload.get("error_message") or "")[:4000] or None
+                ),
+            )
+        return {
+            "candidate_build_id": str(result.candidate_build_id),
+            "status": result.status.value,
+            "replayed": result.replayed,
+        }
 
     @activity.defn(name="mcad.prepare_source")
     async def prepare_source(
@@ -2551,6 +2621,8 @@ class McadWorkflowActivities:
             self.agent_requirements,
             self.agent_decompose,
             self.agent_plan,
+            self.agent_allocate_candidate,
+            self.agent_terminate_candidate,
             self.wait_confirmation,
             self.resume_after_confirmation,
             self.record_cancel,

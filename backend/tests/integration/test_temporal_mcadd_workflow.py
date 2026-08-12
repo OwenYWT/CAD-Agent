@@ -478,6 +478,96 @@ async def test_agent_v2_plan_waits_before_candidate_source_or_execution():
 
 
 @pytest.mark.asyncio(loop_scope="module")
+async def test_agent_v2_confirmed_plan_allocates_then_fails_candidate_truthfully():
+    owner, project_id, initial = await _seed_project("agent-v2-candidate")
+    client = await get_temporal_client()
+    planner = DurableAgentPlanner(
+        planner=_V2PlannerStub(),
+        decomposer=_V2DecomposerStub(),
+        assembly_planner=_V2AssemblyStub(),
+    )
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        from app.services.run_state import create_workflow
+
+        created = await create_workflow(
+            connection,
+            tenant_id=owner.tenant_id,
+            project_id=project_id,
+            requested_by_principal_id=owner.principal_id,
+            kind="mcad.agent.v2.generate",
+            idempotency_key=f"agent-v2-candidate-{project_id}",
+            request_payload={"objective": "创建 20x10x4 mm 安装支架"},
+        )
+    request = McadAgentWorkflowV2Request(
+        workflow_run_id=created.workflow_id,
+        tenant_id=owner.tenant_id,
+        project_id=project_id,
+        principal_id=owner.principal_id,
+        branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,
+        operation="generate",
+        objective="创建 20x10x4 mm 安装支架",
+        confirmation_timeout_seconds=60,
+    )
+    async with build_agent_v2_workflow_worker(
+        client,
+        backend=object(),
+        durable_planner=planner,
+    ):
+        handle = await client.start_workflow(
+            "McadAgentWorkflowV2",
+            request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),
+            task_queue=settings.temporal_agent_v2_task_queue,
+        )
+        await _wait_for_status(
+            owner,
+            created.workflow_id,
+            {"waiting_confirmation"},
+        )
+        await confirm_mcad_workflow(
+            created.workflow_id,
+            accepted=True,
+            note="确认执行",
+            workflow_kind="mcad.agent.v2.generate",
+        )
+        with pytest.raises(WorkflowFailureError):
+            await asyncio.wait_for(handle.result(), timeout=20)
+
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        candidate = (
+            await connection.execute(
+                text(
+                    "SELECT status, failure_code, candidate_revision_id, "
+                    "change_set_id FROM agent_candidate_builds "
+                    "WHERE workflow_run_id=:id"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().one()
+        workflow_status = await connection.scalar(
+            text("SELECT status FROM workflow_runs WHERE id=:id"),
+            {"id": created.workflow_id},
+        )
+        attempt_count = await connection.scalar(
+            text("SELECT count(*) FROM execution_attempts WHERE workflow_run_id=:id"),
+            {"id": created.workflow_id},
+        )
+    assert candidate["status"] == "failed"
+    assert candidate["failure_code"] == "agent_v2_modeling_not_enabled"
+    assert candidate["candidate_revision_id"] is None
+    assert candidate["change_set_id"] is None
+    assert workflow_status == "failed"
+    assert attempt_count == 0
+
+
+@pytest.mark.asyncio(loop_scope="module")
 async def test_real_plan_model_validate_confirmation_export_and_replay():
     owner, project_id, initial = await _seed_project("complete")
     client = await get_temporal_client()

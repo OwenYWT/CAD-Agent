@@ -32,3 +32,24 @@ class ArtifactCommitResult:
     revision_id: UUID
     artifacts: tuple[CommittedArtifact, ...]
     replayed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class StagingManifestAccepted:
+    staging_manifest_id: UUID
+    manifest_hash: str
+    replayed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ValidationEvidenceRecorded:
+    evidence_id: UUID
+    evidence_hash: str
+    replayed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateSealCreated:
+    seal_id: UUID
+    selection_hash: str
+    replayed: bool = False
