@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 from pathlib import Path
 from uuid import uuid4
 
@@ -22,6 +23,8 @@ from app.repositories.agent_candidates import (
     accept_staging_manifest,
     create_agent_candidate_build,
     create_candidate_seal,
+    get_generated_source_for_step,
+    record_generated_source,
     record_validation_evidence,
     transition_agent_candidate_build,
 )
@@ -262,6 +265,81 @@ async def test_candidate_create_and_terminal_lifecycle_are_idempotent():
 
 
 @pytest.mark.asyncio(loop_scope="module")
+async def test_generated_source_is_provenanced_immutable_and_idempotent():
+    owner, _, _, workflow, candidate, step, *_ = await _seed()
+    source = "import cadquery as cq\nresult = cq.Workplane('XY').box(20, 10, 4)\n"
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        recorded = await record_generated_source(
+            connection,
+            tenant_id=owner.tenant_id,
+            candidate_build_id=candidate.candidate_build_id,
+            workflow_id=workflow.workflow_id,
+            step_id=step.step_id,
+            source_code=source,
+            generator_kind="generate",
+            provider="controlled-provider",
+            model="controlled-model",
+            provider_response_id="completion-123",
+            request_hash="a" * 64,
+            response_hash="b" * 64,
+            finish_reason="stop",
+            usage={"total_tokens": 12},
+        )
+        replay = await record_generated_source(
+            connection,
+            tenant_id=owner.tenant_id,
+            candidate_build_id=candidate.candidate_build_id,
+            workflow_id=workflow.workflow_id,
+            step_id=step.step_id,
+            source_code=source,
+            generator_kind="generate",
+            provider="controlled-provider",
+            model="controlled-model",
+            provider_response_id="completion-123",
+            request_hash="a" * 64,
+            response_hash="b" * 64,
+            finish_reason="stop",
+            usage={"total_tokens": 12},
+        )
+        stored = await get_generated_source_for_step(
+            connection,
+            tenant_id=owner.tenant_id,
+            workflow_id=workflow.workflow_id,
+            step_key="model-main",
+        )
+        with pytest.raises(CandidateBuildConflict):
+            await record_generated_source(
+                connection,
+                tenant_id=owner.tenant_id,
+                candidate_build_id=candidate.candidate_build_id,
+                workflow_id=workflow.workflow_id,
+                step_id=step.step_id,
+                source_code=source.replace("20", "21"),
+                generator_kind="generate",
+                provider="controlled-provider",
+                model="controlled-model",
+                request_hash="a" * 64,
+                response_hash="c" * 64,
+            )
+        with pytest.raises(Exception, match="permission denied|immutable"):
+            await connection.execute(
+                text(
+                    "UPDATE agent_generated_sources "
+                    "SET source_code='changed' WHERE id=:id"
+                ),
+                {"id": recorded.source_id},
+            )
+    assert replay.source_id == recorded.source_id
+    assert replay.replayed is True
+    assert stored is not None
+    assert stored["source_hash"] == hashlib.sha256(source.encode()).hexdigest()
+    assert stored["provider_response_id"] == "completion-123"
+
+
+@pytest.mark.asyncio(loop_scope="module")
 async def test_staging_manifest_requires_current_succeeded_lease_and_replays():
     owner, _, _, workflow, candidate, step, attempt, lease = await _seed()
     manifest = {
@@ -463,6 +541,7 @@ async def test_seal_identity_is_one_per_candidate_and_content_bound():
 @pytest.mark.asyncio(loop_scope="module")
 async def test_agent_candidate_tables_force_tenant_rls_and_worker_permissions():
     expected_tables = {
+        "agent_generated_sources",
         "agent_candidate_builds",
         "agent_staging_manifests",
         "agent_validation_evidence",
@@ -502,6 +581,12 @@ async def test_agent_candidate_tables_force_tenant_rls_and_worker_permissions():
         "DELETE": False,
     }
     assert privileges["agent_validation_evidence"] == {
+        "SELECT": True,
+        "INSERT": True,
+        "UPDATE": False,
+        "DELETE": False,
+    }
+    assert privileges["agent_generated_sources"] == {
         "SELECT": True,
         "INSERT": True,
         "UPDATE": False,

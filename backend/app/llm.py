@@ -1,3 +1,6 @@
+from contextvars import ContextVar
+import hashlib
+import json
 from typing import Any
 
 from openai import AsyncAzureOpenAI, AsyncOpenAI, OpenAIError, RateLimitError
@@ -12,6 +15,69 @@ _QUOTA_MARKERS = (
     "billing",
     "quota exceeded",
 )
+
+
+_last_chat_completion_provenance: ContextVar[dict[str, Any] | None] = (
+    ContextVar("last_chat_completion_provenance", default=None)
+)
+
+
+def reset_chat_completion_provenance() -> None:
+    """Clear completion metadata in the current async task context."""
+    _last_chat_completion_provenance.set(None)
+
+
+def get_last_chat_completion_provenance() -> dict[str, Any] | None:
+    """Return non-secret metadata for the latest completion in this task."""
+    value = _last_chat_completion_provenance.get()
+    return dict(value) if value is not None else None
+
+
+def _completion_provenance(
+    *,
+    params: dict[str, Any],
+    response: Any,
+    provider: str,
+) -> dict[str, Any]:
+    request_payload = json.dumps(
+        params,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    ).encode("utf-8")
+    choices = list(getattr(response, "choices", ()) or ())
+    first = choices[0] if choices else None
+    message = getattr(first, "message", None)
+    content = str(getattr(message, "content", "") or "")
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        usage_payload: dict[str, Any] = {}
+    elif hasattr(usage, "model_dump"):
+        usage_payload = usage.model_dump(mode="json", exclude_none=True)
+    else:
+        usage_payload = {
+            key: value
+            for key in (
+                "prompt_tokens",
+                "completion_tokens",
+                "total_tokens",
+            )
+            if (value := getattr(usage, key, None)) is not None
+        }
+    return {
+        "provider": provider,
+        "model": str(getattr(response, "model", "") or params["model"]),
+        "provider_response_id": (
+            str(getattr(response, "id", "") or "") or None
+        ),
+        "request_hash": hashlib.sha256(request_payload).hexdigest(),
+        "response_hash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "finish_reason": (
+            str(getattr(first, "finish_reason", "") or "") or None
+        ),
+        "usage": usage_payload,
+    }
 
 
 def find_provider_exception(exc: BaseException) -> OpenAIError | None:
@@ -102,7 +168,15 @@ class ChatCompletionAdapter:
         )
         for attempt in range(self._settings.llm_max_retries + 1):
             try:
-                return await self._raw_completions.create(**params)
+                response = await self._raw_completions.create(**params)
+                _last_chat_completion_provenance.set(
+                    _completion_provenance(
+                        params=params,
+                        response=response,
+                        provider=self._settings.normalized_llm_provider,
+                    )
+                )
+                return response
             except OpenAIError as exc:
                 if (
                     is_nonretryable_provider_error(exc)

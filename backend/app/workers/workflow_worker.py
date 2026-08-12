@@ -14,6 +14,7 @@ from app.execution.composition import get_execution_backend
 from app.object_store import object_store_readiness
 from app.temporal_client import get_temporal_client
 from app.workflows.activities import McadWorkflowActivities
+from app.workflows.modeling import DurableModelingSourceGenerator
 from app.workflows.agent_v2 import McadAgentWorkflowV2
 from app.workflows.definitions import McadCheckWorkflow, McadDurableWorkflow
 
@@ -37,11 +38,13 @@ def build_agent_v2_workflow_worker(
     *,
     backend: ExecutionBackend | None = None,
     durable_planner: DurableAgentPlanner | None = None,
+    durable_modeling: DurableModelingSourceGenerator | None = None,
 ) -> Worker:
     """Build the version-isolated V2 worker on its dedicated task queue."""
     activities = McadWorkflowActivities(
         backend,
         durable_planner=durable_planner,
+        durable_modeling=durable_modeling,
     )
     return Worker(
         client,

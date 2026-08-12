@@ -38,6 +38,8 @@ def test_v1_and_v2_workers_use_distinct_queues_and_workflow_types(monkeypatch):
         "agent_v2.plan",
         "agent_v2.allocate_candidate",
         "agent_v2.terminate_candidate",
+        "agent_v2.generate_source",
+        "agent_v2.execute_model",
         "mcad.wait_confirmation",
         "mcad.resume_after_confirmation",
         "mcad.record_cancel",

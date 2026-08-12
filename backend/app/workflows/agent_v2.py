@@ -8,6 +8,7 @@ from typing import Any
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError, ApplicationError
+from temporalio.workflow import ActivityCancellationType
 
 
 _CONTROL_RETRY = RetryPolicy(
@@ -56,15 +57,52 @@ class McadAgentWorkflowV2:
         payload: dict[str, Any],
         *,
         suffix: str,
+        execution: bool = False,
     ) -> dict[str, Any]:
-        return await workflow.execute_activity(
-            name,
-            payload,
-            activity_id=f"{payload['workflow_run_id']}:{suffix}",
-            start_to_close_timeout=timedelta(minutes=5),
-            retry_policy=_CONTROL_RETRY,
-            result_type=dict,
+        timeout_seconds = int(payload.get("timeout_seconds") or 120)
+        activity_task = asyncio.create_task(
+            workflow.execute_activity(
+                name,
+                payload,
+                activity_id=f"{payload['workflow_run_id']}:{suffix}",
+                start_to_close_timeout=(
+                    timedelta(seconds=timeout_seconds + 120)
+                    if execution
+                    else timedelta(minutes=5)
+                ),
+                heartbeat_timeout=(timedelta(seconds=15) if execution else None),
+                retry_policy=_CONTROL_RETRY,
+                cancellation_type=(
+                    ActivityCancellationType.WAIT_CANCELLATION_COMPLETED
+                ),
+                result_type=dict,
+            )
         )
+        if not execution:
+            return await activity_task
+        cancel_wait = asyncio.create_task(
+            workflow.wait_condition(lambda: self._cancel_reason is not None)
+        )
+        done, _ = await workflow.wait(
+            {activity_task, cancel_wait},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if cancel_wait in done and not activity_task.done():
+            activity_task.cancel()
+            try:
+                await activity_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            raise asyncio.CancelledError
+        cancel_wait.cancel()
+        try:
+            await cancel_wait
+        except asyncio.CancelledError:
+            pass
+        result = await activity_task
+        if self._cancel_reason is not None:
+            raise asyncio.CancelledError
+        return result
 
     async def _record_cancel(self, request: dict[str, Any]) -> dict[str, Any]:
         self._phase = "cancelling"
@@ -186,11 +224,72 @@ class McadAgentWorkflowV2:
                 suffix="allocate-candidate",
             )
             self._candidate_build_id = str(candidate["candidate_build_id"])
-            self._phase = "modeling_not_enabled"
+            self._phase = "modeling"
+            previous_source: str | None = None
+            predecessor_source_id: str | None = None
+            manifests: list[dict[str, Any]] = []
+            requirements_payload = (
+                requirements["requirements"]
+                if request["operation"] == "generate"
+                else {
+                    "existing_code": request.get("existing_code") or "",
+                    "modification_plan": requirements["requirements"],
+                }
+            )
+            modeling_offset = 3 if request["operation"] == "generate" else 2
+            for plan_step_index, step in enumerate(self._plan["steps"]):
+                if self._cancel_reason is not None:
+                    return await self._record_cancel(request)
+                self._phase = f"generating:{step['step_key']}"
+                generated = await self._activity(
+                    "agent_v2.generate_source",
+                    {
+                        **request,
+                        "candidate_build_id": self._candidate_build_id,
+                        "plan": self._plan,
+                        "step": step,
+                        "step_index": modeling_offset + plan_step_index,
+                        "plan_step_index": plan_step_index,
+                        "requirements": requirements_payload,
+                        "previous_source": previous_source,
+                        "predecessor_source_id": predecessor_source_id,
+                    },
+                    suffix=f"generate-source-{step['step_key']}",
+                )
+                previous_source = str(generated["source_code"])
+                predecessor_source_id = str(generated["source_id"])
+                self._phase = f"executing:{step['step_key']}"
+                executed = await self._activity(
+                    "agent_v2.execute_model",
+                    {
+                        **request,
+                        "candidate_build_id": self._candidate_build_id,
+                        "plan": self._plan,
+                        "step": step,
+                        "step_index": modeling_offset + plan_step_index,
+                        "source_id": generated["source_id"],
+                        "source_hash": generated["source_hash"],
+                        "source_code": generated["source_code"],
+                        "mode": generated["mode"],
+                        "timeout_seconds": 120,
+                    },
+                    suffix=f"execute-model-{step['step_key']}",
+                    execution=True,
+                )
+                manifests.append(
+                    {
+                        "step_key": step["step_key"],
+                        "source_id": generated["source_id"],
+                        "source_hash": generated["source_hash"],
+                        "staging_manifest_id": executed["staging_manifest_id"],
+                        "manifest_hash": executed["manifest_hash"],
+                    }
+                )
+            self._phase = "validation_not_enabled"
             raise ApplicationError(
-                "Durable Agent modeling is not enabled yet for candidate "
-                f"{candidate['candidate_build_id']}.",
-                type="agent_v2_modeling_not_enabled",
+                "Durable Agent modeling completed, but required validation is "
+                f"not enabled yet for candidate {candidate['candidate_build_id']}.",
+                type="agent_v2_validation_not_enabled",
                 non_retryable=True,
             )
         except asyncio.CancelledError:

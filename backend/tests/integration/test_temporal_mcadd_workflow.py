@@ -21,7 +21,7 @@ from temporalio.client import WorkflowFailureError
 from app.config import settings
 from app.agent.assembly_planner import AssemblyPlan
 from app.agent.durable_planner import DurableAgentPlanner
-from app.agent.multi_step import BuildPlan
+from app.agent.multi_step import BuildPhase, BuildPlan, BuildStep
 from app.db import close_database, get_database_engine, tenant_transaction
 from app.domain.identity import user_principal
 from app.execution.composition import get_execution_backend
@@ -38,6 +38,8 @@ from app.workers.workflow_worker import (
     build_agent_v2_workflow_worker,
     build_workflow_worker,
 )
+from app.workflows.modeling import SourceGenerationResult
+from app.workflows.modeling import DurableModelingSourceGenerator
 from app.workflows.temporal import (
     McadAgentWorkflowV2Request,
     McadExecutionRequest,
@@ -125,7 +127,20 @@ async def clean_control_plane():
                     )
                 ).scalars()
             )
-        for key in object_keys:
+            staging_keys = list(
+                (
+                    await connection.execute(
+                        text(
+                            """
+                            SELECT output->>'object_key'
+                            FROM agent_staging_manifests,
+                                 jsonb_array_elements(manifest->'outputs') output
+                            """
+                        )
+                    )
+                ).scalars()
+            )
+        for key in [*object_keys, *staging_keys]:
             await delete_object(key)
         async with get_database_engine().begin() as connection:
             await connection.execute(
@@ -219,6 +234,107 @@ class _V2AssemblyStub:
         return AssemblyPlan(parts=[], assembly_description="unused")
 
 
+class _V2ComplexPlannerStub:
+    async def plan_new(self, messages):
+        from app.models.schemas import CADPlan, DesignBrief
+
+        return CADPlan(
+            description="创建带安装孔的复杂支架",
+            part_type="custom",
+            dimensions={"length": 30, "width": 20, "height": 5},
+            features=["底板", "安装孔", "圆角"],
+            constraints=[],
+            modeling_hint="multi_step",
+            design_brief=DesignBrief(
+                intent_summary="创建复杂安装支架",
+                artifact_type="bracket",
+            ),
+        )
+
+
+class _V2ComplexDecomposerStub:
+    async def decompose(self, plan, *, allow_fallback=True):
+        return BuildPlan(
+            complexity="complex",
+            steps=[
+                BuildStep(
+                    phase=BuildPhase.BASE,
+                    description="创建 30x20x5 mm 底板",
+                ),
+                BuildStep(
+                    phase=BuildPhase.SECONDARY,
+                    description="添加直径 4 mm 安装孔",
+                ),
+            ],
+        )
+
+
+class _ComplexCodeGeneratorStub:
+    def __init__(self):
+        self.calls: list[int] = []
+        self.second_entered = asyncio.Event()
+        self.release_second = asyncio.Event()
+
+    async def generate_step(
+        self,
+        description,
+        accumulated,
+        step_index,
+        total_steps,
+        plan_context="",
+    ):
+        self.calls.append(step_index)
+        if step_index == 1:
+            self.second_entered.set()
+            await self.release_second.wait()
+            return "result = result.faces('>Z').workplane().hole(4)"
+        return "result = cq.Workplane('XY').box(30, 20, 5)"
+
+
+class _UnusedRetriever:
+    async def find_similar(self, query, top_k=3, **kwargs):
+        raise AssertionError("complex step generation should not retrieve examples")
+
+
+def _controlled_provenance():
+    return {
+        "provider": "controlled-provider",
+        "model": "controlled-complex-model",
+        "provider_response_id": "completion-complex",
+        "request_hash": "c" * 64,
+        "response_hash": "d" * 64,
+        "finish_reason": "stop",
+        "usage": {"total_tokens": 32},
+    }
+
+
+class _V2ModelingStub:
+    def __init__(self):
+        self.calls = 0
+
+    async def generate_step_source(self, **_kwargs):
+        self.calls += 1
+        source = (
+            "import cadquery as cq\n"
+            "length = 20\nwidth = 10\nheight = 4\n"
+            "result = cq.Workplane('XY').box(length, width, height)\n"
+        )
+        return SourceGenerationResult(
+            source_code=source,
+            mode="3d",
+            generator_kind="controlled_integration",
+            provenance={
+                "provider": "controlled-provider",
+                "model": "controlled-model",
+                "provider_response_id": "completion-integration-1",
+                "request_hash": "a" * 64,
+                "response_hash": hashlib.sha256(source.encode()).hexdigest(),
+                "finish_reason": "stop",
+                "usage": {"total_tokens": 24},
+            },
+        )
+
+
 async def _snapshot(owner, workflow_id):
     async with tenant_transaction(
         owner.tenant_id,
@@ -234,7 +350,7 @@ async def _snapshot(owner, workflow_id):
                 ),
                 {"id": workflow_id},
             )
-        ).mappings().one()
+        ).mappings().one_or_none()
         attempts = (
             await connection.execute(
                 text(
@@ -478,7 +594,7 @@ async def test_agent_v2_plan_waits_before_candidate_source_or_execution():
 
 
 @pytest.mark.asyncio(loop_scope="module")
-async def test_agent_v2_confirmed_plan_allocates_then_fails_candidate_truthfully():
+async def test_agent_v2_confirmed_plan_executes_to_staging_then_fails_closed():
     owner, project_id, initial = await _seed_project("agent-v2-candidate")
     client = await get_temporal_client()
     planner = DurableAgentPlanner(
@@ -486,6 +602,7 @@ async def test_agent_v2_confirmed_plan_allocates_then_fails_candidate_truthfully
         decomposer=_V2DecomposerStub(),
         assembly_planner=_V2AssemblyStub(),
     )
+    modeling = _V2ModelingStub()
     async with tenant_transaction(
         owner.tenant_id,
         owner.principal_id,
@@ -514,8 +631,9 @@ async def test_agent_v2_confirmed_plan_allocates_then_fails_candidate_truthfully
     )
     async with build_agent_v2_workflow_worker(
         client,
-        backend=object(),
+        backend=get_execution_backend(),
         durable_planner=planner,
+        durable_modeling=modeling,
     ):
         handle = await client.start_workflow(
             "McadAgentWorkflowV2",
@@ -535,7 +653,7 @@ async def test_agent_v2_confirmed_plan_allocates_then_fails_candidate_truthfully
             workflow_kind="mcad.agent.v2.generate",
         )
         with pytest.raises(WorkflowFailureError):
-            await asyncio.wait_for(handle.result(), timeout=20)
+            await asyncio.wait_for(handle.result(), timeout=90)
 
     async with tenant_transaction(
         owner.tenant_id,
@@ -559,12 +677,279 @@ async def test_agent_v2_confirmed_plan_allocates_then_fails_candidate_truthfully
             text("SELECT count(*) FROM execution_attempts WHERE workflow_run_id=:id"),
             {"id": created.workflow_id},
         )
+        source = (
+            await connection.execute(
+                text(
+                    "SELECT source_hash, provider, model, provider_response_id, "
+                    "request_hash, response_hash FROM agent_generated_sources "
+                    "WHERE workflow_run_id=:id"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().one()
+        manifest = (
+            await connection.execute(
+                text(
+                    "SELECT id, manifest FROM agent_staging_manifests "
+                    "WHERE workflow_run_id=:id"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().one()
+        product_artifacts = await connection.scalar(
+            text("SELECT count(*) FROM artifacts WHERE workflow_run_id=:id"),
+            {"id": created.workflow_id},
+        )
     assert candidate["status"] == "failed"
-    assert candidate["failure_code"] == "agent_v2_modeling_not_enabled"
+    assert candidate["failure_code"] == "agent_v2_validation_not_enabled"
     assert candidate["candidate_revision_id"] is None
     assert candidate["change_set_id"] is None
     assert workflow_status == "failed"
-    assert attempt_count == 0
+    assert attempt_count == 1
+    assert modeling.calls == 1
+    assert source["provider"] == "controlled-provider"
+    assert source["model"] == "controlled-model"
+    assert source["provider_response_id"] == "completion-integration-1"
+    assert len(source["request_hash"]) == 64
+    assert source["response_hash"] == source["source_hash"]
+    assert len(manifest["manifest"]["outputs"]) == 2
+    assert all(item["size_bytes"] > 0 for item in manifest["manifest"]["outputs"])
+    assert product_artifacts == 0
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_agent_v2_complex_steps_survive_worker_restart_without_regeneration():
+    owner, project_id, initial = await _seed_project("agent-v2-complex-restart")
+    client = await get_temporal_client()
+    planner = DurableAgentPlanner(
+        planner=_V2ComplexPlannerStub(),
+        decomposer=_V2ComplexDecomposerStub(),
+        assembly_planner=_V2AssemblyStub(),
+    )
+    codegen = _ComplexCodeGeneratorStub()
+    modeling = DurableModelingSourceGenerator(
+        retriever=_UnusedRetriever(),
+        code_generator=codegen,
+        provenance_reader=_controlled_provenance,
+    )
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        from app.services.run_state import create_workflow
+
+        created = await create_workflow(
+            connection,
+            tenant_id=owner.tenant_id,
+            project_id=project_id,
+            requested_by_principal_id=owner.principal_id,
+            kind="mcad.agent.v2.generate",
+            idempotency_key=f"agent-v2-complex-{project_id}",
+            request_payload={"objective": "创建带安装孔的复杂支架"},
+        )
+    request = McadAgentWorkflowV2Request(
+        workflow_run_id=created.workflow_id,
+        tenant_id=owner.tenant_id,
+        project_id=project_id,
+        principal_id=owner.principal_id,
+        branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,
+        operation="generate",
+        objective="创建带安装孔的复杂支架",
+        confirmation_timeout_seconds=60,
+    )
+    backend = get_execution_backend()
+    async with build_agent_v2_workflow_worker(
+        client,
+        backend=backend,
+        durable_planner=planner,
+        durable_modeling=modeling,
+    ):
+        handle = await client.start_workflow(
+            "McadAgentWorkflowV2",
+            request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),
+            task_queue=settings.temporal_agent_v2_task_queue,
+        )
+        await asyncio.wait_for(codegen.second_entered.wait(), timeout=60)
+        async with tenant_transaction(
+            owner.tenant_id,
+            owner.principal_id,
+        ) as connection:
+            first_manifest_count = await connection.scalar(
+                text(
+                    "SELECT count(*) FROM agent_staging_manifests "
+                    "WHERE workflow_run_id=:id"
+                ),
+                {"id": created.workflow_id},
+            )
+        assert first_manifest_count == 1
+
+    codegen.release_second.set()
+    async with build_agent_v2_workflow_worker(
+        client,
+        backend=backend,
+        durable_planner=planner,
+        durable_modeling=modeling,
+    ):
+        with pytest.raises(WorkflowFailureError):
+            await asyncio.wait_for(handle.result(), timeout=90)
+
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        steps = (
+            await connection.execute(
+                text(
+                    "SELECT step_key, status, attempt_count FROM step_runs "
+                    "WHERE workflow_run_id=:id AND kind='agent_model' "
+                    "ORDER BY step_index"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+        source_rows = (
+            await connection.execute(
+                text(
+                    "SELECT source_hash, predecessor_source_id "
+                    "FROM agent_generated_sources WHERE workflow_run_id=:id "
+                    "ORDER BY created_at"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+        manifest_count = await connection.scalar(
+            text(
+                "SELECT count(*) FROM agent_staging_manifests "
+                "WHERE workflow_run_id=:id"
+            ),
+            {"id": created.workflow_id},
+        )
+    assert [row["status"] for row in steps] == ["succeeded", "succeeded"]
+    assert [row["attempt_count"] for row in steps] == [1, 1]
+    assert len(source_rows) == 2
+    assert source_rows[0]["predecessor_source_id"] is None
+    assert source_rows[1]["predecessor_source_id"] is not None
+    assert manifest_count == 2
+    assert codegen.calls.count(0) == 1
+
+
+@pytest.mark.skipif(
+    os.environ.get("CAD_AGENT_TEST_REAL_LLM") != "1",
+    reason="CAD_AGENT_TEST_REAL_LLM=1 is required for provider integration",
+)
+@pytest.mark.asyncio(loop_scope="module")
+async def test_agent_v2_real_planner_retriever_codegen_and_execution_provenance():
+    owner, project_id, initial = await _seed_project("agent-v2-real-provider")
+    client = await get_temporal_client()
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        from app.services.run_state import create_workflow
+
+        created = await create_workflow(
+            connection,
+            tenant_id=owner.tenant_id,
+            project_id=project_id,
+            requested_by_principal_id=owner.principal_id,
+            kind="mcad.agent.v2.generate",
+            idempotency_key=f"agent-v2-real-provider-{project_id}",
+            request_payload={"objective": "创建校准块"},
+        )
+    request = McadAgentWorkflowV2Request(
+        workflow_run_id=created.workflow_id,
+        tenant_id=owner.tenant_id,
+        project_id=project_id,
+        principal_id=owner.principal_id,
+        branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,
+        operation="generate",
+        objective=(
+            "创建一个 20 x 10 x 4 mm 的实心长方体校准块，单位 mm；"
+            "不需要孔、圆角、倒角或其他特征；输出 STEP 和 STL。"
+        ),
+        confirmation_timeout_seconds=60,
+    )
+    async with build_agent_v2_workflow_worker(
+        client,
+        backend=get_execution_backend(),
+    ):
+        handle = await client.start_workflow(
+            "McadAgentWorkflowV2",
+            request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),
+            task_queue=settings.temporal_agent_v2_task_queue,
+        )
+        await handle.signal(
+            "confirmation",
+            {"accepted": True, "note": "受控真实 provider 测试确认"},
+        )
+        with pytest.raises(WorkflowFailureError):
+            await asyncio.wait_for(handle.result(), timeout=180)
+
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        source = (
+            await connection.execute(
+                text(
+                    "SELECT source_hash, provider, model, provider_response_id, "
+                    "request_hash, response_hash FROM agent_generated_sources "
+                    "WHERE workflow_run_id=:id ORDER BY created_at DESC LIMIT 1"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().one_or_none()
+        if source is None:
+            workflow_error = (
+                await connection.execute(
+                    text(
+                        "SELECT status, error_code, error_message "
+                        "FROM workflow_runs WHERE id=:id"
+                    ),
+                    {"id": created.workflow_id},
+                )
+            ).mappings().one()
+            events = (
+                await connection.execute(
+                    text(
+                        "SELECT event_type, payload FROM task_events "
+                        "WHERE workflow_run_id=:id ORDER BY sequence"
+                    ),
+                    {"id": created.workflow_id},
+                )
+            ).mappings().all()
+            raise AssertionError(
+                f"real provider produced no source: {dict(workflow_error)}; "
+                f"events={[dict(item) for item in events]}"
+            )
+        manifest = (
+            await connection.execute(
+                text(
+                    "SELECT manifest FROM agent_staging_manifests "
+                    "WHERE workflow_run_id=:id ORDER BY created_at DESC LIMIT 1"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().one()
+        candidate_failure = await connection.scalar(
+            text(
+                "SELECT failure_code FROM agent_candidate_builds "
+                "WHERE workflow_run_id=:id"
+            ),
+            {"id": created.workflow_id},
+        )
+    assert source["provider"] == settings.normalized_llm_provider
+    assert source["model"]
+    assert source["provider_response_id"]
+    assert len(source["request_hash"]) == 64
+    assert len(source["response_hash"]) == 64
+    assert len(source["source_hash"]) == 64
+    assert manifest["manifest"]["outputs"]
+    assert candidate_failure == "agent_v2_validation_not_enabled"
 
 
 @pytest.mark.asyncio(loop_scope="module")

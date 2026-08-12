@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.domain.artifacts import (
     CandidateSealCreated,
+    GeneratedSourceRecorded,
     StagingManifestAccepted,
     ValidationEvidenceRecorded,
 )
@@ -34,6 +35,225 @@ class StaleExecutionAttempt(RuntimeError):
 
 class ValidationEvidenceConflict(RuntimeError):
     """Validation evidence does not belong to the selected candidate output."""
+
+
+async def record_generated_source(
+    connection: AsyncConnection,
+    *,
+    tenant_id: UUID,
+    candidate_build_id: UUID,
+    workflow_id: UUID,
+    step_id: UUID,
+    source_code: str,
+    generator_kind: str,
+    provider: str,
+    model: str,
+    request_hash: str,
+    response_hash: str,
+    provider_response_id: str | None = None,
+    finish_reason: str | None = None,
+    usage: dict[str, Any] | None = None,
+    predecessor_source_id: UUID | None = None,
+) -> GeneratedSourceRecorded:
+    if not source_code.strip():
+        raise ValueError("generated source cannot be empty")
+    source_hash = hashlib.sha256(source_code.encode("utf-8")).hexdigest()
+    for label, value in (
+        ("source_hash", source_hash),
+        ("request_hash", request_hash),
+        ("response_hash", response_hash),
+    ):
+        if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+            raise ValueError(f"{label} must be a lowercase SHA-256")
+    candidate = (
+        await connection.execute(
+            text(
+                """
+                SELECT status, workflow_run_id FROM agent_candidate_builds
+                WHERE tenant_id=:tenant_id AND id=:candidate_build_id FOR UPDATE
+                """
+            ),
+            {"tenant_id": tenant_id, "candidate_build_id": candidate_build_id},
+        )
+    ).mappings().one_or_none()
+    if candidate is None:
+        raise KeyError(candidate_build_id)
+    if candidate["status"] != CandidateBuildStatus.BUILDING.value:
+        raise CandidateBuildConflict("source generation requires a building candidate")
+    if candidate["workflow_run_id"] != workflow_id:
+        raise CandidateBuildConflict("source belongs to another workflow")
+    if predecessor_source_id is not None:
+        predecessor = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT candidate_build_id FROM agent_generated_sources
+                    WHERE tenant_id=:tenant_id AND id=:source_id
+                    """
+                ),
+                {"tenant_id": tenant_id, "source_id": predecessor_source_id},
+            )
+        ).mappings().one_or_none()
+        if predecessor is None:
+            raise KeyError(predecessor_source_id)
+        if predecessor["candidate_build_id"] != candidate_build_id:
+            raise CandidateBuildConflict(
+                "predecessor source belongs to another candidate"
+            )
+    existing = (
+        await connection.execute(
+            text(
+                """
+                SELECT id, source_hash, generator_kind, provider, model,
+                       provider_response_id, request_hash, response_hash,
+                       finish_reason, usage, predecessor_source_id
+                FROM agent_generated_sources
+                WHERE tenant_id=:tenant_id AND step_run_id=:step_id
+                """
+            ),
+            {"tenant_id": tenant_id, "step_id": step_id},
+        )
+    ).mappings().one_or_none()
+    immutable = {
+        "source_hash": source_hash,
+        "generator_kind": generator_kind,
+        "provider": provider,
+        "model": model,
+        "provider_response_id": provider_response_id,
+        "request_hash": request_hash,
+        "response_hash": response_hash,
+        "finish_reason": finish_reason,
+        "usage": usage or {},
+        "predecessor_source_id": predecessor_source_id,
+    }
+    if existing is not None:
+        if any(existing[key] != value for key, value in immutable.items()):
+            raise CandidateBuildConflict(
+                "modeling step already recorded different generated source"
+            )
+        return GeneratedSourceRecorded(
+            source_id=existing["id"], source_hash=source_hash, replayed=True
+        )
+    source_id = uuid4()
+    await connection.execute(
+        text(
+            """
+            INSERT INTO agent_generated_sources (
+                id, tenant_id, candidate_build_id, workflow_run_id,
+                step_run_id, predecessor_source_id, source_hash, source_code,
+                generator_kind, provider, model, provider_response_id,
+                request_hash, response_hash, finish_reason, usage
+            ) VALUES (
+                :id, :tenant_id, :candidate_build_id, :workflow_id,
+                :step_id, :predecessor_source_id, :source_hash, :source_code,
+                :generator_kind, :provider, :model, :provider_response_id,
+                :request_hash, :response_hash, :finish_reason,
+                CAST(:usage AS jsonb)
+            )
+            """
+        ),
+        {
+            "id": source_id,
+            "tenant_id": tenant_id,
+            "candidate_build_id": candidate_build_id,
+            "workflow_id": workflow_id,
+            "step_id": step_id,
+            "predecessor_source_id": predecessor_source_id,
+            "source_hash": source_hash,
+            "source_code": source_code,
+            "generator_kind": generator_kind,
+            "provider": provider,
+            "model": model,
+            "provider_response_id": provider_response_id,
+            "request_hash": request_hash,
+            "response_hash": response_hash,
+            "finish_reason": finish_reason,
+            "usage": _json(usage or {}),
+        },
+    )
+    await append_workflow_event(
+        connection,
+        tenant_id=tenant_id,
+        workflow_id=workflow_id,
+        event_type="agent.source.generated",
+        payload={
+            "candidate_build_id": str(candidate_build_id),
+            "source_id": str(source_id),
+            "step_run_id": str(step_id),
+            "source_hash": source_hash,
+            "generator_kind": generator_kind,
+            "provider": provider,
+            "model": model,
+            "provider_response_id": provider_response_id,
+            "request_hash": request_hash,
+            "response_hash": response_hash,
+        },
+    )
+    return GeneratedSourceRecorded(source_id=source_id, source_hash=source_hash)
+
+
+async def get_generated_source_for_step(
+    connection: AsyncConnection,
+    *,
+    tenant_id: UUID,
+    workflow_id: UUID,
+    step_key: str,
+) -> dict[str, Any] | None:
+    row = (
+        await connection.execute(
+            text(
+                """
+                SELECT g.*, s.step_key
+                FROM agent_generated_sources g
+                JOIN step_runs s ON s.id=g.step_run_id
+                WHERE g.tenant_id=:tenant_id
+                  AND g.workflow_run_id=:workflow_id
+                  AND s.step_key=:step_key
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "workflow_id": workflow_id,
+                "step_key": step_key,
+            },
+        )
+    ).mappings().one_or_none()
+    return dict(row) if row is not None else None
+
+
+async def get_staging_manifest_for_step(
+    connection: AsyncConnection,
+    *,
+    tenant_id: UUID,
+    candidate_build_id: UUID,
+    workflow_id: UUID,
+    step_key: str,
+) -> dict[str, Any] | None:
+    row = (
+        await connection.execute(
+            text(
+                """
+                SELECT m.*, a.result_payload, s.step_key
+                FROM agent_staging_manifests m
+                JOIN step_runs s ON s.id=m.step_run_id
+                JOIN execution_attempts a ON a.id=m.execution_attempt_id
+                WHERE m.tenant_id=:tenant_id
+                  AND m.candidate_build_id=:candidate_build_id
+                  AND m.workflow_run_id=:workflow_id
+                  AND s.step_key=:step_key
+                ORDER BY a.attempt_number DESC
+                LIMIT 1
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "candidate_build_id": candidate_build_id,
+                "workflow_id": workflow_id,
+                "step_key": step_key,
+            },
+        )
+    ).mappings().one_or_none()
+    return dict(row) if row is not None else None
 
 
 def _json(value: dict[str, Any]) -> str:

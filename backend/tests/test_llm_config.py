@@ -7,7 +7,13 @@ import pytest
 from openai import APIConnectionError, RateLimitError
 
 from app.config import Settings
-from app.llm import ChatCompletionAdapter, build_chat_params, create_llm_client
+from app.llm import (
+    ChatCompletionAdapter,
+    build_chat_params,
+    create_llm_client,
+    get_last_chat_completion_provenance,
+    reset_chat_completion_provenance,
+)
 
 
 def test_azure_credentials_are_detected():
@@ -168,3 +174,43 @@ async def test_chat_adapter_retries_transient_connection_failure_with_bound():
 
     assert result.choices == []
     assert raw.calls == 3
+
+
+@pytest.mark.asyncio
+async def test_chat_adapter_records_non_secret_completion_provenance():
+    class RecordedCompletions:
+        async def create(self, **_kwargs):
+            return SimpleNamespace(
+                id="chatcmpl-controlled",
+                model="controlled-model-2026-08-12",
+                choices=[
+                    SimpleNamespace(
+                        finish_reason="stop",
+                        message=SimpleNamespace(content="result = 42"),
+                    )
+                ],
+                usage=SimpleNamespace(
+                    prompt_tokens=7,
+                    completion_tokens=3,
+                    total_tokens=10,
+                ),
+            )
+
+    reset_chat_completion_provenance()
+    adapter = ChatCompletionAdapter(
+        RecordedCompletions(),
+        Settings(_env_file=None, llm_provider="openai_compatible"),
+    )
+    await adapter.create(
+        model="requested-model",
+        messages=[{"role": "user", "content": "create"}],
+    )
+
+    provenance = get_last_chat_completion_provenance()
+    assert provenance is not None
+    assert provenance["provider"] == "openai_compatible"
+    assert provenance["model"] == "controlled-model-2026-08-12"
+    assert provenance["provider_response_id"] == "chatcmpl-controlled"
+    assert len(provenance["request_hash"]) == 64
+    assert len(provenance["response_hash"]) == 64
+    assert provenance["usage"]["total_tokens"] == 10

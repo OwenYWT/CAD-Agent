@@ -18,6 +18,7 @@ from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
 from app.agent.durable_plan import AgentPlan
+from app.agent.durable_plan import AgentPlanStep
 from app.agent.durable_planner import DurableAgentPlanner
 from app.agent.orchestrator import Orchestrator
 from app.api.error_messages import public_generation_error
@@ -42,7 +43,11 @@ from app.repositories.revisions import (
     create_candidate_change_set,
 )
 from app.repositories.agent_candidates import (
+    accept_staging_manifest,
     create_agent_candidate_build,
+    get_generated_source_for_step,
+    get_staging_manifest_for_step,
+    record_generated_source,
     transition_agent_candidate_build,
 )
 from app.domain.revisions import CandidateBuildStatus
@@ -60,6 +65,7 @@ from app.services.change_sets import (
 from app.services.design_analysis import build_design_analysis_response
 from app.services.run_state import (
     create_attempt,
+    complete_attempt,
     create_step,
     heartbeat_attempt,
     lease_attempt,
@@ -73,6 +79,7 @@ from app.validation.dfm_analyzer import DFMAnalyzer
 from app.llm import is_nonretryable_provider_error
 from app.models.schemas import CADPlan, ModificationPlan
 from app.workflows.source_preparation import SourcePreparer
+from app.workflows.modeling import DurableModelingSourceGenerator
 from app.workflows.temporal import (
     McadAgentWorkflowV2Request,
     McadSourcePreparationRequest,
@@ -92,6 +99,27 @@ def _agent_v2_request(payload: dict[str, Any]) -> McadAgentWorkflowV2Request:
 
 def _worker_id() -> str:
     return f"temporal:{socket.gethostname()}:{os.getpid()}"
+
+
+_MODELING_MEDIA_TYPES = {
+    "step": "model/step",
+    "stl": "model/stl",
+    "dxf": "image/vnd.dxf",
+    "svg": "image/svg+xml",
+    "png": "image/png",
+    "json": "application/json",
+}
+
+
+def _modeling_outputs(step: AgentPlanStep, mode: str) -> tuple[OutputDeclaration, ...]:
+    formats = step.output_formats or (("dxf",) if mode == "2d" else ("step",))
+    return tuple(
+        OutputDeclaration(
+            name=output_format,
+            media_type=_MODELING_MEDIA_TYPES[output_format],
+        )
+        for output_format in formats
+    )
 
 
 async def _step_row(connection, workflow_id: UUID, step_key: str):
@@ -523,6 +551,138 @@ async def _prepare_execution_attempt(
     )
 
 
+async def _prepare_agent_execution_attempt(
+    payload: dict[str, Any],
+    *,
+    temporal_attempt: int,
+) -> tuple[UUID, UUID, str, int]:
+    tenant_id = _uuid(payload, "tenant_id")
+    principal_id = _uuid(payload, "principal_id")
+    workflow_id = _uuid(payload, "workflow_run_id")
+    step_key = str(payload["step"]["step_key"])
+    step_index = int(payload["step_index"])
+    source_id = _uuid(payload, "source_id")
+    async with tenant_transaction(tenant_id, principal_id) as connection:
+        row = await _step_row(connection, workflow_id, step_key)
+        if row is None:
+            raise ApplicationError(
+                f"modeling step {step_key} was not created by source generation",
+                type="agent_modeling_step_missing",
+                non_retryable=True,
+            )
+        if int(row["step_index"]) != step_index or row["kind"] != "agent_model":
+            raise ApplicationError(
+                f"modeling step {step_key} identity does not match its plan",
+                type="agent_modeling_step_conflict",
+                non_retryable=True,
+            )
+        source = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT step_run_id, source_hash FROM agent_generated_sources
+                    WHERE tenant_id=:tenant_id AND id=:source_id
+                    """
+                ),
+                {"tenant_id": tenant_id, "source_id": source_id},
+            )
+        ).mappings().one_or_none()
+        if source is None or source["step_run_id"] != row["id"]:
+            raise ApplicationError(
+                "execution source does not belong to the planned modeling step",
+                type="agent_source_step_mismatch",
+                non_retryable=True,
+            )
+
+        step_status = StepStatus(row["status"])
+        active = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT id, status FROM execution_attempts
+                    WHERE workflow_run_id=:workflow_id
+                      AND step_run_id=:step_id
+                      AND status IN ('pending', 'leased', 'running')
+                    ORDER BY attempt_number FOR UPDATE
+                    """
+                ),
+                {"workflow_id": workflow_id, "step_id": row["id"]},
+            )
+        ).mappings().all()
+        for active_attempt in active:
+            await transition_attempt(
+                connection,
+                active_attempt["id"],
+                expected=AttemptStatus(active_attempt["status"]),
+                target=AttemptStatus.FAILED,
+                error_code="superseded_by_temporal_retry",
+                error_message="A newer Temporal activity attempt fenced this execution.",
+            )
+        if active and step_status is StepStatus.RUNNING:
+            await transition_step(
+                connection,
+                row["id"],
+                expected=StepStatus.RUNNING,
+                target=StepStatus.FAILED,
+                error_code="superseded_by_temporal_retry",
+            )
+            step_status = StepStatus.FAILED
+        if step_status in {StepStatus.FAILED, StepStatus.TIMED_OUT}:
+            await transition_step(
+                connection,
+                row["id"],
+                expected=step_status,
+                target=StepStatus.READY,
+            )
+            step_status = StepStatus.READY
+        if step_status is StepStatus.READY:
+            await transition_step(
+                connection,
+                row["id"],
+                expected=StepStatus.READY,
+                target=StepStatus.RUNNING,
+            )
+        elif step_status is not StepStatus.RUNNING:
+            raise ApplicationError(
+                f"modeling step {step_key} is terminal in {step_status.value}",
+                type="agent_modeling_step_terminal",
+                non_retryable=True,
+            )
+
+        execution_payload = {
+            "schema_version": "durable-agent-execution.v1",
+            "temporal_activity_id": activity.info().activity_id,
+            "temporal_attempt": temporal_attempt,
+            "candidate_build_id": str(payload["candidate_build_id"]),
+            "source_id": str(source_id),
+            "source_hash": source["source_hash"],
+            "step": payload["step"],
+        }
+        attempt = await create_attempt(
+            connection,
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+            step_id=row["id"],
+            idempotency_key=(
+                f"agent-v2:{workflow_id}:{step_key}:attempt:{temporal_attempt}"
+            ),
+            execution_payload=execution_payload,
+        )
+        lease = await lease_attempt(
+            connection,
+            attempt.attempt_id,
+            worker_id=_worker_id(),
+            lease_seconds=30,
+        )
+        await start_attempt(
+            connection,
+            attempt.attempt_id,
+            lease_token=lease.token,
+            lease_generation=lease.generation,
+        )
+    return attempt.attempt_id, row["id"], lease.token, lease.generation
+
+
 async def _heartbeat_loop(
     *,
     tenant_id: UUID,
@@ -821,12 +981,14 @@ class McadWorkflowActivities:
         *,
         source_preparer: SourcePreparer | None = None,
         durable_planner: DurableAgentPlanner | None = None,
+        durable_modeling: DurableModelingSourceGenerator | None = None,
     ):
         self.backend = backend or get_execution_backend()
         self.source_preparer = source_preparer or SourcePreparer(
             Orchestrator(execution_backend=self.backend)
         )
         self.durable_planner = durable_planner or DurableAgentPlanner()
+        self.durable_modeling = durable_modeling or DurableModelingSourceGenerator()
 
     @staticmethod
     def _agent_planning_error(exc: Exception) -> ApplicationError:
@@ -1111,6 +1273,398 @@ class McadWorkflowActivities:
             "status": result.status.value,
             "replayed": result.replayed,
         }
+
+    @activity.defn(name="agent_v2.generate_source")
+    async def agent_generate_source(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        request = _agent_v2_request(payload)
+        plan = AgentPlan.model_validate(payload["plan"])
+        step = AgentPlanStep.model_validate(payload["step"])
+        step_index = int(payload["step_index"])
+        candidate_build_id = _uuid(payload, "candidate_build_id")
+        async with tenant_transaction(
+            request.tenant_id,
+            request.principal_id,
+        ) as connection:
+            replay = await get_generated_source_for_step(
+                connection,
+                tenant_id=request.tenant_id,
+                workflow_id=request.workflow_run_id,
+                step_key=step.step_key,
+            )
+            if replay is not None:
+                return {
+                    "source_id": str(replay["id"]),
+                    "source_hash": replay["source_hash"],
+                    "source_code": replay["source_code"],
+                    "mode": (
+                        "2d"
+                        if step.output_formats
+                        and set(step.output_formats).issubset({"dxf", "svg"})
+                        else "3d"
+                    ),
+                    "generator_kind": replay["generator_kind"],
+                    "provenance": {
+                        "provider": replay["provider"],
+                        "model": replay["model"],
+                        "provider_response_id": replay["provider_response_id"],
+                        "request_hash": replay["request_hash"],
+                        "response_hash": replay["response_hash"],
+                        "finish_reason": replay["finish_reason"],
+                        "usage": dict(replay["usage"]),
+                    },
+                    "replayed": True,
+                }
+            step_id = await _start_agent_logical_step(
+                connection,
+                tenant_id=request.tenant_id,
+                workflow_id=request.workflow_run_id,
+                step_key=step.step_key,
+                step_index=step_index,
+                kind="agent_model",
+            )
+        try:
+            generated = await self.durable_modeling.generate_step_source(
+                plan=plan,
+                step=step,
+                requirements=dict(payload["requirements"]),
+                previous_source=(
+                    str(payload["previous_source"])
+                    if payload.get("previous_source") is not None
+                    else None
+                ),
+                step_index=int(payload["plan_step_index"]),
+            )
+            provenance = generated.provenance
+            async with tenant_transaction(
+                request.tenant_id,
+                request.principal_id,
+            ) as connection:
+                recorded = await record_generated_source(
+                    connection,
+                    tenant_id=request.tenant_id,
+                    candidate_build_id=candidate_build_id,
+                    workflow_id=request.workflow_run_id,
+                    step_id=step_id,
+                    predecessor_source_id=(
+                        _uuid(payload, "predecessor_source_id")
+                        if payload.get("predecessor_source_id")
+                        else None
+                    ),
+                    source_code=generated.source_code,
+                    generator_kind=generated.generator_kind,
+                    provider=str(provenance["provider"]),
+                    model=str(provenance["model"]),
+                    provider_response_id=(
+                        str(provenance["provider_response_id"])
+                        if provenance.get("provider_response_id")
+                        else None
+                    ),
+                    request_hash=str(provenance["request_hash"]),
+                    response_hash=str(provenance["response_hash"]),
+                    finish_reason=(
+                        str(provenance["finish_reason"])
+                        if provenance.get("finish_reason")
+                        else None
+                    ),
+                    usage=dict(provenance.get("usage") or {}),
+                )
+            return {
+                "source_id": str(recorded.source_id),
+                "source_hash": recorded.source_hash,
+                "source_code": generated.source_code,
+                "mode": generated.mode,
+                "generator_kind": generated.generator_kind,
+                "provenance": provenance,
+                "replayed": recorded.replayed,
+            }
+        except Exception as exc:
+            error = self._agent_planning_error(exc)
+            await _fail_agent_logical_step(
+                tenant_id=request.tenant_id,
+                principal_id=request.principal_id,
+                workflow_id=request.workflow_run_id,
+                step_key=step.step_key,
+                error_code=error.type or "agent_source_generation_failed",
+                error_message=str(error),
+            )
+            raise error from exc
+
+    @activity.defn(name="agent_v2.execute_model")
+    async def agent_execute_model(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        info = activity.info()
+        request = _agent_v2_request(payload)
+        plan = AgentPlan.model_validate(payload["plan"])
+        step = AgentPlanStep.model_validate(payload["step"])
+        candidate_build_id = _uuid(payload, "candidate_build_id")
+        async with tenant_transaction(
+            request.tenant_id,
+            request.principal_id,
+        ) as connection:
+            replay = await get_staging_manifest_for_step(
+                connection,
+                tenant_id=request.tenant_id,
+                candidate_build_id=candidate_build_id,
+                workflow_id=request.workflow_run_id,
+                step_key=step.step_key,
+            )
+            if replay is not None:
+                return {
+                    **dict(replay["result_payload"] or {}),
+                    "staging_manifest_id": str(replay["id"]),
+                    "manifest_hash": replay["manifest_hash"],
+                    "manifest": dict(replay["manifest"]),
+                    "replayed": True,
+                }
+
+        attempt_id, step_id, lease_token, lease_generation = (
+            await _prepare_agent_execution_attempt(
+                payload,
+                temporal_attempt=info.attempt,
+            )
+        )
+        outcome: MaterializedExecutionOutcome | None = None
+        upload_heartbeat: asyncio.Task | None = None
+        try:
+            snapshot = await asyncio.to_thread(self.backend.runtime_snapshot)
+            source_code = str(payload["source_code"])
+            source_hash = hashlib.sha256(source_code.encode("utf-8")).hexdigest()
+            if source_hash != str(payload["source_hash"]):
+                raise ApplicationError(
+                    "modeling source hash does not match persisted source",
+                    type="agent_source_hash_mismatch",
+                    non_retryable=True,
+                )
+            outputs = _modeling_outputs(step, str(payload["mode"]))
+            spec = ExecutionSpec(
+                execution_attempt_id=str(attempt_id),
+                workflow_run_id=str(request.workflow_run_id),
+                step_run_id=str(step_id),
+                tenant_id=str(request.tenant_id),
+                project_id=str(request.project_id),
+                expected_base_revision_id=str(request.expected_base_revision_id),
+                idempotency_key=(
+                    f"agent-v2:{request.workflow_run_id}:{step.step_key}:"
+                    f"attempt:{info.attempt}"
+                ),
+                capability="mcad.model",
+                operation=plan.operation,
+                mode=str(payload["mode"]),
+                source=ExecutionSource(
+                    language="python",
+                    code=source_code,
+                    sha256=source_hash,
+                ),
+                outputs=outputs,
+                runtime=RuntimeRequirement(
+                    image_digest=snapshot.image_digest,
+                    platform=snapshot.platform,
+                    sandbox_tier="ephemeral-job",
+                ),
+                limits=ResourceLimits(timeout_seconds=120),
+                metadata={
+                    "candidate_build_id": str(candidate_build_id),
+                    "source_id": str(payload["source_id"]),
+                    "plan_step_key": step.step_key,
+                    "temporal_activity_id": info.activity_id,
+                    "temporal_attempt": info.attempt,
+                },
+            )
+            outcome = await _run_backend_with_heartbeats(
+                self.backend,
+                spec,
+                tenant_id=request.tenant_id,
+                principal_id=request.principal_id,
+                attempt_id=attempt_id,
+                lease_token=lease_token,
+                lease_generation=lease_generation,
+            )
+            if activity.is_cancelled():
+                raise asyncio.CancelledError
+            if outcome.result.status is not ExecutionStatus.SUCCEEDED:
+                error = outcome.result.error
+                code = error.code if error else "execution_failed"
+                message = error.message if error else "MCAD execution failed"
+                await _mark_execution_failure(
+                    payload,
+                    attempt_id=attempt_id,
+                    step_id=step_id,
+                    status=outcome.result.status,
+                    error_code=code,
+                    error_message=message,
+                )
+                retryable = bool(
+                    error
+                    and error.category.value
+                    in {"infrastructure", "timeout", "resource"}
+                )
+                raise ApplicationError(
+                    message,
+                    {
+                        "execution_attempt_id": str(attempt_id),
+                        "category": error.category.value if error else "internal",
+                    },
+                    type=code,
+                    non_retryable=not retryable,
+                )
+
+            upload_heartbeat = asyncio.create_task(
+                _heartbeat_loop(
+                    tenant_id=request.tenant_id,
+                    principal_id=request.principal_id,
+                    attempt_id=attempt_id,
+                    lease_token=lease_token,
+                    lease_generation=lease_generation,
+                )
+            )
+            staged_outputs = []
+            for output_name, path in outcome.files.items():
+                declared = next(
+                    item
+                    for item in outcome.result.outputs
+                    if item.name == path.name
+                )
+                object_key = (
+                    "staging/agent/tenants/"
+                    f"{request.tenant_id}/candidates/{candidate_build_id}/"
+                    f"attempts/{attempt_id}/{declared.sha256}/"
+                    f"{Path(declared.name).name}"
+                )
+                uploaded = await put_file(
+                    object_key,
+                    path,
+                    content_type=declared.media_type,
+                )
+                if (
+                    uploaded["sha256"] != declared.sha256
+                    or uploaded["size_bytes"] != declared.size_bytes
+                ):
+                    raise ApplicationError(
+                        "staged object does not match executor declaration",
+                        type="agent_staging_integrity_failed",
+                        non_retryable=True,
+                    )
+                staged_outputs.append(
+                    {
+                        "format": output_name,
+                        "filename": Path(declared.name).name,
+                        "object_key": object_key,
+                        "sha256": declared.sha256,
+                        "size_bytes": declared.size_bytes,
+                        "content_type": declared.media_type,
+                    }
+                )
+            upload_heartbeat.cancel()
+            try:
+                await upload_heartbeat
+            except asyncio.CancelledError:
+                pass
+            upload_heartbeat = None
+            manifest = {
+                "schema_version": "agent-staging-manifest.v1",
+                "candidate_build_id": str(candidate_build_id),
+                "workflow_run_id": str(request.workflow_run_id),
+                "step_run_id": str(step_id),
+                "execution_attempt_id": str(attempt_id),
+                "source_id": str(payload["source_id"]),
+                "source_hash": source_hash,
+                "outputs": staged_outputs,
+                "runtime_provenance": (
+                    outcome.result.provenance.model_dump(mode="json")
+                    if outcome.result.provenance
+                    else None
+                ),
+            }
+            result_payload = {
+                "status": "succeeded",
+                "attempt_id": str(attempt_id),
+                "source_id": str(payload["source_id"]),
+                "source_hash": source_hash,
+                "outputs": staged_outputs,
+                "execution_result": outcome.result.model_dump(mode="json"),
+            }
+            async with tenant_transaction(
+                request.tenant_id,
+                request.principal_id,
+            ) as connection:
+                await complete_attempt(
+                    connection,
+                    attempt_id,
+                    lease_token=lease_token,
+                    lease_generation=lease_generation,
+                    result_payload=result_payload,
+                )
+                accepted = await accept_staging_manifest(
+                    connection,
+                    tenant_id=request.tenant_id,
+                    candidate_build_id=candidate_build_id,
+                    workflow_id=request.workflow_run_id,
+                    step_id=step_id,
+                    attempt_id=attempt_id,
+                    lease_generation=lease_generation,
+                    manifest=manifest,
+                    lease_token=lease_token,
+                )
+                await transition_step(
+                    connection,
+                    step_id,
+                    expected=StepStatus.RUNNING,
+                    target=StepStatus.SUCCEEDED,
+                )
+            return {
+                **result_payload,
+                "staging_manifest_id": str(accepted.staging_manifest_id),
+                "manifest_hash": accepted.manifest_hash,
+                "manifest": manifest,
+                "replayed": accepted.replayed,
+            }
+        except asyncio.CancelledError:
+            await _mark_execution_failure(
+                payload,
+                attempt_id=attempt_id,
+                step_id=step_id,
+                status=ExecutionStatus.CANCELLED,
+                error_code="execution_cancelled",
+                error_message="Durable Agent modeling execution was cancelled.",
+            )
+            raise
+        except ApplicationError as exc:
+            await _mark_execution_failure(
+                payload,
+                attempt_id=attempt_id,
+                step_id=step_id,
+                status=ExecutionStatus.FAILED,
+                error_code=(exc.type or "agent_model_execution_failed")[:200],
+                error_message=str(exc)[:4000],
+            )
+            raise
+        except Exception as exc:
+            await _mark_execution_failure(
+                payload,
+                attempt_id=attempt_id,
+                step_id=step_id,
+                status=ExecutionStatus.FAILED,
+                error_code="agent_model_execution_failed",
+                error_message=str(exc)[:4000],
+            )
+            raise ApplicationError(
+                str(exc)[:4000],
+                type="agent_model_execution_failed",
+            ) from exc
+        finally:
+            if upload_heartbeat is not None:
+                upload_heartbeat.cancel()
+                try:
+                    await upload_heartbeat
+                except asyncio.CancelledError:
+                    pass
+            if outcome is not None and outcome.work_dir is not None:
+                shutil.rmtree(outcome.work_dir, ignore_errors=True)
 
     @activity.defn(name="mcad.prepare_source")
     async def prepare_source(
@@ -2623,6 +3177,8 @@ class McadWorkflowActivities:
             self.agent_plan,
             self.agent_allocate_candidate,
             self.agent_terminate_candidate,
+            self.agent_generate_source,
+            self.agent_execute_model,
             self.wait_confirmation,
             self.resume_after_confirmation,
             self.record_cancel,

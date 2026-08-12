@@ -53,3 +53,10 @@ class CandidateSealCreated:
     seal_id: UUID
     selection_hash: str
     replayed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class GeneratedSourceRecorded:
+    source_id: UUID
+    source_hash: str
+    replayed: bool = False
