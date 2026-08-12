@@ -84,7 +84,12 @@ class PlanDecomposer:
             self._client = make_llm_client()
         return self._client
 
-    async def decompose(self, plan: CADPlan) -> BuildPlan:
+    async def decompose(
+        self,
+        plan: CADPlan,
+        *,
+        allow_fallback: bool = True,
+    ) -> BuildPlan:
         # Most parameterized parts do not benefit from a second LLM planning
         # round-trip.  Keep decomposition for genuinely feature-rich/custom
         # geometry; this also makes provider use explicit and bounded.
@@ -150,6 +155,8 @@ class PlanDecomposer:
 
         except Exception as e:
             if find_provider_exception(e) is not None:
+                raise
+            if not allow_fallback:
                 raise
             logger.warning(f"PlanDecomposer failed: {e}, using single-step fallback")
             return BuildPlan(
