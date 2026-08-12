@@ -95,6 +95,21 @@ def test_failure_signature_ignores_attempt_ids_hashes_and_line_numbers():
     assert repeated.strategy == "repeated_error_stop"
 
 
+def test_geometry_failure_uses_targeted_bounded_source_repair():
+    decision = decide_repair(
+        category="validation",
+        error_code="geometry_validation_failed",
+        error_message="stl:not_watertight; stl:dimension_mismatch",
+        runtime_error_type="GeometryError",
+        repair_count=0,
+        seen_signatures=(),
+    )
+    assert decision.repairable is True
+    assert decision.failure_class == "geometry_invalid"
+    assert decision.strategy == "minimal_targeted_fix"
+    assert decision.budget == 2
+
+
 class CodeGeneratorStub:
     calls = 0
 

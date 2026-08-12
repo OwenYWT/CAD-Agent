@@ -37,6 +37,7 @@ _FALLBACK_STRATEGIES = {
     "shell_failed": "boolean_hollow",
     "empty_stack_boolean": "create_base_before_boolean",
     "cad_kernel": "simplify_failed_feature",
+    "geometry_invalid": "rebuild_only_invalid_geometry",
 }
 
 
@@ -95,7 +96,9 @@ def decide_repair(
         error_message=error_message,
     )
     allowed_category = category in {"user_code", "cad_kernel"} or (
-        category == "validation" and error_code == "static_analysis_failed"
+        category == "validation"
+        and error_code
+        in {"static_analysis_failed", "geometry_validation_failed"}
     )
     default_budget = 1 if category == "validation" else 2
     budget = min(

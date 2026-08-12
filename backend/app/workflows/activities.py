@@ -41,7 +41,7 @@ from app.execution.contracts import (
     ResourceLimits,
     RuntimeRequirement,
 )
-from app.object_store import get_object, put_file, sha256_object
+from app.object_store import download_object, get_object, put_file, sha256_object
 from app.repositories.revisions import (
     StaleBaseRevision,
     create_candidate_change_set,
@@ -51,7 +51,9 @@ from app.repositories.agent_candidates import (
     create_agent_candidate_build,
     get_generated_source_for_step,
     get_staging_manifest_for_step,
+    get_validation_evidence_for_manifest,
     record_generated_source,
+    record_validation_evidence,
     transition_agent_candidate_build,
 )
 from app.domain.revisions import CandidateBuildStatus
@@ -80,6 +82,10 @@ from app.services.run_state import (
     transition_workflow,
 )
 from app.validation.dfm_analyzer import DFMAnalyzer
+from app.validation.durable_geometry import (
+    DurableGeometryReport,
+    indeterminate_geometry_report,
+)
 from app.llm import is_nonretryable_provider_error
 from app.models.schemas import CADPlan, ModificationPlan
 from app.workflows.source_preparation import SourcePreparer
@@ -692,6 +698,151 @@ async def _prepare_agent_execution_attempt(
     return attempt.attempt_id, row["id"], lease.token, lease.generation
 
 
+async def _prepare_agent_validation_attempt(
+    payload: dict[str, Any],
+    *,
+    temporal_attempt: int,
+    step_key: str,
+    step_index: int,
+    step_kind: str,
+) -> tuple[UUID, UUID, str, int]:
+    tenant_id = _uuid(payload, "tenant_id")
+    principal_id = _uuid(payload, "principal_id")
+    workflow_id = _uuid(payload, "workflow_run_id")
+    candidate_build_id = _uuid(payload, "candidate_build_id")
+    manifest_id = _uuid(payload, "staging_manifest_id")
+    async with tenant_transaction(tenant_id, principal_id) as connection:
+        manifest = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT candidate_build_id, workflow_run_id
+                    FROM agent_staging_manifests
+                    WHERE tenant_id=:tenant_id AND id=:manifest_id
+                    """
+                ),
+                {"tenant_id": tenant_id, "manifest_id": manifest_id},
+            )
+        ).mappings().one_or_none()
+        if manifest is None:
+            raise ApplicationError(
+                "validation input manifest does not exist",
+                type="agent_validation_manifest_missing",
+                non_retryable=True,
+            )
+        if (
+            manifest["candidate_build_id"] != candidate_build_id
+            or manifest["workflow_run_id"] != workflow_id
+        ):
+            raise ApplicationError(
+                "validation input manifest belongs to another candidate",
+                type="agent_validation_manifest_conflict",
+                non_retryable=True,
+            )
+        created = await create_step(
+            connection,
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+            step_key=step_key,
+            step_index=step_index,
+            kind=step_kind,
+        )
+        row = await _step_row(connection, workflow_id, step_key)
+        status = StepStatus(row["status"])
+        active = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT id, status FROM execution_attempts
+                    WHERE workflow_run_id=:workflow_id
+                      AND step_run_id=:step_id
+                      AND status IN ('pending', 'leased', 'running')
+                    ORDER BY attempt_number FOR UPDATE
+                    """
+                ),
+                {"workflow_id": workflow_id, "step_id": created.step_id},
+            )
+        ).mappings().all()
+        for active_attempt in active:
+            await transition_attempt(
+                connection,
+                active_attempt["id"],
+                expected=AttemptStatus(active_attempt["status"]),
+                target=AttemptStatus.FAILED,
+                error_code="superseded_by_temporal_retry",
+                error_message="A newer Temporal activity attempt fenced validation.",
+            )
+        if active and status is StepStatus.RUNNING:
+            await transition_step(
+                connection,
+                created.step_id,
+                expected=StepStatus.RUNNING,
+                target=StepStatus.FAILED,
+                error_code="superseded_by_temporal_retry",
+            )
+            status = StepStatus.FAILED
+        if status is StepStatus.PENDING:
+            await transition_step(
+                connection,
+                created.step_id,
+                expected=StepStatus.PENDING,
+                target=StepStatus.READY,
+            )
+            status = StepStatus.READY
+        if status in {StepStatus.FAILED, StepStatus.TIMED_OUT}:
+            await transition_step(
+                connection,
+                created.step_id,
+                expected=status,
+                target=StepStatus.READY,
+            )
+            status = StepStatus.READY
+        if status is StepStatus.READY:
+            await transition_step(
+                connection,
+                created.step_id,
+                expected=StepStatus.READY,
+                target=StepStatus.RUNNING,
+            )
+        elif status is not StepStatus.RUNNING:
+            raise ApplicationError(
+                f"validation step {step_key} is terminal in {status.value}",
+                type="agent_validation_step_terminal",
+                non_retryable=True,
+            )
+        execution_payload = {
+            "schema_version": "durable-agent-validation.v1",
+            "temporal_activity_id": activity.info().activity_id,
+            "temporal_attempt": temporal_attempt,
+            "candidate_build_id": str(candidate_build_id),
+            "staging_manifest_id": str(manifest_id),
+            "gate": step_kind,
+        }
+        attempt = await create_attempt(
+            connection,
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+            step_id=created.step_id,
+            idempotency_key=(
+                f"agent-v2:{workflow_id}:{step_key}:attempt:{temporal_attempt}"
+            ),
+            execution_payload=execution_payload,
+        )
+        lease = await lease_attempt(
+            connection,
+            attempt.attempt_id,
+            worker_id=_worker_id(),
+            lease_seconds=30,
+        )
+        await start_attempt(
+            connection,
+            attempt.attempt_id,
+            lease_token=lease.token,
+            lease_generation=lease.generation,
+        )
+    return attempt.attempt_id, created.step_id, lease.token, lease.generation
+
+
 async def _heartbeat_loop(
     *,
     tenant_id: UUID,
@@ -851,6 +1002,127 @@ async def _mark_execution_failure(
                     ),
                 },
             )
+
+
+async def _record_agent_validation_outcome(
+    payload: dict[str, Any],
+    *,
+    candidate_build_id: UUID,
+    staging_manifest_id: UUID,
+    gate: str,
+    mode: str,
+    outcome: str,
+    evidence: dict[str, Any],
+    attempt_id: UUID,
+    step_id: UUID,
+    execution_status: ExecutionStatus,
+    lease_token: str,
+    lease_generation: int,
+    result_payload: dict[str, Any] | None = None,
+    error_code: str | None = None,
+    error_message: str | None = None,
+):
+    """Commit a validation attempt, step, and evidence atomically."""
+    tenant_id = _uuid(payload, "tenant_id")
+    principal_id = _uuid(payload, "principal_id")
+    workflow_id = _uuid(payload, "workflow_run_id")
+    async with tenant_transaction(tenant_id, principal_id) as connection:
+        if execution_status is ExecutionStatus.SUCCEEDED:
+            if result_payload is None:
+                raise ValueError("successful validation requires result_payload")
+            await complete_attempt(
+                connection,
+                attempt_id,
+                lease_token=lease_token,
+                lease_generation=lease_generation,
+                result_payload=result_payload,
+            )
+            step_status = await connection.scalar(
+                text("SELECT status FROM step_runs WHERE id=:id FOR UPDATE"),
+                {"id": step_id},
+            )
+            if step_status == StepStatus.RUNNING.value:
+                await transition_step(
+                    connection,
+                    step_id,
+                    expected=StepStatus.RUNNING,
+                    target=StepStatus.SUCCEEDED,
+                )
+            elif step_status != StepStatus.SUCCEEDED.value:
+                raise ApplicationError(
+                    f"validation step is terminal in {step_status}",
+                    type="agent_validation_step_terminal",
+                    non_retryable=True,
+                )
+        else:
+            target_attempt = (
+                AttemptStatus.TIMED_OUT
+                if execution_status is ExecutionStatus.TIMED_OUT
+                else AttemptStatus.CANCELLED
+                if execution_status is ExecutionStatus.CANCELLED
+                else AttemptStatus.FAILED
+            )
+            target_step = (
+                StepStatus.TIMED_OUT
+                if target_attempt is AttemptStatus.TIMED_OUT
+                else StepStatus.CANCELLED
+                if target_attempt is AttemptStatus.CANCELLED
+                else StepStatus.FAILED
+            )
+            attempt_status = await connection.scalar(
+                text(
+                    "SELECT status FROM execution_attempts "
+                    "WHERE id=:id FOR UPDATE"
+                ),
+                {"id": attempt_id},
+            )
+            if attempt_status in {"pending", "leased", "running"}:
+                await transition_attempt(
+                    connection,
+                    attempt_id,
+                    expected=AttemptStatus(attempt_status),
+                    target=target_attempt,
+                    error_code=error_code,
+                    error_message=error_message,
+                )
+            elif attempt_status != target_attempt.value:
+                raise ApplicationError(
+                    f"validation attempt is terminal in {attempt_status}",
+                    type="agent_validation_attempt_terminal",
+                    non_retryable=True,
+                )
+            step_status = await connection.scalar(
+                text("SELECT status FROM step_runs WHERE id=:id FOR UPDATE"),
+                {"id": step_id},
+            )
+            if step_status == StepStatus.RUNNING.value:
+                await transition_step(
+                    connection,
+                    step_id,
+                    expected=StepStatus.RUNNING,
+                    target=target_step,
+                    error_code=error_code,
+                    error_message=error_message,
+                )
+            elif step_status != target_step.value:
+                raise ApplicationError(
+                    f"validation step is terminal in {step_status}",
+                    type="agent_validation_step_terminal",
+                    non_retryable=True,
+                )
+        return await record_validation_evidence(
+            connection,
+            tenant_id=tenant_id,
+            candidate_build_id=candidate_build_id,
+            workflow_id=workflow_id,
+            step_id=step_id,
+            attempt_id=attempt_id,
+            staging_manifest_id=staging_manifest_id,
+            gate=gate,
+            mode=mode,
+            outcome=outcome,
+            evidence=evidence,
+        )
 
 
 async def _complete_check_workflow(
@@ -1874,6 +2146,336 @@ class McadWorkflowActivities:
                     await upload_heartbeat
                 except asyncio.CancelledError:
                     pass
+            if outcome is not None and outcome.work_dir is not None:
+                shutil.rmtree(outcome.work_dir, ignore_errors=True)
+
+    @activity.defn(name="agent_v2.validate_geometry")
+    async def agent_validate_geometry(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        info = activity.info()
+        request = _agent_v2_request(payload)
+        candidate_build_id = _uuid(payload, "candidate_build_id")
+        manifest_id = _uuid(payload, "staging_manifest_id")
+        step_key = str(payload["validation_step_key"])
+        step_index = int(payload["step_index"])
+        expected_dimensions = {
+            str(key): float(value)
+            for key, value in dict(
+                payload.get("expected_dimensions_mm") or {}
+            ).items()
+        }
+        dimension_tolerance = float(payload.get("dimension_tolerance", 0.05))
+        async with tenant_transaction(
+            request.tenant_id,
+            request.principal_id,
+        ) as connection:
+            replay = await get_validation_evidence_for_manifest(
+                connection,
+                tenant_id=request.tenant_id,
+                candidate_build_id=candidate_build_id,
+                workflow_id=request.workflow_run_id,
+                staging_manifest_id=manifest_id,
+                gate="geometry",
+            )
+            if replay is not None:
+                return {
+                    "status": "completed",
+                    "gate": "geometry",
+                    "mode": replay["mode"],
+                    "outcome": replay["outcome"],
+                    "evidence_id": str(replay["id"]),
+                    "evidence_hash": replay["evidence_hash"],
+                    "report": dict(replay["evidence"]),
+                    "attempt_id": (
+                        str(replay["execution_attempt_id"])
+                        if replay["execution_attempt_id"]
+                        else None
+                    ),
+                    "replayed": True,
+                }
+            manifest_row = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT manifest FROM agent_staging_manifests
+                        WHERE tenant_id=:tenant_id
+                          AND candidate_build_id=:candidate_build_id
+                          AND workflow_run_id=:workflow_id AND id=:manifest_id
+                        """
+                    ),
+                    {
+                        "tenant_id": request.tenant_id,
+                        "candidate_build_id": candidate_build_id,
+                        "workflow_id": request.workflow_run_id,
+                        "manifest_id": manifest_id,
+                    },
+                )
+            ).mappings().one_or_none()
+        if manifest_row is None:
+            raise ApplicationError(
+                "geometry validation manifest does not exist",
+                type="agent_geometry_manifest_missing",
+                non_retryable=True,
+            )
+        manifest = dict(manifest_row["manifest"])
+        model_outputs = tuple(
+            dict(item)
+            for item in manifest.get("outputs") or ()
+            if str(item.get("format") or "").lower() in {"step", "stl", "dxf"}
+        )
+        if not model_outputs:
+            raise ApplicationError(
+                "geometry validation requires STEP, STL, or DXF output",
+                type="agent_geometry_input_missing",
+                non_retryable=True,
+            )
+        attempt_id, step_id, lease_token, lease_generation = (
+            await _prepare_agent_validation_attempt(
+                payload,
+                temporal_attempt=info.attempt,
+                step_key=step_key,
+                step_index=step_index,
+                step_kind="agent_geometry_validation",
+            )
+        )
+        temp_dir = Path(tempfile.mkdtemp(prefix="agent_geometry_"))
+        outcome: MaterializedExecutionOutcome | None = None
+        execution_status: ExecutionStatus
+        result_payload: dict[str, Any] | None = None
+        terminal_error_code: str | None = None
+        terminal_error_message: str | None = None
+        try:
+            declarations: list[ArtifactInput] = []
+            materialized: dict[str, Path] = {}
+            task_inputs: dict[str, str] = {}
+            task_artifacts: list[dict[str, str]] = []
+            integrity_issue: str | None = None
+            for index, item in enumerate(model_outputs):
+                artifact_format = str(item["format"]).lower()
+                role = f"artifact-{index:02d}"
+                filename = f"geometry-{index:02d}.{artifact_format}"
+                path = temp_dir / filename
+                try:
+                    downloaded = await download_object(
+                        str(item["object_key"]),
+                        path,
+                    )
+                except Exception as exc:
+                    integrity_issue = f"object_unavailable:{type(exc).__name__}"
+                    break
+                if (
+                    downloaded["sha256"] != str(item["sha256"])
+                    or downloaded["size_bytes"] != int(item["size_bytes"])
+                ):
+                    integrity_issue = "object_integrity_mismatch"
+                    break
+                artifact_id = f"{manifest_id}:{index}"
+                declarations.append(
+                    ArtifactInput(
+                        artifact_id=artifact_id,
+                        filename=filename,
+                        sha256=str(item["sha256"]),
+                        size_bytes=int(item["size_bytes"]),
+                        media_type=str(item["content_type"]),
+                    )
+                )
+                materialized[artifact_id] = path
+                task_inputs[role] = filename
+                task_artifacts.append(
+                    {"role": role, "format": artifact_format}
+                )
+            if integrity_issue is not None:
+                report = indeterminate_geometry_report(
+                    outputs=model_outputs,
+                    expected_dimensions=expected_dimensions,
+                    dimension_tolerance=dimension_tolerance,
+                    issue=integrity_issue,
+                )
+                execution_status = ExecutionStatus.ARTIFACT_REJECTED
+                terminal_error_code = "geometry_input_artifact_rejected"
+                terminal_error_message = integrity_issue
+                runtime_provenance = None
+            else:
+                task = {
+                    "schema_version": "mcad-capability-task.v1",
+                    "capability": "geometry",
+                    "operation": "validate",
+                    "params": {
+                        "artifacts": task_artifacts,
+                        "expected_dimensions_mm": expected_dimensions,
+                        "dimension_tolerance": dimension_tolerance,
+                        "output": "geometry-report.json",
+                    },
+                    "inputs": task_inputs,
+                }
+                source_code = json.dumps(
+                    task,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                snapshot = await asyncio.to_thread(self.backend.runtime_snapshot)
+                spec = ExecutionSpec(
+                    execution_attempt_id=str(attempt_id),
+                    workflow_run_id=str(request.workflow_run_id),
+                    step_run_id=str(step_id),
+                    tenant_id=str(request.tenant_id),
+                    project_id=str(request.project_id),
+                    expected_base_revision_id=str(
+                        request.expected_base_revision_id
+                    ),
+                    idempotency_key=(
+                        f"agent-v2:{request.workflow_run_id}:{step_key}:"
+                        f"attempt:{info.attempt}"
+                    ),
+                    capability="mcad.geometry",
+                    operation="validate",
+                    mode="analysis",
+                    source=ExecutionSource(
+                        language="json",
+                        code=source_code,
+                        sha256=hashlib.sha256(
+                            source_code.encode("utf-8")
+                        ).hexdigest(),
+                    ),
+                    inputs=tuple(declarations),
+                    outputs=(
+                        OutputDeclaration(
+                            name="artifact",
+                            media_type="application/json",
+                            max_size_bytes=4 * 1024 * 1024,
+                        ),
+                        OutputDeclaration(
+                            name="capability-result",
+                            media_type="application/json",
+                            max_size_bytes=4 * 1024 * 1024,
+                        ),
+                    ),
+                    runtime=RuntimeRequirement(
+                        image_digest=snapshot.image_digest,
+                        platform=snapshot.platform,
+                        sandbox_tier="ephemeral-job",
+                    ),
+                    limits=ResourceLimits(timeout_seconds=120),
+                    metadata={
+                        "candidate_build_id": str(candidate_build_id),
+                        "staging_manifest_id": str(manifest_id),
+                        "gate": "geometry",
+                    },
+                )
+                outcome = await _run_backend_with_heartbeats(
+                    self.backend,
+                    spec,
+                    tenant_id=request.tenant_id,
+                    principal_id=request.principal_id,
+                    attempt_id=attempt_id,
+                    lease_token=lease_token,
+                    lease_generation=lease_generation,
+                    materialized_inputs=materialized,
+                )
+                runtime_provenance = (
+                    outcome.result.provenance.model_dump(mode="json")
+                    if outcome.result.provenance
+                    else None
+                )
+                if outcome.result.status is ExecutionStatus.SUCCEEDED:
+                    execution_status = ExecutionStatus.SUCCEEDED
+                    report_path = outcome.files.get("artifact")
+                    if report_path is None:
+                        report = indeterminate_geometry_report(
+                            outputs=model_outputs,
+                            expected_dimensions=expected_dimensions,
+                            dimension_tolerance=dimension_tolerance,
+                            issue="geometry_report_missing",
+                        )
+                    else:
+                        try:
+                            report = DurableGeometryReport.model_validate_json(
+                                report_path.read_text(encoding="utf-8")
+                            )
+                        except Exception as exc:
+                            report = indeterminate_geometry_report(
+                                outputs=model_outputs,
+                                expected_dimensions=expected_dimensions,
+                                dimension_tolerance=dimension_tolerance,
+                                issue=(
+                                    "geometry_report_invalid:"
+                                    f"{type(exc).__name__}"
+                                ),
+                            )
+                    result_payload = {
+                        "status": "succeeded",
+                        "gate": "geometry",
+                        "outcome": report.outcome,
+                        "report": report.model_dump(mode="json"),
+                        "execution_result": outcome.result.model_dump(
+                            mode="json"
+                        ),
+                    }
+                else:
+                    error = outcome.result.error
+                    execution_status = outcome.result.status
+                    terminal_error_code = (
+                        error.code if error else "geometry_execution_failed"
+                    )
+                    terminal_error_message = (
+                        error.message
+                        if error
+                        else "geometry validation execution failed"
+                    )
+                    report = indeterminate_geometry_report(
+                        outputs=model_outputs,
+                        expected_dimensions=expected_dimensions,
+                        dimension_tolerance=dimension_tolerance,
+                        issue=(
+                            error.code if error else "geometry_execution_failed"
+                        ),
+                    )
+            evidence = report.durable_evidence(
+                runtime_provenance=runtime_provenance
+            )
+            recorded = await _record_agent_validation_outcome(
+                payload,
+                candidate_build_id=candidate_build_id,
+                staging_manifest_id=manifest_id,
+                gate="geometry",
+                mode="required",
+                outcome=report.outcome,
+                evidence=evidence,
+                attempt_id=attempt_id,
+                step_id=step_id,
+                execution_status=execution_status,
+                lease_token=lease_token,
+                lease_generation=lease_generation,
+                result_payload=result_payload,
+                error_code=terminal_error_code,
+                error_message=terminal_error_message,
+            )
+            return {
+                "status": "completed",
+                "gate": "geometry",
+                "mode": "required",
+                "outcome": report.outcome,
+                "evidence_id": str(recorded.evidence_id),
+                "evidence_hash": recorded.evidence_hash,
+                "report": evidence,
+                "attempt_id": str(attempt_id),
+                "replayed": recorded.replayed,
+            }
+        except asyncio.CancelledError:
+            await _mark_execution_failure(
+                payload,
+                attempt_id=attempt_id,
+                step_id=step_id,
+                status=ExecutionStatus.CANCELLED,
+                error_code="geometry_validation_cancelled",
+                error_message="Geometry validation was cancelled.",
+            )
+            raise
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
             if outcome is not None and outcome.work_dir is not None:
                 shutil.rmtree(outcome.work_dir, ignore_errors=True)
 
@@ -3391,6 +3993,7 @@ class McadWorkflowActivities:
             self.agent_generate_source,
             self.agent_repair_source,
             self.agent_execute_model,
+            self.agent_validate_geometry,
             self.wait_confirmation,
             self.resume_after_confirmation,
             self.record_cancel,

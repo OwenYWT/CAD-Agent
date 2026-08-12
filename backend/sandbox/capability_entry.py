@@ -22,6 +22,7 @@ SUPPORTED = {
     ("cad", "export"),
     ("cad", "inspect"),
     ("cad", "snapshot"),
+    ("geometry", "validate"),
     ("dxf", "generate"),
     ("implicit-cad", "export"),
     ("implicit-cad", "snapshot"),
@@ -338,6 +339,42 @@ def _implicit(task: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
     return (_timestamped(output) if operation == "snapshot" else output), metadata
 
 
+def _geometry_validate(task: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
+    from geometry_validation import validate_geometry_files
+
+    params = task["params"]
+    artifacts = []
+    for item in params.get("artifacts") or []:
+        role = str(item["role"])
+        source = _input(task, role)
+        artifacts.append(
+            {
+                "role": role,
+                "format": str(item["format"]),
+                "path": str(source),
+            }
+        )
+    if not artifacts:
+        raise ValueError("geometry validation requires at least one artifact")
+    report = validate_geometry_files(
+        artifacts,
+        expected_dimensions=dict(params.get("expected_dimensions_mm") or {}),
+        dimension_tolerance=float(params.get("dimension_tolerance", 0.05)),
+    )
+    output = _output(params)
+    output.write_text(
+        json.dumps(report, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    return output, {
+        "exit_code": 0,
+        "result": report,
+        "stderr": None,
+        "stdout_truncated": False,
+        "stderr_truncated": False,
+    }
+
+
 def run_task(task: dict[str, Any]) -> None:
     if task.get("schema_version") != "mcad-capability-task.v1":
         raise ValueError("unsupported MCAD capability task schema")
@@ -356,6 +393,8 @@ def run_task(task: dict[str, Any]) -> None:
         artifact, metadata = _cad_inspect(task)
     elif capability == "cad" and operation == "snapshot":
         artifact, metadata = _cad_snapshot(task)
+    elif capability == "geometry" and operation == "validate":
+        artifact, metadata = _geometry_validate(task)
     elif capability == "dxf":
         artifact, metadata = _dxf_generate(task)
     else:

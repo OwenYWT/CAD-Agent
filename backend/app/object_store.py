@@ -122,6 +122,35 @@ async def get_object(key: str) -> bytes:
         body.close()
 
 
+async def download_object(key: str, destination: str | Path) -> dict:
+    """Stream one immutable object to disk and return measured integrity facts."""
+    target = Path(destination)
+
+    def _download() -> dict:
+        response = get_object_store_client().get_object(
+            Bucket=settings.object_store_bucket,
+            Key=key,
+        )
+        body = response["Body"]
+        digest = hashlib.sha256()
+        size_bytes = 0
+        try:
+            with target.open("wb") as handle:
+                while chunk := body.read(8 * 1024 * 1024):
+                    handle.write(chunk)
+                    digest.update(chunk)
+                    size_bytes += len(chunk)
+        finally:
+            body.close()
+        return {
+            "key": key,
+            "size_bytes": size_bytes,
+            "sha256": digest.hexdigest(),
+        }
+
+    return await asyncio.to_thread(_download)
+
+
 async def sha256_object(key: str, *, chunk_size: int = 8 * 1024 * 1024) -> dict:
     """Stream an object's bytes through SHA-256 without loading it into RAM."""
     def _hash() -> dict:

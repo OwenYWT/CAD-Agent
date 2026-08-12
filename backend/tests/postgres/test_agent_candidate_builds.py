@@ -483,6 +483,20 @@ async def test_evidence_is_candidate_scoped_immutable_and_idempotent():
                 outcome="passed",
                 evidence={"solid": True},
             )
+        with pytest.raises(KeyError):
+            await record_validation_evidence(
+                connection,
+                tenant_id=owner.tenant_id,
+                candidate_build_id=candidate.candidate_build_id,
+                workflow_id=workflow.workflow_id,
+                step_id=step.step_id,
+                attempt_id=uuid4(),
+                staging_manifest_id=manifest.staging_manifest_id,
+                gate="geometry",
+                mode="required",
+                outcome="passed",
+                evidence={"solid": True},
+            )
         with pytest.raises(Exception, match="permission denied|immutable"):
             await connection.execute(
                 text(

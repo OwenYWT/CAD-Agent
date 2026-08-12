@@ -147,6 +147,7 @@ FAILURE_CLASSES: list[FailureClass] = [
         key="geometry_invalid", label="GeometryError",
         cause="几何验证失败（非水密/退化/尺寸超限）", fix_hint="检查模型是否水密、是否退化、尺寸是否合理",
         fix_scope="针对几何验证报告的具体问题做最小修改（如补水密、修正尺寸），保留其余设计。",
+        retry_budget=2,
         gates=("GeometryError",),
     ),
     # --- OCCT / CadQuery substring classes (union of _ERROR_HINTS + ERROR_FIX_PROMPT rows) ---

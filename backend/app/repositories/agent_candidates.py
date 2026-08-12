@@ -699,7 +699,8 @@ async def record_validation_evidence(
         await connection.execute(
             text(
                 """
-                SELECT candidate_build_id, workflow_run_id, step_run_id
+                SELECT candidate_build_id, workflow_run_id, step_run_id,
+                       status
                 FROM agent_staging_manifests
                 WHERE tenant_id=:tenant_id AND id=:manifest_id
                 """
@@ -716,6 +717,33 @@ async def record_validation_evidence(
         raise ValidationEvidenceConflict(
             "evidence references a manifest from another candidate"
         )
+    if manifest["status"] != "accepted":
+        raise ValidationEvidenceConflict(
+            "validation evidence requires an accepted staging manifest"
+        )
+    if attempt_id is not None:
+        attempt = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT status, workflow_run_id, step_run_id
+                    FROM execution_attempts
+                    WHERE tenant_id=:tenant_id AND id=:attempt_id
+                    """
+                ),
+                {"tenant_id": tenant_id, "attempt_id": attempt_id},
+            )
+        ).mappings().one_or_none()
+        if attempt is None:
+            raise KeyError(attempt_id)
+        if (
+            attempt["status"] not in {"succeeded", "failed", "timed_out"}
+            or attempt["workflow_run_id"] != workflow_id
+            or attempt["step_run_id"] != step_id
+        ):
+            raise ValidationEvidenceConflict(
+                "validation evidence requires its terminal execution attempt"
+            )
     evidence_hash = canonical_sha256(evidence)
     existing = (
         await connection.execute(
@@ -795,6 +823,44 @@ async def record_validation_evidence(
         evidence_id=evidence_id,
         evidence_hash=evidence_hash,
     )
+
+
+async def get_validation_evidence_for_manifest(
+    connection: AsyncConnection,
+    *,
+    tenant_id: UUID,
+    candidate_build_id: UUID,
+    workflow_id: UUID,
+    staging_manifest_id: UUID,
+    gate: str,
+) -> dict[str, Any] | None:
+    row = (
+        await connection.execute(
+            text(
+                """
+                SELECT e.*, s.step_key, a.result_payload
+                FROM agent_validation_evidence e
+                JOIN step_runs s ON s.id=e.step_run_id
+                LEFT JOIN execution_attempts a ON a.id=e.execution_attempt_id
+                WHERE e.tenant_id=:tenant_id
+                  AND e.candidate_build_id=:candidate_build_id
+                  AND e.workflow_run_id=:workflow_id
+                  AND e.staging_manifest_id=:staging_manifest_id
+                  AND e.gate=:gate
+                ORDER BY e.created_at DESC
+                LIMIT 1
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "candidate_build_id": candidate_build_id,
+                "workflow_id": workflow_id,
+                "staging_manifest_id": staging_manifest_id,
+                "gate": gate,
+            },
+        )
+    ).mappings().one_or_none()
+    return dict(row) if row is not None else None
 
 
 async def create_candidate_seal(

@@ -41,6 +41,7 @@ def test_v1_and_v2_workers_use_distinct_queues_and_workflow_types(monkeypatch):
         "agent_v2.generate_source",
         "agent_v2.repair_source",
         "agent_v2.execute_model",
+        "agent_v2.validate_geometry",
         "mcad.wait_confirmation",
         "mcad.resume_after_confirmation",
         "mcad.record_cancel",

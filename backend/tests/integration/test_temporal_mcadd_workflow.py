@@ -26,6 +26,8 @@ from app.agent.multi_step import BuildPhase, BuildPlan, BuildStep
 from app.db import close_database, get_database_engine, tenant_transaction
 from app.domain.identity import user_principal
 from app.execution.composition import get_execution_backend
+from app.execution.capability_adapter import CapabilityExecutionAdapter
+from app.execution.contracts import ExecutionStatus
 from app.object_store import delete_object, get_object, reset_object_store_client
 from app.repositories.identity import ensure_principal
 from app.repositories.projects import create_project
@@ -479,6 +481,32 @@ class _V2BrokenModelingStub:
         )
 
 
+class _V2DimensionMismatchModelingStub:
+    def __init__(self):
+        self.calls = 0
+
+    async def generate_step_source(self, **_kwargs):
+        self.calls += 1
+        source = (
+            "import cadquery as cq\n"
+            "result = cq.Workplane('XY').box(12, 10, 4)\n"
+        )
+        return SourceGenerationResult(
+            source_code=source,
+            mode="3d",
+            generator_kind="controlled_dimension_mismatch",
+            provenance={
+                "provider": "controlled-provider",
+                "model": "controlled-model",
+                "provider_response_id": "completion-dimension-mismatch-1",
+                "request_hash": "4" * 64,
+                "response_hash": hashlib.sha256(source.encode()).hexdigest(),
+                "finish_reason": "stop",
+                "usage": {"total_tokens": 12},
+            },
+        )
+
+
 class _V2RepairStub:
     def __init__(self):
         self.calls = 0
@@ -646,6 +674,69 @@ async def _start_api(env: dict[str, str], port: int):
     process.kill()
     await process.wait()
     raise AssertionError("FastAPI did not become ready")
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_real_geometry_capability_reports_valid_and_corrupt_artifacts(
+    tmp_path,
+):
+    import json
+    import trimesh
+
+    valid_stl = tmp_path / "valid.stl"
+    trimesh.creation.box(extents=(20, 10, 4)).export(valid_stl)
+    corrupt_step = tmp_path / "corrupt.step"
+    corrupt_step.write_bytes(b"not a STEP artifact")
+    adapter = CapabilityExecutionAdapter(get_execution_backend())
+
+    valid = await adapter.execute(
+        capability="geometry",
+        operation="validate",
+        request_id=f"geometry-valid-{uuid4()}",
+        params={
+            "artifacts": [{"role": "stl", "format": "stl"}],
+            "expected_dimensions_mm": {
+                "length": 20,
+                "width": 10,
+                "height": 4,
+            },
+            "dimension_tolerance": 0.05,
+            "output": "geometry-report.json",
+        },
+        inputs={"stl": valid_stl},
+        artifact_media_type="application/json",
+        mode="analysis",
+        timeout_seconds=120,
+        output_bytes=4 * 1024 * 1024,
+    )
+    invalid = await adapter.execute(
+        capability="geometry",
+        operation="validate",
+        request_id=f"geometry-corrupt-{uuid4()}",
+        params={
+            "artifacts": [{"role": "step", "format": "step"}],
+            "expected_dimensions_mm": {},
+            "dimension_tolerance": 0.05,
+            "output": "geometry-report.json",
+        },
+        inputs={"step": corrupt_step},
+        artifact_media_type="application/json",
+        mode="analysis",
+        timeout_seconds=120,
+        output_bytes=4 * 1024 * 1024,
+    )
+
+    assert valid.execution.result.status is ExecutionStatus.SUCCEEDED
+    assert invalid.execution.result.status is ExecutionStatus.SUCCEEDED
+    valid_report = json.loads(
+        valid.execution.files["artifact"].read_text(encoding="utf-8")
+    )
+    invalid_report = json.loads(
+        invalid.execution.files["artifact"].read_text(encoding="utf-8")
+    )
+    assert valid_report["outcome"] == "passed"
+    assert invalid_report["outcome"] == "indeterminate"
+    assert invalid_report["artifacts"][0]["parseable"] is False
 
 
 def _box_execution(*, delay_seconds: int = 0) -> McadExecutionRequest:
@@ -894,12 +985,23 @@ async def test_agent_v2_confirmed_plan_executes_to_staging_then_fails_closed():
             text("SELECT count(*) FROM artifacts WHERE workflow_run_id=:id"),
             {"id": created.workflow_id},
         )
+        geometry_evidence = (
+            await connection.execute(
+                text(
+                    "SELECT outcome, evidence FROM agent_validation_evidence "
+                    "WHERE workflow_run_id=:id AND gate='geometry'"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().one()
     assert candidate["status"] == "failed"
-    assert candidate["failure_code"] == "agent_v2_validation_not_enabled"
+    assert candidate["failure_code"] == (
+        "agent_v2_post_geometry_validation_not_enabled"
+    )
     assert candidate["candidate_revision_id"] is None
     assert candidate["change_set_id"] is None
     assert workflow_status == "failed"
-    assert attempt_count == 1
+    assert attempt_count == 2
     assert modeling.calls == 1
     assert source["provider"] == "controlled-provider"
     assert source["model"] == "controlled-model"
@@ -908,6 +1010,8 @@ async def test_agent_v2_confirmed_plan_executes_to_staging_then_fails_closed():
     assert source["response_hash"] == source["source_hash"]
     assert len(manifest["manifest"]["outputs"]) == 2
     assert all(item["size_bytes"] > 0 for item in manifest["manifest"]["outputs"])
+    assert geometry_evidence["outcome"] == "passed"
+    assert geometry_evidence["evidence"]["runtime_provenance"]["image_digest"]
     assert product_artifacts == 0
 
 
@@ -1037,6 +1141,7 @@ async def test_agent_v2_user_code_failure_creates_durable_repair_attempt():
     assert [(item["status"], item["error_code"]) for item in attempts] == [
         ("failed", "user_code_failed"),
         ("succeeded", None),
+        ("succeeded", None),
     ]
     assert len(sources) == 2
     assert sources[1]["predecessor_source_id"] == sources[0]["id"]
@@ -1049,6 +1154,132 @@ async def test_agent_v2_user_code_failure_creates_durable_repair_attempt():
         "source_hash"
     ]
     assert repair_event["payload"]["source_hash"] == sources[1]["source_hash"]
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_agent_v2_geometry_failure_repairs_and_revalidates_new_manifest():
+    owner, project_id, initial = await _seed_project("agent-v2-geometry-repair")
+    client = await get_temporal_client()
+    planner = DurableAgentPlanner(
+        planner=_V2PlannerStub(),
+        decomposer=_V2DecomposerStub(),
+        assembly_planner=_V2AssemblyStub(),
+    )
+    repair = _V2RepairStub()
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        from app.services.run_state import create_workflow
+
+        created = await create_workflow(
+            connection,
+            tenant_id=owner.tenant_id,
+            project_id=project_id,
+            requested_by_principal_id=owner.principal_id,
+            kind="mcad.agent.v2.generate",
+            idempotency_key=f"agent-v2-geometry-repair-{project_id}",
+            request_payload={"objective": "创建 20x10x4 mm 安装支架"},
+        )
+    request = McadAgentWorkflowV2Request(
+        workflow_run_id=created.workflow_id,
+        tenant_id=owner.tenant_id,
+        project_id=project_id,
+        principal_id=owner.principal_id,
+        branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,
+        operation="generate",
+        objective="创建 20x10x4 mm 安装支架",
+        confirmation_timeout_seconds=60,
+    )
+    async with build_agent_v2_workflow_worker(
+        client,
+        backend=get_execution_backend(),
+        durable_planner=planner,
+        durable_modeling=_V2DimensionMismatchModelingStub(),
+        durable_repair=repair,
+    ):
+        handle = await client.start_workflow(
+            "McadAgentWorkflowV2",
+            request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),
+            task_queue=settings.temporal_agent_v2_task_queue,
+        )
+        await _wait_for_status(
+            owner,
+            created.workflow_id,
+            {"waiting_confirmation"},
+        )
+        await confirm_mcad_workflow(
+            created.workflow_id,
+            accepted=True,
+            note="确认几何修复测试",
+            workflow_kind="mcad.agent.v2.generate",
+        )
+        with pytest.raises(WorkflowFailureError):
+            await asyncio.wait_for(handle.result(), timeout=120)
+
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        attempts = (
+            await connection.execute(
+                text(
+                    "SELECT s.kind, a.status, a.error_code FROM execution_attempts a "
+                    "JOIN step_runs s ON s.id=a.step_run_id "
+                    "WHERE a.workflow_run_id=:id ORDER BY a.created_at"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+        manifests = (
+            await connection.execute(
+                text(
+                    "SELECT id, manifest FROM agent_staging_manifests "
+                    "WHERE workflow_run_id=:id ORDER BY created_at"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+        evidence = (
+            await connection.execute(
+                text(
+                    "SELECT staging_manifest_id, outcome, evidence "
+                    "FROM agent_validation_evidence WHERE workflow_run_id=:id "
+                    "AND gate='geometry' ORDER BY created_at"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+        sources = (
+            await connection.execute(
+                text(
+                    "SELECT id, predecessor_source_id, source_hash "
+                    "FROM agent_generated_sources WHERE workflow_run_id=:id "
+                    "ORDER BY created_at"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+    assert repair.calls == 1
+    assert [item["kind"] for item in attempts] == [
+        "agent_model",
+        "agent_geometry_validation",
+        "agent_repair",
+        "agent_geometry_validation",
+    ]
+    assert all(item["status"] == "succeeded" for item in attempts)
+    assert len(manifests) == 2
+    assert [item["outcome"] for item in evidence] == ["failed", "passed"]
+    assert evidence[0]["staging_manifest_id"] == manifests[0]["id"]
+    assert evidence[1]["staging_manifest_id"] == manifests[1]["id"]
+    assert "artifact-00:dimension_mismatch" in evidence[0]["evidence"][
+        "issues"
+    ]
+    assert len(sources) == 2
+    assert sources[1]["predecessor_source_id"] == sources[0]["id"]
+    assert sources[1]["source_hash"] != sources[0]["source_hash"]
 
 
 @pytest.mark.asyncio(loop_scope="module")
@@ -1537,8 +1768,12 @@ async def test_agent_v2_real_repair_provider_persists_provenance_and_attempt():
             note="确认真实修复服务测试",
             workflow_kind="mcad.agent.v2.generate",
         )
-        with pytest.raises(WorkflowFailureError):
-            await asyncio.wait_for(handle.result(), timeout=180)
+        try:
+            with pytest.raises(WorkflowFailureError):
+                await asyncio.wait_for(handle.result(), timeout=360)
+        except TimeoutError:
+            await handle.terminate("real repair provider test timed out")
+            raise
 
     async with tenant_transaction(
         owner.tenant_id,
@@ -1571,19 +1806,20 @@ async def test_agent_v2_real_repair_provider_persists_provenance_and_attempt():
             ),
             {"id": created.workflow_id},
         )
-    assert len(sources) == 2
-    assert sources[1]["predecessor_source_id"] == sources[0]["id"]
-    assert sources[1]["source_hash"] != sources[0]["source_hash"]
-    assert sources[1]["provider"] == settings.normalized_llm_provider
-    assert sources[1]["model"] == settings.llm_model
-    assert sources[1]["provider_response_id"]
-    assert len(sources[1]["request_hash"]) == 64
-    assert len(sources[1]["response_hash"]) == 64
-    assert [(item["status"], item["error_code"]) for item in attempts] == [
-        ("failed", "user_code_failed"),
-        ("succeeded", None),
-    ]
-    assert manifest_count == 1
+    assert 2 <= len(sources) <= 3
+    for previous, current in zip(sources, sources[1:]):
+        assert current["predecessor_source_id"] == previous["id"]
+        assert current["source_hash"] != previous["source_hash"]
+        assert current["provider"] == settings.normalized_llm_provider
+        assert current["model"] == settings.llm_model
+        assert current["provider_response_id"]
+        assert len(current["request_hash"]) == 64
+        assert len(current["response_hash"]) == 64
+    assert attempts[0]["status"] == "failed"
+    assert attempts[0]["error_code"] == "user_code_failed"
+    assert all(item["status"] == "succeeded" for item in attempts[1:])
+    assert len(attempts) in {3, 5}
+    assert manifest_count in {1, 2}
 
 
 @pytest.mark.skipif(
@@ -1700,7 +1936,7 @@ async def test_agent_v2_real_planner_retriever_codegen_and_execution_provenance(
     assert len(source["response_hash"]) == 64
     assert len(source["source_hash"]) == 64
     assert manifest["manifest"]["outputs"]
-    assert candidate_failure == "agent_v2_validation_not_enabled"
+    assert candidate_failure == "agent_v2_post_geometry_validation_not_enabled"
 
 
 @pytest.mark.asyncio(loop_scope="module")

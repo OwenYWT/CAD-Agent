@@ -161,6 +161,18 @@ class McadAgentWorkflowV2:
             "runtime_error_type": detail.get("runtime_error_type"),
         }
 
+    @staticmethod
+    def _design_repair_context(plan: dict[str, Any]) -> str:
+        dimensions = [
+            f"{item['name']}={item['value']} {item.get('unit') or 'mm'}"
+            for item in plan["design_brief"].get("critical_dimensions") or ()
+            if item.get("value") is not None
+        ]
+        return (
+            f"Design objective: {plan['objective']}. "
+            f"Required dimensions: {', '.join(dimensions) or 'not specified'}."
+        )
+
     async def _model_step(
         self,
         *,
@@ -232,6 +244,10 @@ class McadAgentWorkflowV2:
                     raise
                 if repair_count >= 2:
                     raise
+                failure["error_message"] = (
+                    f"{failure['error_message']}\n"
+                    f"{self._design_repair_context(plan)}"
+                )
                 repair_index = repair_count + 1
                 repair_step_index = 10_000 + plan_step_index * 10 + repair_index
                 repaired = await self._activity(
@@ -255,7 +271,149 @@ class McadAgentWorkflowV2:
                 run_step_kind = "agent_repair"
                 run_step_index = repair_step_index
                 repair_count = repair_index
-        return {"step": step, "generated": generated, "executed": executed}
+        return {
+            "step": step,
+            "generated": generated,
+            "executed": executed,
+            "repair_count": repair_count,
+            "seen_signatures": seen_signatures,
+            "mode": generated["mode"],
+        }
+
+    async def _geometry_gate(
+        self,
+        *,
+        request: dict[str, Any],
+        plan: dict[str, Any],
+        candidate_build_id: str,
+        modeled: dict[str, Any],
+        plan_step_index: int,
+        expected_dimensions: dict[str, float],
+    ) -> dict[str, Any]:
+        geometry_policy = plan["validation_policy"]["geometry"]
+        if geometry_policy["mode"] != "required":
+            raise ApplicationError(
+                "Durable Agent V2 requires the geometry gate.",
+                type="agent_geometry_policy_invalid",
+                non_retryable=True,
+            )
+        step = modeled["step"]
+        generated = dict(modeled["generated"])
+        executed = dict(modeled["executed"])
+        repair_count = int(modeled.get("repair_count") or 0)
+        seen_signatures = list(modeled.get("seen_signatures") or [])
+        geometry_budget = int(geometry_policy["repair_budget"])
+        validation_index = 0
+        while True:
+            validation_index += 1
+            geometry = await self._activity(
+                "agent_v2.validate_geometry",
+                {
+                    **request,
+                    "candidate_build_id": candidate_build_id,
+                    "staging_manifest_id": executed["staging_manifest_id"],
+                    "validation_step_key": (
+                        f"geometry-{step['step_key']}-{validation_index:02d}"
+                    ),
+                    "step_index": (
+                        20_000 + plan_step_index * 10 + validation_index
+                    ),
+                    "expected_dimensions_mm": expected_dimensions,
+                    "dimension_tolerance": 0.05,
+                    "timeout_seconds": 120,
+                },
+                suffix=(
+                    f"validate-geometry-{step['step_key']}-{validation_index:02d}"
+                ),
+                execution=True,
+            )
+            if geometry["outcome"] == "passed":
+                return {
+                    **modeled,
+                    "generated": generated,
+                    "executed": executed,
+                    "geometry": geometry,
+                    "repair_count": repair_count,
+                    "seen_signatures": seen_signatures,
+                }
+            if geometry["outcome"] != "failed" or repair_count >= geometry_budget:
+                raise ApplicationError(
+                    "Required geometry validation did not pass.",
+                    {
+                        "outcome": geometry["outcome"],
+                        "evidence_id": geometry["evidence_id"],
+                        "staging_manifest_id": executed["staging_manifest_id"],
+                    },
+                    type="agent_geometry_validation_failed",
+                    non_retryable=True,
+                )
+            repair_index = repair_count + 1
+            failure = {
+                "execution_attempt_id": geometry.get("attempt_id"),
+                "category": "validation",
+                "error_code": "geometry_validation_failed",
+                "error_message": (
+                    "Geometry validation failed. Issues: "
+                    + (
+                        "; ".join(geometry["report"].get("issues") or ())
+                        or "unspecified"
+                    )
+                    + ". Expected dimensions: "
+                    + str(geometry["report"].get("expected_dimensions_mm") or {})
+                    + ". Measured artifacts: "
+                    + str(
+                        [
+                            {
+                                "format": item.get("format"),
+                                "dimensions_mm": item.get("dimensions_mm"),
+                                "issues": item.get("issues"),
+                            }
+                            for item in geometry["report"].get("artifacts") or ()
+                        ]
+                    )
+                    + ". "
+                    + self._design_repair_context(plan)
+                ),
+                "runtime_error_type": "GeometryError",
+            }
+            repair_step_index = 10_000 + plan_step_index * 10 + repair_index
+            repaired = await self._activity(
+                "agent_v2.repair_source",
+                {
+                    **request,
+                    "candidate_build_id": candidate_build_id,
+                    "source_id": generated["source_id"],
+                    "source_hash": generated["source_hash"],
+                    "failure": failure,
+                    "repair_index": repair_index,
+                    "original_step_key": step["step_key"],
+                    "step_index": repair_step_index,
+                    "seen_signatures": seen_signatures,
+                },
+                suffix=f"repair-geometry-{step['step_key']}-{repair_index:02d}",
+            )
+            seen_signatures.append(str(repaired["signature"]))
+            generated = {**generated, **repaired}
+            repair_count = repair_index
+            executed = await self._activity(
+                "agent_v2.execute_model",
+                {
+                    **request,
+                    "candidate_build_id": candidate_build_id,
+                    "plan": plan,
+                    "step": step,
+                    "step_index": repair_step_index,
+                    "run_step_key": repaired["repair_step_key"],
+                    "run_step_kind": "agent_repair",
+                    "source_id": generated["source_id"],
+                    "source_hash": generated["source_hash"],
+                    "source_code": generated["source_code"],
+                    "mode": modeled["mode"],
+                    "timeout_seconds": 120,
+                },
+                suffix=f"execute-geometry-repair-{step['step_key']}-{repair_index:02d}",
+                execution=True,
+            )
 
     async def _model_step_outcome(self, **kwargs: Any) -> dict[str, Any]:
         try:
@@ -480,11 +638,46 @@ class McadAgentWorkflowV2:
                         "manifest_hash": executed["manifest_hash"],
                     }
                 )
-            self._phase = "validation_not_enabled"
+            self._phase = "validating:geometry"
+            expected_dimensions = {
+                str(key): float(value)
+                for key, value in dict(
+                    requirements_payload.get("dimensions") or {}
+                ).items()
+            }
+            validated: list[dict[str, Any]] = []
+            for plan_step_index, item in enumerate(modeled):
+                if not item["step"].get("output_formats"):
+                    continue
+                validated.append(
+                    await self._geometry_gate(
+                        request=request,
+                        plan=self._plan,
+                        candidate_build_id=self._candidate_build_id,
+                        modeled=item,
+                        plan_step_index=plan_step_index,
+                        expected_dimensions=expected_dimensions,
+                    )
+                )
+            manifests = [
+                {
+                    "step_key": item["step"]["step_key"],
+                    "source_id": item["generated"]["source_id"],
+                    "source_hash": item["generated"]["source_hash"],
+                    "staging_manifest_id": item["executed"][
+                        "staging_manifest_id"
+                    ],
+                    "manifest_hash": item["executed"]["manifest_hash"],
+                    "geometry_evidence_id": item["geometry"]["evidence_id"],
+                }
+                for item in validated
+            ]
+            self._phase = "post_geometry_validation_not_enabled"
             raise ApplicationError(
-                "Durable Agent modeling completed, but required validation is "
-                f"not enabled yet for candidate {candidate['candidate_build_id']}.",
-                type="agent_v2_validation_not_enabled",
+                "Durable Agent modeling and required geometry validation completed, "
+                "but visual/DFM gates and sealing are not enabled yet for candidate "
+                f"{candidate['candidate_build_id']}.",
+                type="agent_v2_post_geometry_validation_not_enabled",
                 non_retryable=True,
             )
         except asyncio.CancelledError:
