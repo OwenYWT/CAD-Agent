@@ -23,6 +23,8 @@ SUPPORTED = {
     ("cad", "inspect"),
     ("cad", "snapshot"),
     ("geometry", "validate"),
+    ("visual", "render"),
+    ("dfm", "validate"),
     ("dxf", "generate"),
     ("implicit-cad", "export"),
     ("implicit-cad", "snapshot"),
@@ -375,6 +377,49 @@ def _geometry_validate(task: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
     }
 
 
+def _visual_render(task: dict[str, Any]) -> tuple[dict[str, Path], dict[str, Any]]:
+    from visual_render import render_four_views
+
+    params = task["params"]
+    source = _input(task, "model")
+    outputs, report = render_four_views(
+        source,
+        OUTPUT_ROOT,
+        width=int(params.get("width", 512)),
+        height=int(params.get("height", 512)),
+    )
+    return outputs, {
+        "exit_code": 0,
+        "result": report,
+        "stderr": None,
+        "stdout_truncated": False,
+        "stderr_truncated": False,
+    }
+
+
+def _dfm_validate(task: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
+    from dfm_validation import evaluate_dfm
+
+    params = task["params"]
+    report = evaluate_dfm(
+        _input(task, "model"),
+        _input(task, "policy"),
+        expected_policy_hash=str(params["policy_hash"]),
+    )
+    output = _output(params)
+    output.write_text(
+        json.dumps(report, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    return output, {
+        "exit_code": 0,
+        "result": report,
+        "stderr": None,
+        "stdout_truncated": False,
+        "stderr_truncated": False,
+    }
+
+
 def run_task(task: dict[str, Any]) -> None:
     if task.get("schema_version") != "mcad-capability-task.v1":
         raise ValueError("unsupported MCAD capability task schema")
@@ -395,21 +440,28 @@ def run_task(task: dict[str, Any]) -> None:
         artifact, metadata = _cad_snapshot(task)
     elif capability == "geometry" and operation == "validate":
         artifact, metadata = _geometry_validate(task)
+    elif capability == "visual" and operation == "render":
+        artifact, metadata = _visual_render(task)
+    elif capability == "dfm" and operation == "validate":
+        artifact, metadata = _dfm_validate(task)
     elif capability == "dxf":
         artifact, metadata = _dxf_generate(task)
     else:
         artifact, metadata = _implicit(task)
 
-    if not artifact.is_file() or artifact.is_symlink() or artifact.stat().st_size <= 0:
-        produced = sorted(
-            path.name
-            for path in OUTPUT_ROOT.iterdir()
-            if path.is_file() and not path.is_symlink()
-        )
-        raise RuntimeError(
-            "MCAD capability did not produce the declared non-empty artifact; "
-            f"produced files: {produced}"
-        )
+    artifacts = artifact if isinstance(artifact, dict) else {"artifact": artifact}
+    for name, path in artifacts.items():
+        _safe_name(str(name), "artifact role")
+        if not path.is_file() or path.is_symlink() or path.stat().st_size <= 0:
+            produced = sorted(
+                candidate.name
+                for candidate in OUTPUT_ROOT.iterdir()
+                if candidate.is_file() and not candidate.is_symlink()
+            )
+            raise RuntimeError(
+                "MCAD capability did not produce the declared non-empty artifact; "
+                f"produced files: {produced}"
+            )
     METADATA_PATH.write_text(
         json.dumps(metadata, ensure_ascii=False),
         encoding="utf-8",
@@ -419,7 +471,7 @@ def run_task(task: dict[str, Any]) -> None:
             {
                 "status": "success",
                 "files": {
-                    "artifact": str(artifact),
+                    **{name: str(path) for name, path in artifacts.items()},
                     "capability-result": str(METADATA_PATH),
                 },
             }

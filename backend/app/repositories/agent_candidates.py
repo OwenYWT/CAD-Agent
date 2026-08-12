@@ -582,7 +582,7 @@ async def accept_staging_manifest(
             await connection.execute(
                 text(
                     """
-                    SELECT candidate_build_id, step_run_id
+                    SELECT candidate_build_id, manifest
                     FROM agent_staging_manifests
                     WHERE tenant_id=:tenant_id AND id=:id
                     """
@@ -594,10 +594,11 @@ async def accept_staging_manifest(
             raise KeyError(supersedes_id)
         if (
             superseded["candidate_build_id"] != candidate_build_id
-            or superseded["step_run_id"] != step_id
+            or dict(superseded["manifest"]).get("plan_step_key")
+            != manifest.get("plan_step_key")
         ):
             raise CandidateBuildConflict(
-                "superseded manifest must belong to the same candidate step"
+                "superseded manifest must belong to the same candidate plan step"
             )
     existing = (
         await connection.execute(

@@ -17,6 +17,7 @@ from app.temporal_client import get_temporal_client
 from app.workflows.activities import McadWorkflowActivities
 from app.workflows.modeling import DurableModelingSourceGenerator
 from app.workflows.agent_v2 import McadAgentWorkflowV2
+from app.validation.durable_visual import DurableVisualValidator
 from app.workflows.definitions import McadCheckWorkflow, McadDurableWorkflow
 
 
@@ -41,6 +42,7 @@ def build_agent_v2_workflow_worker(
     durable_planner: DurableAgentPlanner | None = None,
     durable_modeling: DurableModelingSourceGenerator | None = None,
     durable_repair: DurableRepairSourceGenerator | None = None,
+    durable_visual: DurableVisualValidator | None = None,
 ) -> Worker:
     """Build the version-isolated V2 worker on its dedicated task queue."""
     activities = McadWorkflowActivities(
@@ -48,6 +50,7 @@ def build_agent_v2_workflow_worker(
         durable_planner=durable_planner,
         durable_modeling=durable_modeling,
         durable_repair=durable_repair,
+        durable_visual=durable_visual,
     )
     return Worker(
         client,

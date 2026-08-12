@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     llm_provider: str = "moonshot"
     llm_base_url: str = "https://api.moonshot.cn/v1"
     llm_model: str = "kimi-k2.7-code"
+    # Provider model dedicated to image inputs. Azure or other compatible
+    # deployments must override this with their own vision-capable deployment.
+    vision_model: str = "moonshot-v1-32k-vision-preview"
     llm_reasoning_effort: str | None = None
     planner_max_tokens: int = Field(default=8192, ge=2048, le=32768)
     azure_openai_endpoint: str | None = None
@@ -173,6 +176,10 @@ class Settings(BaseSettings):
     @property
     def normalized_llm_provider(self) -> str:
         return self.llm_provider.strip().lower()
+
+    @property
+    def effective_vision_model(self) -> str:
+        return self.vision_model.strip() or self.llm_model
 
     @property
     def has_llm_credentials(self) -> bool:

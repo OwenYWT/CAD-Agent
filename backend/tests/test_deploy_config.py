@@ -43,7 +43,7 @@ REQUIREMENTS = BACKEND_DIR / "requirements.txt"
 def test_settings_defaults_are_safe(monkeypatch):
     """Fresh defaults: no auth, no key, sane print gate."""
     # Clear any env that could leak in.
-    for k in ("MOONSHOT_API_KEY", "DASHSCOPE_API_KEY", "CORS_ORIGINS", "API_KEYS",
+    for k in ("MOONSHOT_API_KEY", "DASHSCOPE_API_KEY", "VISION_MODEL", "CORS_ORIGINS", "API_KEYS",
               "BUILD_VOLUME_MM", "MIN_WALL_MM", "TRUST_PROXY_HEADERS", "DEFAULT_INVITE_CODES"):
         monkeypatch.delenv(k, raising=False)
     s = Settings(_env_file=None)
@@ -51,6 +51,7 @@ def test_settings_defaults_are_safe(monkeypatch):
     assert s.moonshot_api_key is None
     assert s.llm_provider == "moonshot"
     assert s.llm_model == "kimi-k2.7-code"
+    assert s.effective_vision_model == "moonshot-v1-32k-vision-preview"
     assert s.api_keys == []
     assert s.default_invite_codes == []  # access codes must be deployment-owned secrets
     assert s.has_llm_credentials is False

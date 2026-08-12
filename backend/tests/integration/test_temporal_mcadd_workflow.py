@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import signal
 import socket
@@ -22,6 +23,7 @@ from app.config import settings
 from app.agent.assembly_planner import AssemblyPart, AssemblyPlan
 from app.agent.durable_planner import DurableAgentPlanner
 from app.agent.durable_repair import DurableRepairResult
+from app.validation.durable_visual import DurableVisualReport, VisualJudgment
 from app.agent.multi_step import BuildPhase, BuildPlan, BuildStep
 from app.db import close_database, get_database_engine, tenant_transaction
 from app.domain.identity import user_principal
@@ -92,6 +94,10 @@ async def external_lifecycle(migrated_database):
         "sandbox_runtime": settings.sandbox_runtime,
         "sandbox_command": settings.sandbox_command,
         "sandbox_image": settings.sandbox_image,
+        "moonshot_api_key": settings.moonshot_api_key,
+        "dashscope_api_key": settings.dashscope_api_key,
+        "azure_openai_api_key": settings.azure_openai_api_key,
+        "vision_model": settings.vision_model,
     }
     settings.database_url = TEST_DATABASE_URL
     settings.temporal_target = os.environ["TEMPORAL_TARGET"]
@@ -101,6 +107,26 @@ async def external_lifecycle(migrated_database):
         "SANDBOX_IMAGE",
         "localhost/cad-agent-sandbox:m0-unified",
     )
+    real_provider = (
+        os.environ.get("CAD_AGENT_TEST_REAL_LLM") == "1"
+        or os.environ.get("CAD_AGENT_TEST_REAL_VISION") == "1"
+    )
+    if real_provider:
+        settings.moonshot_api_key = os.environ.get(
+            "MOONSHOT_API_KEY",
+            settings.moonshot_api_key,
+        )
+        settings.vision_model = os.environ.get(
+            "VISION_MODEL",
+            settings.vision_model,
+        )
+    else:
+        # These tests intentionally cover durable orchestration without external
+        # provider calls. Keep them hermetic regardless of the pytest cwd or a
+        # developer's local backend/.env.
+        settings.moonshot_api_key = None
+        settings.dashscope_api_key = None
+        settings.azure_openai_api_key = None
     reset_temporal_client()
     reset_object_store_client()
     get_execution_backend.cache_clear()
@@ -557,6 +583,82 @@ class _V2StillBrokenRepairStub(_V2RepairStub):
         )
 
 
+class _V2PassingVisualStub:
+    async def judge(self, **_kwargs):
+        return (
+            VisualJudgment(is_match=True, confidence=0.99),
+            {
+                "provider": "controlled-vision-provider",
+                "model": "controlled-vision-model",
+                "provider_response_id": "vision-completion-1",
+                "request_hash": "5" * 64,
+                "response_hash": "6" * 64,
+                "finish_reason": "stop",
+                "usage": {"total_tokens": 20},
+            },
+        )
+
+    async def repair(self, **_kwargs):
+        raise AssertionError("passing visual judgment must not invoke repair")
+
+    async def report(self, *, renders, runtime_provenance, **kwargs):
+        judgment, provenance = await self.judge(**kwargs)
+        return DurableVisualReport(
+            schema_version="durable-visual-report.v1",
+            outcome="passed",
+            renders=renders,
+            judgment=judgment,
+            runtime_provenance=runtime_provenance,
+            provider_provenance=provenance,
+        )
+
+
+class _V2MismatchThenPassingVisualStub(_V2PassingVisualStub):
+    def __init__(self):
+        self.judgments = 0
+        self.repairs = 0
+
+    async def report(self, *, renders, runtime_provenance, **kwargs):
+        self.judgments += 1
+        is_match = self.judgments > 1
+        judgment = VisualJudgment(
+            is_match=is_match,
+            confidence=0.97,
+            issues=() if is_match else ("controlled_visual_mismatch",),
+            suggestions=() if is_match else ("preserve geometry and rebuild",),
+        )
+        return DurableVisualReport(
+            schema_version="durable-visual-report.v1",
+            outcome="passed" if is_match else "failed",
+            renders=renders,
+            judgment=judgment,
+            issues=judgment.issues,
+            runtime_provenance=runtime_provenance,
+            provider_provenance={
+                "provider": "controlled-vision-provider",
+                "model": "controlled-vision-model",
+                "provider_response_id": f"vision-completion-{self.judgments}",
+                "request_hash": str(self.judgments) * 64,
+                "response_hash": str(self.judgments + 1) * 64,
+                "finish_reason": "stop",
+                "usage": {"total_tokens": 20},
+            },
+        )
+
+    async def repair(self, *, source_code, **_kwargs):
+        self.repairs += 1
+        repaired = source_code.rstrip() + "\n# controlled visual repair\n"
+        return repaired, {
+            "provider": "controlled-repair-provider",
+            "model": "controlled-repair-model",
+            "provider_response_id": "visual-repair-completion-1",
+            "request_hash": "7" * 64,
+            "response_hash": hashlib.sha256(repaired.encode()).hexdigest(),
+            "finish_reason": "stop",
+            "usage": {"total_tokens": 24},
+        }
+
+
 async def _snapshot(owner, workflow_id):
     async with tenant_transaction(
         owner.tenant_id,
@@ -994,14 +1096,22 @@ async def test_agent_v2_confirmed_plan_executes_to_staging_then_fails_closed():
                 {"id": created.workflow_id},
             )
         ).mappings().one()
+        validation_evidence = (
+            await connection.execute(
+                text(
+                    "SELECT gate, mode, outcome, evidence "
+                    "FROM agent_validation_evidence "
+                    "WHERE workflow_run_id=:id ORDER BY created_at"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
     assert candidate["status"] == "failed"
-    assert candidate["failure_code"] == (
-        "agent_v2_post_geometry_validation_not_enabled"
-    )
+    assert candidate["failure_code"] == "agent_v2_sealing_not_enabled"
     assert candidate["candidate_revision_id"] is None
     assert candidate["change_set_id"] is None
     assert workflow_status == "failed"
-    assert attempt_count == 2
+    assert attempt_count == 4
     assert modeling.calls == 1
     assert source["provider"] == "controlled-provider"
     assert source["model"] == "controlled-model"
@@ -1012,7 +1122,293 @@ async def test_agent_v2_confirmed_plan_executes_to_staging_then_fails_closed():
     assert all(item["size_bytes"] > 0 for item in manifest["manifest"]["outputs"])
     assert geometry_evidence["outcome"] == "passed"
     assert geometry_evidence["evidence"]["runtime_provenance"]["image_digest"]
+    assert [item["gate"] for item in validation_evidence] == [
+        "geometry",
+        "visual",
+        "dfm",
+    ]
+    assert validation_evidence[1]["mode"] == "advisory"
+    assert validation_evidence[1]["outcome"] == "indeterminate"
+    assert len(validation_evidence[1]["evidence"]["renders"]) == 4
+    assert len(validation_evidence[1]["evidence"]["issues"]) == 1
+    assert validation_evidence[1]["evidence"]["issues"][0].startswith(
+        "vision_provider_unavailable:"
+    )
+    assert validation_evidence[1]["evidence"]["provider_provenance"] is None
+    assert validation_evidence[2]["mode"] == "advisory"
+    assert validation_evidence[2]["evidence"]["policy_hash"]
+    assert validation_evidence[2]["evidence"]["policy_object"]["rules"]
+    assert validation_evidence[2]["evidence"]["policy_object"][
+        "policy_hash"
+    ] == validation_evidence[2]["evidence"]["policy_hash"]
+    assert validation_evidence[2]["evidence"]["runtime_provenance"][
+        "image_digest"
+    ]
     assert product_artifacts == 0
+
+
+@pytest.mark.skipif(
+    os.environ.get("CAD_AGENT_TEST_REAL_VISION") != "1",
+    reason="CAD_AGENT_TEST_REAL_VISION=1 is required for vision integration",
+)
+@pytest.mark.asyncio(loop_scope="module")
+async def test_agent_v2_real_visual_provider_persists_provenance():
+    owner, project_id, initial = await _seed_project("agent-v2-real-vision")
+    client = await get_temporal_client()
+    planner = DurableAgentPlanner(
+        planner=_V2PlannerStub(),
+        decomposer=_V2DecomposerStub(),
+        assembly_planner=_V2AssemblyStub(),
+    )
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        from app.services.run_state import create_workflow
+
+        created = await create_workflow(
+            connection,
+            tenant_id=owner.tenant_id,
+            project_id=project_id,
+            requested_by_principal_id=owner.principal_id,
+            kind="mcad.agent.v2.generate",
+            idempotency_key=f"agent-v2-real-vision-{project_id}",
+            request_payload={"objective": "创建 20x10x4 mm 实心长方体"},
+        )
+    request = McadAgentWorkflowV2Request(
+        workflow_run_id=created.workflow_id,
+        tenant_id=owner.tenant_id,
+        project_id=project_id,
+        principal_id=owner.principal_id,
+        branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,
+        operation="generate",
+        objective="创建 20x10x4 mm 实心长方体，不需要孔、圆角或其他特征",
+        confirmation_timeout_seconds=60,
+    )
+    async with build_agent_v2_workflow_worker(
+        client,
+        backend=get_execution_backend(),
+        durable_planner=planner,
+        durable_modeling=_V2ModelingStub(),
+    ):
+        handle = await client.start_workflow(
+            "McadAgentWorkflowV2",
+            request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),
+            task_queue=settings.temporal_agent_v2_task_queue,
+        )
+        await _wait_for_status(owner, created.workflow_id, {"waiting_confirmation"})
+        await confirm_mcad_workflow(
+            created.workflow_id,
+            accepted=True,
+            note="确认真实视觉服务测试",
+            workflow_kind="mcad.agent.v2.generate",
+        )
+        with pytest.raises(WorkflowFailureError):
+            await asyncio.wait_for(handle.result(), timeout=180)
+
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        visual_rows = (
+            await connection.execute(
+                text(
+                    "SELECT outcome, evidence FROM agent_validation_evidence "
+                    "WHERE workflow_run_id=:id AND gate='visual' "
+                    "ORDER BY created_at"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+        if not visual_rows:
+            failure = (
+                await connection.execute(
+                    text(
+                        "SELECT w.error_code, w.error_message, c.failure_code, "
+                        "c.failure_message FROM workflow_runs w "
+                        "LEFT JOIN agent_candidate_builds c "
+                        "ON c.workflow_run_id=w.id WHERE w.id=:id"
+                    ),
+                    {"id": created.workflow_id},
+                )
+            ).mappings().one()
+            attempts = (
+                await connection.execute(
+                    text(
+                        "SELECT s.kind, a.status, a.error_code "
+                        "FROM execution_attempts a JOIN step_runs s "
+                        "ON s.id=a.step_run_id WHERE a.workflow_run_id=:id "
+                        "ORDER BY a.created_at"
+                    ),
+                    {"id": created.workflow_id},
+                )
+            ).mappings().all()
+            raise AssertionError(
+                f"visual evidence missing: failure={dict(failure)}; "
+                f"attempts={[dict(item) for item in attempts]}"
+            )
+    for visual in visual_rows:
+        provenance = visual["evidence"]["provider_provenance"]
+        assert visual["outcome"] in {"passed", "failed"}
+        assert provenance["provider"] == settings.normalized_llm_provider
+        assert provenance["model"] == settings.effective_vision_model
+        assert provenance["provider_response_id"]
+        assert len(provenance["request_hash"]) == 64
+        assert len(provenance["response_hash"]) == 64
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_agent_v2_visual_mismatch_repairs_and_revalidates_geometry():
+    owner, project_id, initial = await _seed_project("agent-v2-visual-repair")
+    client = await get_temporal_client()
+    planner = DurableAgentPlanner(
+        planner=_V2PlannerStub(),
+        decomposer=_V2DecomposerStub(),
+        assembly_planner=_V2AssemblyStub(),
+    )
+    visual = _V2MismatchThenPassingVisualStub()
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        from app.services.run_state import create_workflow
+
+        created = await create_workflow(
+            connection,
+            tenant_id=owner.tenant_id,
+            project_id=project_id,
+            requested_by_principal_id=owner.principal_id,
+            kind="mcad.agent.v2.generate",
+            idempotency_key=f"agent-v2-visual-repair-{project_id}",
+            request_payload={"objective": "创建 20x10x4 mm 安装支架"},
+        )
+    request = McadAgentWorkflowV2Request(
+        workflow_run_id=created.workflow_id,
+        tenant_id=owner.tenant_id,
+        project_id=project_id,
+        principal_id=owner.principal_id,
+        branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,
+        operation="generate",
+        objective="创建 20x10x4 mm 安装支架",
+        confirmation_timeout_seconds=60,
+    )
+    async with build_agent_v2_workflow_worker(
+        client,
+        backend=get_execution_backend(),
+        durable_planner=planner,
+        durable_modeling=_V2ModelingStub(),
+        durable_visual=visual,
+    ):
+        handle = await client.start_workflow(
+            "McadAgentWorkflowV2",
+            request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),
+            task_queue=settings.temporal_agent_v2_task_queue,
+        )
+        await _wait_for_status(owner, created.workflow_id, {"waiting_confirmation"})
+        await confirm_mcad_workflow(
+            created.workflow_id,
+            accepted=True,
+            note="确认视觉修复测试",
+            workflow_kind="mcad.agent.v2.generate",
+        )
+        with pytest.raises(WorkflowFailureError):
+            await asyncio.wait_for(handle.result(), timeout=180)
+
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        sources = (
+            await connection.execute(
+                text(
+                    "SELECT id, predecessor_source_id, source_hash, provider, model "
+                    "FROM agent_generated_sources WHERE workflow_run_id=:id "
+                    "ORDER BY created_at"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+        manifests = (
+            await connection.execute(
+                text(
+                    "SELECT id, supersedes_id FROM agent_staging_manifests "
+                    "WHERE workflow_run_id=:id ORDER BY created_at"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+        gates = (
+            await connection.execute(
+                text(
+                    "SELECT gate, outcome, staging_manifest_id, evidence "
+                    "FROM agent_validation_evidence WHERE workflow_run_id=:id "
+                    "ORDER BY created_at"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+        attempts = (
+            await connection.execute(
+                text(
+                    "SELECT s.kind, a.status FROM execution_attempts a "
+                    "JOIN step_runs s ON s.id=a.step_run_id "
+                    "WHERE a.workflow_run_id=:id ORDER BY a.created_at"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+        failure = (
+            await connection.execute(
+                text(
+                    "SELECT w.error_code, w.error_message, c.failure_code, "
+                    "c.failure_message FROM workflow_runs w "
+                    "LEFT JOIN agent_candidate_builds c "
+                    "ON c.workflow_run_id=w.id WHERE w.id=:id"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().one()
+    diagnostic = {
+        "failure": dict(failure),
+        "sources": [dict(item) for item in sources],
+        "manifests": [dict(item) for item in manifests],
+        "gates": [dict(item) for item in gates],
+        "attempts": [dict(item) for item in attempts],
+    }
+    assert visual.judgments == 2, json.dumps(
+        diagnostic,
+        ensure_ascii=False,
+        default=str,
+        sort_keys=True,
+    )
+    assert visual.repairs == 1
+    assert len(sources) == 2
+    assert sources[1]["predecessor_source_id"] == sources[0]["id"]
+    assert sources[1]["source_hash"] != sources[0]["source_hash"]
+    assert sources[1]["provider"] == "controlled-repair-provider"
+    assert len(manifests) == 2
+    assert manifests[1]["supersedes_id"] == manifests[0]["id"]
+    assert [(item["gate"], item["outcome"]) for item in gates] == [
+        ("geometry", "passed"),
+        ("visual", "failed"),
+        ("geometry", "passed"),
+        ("visual", "passed"),
+        ("dfm", "failed"),
+    ], json.dumps(diagnostic, ensure_ascii=False, default=str, sort_keys=True)
+    assert all(item["status"] == "succeeded" for item in attempts)
+    assert [item["kind"] for item in attempts] == [
+        "agent_model",
+        "agent_geometry_validation",
+        "agent_visual_render",
+        "agent_visual_repair",
+        "agent_geometry_validation",
+        "agent_visual_render",
+        "agent_dfm_validation",
+    ]
 
 
 @pytest.mark.asyncio(loop_scope="module")
@@ -1058,6 +1454,7 @@ async def test_agent_v2_user_code_failure_creates_durable_repair_attempt():
         durable_planner=planner,
         durable_modeling=modeling,
         durable_repair=repair,
+        durable_visual=_V2PassingVisualStub(),
     ):
         handle = await client.start_workflow(
             "McadAgentWorkflowV2",
@@ -1142,6 +1539,8 @@ async def test_agent_v2_user_code_failure_creates_durable_repair_attempt():
         ("failed", "user_code_failed"),
         ("succeeded", None),
         ("succeeded", None),
+        ("succeeded", None),
+        ("succeeded", None),
     ]
     assert len(sources) == 2
     assert sources[1]["predecessor_source_id"] == sources[0]["id"]
@@ -1198,6 +1597,7 @@ async def test_agent_v2_geometry_failure_repairs_and_revalidates_new_manifest():
         durable_planner=planner,
         durable_modeling=_V2DimensionMismatchModelingStub(),
         durable_repair=repair,
+        durable_visual=_V2PassingVisualStub(),
     ):
         handle = await client.start_workflow(
             "McadAgentWorkflowV2",
@@ -1252,6 +1652,15 @@ async def test_agent_v2_geometry_failure_repairs_and_revalidates_new_manifest():
                 {"id": created.workflow_id},
             )
         ).mappings().all()
+        visual_evidence = (
+            await connection.execute(
+                text(
+                    "SELECT outcome, evidence FROM agent_validation_evidence "
+                    "WHERE workflow_run_id=:id AND gate='visual'"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().one()
         sources = (
             await connection.execute(
                 text(
@@ -1268,6 +1677,8 @@ async def test_agent_v2_geometry_failure_repairs_and_revalidates_new_manifest():
         "agent_geometry_validation",
         "agent_repair",
         "agent_geometry_validation",
+        "agent_visual_render",
+        "agent_dfm_validation",
     ]
     assert all(item["status"] == "succeeded" for item in attempts)
     assert len(manifests) == 2
@@ -1280,6 +1691,16 @@ async def test_agent_v2_geometry_failure_repairs_and_revalidates_new_manifest():
     assert len(sources) == 2
     assert sources[1]["predecessor_source_id"] == sources[0]["id"]
     assert sources[1]["source_hash"] != sources[0]["source_hash"]
+    assert visual_evidence["outcome"] == "passed"
+    assert visual_evidence["evidence"]["provider_provenance"] == {
+        "finish_reason": "stop",
+        "model": "controlled-vision-model",
+        "provider": "controlled-vision-provider",
+        "provider_response_id": "vision-completion-1",
+        "request_hash": "5" * 64,
+        "response_hash": "6" * 64,
+        "usage": {"total_tokens": 20},
+    }
 
 
 @pytest.mark.asyncio(loop_scope="module")
@@ -1750,6 +2171,7 @@ async def test_agent_v2_real_repair_provider_persists_provenance_and_attempt():
         backend=get_execution_backend(),
         durable_planner=planner,
         durable_modeling=_V2BrokenModelingStub(),
+        durable_visual=_V2PassingVisualStub(),
     ):
         handle = await client.start_workflow(
             "McadAgentWorkflowV2",
@@ -1818,7 +2240,7 @@ async def test_agent_v2_real_repair_provider_persists_provenance_and_attempt():
     assert attempts[0]["status"] == "failed"
     assert attempts[0]["error_code"] == "user_code_failed"
     assert all(item["status"] == "succeeded" for item in attempts[1:])
-    assert len(attempts) in {3, 5}
+    assert len(attempts) in {5, 7}
     assert manifest_count in {1, 2}
 
 
@@ -1862,6 +2284,7 @@ async def test_agent_v2_real_planner_retriever_codegen_and_execution_provenance(
     async with build_agent_v2_workflow_worker(
         client,
         backend=get_execution_backend(),
+        durable_visual=_V2PassingVisualStub(),
     ):
         handle = await client.start_workflow(
             "McadAgentWorkflowV2",
@@ -1936,7 +2359,7 @@ async def test_agent_v2_real_planner_retriever_codegen_and_execution_provenance(
     assert len(source["response_hash"]) == 64
     assert len(source["source_hash"]) == 64
     assert manifest["manifest"]["outputs"]
-    assert candidate_failure == "agent_v2_post_geometry_validation_not_enabled"
+    assert candidate_failure == "agent_v2_sealing_not_enabled"
 
 
 @pytest.mark.asyncio(loop_scope="module")

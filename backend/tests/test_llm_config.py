@@ -32,9 +32,33 @@ def test_moonshot_is_default_provider():
 
     assert settings.normalized_llm_provider == "moonshot"
     assert settings.llm_model == "kimi-k2.7-code"
+    assert settings.effective_vision_model == "moonshot-v1-32k-vision-preview"
     assert settings.llm_base_url == "https://api.moonshot.cn/v1"
     assert settings.llm_api_key == "moonshot-key"
     assert settings.has_llm_credentials is True
+
+
+def test_vision_model_can_be_configured_without_second_credential():
+    settings = Settings(
+        _env_file=None,
+        moonshot_api_key="moonshot-key",
+        llm_model="kimi-k2.7-code",
+        vision_model="moonshot-v1-32k-vision-preview",
+    )
+
+    assert settings.effective_vision_model == "moonshot-v1-32k-vision-preview"
+    assert settings.llm_api_key == "moonshot-key"
+
+
+def test_empty_vision_model_explicitly_reuses_primary_model():
+    settings = Settings(
+        _env_file=None,
+        moonshot_api_key="moonshot-key",
+        llm_model="multimodal-primary",
+        vision_model="",
+    )
+
+    assert settings.effective_vision_model == "multimodal-primary"
 
 
 def test_openai_compatible_still_uses_dashscope_key():

@@ -72,6 +72,8 @@ RUN python -m pip install --no-cache-dir --no-deps \
 COPY backend/sandbox/executor_entry.py /opt/cad-agent/executor_entry.py
 COPY backend/sandbox/capability_entry.py /opt/cad-agent/capability_entry.py
 COPY backend/sandbox/geometry_validation.py /opt/cad-agent/geometry_validation.py
+COPY backend/sandbox/visual_render.py /opt/cad-agent/visual_render.py
+COPY backend/sandbox/dfm_validation.py /opt/cad-agent/dfm_validation.py
 COPY backend/sandbox/runtime_probe.py /opt/cad-agent/runtime_probe.py
 
 RUN groupadd --gid 1000 sandbox && \
@@ -79,6 +81,7 @@ RUN groupadd --gid 1000 sandbox && \
       --home-dir /tmp --shell /usr/sbin/nologin sandbox && \
     chown 1000:1000 /opt/cad-agent/executor_entry.py \
       /opt/cad-agent/capability_entry.py /opt/cad-agent/geometry_validation.py \
+      /opt/cad-agent/visual_render.py /opt/cad-agent/dfm_validation.py \
       /opt/cad-agent/runtime_probe.py
 
 USER 1000:1000

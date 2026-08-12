@@ -86,6 +86,16 @@ from app.validation.durable_geometry import (
     DurableGeometryReport,
     indeterminate_geometry_report,
 )
+from app.validation.durable_visual import (
+    DurableVisualValidator,
+    VisualRenderEvidence,
+    indeterminate_visual_report,
+)
+from app.validation.durable_dfm import (
+    DurableDFMReport,
+    indeterminate_dfm_report,
+)
+from app.validation.dfm_policy_snapshot import resolve_dfm_policy_snapshot
 from app.llm import is_nonretryable_provider_error
 from app.models.schemas import CADPlan, ModificationPlan
 from app.workflows.source_preparation import SourcePreparer
@@ -843,6 +853,38 @@ async def _prepare_agent_validation_attempt(
     return attempt.attempt_id, created.step_id, lease.token, lease.generation
 
 
+async def _stored_validation_attempt_result(
+    connection,
+    *,
+    workflow_id: UUID,
+    step_key: str,
+) -> dict[str, Any] | None:
+    row = (
+        await connection.execute(
+            text(
+                """
+                SELECT a.id AS attempt_id, a.step_run_id, a.result_payload
+                FROM step_runs s
+                JOIN execution_attempts a ON a.step_run_id=s.id
+                WHERE s.workflow_run_id=:workflow_id AND s.step_key=:step_key
+                  AND s.status='succeeded' AND a.status='succeeded'
+                  AND a.result_payload IS NOT NULL
+                ORDER BY a.attempt_number DESC LIMIT 1
+                """
+            ),
+            {"workflow_id": workflow_id, "step_key": step_key},
+        )
+    ).mappings().one_or_none()
+    if row is None:
+        return None
+    return {
+        **dict(row["result_payload"]),
+        "attempt_id": str(row["attempt_id"]),
+        "step_id": str(row["step_run_id"]),
+        "replayed": True,
+    }
+
+
 async def _heartbeat_loop(
     *,
     tenant_id: UUID,
@@ -1264,6 +1306,7 @@ class McadWorkflowActivities:
         durable_planner: DurableAgentPlanner | None = None,
         durable_modeling: DurableModelingSourceGenerator | None = None,
         durable_repair: DurableRepairSourceGenerator | None = None,
+        durable_visual: DurableVisualValidator | None = None,
     ):
         self.backend = backend or get_execution_backend()
         self.source_preparer = source_preparer or SourcePreparer(
@@ -1272,6 +1315,7 @@ class McadWorkflowActivities:
         self.durable_planner = durable_planner or DurableAgentPlanner()
         self.durable_modeling = durable_modeling or DurableModelingSourceGenerator()
         self.durable_repair = durable_repair or DurableRepairSourceGenerator()
+        self.durable_visual = durable_visual or DurableVisualValidator()
 
     @staticmethod
     def _agent_planning_error(exc: Exception) -> ApplicationError:
@@ -2092,6 +2136,11 @@ class McadWorkflowActivities:
                     lease_generation=lease_generation,
                     manifest=manifest,
                     lease_token=lease_token,
+                    supersedes_id=(
+                        _uuid(payload, "supersedes_staging_manifest_id")
+                        if payload.get("supersedes_staging_manifest_id")
+                        else None
+                    ),
                 )
                 await transition_step(
                     connection,
@@ -2474,6 +2523,805 @@ class McadWorkflowActivities:
                 error_message="Geometry validation was cancelled.",
             )
             raise
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            if outcome is not None and outcome.work_dir is not None:
+                shutil.rmtree(outcome.work_dir, ignore_errors=True)
+
+    async def _agent_validation_input(
+        self,
+        *,
+        request: McadAgentWorkflowV2Request,
+        candidate_build_id: UUID,
+        manifest_id: UUID,
+        temp_dir: Path,
+    ) -> tuple[dict[str, Any], ArtifactInput, dict[str, Path]]:
+        async with tenant_transaction(
+            request.tenant_id,
+            request.principal_id,
+        ) as connection:
+            row = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT manifest FROM agent_staging_manifests
+                        WHERE tenant_id=:tenant_id
+                          AND candidate_build_id=:candidate_build_id
+                          AND workflow_run_id=:workflow_id AND id=:manifest_id
+                          AND status='accepted'
+                        """
+                    ),
+                    {
+                        "tenant_id": request.tenant_id,
+                        "candidate_build_id": candidate_build_id,
+                        "workflow_id": request.workflow_run_id,
+                        "manifest_id": manifest_id,
+                    },
+                )
+            ).mappings().one_or_none()
+        if row is None:
+            raise ApplicationError(
+                "validation manifest is missing or not accepted",
+                type="agent_validation_manifest_missing",
+                non_retryable=True,
+            )
+        manifest = dict(row["manifest"])
+        candidates = [
+            dict(item)
+            for item in manifest.get("outputs") or ()
+            if str(item.get("format") or "").lower() in {"stl", "step"}
+        ]
+        if not candidates:
+            raise ApplicationError(
+                "visual/DFM validation requires an STL or STEP output",
+                type="agent_validation_model_missing",
+                non_retryable=True,
+            )
+        item = next(
+            (value for value in candidates if value["format"] == "stl"),
+            candidates[0],
+        )
+        model_format = str(item["format"]).lower()
+        path = temp_dir / f"validation-model.{model_format}"
+        downloaded = await download_object(str(item["object_key"]), path)
+        if (
+            downloaded["sha256"] != str(item["sha256"])
+            or downloaded["size_bytes"] != int(item["size_bytes"])
+        ):
+            raise ApplicationError(
+                "validation input object failed integrity verification",
+                type="agent_validation_input_rejected",
+                non_retryable=True,
+            )
+        artifact_id = f"{manifest_id}:model"
+        declaration = ArtifactInput(
+            artifact_id=artifact_id,
+            filename=path.name,
+            sha256=str(item["sha256"]),
+            size_bytes=int(item["size_bytes"]),
+            media_type=str(item["content_type"]),
+        )
+        return manifest, declaration, {artifact_id: path}
+
+    @activity.defn(name="agent_v2.render_visual")
+    async def agent_render_visual(self, payload: dict[str, Any]) -> dict[str, Any]:
+        info = activity.info()
+        request = _agent_v2_request(payload)
+        candidate_build_id = _uuid(payload, "candidate_build_id")
+        manifest_id = _uuid(payload, "staging_manifest_id")
+        step_key = str(payload["validation_step_key"])
+        async with tenant_transaction(
+            request.tenant_id,
+            request.principal_id,
+        ) as connection:
+            replay = await get_validation_evidence_for_manifest(
+                connection,
+                tenant_id=request.tenant_id,
+                candidate_build_id=candidate_build_id,
+                workflow_id=request.workflow_run_id,
+                staging_manifest_id=manifest_id,
+                gate="visual",
+            )
+            if replay is not None:
+                return {
+                    "status": "completed",
+                    "outcome": replay["outcome"],
+                    "evidence_id": str(replay["id"]),
+                    "report": dict(replay["evidence"]),
+                    "attempt_id": str(replay["execution_attempt_id"]),
+                    "replayed": True,
+                }
+            completed = await _stored_validation_attempt_result(
+                connection,
+                workflow_id=request.workflow_run_id,
+                step_key=step_key,
+            )
+            if completed is not None:
+                return completed
+        attempt_id, step_id, lease_token, lease_generation = (
+            await _prepare_agent_validation_attempt(
+                payload,
+                temporal_attempt=info.attempt,
+                step_key=step_key,
+                step_index=int(payload["step_index"]),
+                step_kind="agent_visual_render",
+            )
+        )
+        temp_dir = Path(tempfile.mkdtemp(prefix="agent_visual_"))
+        outcome: MaterializedExecutionOutcome | None = None
+        try:
+            try:
+                _, declaration, materialized = await self._agent_validation_input(
+                    request=request,
+                    candidate_build_id=candidate_build_id,
+                    manifest_id=manifest_id,
+                    temp_dir=temp_dir,
+                )
+            except Exception as exc:
+                report = indeterminate_visual_report(
+                    issue=f"visual_input_unavailable:{type(exc).__name__}"
+                )
+                recorded = await _record_agent_validation_outcome(
+                    payload,
+                    candidate_build_id=candidate_build_id,
+                    staging_manifest_id=manifest_id,
+                    gate="visual",
+                    mode=str(payload["gate_mode"]),
+                    outcome="indeterminate",
+                    evidence=report.durable_evidence(),
+                    attempt_id=attempt_id,
+                    step_id=step_id,
+                    execution_status=ExecutionStatus.ARTIFACT_REJECTED,
+                    lease_token=lease_token,
+                    lease_generation=lease_generation,
+                    error_code="visual_input_rejected",
+                    error_message=str(exc)[:4000],
+                )
+                return {
+                    "status": "completed",
+                    "outcome": "indeterminate",
+                    "evidence_id": str(recorded.evidence_id),
+                    "report": report.durable_evidence(),
+                    "attempt_id": str(attempt_id),
+                }
+            task = {
+                "schema_version": "mcad-capability-task.v1",
+                "capability": "visual",
+                "operation": "render",
+                "params": {"width": 512, "height": 512},
+                "inputs": {"model": declaration.filename},
+            }
+            source_code = json.dumps(
+                task, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
+            snapshot = await asyncio.to_thread(self.backend.runtime_snapshot)
+            spec = ExecutionSpec(
+                execution_attempt_id=str(attempt_id),
+                workflow_run_id=str(request.workflow_run_id),
+                step_run_id=str(step_id),
+                tenant_id=str(request.tenant_id),
+                project_id=str(request.project_id),
+                expected_base_revision_id=str(request.expected_base_revision_id),
+                idempotency_key=f"agent-v2:{request.workflow_run_id}:{step_key}:{info.attempt}",
+                capability="mcad.visual",
+                operation="render",
+                mode="analysis",
+                source=ExecutionSource(
+                    language="json",
+                    code=source_code,
+                    sha256=hashlib.sha256(source_code.encode()).hexdigest(),
+                ),
+                inputs=(declaration,),
+                outputs=tuple(
+                    [
+                        OutputDeclaration(
+                            name=view,
+                            media_type="image/png",
+                            max_size_bytes=4 * 1024 * 1024,
+                        )
+                        for view in ("front", "right", "top", "isometric")
+                    ]
+                    + [
+                        OutputDeclaration(
+                            name="capability-result",
+                            media_type="application/json",
+                            max_size_bytes=512 * 1024,
+                        )
+                    ]
+                ),
+                runtime=RuntimeRequirement(
+                    image_digest=snapshot.image_digest,
+                    platform=snapshot.platform,
+                    sandbox_tier="ephemeral-job",
+                ),
+                limits=ResourceLimits(
+                    timeout_seconds=120,
+                    memory_bytes=1536 * 1024 * 1024,
+                    pids=512,
+                ),
+                metadata={
+                    "candidate_build_id": str(candidate_build_id),
+                    "staging_manifest_id": str(manifest_id),
+                    "gate": "visual",
+                },
+            )
+            outcome = await _run_backend_with_heartbeats(
+                self.backend,
+                spec,
+                tenant_id=request.tenant_id,
+                principal_id=request.principal_id,
+                attempt_id=attempt_id,
+                lease_token=lease_token,
+                lease_generation=lease_generation,
+                materialized_inputs=materialized,
+            )
+            runtime_provenance = (
+                outcome.result.provenance.model_dump(mode="json")
+                if outcome.result.provenance
+                else None
+            )
+            if outcome.result.status is not ExecutionStatus.SUCCEEDED:
+                error = outcome.result.error
+                report = indeterminate_visual_report(
+                    issue=error.code if error else "visual_render_failed",
+                    runtime_provenance=runtime_provenance,
+                )
+                recorded = await _record_agent_validation_outcome(
+                    payload,
+                    candidate_build_id=candidate_build_id,
+                    staging_manifest_id=manifest_id,
+                    gate="visual",
+                    mode=str(payload["gate_mode"]),
+                    outcome="indeterminate",
+                    evidence=report.durable_evidence(),
+                    attempt_id=attempt_id,
+                    step_id=step_id,
+                    execution_status=outcome.result.status,
+                    lease_token=lease_token,
+                    lease_generation=lease_generation,
+                    error_code=error.code if error else "visual_render_failed",
+                    error_message=error.message if error else "render failed",
+                )
+                return {
+                    "status": "completed",
+                    "outcome": "indeterminate",
+                    "evidence_id": str(recorded.evidence_id),
+                    "report": report.durable_evidence(),
+                    "attempt_id": str(attempt_id),
+                }
+            metadata_path = outcome.files.get("capability-result")
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            view_facts = {
+                item["view"]: item
+                for item in dict(metadata["result"])["views"]
+            }
+            renders: list[dict[str, Any]] = []
+            for view in ("front", "right", "top", "isometric"):
+                path = outcome.files[view]
+                declared = next(
+                    item for item in outcome.result.outputs if item.name == path.name
+                )
+                object_key = (
+                    "staging/agent/tenants/"
+                    f"{request.tenant_id}/candidates/{candidate_build_id}/"
+                    f"validation/{attempt_id}/{declared.sha256}/{view}.png"
+                )
+                uploaded = await put_file(object_key, path, content_type="image/png")
+                if (
+                    uploaded["sha256"] != declared.sha256
+                    or uploaded["size_bytes"] != declared.size_bytes
+                ):
+                    raise ApplicationError(
+                        "visual render upload integrity mismatch",
+                        type="agent_visual_render_integrity_failed",
+                        non_retryable=True,
+                    )
+                fact = dict(view_facts[view])
+                fact["object_key"] = object_key
+                renders.append(
+                    VisualRenderEvidence.model_validate(fact).model_dump(mode="json")
+                )
+            result_payload = {
+                "status": "rendered",
+                "renders": renders,
+                "runtime_provenance": runtime_provenance,
+                "attempt_id": str(attempt_id),
+                "step_id": str(step_id),
+            }
+            async with tenant_transaction(
+                request.tenant_id,
+                request.principal_id,
+            ) as connection:
+                await complete_attempt(
+                    connection,
+                    attempt_id,
+                    lease_token=lease_token,
+                    lease_generation=lease_generation,
+                    result_payload=result_payload,
+                )
+                await transition_step(
+                    connection,
+                    step_id,
+                    expected=StepStatus.RUNNING,
+                    target=StepStatus.SUCCEEDED,
+                )
+            return result_payload
+        except asyncio.CancelledError:
+            await _mark_execution_failure(
+                payload,
+                attempt_id=attempt_id,
+                step_id=step_id,
+                status=ExecutionStatus.CANCELLED,
+                error_code="visual_render_cancelled",
+                error_message="Visual rendering was cancelled.",
+            )
+            raise
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            if outcome is not None and outcome.work_dir is not None:
+                shutil.rmtree(outcome.work_dir, ignore_errors=True)
+
+    @activity.defn(name="agent_v2.judge_visual")
+    async def agent_judge_visual(self, payload: dict[str, Any]) -> dict[str, Any]:
+        request = _agent_v2_request(payload)
+        candidate_build_id = _uuid(payload, "candidate_build_id")
+        manifest_id = _uuid(payload, "staging_manifest_id")
+        render_attempt_id = _uuid(payload, "render_attempt_id")
+        render_step_id = _uuid(payload, "render_step_id")
+        async with tenant_transaction(
+            request.tenant_id,
+            request.principal_id,
+        ) as connection:
+            replay = await get_validation_evidence_for_manifest(
+                connection,
+                tenant_id=request.tenant_id,
+                candidate_build_id=candidate_build_id,
+                workflow_id=request.workflow_run_id,
+                staging_manifest_id=manifest_id,
+                gate="visual",
+            )
+            if replay is not None:
+                return {
+                    "status": "completed",
+                    "outcome": replay["outcome"],
+                    "evidence_id": str(replay["id"]),
+                    "report": dict(replay["evidence"]),
+                    "attempt_id": str(replay["execution_attempt_id"]),
+                    "replayed": True,
+                }
+        temp_dir = Path(tempfile.mkdtemp(prefix="agent_vision_provider_"))
+        render_models = tuple(
+            VisualRenderEvidence.model_validate(item)
+            for item in payload.get("renders") or ()
+        )
+        try:
+            paths: list[Path] = []
+            for item in render_models:
+                path = temp_dir / item.filename
+                downloaded = await download_object(item.object_key, path)
+                if (
+                    downloaded["sha256"] != item.sha256
+                    or downloaded["size_bytes"] != item.size_bytes
+                ):
+                    raise ValueError("visual render object integrity mismatch")
+                paths.append(path)
+            report = await self.durable_visual.report(
+                objective=str(payload["objective"]),
+                design_brief=dict(payload["design_brief"]),
+                render_paths=tuple(paths),
+                renders=render_models,
+                runtime_provenance=dict(payload["runtime_provenance"]),
+            )
+            evidence = report.durable_evidence()
+            async with tenant_transaction(
+                request.tenant_id,
+                request.principal_id,
+            ) as connection:
+                recorded = await record_validation_evidence(
+                    connection,
+                    tenant_id=request.tenant_id,
+                    candidate_build_id=candidate_build_id,
+                    workflow_id=request.workflow_run_id,
+                    step_id=render_step_id,
+                    attempt_id=render_attempt_id,
+                    staging_manifest_id=manifest_id,
+                    gate="visual",
+                    mode=str(payload["gate_mode"]),
+                    outcome=report.outcome,
+                    evidence=evidence,
+                )
+            return {
+                "status": "completed",
+                "outcome": report.outcome,
+                "evidence_id": str(recorded.evidence_id),
+                "evidence_hash": recorded.evidence_hash,
+                "report": evidence,
+                "attempt_id": str(render_attempt_id),
+                "replayed": recorded.replayed,
+            }
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    @activity.defn(name="agent_v2.repair_visual")
+    async def agent_repair_visual(self, payload: dict[str, Any]) -> dict[str, Any]:
+        request = _agent_v2_request(payload)
+        candidate_build_id = _uuid(payload, "candidate_build_id")
+        source_id = _uuid(payload, "source_id")
+        step_key = str(payload["repair_step_key"])
+        async with tenant_transaction(
+            request.tenant_id,
+            request.principal_id,
+        ) as connection:
+            replay = await get_generated_source_for_step(
+                connection,
+                tenant_id=request.tenant_id,
+                workflow_id=request.workflow_run_id,
+                step_key=step_key,
+            )
+            if replay is not None:
+                return {
+                    "source_id": str(replay["id"]),
+                    "source_hash": replay["source_hash"],
+                    "source_code": replay["source_code"],
+                    "repair_step_key": step_key,
+                    "replayed": True,
+                }
+            source = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT source_code, source_hash FROM agent_generated_sources
+                        WHERE tenant_id=:tenant_id AND id=:source_id
+                          AND candidate_build_id=:candidate_build_id
+                        """
+                    ),
+                    {
+                        "tenant_id": request.tenant_id,
+                        "source_id": source_id,
+                        "candidate_build_id": candidate_build_id,
+                    },
+                )
+            ).mappings().one_or_none()
+            if source is None or source["source_hash"] != str(payload["source_hash"]):
+                raise ApplicationError(
+                    "visual repair source is missing or changed",
+                    type="agent_visual_repair_source_conflict",
+                    non_retryable=True,
+                )
+            step_id = await _start_agent_logical_step(
+                connection,
+                tenant_id=request.tenant_id,
+                workflow_id=request.workflow_run_id,
+                step_key=step_key,
+                step_index=int(payload["step_index"]),
+                kind="agent_visual_repair",
+            )
+        try:
+            repaired, provenance = await self.durable_visual.repair(
+                source_code=str(source["source_code"]),
+                issues=tuple(str(item) for item in payload.get("issues") or ()),
+                suggestions=tuple(
+                    str(item) for item in payload.get("suggestions") or ()
+                ),
+            )
+            async with tenant_transaction(
+                request.tenant_id,
+                request.principal_id,
+            ) as connection:
+                recorded = await record_generated_source(
+                    connection,
+                    tenant_id=request.tenant_id,
+                    candidate_build_id=candidate_build_id,
+                    workflow_id=request.workflow_run_id,
+                    step_id=step_id,
+                    predecessor_source_id=source_id,
+                    source_code=repaired,
+                    generator_kind="repair:vision_mismatch",
+                    provider=str(provenance["provider"]),
+                    model=str(provenance["model"]),
+                    provider_response_id=(
+                        str(provenance["provider_response_id"])
+                        if provenance.get("provider_response_id")
+                        else None
+                    ),
+                    request_hash=str(provenance["request_hash"]),
+                    response_hash=str(provenance["response_hash"]),
+                    finish_reason=(
+                        str(provenance["finish_reason"])
+                        if provenance.get("finish_reason")
+                        else None
+                    ),
+                    usage=dict(provenance.get("usage") or {}),
+                )
+                await append_workflow_event(
+                    connection,
+                    tenant_id=request.tenant_id,
+                    workflow_id=request.workflow_run_id,
+                    event_type="agent.visual_repair.source_generated",
+                    payload={
+                        "repair_step_key": step_key,
+                        "prior_source_id": str(source_id),
+                        "source_id": str(recorded.source_id),
+                        "prior_source_hash": str(source["source_hash"]),
+                        "source_hash": recorded.source_hash,
+                    },
+                )
+            return {
+                "source_id": str(recorded.source_id),
+                "source_hash": recorded.source_hash,
+                "source_code": repaired,
+                "repair_step_key": step_key,
+                "provenance": provenance,
+                "replayed": recorded.replayed,
+            }
+        except Exception as exc:
+            await _fail_agent_logical_step(
+                tenant_id=request.tenant_id,
+                principal_id=request.principal_id,
+                workflow_id=request.workflow_run_id,
+                step_key=step_key,
+                error_code="agent_visual_repair_failed",
+                error_message=str(exc)[:4000],
+            )
+            raise
+
+    @activity.defn(name="agent_v2.validate_dfm")
+    async def agent_validate_dfm(self, payload: dict[str, Any]) -> dict[str, Any]:
+        info = activity.info()
+        request = _agent_v2_request(payload)
+        candidate_build_id = _uuid(payload, "candidate_build_id")
+        manifest_id = _uuid(payload, "staging_manifest_id")
+        step_key = str(payload["validation_step_key"])
+        async with tenant_transaction(
+            request.tenant_id,
+            request.principal_id,
+        ) as connection:
+            replay = await get_validation_evidence_for_manifest(
+                connection,
+                tenant_id=request.tenant_id,
+                candidate_build_id=candidate_build_id,
+                workflow_id=request.workflow_run_id,
+                staging_manifest_id=manifest_id,
+                gate="dfm",
+            )
+            if replay is not None:
+                return {
+                    "status": "completed",
+                    "outcome": replay["outcome"],
+                    "evidence_id": str(replay["id"]),
+                    "evidence_hash": replay["evidence_hash"],
+                    "report": dict(replay["evidence"]),
+                    "attempt_id": str(replay["execution_attempt_id"]),
+                    "replayed": True,
+                }
+            policy = await resolve_dfm_policy_snapshot(
+                connection,
+                tenant_id=request.tenant_id,
+                manufacturing_profile=(
+                    dict(request.manufacturing_profile)
+                    if request.manufacturing_profile
+                    else None
+                ),
+            )
+        attempt_id, step_id, lease_token, lease_generation = (
+            await _prepare_agent_validation_attempt(
+                payload,
+                temporal_attempt=info.attempt,
+                step_key=step_key,
+                step_index=int(payload["step_index"]),
+                step_kind="agent_dfm_validation",
+            )
+        )
+        temp_dir = Path(tempfile.mkdtemp(prefix="agent_dfm_"))
+        outcome: MaterializedExecutionOutcome | None = None
+        try:
+            _, declaration, materialized = await self._agent_validation_input(
+                request=request,
+                candidate_build_id=candidate_build_id,
+                manifest_id=manifest_id,
+                temp_dir=temp_dir,
+            )
+            policy_path = temp_dir / "dfm-policy.json"
+            policy_path.write_bytes(policy.canonical_bytes())
+            policy_id = f"{manifest_id}:dfm-policy:{policy.policy_hash}"
+            policy_declaration = ArtifactInput(
+                artifact_id=policy_id,
+                filename=policy_path.name,
+                sha256=policy.policy_hash,
+                size_bytes=policy_path.stat().st_size,
+                media_type="application/json",
+            )
+            materialized[policy_id] = policy_path
+            task = {
+                "schema_version": "mcad-capability-task.v1",
+                "capability": "dfm",
+                "operation": "validate",
+                "params": {
+                    "policy_hash": policy.policy_hash,
+                    "output": "dfm-report.json",
+                },
+                "inputs": {
+                    "model": declaration.filename,
+                    "policy": policy_declaration.filename,
+                },
+            }
+            source_code = json.dumps(
+                task, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
+            snapshot = await asyncio.to_thread(self.backend.runtime_snapshot)
+            spec = ExecutionSpec(
+                execution_attempt_id=str(attempt_id),
+                workflow_run_id=str(request.workflow_run_id),
+                step_run_id=str(step_id),
+                tenant_id=str(request.tenant_id),
+                project_id=str(request.project_id),
+                expected_base_revision_id=str(request.expected_base_revision_id),
+                idempotency_key=f"agent-v2:{request.workflow_run_id}:{step_key}:{info.attempt}",
+                capability="mcad.dfm",
+                operation="validate",
+                mode="analysis",
+                source=ExecutionSource(
+                    language="json",
+                    code=source_code,
+                    sha256=hashlib.sha256(source_code.encode()).hexdigest(),
+                ),
+                inputs=(declaration, policy_declaration),
+                outputs=(
+                    OutputDeclaration(
+                        name="artifact",
+                        media_type="application/json",
+                        max_size_bytes=4 * 1024 * 1024,
+                    ),
+                    OutputDeclaration(
+                        name="capability-result",
+                        media_type="application/json",
+                        max_size_bytes=4 * 1024 * 1024,
+                    ),
+                ),
+                runtime=RuntimeRequirement(
+                    image_digest=snapshot.image_digest,
+                    platform=snapshot.platform,
+                    sandbox_tier="ephemeral-job",
+                ),
+                limits=ResourceLimits(timeout_seconds=120),
+                metadata={
+                    "candidate_build_id": str(candidate_build_id),
+                    "staging_manifest_id": str(manifest_id),
+                    "gate": "dfm",
+                    "policy_hash": policy.policy_hash,
+                },
+            )
+            outcome = await _run_backend_with_heartbeats(
+                self.backend,
+                spec,
+                tenant_id=request.tenant_id,
+                principal_id=request.principal_id,
+                attempt_id=attempt_id,
+                lease_token=lease_token,
+                lease_generation=lease_generation,
+                materialized_inputs=materialized,
+            )
+            runtime_provenance = (
+                outcome.result.provenance.model_dump(mode="json")
+                if outcome.result.provenance
+                else None
+            )
+            result_payload = None
+            if outcome.result.status is ExecutionStatus.SUCCEEDED:
+                try:
+                    report = DurableDFMReport.model_validate_json(
+                        outcome.files["artifact"].read_text(encoding="utf-8")
+                    )
+                    if report.policy_hash != policy.policy_hash:
+                        raise ValueError("DFM report used another policy")
+                except Exception as exc:
+                    report = indeterminate_dfm_report(
+                        process=policy.process,
+                        material=policy.material,
+                        policy_hash=policy.policy_hash,
+                        issue=f"dfm_report_invalid:{type(exc).__name__}",
+                    )
+                execution_status = ExecutionStatus.SUCCEEDED
+                result_payload = {
+                    "status": "succeeded",
+                    "gate": "dfm",
+                    "outcome": report.outcome,
+                    "report": report.model_dump(mode="json"),
+                    "execution_result": outcome.result.model_dump(mode="json"),
+                }
+                error_code = error_message = None
+            else:
+                error = outcome.result.error
+                report = indeterminate_dfm_report(
+                    process=policy.process,
+                    material=policy.material,
+                    policy_hash=policy.policy_hash,
+                    issue=error.code if error else "dfm_execution_failed",
+                )
+                execution_status = outcome.result.status
+                error_code = error.code if error else "dfm_execution_failed"
+                error_message = error.message if error else "DFM execution failed"
+            evidence = report.durable_evidence(
+                runtime_provenance=runtime_provenance,
+                policy_object={
+                    **policy.model_dump(mode="json"),
+                    "policy_hash": policy.policy_hash,
+                },
+            )
+            recorded = await _record_agent_validation_outcome(
+                payload,
+                candidate_build_id=candidate_build_id,
+                staging_manifest_id=manifest_id,
+                gate="dfm",
+                mode=str(payload["gate_mode"]),
+                outcome=report.outcome,
+                evidence=evidence,
+                attempt_id=attempt_id,
+                step_id=step_id,
+                execution_status=execution_status,
+                lease_token=lease_token,
+                lease_generation=lease_generation,
+                result_payload=result_payload,
+                error_code=error_code,
+                error_message=error_message,
+            )
+            return {
+                "status": "completed",
+                "outcome": report.outcome,
+                "evidence_id": str(recorded.evidence_id),
+                "evidence_hash": recorded.evidence_hash,
+                "report": evidence,
+                "attempt_id": str(attempt_id),
+                "replayed": recorded.replayed,
+            }
+        except asyncio.CancelledError:
+            await _mark_execution_failure(
+                payload,
+                attempt_id=attempt_id,
+                step_id=step_id,
+                status=ExecutionStatus.CANCELLED,
+                error_code="dfm_validation_cancelled",
+                error_message="DFM validation was cancelled.",
+            )
+            raise
+        except Exception as exc:
+            report = indeterminate_dfm_report(
+                process=policy.process,
+                material=policy.material,
+                policy_hash=policy.policy_hash,
+                issue=f"dfm_unavailable:{type(exc).__name__}",
+            )
+            evidence = report.durable_evidence(
+                runtime_provenance=None,
+                policy_object={
+                    **policy.model_dump(mode="json"),
+                    "policy_hash": policy.policy_hash,
+                },
+            )
+            recorded = await _record_agent_validation_outcome(
+                payload,
+                candidate_build_id=candidate_build_id,
+                staging_manifest_id=manifest_id,
+                gate="dfm",
+                mode=str(payload["gate_mode"]),
+                outcome="indeterminate",
+                evidence=evidence,
+                attempt_id=attempt_id,
+                step_id=step_id,
+                execution_status=ExecutionStatus.FAILED,
+                lease_token=lease_token,
+                lease_generation=lease_generation,
+                error_code="dfm_validation_failed",
+                error_message=str(exc)[:4000],
+            )
+            return {
+                "status": "completed",
+                "outcome": "indeterminate",
+                "evidence_id": str(recorded.evidence_id),
+                "evidence_hash": recorded.evidence_hash,
+                "report": evidence,
+                "attempt_id": str(attempt_id),
+            }
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
             if outcome is not None and outcome.work_dir is not None:
@@ -3994,6 +4842,10 @@ class McadWorkflowActivities:
             self.agent_repair_source,
             self.agent_execute_model,
             self.agent_validate_geometry,
+            self.agent_render_visual,
+            self.agent_judge_visual,
+            self.agent_repair_visual,
+            self.agent_validate_dfm,
             self.wait_confirmation,
             self.resume_after_confirmation,
             self.record_cancel,

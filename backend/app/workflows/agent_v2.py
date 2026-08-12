@@ -19,6 +19,15 @@ _CONTROL_RETRY = RetryPolicy(
 )
 
 
+def required_gate_blocks(mode: str, outcome: str) -> bool:
+    """One policy rule shared by visual and DFM workflow gates."""
+    if mode not in {"required", "advisory"}:
+        raise ValueError(f"unsupported active gate mode: {mode}")
+    if outcome not in {"passed", "failed", "indeterminate"}:
+        raise ValueError(f"unsupported gate outcome: {outcome}")
+    return mode == "required" and outcome != "passed"
+
+
 @workflow.defn(name="McadAgentWorkflowV2")
 class McadAgentWorkflowV2:
     """Persist planning first and block execution at an explicit gate."""
@@ -289,6 +298,7 @@ class McadAgentWorkflowV2:
         modeled: dict[str, Any],
         plan_step_index: int,
         expected_dimensions: dict[str, float],
+        validation_cycle: int = 0,
     ) -> dict[str, Any]:
         geometry_policy = plan["validation_policy"]["geometry"]
         if geometry_policy["mode"] != "required":
@@ -306,25 +316,32 @@ class McadAgentWorkflowV2:
         validation_index = 0
         while True:
             validation_index += 1
+            validation_step_key = (
+                f"geometry-{step['step_key']}-{validation_index:02d}"
+                if validation_cycle == 0
+                else (
+                    f"geometry-{step['step_key']}-v{validation_cycle:02d}-"
+                    f"{validation_index:02d}"
+                )
+            )
             geometry = await self._activity(
                 "agent_v2.validate_geometry",
                 {
                     **request,
                     "candidate_build_id": candidate_build_id,
                     "staging_manifest_id": executed["staging_manifest_id"],
-                    "validation_step_key": (
-                        f"geometry-{step['step_key']}-{validation_index:02d}"
-                    ),
+                    "validation_step_key": validation_step_key,
                     "step_index": (
-                        20_000 + plan_step_index * 10 + validation_index
+                        20_000
+                        + plan_step_index * 100
+                        + validation_cycle * 10
+                        + validation_index
                     ),
                     "expected_dimensions_mm": expected_dimensions,
                     "dimension_tolerance": 0.05,
                     "timeout_seconds": 120,
                 },
-                suffix=(
-                    f"validate-geometry-{step['step_key']}-{validation_index:02d}"
-                ),
+                suffix=f"validate-{validation_step_key}",
                 execution=True,
             )
             if geometry["outcome"] == "passed":
@@ -410,6 +427,9 @@ class McadAgentWorkflowV2:
                     "source_code": generated["source_code"],
                     "mode": modeled["mode"],
                     "timeout_seconds": 120,
+                    "supersedes_staging_manifest_id": executed[
+                        "staging_manifest_id"
+                    ],
                 },
                 suffix=f"execute-geometry-repair-{step['step_key']}-{repair_index:02d}",
                 execution=True,
@@ -420,6 +440,184 @@ class McadAgentWorkflowV2:
             return {"result": await self._model_step(**kwargs), "error": None}
         except Exception as exc:
             return {"result": None, "error": exc}
+
+    async def _visual_gate(
+        self,
+        *,
+        request: dict[str, Any],
+        plan: dict[str, Any],
+        candidate_build_id: str,
+        modeled: dict[str, Any],
+        plan_step_index: int,
+        expected_dimensions: dict[str, float],
+    ) -> dict[str, Any]:
+        policy = plan["validation_policy"]["visual"]
+        if policy["mode"] == "disabled":
+            return {**modeled, "visual": None}
+        current = modeled
+        visual_repairs = 0
+        while True:
+            render_index = visual_repairs + 1
+            rendered = await self._activity(
+                "agent_v2.render_visual",
+                {
+                    **request,
+                    "candidate_build_id": candidate_build_id,
+                    "staging_manifest_id": current["executed"]["staging_manifest_id"],
+                    "validation_step_key": (
+                        f"visual-{current['step']['step_key']}-{render_index:02d}"
+                    ),
+                    "step_index": 30_000 + plan_step_index * 10 + render_index,
+                    "gate_mode": policy["mode"],
+                    "timeout_seconds": 120,
+                },
+                suffix=(
+                    f"render-visual-{current['step']['step_key']}-{render_index:02d}"
+                ),
+                execution=True,
+            )
+            if rendered.get("outcome") == "indeterminate":
+                visual = rendered
+            else:
+                visual = await self._activity(
+                    "agent_v2.judge_visual",
+                    {
+                        **request,
+                        "candidate_build_id": candidate_build_id,
+                        "staging_manifest_id": current["executed"][
+                            "staging_manifest_id"
+                        ],
+                        "render_attempt_id": rendered["attempt_id"],
+                        "render_step_id": rendered["step_id"],
+                        "renders": rendered["renders"],
+                        "runtime_provenance": rendered["runtime_provenance"],
+                        "objective": plan["objective"],
+                        "design_brief": plan["design_brief"],
+                        "gate_mode": policy["mode"],
+                    },
+                    suffix=(
+                        f"judge-visual-{current['step']['step_key']}-{render_index:02d}"
+                    ),
+                )
+            if visual["outcome"] == "passed":
+                return {**current, "visual": visual}
+            if visual["outcome"] == "indeterminate":
+                if required_gate_blocks(policy["mode"], visual["outcome"]):
+                    raise ApplicationError(
+                        "Required visual validation is indeterminate.",
+                        {
+                            "outcome": "indeterminate",
+                            "evidence_id": visual["evidence_id"],
+                        },
+                        type="agent_visual_validation_indeterminate",
+                        non_retryable=True,
+                    )
+                return {**current, "visual": visual}
+            if visual_repairs >= int(policy["repair_budget"]):
+                if required_gate_blocks(policy["mode"], visual["outcome"]):
+                    raise ApplicationError(
+                        "Required visual validation failed.",
+                        {
+                            "outcome": "failed",
+                            "evidence_id": visual["evidence_id"],
+                        },
+                        type="agent_visual_validation_failed",
+                        non_retryable=True,
+                    )
+                return {**current, "visual": visual}
+            visual_repairs += 1
+            repair_step_key = (
+                f"visual-repair-{current['step']['step_key']}-{visual_repairs:02d}"
+            )
+            judgment = dict(visual["report"].get("judgment") or {})
+            repaired = await self._activity(
+                "agent_v2.repair_visual",
+                {
+                    **request,
+                    "candidate_build_id": candidate_build_id,
+                    "source_id": current["generated"]["source_id"],
+                    "source_hash": current["generated"]["source_hash"],
+                    "repair_step_key": repair_step_key,
+                    "step_index": 40_000 + plan_step_index * 10 + visual_repairs,
+                    "issues": judgment.get("issues") or (),
+                    "suggestions": judgment.get("suggestions") or (),
+                },
+                suffix=repair_step_key,
+            )
+            generated = {**current["generated"], **repaired}
+            executed = await self._activity(
+                "agent_v2.execute_model",
+                {
+                    **request,
+                    "candidate_build_id": candidate_build_id,
+                    "plan": plan,
+                    "step": current["step"],
+                    "step_index": 40_000 + plan_step_index * 10 + visual_repairs,
+                    "run_step_key": repair_step_key,
+                    "run_step_kind": "agent_visual_repair",
+                    "source_id": generated["source_id"],
+                    "source_hash": generated["source_hash"],
+                    "source_code": generated["source_code"],
+                    "mode": current["mode"],
+                    "timeout_seconds": 120,
+                    "supersedes_staging_manifest_id": current["executed"][
+                        "staging_manifest_id"
+                    ],
+                },
+                suffix=f"execute-{repair_step_key}",
+                execution=True,
+            )
+            current = await self._geometry_gate(
+                request=request,
+                plan=plan,
+                candidate_build_id=candidate_build_id,
+                modeled={
+                    **current,
+                    "generated": generated,
+                    "executed": executed,
+                },
+                plan_step_index=plan_step_index,
+                expected_dimensions=expected_dimensions,
+                validation_cycle=visual_repairs,
+            )
+
+    async def _dfm_gate(
+        self,
+        *,
+        request: dict[str, Any],
+        plan: dict[str, Any],
+        candidate_build_id: str,
+        modeled: dict[str, Any],
+        plan_step_index: int,
+    ) -> dict[str, Any]:
+        policy = plan["validation_policy"]["dfm"]
+        if policy["mode"] == "disabled":
+            return {**modeled, "dfm": None}
+        dfm = await self._activity(
+            "agent_v2.validate_dfm",
+            {
+                **request,
+                "candidate_build_id": candidate_build_id,
+                "staging_manifest_id": modeled["executed"]["staging_manifest_id"],
+                "validation_step_key": f"dfm-{modeled['step']['step_key']}",
+                "step_index": 50_000 + plan_step_index,
+                "gate_mode": policy["mode"],
+                "timeout_seconds": 120,
+            },
+            suffix=f"validate-dfm-{modeled['step']['step_key']}",
+            execution=True,
+        )
+        if required_gate_blocks(policy["mode"], dfm["outcome"]):
+            raise ApplicationError(
+                "Required DFM validation did not pass.",
+                {
+                    "outcome": dfm["outcome"],
+                    "evidence_id": dfm["evidence_id"],
+                },
+                type="agent_dfm_validation_failed",
+                non_retryable=True,
+            )
+        return {**modeled, "dfm": dfm}
 
     @workflow.run
     async def run(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -659,6 +857,31 @@ class McadAgentWorkflowV2:
                         expected_dimensions=expected_dimensions,
                     )
                 )
+            self._phase = "validating:visual"
+            visually_validated: list[dict[str, Any]] = []
+            for plan_step_index, item in enumerate(validated):
+                visually_validated.append(
+                    await self._visual_gate(
+                        request=request,
+                        plan=self._plan,
+                        candidate_build_id=self._candidate_build_id,
+                        modeled=item,
+                        plan_step_index=plan_step_index,
+                        expected_dimensions=expected_dimensions,
+                    )
+                )
+            self._phase = "validating:dfm"
+            fully_validated: list[dict[str, Any]] = []
+            for plan_step_index, item in enumerate(visually_validated):
+                fully_validated.append(
+                    await self._dfm_gate(
+                        request=request,
+                        plan=self._plan,
+                        candidate_build_id=self._candidate_build_id,
+                        modeled=item,
+                        plan_step_index=plan_step_index,
+                    )
+                )
             manifests = [
                 {
                     "step_key": item["step"]["step_key"],
@@ -669,15 +892,21 @@ class McadAgentWorkflowV2:
                     ],
                     "manifest_hash": item["executed"]["manifest_hash"],
                     "geometry_evidence_id": item["geometry"]["evidence_id"],
+                    "visual_evidence_id": (
+                        item["visual"]["evidence_id"] if item["visual"] else None
+                    ),
+                    "dfm_evidence_id": (
+                        item["dfm"]["evidence_id"] if item["dfm"] else None
+                    ),
                 }
-                for item in validated
+                for item in fully_validated
             ]
-            self._phase = "post_geometry_validation_not_enabled"
+            self._phase = "sealing_not_enabled"
             raise ApplicationError(
-                "Durable Agent modeling and required geometry validation completed, "
-                "but visual/DFM gates and sealing are not enabled yet for candidate "
+                "Durable Agent modeling and validation completed, but candidate "
+                "sealing is not enabled yet for candidate "
                 f"{candidate['candidate_build_id']}.",
-                type="agent_v2_post_geometry_validation_not_enabled",
+                type="agent_v2_sealing_not_enabled",
                 non_retryable=True,
             )
         except asyncio.CancelledError:

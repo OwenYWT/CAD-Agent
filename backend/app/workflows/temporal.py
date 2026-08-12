@@ -97,11 +97,11 @@ class McadSourcePreparationRequest(BaseModel):
     operation: Literal["generate", "modify"]
     prompt: str = Field(min_length=1, max_length=10_000)
     existing_code: str | None = Field(default=None, max_length=50_000)
+    manufacturing_profile: dict[str, Any] | None = None
     output_formats: tuple[Literal["step", "stl", "dxf", "svg"], ...] = (
         "step",
         "stl",
     )
-    manufacturing_profile: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def validate_operation_inputs(self) -> "McadSourcePreparationRequest":
@@ -163,6 +163,7 @@ class McadAgentWorkflowV2Request(BaseModel):
     operation: Literal["generate", "modify"]
     objective: str = Field(min_length=1, max_length=4000)
     existing_code: str | None = Field(default=None, max_length=50_000)
+    manufacturing_profile: dict[str, Any] | None = None
     output_formats: tuple[Literal["step", "stl", "dxf", "svg"], ...] = (
         "step",
         "stl",
