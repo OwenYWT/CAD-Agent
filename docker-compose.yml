@@ -113,6 +113,8 @@ services:
       TEMPORAL_TARGET: ${TEMPORAL_TARGET:-temporal:7233}
       TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
       TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-cad-agent-mcad}
+      TEMPORAL_AGENT_V2_TASK_QUEUE: ${TEMPORAL_AGENT_V2_TASK_QUEUE:-cad-agent-mcad-v2}
+      DURABLE_AGENT_FUSION_ENABLED: ${DURABLE_AGENT_FUSION_ENABLED:-false}
       FILE_STORAGE_DIR: /app/data/files
       HISTORY_DB_PATH: /app/data/history.db
     depends_on:
@@ -152,6 +154,8 @@ services:
       TEMPORAL_TARGET: ${TEMPORAL_TARGET:-temporal:7233}
       TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
       TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-cad-agent-mcad}
+      TEMPORAL_AGENT_V2_TASK_QUEUE: ${TEMPORAL_AGENT_V2_TASK_QUEUE:-cad-agent-mcad-v2}
+      DURABLE_AGENT_FUSION_ENABLED: ${DURABLE_AGENT_FUSION_ENABLED:-false}
       FILE_STORAGE_DIR: /app/data/files
       HISTORY_DB_PATH: /app/data/history.db
     command: ["python", "-m", "app.workers.workflow_worker"]

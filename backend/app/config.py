@@ -1,7 +1,7 @@
 import re
 from urllib.parse import urlsplit
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     temporal_target: str = ""
     temporal_namespace: str = "default"
     temporal_task_queue: str = "cad-agent-mcad"
+    temporal_agent_v2_task_queue: str = "cad-agent-mcad-v2"
+    durable_agent_fusion_enabled: bool = False
     file_storage_dir: str = "./data/files"
     history_db_path: str = "./data/history.db"
     file_ttl_hours: int = 24  # generated files older than this are cleaned up
@@ -155,6 +157,18 @@ class Settings(BaseSettings):
     generate_deadline_s: float = 180.0
 
     model_config = {"env_file": ".env", "extra": "ignore"}
+
+    @model_validator(mode="after")
+    def keep_temporal_workflow_versions_isolated(self) -> "Settings":
+        if (
+            self.temporal_agent_v2_task_queue.strip()
+            == self.temporal_task_queue.strip()
+        ):
+            raise ValueError(
+                "TEMPORAL_AGENT_V2_TASK_QUEUE must be different from "
+                "TEMPORAL_TASK_QUEUE"
+            )
+        return self
 
     @property
     def normalized_llm_provider(self) -> str:
@@ -293,6 +307,10 @@ class Settings(BaseSettings):
             "TEMPORAL_NAMESPACE": self.temporal_namespace,
             "TEMPORAL_TASK_QUEUE": self.temporal_task_queue,
         }
+        if self.durable_agent_fusion_enabled:
+            required["TEMPORAL_AGENT_V2_TASK_QUEUE"] = (
+                self.temporal_agent_v2_task_queue
+            )
         for name, value in required.items():
             if not value.strip():
                 problems.append(f"{name} is required.")

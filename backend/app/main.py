@@ -15,6 +15,7 @@ from app.db import close_database, database_readiness
 from app.execution.composition import get_execution_backend
 from app.object_store import object_store_readiness
 from app.temporal_client import (
+    temporal_agent_v2_worker_readiness,
     temporal_readiness,
     temporal_worker_readiness,
 )
@@ -129,6 +130,10 @@ async def _durable_control_plane_readiness() -> dict:
         "temporal": temporal_readiness,
         "temporal_worker": temporal_worker_readiness,
     }
+    if settings.durable_agent_fusion_enabled:
+        probes["temporal_agent_v2_worker"] = (
+            temporal_agent_v2_worker_readiness
+        )
     results = await asyncio.gather(
         *(probe() for probe in probes.values()),
         return_exceptions=True,

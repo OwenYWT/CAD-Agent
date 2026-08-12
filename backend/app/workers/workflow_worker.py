@@ -13,6 +13,7 @@ from app.execution.composition import get_execution_backend
 from app.object_store import object_store_readiness
 from app.temporal_client import get_temporal_client
 from app.workflows.activities import McadWorkflowActivities
+from app.workflows.agent_v2 import McadAgentWorkflowV2
 from app.workflows.definitions import McadCheckWorkflow, McadDurableWorkflow
 
 
@@ -30,6 +31,21 @@ def build_workflow_worker(
     )
 
 
+def build_agent_v2_workflow_worker(
+    client: Client,
+    *,
+    backend: ExecutionBackend | None = None,
+) -> Worker:
+    """Build the version-isolated V2 worker on its dedicated task queue."""
+    activities = McadWorkflowActivities(backend)
+    return Worker(
+        client,
+        task_queue=settings.temporal_agent_v2_task_queue,
+        workflows=[McadAgentWorkflowV2],
+        activities=activities.registered(),
+    )
+
+
 async def run_worker() -> None:
     settings.assert_sandbox_config_safe()
     settings.assert_durable_control_plane_config_safe()
@@ -38,8 +54,9 @@ async def run_worker() -> None:
     backend = get_execution_backend()
     await asyncio.to_thread(backend.runtime_snapshot)
     client = await get_temporal_client()
-    worker = build_workflow_worker(client, backend=backend)
-    await worker.run()
+    v1_worker = build_workflow_worker(client, backend=backend)
+    v2_worker = build_agent_v2_workflow_worker(client, backend=backend)
+    await asyncio.gather(v1_worker.run(), v2_worker.run())
 
 
 def main() -> None:

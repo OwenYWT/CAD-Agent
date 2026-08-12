@@ -202,6 +202,36 @@ async def test_readiness_reports_each_real_dependency(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_readiness_requires_v2_worker_before_fusion_routing(monkeypatch):
+    from app import main
+
+    async def healthy():
+        return {"status": "ready"}
+
+    async def v2_unavailable():
+        raise RuntimeError("no V2 poller")
+
+    monkeypatch.setattr(main.settings, "durable_control_plane_enabled", True)
+    monkeypatch.setattr(main.settings, "durable_agent_fusion_enabled", True)
+    monkeypatch.setattr(main, "database_readiness", healthy)
+    monkeypatch.setattr(main, "object_store_readiness", healthy)
+    monkeypatch.setattr(main, "temporal_readiness", healthy)
+    monkeypatch.setattr(main, "temporal_worker_readiness", healthy)
+    monkeypatch.setattr(
+        main,
+        "temporal_agent_v2_worker_readiness",
+        v2_unavailable,
+    )
+
+    result = await main._durable_control_plane_readiness()
+
+    assert result["status"] == "degraded"
+    assert result["dependencies"]["temporal_agent_v2_worker"]["status"] == (
+        "unavailable"
+    )
+
+
+@pytest.mark.asyncio
 async def test_readiness_is_fail_closed_and_sanitizes_dependency_error(monkeypatch):
     from app import main
 

@@ -54,8 +54,8 @@ async def temporal_readiness() -> dict:
     }
 
 
-async def temporal_worker_readiness() -> dict:
-    """Require recent workflow and activity pollers on the product queue."""
+async def _worker_readiness(task_queue: str) -> dict:
+    """Require recent workflow and activity pollers on one exact queue."""
     started = time.perf_counter()
 
     async def _probe() -> dict[str, int | float]:
@@ -70,7 +70,7 @@ async def temporal_worker_readiness() -> dict:
                 DescribeTaskQueueRequest(
                     namespace=settings.temporal_namespace,
                     task_queue=TaskQueue(
-                        name=settings.temporal_task_queue,
+                        name=task_queue,
                     ),
                     task_queue_type=queue_type,
                     report_pollers=True,
@@ -112,6 +112,16 @@ async def temporal_worker_readiness() -> dict:
         "latency_ms": round((time.perf_counter() - started) * 1000),
         **counts,
     }
+
+
+async def temporal_worker_readiness() -> dict:
+    """Require recent V1 workflow and activity pollers."""
+    return await _worker_readiness(settings.temporal_task_queue)
+
+
+async def temporal_agent_v2_worker_readiness() -> dict:
+    """Require a V2 poller before any submission routing can be enabled."""
+    return await _worker_readiness(settings.temporal_agent_v2_task_queue)
 
 
 @workflow.defn(sandboxed=False)
