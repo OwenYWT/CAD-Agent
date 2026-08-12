@@ -19,7 +19,7 @@ from sqlalchemy import text
 from temporalio.client import WorkflowFailureError
 
 from app.config import settings
-from app.agent.assembly_planner import AssemblyPlan
+from app.agent.assembly_planner import AssemblyPart, AssemblyPlan
 from app.agent.durable_planner import DurableAgentPlanner
 from app.agent.multi_step import BuildPhase, BuildPlan, BuildStep
 from app.db import close_database, get_database_engine, tenant_transaction
@@ -232,6 +232,123 @@ class _V2DecomposerStub:
 class _V2AssemblyStub:
     async def plan_assembly(self, plan, *, allow_fallback=True):
         return AssemblyPlan(parts=[], assembly_description="unused")
+
+
+class _V2AssemblyPlannerStub:
+    async def plan_new(self, messages):
+        from app.models.schemas import CADPlan, DesignBrief
+
+        return CADPlan(
+            description="创建底座与上盖装配体",
+            part_type="assembly",
+            dimensions={"length": 30, "width": 20, "height": 8},
+            features=["底座", "上盖"],
+            constraints=[],
+            modeling_hint="assembly_combine",
+            design_brief=DesignBrief(
+                intent_summary="创建底座与上盖装配体",
+                artifact_type="assembly",
+            ),
+        )
+
+
+class _V2AssemblyDecompositionStub:
+    async def plan_assembly(self, plan, *, allow_fallback=True):
+        return AssemblyPlan(
+            assembly_description="底座与上盖上下装配",
+            parts=[
+                AssemblyPart(
+                    name="base",
+                    description="创建 30x20x4 mm 底座",
+                    dimensions={"length": 30, "width": 20, "height": 4},
+                    position=[0, 0, 0],
+                    color="lightgray",
+                ),
+                AssemblyPart(
+                    name="lid",
+                    description="创建 30x20x2 mm 上盖",
+                    dimensions={"length": 30, "width": 20, "height": 2},
+                    position=[0, 0, 5],
+                    color="steelblue",
+                ),
+            ],
+        )
+
+
+class _V2AssemblyModelingStub:
+    def __init__(self, fail_step: str | None = None):
+        self.fail_step = fail_step
+        self.calls: list[str] = []
+
+    async def generate_step_source(self, *, step, requirements, **_kwargs):
+        self.calls.append(step.step_key)
+        if step.step_key == self.fail_step:
+            return SourceGenerationResult(
+                source_code="raise ValueError('controlled part failure')\n",
+                mode="3d",
+                generator_kind="controlled_assembly_failure",
+                provenance={
+                    "provider": "controlled-provider",
+                    "model": "controlled-model",
+                    "provider_response_id": f"completion-{step.step_key}",
+                    "request_hash": "e" * 64,
+                    "response_hash": "f" * 64,
+                    "finish_reason": "stop",
+                    "usage": {},
+                },
+            )
+        if step.kind == "assembly_part":
+            height = 4 if step.step_key == "part-01" else 2
+            source = (
+                "import cadquery as cq\n"
+                f"def make_{step.step_key.replace('-', '_')}():\n"
+                f"    return cq.Workplane('XY').box(30, 20, {height})\n"
+                f"result = make_{step.step_key.replace('-', '_')}()\n"
+            )
+        else:
+            assert len(requirements["part_sources"]) == 2
+            source = (
+                "import cadquery as cq\n"
+                "def make_part_01(): return cq.Workplane('XY').box(30,20,4)\n"
+                "def make_part_02(): return cq.Workplane('XY').box(30,20,2)\n"
+                "result = cq.Assembly()\n"
+                "result.add(make_part_01(), name='base')\n"
+                "result.add(make_part_02(), name='lid', "
+                "loc=cq.Location((0,0,5)))\n"
+            )
+        return SourceGenerationResult(
+            source_code=source,
+            mode="3d",
+            generator_kind="controlled_assembly",
+            provenance={
+                "provider": "controlled-provider",
+                "model": "controlled-model",
+                "provider_response_id": f"completion-{step.step_key}",
+                "request_hash": "e" * 64,
+                "response_hash": hashlib.sha256(source.encode()).hexdigest(),
+                "finish_reason": "stop",
+                "usage": {"total_tokens": 16},
+            },
+        )
+
+
+class _BlockingAssemblyModelingStub(_V2AssemblyModelingStub):
+    def __init__(self):
+        super().__init__()
+        self.parts_entered = asyncio.Event()
+        self.release_parts = asyncio.Event()
+        self.active = 0
+
+    async def generate_step_source(self, *, step, **kwargs):
+        if step.kind == "assembly_part":
+            self.active += 1
+            if self.active == 2:
+                self.parts_entered.set()
+            try:
+                await self.release_parts.wait()
+            finally:
+                self.active -= 1
+        return await super().generate_step_source(step=step, **kwargs)
 
 
 class _V2ComplexPlannerStub:
@@ -833,6 +950,220 @@ async def test_agent_v2_complex_steps_survive_worker_restart_without_regeneratio
     assert source_rows[1]["predecessor_source_id"] is not None
     assert manifest_count == 2
     assert codegen.calls.count(0) == 1
+
+
+async def _run_assembly_case(*, fail_step: str | None):
+    owner, project_id, initial = await _seed_project(
+        f"agent-v2-assembly-{fail_step or 'success'}"
+    )
+    client = await get_temporal_client()
+    modeling = _V2AssemblyModelingStub(fail_step=fail_step)
+    planner = DurableAgentPlanner(
+        planner=_V2AssemblyPlannerStub(),
+        decomposer=_V2DecomposerStub(),
+        assembly_planner=_V2AssemblyDecompositionStub(),
+    )
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        from app.services.run_state import create_workflow
+
+        created = await create_workflow(
+            connection,
+            tenant_id=owner.tenant_id,
+            project_id=project_id,
+            requested_by_principal_id=owner.principal_id,
+            kind="mcad.agent.v2.generate",
+            idempotency_key=f"agent-v2-assembly-{project_id}",
+            request_payload={"objective": "创建底座与上盖装配体"},
+        )
+    request = McadAgentWorkflowV2Request(
+        workflow_run_id=created.workflow_id,
+        tenant_id=owner.tenant_id,
+        project_id=project_id,
+        principal_id=owner.principal_id,
+        branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,
+        operation="generate",
+        objective="创建底座与上盖装配体",
+    )
+    async with build_agent_v2_workflow_worker(
+        client,
+        backend=get_execution_backend(),
+        durable_planner=planner,
+        durable_modeling=modeling,
+    ):
+        handle = await client.start_workflow(
+            "McadAgentWorkflowV2",
+            request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),
+            task_queue=settings.temporal_agent_v2_task_queue,
+        )
+        with pytest.raises(WorkflowFailureError):
+            await asyncio.wait_for(handle.result(), timeout=120)
+    return owner, created.workflow_id, modeling
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_agent_v2_assembly_executes_parts_then_combine_with_source_edges():
+    owner, workflow_id, modeling = await _run_assembly_case(fail_step=None)
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        steps = (
+            await connection.execute(
+                text(
+                    "SELECT step_key, status, attempt_count FROM step_runs "
+                    "WHERE workflow_run_id=:id AND kind='agent_model' "
+                    "ORDER BY step_index"
+                ),
+                {"id": workflow_id},
+            )
+        ).mappings().all()
+        edges = (
+            await connection.execute(
+                text(
+                    "SELECT i.ordinal, s.step_key AS input_step "
+                    "FROM agent_generated_source_inputs i "
+                    "JOIN agent_generated_sources g ON g.id=i.input_source_id "
+                    "JOIN step_runs s ON s.id=g.step_run_id "
+                    "JOIN agent_generated_sources combined ON combined.id=i.source_id "
+                    "JOIN step_runs cs ON cs.id=combined.step_run_id "
+                    "WHERE i.tenant_id=:tenant_id "
+                    "AND cs.workflow_run_id=:id AND cs.step_key='combine' "
+                    "ORDER BY i.ordinal"
+                ),
+                {"tenant_id": owner.tenant_id, "id": workflow_id},
+            )
+        ).mappings().all()
+        manifests = await connection.scalar(
+            text(
+                "SELECT count(*) FROM agent_staging_manifests "
+                "WHERE workflow_run_id=:id"
+            ),
+            {"id": workflow_id},
+        )
+    assert [row["step_key"] for row in steps] == [
+        "part-01",
+        "part-02",
+        "combine",
+    ]
+    assert all(row["status"] == "succeeded" for row in steps)
+    assert all(row["attempt_count"] == 1 for row in steps)
+    assert [row["input_step"] for row in edges] == ["part-01", "part-02"]
+    assert manifests == 3
+    assert modeling.calls.count("part-01") == 1
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_agent_v2_assembly_partial_failure_preserves_successful_part():
+    owner, workflow_id, modeling = await _run_assembly_case(fail_step="part-02")
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        steps = (
+            await connection.execute(
+                text(
+                    "SELECT step_key, status FROM step_runs "
+                    "WHERE workflow_run_id=:id AND kind='agent_model' "
+                    "ORDER BY step_index"
+                ),
+                {"id": workflow_id},
+            )
+        ).mappings().all()
+        manifests = (
+            await connection.execute(
+                text(
+                    "SELECT s.step_key FROM agent_staging_manifests m "
+                    "JOIN step_runs s ON s.id=m.step_run_id "
+                    "WHERE m.workflow_run_id=:id"
+                ),
+                {"id": workflow_id},
+            )
+        ).scalars().all()
+    by_key = {row["step_key"]: row["status"] for row in steps}
+    assert by_key["part-01"] == "succeeded"
+    assert by_key["part-02"] == "failed"
+    assert "combine" not in by_key
+    assert manifests == ["part-01"]
+    assert "combine" not in modeling.calls
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_agent_v2_assembly_cancel_stops_active_parts_before_execution():
+    owner, project_id, initial = await _seed_project("agent-v2-assembly-cancel")
+    client = await get_temporal_client()
+    modeling = _BlockingAssemblyModelingStub()
+    planner = DurableAgentPlanner(
+        planner=_V2AssemblyPlannerStub(),
+        decomposer=_V2DecomposerStub(),
+        assembly_planner=_V2AssemblyDecompositionStub(),
+    )
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        from app.services.run_state import create_workflow
+
+        created = await create_workflow(
+            connection,
+            tenant_id=owner.tenant_id,
+            project_id=project_id,
+            requested_by_principal_id=owner.principal_id,
+            kind="mcad.agent.v2.generate",
+            idempotency_key=f"agent-v2-assembly-cancel-{project_id}",
+            request_payload={"objective": "创建底座与上盖装配体"},
+        )
+    request = McadAgentWorkflowV2Request(
+        workflow_run_id=created.workflow_id,
+        tenant_id=owner.tenant_id,
+        project_id=project_id,
+        principal_id=owner.principal_id,
+        branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,
+        operation="generate",
+        objective="创建底座与上盖装配体",
+    )
+    async with build_agent_v2_workflow_worker(
+        client,
+        backend=get_execution_backend(),
+        durable_planner=planner,
+        durable_modeling=modeling,
+    ):
+        handle = await client.start_workflow(
+            "McadAgentWorkflowV2",
+            request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),
+            task_queue=settings.temporal_agent_v2_task_queue,
+        )
+        await asyncio.wait_for(modeling.parts_entered.wait(), timeout=30)
+        await handle.signal("cancel_requested", "取消装配体")
+        modeling.release_parts.set()
+        result = await asyncio.wait_for(handle.result(), timeout=60)
+    assert result["status"] == "cancelled"
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        candidate_status = await connection.scalar(
+            text(
+                "SELECT status FROM agent_candidate_builds "
+                "WHERE workflow_run_id=:id"
+            ),
+            {"id": created.workflow_id},
+        )
+        attempt_count = await connection.scalar(
+            text(
+                "SELECT count(*) FROM execution_attempts "
+                "WHERE workflow_run_id=:id"
+            ),
+            {"id": created.workflow_id},
+        )
+    assert candidate_status == "cancelled"
+    assert attempt_count == 0
 
 
 @pytest.mark.skipif(

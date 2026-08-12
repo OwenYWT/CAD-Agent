@@ -69,9 +69,12 @@ class DurableModelingSourceGenerator:
         previous_source: str | None,
         step_index: int,
     ) -> SourceGenerationResult:
-        reset_chat_completion_provenance()
         if plan.model_kind == "assembly":
-            raise ValueError("assembly source generation uses the assembly workflow")
+            return await self._generate_assembly_source(
+                step=step,
+                part_sources=tuple(requirements.get("part_sources") or ()),
+            )
+        reset_chat_completion_provenance()
         if plan.operation == "modify":
             if step.kind != "modify" or step_index != 0:
                 raise ValueError("modification plan must contain one modify step")
@@ -130,6 +133,42 @@ class DurableModelingSourceGenerator:
             step,
             "generate_2d" if plan.model_kind == "profile_2d" else "generate",
         )
+
+    async def _generate_assembly_source(
+        self,
+        *,
+        step: AgentPlanStep,
+        part_sources: tuple[dict[str, Any], ...],
+    ) -> SourceGenerationResult:
+        reset_chat_completion_provenance()
+        if step.kind == "assembly_part":
+            function_name = step.step_key.replace("-", "_")
+            source = await self.code_generator.generate_single_part(
+                function_name,
+                step.description,
+                step.part_dimensions,
+                await self.retriever.find_similar(step.description, top_k=2),
+            )
+            return self._result(source, step, "generate_single_part")
+        if step.kind != "assembly_combine":
+            raise ValueError("unsupported assembly modeling step")
+        if not part_sources or len(part_sources) != len(step.depends_on):
+            raise ValueError("assembly combine requires every planned part source")
+        source_by_key = {str(item["step_key"]): item for item in part_sources}
+        if set(source_by_key) != set(step.depends_on):
+            raise ValueError("assembly combine source set does not match dependencies")
+        part_codes = [
+            {
+                "name": str(source_by_key[key]["function_name"]),
+                "label": str(source_by_key[key]["part_name"]),
+                "code": str(source_by_key[key]["source_code"]),
+                "position": list(source_by_key[key]["position"]),
+                "color": str(source_by_key[key]["color"]),
+            }
+            for key in step.depends_on
+        ]
+        source = await self.code_generator.generate_assembly_combiner(part_codes)
+        return self._result(source, step, "generate_assembly_combiner")
 
     def _result(
         self,

@@ -542,6 +542,7 @@ async def test_seal_identity_is_one_per_candidate_and_content_bound():
 async def test_agent_candidate_tables_force_tenant_rls_and_worker_permissions():
     expected_tables = {
         "agent_generated_sources",
+        "agent_generated_source_inputs",
         "agent_candidate_builds",
         "agent_staging_manifests",
         "agent_validation_evidence",
@@ -587,6 +588,12 @@ async def test_agent_candidate_tables_force_tenant_rls_and_worker_permissions():
         "DELETE": False,
     }
     assert privileges["agent_generated_sources"] == {
+        "SELECT": True,
+        "INSERT": True,
+        "UPDATE": False,
+        "DELETE": False,
+    }
+    assert privileges["agent_generated_source_inputs"] == {
         "SELECT": True,
         "INSERT": True,
         "UPDATE": False,

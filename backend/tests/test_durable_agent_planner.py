@@ -181,6 +181,8 @@ async def test_assembly_maps_parts_and_final_combine_step():
         "assembly_combine",
     ]
     assert result.steps[-1].depends_on == ("part-01", "part-02")
+    assert result.steps[0].part_name == "housing"
+    assert result.steps[0].part_position == (0.0, 0.0, 0.0)
     assert assembly.calls == 1
 
 

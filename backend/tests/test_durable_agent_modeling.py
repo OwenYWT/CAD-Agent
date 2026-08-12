@@ -51,6 +51,27 @@ class CodeGeneratorStub:
             return "import cadquery as cq\nresult = cq.Workplane('XY').box(20,10,4)"
         return "result = result.faces('>Z').workplane().hole(3)\nshow_object(result)"
 
+    async def generate_single_part(
+        self, part_name, part_description, part_dimensions, examples
+    ):
+        return (
+            "import cadquery as cq\n"
+            f"def make_{part_name}():\n"
+            "    return cq.Workplane('XY').box(10, 10, 2)\n"
+            f"result = make_{part_name}()\n"
+        )
+
+    async def generate_assembly_combiner(self, part_codes):
+        names = [item["name"] for item in part_codes]
+        return (
+            "import cadquery as cq\n"
+            + "\n".join(
+                f"def make_{name}(): return cq.Workplane('XY').box(10, 10, 2)"
+                for name in names
+            )
+            + "\nresult = cq.Assembly()\n"
+        )
+
 
 def _requirements(**overrides):
     values = {
@@ -170,3 +191,109 @@ async def test_complex_steps_accumulate_source_and_remove_duplicate_imports():
     assert ".hole(3)" in source2
     assert "show_object" not in source2
     assert [call[2] for call in codegen.step_calls] == [0, 1]
+
+
+@pytest.mark.asyncio
+async def test_assembly_parts_and_combiner_use_exact_persisted_metadata():
+    codegen = CodeGeneratorStub()
+    service = DurableModelingSourceGenerator(
+        retriever=RetrieverStub(),
+        code_generator=codegen,
+        provenance_reader=_provenance,
+    )
+    housing = AgentPlanStep(
+        step_key="part-01",
+        kind="assembly_part",
+        description="生成壳体",
+        affected_object_ids=("part-01",),
+        part_name="housing",
+        part_dimensions={"length": 20},
+        part_position=(0, 0, 0),
+        part_color="lightgray",
+    )
+    shaft = AgentPlanStep(
+        step_key="part-02",
+        kind="assembly_part",
+        description="生成轴",
+        affected_object_ids=("part-02",),
+        part_name="shaft",
+        part_dimensions={"diameter": 4},
+        part_position=(5, 0, 2),
+        part_color="steelblue",
+    )
+    combine = AgentPlanStep(
+        step_key="combine",
+        kind="assembly_combine",
+        description="组合壳体和轴",
+        depends_on=("part-01", "part-02"),
+        affected_object_ids=("part-01", "part-02"),
+        output_formats=("step", "stl"),
+    )
+    plan = AgentPlan(
+        objective="创建装配体",
+        operation="generate",
+        model_kind="assembly",
+        modeling_strategy="assembly_combine",
+        design_brief=DesignBrief(
+            intent_summary="创建装配体", artifact_type="assembly"
+        ),
+        affected_objects=(
+            AffectedObject(
+                object_id="part-01",
+                object_type="part",
+                label="housing",
+                change="create",
+            ),
+            AffectedObject(
+                object_id="part-02",
+                object_type="part",
+                label="shaft",
+                change="create",
+            ),
+        ),
+        steps=(housing, shaft, combine),
+    )
+    first = await service.generate_step_source(
+        plan=plan,
+        step=housing,
+        requirements={},
+        previous_source=None,
+        step_index=0,
+    )
+    second = await service.generate_step_source(
+        plan=plan,
+        step=shaft,
+        requirements={},
+        previous_source=None,
+        step_index=1,
+    )
+    combined = await service.generate_step_source(
+        plan=plan,
+        step=combine,
+        requirements={
+            "part_sources": [
+                {
+                    "step_key": "part-01",
+                    "function_name": "part_01",
+                    "part_name": "housing",
+                    "position": [0, 0, 0],
+                    "color": "lightgray",
+                    "source_code": first.source_code,
+                },
+                {
+                    "step_key": "part-02",
+                    "function_name": "part_02",
+                    "part_name": "shaft",
+                    "position": [5, 0, 2],
+                    "color": "steelblue",
+                    "source_code": second.source_code,
+                },
+            ]
+        },
+        previous_source=None,
+        step_index=2,
+    )
+
+    assert "make_part_01" in first.source_code
+    assert "make_part_02" in second.source_code
+    assert combined.generator_kind == "generate_assembly_combiner"

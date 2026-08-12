@@ -1353,6 +1353,10 @@ class McadWorkflowActivities:
                         if payload.get("predecessor_source_id")
                         else None
                     ),
+                    input_source_ids=tuple(
+                        UUID(str(item))
+                        for item in payload.get("input_source_ids") or ()
+                    ),
                     source_code=generated.source_code,
                     generator_kind=generated.generator_kind,
                     provider=str(provenance["provider"]),

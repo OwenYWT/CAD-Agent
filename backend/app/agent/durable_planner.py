@@ -260,6 +260,10 @@ class DurableAgentPlanner:
                     kind="assembly_part",
                     description=part.description,
                     affected_object_ids=(key,),
+                    part_name=part.name,
+                    part_dimensions=dict(part.dimensions),
+                    part_position=tuple(part.position),
+                    part_color=part.color,
                 )
             )
         steps.append(

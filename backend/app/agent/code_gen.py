@@ -313,7 +313,12 @@ class CodeGenerator:
     ) -> str:
         """Generate the final assembly code that combines all parts."""
         parts_section = "\n\n".join(
-            f"# === {p['name']} ===\n{p['code']}"
+            (
+                f"# === {p.get('label', p['name'])} ===\n"
+                f"# Position: {p.get('position', [0, 0, 0])} mm\n"
+                f"# Color: {p.get('color', 'lightgray')}\n"
+                f"{p['code']}"
+            )
             for p in part_codes
         )
 
@@ -324,8 +329,8 @@ class CodeGenerator:
             "1. 保留所有零件的 make_xxx() 函数定义和参数\n"
             "2. import 只写一次\n"
             "3. 创建 cq.Assembly()，用 assy.add() 添加各零件\n"
-            "4. 用 cq.Location((x, y, z)) 指定位置\n"
-            "5. 用 cq.Color() 区分零件颜色\n"
+            "4. 必须严格使用每个零件注释中的 Position 创建 cq.Location((x, y, z))，不得自行改位\n"
+            "5. 必须严格使用每个零件注释中的 Color 创建 cq.Color()，不得自行换色\n"
             "6. result = assy\n"
             "7. show_object(result)\n"
             "8. 只输出完整的 Python 代码\n"

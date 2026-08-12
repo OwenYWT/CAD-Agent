@@ -127,6 +127,61 @@ class McadAgentWorkflowV2:
         self._phase = "cancelled"
         return result
 
+    async def _model_step(
+        self,
+        *,
+        request: dict[str, Any],
+        plan: dict[str, Any],
+        candidate_build_id: str,
+        step: dict[str, Any],
+        step_index: int,
+        plan_step_index: int,
+        requirements: dict[str, Any],
+        previous_source: str | None = None,
+        predecessor_source_id: str | None = None,
+        input_source_ids: tuple[str, ...] = (),
+    ) -> dict[str, Any]:
+        generated = await self._activity(
+            "agent_v2.generate_source",
+            {
+                **request,
+                "candidate_build_id": candidate_build_id,
+                "plan": plan,
+                "step": step,
+                "step_index": step_index,
+                "plan_step_index": plan_step_index,
+                "requirements": requirements,
+                "previous_source": previous_source,
+                "predecessor_source_id": predecessor_source_id,
+                "input_source_ids": list(input_source_ids),
+            },
+            suffix=f"generate-source-{step['step_key']}",
+        )
+        executed = await self._activity(
+            "agent_v2.execute_model",
+            {
+                **request,
+                "candidate_build_id": candidate_build_id,
+                "plan": plan,
+                "step": step,
+                "step_index": step_index,
+                "source_id": generated["source_id"],
+                "source_hash": generated["source_hash"],
+                "source_code": generated["source_code"],
+                "mode": generated["mode"],
+                "timeout_seconds": 120,
+            },
+            suffix=f"execute-model-{step['step_key']}",
+            execution=True,
+        )
+        return {"step": step, "generated": generated, "executed": executed}
+
+    async def _model_step_outcome(self, **kwargs: Any) -> dict[str, Any]:
+        try:
+            return {"result": await self._model_step(**kwargs), "error": None}
+        except Exception as exc:
+            return {"result": None, "error": exc}
+
     @workflow.run
     async def run(self, request: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -237,45 +292,104 @@ class McadAgentWorkflowV2:
                 }
             )
             modeling_offset = 3 if request["operation"] == "generate" else 2
-            for plan_step_index, step in enumerate(self._plan["steps"]):
-                if self._cancel_reason is not None:
-                    return await self._record_cancel(request)
-                self._phase = f"generating:{step['step_key']}"
-                generated = await self._activity(
-                    "agent_v2.generate_source",
-                    {
-                        **request,
-                        "candidate_build_id": self._candidate_build_id,
-                        "plan": self._plan,
-                        "step": step,
-                        "step_index": modeling_offset + plan_step_index,
-                        "plan_step_index": plan_step_index,
-                        "requirements": requirements_payload,
-                        "previous_source": previous_source,
-                        "predecessor_source_id": predecessor_source_id,
-                    },
-                    suffix=f"generate-source-{step['step_key']}",
+            modeled: list[dict[str, Any]] = []
+            if self._plan["model_kind"] == "assembly":
+                part_entries = [
+                    (index, step)
+                    for index, step in enumerate(self._plan["steps"])
+                    if step["kind"] == "assembly_part"
+                ]
+                for offset in range(0, len(part_entries), 3):
+                    self._phase = "executing:assembly-parts"
+                    batch = part_entries[offset : offset + 3]
+                    batch_outcomes = await asyncio.gather(
+                        *(
+                            self._model_step_outcome(
+                                request=request,
+                                plan=self._plan,
+                                candidate_build_id=self._candidate_build_id,
+                                step=step,
+                                step_index=modeling_offset + index,
+                                plan_step_index=index,
+                                requirements=requirements_payload,
+                            )
+                            for index, step in batch
+                        )
+                    )
+                    modeled.extend(
+                        outcome["result"]
+                        for outcome in batch_outcomes
+                        if outcome["result"] is not None
+                    )
+                    if self._cancel_reason is not None:
+                        return await self._record_cancel(request)
+                    failed = next(
+                        (
+                            outcome["error"]
+                            for outcome in batch_outcomes
+                            if outcome["error"] is not None
+                        ),
+                        None,
+                    )
+                    if failed is not None:
+                        raise failed
+                combine_index, combine = next(
+                    (index, step)
+                    for index, step in enumerate(self._plan["steps"])
+                    if step["kind"] == "assembly_combine"
                 )
-                previous_source = str(generated["source_code"])
-                predecessor_source_id = str(generated["source_id"])
-                self._phase = f"executing:{step['step_key']}"
-                executed = await self._activity(
-                    "agent_v2.execute_model",
+                part_sources = [
                     {
-                        **request,
-                        "candidate_build_id": self._candidate_build_id,
-                        "plan": self._plan,
-                        "step": step,
-                        "step_index": modeling_offset + plan_step_index,
-                        "source_id": generated["source_id"],
-                        "source_hash": generated["source_hash"],
-                        "source_code": generated["source_code"],
-                        "mode": generated["mode"],
-                        "timeout_seconds": 120,
-                    },
-                    suffix=f"execute-model-{step['step_key']}",
-                    execution=True,
+                        "step_key": item["step"]["step_key"],
+                        "function_name": item["step"]["step_key"].replace(
+                            "-", "_"
+                        ),
+                        "part_name": item["step"]["part_name"],
+                        "position": item["step"]["part_position"],
+                        "color": item["step"]["part_color"],
+                        "source_code": item["generated"]["source_code"],
+                        "source_id": item["generated"]["source_id"],
+                    }
+                    for item in modeled
+                ]
+                self._phase = "executing:assembly-combine"
+                modeled.append(
+                    await self._model_step(
+                        request=request,
+                        plan=self._plan,
+                        candidate_build_id=self._candidate_build_id,
+                        step=combine,
+                        step_index=modeling_offset + combine_index,
+                        plan_step_index=combine_index,
+                        requirements={"part_sources": part_sources},
+                        input_source_ids=tuple(
+                            item["generated"]["source_id"] for item in modeled
+                        ),
+                    )
                 )
+            else:
+                for plan_step_index, step in enumerate(self._plan["steps"]):
+                    if self._cancel_reason is not None:
+                        return await self._record_cancel(request)
+                    self._phase = f"executing:{step['step_key']}"
+                    result = await self._model_step(
+                        request=request,
+                        plan=self._plan,
+                        candidate_build_id=self._candidate_build_id,
+                        step=step,
+                        step_index=modeling_offset + plan_step_index,
+                        plan_step_index=plan_step_index,
+                        requirements=requirements_payload,
+                        previous_source=previous_source,
+                        predecessor_source_id=predecessor_source_id,
+                    )
+                    modeled.append(result)
+                    previous_source = str(result["generated"]["source_code"])
+                    predecessor_source_id = str(result["generated"]["source_id"])
+            for item in modeled:
+                step = item["step"]
+                generated = item["generated"]
+                executed = item["executed"]
                 manifests.append(
                     {
                         "step_key": step["step_key"],

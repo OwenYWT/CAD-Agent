@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from enum import Enum
+import math
 from typing import Literal
 from uuid import UUID
 
@@ -101,6 +102,12 @@ class AgentPlanStep(FrozenContract):
     depends_on: tuple[Identifier, ...] = ()
     affected_object_ids: tuple[Identifier, ...] = ()
     output_formats: tuple[OutputFormat, ...] = ()
+    part_name: str | None = Field(default=None, max_length=120)
+    part_dimensions: dict[str, float] = Field(default_factory=dict)
+    part_position: tuple[float, float, float] | None = None
+    part_color: Literal[
+        "lightgray", "steelblue", "orange", "green", "red", "gold", "silver"
+    ] | None = None
 
     @model_validator(mode="after")
     def references_are_unique(self) -> "AgentPlanStep":
@@ -113,6 +120,30 @@ class AgentPlanStep(FrozenContract):
                 raise ValueError(f"{label} cannot contain duplicates")
         if self.step_key in self.depends_on:
             raise ValueError("step cannot depend on itself")
+        if self.kind == "assembly_part" and not (self.part_name or "").strip():
+            raise ValueError("assembly part step requires part_name")
+        if self.kind == "assembly_part" and (
+            self.part_position is None or self.part_color is None
+        ):
+            raise ValueError("assembly part step requires position and color")
+        if any(
+            not math.isfinite(value) or value <= 0
+            for value in self.part_dimensions.values()
+        ):
+            raise ValueError("assembly part dimensions must be finite and positive")
+        if self.part_position is not None and any(
+            not math.isfinite(value) for value in self.part_position
+        ):
+            raise ValueError("assembly part position must contain finite values")
+        if self.kind != "assembly_part" and any(
+            (
+                self.part_name is not None,
+                bool(self.part_dimensions),
+                self.part_position is not None,
+                self.part_color is not None,
+            )
+        ):
+            raise ValueError("part metadata is only valid for assembly part steps")
         return self
 
 

@@ -54,6 +54,7 @@ async def record_generated_source(
     finish_reason: str | None = None,
     usage: dict[str, Any] | None = None,
     predecessor_source_id: UUID | None = None,
+    input_source_ids: tuple[UUID, ...] = (),
 ) -> GeneratedSourceRecorded:
     if not source_code.strip():
         raise ValueError("generated source cannot be empty")
@@ -82,23 +83,39 @@ async def record_generated_source(
         raise CandidateBuildConflict("source generation requires a building candidate")
     if candidate["workflow_run_id"] != workflow_id:
         raise CandidateBuildConflict("source belongs to another workflow")
-    if predecessor_source_id is not None:
+    if len(input_source_ids) != len(set(input_source_ids)):
+        raise ValueError("generated source inputs cannot contain duplicates")
+    referenced_source_ids = tuple(
+        dict.fromkeys(
+            [
+                *(input_source_ids or ()),
+                *([predecessor_source_id] if predecessor_source_id else []),
+            ]
+        )
+    )
+    if referenced_source_ids:
         predecessor = (
             await connection.execute(
                 text(
                     """
-                    SELECT candidate_build_id FROM agent_generated_sources
-                    WHERE tenant_id=:tenant_id AND id=:source_id
+                    SELECT id, candidate_build_id FROM agent_generated_sources
+                    WHERE tenant_id=:tenant_id AND id = ANY(:source_ids)
                     """
                 ),
-                {"tenant_id": tenant_id, "source_id": predecessor_source_id},
+                {
+                    "tenant_id": tenant_id,
+                    "source_ids": list(referenced_source_ids),
+                },
             )
-        ).mappings().one_or_none()
-        if predecessor is None:
-            raise KeyError(predecessor_source_id)
-        if predecessor["candidate_build_id"] != candidate_build_id:
+        ).mappings().all()
+        if {row["id"] for row in predecessor} != set(referenced_source_ids):
+            raise KeyError("one or more generated source inputs do not exist")
+        if any(
+            row["candidate_build_id"] != candidate_build_id
+            for row in predecessor
+        ):
             raise CandidateBuildConflict(
-                "predecessor source belongs to another candidate"
+                "generated source input belongs to another candidate"
             )
     existing = (
         await connection.execute(
@@ -127,9 +144,28 @@ async def record_generated_source(
         "predecessor_source_id": predecessor_source_id,
     }
     if existing is not None:
+        stored_inputs = tuple(
+            (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT input_source_id
+                        FROM agent_generated_source_inputs
+                        WHERE tenant_id=:tenant_id AND source_id=:source_id
+                        ORDER BY ordinal
+                        """
+                    ),
+                    {"tenant_id": tenant_id, "source_id": existing["id"]},
+                )
+            ).scalars()
+        )
         if any(existing[key] != value for key, value in immutable.items()):
             raise CandidateBuildConflict(
                 "modeling step already recorded different generated source"
+            )
+        if stored_inputs != input_source_ids:
+            raise CandidateBuildConflict(
+                "modeling step already recorded different source inputs"
             )
         return GeneratedSourceRecorded(
             source_id=existing["id"], source_hash=source_hash, replayed=True
@@ -171,6 +207,24 @@ async def record_generated_source(
             "usage": _json(usage or {}),
         },
     )
+    for ordinal, input_source_id in enumerate(input_source_ids):
+        await connection.execute(
+            text(
+                """
+                INSERT INTO agent_generated_source_inputs (
+                    tenant_id, source_id, input_source_id, ordinal
+                ) VALUES (
+                    :tenant_id, :source_id, :input_source_id, :ordinal
+                )
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "source_id": source_id,
+                "input_source_id": input_source_id,
+                "ordinal": ordinal,
+            },
+        )
     await append_workflow_event(
         connection,
         tenant_id=tenant_id,
@@ -187,6 +241,7 @@ async def record_generated_source(
             "provider_response_id": provider_response_id,
             "request_hash": request_hash,
             "response_hash": response_hash,
+            "input_source_ids": [str(item) for item in input_source_ids],
         },
     )
     return GeneratedSourceRecorded(source_id=source_id, source_hash=source_hash)

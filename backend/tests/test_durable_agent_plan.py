@@ -133,12 +133,18 @@ def test_assembly_plan_rejects_unknown_or_duplicate_objects():
                 kind="assembly_part",
                 description="生成壳体",
                 affected_object_ids=("housing",),
+                part_name="housing",
+                part_position=(0, 0, 0),
+                part_color="lightgray",
             ),
             AgentPlanStep(
                 step_key="shaft",
                 kind="assembly_part",
                 description="生成轴",
                 affected_object_ids=("shaft",),
+                part_name="shaft",
+                part_position=(0, 0, 0),
+                part_color="steelblue",
             ),
             AgentPlanStep(
                 step_key="combine",
