@@ -21,6 +21,7 @@ from temporalio.client import WorkflowFailureError
 from app.config import settings
 from app.agent.assembly_planner import AssemblyPart, AssemblyPlan
 from app.agent.durable_planner import DurableAgentPlanner
+from app.agent.durable_repair import DurableRepairResult
 from app.agent.multi_step import BuildPhase, BuildPlan, BuildStep
 from app.db import close_database, get_database_engine, tenant_transaction
 from app.domain.identity import user_principal
@@ -452,6 +453,82 @@ class _V2ModelingStub:
         )
 
 
+class _V2BrokenModelingStub:
+    def __init__(self):
+        self.calls = 0
+
+    async def generate_step_source(self, **_kwargs):
+        self.calls += 1
+        source = (
+            "import cadquery as cq\n"
+            "result = cq.Workplane('XY').box(20, 10)\n"
+        )
+        return SourceGenerationResult(
+            source_code=source,
+            mode="3d",
+            generator_kind="controlled_invalid_source",
+            provenance={
+                "provider": "controlled-provider",
+                "model": "controlled-model",
+                "provider_response_id": "completion-invalid-1",
+                "request_hash": "1" * 64,
+                "response_hash": hashlib.sha256(source.encode()).hexdigest(),
+                "finish_reason": "stop",
+                "usage": {"total_tokens": 12},
+            },
+        )
+
+
+class _V2RepairStub:
+    def __init__(self):
+        self.calls = 0
+
+    async def repair(self, *, failure, decision, **_kwargs):
+        self.calls += 1
+        source = (
+            "import cadquery as cq\n"
+            "result = cq.Workplane('XY').box(20, 10, 4)\n"
+        )
+        return DurableRepairResult(
+            source_code=source,
+            failure_class=decision.failure_class,
+            strategy=decision.strategy,
+            provenance={
+                "provider": "controlled-repair-provider",
+                "model": "controlled-repair-model",
+                "provider_response_id": "repair-completion-1",
+                "request_hash": "2" * 64,
+                "response_hash": hashlib.sha256(source.encode()).hexdigest(),
+                "finish_reason": "stop",
+                "usage": {"total_tokens": 18},
+            },
+        )
+
+
+class _V2StillBrokenRepairStub(_V2RepairStub):
+    async def repair(self, *, failure, decision, **_kwargs):
+        self.calls += 1
+        source = (
+            "import cadquery as cq\n"
+            "result = cq.Workplane('XY').box(20, 10)\n"
+            "# repaired provider response remains invalid\n"
+        )
+        return DurableRepairResult(
+            source_code=source,
+            failure_class=decision.failure_class,
+            strategy=decision.strategy,
+            provenance={
+                "provider": "controlled-repair-provider",
+                "model": "controlled-repair-model",
+                "provider_response_id": "repair-completion-invalid-1",
+                "request_hash": "3" * 64,
+                "response_hash": hashlib.sha256(source.encode()).hexdigest(),
+                "finish_reason": "stop",
+                "usage": {"total_tokens": 18},
+            },
+        )
+
+
 async def _snapshot(owner, workflow_id):
     async with tenant_transaction(
         owner.tenant_id,
@@ -835,6 +912,238 @@ async def test_agent_v2_confirmed_plan_executes_to_staging_then_fails_closed():
 
 
 @pytest.mark.asyncio(loop_scope="module")
+async def test_agent_v2_user_code_failure_creates_durable_repair_attempt():
+    owner, project_id, initial = await _seed_project("agent-v2-repair")
+    client = await get_temporal_client()
+    planner = DurableAgentPlanner(
+        planner=_V2PlannerStub(),
+        decomposer=_V2DecomposerStub(),
+        assembly_planner=_V2AssemblyStub(),
+    )
+    modeling = _V2BrokenModelingStub()
+    repair = _V2RepairStub()
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        from app.services.run_state import create_workflow
+
+        created = await create_workflow(
+            connection,
+            tenant_id=owner.tenant_id,
+            project_id=project_id,
+            requested_by_principal_id=owner.principal_id,
+            kind="mcad.agent.v2.generate",
+            idempotency_key=f"agent-v2-repair-{project_id}",
+            request_payload={"objective": "创建 20x10x4 mm 安装支架"},
+        )
+    request = McadAgentWorkflowV2Request(
+        workflow_run_id=created.workflow_id,
+        tenant_id=owner.tenant_id,
+        project_id=project_id,
+        principal_id=owner.principal_id,
+        branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,
+        operation="generate",
+        objective="创建 20x10x4 mm 安装支架",
+        confirmation_timeout_seconds=60,
+    )
+    async with build_agent_v2_workflow_worker(
+        client,
+        backend=get_execution_backend(),
+        durable_planner=planner,
+        durable_modeling=modeling,
+        durable_repair=repair,
+    ):
+        handle = await client.start_workflow(
+            "McadAgentWorkflowV2",
+            request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),
+            task_queue=settings.temporal_agent_v2_task_queue,
+        )
+        await _wait_for_status(
+            owner,
+            created.workflow_id,
+            {"waiting_confirmation"},
+        )
+        await confirm_mcad_workflow(
+            created.workflow_id,
+            accepted=True,
+            note="确认执行并允许分类修复",
+            workflow_kind="mcad.agent.v2.generate",
+        )
+        with pytest.raises(WorkflowFailureError):
+            await asyncio.wait_for(handle.result(), timeout=90)
+
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        steps = (
+            await connection.execute(
+                text(
+                    "SELECT id, step_key, kind, status, error_code "
+                    "FROM step_runs WHERE workflow_run_id=:id "
+                    "AND kind IN ('agent_model', 'agent_repair') "
+                    "ORDER BY step_index"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+        attempts = (
+            await connection.execute(
+                text(
+                    "SELECT a.status, a.error_code, s.step_key "
+                    "FROM execution_attempts a JOIN step_runs s "
+                    "ON s.id=a.step_run_id WHERE a.workflow_run_id=:id "
+                    "ORDER BY a.created_at"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+        sources = (
+            await connection.execute(
+                text(
+                    "SELECT id, predecessor_source_id, source_hash, provider, "
+                    "model, provider_response_id FROM agent_generated_sources "
+                    "WHERE workflow_run_id=:id ORDER BY created_at"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+        manifests = await connection.scalar(
+            text(
+                "SELECT count(*) FROM agent_staging_manifests "
+                "WHERE workflow_run_id=:id"
+            ),
+            {"id": created.workflow_id},
+        )
+        repair_event = (
+            await connection.execute(
+                text(
+                    "SELECT payload FROM task_events WHERE workflow_run_id=:id "
+                    "AND event_type='agent.repair.source_generated'"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().one()
+
+    assert modeling.calls == 1
+    assert repair.calls == 1
+    assert [(item["kind"], item["status"]) for item in steps] == [
+        ("agent_model", "failed"),
+        ("agent_repair", "succeeded"),
+    ]
+    assert [(item["status"], item["error_code"]) for item in attempts] == [
+        ("failed", "user_code_failed"),
+        ("succeeded", None),
+    ]
+    assert len(sources) == 2
+    assert sources[1]["predecessor_source_id"] == sources[0]["id"]
+    assert sources[1]["source_hash"] != sources[0]["source_hash"]
+    assert sources[1]["provider"] == "controlled-repair-provider"
+    assert sources[1]["model"] == "controlled-repair-model"
+    assert sources[1]["provider_response_id"] == "repair-completion-1"
+    assert manifests == 1
+    assert repair_event["payload"]["prior_source_hash"] == sources[0][
+        "source_hash"
+    ]
+    assert repair_event["payload"]["source_hash"] == sources[1]["source_hash"]
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_agent_v2_repeated_repair_failure_stops_without_second_llm_call():
+    owner, project_id, initial = await _seed_project("agent-v2-repair-repeat")
+    client = await get_temporal_client()
+    planner = DurableAgentPlanner(
+        planner=_V2PlannerStub(),
+        decomposer=_V2DecomposerStub(),
+        assembly_planner=_V2AssemblyStub(),
+    )
+    repair = _V2StillBrokenRepairStub()
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        from app.services.run_state import create_workflow
+
+        created = await create_workflow(
+            connection,
+            tenant_id=owner.tenant_id,
+            project_id=project_id,
+            requested_by_principal_id=owner.principal_id,
+            kind="mcad.agent.v2.generate",
+            idempotency_key=f"agent-v2-repair-repeat-{project_id}",
+            request_payload={"objective": "创建 20x10x4 mm 安装支架"},
+        )
+    request = McadAgentWorkflowV2Request(
+        workflow_run_id=created.workflow_id,
+        tenant_id=owner.tenant_id,
+        project_id=project_id,
+        principal_id=owner.principal_id,
+        branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,
+        operation="generate",
+        objective="创建 20x10x4 mm 安装支架",
+        confirmation_timeout_seconds=60,
+    )
+    async with build_agent_v2_workflow_worker(
+        client,
+        backend=get_execution_backend(),
+        durable_planner=planner,
+        durable_modeling=_V2BrokenModelingStub(),
+        durable_repair=repair,
+    ):
+        handle = await client.start_workflow(
+            "McadAgentWorkflowV2",
+            request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),
+            task_queue=settings.temporal_agent_v2_task_queue,
+        )
+        await _wait_for_status(
+            owner,
+            created.workflow_id,
+            {"waiting_confirmation"},
+        )
+        await confirm_mcad_workflow(
+            created.workflow_id,
+            accepted=True,
+            note="确认执行",
+            workflow_kind="mcad.agent.v2.generate",
+        )
+        with pytest.raises(WorkflowFailureError):
+            await asyncio.wait_for(handle.result(), timeout=90)
+
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        attempts = await connection.scalar(
+            text(
+                "SELECT count(*) FROM execution_attempts "
+                "WHERE workflow_run_id=:id"
+            ),
+            {"id": created.workflow_id},
+        )
+        repair_steps = (
+            await connection.execute(
+                text(
+                    "SELECT step_key, status, error_code FROM step_runs "
+                    "WHERE workflow_run_id=:id AND kind='agent_repair' "
+                    "ORDER BY step_index"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+    assert repair.calls == 1
+    assert attempts == 2
+    assert [item["step_key"] for item in repair_steps] == [
+        "repair-model-main-01"
+    ]
+    assert repair_steps[0]["status"] == "failed"
+
+
+@pytest.mark.asyncio(loop_scope="module")
 async def test_agent_v2_complex_steps_survive_worker_restart_without_regeneration():
     owner, project_id, initial = await _seed_project("agent-v2-complex-restart")
     client = await get_temporal_client()
@@ -1164,6 +1473,117 @@ async def test_agent_v2_assembly_cancel_stops_active_parts_before_execution():
         )
     assert candidate_status == "cancelled"
     assert attempt_count == 0
+
+
+@pytest.mark.skipif(
+    os.environ.get("CAD_AGENT_TEST_REAL_LLM") != "1",
+    reason="CAD_AGENT_TEST_REAL_LLM=1 is required for provider integration",
+)
+@pytest.mark.asyncio(loop_scope="module")
+async def test_agent_v2_real_repair_provider_persists_provenance_and_attempt():
+    owner, project_id, initial = await _seed_project("agent-v2-real-repair")
+    client = await get_temporal_client()
+    planner = DurableAgentPlanner(
+        planner=_V2PlannerStub(),
+        decomposer=_V2DecomposerStub(),
+        assembly_planner=_V2AssemblyStub(),
+    )
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        from app.services.run_state import create_workflow
+
+        created = await create_workflow(
+            connection,
+            tenant_id=owner.tenant_id,
+            project_id=project_id,
+            requested_by_principal_id=owner.principal_id,
+            kind="mcad.agent.v2.generate",
+            idempotency_key=f"agent-v2-real-repair-{project_id}",
+            request_payload={"objective": "创建 20x10x4 mm 安装支架"},
+        )
+    request = McadAgentWorkflowV2Request(
+        workflow_run_id=created.workflow_id,
+        tenant_id=owner.tenant_id,
+        project_id=project_id,
+        principal_id=owner.principal_id,
+        branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,
+        operation="generate",
+        objective="创建 20x10x4 mm 安装支架",
+        confirmation_timeout_seconds=60,
+    )
+    async with build_agent_v2_workflow_worker(
+        client,
+        backend=get_execution_backend(),
+        durable_planner=planner,
+        durable_modeling=_V2BrokenModelingStub(),
+    ):
+        handle = await client.start_workflow(
+            "McadAgentWorkflowV2",
+            request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),
+            task_queue=settings.temporal_agent_v2_task_queue,
+        )
+        await _wait_for_status(
+            owner,
+            created.workflow_id,
+            {"waiting_confirmation"},
+        )
+        await confirm_mcad_workflow(
+            created.workflow_id,
+            accepted=True,
+            note="确认真实修复服务测试",
+            workflow_kind="mcad.agent.v2.generate",
+        )
+        with pytest.raises(WorkflowFailureError):
+            await asyncio.wait_for(handle.result(), timeout=180)
+
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        sources = (
+            await connection.execute(
+                text(
+                    "SELECT id, predecessor_source_id, source_hash, provider, "
+                    "model, provider_response_id, request_hash, response_hash "
+                    "FROM agent_generated_sources WHERE workflow_run_id=:id "
+                    "ORDER BY created_at"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+        attempts = (
+            await connection.execute(
+                text(
+                    "SELECT status, error_code FROM execution_attempts "
+                    "WHERE workflow_run_id=:id ORDER BY created_at"
+                ),
+                {"id": created.workflow_id},
+            )
+        ).mappings().all()
+        manifest_count = await connection.scalar(
+            text(
+                "SELECT count(*) FROM agent_staging_manifests "
+                "WHERE workflow_run_id=:id"
+            ),
+            {"id": created.workflow_id},
+        )
+    assert len(sources) == 2
+    assert sources[1]["predecessor_source_id"] == sources[0]["id"]
+    assert sources[1]["source_hash"] != sources[0]["source_hash"]
+    assert sources[1]["provider"] == settings.normalized_llm_provider
+    assert sources[1]["model"] == settings.llm_model
+    assert sources[1]["provider_response_id"]
+    assert len(sources[1]["request_hash"]) == 64
+    assert len(sources[1]["response_hash"]) == 64
+    assert [(item["status"], item["error_code"]) for item in attempts] == [
+        ("failed", "user_code_failed"),
+        ("succeeded", None),
+    ]
+    assert manifest_count == 1
 
 
 @pytest.mark.skipif(

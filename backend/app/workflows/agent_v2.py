@@ -127,6 +127,40 @@ class McadAgentWorkflowV2:
         self._phase = "cancelled"
         return result
 
+    @staticmethod
+    def _execution_failure(exc: Exception) -> dict[str, Any] | None:
+        application_error = (
+            exc.cause
+            if isinstance(exc, ActivityError)
+            and isinstance(exc.cause, ApplicationError)
+            else exc
+            if isinstance(exc, ApplicationError)
+            else None
+        )
+        if application_error is None:
+            return None
+        detail = next(
+            (
+                item
+                for item in application_error.details
+                if isinstance(item, dict)
+            ),
+            {},
+        )
+        return {
+            "execution_attempt_id": detail.get("execution_attempt_id"),
+            "category": str(detail.get("category") or "internal"),
+            "error_code": str(
+                detail.get("error_code")
+                or application_error.type
+                or "agent_model_execution_failed"
+            ),
+            "error_message": str(
+                detail.get("error_message") or application_error
+            )[:4000],
+            "runtime_error_type": detail.get("runtime_error_type"),
+        }
+
     async def _model_step(
         self,
         *,
@@ -157,23 +191,70 @@ class McadAgentWorkflowV2:
             },
             suffix=f"generate-source-{step['step_key']}",
         )
-        executed = await self._activity(
-            "agent_v2.execute_model",
-            {
-                **request,
-                "candidate_build_id": candidate_build_id,
-                "plan": plan,
-                "step": step,
-                "step_index": step_index,
-                "source_id": generated["source_id"],
-                "source_hash": generated["source_hash"],
-                "source_code": generated["source_code"],
-                "mode": generated["mode"],
-                "timeout_seconds": 120,
-            },
-            suffix=f"execute-model-{step['step_key']}",
-            execution=True,
-        )
+        run_step_key = str(step["step_key"])
+        run_step_kind = "agent_model"
+        run_step_index = step_index
+        repair_count = 0
+        seen_signatures: list[str] = []
+        while True:
+            try:
+                executed = await self._activity(
+                    "agent_v2.execute_model",
+                    {
+                        **request,
+                        "candidate_build_id": candidate_build_id,
+                        "plan": plan,
+                        "step": step,
+                        "step_index": run_step_index,
+                        "run_step_key": run_step_key,
+                        "run_step_kind": run_step_kind,
+                        "source_id": generated["source_id"],
+                        "source_hash": generated["source_hash"],
+                        "source_code": generated["source_code"],
+                        "mode": generated["mode"],
+                        "timeout_seconds": 120,
+                    },
+                    suffix=(
+                        f"execute-model-{step['step_key']}"
+                        if repair_count == 0
+                        else f"execute-repair-{step['step_key']}-{repair_count:02d}"
+                    ),
+                    execution=True,
+                )
+                break
+            except Exception as exc:
+                failure = self._execution_failure(exc)
+                if failure is None or failure["category"] not in {
+                    "user_code",
+                    "cad_kernel",
+                    "validation",
+                }:
+                    raise
+                if repair_count >= 2:
+                    raise
+                repair_index = repair_count + 1
+                repair_step_index = 10_000 + plan_step_index * 10 + repair_index
+                repaired = await self._activity(
+                    "agent_v2.repair_source",
+                    {
+                        **request,
+                        "candidate_build_id": candidate_build_id,
+                        "source_id": generated["source_id"],
+                        "source_hash": generated["source_hash"],
+                        "failure": failure,
+                        "repair_index": repair_index,
+                        "original_step_key": step["step_key"],
+                        "step_index": repair_step_index,
+                        "seen_signatures": seen_signatures,
+                    },
+                    suffix=f"repair-source-{step['step_key']}-{repair_index:02d}",
+                )
+                seen_signatures.append(str(repaired["signature"]))
+                generated = {**generated, **repaired}
+                run_step_key = str(repaired["repair_step_key"])
+                run_step_kind = "agent_repair"
+                run_step_index = repair_step_index
+                repair_count = repair_index
         return {"step": step, "generated": generated, "executed": executed}
 
     async def _model_step_outcome(self, **kwargs: Any) -> dict[str, Any]:

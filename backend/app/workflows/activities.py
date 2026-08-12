@@ -20,6 +20,10 @@ from temporalio.exceptions import ApplicationError
 from app.agent.durable_plan import AgentPlan
 from app.agent.durable_plan import AgentPlanStep
 from app.agent.durable_planner import DurableAgentPlanner
+from app.agent.durable_repair import (
+    DurableRepairSourceGenerator,
+    decide_repair,
+)
 from app.agent.orchestrator import Orchestrator
 from app.api.error_messages import public_generation_error
 from app.db import tenant_transaction
@@ -559,7 +563,9 @@ async def _prepare_agent_execution_attempt(
     tenant_id = _uuid(payload, "tenant_id")
     principal_id = _uuid(payload, "principal_id")
     workflow_id = _uuid(payload, "workflow_run_id")
-    step_key = str(payload["step"]["step_key"])
+    plan_step_key = str(payload["step"]["step_key"])
+    step_key = str(payload.get("run_step_key") or plan_step_key)
+    step_kind = str(payload.get("run_step_kind") or "agent_model")
     step_index = int(payload["step_index"])
     source_id = _uuid(payload, "source_id")
     async with tenant_transaction(tenant_id, principal_id) as connection:
@@ -570,7 +576,7 @@ async def _prepare_agent_execution_attempt(
                 type="agent_modeling_step_missing",
                 non_retryable=True,
             )
-        if int(row["step_index"]) != step_index or row["kind"] != "agent_model":
+        if int(row["step_index"]) != step_index or row["kind"] != step_kind:
             raise ApplicationError(
                 f"modeling step {step_key} identity does not match its plan",
                 type="agent_modeling_step_conflict",
@@ -657,6 +663,9 @@ async def _prepare_agent_execution_attempt(
             "source_id": str(source_id),
             "source_hash": source["source_hash"],
             "step": payload["step"],
+            "run_step_key": step_key,
+            "run_step_kind": step_kind,
+            "original_plan_step_key": plan_step_key,
         }
         attempt = await create_attempt(
             connection,
@@ -982,6 +991,7 @@ class McadWorkflowActivities:
         source_preparer: SourcePreparer | None = None,
         durable_planner: DurableAgentPlanner | None = None,
         durable_modeling: DurableModelingSourceGenerator | None = None,
+        durable_repair: DurableRepairSourceGenerator | None = None,
     ):
         self.backend = backend or get_execution_backend()
         self.source_preparer = source_preparer or SourcePreparer(
@@ -989,6 +999,7 @@ class McadWorkflowActivities:
         )
         self.durable_planner = durable_planner or DurableAgentPlanner()
         self.durable_modeling = durable_modeling or DurableModelingSourceGenerator()
+        self.durable_repair = durable_repair or DurableRepairSourceGenerator()
 
     @staticmethod
     def _agent_planning_error(exc: Exception) -> ApplicationError:
@@ -1396,6 +1407,191 @@ class McadWorkflowActivities:
             )
             raise error from exc
 
+    @activity.defn(name="agent_v2.repair_source")
+    async def agent_repair_source(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        request = _agent_v2_request(payload)
+        candidate_build_id = _uuid(payload, "candidate_build_id")
+        source_id = _uuid(payload, "source_id")
+        failure = dict(payload["failure"])
+        repair_index = int(payload["repair_index"])
+        original_step_key = str(payload["original_step_key"])
+        repair_step_key = f"repair-{original_step_key}-{repair_index:02d}"
+        decision = decide_repair(
+            category=str(failure["category"]),
+            error_code=str(failure["error_code"]),
+            error_message=str(failure["error_message"]),
+            runtime_error_type=(
+                str(failure["runtime_error_type"])
+                if failure.get("runtime_error_type")
+                else None
+            ),
+            repair_count=repair_index - 1,
+            seen_signatures=tuple(
+                str(item) for item in payload.get("seen_signatures") or ()
+            ),
+        )
+        if not decision.repairable:
+            raise ApplicationError(
+                decision.reason,
+                {
+                    "failure_class": decision.failure_class,
+                    "strategy": decision.strategy,
+                    "signature": decision.signature,
+                },
+                type="agent_repair_not_allowed",
+                non_retryable=True,
+            )
+        async with tenant_transaction(
+            request.tenant_id,
+            request.principal_id,
+        ) as connection:
+            replay = await get_generated_source_for_step(
+                connection,
+                tenant_id=request.tenant_id,
+                workflow_id=request.workflow_run_id,
+                step_key=repair_step_key,
+            )
+            if replay is not None:
+                return {
+                    "source_id": str(replay["id"]),
+                    "source_hash": replay["source_hash"],
+                    "source_code": replay["source_code"],
+                    "repair_step_key": repair_step_key,
+                    "failure_class": replay["generator_kind"].removeprefix(
+                        "repair:"
+                    ),
+                    "strategy": str(payload.get("strategy") or decision.strategy),
+                    "signature": decision.signature,
+                    "provenance": {
+                        "provider": replay["provider"],
+                        "model": replay["model"],
+                        "provider_response_id": replay["provider_response_id"],
+                        "request_hash": replay["request_hash"],
+                        "response_hash": replay["response_hash"],
+                        "finish_reason": replay["finish_reason"],
+                        "usage": dict(replay["usage"]),
+                    },
+                    "replayed": True,
+                }
+            source = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT source_code, source_hash
+                        FROM agent_generated_sources
+                        WHERE tenant_id=:tenant_id AND id=:source_id
+                          AND candidate_build_id=:candidate_build_id
+                        """
+                    ),
+                    {
+                        "tenant_id": request.tenant_id,
+                        "source_id": source_id,
+                        "candidate_build_id": candidate_build_id,
+                    },
+                )
+            ).mappings().one_or_none()
+            if source is None:
+                raise ApplicationError(
+                    "repair input source does not belong to candidate",
+                    type="agent_repair_source_missing",
+                    non_retryable=True,
+                )
+            if str(source["source_hash"]) != str(payload["source_hash"]):
+                raise ApplicationError(
+                    "repair input source hash does not match persisted source",
+                    type="agent_repair_source_hash_mismatch",
+                    non_retryable=True,
+                )
+            step_id = await _start_agent_logical_step(
+                connection,
+                tenant_id=request.tenant_id,
+                workflow_id=request.workflow_run_id,
+                step_key=repair_step_key,
+                step_index=int(payload["step_index"]),
+                kind="agent_repair",
+            )
+        try:
+            repaired = await self.durable_repair.repair(
+                source_code=str(source["source_code"]),
+                failure=failure,
+                decision=decision,
+            )
+            provenance = repaired.provenance
+            async with tenant_transaction(
+                request.tenant_id,
+                request.principal_id,
+            ) as connection:
+                recorded = await record_generated_source(
+                    connection,
+                    tenant_id=request.tenant_id,
+                    candidate_build_id=candidate_build_id,
+                    workflow_id=request.workflow_run_id,
+                    step_id=step_id,
+                    predecessor_source_id=source_id,
+                    source_code=repaired.source_code,
+                    generator_kind=f"repair:{repaired.failure_class}",
+                    provider=str(provenance["provider"]),
+                    model=str(provenance["model"]),
+                    provider_response_id=(
+                        str(provenance["provider_response_id"])
+                        if provenance.get("provider_response_id")
+                        else None
+                    ),
+                    request_hash=str(provenance["request_hash"]),
+                    response_hash=str(provenance["response_hash"]),
+                    finish_reason=(
+                        str(provenance["finish_reason"])
+                        if provenance.get("finish_reason")
+                        else None
+                    ),
+                    usage=dict(provenance.get("usage") or {}),
+                )
+                await append_workflow_event(
+                    connection,
+                    tenant_id=request.tenant_id,
+                    workflow_id=request.workflow_run_id,
+                    event_type="agent.repair.source_generated",
+                    payload={
+                        "repair_step_key": repair_step_key,
+                        "prior_source_id": str(source_id),
+                        "source_id": str(recorded.source_id),
+                        "prior_source_hash": str(payload["source_hash"]),
+                        "source_hash": recorded.source_hash,
+                        "failure_class": repaired.failure_class,
+                        "strategy": repaired.strategy,
+                        "signature": decision.signature,
+                        "failure_execution_attempt_id": failure.get(
+                            "execution_attempt_id"
+                        ),
+                        "error_code": failure["error_code"],
+                    },
+                )
+            return {
+                "source_id": str(recorded.source_id),
+                "source_hash": recorded.source_hash,
+                "source_code": repaired.source_code,
+                "repair_step_key": repair_step_key,
+                "failure_class": repaired.failure_class,
+                "strategy": repaired.strategy,
+                "signature": decision.signature,
+                "provenance": provenance,
+                "replayed": recorded.replayed,
+            }
+        except Exception as exc:
+            error = self._agent_planning_error(exc)
+            await _fail_agent_logical_step(
+                tenant_id=request.tenant_id,
+                principal_id=request.principal_id,
+                workflow_id=request.workflow_run_id,
+                step_key=repair_step_key,
+                error_code=error.type or "agent_repair_failed",
+                error_message=str(error),
+            )
+            raise error from exc
+
     @activity.defn(name="agent_v2.execute_model")
     async def agent_execute_model(
         self,
@@ -1405,6 +1601,7 @@ class McadWorkflowActivities:
         request = _agent_v2_request(payload)
         plan = AgentPlan.model_validate(payload["plan"])
         step = AgentPlanStep.model_validate(payload["step"])
+        run_step_key = str(payload.get("run_step_key") or step.step_key)
         candidate_build_id = _uuid(payload, "candidate_build_id")
         async with tenant_transaction(
             request.tenant_id,
@@ -1415,7 +1612,7 @@ class McadWorkflowActivities:
                 tenant_id=request.tenant_id,
                 candidate_build_id=candidate_build_id,
                 workflow_id=request.workflow_run_id,
-                step_key=step.step_key,
+                step_key=run_step_key,
             )
             if replay is not None:
                 return {
@@ -1453,7 +1650,7 @@ class McadWorkflowActivities:
                 project_id=str(request.project_id),
                 expected_base_revision_id=str(request.expected_base_revision_id),
                 idempotency_key=(
-                    f"agent-v2:{request.workflow_run_id}:{step.step_key}:"
+                    f"agent-v2:{request.workflow_run_id}:{run_step_key}:"
                     f"attempt:{info.attempt}"
                 ),
                 capability="mcad.model",
@@ -1475,6 +1672,7 @@ class McadWorkflowActivities:
                     "candidate_build_id": str(candidate_build_id),
                     "source_id": str(payload["source_id"]),
                     "plan_step_key": step.step_key,
+                    "run_step_key": run_step_key,
                     "temporal_activity_id": info.activity_id,
                     "temporal_attempt": info.attempt,
                 },
@@ -1512,6 +1710,13 @@ class McadWorkflowActivities:
                     {
                         "execution_attempt_id": str(attempt_id),
                         "category": error.category.value if error else "internal",
+                        "error_code": code,
+                        "error_message": message,
+                        "runtime_error_type": (
+                            error.evidence.get("runtime_error_type")
+                            if error
+                            else None
+                        ),
                     },
                     type=code,
                     non_retryable=not retryable,
@@ -1577,6 +1782,8 @@ class McadWorkflowActivities:
                 "execution_attempt_id": str(attempt_id),
                 "source_id": str(payload["source_id"]),
                 "source_hash": source_hash,
+                "plan_step_key": step.step_key,
+                "run_step_key": run_step_key,
                 "outputs": staged_outputs,
                 "runtime_provenance": (
                     outcome.result.provenance.model_dump(mode="json")
@@ -3182,6 +3389,7 @@ class McadWorkflowActivities:
             self.agent_allocate_candidate,
             self.agent_terminate_candidate,
             self.agent_generate_source,
+            self.agent_repair_source,
             self.agent_execute_model,
             self.wait_confirmation,
             self.resume_after_confirmation,
