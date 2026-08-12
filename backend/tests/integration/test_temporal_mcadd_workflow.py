@@ -169,8 +169,28 @@ async def clean_control_plane():
                     )
                 ).scalars()
             )
-        for key in [*object_keys, *staging_keys]:
-            await delete_object(key)
+            evidence_keys = list(
+                (
+                    await connection.execute(
+                        text(
+                            """
+                            SELECT render->>'object_key'
+                            FROM agent_validation_evidence
+                            CROSS JOIN LATERAL jsonb_array_elements(
+                                COALESCE(evidence->'renders', '[]'::jsonb)
+                            ) render
+                            UNION
+                            SELECT evidence->'report_artifact'->>'object_key'
+                            FROM agent_validation_evidence
+                            WHERE evidence ? 'report_artifact'
+                            """
+                        )
+                    )
+                ).scalars()
+            )
+        for key in [*object_keys, *staging_keys, *evidence_keys]:
+            if key:
+                await delete_object(key)
         async with get_database_engine().begin() as connection:
             await connection.execute(
                 text(
@@ -981,7 +1001,7 @@ async def test_agent_v2_plan_waits_before_candidate_source_or_execution():
 
 
 @pytest.mark.asyncio(loop_scope="module")
-async def test_agent_v2_confirmed_plan_executes_to_staging_then_fails_closed():
+async def test_agent_v2_confirmed_plan_seals_reviewable_candidate():
     owner, project_id, initial = await _seed_project("agent-v2-candidate")
     client = await get_temporal_client()
     planner = DurableAgentPlanner(
@@ -1039,8 +1059,8 @@ async def test_agent_v2_confirmed_plan_executes_to_staging_then_fails_closed():
             note="确认执行",
             workflow_kind="mcad.agent.v2.generate",
         )
-        with pytest.raises(WorkflowFailureError):
-            await asyncio.wait_for(handle.result(), timeout=90)
+        result = await asyncio.wait_for(handle.result(), timeout=90)
+        assert result["status"] == "succeeded"
 
     async with tenant_transaction(
         owner.tenant_id,
@@ -1049,7 +1069,7 @@ async def test_agent_v2_confirmed_plan_executes_to_staging_then_fails_closed():
         candidate = (
             await connection.execute(
                 text(
-                    "SELECT status, failure_code, candidate_revision_id, "
+                    "SELECT status, failure_code, failure_message, candidate_revision_id, "
                     "change_set_id FROM agent_candidate_builds "
                     "WHERE workflow_run_id=:id"
                 ),
@@ -1106,11 +1126,25 @@ async def test_agent_v2_confirmed_plan_executes_to_staging_then_fails_closed():
                 {"id": created.workflow_id},
             )
         ).mappings().all()
-    assert candidate["status"] == "failed"
-    assert candidate["failure_code"] == "agent_v2_sealing_not_enabled"
-    assert candidate["candidate_revision_id"] is None
-    assert candidate["change_set_id"] is None
-    assert workflow_status == "failed"
+        selected_steps = list(
+            (
+                await connection.execute(
+                    text(
+                        "SELECT sm.plan_step_key FROM agent_seal_manifests sm "
+                        "JOIN agent_candidate_seals s ON s.id=sm.seal_id "
+                        "WHERE s.candidate_build_id=(SELECT id FROM "
+                        "agent_candidate_builds WHERE workflow_run_id=:id) "
+                        "ORDER BY sm.ordinal"
+                    ),
+                    {"id": created.workflow_id},
+                )
+            ).scalars()
+        )
+    assert candidate["status"] == "reviewable", candidate["failure_message"]
+    assert candidate["failure_code"] is None
+    assert candidate["candidate_revision_id"] is not None
+    assert candidate["change_set_id"] is not None
+    assert workflow_status == "succeeded"
     assert attempt_count == 4
     assert modeling.calls == 1
     assert source["provider"] == "controlled-provider"
@@ -1144,7 +1178,8 @@ async def test_agent_v2_confirmed_plan_executes_to_staging_then_fails_closed():
     assert validation_evidence[2]["evidence"]["runtime_provenance"][
         "image_digest"
     ]
-    assert product_artifacts == 0
+    assert product_artifacts == 7
+    assert selected_steps == ["model-main"]
 
 
 @pytest.mark.skipif(
@@ -1205,8 +1240,8 @@ async def test_agent_v2_real_visual_provider_persists_provenance():
             note="确认真实视觉服务测试",
             workflow_kind="mcad.agent.v2.generate",
         )
-        with pytest.raises(WorkflowFailureError):
-            await asyncio.wait_for(handle.result(), timeout=180)
+        result = await asyncio.wait_for(handle.result(), timeout=180)
+        assert result["status"] == "succeeded"
 
     async with tenant_transaction(
         owner.tenant_id,
@@ -1315,8 +1350,8 @@ async def test_agent_v2_visual_mismatch_repairs_and_revalidates_geometry():
             note="确认视觉修复测试",
             workflow_kind="mcad.agent.v2.generate",
         )
-        with pytest.raises(WorkflowFailureError):
-            await asyncio.wait_for(handle.result(), timeout=180)
+        result = await asyncio.wait_for(handle.result(), timeout=180)
+        assert result["status"] == "succeeded"
 
     async with tenant_transaction(
         owner.tenant_id,
@@ -1372,6 +1407,19 @@ async def test_agent_v2_visual_mismatch_repairs_and_revalidates_geometry():
                 {"id": created.workflow_id},
             )
         ).mappings().one()
+        selected_manifest_ids = set(
+            (
+                await connection.execute(
+                    text(
+                        "SELECT staging_manifest_id FROM agent_seal_manifests sm "
+                        "JOIN agent_candidate_seals s ON s.id=sm.seal_id "
+                        "WHERE s.candidate_build_id=(SELECT id FROM "
+                        "agent_candidate_builds WHERE workflow_run_id=:id)"
+                    ),
+                    {"id": created.workflow_id},
+                )
+            ).scalars()
+        )
     diagnostic = {
         "failure": dict(failure),
         "sources": [dict(item) for item in sources],
@@ -1392,6 +1440,7 @@ async def test_agent_v2_visual_mismatch_repairs_and_revalidates_geometry():
     assert sources[1]["provider"] == "controlled-repair-provider"
     assert len(manifests) == 2
     assert manifests[1]["supersedes_id"] == manifests[0]["id"]
+    assert selected_manifest_ids == {manifests[1]["id"]}
     assert [(item["gate"], item["outcome"]) for item in gates] == [
         ("geometry", "passed"),
         ("visual", "failed"),
@@ -1473,8 +1522,8 @@ async def test_agent_v2_user_code_failure_creates_durable_repair_attempt():
             note="确认执行并允许分类修复",
             workflow_kind="mcad.agent.v2.generate",
         )
-        with pytest.raises(WorkflowFailureError):
-            await asyncio.wait_for(handle.result(), timeout=90)
+        result = await asyncio.wait_for(handle.result(), timeout=90)
+        assert result["status"] == "succeeded"
 
     async with tenant_transaction(
         owner.tenant_id,
@@ -1616,8 +1665,8 @@ async def test_agent_v2_geometry_failure_repairs_and_revalidates_new_manifest():
             note="确认几何修复测试",
             workflow_kind="mcad.agent.v2.generate",
         )
-        with pytest.raises(WorkflowFailureError):
-            await asyncio.wait_for(handle.result(), timeout=120)
+        result = await asyncio.wait_for(handle.result(), timeout=120)
+        assert result["status"] == "succeeded"
 
     async with tenant_transaction(
         owner.tenant_id,
@@ -1671,6 +1720,19 @@ async def test_agent_v2_geometry_failure_repairs_and_revalidates_new_manifest():
                 {"id": created.workflow_id},
             )
         ).mappings().all()
+        selected_manifest_ids = set(
+            (
+                await connection.execute(
+                    text(
+                        "SELECT staging_manifest_id FROM agent_seal_manifests sm "
+                        "JOIN agent_candidate_seals s ON s.id=sm.seal_id "
+                        "WHERE s.candidate_build_id=(SELECT id FROM "
+                        "agent_candidate_builds WHERE workflow_run_id=:id)"
+                    ),
+                    {"id": created.workflow_id},
+                )
+            ).scalars()
+        )
     assert repair.calls == 1
     assert [item["kind"] for item in attempts] == [
         "agent_model",
@@ -1685,6 +1747,7 @@ async def test_agent_v2_geometry_failure_repairs_and_revalidates_new_manifest():
     assert [item["outcome"] for item in evidence] == ["failed", "passed"]
     assert evidence[0]["staging_manifest_id"] == manifests[0]["id"]
     assert evidence[1]["staging_manifest_id"] == manifests[1]["id"]
+    assert selected_manifest_ids == {manifests[1]["id"]}
     assert "artifact-00:dimension_mismatch" in evidence[0]["evidence"][
         "issues"
     ]
@@ -1870,8 +1933,8 @@ async def test_agent_v2_complex_steps_survive_worker_restart_without_regeneratio
         durable_planner=planner,
         durable_modeling=modeling,
     ):
-        with pytest.raises(WorkflowFailureError):
-            await asyncio.wait_for(handle.result(), timeout=90)
+        result = await asyncio.wait_for(handle.result(), timeout=90)
+        assert result["status"] == "succeeded"
 
     async with tenant_transaction(
         owner.tenant_id,
@@ -1904,6 +1967,20 @@ async def test_agent_v2_complex_steps_survive_worker_restart_without_regeneratio
             ),
             {"id": created.workflow_id},
         )
+        selected_steps = list(
+            (
+                await connection.execute(
+                    text(
+                        "SELECT sm.plan_step_key FROM agent_seal_manifests sm "
+                        "JOIN agent_candidate_seals s ON s.id=sm.seal_id "
+                        "WHERE s.candidate_build_id=(SELECT id FROM "
+                        "agent_candidate_builds WHERE workflow_run_id=:id) "
+                        "ORDER BY sm.ordinal"
+                    ),
+                    {"id": created.workflow_id},
+                )
+            ).scalars()
+        )
     assert [row["status"] for row in steps] == ["succeeded", "succeeded"]
     assert [row["attempt_count"] for row in steps] == [1, 1]
     assert len(source_rows) == 2
@@ -1911,6 +1988,7 @@ async def test_agent_v2_complex_steps_survive_worker_restart_without_regeneratio
     assert source_rows[1]["predecessor_source_id"] is not None
     assert manifest_count == 2
     assert codegen.calls.count(0) == 1
+    assert selected_steps == ["model-02-secondary"]
 
 
 async def _run_assembly_case(*, fail_step: str | None):
@@ -1961,8 +2039,12 @@ async def _run_assembly_case(*, fail_step: str | None):
             id=temporal_agent_v2_workflow_id(created.workflow_id),
             task_queue=settings.temporal_agent_v2_task_queue,
         )
-        with pytest.raises(WorkflowFailureError):
-            await asyncio.wait_for(handle.result(), timeout=120)
+        if fail_step is None:
+            result = await asyncio.wait_for(handle.result(), timeout=120)
+            assert result["status"] == "succeeded"
+        else:
+            with pytest.raises(WorkflowFailureError):
+                await asyncio.wait_for(handle.result(), timeout=120)
     return owner, created.workflow_id, modeling
 
 
@@ -2006,6 +2088,20 @@ async def test_agent_v2_assembly_executes_parts_then_combine_with_source_edges()
             ),
             {"id": workflow_id},
         )
+        selected_steps = list(
+            (
+                await connection.execute(
+                    text(
+                        "SELECT sm.plan_step_key FROM agent_seal_manifests sm "
+                        "JOIN agent_candidate_seals s ON s.id=sm.seal_id "
+                        "WHERE s.candidate_build_id=(SELECT id FROM "
+                        "agent_candidate_builds WHERE workflow_run_id=:id) "
+                        "ORDER BY sm.ordinal"
+                    ),
+                    {"id": workflow_id},
+                )
+            ).scalars()
+        )
     assert [row["step_key"] for row in steps] == [
         "part-01",
         "part-02",
@@ -2016,6 +2112,7 @@ async def test_agent_v2_assembly_executes_parts_then_combine_with_source_edges()
     assert [row["input_step"] for row in edges] == ["part-01", "part-02"]
     assert manifests == 3
     assert modeling.calls.count("part-01") == 1
+    assert selected_steps == ["combine"]
 
 
 @pytest.mark.asyncio(loop_scope="module")
@@ -2296,8 +2393,8 @@ async def test_agent_v2_real_planner_retriever_codegen_and_execution_provenance(
             "confirmation",
             {"accepted": True, "note": "受控真实 provider 测试确认"},
         )
-        with pytest.raises(WorkflowFailureError):
-            await asyncio.wait_for(handle.result(), timeout=180)
+        result = await asyncio.wait_for(handle.result(), timeout=180)
+        assert result["status"] == "succeeded"
 
     async with tenant_transaction(
         owner.tenant_id,
@@ -2359,7 +2456,7 @@ async def test_agent_v2_real_planner_retriever_codegen_and_execution_provenance(
     assert len(source["response_hash"]) == 64
     assert len(source["source_hash"]) == 64
     assert manifest["manifest"]["outputs"]
-    assert candidate_failure == "agent_v2_sealing_not_enabled"
+    assert candidate_failure is None
 
 
 @pytest.mark.asyncio(loop_scope="module")

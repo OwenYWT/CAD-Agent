@@ -875,22 +875,23 @@ async def create_candidate_seal(
     if not seal_key.strip():
         raise ValueError("seal_key is required")
     selection_hash = canonical_sha256(selection)
-    candidate_status = await connection.scalar(
-        text(
-            "SELECT status FROM agent_candidate_builds "
-            "WHERE tenant_id=:tenant_id AND id=:id FOR UPDATE"
-        ),
-        {"tenant_id": tenant_id, "id": candidate_build_id},
-    )
-    if candidate_status is None:
+    candidate = (
+        await connection.execute(
+            text(
+                "SELECT status FROM agent_candidate_builds "
+                "WHERE tenant_id=:tenant_id AND id=:id FOR UPDATE"
+            ),
+            {"tenant_id": tenant_id, "id": candidate_build_id},
+        )
+    ).mappings().one_or_none()
+    if candidate is None:
         raise KeyError(candidate_build_id)
-    if candidate_status != CandidateBuildStatus.BUILDING.value:
-        raise CandidateBuildConflict("seal requires a building candidate")
     existing = (
         await connection.execute(
             text(
                 """
-                SELECT id, candidate_build_id, seal_key, selection_hash
+                SELECT id, candidate_build_id, seal_key, selection_hash,
+                       selection
                 FROM agent_candidate_seals
                 WHERE tenant_id=:tenant_id
                   AND (seal_key=:seal_key OR candidate_build_id=:candidate_build_id)
@@ -909,6 +910,10 @@ async def create_candidate_seal(
             existing["candidate_build_id"] != candidate_build_id
             or existing["seal_key"] != seal_key
             or existing["selection_hash"] != selection_hash
+            or (
+                existing["selection"] is not None
+                and dict(existing["selection"]) != selection
+            )
         ):
             raise CandidateBuildConflict(
                 "seal key replay used a different candidate selection"
@@ -918,15 +923,18 @@ async def create_candidate_seal(
             selection_hash=selection_hash,
             replayed=True,
         )
+    if candidate["status"] != CandidateBuildStatus.BUILDING.value:
+        raise CandidateBuildConflict("seal requires a building candidate")
     seal_id = uuid4()
     await connection.execute(
         text(
             """
             INSERT INTO agent_candidate_seals (
-                id, tenant_id, candidate_build_id, seal_key, selection_hash
+                id, tenant_id, candidate_build_id, seal_key, selection_hash,
+                selection
             ) VALUES (
                 :id, :tenant_id, :candidate_build_id, :seal_key,
-                :selection_hash
+                :selection_hash, CAST(:selection AS jsonb)
             )
             """
         ),
@@ -936,6 +944,7 @@ async def create_candidate_seal(
             "candidate_build_id": candidate_build_id,
             "seal_key": seal_key,
             "selection_hash": selection_hash,
+            "selection": _json(selection),
         },
     )
     return CandidateSealCreated(

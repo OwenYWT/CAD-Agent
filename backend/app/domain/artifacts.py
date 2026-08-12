@@ -56,6 +56,16 @@ class CandidateSealCreated:
 
 
 @dataclass(frozen=True, slots=True)
+class CandidateSealResult:
+    seal_id: UUID
+    candidate_build_id: UUID
+    candidate_revision_id: UUID
+    change_set_id: UUID
+    artifacts: tuple[CommittedArtifact, ...]
+    replayed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class GeneratedSourceRecorded:
     source_id: UUID
     source_hash: str

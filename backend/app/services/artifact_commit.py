@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import PurePath
-from typing import Any
-from uuid import UUID, uuid4
+from typing import Any, Callable
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from botocore.exceptions import ClientError
 from sqlalchemy import text
@@ -17,9 +18,12 @@ from app.db import tenant_transaction
 from app.domain.artifacts import (
     ArtifactCommitResult,
     ArtifactUploadAuthorization,
+    CandidateSealResult,
     CommittedArtifact,
 )
+from app.domain.revisions import CandidateBuildStatus
 from app.domain.runs import AttemptStatus, WorkflowStatus
+from app.execution.canonical import canonical_sha256
 from app.object_store import (
     copy_object,
     create_presigned_upload,
@@ -37,11 +41,19 @@ from app.repositories.artifacts import (
     reject_uploads,
 )
 from app.repositories.runs import append_workflow_event
+from app.repositories.agent_candidates import (
+    CandidateBuildConflict,
+    create_candidate_seal,
+    transition_agent_candidate_build,
+)
+from app.repositories.revisions import create_candidate_change_set
+from app.services.change_sets import build_agent_change_set_evidence
 from app.services.run_state import (
     IdempotencyConflict,
     IllegalTransition,
     StaleLease,
     complete_attempt,
+    transition_workflow,
 )
 
 
@@ -49,8 +61,852 @@ class ArtifactVerificationError(RuntimeError):
     """Uploaded bytes do not match their immutable authorization."""
 
 
+class CandidateSealVerificationError(RuntimeError):
+    """Selected candidate staging bytes or evidence cannot be sealed."""
+
+
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _KIND_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+def _candidate_final_object_key(
+    *,
+    tenant_id: UUID,
+    project_id: UUID,
+    candidate_build_id: UUID,
+    sha256: str,
+    filename: str,
+) -> str:
+    return (
+        f"tenants/{tenant_id}/projects/{project_id}/candidate-seals/"
+        f"{candidate_build_id}/artifacts/{sha256}/{filename}"
+    )
+
+
+async def _verified_copy_if_absent(
+    *,
+    source_key: str,
+    destination_key: str,
+    expected_sha256: str,
+    expected_size: int,
+) -> None:
+    destination_exists = False
+    try:
+        destination = await sha256_object(destination_key)
+        destination_exists = True
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code not in {"404", "NoSuchKey", "NotFound"}:
+            raise
+    if destination_exists:
+        if (
+            destination["sha256"] != expected_sha256
+            or destination["size_bytes"] != expected_size
+        ):
+            raise CandidateSealVerificationError(
+                "existing final object does not match selected manifest"
+            )
+        return
+    try:
+        source = await sha256_object(source_key)
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in {"404", "NoSuchKey", "NotFound"}:
+            raise CandidateSealVerificationError(
+                "selected staging object is missing"
+            ) from exc
+        raise
+    if source["sha256"] != expected_sha256 or source["size_bytes"] != expected_size:
+        raise CandidateSealVerificationError(
+            "selected staging object failed SHA-256 verification"
+        )
+    await copy_object(source_key, destination_key)
+    copied = await sha256_object(destination_key)
+    if copied["sha256"] != expected_sha256 or copied["size_bytes"] != expected_size:
+        raise CandidateSealVerificationError(
+            "final object failed post-copy SHA-256 verification"
+        )
+
+
+def _candidate_artifact_rows(
+    *,
+    tenant_id: UUID,
+    project_id: UUID,
+    candidate_build_id: UUID,
+    manifests: list[dict[str, Any]],
+    evidence_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    multiple = len(manifests) > 1
+    rows: list[dict[str, Any]] = []
+    filenames: set[str] = set()
+    for selected in manifests:
+        step_key = str(selected["step_key"])
+        manifest = dict(selected["manifest"])
+        outputs = list(manifest.get("outputs") or ())
+        if not outputs:
+            raise CandidateSealVerificationError(
+                f"selected manifest {step_key} has no outputs"
+            )
+        for output in outputs:
+            filename = _safe_filename(str(output["filename"]))
+            product_filename = _safe_filename(
+                f"{step_key}-{filename}" if multiple else filename
+            )
+            if product_filename in filenames:
+                raise CandidateSealVerificationError(
+                    "selected artifact filenames are not unique"
+                )
+            filenames.add(product_filename)
+            digest = str(output["sha256"])
+            size_bytes = int(output["size_bytes"])
+            if not _SHA256_RE.fullmatch(digest) or size_bytes < 1:
+                raise CandidateSealVerificationError(
+                    "selected artifact declaration is invalid"
+                )
+            source_key = str(output["object_key"])
+            expected_prefix = (
+                f"staging/agent/tenants/{tenant_id}/candidates/"
+                f"{candidate_build_id}/"
+            )
+            if not source_key.startswith(expected_prefix):
+                raise CandidateSealVerificationError(
+                    "selected artifact key is outside its candidate staging prefix"
+                )
+            rows.append(
+                {
+                    "manifest_id": selected["id"],
+                    "attempt_id": selected["execution_attempt_id"],
+                    "step_key": step_key,
+                    "artifact_kind": str(output["format"]).lower(),
+                    "filename": product_filename,
+                    "content_type": str(output["content_type"]),
+                    "size_bytes": size_bytes,
+                    "sha256": digest,
+                    "staging_object_key": source_key,
+                    "object_key": _candidate_final_object_key(
+                        tenant_id=tenant_id,
+                        project_id=project_id,
+                        candidate_build_id=candidate_build_id,
+                        sha256=digest,
+                        filename=product_filename,
+                    ),
+                    "runtime_metadata": dict(
+                        manifest.get("runtime_provenance") or {}
+                    ),
+                }
+            )
+    manifest_steps = {row["id"]: row["step_key"] for row in manifests}
+    for evidence in evidence_rows:
+        step_key = manifest_steps[evidence["staging_manifest_id"]]
+        report = dict(evidence["evidence"] or {})
+        if evidence["gate"] == "visual":
+            for render in report.get("renders") or ():
+                view = str(render["view"])
+                product_filename = _safe_filename(
+                    f"{step_key}-visual-{view}.png"
+                )
+                if product_filename in filenames:
+                    raise CandidateSealVerificationError(
+                        "selected evidence filenames are not unique"
+                    )
+                filenames.add(product_filename)
+                digest = str(render["sha256"])
+                size_bytes = int(render["size_bytes"])
+                source_key = str(render["object_key"])
+                expected_prefix = (
+                    f"staging/agent/tenants/{tenant_id}/candidates/"
+                    f"{candidate_build_id}/validation/"
+                )
+                if (
+                    not _SHA256_RE.fullmatch(digest)
+                    or size_bytes < 1
+                    or not source_key.startswith(expected_prefix)
+                    or evidence["execution_attempt_id"] is None
+                ):
+                    raise CandidateSealVerificationError(
+                        "selected visual evidence declaration is invalid"
+                    )
+                rows.append(
+                    {
+                        "manifest_id": evidence["staging_manifest_id"],
+                        "attempt_id": evidence["execution_attempt_id"],
+                        "step_key": step_key,
+                        "artifact_kind": "visual_render",
+                        "filename": product_filename,
+                        "content_type": "image/png",
+                        "size_bytes": size_bytes,
+                        "sha256": digest,
+                        "staging_object_key": source_key,
+                        "object_key": _candidate_final_object_key(
+                            tenant_id=tenant_id,
+                            project_id=project_id,
+                            candidate_build_id=candidate_build_id,
+                            sha256=digest,
+                            filename=product_filename,
+                        ),
+                        "runtime_metadata": {
+                            **dict(report.get("runtime_provenance") or {}),
+                            "validation_evidence_id": str(evidence["id"]),
+                            "validation_gate": "visual",
+                            "view": view,
+                        },
+                    }
+                )
+            continue
+        if evidence["gate"] != "dfm":
+            continue
+        report_artifact = dict(report.get("report_artifact") or {})
+        if not report_artifact:
+            continue
+        step_key = manifest_steps[evidence["staging_manifest_id"]]
+        product_filename = _safe_filename(f"{step_key}-dfm-report.json")
+        digest = str(report_artifact.get("sha256") or "")
+        size_bytes = int(report_artifact.get("size_bytes") or 0)
+        source_key = str(report_artifact.get("object_key") or "")
+        expected_prefix = (
+            f"staging/agent/tenants/{tenant_id}/candidates/"
+            f"{candidate_build_id}/validation/"
+        )
+        if (
+            product_filename in filenames
+            or not _SHA256_RE.fullmatch(digest)
+            or size_bytes < 1
+            or not source_key.startswith(expected_prefix)
+            or evidence["execution_attempt_id"] is None
+        ):
+            raise CandidateSealVerificationError(
+                "selected DFM report declaration is invalid"
+            )
+        filenames.add(product_filename)
+        rows.append(
+            {
+                "manifest_id": evidence["staging_manifest_id"],
+                "attempt_id": evidence["execution_attempt_id"],
+                "step_key": step_key,
+                "artifact_kind": "dfm_report",
+                "filename": product_filename,
+                "content_type": "application/json",
+                "size_bytes": size_bytes,
+                "sha256": digest,
+                "staging_object_key": source_key,
+                "object_key": _candidate_final_object_key(
+                    tenant_id=tenant_id,
+                    project_id=project_id,
+                    candidate_build_id=candidate_build_id,
+                    sha256=digest,
+                    filename=product_filename,
+                ),
+                "runtime_metadata": {
+                    **dict(report.get("runtime_provenance") or {}),
+                    "validation_evidence_id": str(evidence["id"]),
+                    "validation_gate": "dfm",
+                },
+            }
+        )
+    return rows
+
+
+async def _load_candidate_seal_selection(
+    connection,
+    *,
+    tenant_id: UUID,
+    candidate_build_id: UUID,
+    workflow_id: UUID,
+    plan: dict[str, Any],
+    selected: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    candidate = (
+        await connection.execute(
+            text(
+                """
+                SELECT * FROM agent_candidate_builds
+                WHERE tenant_id=:tenant_id AND id=:candidate_build_id
+                  AND workflow_run_id=:workflow_id
+                FOR UPDATE
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "candidate_build_id": candidate_build_id,
+                "workflow_id": workflow_id,
+            },
+        )
+    ).mappings().one_or_none()
+    if candidate is None:
+        raise CandidateSealVerificationError("candidate build ownership mismatch")
+    if candidate["status"] != CandidateBuildStatus.BUILDING.value:
+        raise CandidateBuildConflict(
+            f"candidate cannot seal while it is {candidate['status']}"
+        )
+    if candidate["plan_hash"] != canonical_sha256(plan):
+        raise CandidateSealVerificationError("candidate plan hash mismatch")
+    expected_steps = [
+        str(step["step_key"])
+        for step in plan.get("steps") or ()
+        if step.get("output_formats")
+    ]
+    supplied_steps = [str(item["step_key"]) for item in selected]
+    if not expected_steps or supplied_steps != expected_steps:
+        raise CandidateSealVerificationError(
+            "selected manifests do not match terminal plan outputs"
+        )
+    manifest_ids = [UUID(str(item["staging_manifest_id"])) for item in selected]
+    if len(manifest_ids) != len(set(manifest_ids)):
+        raise CandidateSealVerificationError("selected manifests contain duplicates")
+    rows = (
+        await connection.execute(
+            text(
+                """
+                SELECT m.*, a.status AS attempt_status
+                FROM agent_staging_manifests m
+                JOIN execution_attempts a ON a.id=m.execution_attempt_id
+                WHERE m.tenant_id=:tenant_id AND m.id = ANY(:manifest_ids)
+                """
+            ),
+            {"tenant_id": tenant_id, "manifest_ids": manifest_ids},
+        )
+    ).mappings().all()
+    by_id = {row["id"]: dict(row) for row in rows}
+    if set(by_id) != set(manifest_ids):
+        raise CandidateSealVerificationError("selected manifest is missing")
+    manifests: list[dict[str, Any]] = []
+    for supplied, manifest_id in zip(selected, manifest_ids, strict=True):
+        row = by_id[manifest_id]
+        manifest = dict(row["manifest"])
+        source = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT source_hash, candidate_build_id, workflow_run_id
+                    FROM agent_generated_sources
+                    WHERE tenant_id=:tenant_id AND id=:source_id
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "source_id": UUID(str(manifest.get("source_id"))),
+                },
+            )
+        ).mappings().one_or_none()
+        is_superseded = await connection.scalar(
+            text(
+                "SELECT 1 FROM agent_staging_manifests "
+                "WHERE tenant_id=:tenant_id AND supersedes_id=:manifest_id LIMIT 1"
+            ),
+            {"tenant_id": tenant_id, "manifest_id": manifest_id},
+        )
+        consumed = await connection.scalar(
+            text(
+                "SELECT 1 FROM agent_seal_manifests "
+                "WHERE tenant_id=:tenant_id AND staging_manifest_id=:manifest_id"
+            ),
+            {"tenant_id": tenant_id, "manifest_id": manifest_id},
+        )
+        if (
+            row["candidate_build_id"] != candidate_build_id
+            or row["workflow_run_id"] != workflow_id
+            or row["status"] != "accepted"
+            or row["attempt_status"] != "succeeded"
+            or is_superseded is not None
+            or consumed is not None
+            or source is None
+            or source["candidate_build_id"] != candidate_build_id
+            or source["workflow_run_id"] != workflow_id
+            or source["source_hash"] != manifest.get("source_hash")
+            or manifest.get("plan_step_key") != supplied["step_key"]
+            or row["manifest_hash"] != supplied["manifest_hash"]
+            or str(manifest.get("source_id")) != str(supplied["source_id"])
+            or manifest.get("source_hash") != supplied["source_hash"]
+        ):
+            raise CandidateSealVerificationError(
+                "selected manifest is stale, consumed, or does not match selection"
+            )
+        manifests.append({**row, "step_key": supplied["step_key"]})
+    policy = dict(plan["validation_policy"])
+    evidence_rows: list[dict[str, Any]] = []
+    for supplied, manifest_id in zip(selected, manifest_ids, strict=True):
+        for gate in ("geometry", "visual", "dfm"):
+            mode = str(policy[gate]["mode"])
+            evidence_id = supplied.get(f"{gate}_evidence_id")
+            if mode == "disabled":
+                if evidence_id is not None:
+                    raise CandidateSealVerificationError(
+                        f"disabled {gate} gate cannot select evidence"
+                    )
+                continue
+            if evidence_id is None:
+                raise CandidateSealVerificationError(
+                    f"selected manifest is missing {gate} evidence"
+                )
+            evidence = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT * FROM agent_validation_evidence
+                        WHERE tenant_id=:tenant_id AND id=:evidence_id
+                        """
+                    ),
+                    {"tenant_id": tenant_id, "evidence_id": UUID(str(evidence_id))},
+                )
+            ).mappings().one_or_none()
+            if (
+                evidence is None
+                or evidence["candidate_build_id"] != candidate_build_id
+                or evidence["workflow_run_id"] != workflow_id
+                or evidence["staging_manifest_id"] != manifest_id
+                or evidence["gate"] != gate
+                or evidence["mode"] != mode
+                or (mode == "required" and evidence["outcome"] != "passed")
+            ):
+                raise CandidateSealVerificationError(
+                    f"selected {gate} evidence does not satisfy its gate"
+                )
+            evidence_rows.append(dict(evidence))
+    return dict(candidate), manifests, evidence_rows
+
+
+def _seal_result_from_payload(payload: dict[str, Any], *, replayed: bool) -> CandidateSealResult:
+    return CandidateSealResult(
+        seal_id=UUID(str(payload["seal_id"])),
+        candidate_build_id=UUID(str(payload["candidate_build_id"])),
+        candidate_revision_id=UUID(str(payload["candidate_revision_id"])),
+        change_set_id=UUID(str(payload["change_set_id"])),
+        artifacts=tuple(
+            CommittedArtifact(
+                artifact_id=UUID(str(item["artifact_id"])),
+                upload_id=UUID(str(item["upload_id"])),
+                filename=str(item["filename"]),
+                artifact_kind=str(item["artifact_kind"]),
+                object_key=str(item["object_key"]),
+                size_bytes=int(item["size_bytes"]),
+                sha256=str(item["sha256"]),
+                content_type=str(item["content_type"]),
+            )
+            for item in payload.get("artifacts") or ()
+        ),
+        replayed=replayed,
+    )
+
+
+async def seal_agent_candidate(
+    *,
+    tenant_id: UUID,
+    principal_id: UUID,
+    workflow_id: UUID,
+    candidate_build_id: UUID,
+    plan: dict[str, Any],
+    selected_manifests: list[dict[str, Any]],
+    fault_hook: Callable[[str], None] | None = None,
+) -> CandidateSealResult:
+    """Promote validated staging outputs and atomically make a candidate reviewable."""
+    seal_key = f"agent-v2:{workflow_id}:candidate-seal"
+    selection = {
+        "schema_version": "agent-candidate-selection.v1",
+        "candidate_build_id": str(candidate_build_id),
+        "workflow_run_id": str(workflow_id),
+        "manifests": selected_manifests,
+    }
+
+    async with tenant_transaction(tenant_id, principal_id) as connection:
+        await connection.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": str(candidate_build_id)},
+        )
+        existing = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT status, result, selection_hash
+                    FROM agent_candidate_seals
+                    WHERE tenant_id=:tenant_id
+                      AND candidate_build_id=:candidate_build_id
+                      AND seal_key=:seal_key
+                    FOR UPDATE
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "candidate_build_id": candidate_build_id,
+                    "seal_key": seal_key,
+                },
+            )
+        ).mappings().one_or_none()
+        if existing is not None and existing["selection_hash"] != canonical_sha256(
+            selection
+        ):
+            raise CandidateBuildConflict(
+                "candidate seal replay used a different selection"
+            )
+        if (
+            existing is not None
+            and existing["status"] == "committed"
+            and existing["result"] is not None
+        ):
+            replay = _seal_result_from_payload(
+                dict(existing["result"]), replayed=True
+            )
+            staging_keys = list(
+                (
+                    await connection.execute(
+                        text(
+                            """
+                            SELECT staging_object_key FROM artifact_uploads
+                            WHERE tenant_id=:tenant_id
+                              AND revision_id=:revision_id
+                            """
+                        ),
+                        {
+                            "tenant_id": tenant_id,
+                            "revision_id": replay.candidate_revision_id,
+                        },
+                    )
+                ).scalars()
+            )
+            for key in staging_keys:
+                try:
+                    await delete_object(key)
+                except Exception:
+                    pass
+            return replay
+        candidate, manifests, evidence = await _load_candidate_seal_selection(
+            connection,
+            tenant_id=tenant_id,
+            candidate_build_id=candidate_build_id,
+            workflow_id=workflow_id,
+            plan=plan,
+            selected=selected_manifests,
+        )
+        seal = await create_candidate_seal(
+            connection,
+            tenant_id=tenant_id,
+            candidate_build_id=candidate_build_id,
+            seal_key=seal_key,
+            selection=selection,
+        )
+        await connection.execute(
+            text(
+                """
+                UPDATE agent_candidate_seals
+                SET status='copying', error_code=NULL,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE tenant_id=:tenant_id AND id=:seal_id
+                  AND status IN ('pending', 'copying', 'failed')
+                """
+            ),
+            {"tenant_id": tenant_id, "seal_id": seal.seal_id},
+        )
+    artifact_rows = _candidate_artifact_rows(
+        tenant_id=tenant_id,
+        project_id=candidate["project_id"],
+        candidate_build_id=candidate_build_id,
+        manifests=manifests,
+        evidence_rows=evidence,
+    )
+    try:
+        for index, row in enumerate(artifact_rows):
+            await _verified_copy_if_absent(
+                source_key=row["staging_object_key"],
+                destination_key=row["object_key"],
+                expected_sha256=row["sha256"],
+                expected_size=row["size_bytes"],
+            )
+            if index == 0 and fault_hook is not None:
+                fault_hook("after_partial_copy")
+        if fault_hook is not None:
+            fault_hook("after_all_copies")
+    except Exception as exc:
+        async with tenant_transaction(tenant_id, principal_id) as connection:
+            await connection.execute(
+                text(
+                    """
+                    UPDATE agent_candidate_seals
+                    SET status='failed', error_code=:error_code,
+                        updated_at=CURRENT_TIMESTAMP
+                    WHERE tenant_id=:tenant_id AND id=:seal_id
+                      AND status <> 'committed'
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "seal_id": seal.seal_id,
+                    "error_code": type(exc).__name__[:200],
+                },
+            )
+        raise
+
+    validation_summary, risk_summary = build_agent_change_set_evidence(evidence)
+    candidate_manifest = {
+        "schema_version": "mcad-agent-revision-manifest.v1",
+        "candidate_build_id": str(candidate_build_id),
+        "workflow_run_id": str(workflow_id),
+        "objective": str(plan["objective"]),
+        "operation": str(plan["operation"]),
+        "base_revision_id": str(candidate["base_revision_id"]),
+        "plan_hash": candidate["plan_hash"],
+        "selected_manifests": [
+            {
+                "staging_manifest_id": str(row["id"]),
+                "manifest_hash": row["manifest_hash"],
+                "plan_step_key": row["step_key"],
+            }
+            for row in manifests
+        ],
+        "artifacts": [
+            {
+                "filename": row["filename"],
+                "artifact_kind": row["artifact_kind"],
+                "object_key": row["object_key"],
+                "sha256": row["sha256"],
+                "size_bytes": row["size_bytes"],
+                "content_type": row["content_type"],
+            }
+            for row in artifact_rows
+        ],
+        "validation": validation_summary,
+        "risks": risk_summary,
+    }
+    committed: list[CommittedArtifact] = []
+    async with tenant_transaction(tenant_id, principal_id) as connection:
+        await connection.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": str(candidate_build_id)},
+        )
+        replay = (
+            await connection.execute(
+                text(
+                    "SELECT status, result FROM agent_candidate_seals "
+                    "WHERE tenant_id=:tenant_id AND id=:seal_id FOR UPDATE"
+                ),
+                {"tenant_id": tenant_id, "seal_id": seal.seal_id},
+            )
+        ).mappings().one()
+        if replay["status"] == "committed":
+            return _seal_result_from_payload(dict(replay["result"]), replayed=True)
+        candidate, manifests, evidence = await _load_candidate_seal_selection(
+            connection,
+            tenant_id=tenant_id,
+            candidate_build_id=candidate_build_id,
+            workflow_id=workflow_id,
+            plan=plan,
+            selected=selected_manifests,
+        )
+        change = await create_candidate_change_set(
+            connection,
+            tenant_id=tenant_id,
+            project_id=candidate["project_id"],
+            branch_id=candidate["branch_id"],
+            expected_base_revision_id=candidate["base_revision_id"],
+            created_by_principal_id=principal_id,
+            idempotency_key=f"agent-v2:{candidate_build_id}:change-set",
+            objective=str(plan["objective"]),
+            candidate_manifest=candidate_manifest,
+            change_summary={
+                "operation": str(plan["operation"]),
+                "selected_step_count": len(manifests),
+                "artifact_count": len(artifact_rows),
+                "source_hashes": [
+                    str(item["source_hash"]) for item in selected_manifests
+                ],
+            },
+            validation_summary=validation_summary,
+            risk_summary=risk_summary,
+            source_workflow_run_id=workflow_id,
+        )
+        now = _utcnow()
+        for row in artifact_rows:
+            upload_id = uuid5(
+                NAMESPACE_URL,
+                f"cad-agent:{candidate_build_id}:upload:{row['manifest_id']}:"
+                f"{row['filename']}:{row['sha256']}",
+            )
+            artifact_id = uuid5(
+                NAMESPACE_URL,
+                f"cad-agent:{candidate_build_id}:artifact:{row['manifest_id']}:"
+                f"{row['filename']}:{row['sha256']}",
+            )
+            upload = {
+                "id": upload_id,
+                "tenant_id": tenant_id,
+                "project_id": candidate["project_id"],
+                "revision_id": change.candidate_revision_id,
+                "workflow_run_id": workflow_id,
+                "attempt_id": row["attempt_id"],
+                "artifact_kind": row["artifact_kind"],
+                "filename": row["filename"],
+                "content_type": row["content_type"],
+                "declared_size_bytes": row["size_bytes"],
+                "declared_sha256": row["sha256"],
+                "staging_object_key": row["staging_object_key"],
+            }
+            await insert_upload_authorization(
+                connection,
+                upload_id=upload_id,
+                tenant_id=tenant_id,
+                project_id=candidate["project_id"],
+                revision_id=change.candidate_revision_id,
+                workflow_id=workflow_id,
+                attempt_id=row["attempt_id"],
+                artifact_kind=row["artifact_kind"],
+                filename=row["filename"],
+                content_type=row["content_type"],
+                declared_size_bytes=row["size_bytes"],
+                declared_sha256=row["sha256"],
+                staging_object_key=row["staging_object_key"],
+                expires_at=now,
+            )
+            committed.append(
+                await insert_artifact(
+                    connection,
+                    artifact_id=artifact_id,
+                    upload=upload,
+                    object_key=row["object_key"],
+                    runtime_metadata={
+                        **row["runtime_metadata"],
+                        "candidate_build_id": str(candidate_build_id),
+                        "seal_id": str(seal.seal_id),
+                        "staging_manifest_id": str(row["manifest_id"]),
+                    },
+                )
+            )
+            await mark_uploads_committed(
+                connection,
+                upload_ids=[upload_id],
+                committed_at=now,
+            )
+        for ordinal, manifest in enumerate(manifests):
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO agent_seal_manifests (
+                        tenant_id, seal_id, staging_manifest_id, ordinal,
+                        plan_step_key
+                    ) VALUES (
+                        :tenant_id, :seal_id, :manifest_id, :ordinal, :step_key
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "seal_id": seal.seal_id,
+                    "manifest_id": manifest["id"],
+                    "ordinal": ordinal,
+                    "step_key": manifest["step_key"],
+                },
+            )
+        for row in evidence:
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO agent_seal_evidence (
+                        tenant_id, seal_id, evidence_id, gate
+                    ) VALUES (
+                        :tenant_id, :seal_id, :evidence_id, :gate
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "seal_id": seal.seal_id,
+                    "evidence_id": row["id"],
+                    "gate": row["gate"],
+                },
+            )
+        await connection.execute(
+            text(
+                """
+                UPDATE agent_candidate_builds
+                SET candidate_revision_id=:revision_id,
+                    change_set_id=:change_set_id,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE tenant_id=:tenant_id AND id=:candidate_build_id
+                  AND status='building'
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "candidate_build_id": candidate_build_id,
+                "revision_id": change.candidate_revision_id,
+                "change_set_id": change.change_set_id,
+            },
+        )
+        await transition_agent_candidate_build(
+            connection,
+            tenant_id=tenant_id,
+            candidate_build_id=candidate_build_id,
+            expected=CandidateBuildStatus.BUILDING,
+            target=CandidateBuildStatus.REVIEWABLE,
+        )
+        result_payload = {
+            "seal_id": str(seal.seal_id),
+            "candidate_build_id": str(candidate_build_id),
+            "candidate_revision_id": str(change.candidate_revision_id),
+            "change_set_id": str(change.change_set_id),
+            "artifacts": [
+                {
+                    "artifact_id": str(item.artifact_id),
+                    "upload_id": str(item.upload_id),
+                    "filename": item.filename,
+                    "artifact_kind": item.artifact_kind,
+                    "object_key": item.object_key,
+                    "size_bytes": item.size_bytes,
+                    "sha256": item.sha256,
+                    "content_type": item.content_type,
+                }
+                for item in committed
+            ],
+        }
+        await connection.execute(
+            text(
+                """
+                UPDATE agent_candidate_seals
+                SET status='committed', result=CAST(:result AS jsonb),
+                    error_code=NULL, completed_at=CURRENT_TIMESTAMP,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE tenant_id=:tenant_id AND id=:seal_id
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "seal_id": seal.seal_id,
+                "result": json.dumps(result_payload, separators=(",", ":")),
+            },
+        )
+        await append_workflow_event(
+            connection,
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+            event_type="agent.candidate.sealed",
+            payload={
+                "candidate_build_id": str(candidate_build_id),
+                "candidate_revision_id": str(change.candidate_revision_id),
+                "change_set_id": str(change.change_set_id),
+                "artifact_ids": [str(item.artifact_id) for item in committed],
+            },
+        )
+        workflow_status = await connection.scalar(
+            text("SELECT status FROM workflow_runs WHERE id=:id FOR UPDATE"),
+            {"id": workflow_id},
+        )
+        if workflow_status == WorkflowStatus.RUNNING.value:
+            await transition_workflow(
+                connection,
+                workflow_id,
+                expected=WorkflowStatus.RUNNING,
+                target=WorkflowStatus.SUCCEEDED,
+            )
+        elif workflow_status != WorkflowStatus.SUCCEEDED.value:
+            raise CandidateBuildConflict(
+                f"candidate cannot seal while workflow is {workflow_status}"
+            )
+    result = _seal_result_from_payload(result_payload, replayed=False)
+    if fault_hook is not None:
+        fault_hook("after_db_commit")
+    for row in artifact_rows:
+        try:
+            await delete_object(row["staging_object_key"])
+        except Exception:
+            pass
+    return result
 
 
 def _utcnow() -> datetime:
@@ -568,6 +1424,66 @@ async def cleanup_artifact_orphans(
                 )
             ).scalars()
         )
+        terminal_agent_rows = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT m.manifest, e.evidence
+                    FROM agent_candidate_builds b
+                    JOIN agent_staging_manifests m
+                      ON m.candidate_build_id=b.id
+                    LEFT JOIN agent_validation_evidence e
+                      ON e.staging_manifest_id=m.id
+                    WHERE b.tenant_id=:tenant_id
+                      AND b.status IN (
+                        'reviewable', 'failed', 'cancelled', 'abandoned'
+                      )
+                      AND b.completed_at IS NOT NULL
+                      AND b.completed_at <= :cutoff
+                    """
+                ),
+                {"tenant_id": tenant_id, "cutoff": cutoff},
+            )
+        ).mappings().all()
+        active_agent_rows = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT m.manifest, e.evidence
+                    FROM agent_candidate_builds b
+                    JOIN agent_staging_manifests m
+                      ON m.candidate_build_id=b.id
+                    LEFT JOIN agent_validation_evidence e
+                      ON e.staging_manifest_id=m.id
+                    WHERE b.tenant_id=:tenant_id AND b.status='building'
+                    """
+                ),
+                {"tenant_id": tenant_id},
+            )
+        ).mappings().all()
+
+    def agent_keys(rows) -> set[str]:
+        keys: set[str] = set()
+        for row in rows:
+            manifest = dict(row["manifest"] or {})
+            keys.update(
+                str(item["object_key"])
+                for item in manifest.get("outputs") or ()
+                if item.get("object_key")
+            )
+            evidence = dict(row["evidence"] or {})
+            keys.update(
+                str(item["object_key"])
+                for item in evidence.get("renders") or ()
+                if item.get("object_key")
+            )
+            report_artifact = dict(evidence.get("report_artifact") or {})
+            if report_artifact.get("object_key"):
+                keys.add(str(report_artifact["object_key"]))
+        return keys
+
+    terminal_agent_keys = agent_keys(terminal_agent_rows)
+    active_agent_keys = agent_keys(active_agent_rows)
 
     deleted_staging = 0
     for row in staging_rows:
@@ -582,6 +1498,27 @@ async def cleanup_artifact_orphans(
         last_modified = item.get("last_modified")
         if (
             item["key"] not in registered_staging_keys
+            and last_modified is not None
+            and last_modified <= cutoff
+        ):
+            try:
+                await delete_object(item["key"])
+                deleted_staging += 1
+            except Exception:
+                pass
+
+    for key in terminal_agent_keys:
+        try:
+            await delete_object(key)
+            deleted_staging += 1
+        except Exception:
+            pass
+
+    agent_staging_prefix = f"staging/agent/tenants/{tenant_id}/"
+    for item in await list_objects(agent_staging_prefix):
+        last_modified = item.get("last_modified")
+        if (
+            item["key"] not in active_agent_keys
             and last_modified is not None
             and last_modified <= cutoff
         ):

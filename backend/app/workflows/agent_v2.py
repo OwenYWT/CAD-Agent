@@ -901,14 +901,19 @@ class McadAgentWorkflowV2:
                 }
                 for item in fully_validated
             ]
-            self._phase = "sealing_not_enabled"
-            raise ApplicationError(
-                "Durable Agent modeling and validation completed, but candidate "
-                "sealing is not enabled yet for candidate "
-                f"{candidate['candidate_build_id']}.",
-                type="agent_v2_sealing_not_enabled",
-                non_retryable=True,
+            self._phase = "sealing"
+            sealed = await self._activity(
+                "agent_v2.seal_candidate",
+                {
+                    **request,
+                    "candidate_build_id": self._candidate_build_id,
+                    "plan": self._plan,
+                    "selected_manifests": manifests,
+                },
+                suffix="seal-candidate",
             )
+            self._phase = "reviewable"
+            return sealed
         except asyncio.CancelledError:
             return await self._record_cancel(request)
         except Exception as exc:

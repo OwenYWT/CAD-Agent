@@ -61,6 +61,7 @@ from app.repositories.runs import append_workflow_event
 from app.services.artifact_commit import (
     authorize_artifact_upload,
     commit_artifacts,
+    seal_agent_candidate,
 )
 from app.services.change_sets import (
     accept_change_set,
@@ -3207,13 +3208,33 @@ class McadWorkflowActivities:
                 else None
             )
             result_payload = None
+            report_artifact: dict[str, Any] | None = None
             if outcome.result.status is ExecutionStatus.SUCCEEDED:
                 try:
+                    report_path = outcome.files["artifact"]
                     report = DurableDFMReport.model_validate_json(
-                        outcome.files["artifact"].read_text(encoding="utf-8")
+                        report_path.read_text(encoding="utf-8")
                     )
                     if report.policy_hash != policy.policy_hash:
                         raise ValueError("DFM report used another policy")
+                    report_digest = hashlib.sha256(report_path.read_bytes()).hexdigest()
+                    report_key = (
+                        "staging/agent/tenants/"
+                        f"{request.tenant_id}/candidates/{candidate_build_id}/"
+                        f"validation/{attempt_id}/{report_digest}/dfm-report.json"
+                    )
+                    uploaded = await put_file(
+                        report_key,
+                        report_path,
+                        content_type="application/json",
+                    )
+                    report_artifact = {
+                        "filename": "dfm-report.json",
+                        "object_key": report_key,
+                        "sha256": uploaded["sha256"],
+                        "size_bytes": uploaded["size_bytes"],
+                        "content_type": "application/json",
+                    }
                 except Exception as exc:
                     report = indeterminate_dfm_report(
                         process=policy.process,
@@ -3248,6 +3269,8 @@ class McadWorkflowActivities:
                     "policy_hash": policy.policy_hash,
                 },
             )
+            if report_artifact is not None:
+                evidence["report_artifact"] = report_artifact
             recorded = await _record_agent_validation_outcome(
                 payload,
                 candidate_build_id=candidate_build_id,
@@ -3326,6 +3349,41 @@ class McadWorkflowActivities:
             shutil.rmtree(temp_dir, ignore_errors=True)
             if outcome is not None and outcome.work_dir is not None:
                 shutil.rmtree(outcome.work_dir, ignore_errors=True)
+
+    @activity.defn(name="agent_v2.seal_candidate")
+    async def agent_seal_candidate(self, payload: dict[str, Any]) -> dict[str, Any]:
+        request = _agent_v2_request(payload)
+        plan = AgentPlan.model_validate(payload["plan"])
+        sealed = await seal_agent_candidate(
+            tenant_id=request.tenant_id,
+            principal_id=request.principal_id,
+            workflow_id=request.workflow_run_id,
+            candidate_build_id=_uuid(payload, "candidate_build_id"),
+            plan=plan.temporal_payload(),
+            selected_manifests=[
+                dict(item) for item in payload.get("selected_manifests") or ()
+            ],
+        )
+        return {
+            "status": "succeeded",
+            "seal_id": str(sealed.seal_id),
+            "candidate_build_id": str(sealed.candidate_build_id),
+            "candidate_revision_id": str(sealed.candidate_revision_id),
+            "change_set_id": str(sealed.change_set_id),
+            "artifacts": [
+                {
+                    "artifact_id": str(item.artifact_id),
+                    "filename": item.filename,
+                    "artifact_kind": item.artifact_kind,
+                    "object_key": item.object_key,
+                    "size_bytes": item.size_bytes,
+                    "sha256": item.sha256,
+                    "content_type": item.content_type,
+                }
+                for item in sealed.artifacts
+            ],
+            "replayed": sealed.replayed,
+        }
 
     @activity.defn(name="mcad.prepare_source")
     async def prepare_source(
@@ -4846,6 +4904,7 @@ class McadWorkflowActivities:
             self.agent_judge_visual,
             self.agent_repair_visual,
             self.agent_validate_dfm,
+            self.agent_seal_candidate,
             self.wait_confirmation,
             self.resume_after_confirmation,
             self.record_cancel,

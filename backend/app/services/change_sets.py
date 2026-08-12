@@ -34,6 +34,49 @@ class ArtifactEvidenceRequired(ChangeSetError):
     """Committed immutable artifacts are required before approval."""
 
 
+def build_agent_change_set_evidence(
+    evidence_rows: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Project immutable gate evidence into review validation and risks."""
+    required = [row for row in evidence_rows if row["mode"] == "required"]
+    required_failures = [
+        row for row in required if row["outcome"] != "passed"
+    ]
+    validation = {
+        "status": "passed" if not required_failures else "failed",
+        "issue_count": len(required_failures),
+        "gates": [
+            {
+                "gate": row["gate"],
+                "mode": row["mode"],
+                "outcome": row["outcome"],
+                "evidence_id": str(row["id"]),
+                "evidence_hash": row["evidence_hash"],
+            }
+            for row in evidence_rows
+        ],
+    }
+    risks: list[dict[str, Any]] = []
+    for row in evidence_rows:
+        if row["mode"] != "advisory" or row["outcome"] == "passed":
+            continue
+        report = dict(row["evidence"] or {})
+        risks.append(
+            {
+                "gate": row["gate"],
+                "outcome": row["outcome"],
+                "evidence_id": str(row["id"]),
+                "issues": list(report.get("issues") or ()),
+                "violations": list(report.get("violations") or ()),
+            }
+        )
+    return validation, {
+        "status": "attention_required" if risks else "clear",
+        "issue_count": len(risks),
+        "items": risks,
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class ChangeSetOperationResult:
     change_set_id: UUID

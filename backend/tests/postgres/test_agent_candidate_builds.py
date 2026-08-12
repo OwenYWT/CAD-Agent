@@ -561,6 +561,8 @@ async def test_agent_candidate_tables_force_tenant_rls_and_worker_permissions():
         "agent_staging_manifests",
         "agent_validation_evidence",
         "agent_candidate_seals",
+        "agent_seal_manifests",
+        "agent_seal_evidence",
     }
     async with get_database_engine().connect() as connection:
         rls = (
@@ -613,3 +615,10 @@ async def test_agent_candidate_tables_force_tenant_rls_and_worker_permissions():
         "UPDATE": False,
         "DELETE": False,
     }
+    for table in ("agent_seal_manifests", "agent_seal_evidence"):
+        assert privileges[table] == {
+            "SELECT": True,
+            "INSERT": True,
+            "UPDATE": False,
+            "DELETE": False,
+        }
