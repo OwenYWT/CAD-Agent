@@ -71,6 +71,7 @@ async def _signal_review(
         workflow_run_id,
         accepted=accepted,
         note=note,
+        workflow_kind=snapshot["kind"],
     )
 
 

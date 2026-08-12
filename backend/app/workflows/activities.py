@@ -17,6 +17,8 @@ from sqlalchemy import text
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
+from app.agent.durable_plan import AgentPlan
+from app.agent.durable_planner import DurableAgentPlanner
 from app.agent.orchestrator import Orchestrator
 from app.api.error_messages import public_generation_error
 from app.db import tenant_transaction
@@ -64,12 +66,23 @@ from app.services.run_state import (
 )
 from app.validation.dfm_analyzer import DFMAnalyzer
 from app.llm import is_nonretryable_provider_error
+from app.models.schemas import CADPlan, ModificationPlan
 from app.workflows.source_preparation import SourcePreparer
-from app.workflows.temporal import McadSourcePreparationRequest
+from app.workflows.temporal import (
+    McadAgentWorkflowV2Request,
+    McadSourcePreparationRequest,
+)
 
 
 def _uuid(payload: dict[str, Any], key: str) -> UUID:
     return UUID(str(payload[key]))
+
+
+def _agent_v2_request(payload: dict[str, Any]) -> McadAgentWorkflowV2Request:
+    fields = McadAgentWorkflowV2Request.model_fields
+    return McadAgentWorkflowV2Request.model_validate(
+        {key: payload[key] for key in fields if key in payload}
+    )
 
 
 def _worker_id() -> str:
@@ -155,6 +168,174 @@ async def _succeed_logical_step(
             target=StepStatus.SUCCEEDED,
         )
     return created.step_id
+
+
+async def _stored_agent_step_result(
+    connection,
+    *,
+    workflow_id: UUID,
+    event_type: str,
+    step_key: str,
+) -> dict[str, Any] | None:
+    row = (
+        await connection.execute(
+            text(
+                """
+                SELECT payload FROM task_events
+                WHERE workflow_run_id=:workflow_id
+                  AND event_type=:event_type
+                  AND payload->>'step_key'=:step_key
+                ORDER BY sequence DESC
+                LIMIT 1
+                """
+            ),
+            {
+                "workflow_id": workflow_id,
+                "event_type": event_type,
+                "step_key": step_key,
+            },
+        )
+    ).mappings().one_or_none()
+    if row is None:
+        return None
+    return {**dict(row["payload"]), "replayed": True}
+
+
+async def _start_agent_logical_step(
+    connection,
+    *,
+    tenant_id: UUID,
+    workflow_id: UUID,
+    step_key: str,
+    step_index: int,
+    kind: str,
+) -> UUID:
+    status = await _workflow_status(connection, workflow_id)
+    if status == WorkflowStatus.PENDING:
+        await transition_workflow(
+            connection,
+            workflow_id,
+            expected=WorkflowStatus.PENDING,
+            target=WorkflowStatus.PLANNING,
+        )
+    elif status not in {WorkflowStatus.PLANNING, WorkflowStatus.RUNNING}:
+        raise ApplicationError(
+            f"workflow cannot plan in {status.value}",
+            type="workflow_state_conflict",
+            non_retryable=True,
+        )
+
+    created = await create_step(
+        connection,
+        tenant_id=tenant_id,
+        workflow_id=workflow_id,
+        step_key=step_key,
+        step_index=step_index,
+        kind=kind,
+    )
+    row = await _step_row(connection, workflow_id, step_key)
+    step_status = StepStatus(row["status"])
+    if step_status == StepStatus.SUCCEEDED:
+        raise ApplicationError(
+            f"successful step {step_key} has no stored result",
+            type="agent_step_result_missing",
+            non_retryable=True,
+        )
+    if step_status in {StepStatus.FAILED, StepStatus.TIMED_OUT}:
+        await transition_step(
+            connection,
+            created.step_id,
+            expected=step_status,
+            target=StepStatus.READY,
+        )
+        step_status = StepStatus.READY
+    if step_status == StepStatus.PENDING:
+        await transition_step(
+            connection,
+            created.step_id,
+            expected=StepStatus.PENDING,
+            target=StepStatus.READY,
+        )
+        step_status = StepStatus.READY
+    if step_status == StepStatus.READY:
+        await transition_step(
+            connection,
+            created.step_id,
+            expected=StepStatus.READY,
+            target=StepStatus.RUNNING,
+        )
+    return created.step_id
+
+
+async def _complete_agent_logical_step(
+    connection,
+    *,
+    tenant_id: UUID,
+    workflow_id: UUID,
+    step_id: UUID,
+    event_type: str,
+    result: dict[str, Any],
+    enter_running: bool = False,
+) -> dict[str, Any]:
+    step_status = await connection.scalar(
+        text("SELECT status FROM step_runs WHERE id=:id FOR UPDATE"),
+        {"id": step_id},
+    )
+    if step_status == StepStatus.RUNNING.value:
+        await transition_step(
+            connection,
+            step_id,
+            expected=StepStatus.RUNNING,
+            target=StepStatus.SUCCEEDED,
+        )
+    elif step_status != StepStatus.SUCCEEDED.value:
+        raise ApplicationError(
+            f"agent planning step cannot complete in {step_status}",
+            type="workflow_state_conflict",
+            non_retryable=True,
+        )
+    await append_workflow_event(
+        connection,
+        tenant_id=tenant_id,
+        workflow_id=workflow_id,
+        event_type=event_type,
+        payload=result,
+    )
+    if enter_running:
+        workflow_status = await _workflow_status(connection, workflow_id)
+        if workflow_status == WorkflowStatus.PLANNING:
+            await transition_workflow(
+                connection,
+                workflow_id,
+                expected=WorkflowStatus.PLANNING,
+                target=WorkflowStatus.RUNNING,
+            )
+    return result
+
+
+async def _fail_agent_logical_step(
+    *,
+    tenant_id: UUID,
+    principal_id: UUID,
+    workflow_id: UUID,
+    step_key: str,
+    error_code: str,
+    error_message: str,
+) -> None:
+    async with tenant_transaction(tenant_id, principal_id) as connection:
+        row = await _step_row(connection, workflow_id, step_key)
+        if row is None:
+            return
+        status = StepStatus(row["status"])
+        if status == StepStatus.RUNNING:
+            await transition_step(
+                connection,
+                row["id"],
+                expected=StepStatus.RUNNING,
+                target=StepStatus.FAILED,
+                error_code=error_code[:200],
+                error_message=error_message[:4000],
+            )
 
 
 async def _stored_execution_result(
@@ -634,11 +815,232 @@ class McadWorkflowActivities:
         backend: ExecutionBackend | None = None,
         *,
         source_preparer: SourcePreparer | None = None,
+        durable_planner: DurableAgentPlanner | None = None,
     ):
         self.backend = backend or get_execution_backend()
         self.source_preparer = source_preparer or SourcePreparer(
             Orchestrator(execution_backend=self.backend)
         )
+        self.durable_planner = durable_planner or DurableAgentPlanner()
+
+    @staticmethod
+    def _agent_planning_error(exc: Exception) -> ApplicationError:
+        public = public_generation_error(exc)
+        non_retryable = (
+            is_nonretryable_provider_error(exc)
+            or isinstance(exc, (RuntimeError, ValueError, KeyError))
+        )
+        return ApplicationError(
+            public["message"],
+            type=public["type"][:200],
+            non_retryable=non_retryable,
+        )
+
+    @activity.defn(name="agent_v2.requirements")
+    async def agent_requirements(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        request = _agent_v2_request(payload)
+        tenant_id = request.tenant_id
+        principal_id = request.principal_id
+        workflow_id = request.workflow_run_id
+        step_key = "agent-requirements"
+        event_type = "agent.requirements.completed"
+        async with tenant_transaction(tenant_id, principal_id) as connection:
+            replay = await _stored_agent_step_result(
+                connection,
+                workflow_id=workflow_id,
+                event_type=event_type,
+                step_key=step_key,
+            )
+            if replay is not None:
+                return replay
+            step_id = await _start_agent_logical_step(
+                connection,
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                step_key=step_key,
+                step_index=0,
+                kind="agent_requirements",
+            )
+        try:
+            if request.operation == "generate":
+                requirements = await self.durable_planner.requirements_generation(
+                    request.objective
+                )
+            else:
+                requirements = await self.durable_planner.requirements_modification(
+                    request.existing_code or "",
+                    request.objective,
+                )
+            result = {
+                "step_key": step_key,
+                "operation": request.operation,
+                "requirements": requirements.model_dump(mode="json"),
+            }
+        except Exception as exc:
+            error = self._agent_planning_error(exc)
+            await _fail_agent_logical_step(
+                tenant_id=tenant_id,
+                principal_id=principal_id,
+                workflow_id=workflow_id,
+                step_key=step_key,
+                error_code=error.type or "agent_requirements_failed",
+                error_message=str(error),
+            )
+            raise error from exc
+        async with tenant_transaction(tenant_id, principal_id) as connection:
+            return await _complete_agent_logical_step(
+                connection,
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                step_id=step_id,
+                event_type=event_type,
+                result=result,
+            )
+
+    @activity.defn(name="agent_v2.decompose")
+    async def agent_decompose(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        request = _agent_v2_request(payload)
+        if request.operation != "generate":
+            raise ApplicationError(
+                "Only generation plans can be decomposed.",
+                type="invalid_agent_decomposition",
+                non_retryable=True,
+            )
+        tenant_id = request.tenant_id
+        principal_id = request.principal_id
+        workflow_id = request.workflow_run_id
+        step_key = "agent-decompose"
+        event_type = "agent.decomposition.completed"
+        async with tenant_transaction(tenant_id, principal_id) as connection:
+            replay = await _stored_agent_step_result(
+                connection,
+                workflow_id=workflow_id,
+                event_type=event_type,
+                step_key=step_key,
+            )
+            if replay is not None:
+                return replay
+            step_id = await _start_agent_logical_step(
+                connection,
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                step_key=step_key,
+                step_index=1,
+                kind="agent_decompose",
+            )
+        try:
+            plan = CADPlan.model_validate(payload["requirements"])
+            decomposition = await self.durable_planner.decompose_generation(plan)
+            result = {
+                "step_key": step_key,
+                "decomposition": decomposition,
+                "skipped": decomposition is None,
+            }
+        except Exception as exc:
+            error = self._agent_planning_error(exc)
+            await _fail_agent_logical_step(
+                tenant_id=tenant_id,
+                principal_id=principal_id,
+                workflow_id=workflow_id,
+                step_key=step_key,
+                error_code=error.type or "agent_decomposition_failed",
+                error_message=str(error),
+            )
+            raise error from exc
+        async with tenant_transaction(tenant_id, principal_id) as connection:
+            return await _complete_agent_logical_step(
+                connection,
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                step_id=step_id,
+                event_type=event_type,
+                result=result,
+            )
+
+    @activity.defn(name="agent_v2.plan")
+    async def agent_plan(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        request = _agent_v2_request(payload)
+        tenant_id = request.tenant_id
+        principal_id = request.principal_id
+        workflow_id = request.workflow_run_id
+        step_key = "agent-plan"
+        event_type = "agent.plan.completed"
+        step_index = 2 if request.operation == "generate" else 1
+        async with tenant_transaction(tenant_id, principal_id) as connection:
+            replay = await _stored_agent_step_result(
+                connection,
+                workflow_id=workflow_id,
+                event_type=event_type,
+                step_key=step_key,
+            )
+            if replay is not None:
+                AgentPlan.model_validate(replay["plan"])
+                return replay
+            step_id = await _start_agent_logical_step(
+                connection,
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                step_key=step_key,
+                step_index=step_index,
+                kind="agent_plan",
+            )
+        try:
+            if request.operation == "generate":
+                requirements = CADPlan.model_validate(payload["requirements"])
+                plan = self.durable_planner.compose_generation(
+                    request.objective,
+                    requirements,
+                    decomposition=payload.get("decomposition"),
+                    output_formats=request.output_formats,
+                )
+            else:
+                requirements = ModificationPlan.model_validate(
+                    payload["requirements"]
+                )
+                plan = self.durable_planner.compose_modification(
+                    request.objective,
+                    requirements,
+                    expected_base_revision_id=request.expected_base_revision_id,
+                    output_formats=request.output_formats,
+                )
+            result = {
+                "step_key": step_key,
+                "plan": plan.temporal_payload(),
+                "requires_confirmation": (
+                    plan.confirmation_policy.value == "required"
+                ),
+                "confirmation_reason": plan.confirmation_reason,
+            }
+        except Exception as exc:
+            error = self._agent_planning_error(exc)
+            await _fail_agent_logical_step(
+                tenant_id=tenant_id,
+                principal_id=principal_id,
+                workflow_id=workflow_id,
+                step_key=step_key,
+                error_code=error.type or "agent_plan_failed",
+                error_message=str(error),
+            )
+            raise error from exc
+        async with tenant_transaction(tenant_id, principal_id) as connection:
+            return await _complete_agent_logical_step(
+                connection,
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                step_id=step_id,
+                event_type=event_type,
+                result=result,
+                enter_running=True,
+            )
 
     @activity.defn(name="mcad.prepare_source")
     async def prepare_source(
@@ -2138,6 +2540,19 @@ class McadWorkflowActivities:
             self.wait_confirmation,
             self.resume_after_confirmation,
             self.finalize,
+            self.record_cancel,
+            self.record_timeout,
+            self.record_failure,
+        ]
+
+    def registered_agent_v2(self) -> list:
+        """Activities available only to the version-isolated Agent queue."""
+        return [
+            self.agent_requirements,
+            self.agent_decompose,
+            self.agent_plan,
+            self.wait_confirmation,
+            self.resume_after_confirmation,
             self.record_cancel,
             self.record_timeout,
             self.record_failure,

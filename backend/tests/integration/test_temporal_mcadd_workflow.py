@@ -19,6 +19,9 @@ from sqlalchemy import text
 from temporalio.client import WorkflowFailureError
 
 from app.config import settings
+from app.agent.assembly_planner import AssemblyPlan
+from app.agent.durable_planner import DurableAgentPlanner
+from app.agent.multi_step import BuildPlan
 from app.db import close_database, get_database_engine, tenant_transaction
 from app.domain.identity import user_principal
 from app.execution.composition import get_execution_backend
@@ -31,12 +34,17 @@ from app.repositories.revisions import (
     create_initial_branch,
 )
 from app.temporal_client import get_temporal_client, reset_temporal_client
-from app.workers.workflow_worker import build_workflow_worker
+from app.workers.workflow_worker import (
+    build_agent_v2_workflow_worker,
+    build_workflow_worker,
+)
 from app.workflows.temporal import (
+    McadAgentWorkflowV2Request,
     McadExecutionRequest,
     cancel_mcad_workflow,
     confirm_mcad_workflow,
     start_mcad_workflow,
+    temporal_agent_v2_workflow_id,
 )
 
 
@@ -176,6 +184,39 @@ async def _wait_for_status(owner, workflow_id, expected: set[str], timeout=30):
     raise AssertionError(
         f"workflow {workflow_id} did not reach {sorted(expected)}"
     )
+
+
+class _V2PlannerStub:
+    def __init__(self):
+        self.calls = 0
+
+    async def plan_new(self, messages):
+        from app.models.schemas import CADPlan, DesignBrief
+
+        self.calls += 1
+        return CADPlan(
+            description="创建 20x10x4 mm 安装支架",
+            part_type="bracket",
+            dimensions={"length": 20, "width": 10, "height": 4},
+            features=["两个安装孔"],
+            constraints=[],
+            modeling_hint="extrude_cut",
+            design_brief=DesignBrief(
+                intent_summary="创建安装支架",
+                artifact_type="bracket",
+                open_questions=["必须先确认安装孔中心距，否则无法安全默认"],
+            ),
+        )
+
+
+class _V2DecomposerStub:
+    async def decompose(self, plan, *, allow_fallback=True):
+        return BuildPlan(steps=[], complexity="simple")
+
+
+class _V2AssemblyStub:
+    async def plan_assembly(self, plan, *, allow_fallback=True):
+        return AssemblyPlan(parts=[], assembly_description="unused")
 
 
 async def _snapshot(owner, workflow_id):
@@ -332,6 +373,108 @@ def _dxf_execution() -> McadExecutionRequest:
         ),
         timeout_seconds=30,
     )
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_agent_v2_plan_waits_before_candidate_source_or_execution():
+    owner, project_id, initial = await _seed_project("agent-v2-confirm")
+    client = await get_temporal_client()
+    planner_stub = _V2PlannerStub()
+    planner = DurableAgentPlanner(
+        planner=planner_stub,
+        decomposer=_V2DecomposerStub(),
+        assembly_planner=_V2AssemblyStub(),
+    )
+    request_payload = {
+        "branch_id": str(initial.branch_id),
+        "expected_base_revision_id": str(initial.revision_id),
+        "operation": "generate",
+        "objective": "创建 20x10x4 mm 安装支架",
+    }
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        from app.services.run_state import create_workflow
+
+        created = await create_workflow(
+            connection,
+            tenant_id=owner.tenant_id,
+            project_id=project_id,
+            requested_by_principal_id=owner.principal_id,
+            kind="mcad.agent.v2.generate",
+            idempotency_key=f"agent-v2-{project_id}",
+            request_payload=request_payload,
+        )
+    request = McadAgentWorkflowV2Request(
+        workflow_run_id=created.workflow_id,
+        tenant_id=owner.tenant_id,
+        project_id=project_id,
+        principal_id=owner.principal_id,
+        branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,
+        operation="generate",
+        objective=request_payload["objective"],
+        confirmation_timeout_seconds=60,
+    )
+
+    async with build_agent_v2_workflow_worker(
+        client,
+        backend=object(),
+        durable_planner=planner,
+    ):
+        handle = await client.start_workflow(
+            "McadAgentWorkflowV2",
+            request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),
+            task_queue=settings.temporal_agent_v2_task_queue,
+        )
+        assert (
+            await _wait_for_status(
+                owner,
+                created.workflow_id,
+                {"waiting_confirmation"},
+            )
+            == "waiting_confirmation"
+        )
+        async with tenant_transaction(
+            owner.tenant_id,
+            owner.principal_id,
+        ) as connection:
+            counts = (
+                await connection.execute(
+                    text(
+                        "SELECT "
+                        "(SELECT count(*) FROM change_sets "
+                        " WHERE source_workflow_run_id=:id) AS candidates, "
+                        "(SELECT count(*) FROM execution_attempts "
+                        " WHERE workflow_run_id=:id) AS attempts, "
+                        "(SELECT count(*) FROM artifacts "
+                        " WHERE workflow_run_id=:id) AS artifacts"
+                    ),
+                    {"id": created.workflow_id},
+                )
+            ).mappings().one()
+        assert dict(counts) == {
+            "candidates": 0,
+            "attempts": 0,
+            "artifacts": 0,
+        }
+        assert planner_stub.calls == 1
+        await confirm_mcad_workflow(
+            created.workflow_id,
+            accepted=False,
+            note="拒绝当前计划",
+            workflow_kind="mcad.agent.v2.generate",
+        )
+        result = await asyncio.wait_for(handle.result(), timeout=20)
+        assert result["status"] == "cancelled"
+
+    snapshot = await _snapshot(owner, created.workflow_id)
+    assert snapshot["workflow"]["status"] == "cancelled"
+    assert snapshot["attempts"] == []
+    assert snapshot["artifacts"] == []
+    assert snapshot["change_set"] is None
 
 
 @pytest.mark.asyncio(loop_scope="module")

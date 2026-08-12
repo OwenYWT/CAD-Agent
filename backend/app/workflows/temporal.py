@@ -149,6 +149,40 @@ class McadWorkflowRequest(BaseModel):
         return self.model_dump(mode="json")
 
 
+class McadAgentWorkflowV2Request(BaseModel):
+    """Planning-first input for the version-isolated durable Agent flow."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    workflow_run_id: UUID
+    tenant_id: UUID
+    project_id: UUID
+    principal_id: UUID
+    branch_id: UUID
+    expected_base_revision_id: UUID
+    operation: Literal["generate", "modify"]
+    objective: str = Field(min_length=1, max_length=4000)
+    existing_code: str | None = Field(default=None, max_length=50_000)
+    output_formats: tuple[Literal["step", "stl", "dxf", "svg"], ...] = (
+        "step",
+        "stl",
+    )
+    confirmation_timeout_seconds: int = Field(default=3600, ge=1, le=604800)
+
+    @model_validator(mode="after")
+    def validate_operation_inputs(self) -> "McadAgentWorkflowV2Request":
+        if self.operation == "modify" and not self.existing_code:
+            raise ValueError("modify planning requires existing_code")
+        if self.operation == "generate" and self.existing_code is not None:
+            raise ValueError("generate planning cannot include existing_code")
+        if not self.output_formats:
+            raise ValueError("output_formats cannot be empty")
+        return self
+
+    def temporal_payload(self) -> dict:
+        return self.model_dump(mode="json")
+
+
 class McadCheckRequest(BaseModel):
     """Serializable request for one durable, read-only engineering check."""
 
@@ -176,6 +210,10 @@ def temporal_workflow_id(workflow_run_id: UUID | str) -> str:
 
 def temporal_check_workflow_id(workflow_run_id: UUID | str) -> str:
     return f"mcad-check-workflow-{workflow_run_id}"
+
+
+def temporal_agent_v2_workflow_id(workflow_run_id: UUID | str) -> str:
+    return f"mcad-agent-v2-workflow-{workflow_run_id}"
 
 
 def mcad_workflow_request_payload(
@@ -373,9 +411,15 @@ async def confirm_mcad_workflow(
     *,
     accepted: bool,
     note: str = "",
+    workflow_kind: str | None = None,
 ) -> None:
     client = await get_temporal_client()
-    handle = client.get_workflow_handle(temporal_workflow_id(workflow_run_id))
+    workflow_id = (
+        temporal_agent_v2_workflow_id(workflow_run_id)
+        if workflow_kind and workflow_kind.startswith("mcad.agent.v2")
+        else temporal_workflow_id(workflow_run_id)
+    )
+    handle = client.get_workflow_handle(workflow_id)
     await handle.signal(
         "confirmation",
         {"accepted": accepted, "note": note[:4000]},
@@ -419,6 +463,8 @@ async def cancel_mcad_workflow(
     workflow_id = (
         temporal_check_workflow_id(workflow_run_id)
         if workflow_kind == "mcad.check"
+        else temporal_agent_v2_workflow_id(workflow_run_id)
+        if str(workflow_kind).startswith("mcad.agent.v2")
         else temporal_workflow_id(workflow_run_id)
     )
     handle = client.get_workflow_handle(workflow_id)

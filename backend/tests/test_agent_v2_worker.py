@@ -32,3 +32,21 @@ def test_v1_and_v2_workers_use_distinct_queues_and_workflow_types(monkeypatch):
     assert [item.__name__ for item in captured[1]["workflows"]] == [
         "McadAgentWorkflowV2",
     ]
+    assert {item.__temporal_activity_definition.name for item in captured[1]["activities"]} == {
+        "agent_v2.requirements",
+        "agent_v2.decompose",
+        "agent_v2.plan",
+        "mcad.wait_confirmation",
+        "mcad.resume_after_confirmation",
+        "mcad.record_cancel",
+        "mcad.record_timeout",
+        "mcad.record_failure",
+    }
+    assert all(
+        item.__temporal_activity_definition.name not in {
+            "agent_v2.requirements",
+            "agent_v2.decompose",
+            "agent_v2.plan",
+        }
+        for item in captured[0]["activities"]
+    )

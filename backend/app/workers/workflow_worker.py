@@ -7,6 +7,7 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 from app.config import settings
+from app.agent.durable_planner import DurableAgentPlanner
 from app.db import database_readiness
 from app.execution.backend import ExecutionBackend
 from app.execution.composition import get_execution_backend
@@ -35,14 +36,18 @@ def build_agent_v2_workflow_worker(
     client: Client,
     *,
     backend: ExecutionBackend | None = None,
+    durable_planner: DurableAgentPlanner | None = None,
 ) -> Worker:
     """Build the version-isolated V2 worker on its dedicated task queue."""
-    activities = McadWorkflowActivities(backend)
+    activities = McadWorkflowActivities(
+        backend,
+        durable_planner=durable_planner,
+    )
     return Worker(
         client,
         task_queue=settings.temporal_agent_v2_task_queue,
         workflows=[McadAgentWorkflowV2],
-        activities=activities.registered(),
+        activities=activities.registered_agent_v2(),
     )
 
 

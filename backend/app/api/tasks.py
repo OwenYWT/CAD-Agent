@@ -109,6 +109,7 @@ async def confirm_task(
             workflow_run_id,
             accepted=body.accepted,
             note=body.note,
+            workflow_kind=snapshot["kind"],
         )
         return {
             "workflow_run_id": workflow_run_id,

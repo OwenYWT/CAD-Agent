@@ -457,6 +457,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         workflow_run_id,
                         accepted=True,
                         note=text,
+                        workflow_kind=snapshot["kind"],
                     )
                     await send_json({
                         "type": "task_submitted",
