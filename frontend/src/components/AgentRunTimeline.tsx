@@ -25,6 +25,7 @@ interface AgentRunTimelineProps {
   inspectReport?: InspectReport | null;
   activeRun?: RunCreatedEvent | null;
   artifacts?: ArtifactHistoryEntry[];
+  durableAgent?: import("../types").DurableAgentSnapshotProjection | null;
   onRetryPrompt?: () => void;
   onRerunCode?: () => void;
   onResumeRun?: (runId: string) => void;
@@ -118,8 +119,9 @@ function runStatusLabel(status?: string | null) {
 function detailText(step: StepUpdate) {
   if (!step.detail) return "";
   const source = typeof step.detail.source === "string" ? step.detail.source : "";
+  const label = typeof step.detail.label === "string" ? step.detail.label : "";
   const errorType = typeof step.detail.error_type === "string" ? step.detail.error_type : "";
-  return [source ? engineeringSourceLabel(source) : "", errorType].filter(Boolean).join(" - ");
+  return [label, source ? engineeringSourceLabel(source) : "", errorType].filter(Boolean).join(" - ");
 }
 
 function printableLabel(inspectReport: InspectReport) {
@@ -132,15 +134,24 @@ function shortId(value?: string | null) {
   return value ? value.slice(0, 8) : "-";
 }
 
-export default function AgentRunTimeline({ steps = [], isGenerating, result, repairHistory, inspectReport, activeRun, artifacts = [], onRetryPrompt, onRerunCode, onResumeRun }: AgentRunTimelineProps) {
+export default function AgentRunTimeline({ steps = [], isGenerating, result, repairHistory, inspectReport, activeRun, artifacts = [], durableAgent, onRetryPrompt, onRerunCode, onResumeRun }: AgentRunTimelineProps) {
   const [collapsed, setCollapsed] = useState(true);
-  const hasContent = steps.length > 0 || Boolean(repairHistory?.length) || Boolean(inspectReport) || Boolean(activeRun) || artifacts.length > 0;
+  const hasContent = steps.length > 0 || Boolean(repairHistory?.length) || Boolean(inspectReport) || Boolean(activeRun) || artifacts.length > 0 || Boolean(durableAgent);
   if (!hasContent) return null;
 
   const hasFailed = (result?.success === false && !result.needs_confirmation) || steps.some((step) => normalizeStatus(step, false, false) === "failed");
   const hasCode = Boolean(result?.code);
   const canResume = Boolean(activeRun?.run_id && steps.some((step) => step.step === "resume_available"));
   const latestStep = steps.at(-1);
+  const projectedStage = typeof latestStep?.detail?.stage === "string"
+    ? latestStep.detail.stage
+    : durableAgent?.current_stage;
+  const planSteps = Array.isArray(durableAgent?.plan?.steps)
+    ? durableAgent.plan.steps.length
+    : 0;
+  const riskCount = typeof durableAgent?.risk_summary?.issue_count === "number"
+    ? durableAgent.risk_summary.issue_count
+    : 0;
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3">
@@ -155,6 +166,10 @@ export default function AgentRunTimeline({ steps = [], isGenerating, result, rep
               {artifacts.slice(-6).map((artifact, index) => (
                 <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700" key={`${artifact.path}:${index}`}>{"\u4ea7\u7269"} {artifact.artifact_type.toUpperCase()}</span>
               ))}
+              {projectedStage ? <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-gray-600">当前阶段 {_STAGE_LABELS[projectedStage] || projectedStage}</span> : null}
+              {planSteps ? <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-gray-600">计划 {planSteps} 步</span> : null}
+              {durableAgent?.repair_count ? <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-700">真实修复 {durableAgent.repair_count} 次</span> : null}
+              {riskCount ? <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-700">风险 {riskCount} 项</span> : null}
             </div>
           )}
         </div>
@@ -213,7 +228,28 @@ export default function AgentRunTimeline({ steps = [], isGenerating, result, rep
             {inspectReport ? <p className="text-xs text-gray-600">{"\u68c0\u67e5\u8bc1\u636e\uff1a\u7ed3\u8bba"} {engineeringStatusLabel(inspectReport.verdict)}{"\uff0c\u53ef\u6253\u5370\u6027"} {printableLabel(inspectReport)}{"\u3002"}</p> : null}
           </div>
         )}
+        {durableAgent?.validations.length ? (
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+            <p className="text-xs font-medium text-gray-700">持久化验证证据</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {durableAgent.validations.map((item) => (
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] ${item.outcome === "passed" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : item.mode === "required" ? "border-red-200 bg-red-50 text-red-700" : "border-amber-200 bg-amber-50 text-amber-700"}`} key={item.evidence_id} title={item.evidence_hash}>
+                  {item.gate.toUpperCase()} · {item.outcome === "passed" ? "通过" : item.outcome === "failed" ? "存在问题" : "未能判定"}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>}
     </div>
   );
 }
+
+const _STAGE_LABELS: Record<string, string> = {
+  planning: "需求与方案",
+  modeling: "机械设计",
+  repair: "自动修复",
+  validation: "工程验证",
+  review: "变更审查",
+  complete: "已完成",
+};

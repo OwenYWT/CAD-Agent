@@ -459,7 +459,29 @@ function durableValidation(
     : status === "unknown"
       ? "后端未记录可判定的验证结论。"
       : `验证状态：${raw}${issueCount === null ? "" : `，问题 ${issueCount} 项`}`;
-  return { status, summary: summaryText };
+  const gates = (Array.isArray(summary.gates) ? summary.gates : []).flatMap(
+    (value) => {
+      const item = record(value);
+      if (
+        !item
+        || typeof item.gate !== "string"
+        || typeof item.mode !== "string"
+        || typeof item.outcome !== "string"
+      ) return [];
+      return [{
+        gate: item.gate,
+        mode: item.mode,
+        outcome: item.outcome,
+        evidenceId: typeof item.evidence_id === "string"
+          ? item.evidence_id
+          : undefined,
+        evidenceHash: typeof item.evidence_hash === "string"
+          ? item.evidence_hash
+          : undefined,
+      }];
+    },
+  );
+  return { status, summary: summaryText, gates };
 }
 
 function durableRisk(
@@ -467,18 +489,40 @@ function durableRisk(
 ): ChangeSet["risk"] {
   const raw = typeof summary.level === "string"
     ? summary.level.toLowerCase()
-    : "";
+    : typeof summary.status === "string"
+      ? summary.status.toLowerCase()
+      : "";
   const level = raw === "low" || raw === "medium" || raw === "high"
     ? raw
-    : "unknown";
+    : raw === "clear"
+      ? "low"
+      : raw === "attention_required"
+        ? "medium"
+        : "unknown";
   const reasons = Array.isArray(summary.reasons)
     ? summary.reasons.filter((value): value is string => typeof value === "string")
     : [];
+  const itemReasons = (Array.isArray(summary.items) ? summary.items : [])
+    .flatMap((value) => {
+      const item = record(value);
+      if (!item) return [];
+      const gate = typeof item.gate === "string" ? item.gate.toUpperCase() : "检查";
+      const issues = Array.isArray(item.issues)
+        ? item.issues.filter((issue): issue is string => typeof issue === "string")
+        : [];
+      const violations = Array.isArray(item.violations) ? item.violations.length : 0;
+      if (issues.length) return issues.map((issue) => `${gate}：${issue}`);
+      return violations ? [`${gate}：记录 ${violations} 项规则风险`] : [];
+    });
   return {
     level,
-    reasons: reasons.length
-      ? reasons
-      : ["后端未记录可判定的风险依据。"],
+    reasons: reasons.length || itemReasons.length
+      ? [...reasons, ...itemReasons]
+      : raw === "clear"
+        ? ["持久化验证未记录建议风险。"]
+        : raw === "attention_required"
+          ? ["后端记录了需关注风险，但未提供具体说明。"]
+          : ["后端未记录可判定的风险依据。"],
   };
 }
 
@@ -504,12 +548,19 @@ export function adaptDurableChangeSet(
     files: durableFileChanges(detail),
     validation: durableValidation(detail.validation_summary),
     risk: durableRisk(detail.risk_summary),
-    agentLogs: detail.audit_log.map((entry) => {
+    agentLogs: [
+      ...(detail.agent_events || []).flatMap((entry) => (
+        entry.event_type.startsWith("agent.") && entry.projection?.message
+          ? [`#${entry.sequence} ${entry.projection.message}`]
+          : []
+      )),
+      ...detail.audit_log.map((entry) => {
       const note = typeof entry.payload.note === "string"
         ? `：${entry.payload.note}`
         : "";
       return `${entry.action}${note}`;
-    }),
+      }),
+    ],
     createdAt: detail.created_at,
     source: "durable",
     reviewStatus: detail.status,

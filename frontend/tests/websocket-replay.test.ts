@@ -26,6 +26,15 @@ const event: DurableTaskEvent = {
   sequence: 12,
   event_type: "attempt.failed",
   payload: { message: "STEP 导出失败", error_code: "user_code_error" },
+  projection: {
+    stage: "modeling",
+    label: "执行建模",
+    status: "failed",
+    message: "STEP 导出失败",
+    step_key: "model-main",
+    step_kind: "agent_model",
+    attempt_number: 2,
+  },
   occurred_at: "2026-07-30T12:00:00Z",
 };
 
@@ -42,8 +51,43 @@ test("durable events retain the backend sequence and failure evidence", () => {
   assert.equal(step.step, "attempt.failed");
   assert.equal(step.message, "STEP 导出失败");
   assert.equal(step.status, "failed");
+  assert.equal(step.stage_id, "modeling");
+  assert.equal(step.attempt, 2);
+  assert.equal(step.detail?.label, "执行建模");
   assert.equal(step.detail?.sequence, 12);
   assert.equal(step.detail?.error_code, "user_code_error");
+});
+
+
+test("advisory validation failures are warnings with immutable evidence", () => {
+  const validation = durableEventStep({
+    ...event,
+    id: "event-13",
+    sequence: 13,
+    event_type: "agent.validation_evidence.recorded",
+    payload: {
+      gate: "dfm",
+      mode: "advisory",
+      outcome: "failed",
+      evidence_id: "evidence-1",
+      evidence_hash: "f".repeat(64),
+    },
+    projection: {
+      stage: "validation",
+      label: "DFM 检查",
+      status: "warn",
+      message: "DFM 检查发现风险",
+      gate: "dfm",
+      mode: "advisory",
+      outcome: "failed",
+      evidence_id: "evidence-1",
+      evidence_hash: "f".repeat(64),
+    },
+  });
+  assert.equal(validation.status, "warn");
+  assert.equal(validation.step, "agent.validation_evidence.recorded");
+  assert.equal(validation.detail?.gate, "dfm");
+  assert.equal(validation.detail?.evidence_hash, "f".repeat(64));
 });
 
 
@@ -98,6 +142,30 @@ function snapshot(
       candidate_revision_id: "revision-2",
       objective: "加厚",
       updated_at: "2026-07-30T12:00:02Z",
+    },
+    agent: {
+      current_stage: "review",
+      current_step_key: null,
+      current_step_kind: null,
+      current_status: "reviewable",
+      candidate_build_id: "candidate-1",
+      candidate_status: "reviewable",
+      repair_count: 1,
+      plan: null,
+      validations: [{
+        evidence_id: "evidence-1",
+        evidence_hash: "e".repeat(64),
+        gate: "dfm",
+        mode: "advisory",
+        outcome: "failed",
+        issues: ["壁厚不足"],
+        violations: [],
+      }],
+      risk_summary: {
+        status: "attention_required",
+        issue_count: 1,
+        items: [],
+      },
     },
   };
 }

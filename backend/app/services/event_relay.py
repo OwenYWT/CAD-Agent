@@ -19,6 +19,206 @@ from app.object_store import presign_get
 from app.repositories.projects import principal_has_permission
 
 
+_STEP_STAGE = {
+    "agent_requirements": "planning",
+    "agent_decompose": "planning",
+    "agent_plan": "planning",
+    "agent_model": "modeling",
+    "agent_repair": "repair",
+    "agent_visual_repair": "repair",
+    "agent_geometry_validation": "validation",
+    "agent_visual_render": "validation",
+    "agent_visual_validation": "validation",
+    "agent_dfm_validation": "validation",
+}
+_STAGE_LABEL = {
+    "planning": "需求与方案",
+    "modeling": "执行建模",
+    "repair": "自动修复",
+    "validation": "工程验证",
+    "review": "变更审查",
+    "complete": "任务完成",
+}
+_STATUS_PROJECTION = {
+    "pending": "queued",
+    "ready": "queued",
+    "planning": "running",
+    "running": "running",
+    "waiting_confirmation": "warn",
+    "cancelling": "warn",
+    "succeeded": "success",
+    "reviewable": "success",
+    "failed": "failed",
+    "timed_out": "failed",
+    "cancelled": "skipped",
+    "skipped": "skipped",
+    "abandoned": "skipped",
+}
+_GATE_LABEL = {
+    "geometry": "几何检查",
+    "visual": "视觉检查",
+    "dfm": "DFM 检查",
+}
+
+
+def _project_status(value: Any, fallback: str = "running") -> str:
+    return _STATUS_PROJECTION.get(str(value or "").lower(), fallback)
+
+
+def _event_projection(
+    event: dict[str, Any],
+    *,
+    steps_by_id: dict[str, dict[str, Any]],
+    attempts_by_id: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Build a Chinese read projection without mutating persisted events."""
+    event_type = str(event["event_type"])
+    payload = dict(event.get("payload") or {})
+    attempt = attempts_by_id.get(str(payload.get("attempt_id") or ""))
+    step_id = payload.get("step_id") or payload.get("step_run_id")
+    if step_id is None and attempt is not None:
+        step_id = attempt.get("step_run_id")
+    step = steps_by_id.get(str(step_id or ""), {})
+    step_kind = str(payload.get("kind") or step.get("kind") or "")
+    step_key = str(
+        payload.get("step_key")
+        or payload.get("repair_step_key")
+        or step.get("step_key")
+        or ""
+    )
+    stage = _STEP_STAGE.get(step_kind, "planning")
+    status = "running"
+    label = _STAGE_LABEL[stage]
+    message = label
+
+    if event_type == "workflow.created":
+        status, message = "queued", "持久任务已创建"
+    elif event_type == "workflow.state_changed":
+        workflow_status = str(payload.get("status") or "")
+        status = _project_status(workflow_status)
+        if workflow_status == "waiting_confirmation":
+            stage, label, message = "planning", "需求与方案", "计划等待确认"
+        elif workflow_status == "succeeded":
+            stage, label, message = "complete", "任务完成", "工程任务已完成"
+        elif workflow_status in {"failed", "timed_out"}:
+            message = str(payload.get("error_message") or "工程任务执行失败")
+        elif workflow_status == "cancelled":
+            message = "工程任务已取消"
+        else:
+            message = f"任务状态：{workflow_status or '运行中'}"
+    elif event_type == "step.created":
+        status, message = "queued", f"{label}已排队"
+    elif event_type == "step.state_changed":
+        value = str(payload.get("status") or "")
+        status = _project_status(value)
+        if status == "failed":
+            message = str(payload.get("error_message") or f"{label}执行失败")
+        elif status == "success":
+            message = f"{label}已完成"
+        elif status == "running":
+            message = f"{label}进行中"
+        else:
+            message = f"{label}已排队"
+    elif event_type == "attempt.created":
+        status, message = "queued", f"{label}执行尝试已创建"
+    elif event_type in {"attempt.started", "attempt.leased", "attempt.heartbeat"}:
+        status, message = "running", f"{label}正在隔离环境中执行"
+    elif event_type == "attempt.state_changed":
+        status = _project_status(payload.get("status"))
+        if status == "failed":
+            message = str(payload.get("error_message") or f"{label}执行失败")
+        else:
+            message = f"{label}状态已更新"
+    elif event_type == "attempt.completed":
+        status, message = "success", f"{label}计算已完成"
+    elif event_type == "agent.requirements.completed":
+        stage, label, status, message = "planning", "需求与方案", "success", "工程需求已解析"
+    elif event_type == "agent.decomposition.completed":
+        stage, label, status, message = "planning", "需求与方案", "success", "建模步骤已拆解"
+    elif event_type == "agent.plan.completed":
+        stage, label, status, message = "planning", "需求与方案", "success", "执行计划已生成"
+    elif event_type == "agent.candidate_build.created":
+        stage, label, status, message = "modeling", "执行建模", "running", "候选模型已开始构建"
+    elif event_type == "agent.source.generated":
+        generator = str(payload.get("generator_kind") or "")
+        is_repair = generator.startswith("repair:")
+        stage = "repair" if is_repair else "modeling"
+        label = _STAGE_LABEL[stage]
+        status = "success"
+        message = "修复代码已生成" if is_repair else "建模代码已生成"
+    elif event_type in {
+        "agent.repair.source_generated",
+        "agent.visual_repair.source_generated",
+    }:
+        stage, label, status, message = "repair", "自动修复", "success", "自动修复代码已生成"
+    elif event_type == "agent.staging_manifest.accepted":
+        stage, label, status, message = "modeling", "执行建模", "success", "候选工程产物已生成"
+    elif event_type == "agent.validation_evidence.recorded":
+        gate = str(payload.get("gate") or "")
+        mode = str(payload.get("mode") or "")
+        outcome = str(payload.get("outcome") or "")
+        stage, label = "validation", _GATE_LABEL.get(gate, "工程验证")
+        status = (
+            "success"
+            if outcome == "passed"
+            else "failed"
+            if mode == "required"
+            else "warn"
+        )
+        message = (
+            f"{label}已通过"
+            if outcome == "passed"
+            else f"{label}{'未能判定' if outcome == 'indeterminate' else '发现风险'}"
+        )
+    elif event_type == "agent.candidate.sealed":
+        stage, label, status, message = "review", "变更审查", "success", "候选版本已封装，等待审查"
+    elif event_type == "agent.candidate_build.state_changed":
+        value = str(payload.get("status") or "")
+        stage = "review" if value == "reviewable" else stage
+        label = _STAGE_LABEL[stage]
+        status = _project_status(value)
+        message = "候选版本可以审查" if value == "reviewable" else f"候选模型状态：{value}"
+
+    return {
+        "stage": stage,
+        "label": label,
+        "status": status,
+        "message": message,
+        "step_key": step_key or None,
+        "step_kind": step_kind or None,
+        "attempt_number": (
+            int(attempt["attempt_number"]) if attempt is not None else None
+        ),
+        "gate": payload.get("gate"),
+        "mode": payload.get("mode"),
+        "outcome": payload.get("outcome"),
+        "evidence_id": payload.get("evidence_id"),
+        "evidence_hash": payload.get("evidence_hash"),
+        "risk_count": payload.get("risk_count"),
+    }
+
+
+def project_task_events(
+    events: list[dict[str, Any]],
+    *,
+    step_rows: list[dict[str, Any]],
+    attempt_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    steps_by_id = {str(row["id"]): row for row in step_rows}
+    attempts_by_id = {str(row["id"]): row for row in attempt_rows}
+    return [
+        {
+            **event,
+            "projection": _event_projection(
+                event,
+                steps_by_id=steps_by_id,
+                attempts_by_id=attempts_by_id,
+            ),
+        }
+        for event in events
+    ]
+
+
 class CursorExpired(RuntimeError):
     def __init__(self, earliest_sequence: int, current_sequence: int) -> None:
         self.earliest_sequence = earliest_sequence
@@ -162,7 +362,8 @@ async def get_task_snapshot(
                 text(
                     """
                     SELECT id, status, base_revision_id,
-                           candidate_revision_id, objective, updated_at
+                           candidate_revision_id, objective, risk_summary,
+                           updated_at
                     FROM change_sets
                     WHERE source_workflow_run_id=:workflow_run_id
                     """
@@ -170,6 +371,54 @@ async def get_task_snapshot(
                 {"workflow_run_id": workflow_run_id},
             )
         ).mappings().one_or_none()
+        candidate = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT id, status FROM agent_candidate_builds
+                    WHERE workflow_run_id=:workflow_run_id
+                    """
+                ),
+                {"workflow_run_id": workflow_run_id},
+            )
+        ).mappings().one_or_none()
+        plan_payload = await connection.scalar(
+            text(
+                """
+                SELECT payload->'plan' FROM task_events
+                WHERE workflow_run_id=:workflow_run_id
+                  AND event_type='agent.plan.completed'
+                ORDER BY sequence DESC LIMIT 1
+                """
+            ),
+            {"workflow_run_id": workflow_run_id},
+        )
+        validation_rows = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT id, evidence_hash, gate, mode, outcome, evidence
+                    FROM agent_validation_evidence
+                    WHERE workflow_run_id=:workflow_run_id
+                    ORDER BY created_at, id
+                    """
+                ),
+                {"workflow_run_id": workflow_run_id},
+            )
+        ).mappings().all()
+        repair_count = int(
+            await connection.scalar(
+                text(
+                    """
+                    SELECT count(*) FROM agent_generated_sources
+                    WHERE workflow_run_id=:workflow_run_id
+                      AND generator_kind LIKE 'repair:%'
+                    """
+                ),
+                {"workflow_run_id": workflow_run_id},
+            )
+            or 0
+        )
 
     attempts_by_step: dict[UUID, list[dict[str, Any]]] = {}
     for row in attempt_rows:
@@ -179,6 +428,67 @@ async def get_task_snapshot(
         item = dict(row)
         item["attempts"] = attempts_by_step.get(row["id"], [])
         steps.append(item)
+    current_step = next(
+        (
+            row for row in reversed(steps)
+            if row["status"] in {"running", "ready", "pending"}
+        ),
+        steps[-1] if steps else None,
+    )
+    current_stage = (
+        "review"
+        if candidate and candidate["status"] == "reviewable"
+        else "complete"
+        if workflow["status"] == "succeeded"
+        else _STEP_STAGE.get(str(current_step["kind"]), "planning")
+        if current_step
+        else "planning"
+    )
+    agent_projection = None
+    if candidate is not None or str(workflow["kind"]).startswith("mcad.agent.v2"):
+        validations = []
+        for row in validation_rows:
+            evidence = dict(row["evidence"] or {})
+            validations.append(
+                {
+                    "evidence_id": row["id"],
+                    "evidence_hash": row["evidence_hash"],
+                    "gate": row["gate"],
+                    "mode": row["mode"],
+                    "outcome": row["outcome"],
+                    "issues": [
+                        str(item) for item in evidence.get("issues") or ()
+                    ],
+                    "violations": [
+                        dict(item) for item in evidence.get("violations") or ()
+                        if isinstance(item, dict)
+                    ],
+                }
+            )
+        agent_projection = {
+            "current_stage": current_stage,
+            "current_step_key": current_step["step_key"] if current_step else None,
+            "current_step_kind": current_step["kind"] if current_step else None,
+            "current_status": (
+                candidate["status"]
+                if candidate and candidate["status"] == "reviewable"
+                else current_step["status"]
+                if current_step
+                else workflow["status"]
+            ),
+            "candidate_build_id": candidate["id"] if candidate else None,
+            "candidate_status": candidate["status"] if candidate else None,
+            "repair_count": repair_count,
+            "plan": (
+                dict(plan_payload)
+                if isinstance(plan_payload, dict)
+                else None
+            ),
+            "validations": validations,
+            "risk_summary": (
+                dict(change_set["risk_summary"] or {}) if change_set else None
+            ),
+        }
     return {
         **dict(workflow),
         "steps": steps,
@@ -192,6 +502,7 @@ async def get_task_snapshot(
             for row in artifact_rows
         ],
         "change_set": dict(change_set) if change_set else None,
+        "agent": agent_projection,
     }
 
 
@@ -270,7 +581,36 @@ async def read_task_events(
                 },
             )
         ).mappings().all()
-    events = [dict(row) for row in rows]
+        step_rows = [
+            dict(row)
+            for row in (
+                await connection.execute(
+                    text(
+                        "SELECT id, step_key, kind FROM step_runs "
+                        "WHERE workflow_run_id=:workflow_run_id"
+                    ),
+                    {"workflow_run_id": workflow_run_id},
+                )
+            ).mappings().all()
+        ]
+        attempt_rows = [
+            dict(row)
+            for row in (
+                await connection.execute(
+                    text(
+                        "SELECT id, step_run_id, attempt_number "
+                        "FROM execution_attempts "
+                        "WHERE workflow_run_id=:workflow_run_id"
+                    ),
+                    {"workflow_run_id": workflow_run_id},
+                )
+            ).mappings().all()
+        ]
+    events = project_task_events(
+        [dict(row) for row in rows],
+        step_rows=step_rows,
+        attempt_rows=attempt_rows,
+    )
     next_cursor = int(events[-1]["sequence"]) if events else after_sequence
     return {
         "workflow_run_id": workflow_run_id,
@@ -360,6 +700,51 @@ async def get_change_set_detail(
                 {"target_id": str(change_set_id)},
             )
         ).mappings().all()
+        agent_event_rows = []
+        agent_step_rows = []
+        agent_attempt_rows = []
+        if row["source_workflow_run_id"]:
+            agent_event_rows = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT id, workflow_run_id, sequence, event_type,
+                               payload, occurred_at
+                        FROM task_events
+                        WHERE workflow_run_id=:workflow_run_id
+                          AND (
+                            event_type LIKE 'agent.%'
+                            OR event_type IN (
+                              'step.created', 'step.state_changed',
+                              'attempt.created', 'attempt.started',
+                              'attempt.completed', 'attempt.state_changed'
+                            )
+                          )
+                        ORDER BY sequence
+                        """
+                    ),
+                    {"workflow_run_id": row["source_workflow_run_id"]},
+                )
+            ).mappings().all()
+            agent_step_rows = (
+                await connection.execute(
+                    text(
+                        "SELECT id, step_key, kind FROM step_runs "
+                        "WHERE workflow_run_id=:workflow_run_id"
+                    ),
+                    {"workflow_run_id": row["source_workflow_run_id"]},
+                )
+            ).mappings().all()
+            agent_attempt_rows = (
+                await connection.execute(
+                    text(
+                        "SELECT id, step_run_id, attempt_number "
+                        "FROM execution_attempts "
+                        "WHERE workflow_run_id=:workflow_run_id"
+                    ),
+                    {"workflow_run_id": row["source_workflow_run_id"]},
+                )
+            ).mappings().all()
     artifacts = []
     for artifact in artifact_rows:
         public_artifact = {
@@ -411,6 +796,11 @@ async def get_change_set_detail(
     # Compatibility alias for clients that only need the candidate outputs.
     item["artifacts"] = item["candidate_artifacts"]
     item["audit_log"] = [dict(audit) for audit in audit_rows]
+    item["agent_events"] = project_task_events(
+        [dict(event) for event in agent_event_rows],
+        step_rows=[dict(step) for step in agent_step_rows],
+        attempt_rows=[dict(attempt) for attempt in agent_attempt_rows],
+    )
     return item
 
 

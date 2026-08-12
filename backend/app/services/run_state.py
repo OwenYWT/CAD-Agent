@@ -209,6 +209,7 @@ async def transition_workflow(
             "previous_status": expected.value,
             "status": target.value,
             "error_code": error_code,
+            "error_message": error_message,
         },
     )
 
@@ -364,6 +365,7 @@ async def transition_step(
             "previous_status": expected.value,
             "status": target.value,
             "error_code": error_code,
+            "error_message": error_message,
         },
     )
 
@@ -543,6 +545,7 @@ async def transition_attempt(
             "previous_status": expected.value,
             "status": target.value,
             "error_code": error_code,
+            "error_message": error_message,
         },
     )
 

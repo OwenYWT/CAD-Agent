@@ -115,6 +115,13 @@ export interface ChangeSet {
   validation: {
     status: "pass" | "warning" | "fail" | "unknown";
     summary: string;
+    gates?: Array<{
+      gate: string;
+      mode: string;
+      outcome: string;
+      evidenceId?: string;
+      evidenceHash?: string;
+    }>;
   };
   risk: {
     level: "low" | "medium" | "high" | "unknown";
@@ -204,6 +211,21 @@ export interface DurableChangeSetDetail {
     action: string;
     payload: Record<string, unknown>;
     occurred_at: string;
+  }>;
+  agent_events?: Array<{
+    sequence: number;
+    event_type: string;
+    payload: Record<string, unknown>;
+    occurred_at: string;
+    projection?: {
+      stage: string;
+      label: string;
+      status: string;
+      message: string;
+      step_key?: string | null;
+      gate?: string | null;
+      outcome?: string | null;
+    } | null;
   }>;
 }
 

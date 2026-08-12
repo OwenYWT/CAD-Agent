@@ -40,10 +40,24 @@ function durableDetail(): DurableChangeSetDetail {
     validation_summary: {
       status: "passed",
       issue_count: 0,
+      gates: [{
+        gate: "geometry",
+        mode: "required",
+        outcome: "passed",
+        evidence_id: "geometry-evidence",
+        evidence_hash: "e".repeat(64),
+      }],
     },
     risk_summary: {
-      level: "low",
-      reasons: ["验证未发现问题"],
+      status: "attention_required",
+      issue_count: 1,
+      items: [{
+        gate: "dfm",
+        outcome: "failed",
+        evidence_id: "dfm-evidence",
+        issues: ["最小壁厚不足"],
+        violations: [{ rule_id: "min-wall" }],
+      }],
     },
     status: "pending_review",
     workflow_status: "waiting_confirmation",
@@ -67,6 +81,19 @@ function durableDetail(): DurableChangeSetDetail {
       payload: { status: "pending_review" },
       occurred_at: "2026-07-30T12:01:00Z",
     }],
+    agent_events: [{
+      sequence: 17,
+      event_type: "agent.repair.source_generated",
+      payload: { repair_step_key: "repair-model-main-01" },
+      occurred_at: "2026-07-30T12:00:30Z",
+      projection: {
+        stage: "repair",
+        label: "自动修复",
+        status: "success",
+        message: "自动修复代码已生成",
+        step_key: "repair-model-main-01",
+      },
+    }],
   };
 }
 
@@ -80,12 +107,15 @@ test("durable Change Set UI is derived only from persisted evidence", () => {
   assert.equal(result.parameterChanges[0].before, 20);
   assert.equal(result.parameterChanges[0].after, 24);
   assert.equal(result.validation.status, "pass");
-  assert.equal(result.risk.level, "low");
+  assert.equal(result.validation.gates?.[0].gate, "geometry");
+  assert.equal(result.risk.level, "medium");
+  assert.equal(result.risk.reasons.some((reason) => reason.includes("最小壁厚不足")), true);
   assert.equal(result.files[0].kind, "added");
   assert.equal(result.files[0].evidence, "sha256");
   assert.equal(result.files[0].afterUrl?.includes("signature=real"), true);
   assert.equal(result.geometry.status, "unknown");
   assert.equal(result.code.status, "unknown");
+  assert.equal(result.agentLogs.some((log) => log.includes("自动修复代码已生成")), true);
 });
 
 

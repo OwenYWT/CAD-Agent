@@ -117,11 +117,12 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
       <div className="flex min-h-0 flex-1">
         <ProjectSidebar activeView={view} collapsed={sidebarCollapsed} mobileOpen={mobileSidebar} onCollapse={() => setSidebarCollapsed((value) => !value)} onMobileClose={() => setMobileSidebar(false)} onNavigate={navigate} restoreContext={restoreContext} />
         <div className="min-w-0 flex-1 overflow-y-auto">
-          {(panel.activeRun || panel.stepHistory.length > 0 || panel.artifactUpdates.length > 0) ? (
+          {(panel.activeRun || panel.stepHistory.length > 0 || panel.artifactUpdates.length > 0 || panel.durable?.agent) ? (
             <div className="p-4 pb-0 sm:p-6 sm:pb-0">
               <AgentRunTimeline
                 activeRun={panel.activeRun}
                 artifacts={panel.artifactUpdates}
+                durableAgent={panel.durable?.agent}
                 inspectReport={model.result?.inspect_report}
                 isGenerating={panel.isGenerating}
                 onRerunCode={() => { if (model.result?.code) executeWithProgress(model.result.code); }}
@@ -145,6 +146,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
         activeSnapshotId={model.result?.snapshot_id}
         activeRun={panel.activeRun}
         artifacts={panel.artifactUpdates}
+        durableAgent={panel.durable?.agent}
         description={latestUserPrompt}
         isGenerating={panel.isGenerating}
         key={"validation:" + (model.result?.request_id || "empty") + ":" + checksOpen}

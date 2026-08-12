@@ -881,6 +881,8 @@ async def seal_agent_candidate(
                 "candidate_revision_id": str(change.candidate_revision_id),
                 "change_set_id": str(change.change_set_id),
                 "artifact_ids": [str(item.artifact_id) for item in committed],
+                "validation_status": validation_summary["status"],
+                "risk_count": risk_summary["issue_count"],
             },
         )
         workflow_status = await connection.scalar(

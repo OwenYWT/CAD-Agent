@@ -31,6 +31,11 @@ from app.execution.composition import get_execution_backend
 from app.execution.capability_adapter import CapabilityExecutionAdapter
 from app.execution.contracts import ExecutionStatus
 from app.object_store import delete_object, get_object, reset_object_store_client
+from app.services.event_relay import (
+    get_change_set_detail,
+    get_task_snapshot,
+    read_task_events,
+)
 from app.repositories.identity import ensure_principal
 from app.repositories.projects import create_project
 from app.repositories.revisions import (
@@ -1180,6 +1185,52 @@ async def test_agent_v2_confirmed_plan_seals_reviewable_candidate():
     ]
     assert product_artifacts == 7
     assert selected_steps == ["model-main"]
+    snapshot = await get_task_snapshot(owner, created.workflow_id)
+    assert snapshot["agent"]["current_stage"] == "review"
+    assert snapshot["agent"]["current_status"] == "reviewable"
+    assert [item["gate"] for item in snapshot["agent"]["validations"]] == [
+        "geometry",
+        "visual",
+        "dfm",
+    ]
+    assert snapshot["agent"]["risk_summary"]["status"] == (
+        "attention_required"
+    )
+    page = await read_task_events(
+        owner,
+        created.workflow_id,
+        after_sequence=0,
+        limit=500,
+    )
+    sequences = [item["sequence"] for item in page["events"]]
+    assert sequences == sorted(sequences)
+    assert len(sequences) == len(set(sequences))
+    projected = {
+        item["event_type"]: item["projection"] for item in page["events"]
+    }
+    assert projected["agent.plan.completed"]["stage"] == "planning"
+    assert projected["agent.source.generated"]["stage"] == "modeling"
+    validation_projections = [
+        item["projection"] for item in page["events"]
+        if item["event_type"] == "agent.validation_evidence.recorded"
+    ]
+    assert [item["status"] for item in validation_projections] == [
+        "success",
+        "warn",
+        "warn",
+    ]
+    assert projected["agent.candidate.sealed"]["stage"] == "review"
+    assert projected["agent.candidate.sealed"]["risk_count"] == 2
+    change_detail = await get_change_set_detail(
+        owner,
+        candidate["change_set_id"],
+    )
+    assert change_detail["risk_summary"]["issue_count"] == 2
+    assert any(
+        event["event_type"] == "agent.candidate.sealed"
+        and event["projection"]["stage"] == "review"
+        for event in change_detail["agent_events"]
+    )
 
 
 @pytest.mark.skipif(

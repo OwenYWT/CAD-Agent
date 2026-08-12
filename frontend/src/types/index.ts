@@ -349,7 +349,47 @@ export interface DurableTaskEvent {
   sequence: number;
   event_type: string;
   payload: Record<string, unknown>;
+  projection?: DurableAgentEventProjection | null;
   occurred_at: string;
+}
+
+export interface DurableAgentEventProjection {
+  stage: string;
+  label: string;
+  status: StepStatus;
+  message: string;
+  step_key?: string | null;
+  step_kind?: string | null;
+  attempt_number?: number | null;
+  gate?: string | null;
+  mode?: string | null;
+  outcome?: string | null;
+  evidence_id?: string | null;
+  evidence_hash?: string | null;
+  risk_count?: number | null;
+}
+
+export interface DurableAgentValidationProjection {
+  evidence_id: string;
+  evidence_hash: string;
+  gate: string;
+  mode: string;
+  outcome: string;
+  issues: string[];
+  violations: Record<string, unknown>[];
+}
+
+export interface DurableAgentSnapshotProjection {
+  current_stage: string;
+  current_step_key?: string | null;
+  current_step_kind?: string | null;
+  current_status: string;
+  candidate_build_id?: string | null;
+  candidate_status?: string | null;
+  repair_count: number;
+  plan?: Record<string, unknown> | null;
+  validations: DurableAgentValidationProjection[];
+  risk_summary?: Record<string, unknown> | null;
 }
 
 export interface DurableTaskSnapshot {
@@ -386,6 +426,7 @@ export interface DurableTaskSnapshot {
     candidate_revision_id: string;
     objective: string;
   } | null;
+  agent?: DurableAgentSnapshotProjection | null;
 }
 
 export type DurableWSMessage =

@@ -96,18 +96,22 @@ export function webSocketAuthProtocol(token: string | null | undefined) {
 }
 
 export function durableEventStep(event: DurableTaskEvent): StepUpdate {
-  const message = typeof event.payload.message === "string"
+  const projected = event.projection;
+  const message = projected?.message || (typeof event.payload.message === "string"
     ? event.payload.message
-    : event.event_type;
+    : event.event_type);
   const failed = event.event_type.includes("failed")
     || event.event_type.includes("timed_out");
   return {
     step: event.event_type,
     message,
-    status: failed ? "failed" : "running",
+    status: projected?.status || (failed ? "failed" : "running"),
+    stage_id: projected?.stage || null,
+    attempt: projected?.attempt_number || null,
     started_at: event.occurred_at,
     detail: {
       ...event.payload,
+      ...(projected || {}),
       source: "durable_task_event",
       sequence: event.sequence,
     },

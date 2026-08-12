@@ -21,6 +21,7 @@ interface ValidationDialogProps {
   steps: StepHistoryEntry[];
   activeRun?: RunCreatedEvent | null;
   artifacts?: ArtifactHistoryEntry[];
+  durableAgent?: import("../../types").DurableAgentSnapshotProjection | null;
   isGenerating: boolean;
   activeSnapshotId?: string | null;
   refreshKey?: string | number | null;
@@ -46,6 +47,7 @@ export default function ValidationDialog({
   steps,
   activeRun,
   artifacts = [],
+  durableAgent,
   isGenerating,
   activeSnapshotId,
   refreshKey,
@@ -113,6 +115,7 @@ export default function ValidationDialog({
         <AgentRunTimeline
           activeRun={activeRun}
           artifacts={artifacts}
+          durableAgent={durableAgent}
           inspectReport={result?.inspect_report}
           isGenerating={isGenerating}
           onRerunCode={result?.code ? onRerunCode : undefined}

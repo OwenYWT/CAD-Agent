@@ -37,6 +37,7 @@ export interface DurablePanelContext {
   lastEventSequence: number;
   taskStatus: string | null;
   preparedResult: GenerationResult | null;
+  agent: DurableTaskSnapshot["agent"];
 }
 
 export function emptyDurableContext(): DurablePanelContext {
@@ -50,6 +51,7 @@ export function emptyDurableContext(): DurablePanelContext {
     lastEventSequence: 0,
     taskStatus: null,
     preparedResult: null,
+    agent: null,
   };
 }
 
@@ -490,6 +492,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
               preparedResult: sameWorkflow
                 ? panel.durable?.preparedResult || null
                 : null,
+              agent: sameWorkflow ? panel.durable?.agent || null : null,
             },
           };
         }),
@@ -703,6 +706,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
               snapshot,
             ),
             taskStatus: snapshot.status,
+            agent: snapshot.agent || null,
           },
           result: terminalResult,
           isGenerating: !terminal,
@@ -760,6 +764,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
               lastEventSequence: event.sequence,
               preparedResult:
                 preparedPayload || durable.preparedResult,
+              agent: durable.agent,
             },
             result: preparedPayload?.needs_confirmation
               ? preparedPayload

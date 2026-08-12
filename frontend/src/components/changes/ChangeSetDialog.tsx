@@ -353,6 +353,15 @@ export default function ChangeSetDialog({
               <div>
                 <h3 className="text-xs font-semibold text-[var(--ink)]">验证与风险</h3>
                 <p className="mt-2 text-xs text-[var(--muted)]">验证：{validationLabel(changeSet.validation.status)} · {changeSet.validation.summary}</p>
+                {changeSet.validation.gates?.length ? (
+                  <ul className="mt-2 space-y-1 text-[11px] text-[var(--faint)]">
+                    {changeSet.validation.gates.map((gate) => (
+                      <li key={gate.evidenceId || `${gate.gate}:${gate.outcome}`} title={gate.evidenceHash}>
+                        · {gate.gate.toUpperCase()} · {gate.mode === "required" ? "必需" : "建议"} · {gate.outcome === "passed" ? "通过" : gate.outcome === "failed" ? "存在问题" : "未能判定"}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
                 <p className="mt-2 text-xs text-[var(--muted)]">风险：{riskLabel(changeSet.risk.level)}</p>
                 <ul className="mt-1 space-y-1 text-[11px] text-[var(--faint)]">
                   {changeSet.risk.reasons.map((reason) => <li key={reason}>· {reason}</li>)}

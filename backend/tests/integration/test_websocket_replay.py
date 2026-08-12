@@ -384,7 +384,8 @@ async def test_real_websocket_replay_reconnect_slow_consumer_auth_and_retention(
                     headers=headers,
                 )
                 assert snapshot.status_code == 200
-                last_sequence = snapshot.json()["last_event_sequence"]
+                snapshot_body = snapshot.json()
+                last_sequence = snapshot_body["last_event_sequence"]
                 assert replay_sequences[-1] == last_sequence
                 empty = await client.get(
                     f"http://127.0.0.1:{port}/api/tasks/{workflow_id}/events",
@@ -393,6 +394,17 @@ async def test_real_websocket_replay_reconnect_slow_consumer_auth_and_retention(
                 )
                 assert empty.status_code == 200
                 assert empty.json()["events"] == []
+                projected = await client.get(
+                    f"http://127.0.0.1:{port}/api/tasks/{workflow_id}/events",
+                    params={"after_sequence": 0, "limit": 500},
+                    headers=headers,
+                )
+                assert projected.status_code == 200
+                projections = projected.json()["events"]
+                assert all(item["projection"] for item in projections)
+                assert [item["sequence"] for item in projections] == list(
+                    range(1, last_sequence + 1)
+                )
 
             retained_workflow_id = uuid4()
             async with tenant_transaction(

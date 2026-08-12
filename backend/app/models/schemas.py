@@ -304,12 +304,52 @@ class FeedbackRequest(BaseModel):
     note: str | None = Field(None, max_length=2000)
 
 
+class DurableAgentEventProjection(BaseModel):
+    stage: str
+    label: str
+    status: str
+    message: str
+    step_key: str | None = None
+    step_kind: str | None = None
+    attempt_number: int | None = None
+    gate: str | None = None
+    mode: str | None = None
+    outcome: str | None = None
+    evidence_id: UUID | None = None
+    evidence_hash: str | None = None
+    risk_count: int | None = None
+
+
+class DurableAgentValidationProjection(BaseModel):
+    evidence_id: UUID
+    evidence_hash: str
+    gate: str
+    mode: str
+    outcome: str
+    issues: list[str] = Field(default_factory=list)
+    violations: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class DurableAgentSnapshotProjection(BaseModel):
+    current_stage: str
+    current_step_key: str | None = None
+    current_step_kind: str | None = None
+    current_status: str
+    candidate_build_id: UUID | None = None
+    candidate_status: str | None = None
+    repair_count: int = 0
+    plan: dict[str, Any] | None = None
+    validations: list[DurableAgentValidationProjection] = Field(default_factory=list)
+    risk_summary: dict[str, Any] | None = None
+
+
 class DurableTaskEvent(BaseModel):
     id: UUID
     workflow_run_id: UUID
     sequence: int
     event_type: str
     payload: dict[str, Any]
+    projection: DurableAgentEventProjection | None = None
     occurred_at: datetime
 
 
@@ -386,6 +426,7 @@ class DurableTaskSnapshot(BaseModel):
     steps: list[DurableStepSnapshot] = Field(default_factory=list)
     artifacts: list[DurableArtifactSnapshot] = Field(default_factory=list)
     change_set: DurableChangeSetSummary | None = None
+    agent: DurableAgentSnapshotProjection | None = None
 
 
 class TaskConfirmationRequest(BaseModel):
