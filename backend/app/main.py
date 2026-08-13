@@ -130,10 +130,9 @@ async def _durable_control_plane_readiness() -> dict:
         "temporal": temporal_readiness,
         "temporal_worker": temporal_worker_readiness,
     }
-    if settings.durable_agent_fusion_enabled:
-        probes["temporal_agent_v2_worker"] = (
-            temporal_agent_v2_worker_readiness
-        )
+    probes["temporal_agent_v2_worker"] = (
+        temporal_agent_v2_worker_readiness
+    )
     results = await asyncio.gather(
         *(probe() for probe in probes.values()),
         return_exceptions=True,
@@ -173,31 +172,11 @@ async def lifespan(app: FastAPI):
     from app.storage.auth import ensure_admin_user, ensure_default_invite_code
     await ensure_admin_user()
     await ensure_default_invite_code()
-    legacy_workflow_enabled = not settings.durable_api_cutover_enabled
-    reconciled_runs = 0
-    if legacy_workflow_enabled:
-        from app.storage import local_runs
-
-        await local_runs.initialize()
-        reconciled_runs = await local_runs.reconcile_incomplete_runs()
-    app.state.reconciled_local_workflow_runs = reconciled_runs
-    if reconciled_runs:
-        logger.warning(
-            "Reconciled %d interrupted process-local workflow run(s) as non-resumable",
-            len(reconciled_runs),
-        )
-    if legacy_workflow_enabled:
-        from app.agent.recovery import recover_running_runs
-
-        await recover_running_runs()
+    app.state.reconciled_local_workflow_runs = 0
     cleanup_task = asyncio.create_task(_periodic_cleanup())
     yield
     # Shutdown
     cleanup_task.cancel()
-    if legacy_workflow_enabled:
-        from app.workflows.local import get_local_workflow_manager
-
-        await get_local_workflow_manager().shutdown()
     from app.storage.history import close_db
     await close_db()
     from app.storage.auth import close_db as close_auth_db

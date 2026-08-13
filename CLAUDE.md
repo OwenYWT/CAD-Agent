@@ -14,7 +14,7 @@
 ## 事实边界
 
 - 基础 Web MCAD：React/Vite/Three.js -> FastAPI 控制平面 -> PostgreSQL/Temporal -> ExecutionBackend -> Docker/Podman 隔离 Worker -> S3 兼容不可变产物。
-- 核心任务事实是 `WorkflowRun -> StepRun -> ExecutionAttempt`、持久事件、`ProjectRevision` 和 `Artifact`；WebSocket 只订阅/回放事件，不能承担生命周期。
+- 核心任务事实是 `WorkflowRun -> StepRun -> ExecutionAttempt`、持久事件、`ProjectRevision` 和 `Artifact`；WebSocket 可提交 Durable 请求并订阅/回放事件，但不能承担生命周期。
 - 业务层不能直接调用 Docker、Podman、Kubernetes 或宿主 shell；修改必须携带 `expected_base_revision_id`，外部执行必须幂等。
 - CAD Skills：产品 adapter 在 `backend/app/capabilities`；`third_party/cadskills` 是固定上游快照，不直接写产品逻辑。
 - Fusion 360：`backend/app/fusion360` 和 `fusion_addin` 使用 typed action、Preview、Approval 和 verified result。模拟/facade 测试不能写成真实 Fusion E2E。

@@ -25,7 +25,6 @@ def _settings(**overrides) -> Settings:
         "_env_file": None,
         "app_environment": "development",
         "durable_control_plane_enabled": True,
-        "durable_api_cutover_enabled": True,
         "database_url": "postgresql+asyncpg://cad_agent:local-secret@postgres:5432/cad_agent",
         "object_store_endpoint_url": "http://minio:9000",
         "object_store_access_key": "cad-agent-local",
@@ -62,7 +61,6 @@ def test_enabled_durable_control_plane_requires_every_dependency(override, expec
 def test_development_may_keep_durable_control_plane_disabled_during_cutover():
     settings = _settings(
         durable_control_plane_enabled=False,
-        durable_api_cutover_enabled=False,
     )
 
     assert settings.durable_control_plane_config_problems() == []
@@ -77,17 +75,6 @@ def test_production_fails_closed_when_durable_control_plane_is_disabled():
     problems = settings.durable_control_plane_config_problems()
 
     assert any("DURABLE_CONTROL_PLANE_ENABLED" in problem for problem in problems)
-
-
-def test_production_fails_closed_before_atomic_api_cutover():
-    settings = _settings(
-        app_environment="production",
-        durable_api_cutover_enabled=False,
-    )
-
-    problems = settings.durable_control_plane_config_problems()
-
-    assert any("DURABLE_API_CUTOVER_ENABLED" in problem for problem in problems)
 
 
 @pytest.mark.parametrize(
@@ -183,6 +170,11 @@ async def test_readiness_reports_each_real_dependency(monkeypatch):
         "temporal_worker_readiness",
         temporal_worker,
     )
+    monkeypatch.setattr(
+        main,
+        "temporal_agent_v2_worker_readiness",
+        temporal_worker,
+    )
 
     result = await main._durable_control_plane_readiness()
 
@@ -192,6 +184,12 @@ async def test_readiness_reports_each_real_dependency(monkeypatch):
         "object_store": {"status": "ready", "latency_ms": 2},
         "temporal": {"status": "ready", "latency_ms": 3},
         "temporal_worker": {
+            "status": "ready",
+            "latency_ms": 4,
+            "workflow_pollers": 1,
+            "activity_pollers": 1,
+        },
+        "temporal_agent_v2_worker": {
             "status": "ready",
             "latency_ms": 4,
             "workflow_pollers": 1,
@@ -212,7 +210,6 @@ async def test_readiness_requires_v2_worker_before_fusion_routing(monkeypatch):
         raise RuntimeError("no V2 poller")
 
     monkeypatch.setattr(main.settings, "durable_control_plane_enabled", True)
-    monkeypatch.setattr(main.settings, "durable_agent_fusion_enabled", True)
     monkeypatch.setattr(main, "database_readiness", healthy)
     monkeypatch.setattr(main, "object_store_readiness", healthy)
     monkeypatch.setattr(main, "temporal_readiness", healthy)
@@ -287,12 +284,9 @@ def test_compose_declares_durable_services_with_healthchecks_and_volumes():
         "-m",
         "app.workers.workflow_worker",
     ]
-    assert (
-        services["backend"]["environment"][
-            "DURABLE_API_CUTOVER_ENABLED"
-        ]
-        == "${DURABLE_API_CUTOVER_ENABLED:-true}"
-    )
+    compose_text = COMPOSE.read_text()
+    assert "DURABLE_API_CUTOVER_ENABLED" not in compose_text
+    assert "DURABLE_AGENT_FUSION_ENABLED" not in compose_text
 
 
 def test_compose_requires_operator_supplied_local_credentials():

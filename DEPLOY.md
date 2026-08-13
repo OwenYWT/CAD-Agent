@@ -11,7 +11,7 @@
 - `temporal`：本地/单机验证用的持久工作流服务。
 - `migrate`：在 API 和 Worker 启动前执行 `alembic upgrade head`。
 - `backend`：FastAPI 控制平面，只在 Compose 网络暴露 `8000`。
-- `workflow-worker`：独立 Temporal Worker，通过统一 `ExecutionBackend` 提交隔离 MCAD 执行。
+- `workflow-worker`：独立 Temporal Worker；同时注册 V1 与专用 V2 Agent task queue，通过统一 `ExecutionBackend` 提交隔离 MCAD 执行。
 - `frontend`：Nginx 托管 Vite 产物，对外监听 `8080`，并代理 `/api`、`/health`、`/ready` 和 `/ws`。
 
 当前单机执行后端通过宿主机 `/var/run/docker.sock` 启动一次性沙箱，因此只能部署在受信执行节点。Compose 中的 `temporalio/auto-setup` 只用于本地和单机验证；正式生产应改为托管 Temporal 或由运维管理 schema 的受支持 Temporal 部署。后续 Kubernetes Job 或企业私有 Worker 必须实现同一 `ExecutionSpec` / `ExecutionResult` 契约，业务 API 不应直接依赖容器技术。
@@ -26,10 +26,10 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 把随机值写入 `AUTH_TOKEN_SECRET`，并检查以下配置：
 
 - 设置真实 `MOONSHOT_API_KEY`，或完整配置 Azure/OpenAI-compatible provider。
-- 保持 `AUTH_REQUIRED=true`、`AUTH_DEV_EXPOSE_CODE=false`、`DURABLE_CONTROL_PLANE_ENABLED=true` 和 `DURABLE_API_CUTOVER_ENABLED=true`。非开发环境会拒绝旧写链路。
+- 保持 `AUTH_REQUIRED=true`、`AUTH_DEV_EXPOSE_CODE=false` 和 `DURABLE_CONTROL_PLANE_ENABLED=true`。MCAD 写请求只有 Durable 链路，不再存在可切换的旧写链路。
 - 设置 `DATABASE_URL=postgresql+asyncpg://...`，数据库密码如含特殊字符必须 URL 编码。
 - 设置对象存储 endpoint、access key、secret 和 bucket；非本地环境必须使用 HTTPS。
-- 设置 Temporal target、namespace 和 task queue；API 与 Worker 必须完全一致。
+- 设置 Temporal target、namespace、`TEMPORAL_TASK_QUEUE` 和不同名的 `TEMPORAL_AGENT_V2_TASK_QUEUE`；API 与 Worker 必须完全一致。
 - 私测邀请码模式保持 `AUTH_CODE_FLOWS_ENABLED=false`；删除模板邀请码，改成实际发放的单次邀请码。
 - 如启用验证码流程，设置 `AUTH_CODE_FLOWS_ENABLED=true`，并完整配置腾讯云 SMS 或自有 webhook；不得使用 `disabled/log` provider。
 - `CORS_ORIGINS` 只包含真实 HTTPS 域名。
@@ -98,8 +98,8 @@ test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
 
 - PostgreSQL 连接和 migration head；
 - 对象存储访问、bucket、主机时钟和 TLS；
-- Temporal namespace/task queue；
-- Workflow 与 Activity poller 是否在 90 秒有效窗口内；
+- Temporal namespace、V1/V2 task queue；
+- V1/V2 Workflow 与 Activity poller 是否在 90 秒有效窗口内；
 - LLM provider 凭据；
 - Docker daemon 和 digest 固定的 MCAD Runtime。
 
@@ -118,7 +118,7 @@ curl --include --no-buffer --max-time 5 \
 
 最后用已登录账号执行一次真实 MCAD 任务，至少验证：
 
-1. 创建 `WorkflowRun`、逻辑 `StepRun` 和实际 `ExecutionAttempt`；
+1. 生成/修改创建 V2 Agent `WorkflowRun`，并持久化规划、建模、执行、验证、修复与封存对应的 `StepRun` / `ExecutionAttempt`；
 2. WebSocket 显示的状态能在刷新后通过 REST/事件回放恢复；
 3. STEP/STL 可下载，字节数和 SHA-256 与产物元数据一致；
 4. 工程检查生成独立检查 Workflow 和不可变 JSON 报告；

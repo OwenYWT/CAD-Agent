@@ -74,4 +74,4 @@ async def test_rest_api_endpoints():
         r = await client.post("/api/generate", json={"prompt": "test"})
         # Provider outages/quota/configuration are intentionally normalized to
         # 503; runtime/internal failures remain 500.
-        assert r.status_code in (200, 500, 503)
+        assert r.status_code in (200, 422, 500, 503)

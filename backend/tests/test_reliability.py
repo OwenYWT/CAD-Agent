@@ -181,15 +181,23 @@ async def test_planner_does_not_retry_nonrecoverable_provider_quota():
 
 @pytest.mark.asyncio
 async def test_generate_deadline_returns_504(monkeypatch):
-    """If the pipeline exceeds generate_deadline_s, the endpoint returns 504, not a hang."""
-    from app.api import websocket, generate as generate_api
+    """A Durable projection deadline is surfaced as 504, never a hung request."""
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from app.api import generate as generate_api
     from fastapi import Request
 
-    class SlowOrch:
-        async def generate(self, prompt, output_formats):
-            await asyncio.sleep(5)  # longer than the patched deadline
+    async def submit(_principal, **_kwargs):
+        return SimpleNamespace(workflow_run_id=uuid4())
 
-    monkeypatch.setattr(generate_api, "_get_orchestrator", lambda: SlowOrch())
+    async def wait(_principal, _submission, *, timeout_seconds):
+        raise asyncio.TimeoutError
+
+    monkeypatch.setattr(generate_api, "submit_durable_workflow", submit)
+    monkeypatch.setattr(generate_api, "wait_for_compatibility_response", wait)
+    monkeypatch.setattr(generate_api, "current_principal", lambda: object())
+    monkeypatch.setattr(generate_api.rate_limiter, "check", lambda *_args, **_kwargs: asyncio.sleep(0))
     monkeypatch.setattr(settings, "generate_deadline_s", 0.1)
 
     # minimal Request stub for rate_limiter._client_key
@@ -197,7 +205,15 @@ async def test_generate_deadline_returns_504(monkeypatch):
     req = Request(scope)
 
     from app.models.schemas import GenerateRequest
-    resp = await generate_api.generate(GenerateRequest(prompt="x"), req, api_key=None)
+    identity = {
+        "project_id": uuid4(),
+        "branch_id": uuid4(),
+        "expected_base_revision_id": uuid4(),
+        "idempotency_key": f"deadline-{uuid4()}",
+    }
+    resp = await generate_api.generate(
+        GenerateRequest(prompt="x", **identity), req, api_key=None
+    )
     assert resp.status_code == 504
     import json
     body = json.loads(resp.body)

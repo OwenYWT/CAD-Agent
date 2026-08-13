@@ -45,12 +45,15 @@ Fusion 自动化测试与真实桌面验收必须分开表述。没有完成 Win
 
 - [`superpowers/specs/2026-07-25-commercial-mcad-execution-design.md`](superpowers/specs/2026-07-25-commercial-mcad-execution-design.md)
   定义 M0 本地 MCAD、M1 持久控制平面和 M2 隔离计算扩展的已批准目标、边界与真实验收要求。
+- [`superpowers/specs/2026-08-12-durable-agent-fusion-design.md`](superpowers/specs/2026-08-12-durable-agent-fusion-design.md)
+  定义已落地的 V2 Durable Agent 规划、建模、修复、几何/视觉/DFM 验证和候选版本封存边界。
 
 ## 历史归档
 
 - [`archive/forgecad-roadmap-2026-07.md`](archive/forgecad-roadmap-2026-07.md)：从旧 `NEXT.md` 提炼的产品研究和候选路线。它不是当前实现清单、排期或接口合同。
+- [`archive/agent-orchestration-upgrade-2026-07.md`](archive/agent-orchestration-upgrade-2026-07.md)：2026-07 的进程内 Agent 编排比较稿；旧架构和实施清单已废弃。
 
-已完成的一次性 implementation plan/spec、旧 Sprint、重复使用说明和旧交接副本已删除。需要追溯时使用 Git 历史，不再把它们放在当前文档树里。
+未从本索引列出的 `superpowers/plans/` 文件只保留实施追溯价值，不是当前事实来源。旧 Sprint、重复使用说明和旧交接副本不再保留；更早内容使用 Git 历史追溯。
 
 ## 维护规则
 

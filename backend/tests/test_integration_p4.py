@@ -3,15 +3,15 @@ Phase 4 integration tests
 Web client + batch API + SDK
 """
 import ast
-import asyncio
 import os
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-import app.api.websocket as ws_mod
-from app.config import settings
+from app.api import batch as batch_api
 from app.main import app
 from app.models.schemas import GenerateResponse
 from app.storage import history
@@ -36,57 +36,55 @@ async def test_batch_generate_endpoint_exists():
             ],
             "max_concurrent": 2,
         })
-        # 200 if Docker, 500 if not — either means route exists
-        assert r.status_code in (200, 500)
+        # Durable identity is required before work can be accepted.
+        assert r.status_code == 422
 
 
 @pytest.mark.asyncio
 async def test_async_generate_endpoint_persists_and_returns_terminal_result(
-    tmp_path,
     monkeypatch,
 ):
-    """异步生成状态和终态来自 SQLite，而不是进程内字典。"""
-    monkeypatch.setattr(settings, "history_db_path", str(tmp_path / "history.db"))
-    monkeypatch.setattr(settings, "file_storage_dir", str(tmp_path / "files"))
-    await history.close_db()
+    """异步 API 返回持久 WorkflowRun，并从同一投影读取终态。"""
+    workflow_run_id = uuid4()
+    identity = {
+        "project_id": str(uuid4()),
+        "branch_id": str(uuid4()),
+        "expected_base_revision_id": str(uuid4()),
+        "idempotency_key": f"async-{uuid4()}",
+    }
 
-    class AsyncOrchestrator:
-        async def generate(self, prompt, output_formats, on_step=None):
-            if on_step:
-                from app.models.schemas import StepUpdate
+    async def submit(_principal, **_kwargs):
+        return SimpleNamespace(workflow_run_id=workflow_run_id)
 
-                await on_step(StepUpdate(step="executing", message="running"))
-            return GenerateResponse(
-                request_id="async-request",
-                success=True,
-                files={"step": "/api/files/async-request/result.step"},
-                code="result = cq.Workplane('XY').box(1, 1, 1)",
-                attempts=1,
-            )
+    async def projection(_principal, queried_workflow_run_id):
+        assert queried_workflow_run_id == workflow_run_id
+        return GenerateResponse(
+            request_id=str(workflow_run_id),
+            workflow_run_id=workflow_run_id,
+            success=True,
+            task_status="succeeded",
+            files={"step": f"/api/files/{workflow_run_id}/result.step"},
+        )
 
-    monkeypatch.setattr(ws_mod, "_orchestrator", AsyncOrchestrator())
+    monkeypatch.setattr(batch_api, "submit_durable_workflow", submit)
+    monkeypatch.setattr(batch_api, "get_compatibility_response", projection)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.post("/api/generate/async", json={
             "prompt": "test",
+            **identity,
         })
         assert r.status_code == 200
         data = r.json()
         assert data["status"] == "pending"
         task_id = data["task_id"]
 
-        terminal = None
-        for _ in range(50):
-            status_response = await client.get(f"/api/tasks/{task_id}")
-            assert status_response.status_code == 200
-            terminal = status_response.json()
-            if terminal["status"] in {"completed", "failed"}:
-                break
-            await asyncio.sleep(0.01)
+        status_response = await client.get(f"/api/tasks/{task_id}")
+        assert status_response.status_code == 200
+        terminal = status_response.json()
 
     assert terminal["status"] == "completed"
-    assert terminal["result"]["request_id"] == "async-request"
-    await history.close_db()
+    assert terminal["result"]["request_id"] == str(workflow_run_id)
 
 
 @pytest.mark.asyncio

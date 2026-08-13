@@ -2,11 +2,11 @@ import logging
 import re
 import shutil
 import uuid
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from app.agent import run_store
 from app.agent.code_gen import CodeGenerator
+from app.agent.conversation import ConversationContext
 from app.agent.design_brief import ensure_design_brief
 from app.agent.failure_taxonomy import FixPath, classify
 from app.agent.planner import Planner
@@ -51,18 +51,6 @@ def requires_design_confirmation(brief: DesignBrief) -> bool:
         any(marker in question for marker in _BLOCKING_CONFIRMATION_MARKERS)
         for question in brief.open_questions
     )
-
-
-@dataclass
-class ConversationContext:
-    session_id: str
-    messages: list[dict] = field(default_factory=list)
-    current_code: str | None = None
-    current_params: dict | None = None
-    generation_count: int = 0
-    assembly_parts: list[dict] | None = None  # per-part code/metadata for assemblies
-    current_design_brief: DesignBrief | None = None
-    current_manufacturing_profile: ManufacturingProfile | None = None
 
 
 class Orchestrator:

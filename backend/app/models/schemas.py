@@ -243,9 +243,9 @@ def _validate_output_formats(v: list[str]) -> list[str]:
 class DurableRequestIdentity(BaseModel):
     """Optimistic-concurrency identity shared by every public write request.
 
-    The fields are optional during the compatibility period.  Once the atomic
-    API cutover is enabled, accepting an incomplete write would silently lose
-    stale-base and idempotency guarantees, so validation fails before execution.
+    Every public MCAD write is durable. Accepting an incomplete identity would
+    silently lose stale-base and idempotency guarantees, so validation fails
+    before execution in every environment.
     """
 
     project_id: UUID | None = None
@@ -255,8 +255,6 @@ class DurableRequestIdentity(BaseModel):
 
     @model_validator(mode="after")
     def require_durable_identity_after_cutover(self):
-        if not settings.durable_api_cutover_enabled:
-            return self
         missing = [
             name
             for name in (
@@ -269,7 +267,7 @@ class DurableRequestIdentity(BaseModel):
         ]
         if missing:
             raise ValueError(
-                "durable API cutover requires " + ", ".join(missing)
+                "durable MCAD writes require " + ", ".join(missing)
             )
         return self
 

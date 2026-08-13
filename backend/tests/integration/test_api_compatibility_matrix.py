@@ -31,7 +31,11 @@ from app.repositories.revisions import create_initial_branch
 from app.services.durable_submission import ensure_workspace_identity
 from app.storage import postgres_history
 from app.temporal_client import get_temporal_client, reset_temporal_client
-from app.workers.workflow_worker import build_workflow_worker
+from app.validation.durable_visual import DurableVisualReport, VisualJudgment
+from app.workers.workflow_worker import (
+    build_agent_v2_workflow_worker,
+    build_workflow_worker,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -52,6 +56,31 @@ pytestmark = [
 ]
 
 
+class _PassingVisualProvider:
+    """Keep this API gate focused on the real planner/codegen provider."""
+
+    async def report(self, *, renders, runtime_provenance, **_kwargs):
+        return DurableVisualReport(
+            schema_version="durable-visual-report.v1",
+            outcome="passed",
+            renders=renders,
+            judgment=VisualJudgment(is_match=True, confidence=0.99),
+            runtime_provenance=runtime_provenance,
+            provider_provenance={
+                "provider": "controlled-api-matrix",
+                "model": "controlled-api-matrix",
+                "provider_response_id": "api-matrix-visual",
+                "request_hash": "a" * 64,
+                "response_hash": "b" * 64,
+                "finish_reason": "stop",
+                "usage": {},
+            },
+        )
+
+    async def repair(self, **_kwargs):
+        raise AssertionError("passing visual result must not invoke repair")
+
+
 @pytest.fixture(scope="module", autouse=True)
 def migrated_database():
     if not TEST_DATABASE_URL or not RUN_EXTERNAL:
@@ -61,8 +90,6 @@ def migrated_database():
         "database_url": settings.database_url,
         "durable_control_plane_enabled":
             settings.durable_control_plane_enabled,
-        "durable_api_cutover_enabled":
-            settings.durable_api_cutover_enabled,
         "auth_required": settings.auth_required,
         "api_keys": settings.api_keys,
         "temporal_target": settings.temporal_target,
@@ -72,7 +99,6 @@ def migrated_database():
     }
     settings.database_url = TEST_DATABASE_URL
     settings.durable_control_plane_enabled = True
-    settings.durable_api_cutover_enabled = True
     settings.auth_required = True
     settings.api_keys = [OWNER_KEY]
     settings.temporal_target = os.environ["TEMPORAL_TARGET"]
@@ -182,7 +208,6 @@ async def _start_api(port: int):
         "APP_ENVIRONMENT": "test",
         "DATABASE_URL": TEST_DATABASE_URL,
         "DURABLE_CONTROL_PLANE_ENABLED": "true",
-        "DURABLE_API_CUTOVER_ENABLED": "true",
         "AUTH_REQUIRED": "true",
         "AUTH_TOKEN_SECRET": "task10-test-" + ("s" * 64),
         "API_KEYS": json.dumps([OWNER_KEY]),
@@ -645,7 +670,10 @@ async def test_real_generate_runs_llm_inside_temporal_before_podman():
     }
 
     async with (
-        build_workflow_worker(temporal),
+        build_agent_v2_workflow_worker(
+            temporal,
+            durable_visual=_PassingVisualProvider(),
+        ),
         httpx.AsyncClient(
             transport=transport,
             base_url="http://test",
@@ -691,7 +719,7 @@ async def test_real_generate_runs_llm_inside_temporal_before_podman():
         body = generated.json()
         assert body["success"] is True
         assert body["code"]
-        assert body["plan"]
+        assert body["design_brief"]
         assert set(body["files"]) == {"step", "stl"}
 
         events = await client.get(
@@ -702,11 +730,9 @@ async def test_real_generate_runs_llm_inside_temporal_before_podman():
         event_types = [
             event["event_type"] for event in events.json()["events"]
         ]
-        assert "source.preparation_started" in event_types
-        assert "source.prepared" in event_types
-        # Attempt completion is the immutable, lease-fenced success event used by
-        # the run-state service and frontend event adapter.  The status itself is
-        # persisted as ``succeeded`` on execution_attempts.
+        assert "agent.plan.completed" in event_types
+        assert "agent.source.generated" in event_types
+        assert "agent.candidate.sealed" in event_types
         assert "attempt.completed" in event_types
 
     async with tenant_transaction(
@@ -727,7 +753,5 @@ async def test_real_generate_runs_llm_inside_temporal_before_podman():
             text("SELECT count(*) FROM execution_attempts")
         )
     assert workflow["status"] == "succeeded"
-    assert workflow["request_payload"]["preparation"]["operation"] == (
-        "generate"
-    )
-    assert attempt_count == 1
+    assert workflow["request_payload"]["operation"] == "generate"
+    assert attempt_count >= 4

@@ -13,14 +13,12 @@ from app.models.schemas import (
     GenerateResponse,
     ManufacturingProfile,
 )
-from app.storage.file_ownership import claim_request_owner
 from app.principal_context import current_principal
 from app.services.durable_submission import (
     get_compatibility_response,
     submit_durable_workflow,
     wait_for_compatibility_response,
 )
-from app.workflows.local import get_local_workflow_manager
 
 router = APIRouter(prefix="/api", tags=["batch"])
 
@@ -77,34 +75,23 @@ async def batch_generate(
 
     async def run_one(item: BatchItem) -> GenerateResponse:
         async with semaphore:
-            if settings.durable_api_cutover_enabled:
-                submission = await submit_durable_workflow(
-                    current_principal(),
-                    project_id=item.project_id,
-                    branch_id=item.branch_id,
-                    expected_base_revision_id=(
-                        item.expected_base_revision_id
-                    ),
-                    idempotency_key=item.idempotency_key,
-                    operation="generate",
-                    objective=item.prompt,
-                    output_formats=item.output_formats,
-                    manufacturing_profile=item.manufacturing_profile,
-                )
-                return await wait_for_compatibility_response(
-                    current_principal(),
-                    submission,
-                    timeout_seconds=settings.generate_deadline_s,
-                )
-            from app.api.websocket import _get_orchestrator
-            orchestrator = _get_orchestrator()
-            kwargs = {}
-            if item.manufacturing_profile is not None:
-                kwargs["manufacturing_profile"] = item.manufacturing_profile
-            return await orchestrator.generate(
-                prompt=item.prompt,
+            submission = await submit_durable_workflow(
+                current_principal(),
+                project_id=item.project_id,
+                branch_id=item.branch_id,
+                expected_base_revision_id=(
+                    item.expected_base_revision_id
+                ),
+                idempotency_key=item.idempotency_key,
+                operation="generate",
+                objective=item.prompt,
                 output_formats=item.output_formats,
-                **kwargs,
+                manufacturing_profile=item.manufacturing_profile,
+            )
+            return await wait_for_compatibility_response(
+                current_principal(),
+                submission,
+                timeout_seconds=settings.generate_deadline_s,
             )
 
     results = await asyncio.gather(
@@ -122,8 +109,6 @@ async def batch_generate(
                 error={"type": type(r).__name__, "message": str(r)},
             ))
         else:
-            if not settings.durable_api_cutover_enabled:
-                await claim_request_owner(r.request_id, api_key)
             final_results.append(r)
 
     total_ms = int((time.time() - start) * 1000)
@@ -143,52 +128,24 @@ async def generate_async(
     request: Request,
     api_key: str | None = Depends(verify_api_key),
 ):
-    """异步生成 — 状态持久化，计算在当前 API 进程中后台执行。"""
+    """异步生成；任务由持久工作流执行，与 API 进程生命周期解耦。"""
     await rate_limiter.check(request, api_key)
 
-    if settings.durable_api_cutover_enabled:
-        submission = await submit_durable_workflow(
-            current_principal(),
-            project_id=req.project_id,
-            branch_id=req.branch_id,
-            expected_base_revision_id=req.expected_base_revision_id,
-            idempotency_key=req.idempotency_key,
-            operation="generate",
-            objective=req.prompt,
-            output_formats=req.output_formats,
-            manufacturing_profile=req.manufacturing_profile,
-        )
-        return AsyncTaskStatus(
-            task_id=str(submission.workflow_run_id),
-            status="pending",
-        )
-
-    from app.api.websocket import _get_orchestrator
-
-    orchestrator = _get_orchestrator()
-
-    async def runner(on_progress):
-        kwargs = {}
-        if req.manufacturing_profile is not None:
-            kwargs["manufacturing_profile"] = req.manufacturing_profile
-        result = await orchestrator.generate(
-            prompt=req.prompt,
-            output_formats=req.output_formats,
-            on_step=on_progress,
-            **kwargs,
-        )
-        await claim_request_owner(result.request_id, api_key)
-        return result
-
-    manager = get_local_workflow_manager()
-    task_id = await manager.submit(
-        kind="generate",
-        owner=api_key,
-        request=req.model_dump(mode="json"),
-        runner=runner,
+    submission = await submit_durable_workflow(
+        current_principal(),
+        project_id=req.project_id,
+        branch_id=req.branch_id,
+        expected_base_revision_id=req.expected_base_revision_id,
+        idempotency_key=req.idempotency_key,
+        operation="generate",
+        objective=req.prompt,
+        output_formats=req.output_formats,
+        manufacturing_profile=req.manufacturing_profile,
     )
-
-    return AsyncTaskStatus(task_id=task_id, status="pending")
+    return AsyncTaskStatus(
+        task_id=str(submission.workflow_run_id),
+        status="pending",
+    )
 
 
 @router.get("/tasks/{task_id}", response_model=AsyncTaskStatus)
@@ -197,59 +154,33 @@ async def get_task_status(
     api_key: str | None = Depends(verify_api_key),
 ):
     """查询异步任务状态"""
-    if settings.durable_api_cutover_enabled:
-        try:
-            from uuid import UUID
+    try:
+        from uuid import UUID
 
-            result = await get_compatibility_response(
-                current_principal(),
-                UUID(task_id),
-            )
-        except (ValueError, KeyError):
-            raise HTTPException(status_code=404, detail="Task not found")
-        status = {
-            "pending": "pending",
-            "planning": "running",
-            "running": "running",
-            "waiting_confirmation": "running",
-            "cancelling": "running",
-            "succeeded": "completed",
-            "failed": "failed",
-            "cancelled": "failed",
-            "timed_out": "failed",
-        }.get(result.task_status or "", "running")
-        return AsyncTaskStatus(
-            task_id=task_id,
-            status=status,
-            result=(
-                result
-                if status in {"completed", "failed"}
-                or result.needs_confirmation
-                else None
-            ),
+        result = await get_compatibility_response(
+            current_principal(),
+            UUID(task_id),
         )
-
-    task = await get_local_workflow_manager().get(task_id, owner=api_key)
-    if task is None:
+    except (ValueError, KeyError):
         raise HTTPException(status_code=404, detail="Task not found")
-
     status = {
-        "PENDING": "pending",
-        "RUNNING": "running",
-        "INTERRUPTED": "running",
-        "RECONCILING": "running",
-        "CANCEL_REQUESTED": "running",
-        "COMPLETED": "completed",
-        "FAILED": "failed",
-        "CANCELLED": "failed",
-    }[task["state"]]
-    result = (
-        GenerateResponse.model_validate(task["result"])
-        if task["result"] is not None
-        else None
-    )
+        "pending": "pending",
+        "planning": "running",
+        "running": "running",
+        "waiting_confirmation": "running",
+        "cancelling": "running",
+        "succeeded": "completed",
+        "failed": "failed",
+        "cancelled": "failed",
+        "timed_out": "failed",
+    }.get(result.task_status or "", "running")
     return AsyncTaskStatus(
         task_id=task_id,
         status=status,
-        result=result,
+        result=(
+            result
+            if status in {"completed", "failed"}
+            or result.needs_confirmation
+            else None
+        ),
     )

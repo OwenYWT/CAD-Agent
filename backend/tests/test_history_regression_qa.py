@@ -1,6 +1,8 @@
 """Regression coverage for issues found by the 2026-07-16 full-stack QA run."""
 
 import asyncio
+from types import SimpleNamespace
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
@@ -9,7 +11,6 @@ from fastapi.testclient import TestClient
 import app.api.websocket as ws_api
 from app.config import settings
 from app.main import app
-from app.models.schemas import GenerateResponse, ValidationResult
 from app.capabilities import registry
 from app.storage import history
 from app.storage.file_ownership import claim_request_owner
@@ -58,52 +59,53 @@ async def test_existing_session_title_is_not_replaced(isolated_history):
     assert session["title"] == "原始项目名称"
 
 
-class _ExecuteOrchestrator:
-    async def execute_code(self, code, output_formats=None):
-        return GenerateResponse(
-            request_id="qa-execute",
-            success=True,
-            files={"stl": "/api/files/qa-execute/result.stl"},
-            code=code,
-            validation=ValidationResult(is_watertight=True, volume=125.0),
-        )
-
-
 @pytest.fixture
 def isolated_websocket_history(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "history_db_path", str(tmp_path / "history.db"))
     monkeypatch.setattr(settings, "api_keys", [])
     monkeypatch.setattr(settings, "rate_limit_per_minute", 0)
     monkeypatch.setattr(ws_api.rate_limiter, "rpm", 0)
-    monkeypatch.setattr(ws_api, "_orchestrator", _ExecuteOrchestrator())
+    monkeypatch.setattr(settings, "durable_control_plane_enabled", False)
+    submissions = []
+
+    async def submit(_principal, **kwargs):
+        submissions.append(kwargs)
+        return SimpleNamespace(workflow_run_id=uuid4())
+
+    monkeypatch.setattr(ws_api, "submit_durable_workflow", submit)
     asyncio.run(history.close_db())
     ws_api.sessions.clear()
-    yield
+    yield submissions
     asyncio.run(history.close_db())
     ws_api.sessions.clear()
 
 
-def test_execute_code_persists_complete_result(isolated_websocket_history):
+def test_execute_code_submits_persisted_workflow_identity(
+    isolated_websocket_history,
+):
     code = "result = box(5, 5, 5)\nshow_object(result)"
+    identity = {
+        "project_id": str(uuid4()),
+        "branch_id": str(uuid4()),
+        "expected_base_revision_id": str(uuid4()),
+        "idempotency_key": f"qa-execute-{uuid4()}",
+    }
 
     with TestClient(app).websocket_connect("/ws/qa-session") as websocket:
         websocket.send_json(
-            {"type": "execute_code", "code": code, "panel_id": "qa-panel"}
+            {
+                "type": "execute_code",
+                "code": code,
+                "panel_id": "qa-panel",
+                **identity,
+            }
         )
-        for _ in range(4):
-            message = websocket.receive_json()
-            if message["type"] == "generation_result":
-                break
-        else:
-            raise AssertionError("WebSocket did not emit generation_result")
+        message = websocket.receive_json()
 
-    messages = asyncio.run(history.get_messages("qa-panel"))
-    panels = asyncio.run(history.list_panels("qa-session"))
-
-    assert message["data"]["validation"]["is_watertight"] is True
-    assert panels[0]["current_code"] == code
-    assert messages[-1]["role"] == "assistant"
-    assert messages[-1]["result"] == message["data"]
+    assert message["type"] == "task_submitted"
+    assert UUID(message["data"]["workflow_run_id"])
+    assert isolated_websocket_history[0]["operation"] == "execute"
+    assert isolated_websocket_history[0]["code"] == code
 
 
 @pytest.mark.auth

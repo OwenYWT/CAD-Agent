@@ -162,8 +162,8 @@ sequence cursor. No simulated progress is introduced.
   continue on V1 workers and are never replayed by the new definition. New
   submissions switch atomically to V2 only after its worker on a dedicated V2
   Task Queue is ready; V1 stays registered until all V1 runs are terminal.
-- Production keeps `DURABLE_API_CUTOVER_ENABLED=true` and never falls back to
-  process-local orchestration.
+- Production has one Durable write path and never falls back to process-local
+  orchestration; there is no runtime cutover switch.
 - Legacy Agent classes may be reused behind focused adapters during migration,
   but they cannot own task state, write product artifacts, or execute CAD
   directly.

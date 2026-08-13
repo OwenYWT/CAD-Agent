@@ -1,26 +1,29 @@
-# MCAD M1 真实链路验收报告
+# MCAD M1 / Durable Agent V2 真实链路验收报告
 
-验收日期：2026-08-03
+验收日期：2026-08-13
 
-验收范围：本地单机 M1 控制平面与 `PodmanExecutionBackend`
+验收范围：本地单机 M1 控制平面、`PodmanExecutionBackend` 与 Durable Agent V2
 
-候选版本：`fb845e5` 及其之前的 M0/M1 提交
+候选版本：分支 `codex/m1-durable-control-plane` 的 Task 12 发布候选
 
 ## 结论
 
-当前 MCAD 核心写链路已统一到：
+当前 MCAD 写链路只有 Durable 实现：
 
 ```text
 REST / conversational WebSocket
   -> FastAPI 控制平面
-  -> WorkflowRun / StepRun / ExecutionAttempt
-  -> Temporal Workflow + Activity
-  -> PodmanExecutionBackend
+  -> PostgreSQL WorkflowRun / StepRun / ExecutionAttempt
+  -> Temporal V1（execute / check / 既有历史）
+     或 Temporal V2 Agent（generate / modify）
+  -> ExecutionBackend
   -> 隔离 MCAD Runtime
-  -> PostgreSQL 元数据 + MinIO 不可变产物
+  -> MinIO 不可变产物 + ProjectRevision / Change Set
 ```
 
-在本报告记录的环境中，执行、修改、人工确认、取消、检查、导出、Revision 提交、断线回放、API/Worker 重启恢复和幂等重放均使用真实 PostgreSQL、MinIO、Temporal 与 Podman 完成，没有用 Mock、固定成功返回或仅前端状态替代外部链路。
+V2 Agent 已真实覆盖规划、检索、建模、隔离执行、有限修复、几何验证、视觉验证、DFM、候选版本封存和审查。生产入口不存在进程内 Agent 回退、双写或运行时切换开关；WebSocket 进度来自持久事件。
+
+生产代码没有 Mock、固定成功返回或静态 CAD 产物。普通单元/故障测试仍使用明确命名的测试替身；真实 PostgreSQL、MinIO、Temporal、Podman 和 provider 门槛单独运行，不把替身结果当成外部链路证据。
 
 ## 测试环境
 
@@ -28,100 +31,77 @@ REST / conversational WebSocket
 - PostgreSQL 16
 - MinIO（S3 API）
 - Temporal Server 1.29
-- 固定依赖的统一 MCAD OCI Runtime
-- FastAPI、独立 Temporal Worker、React/Vite 前端
-- 浏览器自动化视口：1440×900、1024×768、375×812
+- Runtime：`localhost/cad-agent-sandbox:m1-validation`
+- FastAPI、独立 Temporal V1/V2 Worker、React/Vite 前端
 
-测试凭据只在本地环境注入，不记录在本文或仓库。
+测试凭据只由本地环境注入，不记录在本文或仓库。
 
 ## 自动化结果
 
-### 代码回归
+### 完整代码回归
 
-| 范围 | 命令/结果 |
+| 范围 | 结果 |
 | --- | --- |
-| 后端完整测试 | `python -m pytest -q`：`1040 passed, 89 skipped` |
-| 前端 lint | `npm run lint`：通过 |
-| TypeScript | `npx tsc --noEmit -p tsconfig.app.json`：通过 |
-| 前端生产构建 | `npm run build`：通过 |
-| 前端契约测试 | `node --test --experimental-strip-types tests/*.test.ts`：`39 passed` |
+| 后端完整测试 | `1115 passed, 122 skipped` |
+| 前端 lint | 通过 |
+| 前端生产构建 / TypeScript | 通过；仅保留 Viewer3D chunk 体积警告 |
+| 前端契约测试 | `40 passed, 0 failed` |
 
-89 个普通测试 skip 来自按依赖/平台显式隔离的专项场景，不被统计为已验证能力。生产构建仍报告 Three.js Viewer chunk 大于 500 kB；它已动态分包，不影响正确性，但属于后续性能优化项。
+普通测试中的 skip 均由显式依赖或平台门槛控制，不计入已验证能力。
 
 ### 真实基础设施回归
 
-以下五个集成文件在同一真实 PostgreSQL、MinIO、Temporal 和 Podman 环境中运行：
+以下测试在同一真实 PostgreSQL、MinIO、Temporal 和 Podman 环境运行，并使用独立 V1/V2 task queue：
 
+- `test_agent_candidate_seal.py`
 - `test_temporal_mcadd_workflow.py`
 - `test_websocket_replay.py`
 - `test_change_set_api.py`
-- `test_postgres_project_files.py`
 - `test_api_compatibility_matrix.py`
 
-使用独立于持续运行开发 Worker 的 Temporal task queue，并显式启用真实 provider 测试。结果：`15 passed in 142.95s`，无 skip。
+排除四个需额外 provider 开关的专项用例后，结果为 `33 passed, 4 deselected in 197.92s`，无 skip。真实覆盖：
 
-其中自然语言用例真实完成了 Planner/Codegen → Temporal Workflow/Activity → Podman → PostgreSQL/MinIO 全链路，并返回可读取的 STEP、STL、生成代码、计划、持久事件和成功执行记录；没有以确定性代码、Mock 或固定成功返回替代模型调用。
+- V1 执行、检查、取消、重试、Worker 恢复与 fenced Attempt；
+- V2 规划确认、简单/复杂/装配建模、部分失败和取消；
+- user-code、几何和视觉失败后的有限修复与重新验证；
+- staging manifest、不可变验证证据、幂等候选版本封存与 orphan 清理；
+- Revision、Change Set、stale base、分支 compare-and-swap；
+- REST / WebSocket 鉴权、提交、断线续传、游标回放和 API 兼容；
+- 对象存储下载、SHA-256、Artifact 归属和工程检查报告。
 
-真实回归覆盖：
+### 真实模型 Provider 门槛
 
-- 规划/建模/验证/确认/导出步骤及事件顺序；
-- 用户拒绝确认时不推进 branch head；
-- 任务取消停止执行且不产生成功 Artifact；
-- 用户代码失败保持失败，不伪造成功；
-- stale `expected_base_revision_id` 在执行前持久失败；
-- Worker 进程崩溃后创建新的 fenced `ExecutionAttempt` 并恢复；
-- WebSocket 鉴权、断线重连、游标回放、慢消费者与 retention；
-- Change Set 接受、拒绝、请求修改、取消及 Revision 提交；
-- 产物本地临时文件删除后仍可从对象存储下载；
-- REST execute、幂等 replay、下载、review 和 stale-base 兼容矩阵；
-- 工程检查独立 Workflow、报告下载、SHA-256 与幂等；
-- conversational WebSocket 只提交一次并在断线后回放。
+四个受控真实 provider 场景均已通过：
 
-## 手动真实链路
+1. 真实视觉模型判断，持久化 provider、model、response ID 和请求/响应哈希；
+2. 首次 user-code 失败后调用真实修复模型，新源码和新的 ExecutionAttempt 成功；
+3. 真实 Planner / Retriever / Codegen 后通过 Podman 生成 STEP/STL，并持久化完整 provenance；
+4. 真实 `POST /api/generate` 经 FastAPI、V2 Temporal、真实 Planner/Codegen、Podman、PostgreSQL 和 MinIO 返回可下载的 STEP/STL；最终单项结果 `1 passed in 43.49s`。
 
-使用确定性 CadQuery 代码创建了 32×24×12 mm 立方体：
+API 门槛使用已单独验证的确定性视觉通过器，以避免重复调用视觉 provider；它没有替代真实规划、代码生成、CAD 执行、几何/DFM、持久化或对象存储。
 
-- 生成 STEP 和 STL；
-- PostgreSQL 持久化三层任务记录、事件、Revision 和 Artifact 元数据；
-- MinIO 保存不可变字节，下载内容和元数据一致；
-- 接受 Change Set 后推进 branch head；
-- 停止并重启 FastAPI 与 Worker 后，任务快照、历史消息和文件仍可查询；
-- 重启后再次运行工程检查，STEP 精确分析得到 6 个面和 9216 mm³ 体积；
-- 重复相同检查请求复用同一 Workflow/Attempt/Artifact，没有重复写入。
+## 本轮发现并修复的问题
 
-`GET /ready` 在服务恢复后返回 200，并同时确认 PostgreSQL、对象存储、Temporal、Workflow poller、Activity poller、LLM 配置和 Runtime。`/health` 不替代该检查。
-
-## 前端与响应式验证
-
-- 初始 Prompt 页、历史项目、项目流程、机械设计和工程检查弹窗均通过真实浏览器操作。
-- 机械工作区真实请求 STL：`GET /api/files/{workflow}/model-result.stl` 返回 200 和实际二进制。
-- 浏览器运行环境没有 WebGL 时，界面明确显示“STL 文件已成功读取，但 WebGL 不可用”，没有伪造模型画布。
-- 工程检查由 UI 发起真实 `POST /api/analyze/{workflow}`，约 3.1 秒返回并展示真实 DFM 结果。
-- 1440、1024 和 375 宽度下没有控制台错误或失败网络请求。
-- 移动端项目恢复后侧栏状态实测已关闭；一次批量截图中的打开侧栏来自测试工具保留历史面板状态，不是应用缺陷。
-
-截图证据保存在被 Git 忽略的 `.gstack/qa-reports/screenshots/`，不作为产品运行依赖。
-
-## 验收中发现并修复的问题
-
-| 问题 | 修复 |
+| 问题 | 修复与复验 |
 | --- | --- |
-| 工程检查仍在 API 进程内运行，结果没有三层任务与不可变报告 | 新增 `McadCheckWorkflow` 和真实 Activity；验证源 Artifact 哈希，通过 `ExecutionBackend` 做 STEP 分析，并提交不可变 JSON 报告 |
-| Compose 只有 API，没有独立 Worker 和 migration gate | 新增 `migrate`、`workflow-worker`，API/前端按健康依赖启动 |
-| Backend 镜像不含 Alembic 配置和 migration | Dockerfile 纳入 `alembic.ini` 与 `alembic/`，镜像内实际执行 migration 通过 |
-| `/ready` 只验证 Temporal Server，无法发现没有消费者 | 增加 task queue 的 Workflow/Activity poller 检查和 90 秒新鲜度门槛 |
-| 生产仍可关闭 durable API cutover | 非开发环境对两个 durable 开关 fail closed |
-| MinIO 曾返回表面上的 403 | 定位为 Podman VM 时钟漂移导致 `RequestTimeTooSkewed`；同步时钟后恢复，并由对象存储 readiness 阻止错误接流量 |
-| 崩溃恢复测试第一次被常驻开发 Worker 抢占 | 隔离测试 task consumer 后失败单项及完整整组均重新通过；产品代码无需规避正确的多 Worker 消费行为 |
-| 二维 SVG 预览使用正则清洗后写入 `dangerouslySetInnerHTML`，未加引号的事件属性仍可穿透 | 改为 Blob URL 的 `<img>` 隔离上下文渲染，保留鉴权加载和缩放，并增加禁止可执行 DOM 注入及 URL 回收的回归测试 |
-| 真实 LLM 用例仍断言不存在的旧事件名 `attempt.succeeded` | 与运行状态服务和前端事件适配器统一为持久事件 `attempt.completed`，并继续断言数据库 Attempt 状态为 `succeeded`；真实链路重跑通过 |
-| 暂停开发 Worker 后首个测试仍可能被其未完成的长轮询抢占 | 真实集成测试改用独立 Temporal task queue；失败用例由 60 秒超时恢复为 10.10 秒通过，完整 15 项随后全部通过 |
+| REST / WebSocket 测试仍通过旧进程内 Orchestrator，无法证明生产主链路 | 测试全部迁到 Durable 提交与持久投影边界；生产 generate/modify/execute/batch/async/WebSocket 不再回退 |
+| `DURABLE_API_CUTOVER_ENABLED`、`DURABLE_AGENT_FUSION_ENABLED` 已不控制行为，却仍暗示双链路 | 删除配置、Compose、环境模板、文档和旧测试中的行为开关 |
+| V2 Worker 未就绪时，幂等重放也会先被 readiness 拒绝 | 幂等请求先重进持久提交边界并修复 DB→Temporal 崩溃窗口；只有新任务要求 V2 readiness |
+| snapshot restore 写接口仍可触达旧状态模型 | 统一返回 `410 Gone`，不再产生非 Durable 修改 |
+| 旧请求可省略项目/分支/基线身份 | 核心写请求强制完整 Durable identity，缺失返回 `422` |
+| 零宽限 orphan 清理依赖应用与 MinIO 秒级时钟完全一致 | `grace_seconds=0` 不再比较跨系统时间；非零宽限仍按对象时间保护 |
+| V2 验证证据文件混入产品导出 `files` 字段 | API 兼容投影只暴露 STEP/STL/DXF/SVG 等产品导出；验证证据仍保留在任务快照和事件中 |
+| 真实修复测试仍预期最终失败，但工作流已正确修复成功 | 改为断言成功结果，同时继续校验失败 Attempt、修复源码链和 provider provenance |
+| MinIO 返回 `RequestTimeTooSkewed` | 定位到 Podman VM 漂移约 16 分钟；同步 VM 时钟后 readiness 与全部真实链路恢复 |
+
+所有上述代码问题修复后均已重新执行对应聚焦测试；随后完成全量后端、前端和真实基础设施回归。
 
 ## 尚存风险与后续门槛
 
-1. Headless QA 环境无 WebGL；发布前仍需在有 GPU/WebGL 的 Chrome、Safari 和 Edge 检查模型旋转、适应视图、爆炸、剖切与测量。
-2. 当前执行器为单机 Docker/Podman socket，适合 M1 和受信节点；它不是多租户强隔离终态。Kubernetes/gVisor 与 Private Worker 仍需按统一 ExecutionBackend 契约实现和验收。
-3. Compose 的 Temporal auto-setup 不是正式生产集群方案；生产需托管 Temporal 或运维管理的高可用部署。
-4. Podman VM、对象存储签名和 TLS 对系统时间敏感，应配置 NTP/时钟漂移监控。
-5. 生产必须使用 Registry image digest，不能把本地可变 tag 带入 staging/production。
-6. PostgreSQL 与对象存储必须联合备份、恢复演练和一致性校验；S3 Versioning 不能替代 ProjectRevision。
+1. 一次真实视觉 provider 调用使同步 `/api/generate` 超过 180 秒响应期限；Durable Workflow 不会丢失并可继续查询，但同步客户端可能收到 `504`。交互主链路应继续使用 WebSocket/任务订阅，并为生产 provider 建立延迟 SLO。
+2. Headless 环境无 GPU/WebGL；发布前仍需在 Chrome、Safari 和 Edge 实机检查模型旋转、适应视图、爆炸、剖切与测量。
+3. Podman VM、S3 签名和 TLS 对系统时间敏感；开发机和生产节点都需 NTP 与漂移监控。
+4. 当前执行器适合 M1 单机受信节点，不是多租户强隔离终态。Kubernetes/gVisor 与 Private Worker 仍需按同一 `ExecutionBackend` 契约实现和验收。
+5. Compose 的 Temporal auto-setup 只适用于本地/单机验证；生产需托管 Temporal 或运维管理的高可用集群。
+6. Fusion 360 自动化仍缺少 Windows/macOS 真实 Fusion Desktop 验收，不能与浏览器 MCAD 主链路的通过结论混写。
+7. PostgreSQL 与对象存储必须联合备份、恢复演练和一致性校验；S3 Versioning 不能替代 `ProjectRevision`。

@@ -29,11 +29,6 @@ class Settings(BaseSettings):
     # M1 durable control plane. Development keeps this disabled until its real
     # dependencies are intentionally started; production fails closed.
     durable_control_plane_enabled: bool = False
-    # Public write routes remain on the proven compatibility workflow until the
-    # durable REST/WebSocket cutover is explicitly enabled.  This is separate
-    # from the control-plane flag so deployments can migrate/read/verify their
-    # durable data before changing user-visible execution behaviour.
-    durable_api_cutover_enabled: bool = False
     database_url: str = Field(default="", repr=False)
     database_pool_size: int = Field(default=10, ge=1, le=100)
     database_max_overflow: int = Field(default=20, ge=0, le=200)
@@ -55,7 +50,6 @@ class Settings(BaseSettings):
     temporal_namespace: str = "default"
     temporal_task_queue: str = "cad-agent-mcad"
     temporal_agent_v2_task_queue: str = "cad-agent-mcad-v2"
-    durable_agent_fusion_enabled: bool = False
     file_storage_dir: str = "./data/files"
     history_db_path: str = "./data/history.db"
     file_ttl_hours: int = 24  # generated files older than this are cleaned up
@@ -280,11 +274,6 @@ class Settings(BaseSettings):
             "test",
         }
         if not self.durable_control_plane_enabled:
-            if self.durable_api_cutover_enabled:
-                return [
-                    "DURABLE_API_CUTOVER_ENABLED requires "
-                    "DURABLE_CONTROL_PLANE_ENABLED."
-                ]
             if production_like:
                 return [
                     "DURABLE_CONTROL_PLANE_ENABLED must be true outside local "
@@ -293,11 +282,6 @@ class Settings(BaseSettings):
             return []
 
         problems: list[str] = []
-        if production_like and not self.durable_api_cutover_enabled:
-            problems.append(
-                "DURABLE_API_CUTOVER_ENABLED must be true outside local "
-                "development so production has one durable write path."
-            )
         if not self.database_url.strip():
             problems.append("DATABASE_URL is required.")
         elif not self.database_url.startswith("postgresql+asyncpg://"):
@@ -314,10 +298,9 @@ class Settings(BaseSettings):
             "TEMPORAL_NAMESPACE": self.temporal_namespace,
             "TEMPORAL_TASK_QUEUE": self.temporal_task_queue,
         }
-        if self.durable_agent_fusion_enabled:
-            required["TEMPORAL_AGENT_V2_TASK_QUEUE"] = (
-                self.temporal_agent_v2_task_queue
-            )
+        required["TEMPORAL_AGENT_V2_TASK_QUEUE"] = (
+            self.temporal_agent_v2_task_queue
+        )
         for name, value in required.items():
             if not value.strip():
                 problems.append(f"{name} is required.")

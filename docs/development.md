@@ -101,12 +101,13 @@ docker compose up -d postgres minio minio-init temporal
 cd backend
 export DATABASE_URL='postgresql+asyncpg://cad_agent:<url-encoded-password>@127.0.0.1:55432/cad_agent'
 export DURABLE_CONTROL_PLANE_ENABLED=true
-export DURABLE_API_CUTOVER_ENABLED=true
 export OBJECT_STORE_ENDPOINT_URL='http://127.0.0.1:59000'
 export OBJECT_STORE_ACCESS_KEY="$MINIO_ROOT_USER"
 export OBJECT_STORE_SECRET_KEY="$MINIO_ROOT_PASSWORD"
 export OBJECT_STORE_BUCKET='cad-agent-artifacts'
 export TEMPORAL_TARGET='127.0.0.1:57233'
+export TEMPORAL_TASK_QUEUE='cad-agent-mcad'
+export TEMPORAL_AGENT_V2_TASK_QUEUE='cad-agent-mcad-v2'
 alembic upgrade head
 ```
 
@@ -176,7 +177,11 @@ CAD_AGENT_TEST_OBJECT_STORE=1 \
 CAD_AGENT_TEST_TEMPORAL=1 \
 TEMPORAL_TARGET='127.0.0.1:57233' \
 TEMPORAL_TASK_QUEUE='cad-agent-m1-test' \
+TEMPORAL_AGENT_V2_TASK_QUEUE='cad-agent-m1-agent-v2-test' \
 OBJECT_STORE_ENDPOINT_URL='http://127.0.0.1:59000' \
+OBJECT_STORE_ACCESS_KEY='<test-access-key>' \
+OBJECT_STORE_SECRET_KEY='<test-secret>' \
+OBJECT_STORE_BUCKET='cad-agent-artifacts' \
 SANDBOX_RUNTIME=podman \
 SANDBOX_COMMAND=podman \
 SANDBOX_IMAGE='cad-agent-sandbox:dev' \
@@ -188,9 +193,9 @@ python -m pytest -q \
   tests/integration/test_api_compatibility_matrix.py
 ```
 
-测试队列必须与持续运行的开发 Worker 队列不同；否则已有 Worker 的长轮询可能抢占测试 Workflow/Activity，造成无法复现的超时。并行运行多组真实集成测试时，每组还应使用不同的测试队列名。
+V1 和 V2 测试队列必须彼此不同，也必须与持续运行的开发 Worker 队列不同；否则已有 Worker 的长轮询可能抢占测试 Workflow/Activity，造成无法复现的超时。并行运行多组真实集成测试时，每组还应使用不同的队列名。
 
-真实 LLM 测试还需显式设置 `CAD_AGENT_TEST_LLM=1` 和有效 provider 凭据；不设置时会明确跳过，不用固定返回替代。最近一次完整 M1 验收见 [`qa/mcad-m1-report.md`](qa/mcad-m1-report.md)。
+API 真实生成门槛需显式设置 `CAD_AGENT_TEST_LLM=1`；V2 provider 专项分别使用 `CAD_AGENT_TEST_REAL_LLM=1` 和 `CAD_AGENT_TEST_REAL_VISION=1`。三者都要求有效 provider 凭据；不设置时会明确跳过，不用固定返回替代。最近一次完整 M1/V2 验收见 [`qa/mcad-m1-report.md`](qa/mcad-m1-report.md)。
 
 Fusion 专项：
 
@@ -209,7 +214,7 @@ python -m compileall -q backend/app/fusion360 fusion_addin/CADAgentFusionConnect
 
 - 组件内不要新增散落的后端请求；前端 API 调用集中在 service/adapter/hook 层。
 - 业务层只能通过 `ExecutionBackend` 提交 `ExecutionSpec`，不得直接调用 Docker、Podman、Kubernetes 或宿主 shell。
-- WebSocket 的消息格式、鉴权和 session/panel 数据结构是兼容边界；它只订阅持久事件。
+- WebSocket 的消息格式、鉴权和 session/panel 数据结构是兼容边界；写请求进入 Durable Workflow，进度只来自持久事件。
 - 核心写操作必须携带幂等键；修改必须携带 `expected_base_revision_id`。
 - Artifact 必须使用不可变对象路径并记录 SHA-256、来源 Workflow/Attempt、Runtime 版本和创建时间。
 - 上传的 Python/JavaScript generator 不能直接在宿主机执行；没有隔离 runner 时保持阻塞。

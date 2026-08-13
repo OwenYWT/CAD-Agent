@@ -185,5 +185,5 @@ def test_snapshot_api_list_detail_and_restore(monkeypatch, tmp_path):
     assert listed.json()[0]["available_exports"] == ["stl"]
     assert detail.status_code == 200
     assert detail.json()["result"]["code"] == "result = api"
-    assert restored.status_code == 200
-    assert restored.json()["code"] == "result = api"
+    assert restored.status_code == 410
+    assert "持久化 MCAD" in restored.json()["detail"]

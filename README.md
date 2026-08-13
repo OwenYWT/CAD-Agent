@@ -24,13 +24,14 @@ React / TypeScript / Three.js
 FastAPI 控制平面
    │
    ├── PostgreSQL：项目、版本、任务、事件、审计与产物元数据
-   ├── Temporal：WorkflowRun → StepRun → ExecutionAttempt
+   ├── Temporal V1：执行、检查与既有 Workflow 历史
+   ├── Temporal V2 Agent：规划 → 建模 → 隔离执行 → 修复 → 几何/视觉/DFM → 候选版本封存
    ├── S3 兼容对象存储：不可变 CAD 产物、日志与检查报告
    └── ExecutionBackend
           └── Docker / Podman 隔离 MCAD Worker
 ```
 
-WebSocket 只订阅和回放持久任务事件，不承担任务生命周期。浏览器断线、API 重启或 Worker 重试不会覆盖已有运行记录；修改通过 `expected_base_revision_id` 防止并发覆盖。配置的 LLM provider、CAD Skills adapter 和可选 Fusion 360 / APS Connector 位于上述控制平面边界之外。
+所有生成、修改、执行和 WebSocket 写请求都进入 Durable 主链路，不存在进程内回退。WebSocket 负责提交请求、订阅和回放持久任务事件，不承担任务生命周期。浏览器断线、API 重启或 Worker 重试不会覆盖已有运行记录；修改通过 `expected_base_revision_id` 防止并发覆盖。配置的 LLM provider、CAD Skills adapter 和可选 Fusion 360 / APS Connector 位于上述控制平面边界之外。
 
 主要技术栈：Python 3.11+、FastAPI、React 19、TypeScript、Vite、Tailwind CSS、Three.js、Zustand、PostgreSQL、Temporal、S3/MinIO、Docker/Podman。
 

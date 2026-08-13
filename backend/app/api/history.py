@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.auth import get_optional_user
-from app.config import settings
 from app.storage.history import (
     list_sessions,
     list_panels,
@@ -11,7 +10,6 @@ from app.storage.history import (
     session_belongs_to_user,
     list_model_snapshots,
     get_model_snapshot,
-    restore_model_snapshot,
     snapshot_belongs_to_user,
 )
 
@@ -63,18 +61,13 @@ async def api_get_model_snapshot(snapshot_id: str, user=Depends(get_optional_use
 
 @router.post("/snapshots/{snapshot_id}/restore")
 async def api_restore_model_snapshot(snapshot_id: str, user=Depends(get_optional_user)):
-    if settings.durable_api_cutover_enabled:
-        raise HTTPException(
-            status_code=410,
-            detail=(
-                "旧版本恢复写接口已停用。请读取该版本并通过持久化 "
-                "MCAD 执行链路创建可审查的 Change Set。"
-            ),
-        )
-    snapshot = await restore_model_snapshot(snapshot_id, _uid(user))
-    if snapshot is None:
-        raise HTTPException(status_code=404, detail="Snapshot not found")
-    return snapshot
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "旧版本恢复写接口已停用。请读取该版本并通过持久化 "
+            "MCAD 执行链路创建可审查的 Change Set。"
+        ),
+    )
 
 
 @router.delete("/sessions/{session_id}")

@@ -2339,8 +2339,8 @@ async def test_agent_v2_real_repair_provider_persists_provenance_and_attempt():
             workflow_kind="mcad.agent.v2.generate",
         )
         try:
-            with pytest.raises(WorkflowFailureError):
-                await asyncio.wait_for(handle.result(), timeout=360)
+            result = await asyncio.wait_for(handle.result(), timeout=360)
+            assert result["status"] == "succeeded"
         except TimeoutError:
             await handle.terminate("real repair provider test timed out")
             raise

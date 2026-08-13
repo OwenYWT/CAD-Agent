@@ -61,7 +61,6 @@ async def test_generate_cutover_uses_only_durable_submission(monkeypatch):
     async def wait(principal, submission, timeout_seconds):
         return _success(identity, workflow_run_id)
 
-    monkeypatch.setattr(settings, "durable_api_cutover_enabled", True)
     monkeypatch.setattr(generate_api.rate_limiter, "check", _no_rate_limit)
     monkeypatch.setattr(generate_api, "current_principal", lambda: object())
     monkeypatch.setattr(generate_api, "submit_durable_workflow", submit)
@@ -70,13 +69,7 @@ async def test_generate_cutover_uses_only_durable_submission(monkeypatch):
         "wait_for_compatibility_response",
         wait,
     )
-    monkeypatch.setattr(
-        generate_api,
-        "_get_orchestrator",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("legacy orchestrator must not be called")
-        ),
-    )
+    assert not hasattr(generate_api, "_get_orchestrator")
 
     response = await generate_api.generate(
         GenerateRequest(prompt="创建支架", **identity),
@@ -109,7 +102,6 @@ async def test_execute_cutover_never_calls_process_local_executor(monkeypatch):
     async def wait(principal, submission, timeout_seconds):
         return _success(identity, workflow_run_id)
 
-    monkeypatch.setattr(settings, "durable_api_cutover_enabled", True)
     monkeypatch.setattr(execute_api.rate_limiter, "check", _no_rate_limit)
     monkeypatch.setattr(execute_api, "current_principal", lambda: object())
     monkeypatch.setattr(execute_api, "submit_durable_workflow", submit)
@@ -118,13 +110,7 @@ async def test_execute_cutover_never_calls_process_local_executor(monkeypatch):
         "wait_for_compatibility_response",
         wait,
     )
-    monkeypatch.setattr(
-        execute_api,
-        "_get_orchestrator",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("legacy executor must not be called")
-        ),
-    )
+    assert not hasattr(execute_api, "_get_orchestrator")
 
     code = "result = box(2, 2, 2)"
     response = await execute_api.execute(
@@ -139,6 +125,148 @@ async def test_execute_cutover_never_calls_process_local_executor(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "expected_kind", "expected_workflow_id"),
+    [
+        ("generate", "mcad.agent.v2.generate", "agent-v2"),
+        ("modify", "mcad.agent.v2.modify", "agent-v2"),
+        ("execute", "mcad.execute", "v1"),
+    ],
+)
+async def test_durable_submission_uses_v2_only_for_new_agent_writes(
+    monkeypatch,
+    operation,
+    expected_kind,
+    expected_workflow_id,
+):
+    from app.services import durable_submission as submission_api
+
+    identity = _identity()
+    principal = SimpleNamespace(tenant_id=uuid4(), principal_id=uuid4())
+    calls = []
+
+    class _Transaction:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def execute(self, *_args, **_kwargs):
+            return SimpleNamespace(
+                mappings=lambda: SimpleNamespace(one_or_none=lambda: None)
+            )
+
+    async def authorize(*_args, **_kwargs):
+        return None
+
+    async def start_v2(**kwargs):
+        calls.append(("agent-v2", kwargs))
+        return uuid4(), object()
+
+    async def start_v1(**kwargs):
+        calls.append(("v1", kwargs))
+        return uuid4(), object()
+
+    monkeypatch.setattr(
+        submission_api,
+        "tenant_transaction",
+        lambda *_args, **_kwargs: _Transaction(),
+    )
+    monkeypatch.setattr(submission_api, "_authorize_current_base", authorize)
+    monkeypatch.setattr(
+        submission_api,
+        "start_mcad_agent_v2_workflow",
+        start_v2,
+        raising=False,
+    )
+    monkeypatch.setattr(submission_api, "start_mcad_workflow", start_v1)
+
+    await submission_api.submit_durable_workflow(
+        principal,
+        **identity,
+        operation=operation,
+        objective="创建支架",
+        output_formats=["step", "stl"],
+        code=("result = box(2, 2, 2)" if operation != "generate" else None),
+    )
+
+    assert calls[0][0] == expected_workflow_id
+    assert calls[0][1]["kind"] == expected_kind
+
+
+@pytest.mark.asyncio
+async def test_v2_idempotent_replay_repairs_start_without_readiness_gate(
+    monkeypatch,
+):
+    """An accepted run can repair DB→Temporal crash windows during outage."""
+    from app.services import durable_submission as submission_api
+
+    identity = _identity()
+    principal = SimpleNamespace(tenant_id=uuid4(), principal_id=uuid4())
+    workflow_run_id = uuid4()
+    calls = []
+
+    class _Transaction:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def execute(self, *_args, **_kwargs):
+            existing = {
+                "id": workflow_run_id,
+                "project_id": identity["project_id"],
+                "requested_by_principal_id": principal.principal_id,
+                "kind": "mcad.agent.v2.generate",
+                "request_payload_hash": submission_api.canonical_sha256(
+                    submission_api.mcad_agent_v2_request_payload(
+                        branch_id=identity["branch_id"],
+                        expected_base_revision_id=identity[
+                            "expected_base_revision_id"
+                        ],
+                        operation="generate",
+                        objective="创建支架",
+                        existing_code=None,
+                        manufacturing_profile=None,
+                        output_formats=("step", "stl"),
+                        confirmation_timeout_seconds=3600,
+                    )
+                ),
+            }
+            return SimpleNamespace(
+                mappings=lambda: SimpleNamespace(
+                    one_or_none=lambda: existing
+                )
+            )
+
+    async def start_v2(**kwargs):
+        calls.append(kwargs)
+        return workflow_run_id, object()
+
+    monkeypatch.setattr(
+        submission_api,
+        "tenant_transaction",
+        lambda *_args, **_kwargs: _Transaction(),
+    )
+    monkeypatch.setattr(
+        submission_api, "start_mcad_agent_v2_workflow", start_v2
+    )
+
+    result = await submission_api.submit_durable_workflow(
+        principal,
+        **identity,
+        operation="generate",
+        objective="创建支架",
+        output_formats=["step", "stl"],
+    )
+
+    assert result.workflow_run_id == workflow_run_id
+    assert calls[0]["require_worker_ready"] is False
+
+
+@pytest.mark.asyncio
 async def test_async_generate_returns_persisted_workflow_id(monkeypatch):
     identity = _identity()
     workflow_run_id = uuid4()
@@ -146,7 +274,6 @@ async def test_async_generate_returns_persisted_workflow_id(monkeypatch):
     async def submit(principal, **kwargs):
         return SimpleNamespace(workflow_run_id=workflow_run_id)
 
-    monkeypatch.setattr(settings, "durable_api_cutover_enabled", True)
     monkeypatch.setattr(batch_api.rate_limiter, "check", _no_rate_limit)
     monkeypatch.setattr(batch_api, "current_principal", lambda: object())
     monkeypatch.setattr(batch_api, "submit_durable_workflow", submit)
@@ -166,7 +293,6 @@ async def test_async_generate_returns_persisted_workflow_id(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_cutover_disables_legacy_snapshot_restore_writer(monkeypatch):
-    monkeypatch.setattr(settings, "durable_api_cutover_enabled", True)
     with pytest.raises(HTTPException) as error:
         await history_api.api_restore_model_snapshot(
             "legacy-snapshot",

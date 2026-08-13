@@ -199,10 +199,9 @@ def test_validation_policy_distinguishes_required_advisory_and_disabled():
     assert plan.validation_policy.dfm.mode is GateMode.DISABLED
 
 
-def test_v2_queue_is_dedicated_and_routing_is_disabled_by_default():
+def test_v2_queue_is_dedicated():
     settings = Settings(_env_file=None)
 
-    assert settings.durable_agent_fusion_enabled is False
     assert settings.temporal_agent_v2_task_queue
     assert settings.temporal_agent_v2_task_queue != settings.temporal_task_queue
 
@@ -218,7 +217,6 @@ def test_enabled_v2_routing_requires_a_non_empty_v2_queue():
     settings = Settings(
         _env_file=None,
         durable_control_plane_enabled=True,
-        durable_agent_fusion_enabled=True,
         temporal_agent_v2_task_queue=" ",
     )
 

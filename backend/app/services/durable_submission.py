@@ -24,11 +24,11 @@ from app.workflows.temporal import (
     McadOutputRequest,
     McadSourcePreparationRequest,
     mcad_workflow_request_payload,
+    mcad_agent_v2_request_payload,
+    start_mcad_agent_v2_workflow,
     start_mcad_workflow,
-    temporal_workflow_id,
 )
 from app.services.run_state import IdempotencyConflict
-from app.temporal_client import get_temporal_client
 
 
 _MEDIA_TYPES = {
@@ -233,6 +233,7 @@ async def submit_durable_workflow(
         raise ValueError(
             "idempotency_key must contain 1 to 500 characters"
         )
+    normalized_profile = None
     if operation == "execute":
         if not code:
             raise ValueError("execute requires source code")
@@ -263,17 +264,39 @@ async def submit_durable_workflow(
     else:
         raise ValueError(f"unsupported durable operation: {operation}")
 
-    kind = f"mcad.{operation}"
-    request_payload = mcad_workflow_request_payload(
-        branch_id=branch_id,
-        expected_base_revision_id=expected_base_revision_id,
-        objective=normalized_objective,
-        primary=primary,
-        preparation=preparation,
-        followup=None,
-        require_confirmation=require_confirmation,
-        confirmation_timeout_seconds=3600,
-        commit_after_confirmation=require_confirmation,
+    is_agent_v2 = operation in {"generate", "modify"}
+    kind = (
+        f"mcad.agent.v2.{operation}"
+        if is_agent_v2
+        else f"mcad.{operation}"
+    )
+    request_payload = (
+        mcad_agent_v2_request_payload(
+            branch_id=branch_id,
+            expected_base_revision_id=expected_base_revision_id,
+            operation=operation,
+            objective=normalized_objective,
+            existing_code=code if operation == "modify" else None,
+            manufacturing_profile=(
+                normalized_profile.model_dump(mode="json")
+                if normalized_profile
+                else None
+            ),
+            output_formats=tuple(output_formats),
+            confirmation_timeout_seconds=3600,
+        )
+        if is_agent_v2
+        else mcad_workflow_request_payload(
+            branch_id=branch_id,
+            expected_base_revision_id=expected_base_revision_id,
+            objective=normalized_objective,
+            primary=primary,
+            preparation=preparation,
+            followup=None,
+            require_confirmation=require_confirmation,
+            confirmation_timeout_seconds=3600,
+            commit_after_confirmation=require_confirmation,
+        )
     )
     payload_hash = canonical_sha256(request_payload)
     async with tenant_transaction(
@@ -311,11 +334,43 @@ async def submit_durable_workflow(
             raise IdempotencyConflict(
                 "workflow idempotency key was reused with a different payload"
             )
-        workflow_run_id = existing["id"]
-        client = await get_temporal_client()
-        handle = client.get_workflow_handle(
-            temporal_workflow_id(workflow_run_id)
-        )
+        # Re-enter the idempotent start boundary. This repairs the crash window
+        # where WorkflowRun committed but the Temporal start call did not.
+        if is_agent_v2:
+            workflow_run_id, handle = await start_mcad_agent_v2_workflow(
+                tenant_id=principal.tenant_id,
+                project_id=project_id,
+                principal_id=principal.principal_id,
+                branch_id=branch_id,
+                expected_base_revision_id=expected_base_revision_id,
+                kind=kind,
+                idempotency_key=normalized_idempotency_key,
+                operation=operation,
+                objective=normalized_objective,
+                existing_code=code if operation == "modify" else None,
+                manufacturing_profile=(
+                    normalized_profile.model_dump(mode="json")
+                    if normalized_profile
+                    else None
+                ),
+                output_formats=tuple(output_formats),
+                require_worker_ready=False,
+            )
+        else:
+            workflow_run_id, handle = await start_mcad_workflow(
+                tenant_id=principal.tenant_id,
+                project_id=project_id,
+                principal_id=principal.principal_id,
+                branch_id=branch_id,
+                expected_base_revision_id=expected_base_revision_id,
+                kind=kind,
+                idempotency_key=normalized_idempotency_key,
+                objective=normalized_objective,
+                primary=primary,
+                preparation=preparation,
+                require_confirmation=require_confirmation,
+                commit_after_confirmation=require_confirmation,
+            )
         return DurableSubmission(
             workflow_run_id=workflow_run_id,
             handle=handle,
@@ -331,20 +386,40 @@ async def submit_durable_workflow(
         branch_id=branch_id,
         expected_base_revision_id=expected_base_revision_id,
     )
-    workflow_run_id, handle = await start_mcad_workflow(
-        tenant_id=principal.tenant_id,
-        project_id=project_id,
-        principal_id=principal.principal_id,
-        branch_id=branch_id,
-        expected_base_revision_id=expected_base_revision_id,
-        kind=kind,
-        idempotency_key=normalized_idempotency_key,
-        objective=normalized_objective,
-        primary=primary,
-        preparation=preparation,
-        require_confirmation=require_confirmation,
-        commit_after_confirmation=require_confirmation,
-    )
+    if is_agent_v2:
+        workflow_run_id, handle = await start_mcad_agent_v2_workflow(
+            tenant_id=principal.tenant_id,
+            project_id=project_id,
+            principal_id=principal.principal_id,
+            branch_id=branch_id,
+            expected_base_revision_id=expected_base_revision_id,
+            kind=kind,
+            idempotency_key=normalized_idempotency_key,
+            operation=operation,
+            objective=normalized_objective,
+            existing_code=code if operation == "modify" else None,
+            manufacturing_profile=(
+                normalized_profile.model_dump(mode="json")
+                if normalized_profile
+                else None
+            ),
+            output_formats=tuple(output_formats),
+        )
+    else:
+        workflow_run_id, handle = await start_mcad_workflow(
+            tenant_id=principal.tenant_id,
+            project_id=project_id,
+            principal_id=principal.principal_id,
+            branch_id=branch_id,
+            expected_base_revision_id=expected_base_revision_id,
+            kind=kind,
+            idempotency_key=normalized_idempotency_key,
+            objective=normalized_objective,
+            primary=primary,
+            preparation=preparation,
+            require_confirmation=require_confirmation,
+            commit_after_confirmation=require_confirmation,
+        )
     return DurableSubmission(
         workflow_run_id=workflow_run_id,
         handle=handle,
@@ -420,13 +495,73 @@ async def _workflow_projection(
                 {"workflow_run_id": workflow_run_id},
             )
         ).mappings().one_or_none()
+        agent_plan_event = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT payload
+                    FROM task_events
+                    WHERE workflow_run_id=:workflow_run_id
+                      AND event_type='agent.plan.completed'
+                    ORDER BY sequence DESC
+                    LIMIT 1
+                    """
+                ),
+                {"workflow_run_id": workflow_run_id},
+            )
+        ).mappings().one_or_none()
+        generated_source = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT source_code, source_hash
+                    FROM agent_generated_sources
+                    WHERE workflow_run_id=:workflow_run_id
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT 1
+                    """
+                ),
+                {"workflow_run_id": workflow_run_id},
+            )
+        ).mappings().one_or_none()
+        attempt_count = await connection.scalar(
+            text(
+                "SELECT count(*) FROM execution_attempts "
+                "WHERE workflow_run_id=:workflow_run_id"
+            ),
+            {"workflow_run_id": workflow_run_id},
+        )
+    prepared = (
+        dict(source_event["payload"])
+        if source_event is not None
+        else {}
+    )
+    if agent_plan_event is not None:
+        agent_plan = dict(agent_plan_event["payload"])
+        plan = dict(agent_plan.get("plan") or {})
+        prepared.update(
+            {
+                "needs_confirmation": bool(
+                    agent_plan.get("requires_confirmation")
+                ),
+                "design_brief": plan.get("design_brief"),
+                "manufacturing_profile": workflow["request_payload"].get(
+                    "manufacturing_profile"
+                ),
+                "output_formats": workflow["request_payload"].get(
+                    "output_formats"
+                ),
+            }
+        )
+    if generated_source is not None:
+        prepared["source_code"] = generated_source["source_code"]
+        prepared["source_hash"] = generated_source["source_hash"]
     return {
         "workflow": dict(workflow),
         "change_set": dict(change_set) if change_set else None,
         "artifacts": [dict(item) for item in artifacts],
-        "prepared": (
-            dict(source_event["payload"]) if source_event is not None else None
-        ),
+        "prepared": prepared or None,
+        "attempt_count": int(attempt_count or 0),
     }
 
 
@@ -461,6 +596,7 @@ def _compatibility_response(
             f"/api/files/{submission.workflow_run_id}/{item['filename']}"
         )
         for item in projection["artifacts"]
+        if str(item["artifact_kind"]) in _MEDIA_TYPES
     }
     success = status == "succeeded"
     error = None
@@ -491,7 +627,7 @@ def _compatibility_response(
         workflow_run_id=submission.workflow_run_id,
         change_set_id=change_set["id"] if change_set else None,
         task_status=status,
-        attempts=1 if projection["artifacts"] else 0,
+        attempts=projection["attempt_count"],
     )
 
 

@@ -104,7 +104,6 @@ services:
       # Production must override this with registry/path@sha256:<digest>.
       SANDBOX_IMAGE: ${SANDBOX_IMAGE:-cad-agent-sandbox:dev}
       DURABLE_CONTROL_PLANE_ENABLED: ${DURABLE_CONTROL_PLANE_ENABLED:-true}
-      DURABLE_API_CUTOVER_ENABLED: ${DURABLE_API_CUTOVER_ENABLED:-true}
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL with a URL-encoded password}
       OBJECT_STORE_ENDPOINT_URL: ${OBJECT_STORE_ENDPOINT_URL:-http://minio:9000}
       OBJECT_STORE_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
@@ -114,7 +113,6 @@ services:
       TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
       TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-cad-agent-mcad}
       TEMPORAL_AGENT_V2_TASK_QUEUE: ${TEMPORAL_AGENT_V2_TASK_QUEUE:-cad-agent-mcad-v2}
-      DURABLE_AGENT_FUSION_ENABLED: ${DURABLE_AGENT_FUSION_ENABLED:-false}
       FILE_STORAGE_DIR: /app/data/files
       HISTORY_DB_PATH: /app/data/history.db
     depends_on:
@@ -145,7 +143,6 @@ services:
       APP_ENVIRONMENT: ${APP_ENVIRONMENT:-development}
       SANDBOX_IMAGE: ${SANDBOX_IMAGE:-cad-agent-sandbox:dev}
       DURABLE_CONTROL_PLANE_ENABLED: ${DURABLE_CONTROL_PLANE_ENABLED:-true}
-      DURABLE_API_CUTOVER_ENABLED: ${DURABLE_API_CUTOVER_ENABLED:-true}
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL with a URL-encoded password}
       OBJECT_STORE_ENDPOINT_URL: ${OBJECT_STORE_ENDPOINT_URL:-http://minio:9000}
       OBJECT_STORE_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
@@ -155,7 +152,6 @@ services:
       TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
       TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-cad-agent-mcad}
       TEMPORAL_AGENT_V2_TASK_QUEUE: ${TEMPORAL_AGENT_V2_TASK_QUEUE:-cad-agent-mcad-v2}
-      DURABLE_AGENT_FUSION_ENABLED: ${DURABLE_AGENT_FUSION_ENABLED:-false}
       FILE_STORAGE_DIR: /app/data/files
       HISTORY_DB_PATH: /app/data/history.db
     command: ["python", "-m", "app.workers.workflow_worker"]

@@ -8,7 +8,6 @@ from pydantic import ValidationError
 
 from app.api.batch import AsyncGenerateRequest, BatchItem
 from app.api.websocket import _durable_identity_payload
-from app.config import settings
 from app.models.schemas import ExecuteRequest, GenerateRequest, ModifyRequest
 
 
@@ -21,15 +20,21 @@ def _identity():
     }
 
 
-def test_legacy_request_contract_is_unchanged_before_atomic_cutover(monkeypatch):
-    monkeypatch.setattr(settings, "durable_api_cutover_enabled", False)
-
-    GenerateRequest(prompt="创建支架")
-    ModifyRequest(code="result = box(1, 1, 1)", prompt="加厚")
-    ExecuteRequest(code="result = box(2, 2, 2)")
-    BatchItem(prompt="创建面板")
-    AsyncGenerateRequest(prompt="创建外壳")
-    assert _durable_identity_payload({"type": "execute_code"}) == {}
+def test_durable_identity_is_always_required():
+    for model, payload in (
+        (GenerateRequest, {"prompt": "创建支架"}),
+        (ModifyRequest, {
+            "code": "result = box(1, 1, 1)",
+            "prompt": "加厚",
+        }),
+        (ExecuteRequest, {"code": "result = box(2, 2, 2)"}),
+        (BatchItem, {"prompt": "创建面板"}),
+        (AsyncGenerateRequest, {"prompt": "创建外壳"}),
+    ):
+        with pytest.raises(ValidationError, match="durable MCAD writes"):
+            model.model_validate(payload)
+    with pytest.raises(ValidationError, match="durable MCAD writes"):
+        _durable_identity_payload({"type": "execute_code"})
 
 
 @pytest.mark.parametrize(
@@ -45,20 +50,12 @@ def test_legacy_request_contract_is_unchanged_before_atomic_cutover(monkeypatch)
         (AsyncGenerateRequest, {"prompt": "创建外壳"}),
     ],
 )
-def test_cutover_rejects_incomplete_optimistic_concurrency_identity(
-    monkeypatch,
-    model,
-    payload,
-):
-    monkeypatch.setattr(settings, "durable_api_cutover_enabled", True)
+def test_rejects_incomplete_optimistic_concurrency_identity(model, payload):
     with pytest.raises(ValidationError, match="expected_base_revision_id"):
         model.model_validate(payload)
 
 
-def test_cutover_accepts_one_complete_identity_across_http_and_websocket(
-    monkeypatch,
-):
-    monkeypatch.setattr(settings, "durable_api_cutover_enabled", True)
+def test_accepts_one_complete_identity_across_http_and_websocket():
     identity = _identity()
 
     request = ExecuteRequest.model_validate({
@@ -76,10 +73,7 @@ def test_cutover_accepts_one_complete_identity_across_http_and_websocket(
     }
 
 
-def test_current_and_stale_identities_remain_distinct_across_all_parsers(
-    monkeypatch,
-):
-    monkeypatch.setattr(settings, "durable_api_cutover_enabled", True)
+def test_current_and_stale_identities_remain_distinct_across_all_parsers():
     project_id = uuid4()
     branch_id = uuid4()
     current_revision_id = uuid4()
@@ -118,11 +112,3 @@ def test_current_and_stale_identities_remain_distinct_across_all_parsers(
     assert _durable_identity_payload(stale)[
         "expected_base_revision_id"
     ] == str(stale_revision_id)
-
-
-def test_cutover_cannot_be_enabled_without_the_control_plane(monkeypatch):
-    monkeypatch.setattr(settings, "durable_control_plane_enabled", False)
-    monkeypatch.setattr(settings, "durable_api_cutover_enabled", True)
-    assert settings.durable_control_plane_config_problems() == [
-        "DURABLE_API_CUTOVER_ENABLED requires DURABLE_CONTROL_PLANE_ENABLED."
-    ]

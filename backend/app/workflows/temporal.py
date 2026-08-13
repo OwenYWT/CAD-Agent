@@ -17,7 +17,10 @@ from app.services.run_state import (
     create_workflow,
     request_workflow_cancellation,
 )
-from app.temporal_client import get_temporal_client
+from app.temporal_client import (
+    get_temporal_client,
+    temporal_agent_v2_worker_readiness,
+)
 
 
 class McadOutputRequest(BaseModel):
@@ -243,6 +246,106 @@ def mcad_workflow_request_payload(
         "confirmation_timeout_seconds": confirmation_timeout_seconds,
         "commit_after_confirmation": commit_after_confirmation,
     }
+
+
+def mcad_agent_v2_request_payload(
+    *,
+    branch_id: UUID,
+    expected_base_revision_id: UUID,
+    operation: Literal["generate", "modify"],
+    objective: str,
+    existing_code: str | None,
+    manufacturing_profile: dict[str, Any] | None,
+    output_formats: tuple[str, ...],
+    confirmation_timeout_seconds: int,
+) -> dict[str, Any]:
+    """Canonical immutable V2 payload used by WorkflowRun idempotency."""
+    return {
+        "branch_id": str(branch_id),
+        "expected_base_revision_id": str(expected_base_revision_id),
+        "operation": operation,
+        "objective": objective,
+        "existing_code": existing_code,
+        "manufacturing_profile": manufacturing_profile,
+        "output_formats": list(output_formats),
+        "confirmation_timeout_seconds": confirmation_timeout_seconds,
+    }
+
+
+async def start_mcad_agent_v2_workflow(
+    *,
+    tenant_id: UUID,
+    project_id: UUID,
+    principal_id: UUID,
+    branch_id: UUID,
+    expected_base_revision_id: UUID,
+    kind: str,
+    idempotency_key: str,
+    operation: Literal["generate", "modify"],
+    objective: str,
+    existing_code: str | None = None,
+    manufacturing_profile: dict[str, Any] | None = None,
+    output_formats: tuple[str, ...] = ("step", "stl"),
+    confirmation_timeout_seconds: int = 3600,
+    require_worker_ready: bool = True,
+) -> tuple[UUID, WorkflowHandle]:
+    """Fail closed on V2 readiness, persist once, then start V2 idempotently."""
+    objective = objective.strip()
+    kind = kind.strip()
+    idempotency_key = idempotency_key.strip()
+    request_payload = mcad_agent_v2_request_payload(
+        branch_id=branch_id,
+        expected_base_revision_id=expected_base_revision_id,
+        operation=operation,
+        objective=objective,
+        existing_code=existing_code,
+        manufacturing_profile=manufacturing_profile,
+        output_formats=output_formats,
+        confirmation_timeout_seconds=confirmation_timeout_seconds,
+    )
+    # New work is accepted only when V2 has pollers. An already-persisted
+    # idempotent submission may re-enter this boundary without readiness so a
+    # crash between the DB commit and Temporal start can still be repaired.
+    if require_worker_ready:
+        await temporal_agent_v2_worker_readiness()
+    async with tenant_transaction(tenant_id, principal_id) as connection:
+        created = await create_workflow(
+            connection,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            requested_by_principal_id=principal_id,
+            kind=kind,
+            idempotency_key=idempotency_key,
+            request_payload=request_payload,
+        )
+    durable_request = McadAgentWorkflowV2Request(
+        workflow_run_id=created.workflow_id,
+        tenant_id=tenant_id,
+        project_id=project_id,
+        principal_id=principal_id,
+        branch_id=branch_id,
+        expected_base_revision_id=expected_base_revision_id,
+        operation=operation,
+        objective=objective,
+        existing_code=existing_code,
+        manufacturing_profile=manufacturing_profile,
+        output_formats=output_formats,
+        confirmation_timeout_seconds=confirmation_timeout_seconds,
+    )
+    client = await get_temporal_client()
+    workflow_id = temporal_agent_v2_workflow_id(created.workflow_id)
+    try:
+        handle = await client.start_workflow(
+            "McadAgentWorkflowV2",
+            durable_request.temporal_payload(),
+            id=workflow_id,
+            task_queue=settings.temporal_agent_v2_task_queue,
+            id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
+            id_conflict_policy=WorkflowIDConflictPolicy.USE_EXISTING,
+        )
+    except WorkflowAlreadyStartedError:
+        handle = client.get_workflow_handle(workflow_id)
+    return created.workflow_id, handle
 
 
 async def start_mcad_workflow(

@@ -1501,7 +1501,7 @@ async def cleanup_artifact_orphans(
         if (
             item["key"] not in registered_staging_keys
             and last_modified is not None
-            and last_modified <= cutoff
+            and (grace == 0 or last_modified <= cutoff)
         ):
             try:
                 await delete_object(item["key"])
@@ -1522,7 +1522,7 @@ async def cleanup_artifact_orphans(
         if (
             item["key"] not in active_agent_keys
             and last_modified is not None
-            and last_modified <= cutoff
+            and (grace == 0 or last_modified <= cutoff)
         ):
             try:
                 await delete_object(item["key"])
@@ -1537,7 +1537,7 @@ async def cleanup_artifact_orphans(
         if (
             item["key"] not in committed_keys
             and last_modified is not None
-            and last_modified <= cutoff
+            and (grace == 0 or last_modified <= cutoff)
         ):
             try:
                 await delete_object(item["key"])

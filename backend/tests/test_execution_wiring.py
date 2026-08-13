@@ -6,11 +6,11 @@ from types import SimpleNamespace
 
 from app.agent.orchestrator import Orchestrator
 from app.agent.multi_step import MultiStepExecutor
-from app.api import websocket as websocket_api
 from app.capabilities.runtime import CapabilityRuntime, RuntimeConfig
 from app.dfm.step_analysis import StepAnalyzer
 from app.execution.composition import get_execution_backend
 from app.execution import host_process
+from app.workflows.activities import McadWorkflowActivities
 
 
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
@@ -53,21 +53,21 @@ def test_application_composition_reuses_one_execution_backend() -> None:
         get_execution_backend.cache_clear()
 
 
-def test_rest_websocket_and_multi_step_share_the_composed_backend(
-    monkeypatch,
-) -> None:
+def test_durable_worker_and_multi_step_share_the_composed_backend() -> None:
     get_execution_backend.cache_clear()
-    monkeypatch.setattr(websocket_api, "_orchestrator", None)
     try:
-        orchestrator = websocket_api._get_orchestrator()
         backend = get_execution_backend()
-        multi_step = MultiStepExecutor(orchestrator.code_gen, orchestrator.executor)
+        activities = McadWorkflowActivities()
+        orchestrator = activities.source_preparer.orchestrator
+        multi_step = MultiStepExecutor(
+            orchestrator.code_gen,
+            orchestrator.executor,
+        )
 
+        assert activities.backend is backend
         assert orchestrator.executor.backend is backend
         assert multi_step.executor.backend is backend
-        assert websocket_api._get_orchestrator() is orchestrator
     finally:
-        websocket_api._orchestrator = None
         get_execution_backend.cache_clear()
 
 

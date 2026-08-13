@@ -144,7 +144,6 @@ async def _start_api(port: int):
         "APP_ENVIRONMENT": "test",
         "DATABASE_URL": TEST_DATABASE_URL,
         "DURABLE_CONTROL_PLANE_ENABLED": "true",
-        "DURABLE_API_CUTOVER_ENABLED": "false",
         "AUTH_REQUIRED": "true",
         "AUTH_TOKEN_SECRET": "task9-test-" + ("s" * 64),
         "API_KEYS": json.dumps([OWNER_KEY, OTHER_KEY]),
