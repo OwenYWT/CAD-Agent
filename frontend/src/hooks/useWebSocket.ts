@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getAuthToken } from "../auth";
 import { useSessionStore } from "../stores/sessionStore";
-import type { CapabilitySelection, ManufacturingProfile, WSMessage } from "../types";
+import type { AssemblyPartInfo, CapabilitySelection, ManufacturingProfile, WSMessage } from "../types";
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const BASE_RECONNECT_DELAY_MS = 1000;
@@ -24,6 +24,7 @@ function requestPanelReplay(ws: WebSocket) {
       type: "restore_context",
       panel_id: panelId,
       code: panel?.result?.code || "",
+      assembly_parts: panel?.result?.assembly_parts || [],
     }));
   }
 }
@@ -180,9 +181,9 @@ export function useWebSocket() {
     }
   }, []);
 
-  const restoreContext = useCallback((panelId: string, code = "") => {
+  const restoreContext = useCallback((panelId: string, code = "", assemblyParts: AssemblyPartInfo[] = []) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "restore_context", panel_id: panelId, code }));
+      wsRef.current.send(JSON.stringify({ type: "restore_context", panel_id: panelId, code, assembly_parts: assemblyParts }));
     }
   }, []);
 

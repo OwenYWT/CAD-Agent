@@ -18,7 +18,7 @@ from collections import OrderedDict
 
 # sessions[session_id][panel_id] -> ConversationContext
 # LRU-bounded: in-memory context is a cache (durable state lives in history.py / sqlite),
-# so evicting the least-recently-used session just drops cached context — a reconnect
+# so evicting the least-recently-used session just drops cached context; a reconnect
 # can restore it via the restore_context message. Bounds memory under many sessions.
 _MAX_SESSIONS = 500
 sessions: "OrderedDict[str, dict[str, ConversationContext]]" = OrderedDict()
@@ -212,7 +212,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     "type": "generation_result",
                     "data": {
                         "success": False,
-                        "error": {"type": "RateLimitError", "message": "请求过于频繁，请稍后再试"},
+                        "error": {"type": "RateLimitError", "message": "璇锋眰杩囦簬棰戠箒锛岃绋嶅悗鍐嶈瘯"},
                         "panel_id": panel_id,
                     },
                 })
@@ -227,7 +227,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         "type": "generation_result",
                         "data": {
                             "success": False,
-                            "error": {"type": "ValidationError", "message": "提示词为空或超过长度限制"},
+                            "error": {"type": "ValidationError", "message": "鎻愮ず璇嶄负绌烘垨瓒呰繃闀垮害闄愬埗"},
                             "panel_id": panel_id,
                         },
                     })
@@ -240,8 +240,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                             "error": {
                                 "type": "ValidationError",
                                 "message": (
-                                    "该能力需要结构化输入或已有产物，请使用 /api/capability-actions，"
-                                    "不能按普通 CAD 对话执行。"
+                                    "\u8be5\u80fd\u529b\u9700\u8981\u7ed3\u6784\u5316\u8f93\u5165\u6216\u5df2\u6709\u4ea7\u7269\uff0c\u8bf7\u4f7f\u7528 /api/capability-actions\uff1b"
+                                    "\u4e0d\u80fd\u6309\u666e\u901a CAD \u5bf9\u8bdd\u6267\u884c\u3002"
                                 ),
                             },
                             "panel_id": panel_id,
@@ -252,8 +252,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 effective_text = text
                 if capability == "dxf":
                     effective_text = (
-                        "只生成 1:1 的二维 DXF 图纸，不生成三维模型。"
-                        "请将下述需求规划为 profile_2d，并输出 DXF：\n" + text
+                        "\u53ea\u751f\u6210 1:1 \u7684\u4e8c\u7ef4 DXF \u56fe\u7eb8\uff0c\u4e0d\u751f\u6210\u4e09\u7ef4\u6a21\u578b\u3002"
+                        "\u8bf7\u63d0\u53d6\u5c01\u95ed\u8f6e\u5ed3\u3001\u5c3a\u5bf8\u548c\u5fc5\u8981\u6807\u6ce8\uff0c\u8f93\u51fa profile_2d \u5e76\u5bfc\u51fa DXF\u3002\\n" + text
                     )
 
                 context = _get_context(session_id, panel_id)
@@ -295,7 +295,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     await history.save_message(
                         panel_id,
                         "assistant",
-                        f"生成失败: {error_data['error']['message']}",
+                        f"\u751f\u6210\u5931\u8d25: {error_data['error']['message']}",
                         result=error_data,
                     )
                     await history.touch_session(session_id)
@@ -313,12 +313,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     result_data["version"] = snapshot["version"]
 
                 if result.needs_confirmation:
-                    assistant_content = "设计简报需要确认"
+                    assistant_content = "\u8bf7\u5148\u786e\u8ba4\u751f\u6210\u65b9\u6848\u3002"
                 elif result.success:
-                    assistant_content = "CAD 模型已生成"
+                    assistant_content = "CAD \u6a21\u578b\u5df2\u751f\u6210\u3002"
                 else:
-                    error_message = result.error.get("message", "") if result.error else "未知错误"
-                    assistant_content = f"生成失败: {error_message}"
+                    error_message = result.error.get("message", "") if result.error else "\u672a\u77e5\u9519\u8bef"
+                    assistant_content = f"\u751f\u6210\u5931\u8d25: {error_message}"
                 await history.save_message(panel_id, "assistant", assistant_content, result=result_data)
                 if result.success and result.code:
                     params_dict = (
@@ -340,7 +340,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         "type": "generation_result",
                         "data": {
                             "success": False,
-                            "error": {"type": "ValidationError", "message": "零件名或修改指令为空"},
+                            "error": {"type": "ValidationError", "message": "\u96f6\u4ef6\u540d\u6216\u4fee\u6539\u6307\u4ee4\u4e3a\u7a7a"},
                             "panel_id": panel_id,
                         },
                     })
@@ -349,11 +349,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 context = _get_context(session_id, panel_id)
                 on_step = await make_on_step(panel_id)
 
-                # Ensure session+panel rows exist before saving a message — otherwise
+                # Ensure session+panel rows exist before saving a message; otherwise
                 # the FK on messages.panel_id rejects the insert. (user_message does this too.)
                 await history.create_session(session_id, title="", user_id=user_id)
                 await history.create_panel(session_id, panel_id, user_id=user_id)
-                await history.save_message(panel_id, "user", f"修改零件 {part_name}: {instruction}")
+                await history.save_message(panel_id, "user", f"\u4fee\u6539\u96f6\u4ef6 {part_name}: {instruction}")
 
                 try:
                     result = await orchestrator.modify_assembly_part(
@@ -371,7 +371,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     await history.save_message(
                         panel_id,
                         "assistant",
-                        f"零件修改失败: {error_data['error']['message']}",
+                        f"\u96f6\u4ef6\u4fee\u6539\u5931\u8d25: {error_data['error']['message']}",
                         result=error_data,
                     )
                     await history.touch_session(session_id)
@@ -386,15 +386,16 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         panel_id,
                         result_data,
                         source="modify_part",
-                        prompt=f"修改零件 {part_name}: {instruction}",
+                        prompt=f"\u4fee\u6539\u96f6\u4ef6 {part_name}: {instruction}",
                     )
                     result_data["snapshot_id"] = snapshot["id"]
                     result_data["version"] = snapshot["version"]
 
+                unknown_error = "\u672a\u77e5\u9519\u8bef"
                 msg_content = (
-                    f"零件 {part_name} 已修改"
+                    f"\u96f6\u4ef6 {part_name} \u5df2\u4fee\u6539\u3002"
                     if result.success
-                    else f"零件修改失败: {result.error.get('message', '') if result.error else '未知错误'}"
+                    else f"\u96f6\u4ef6\u4fee\u6539\u5931\u8d25: {result.error.get('message', '') if result.error else unknown_error}"
                 )
                 await history.save_message(panel_id, "assistant", msg_content, result=result_data)
                 if result.success and result.code:
@@ -411,7 +412,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         "type": "generation_result",
                         "data": {
                             "success": False,
-                            "error": {"type": "ValidationError", "message": "代码为空或超过长度限制"},
+                            "error": {"type": "ValidationError", "message": "\u4ee3\u7801\u4e3a\u7a7a\u6216\u957f\u5ea6\u8d85\u8fc7\u9650\u5236"},
                             "panel_id": panel_id,
                         },
                     })
@@ -431,7 +432,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     await history.save_message(
                         panel_id,
                         "assistant",
-                        "参数修改执行失败",
+                        "\u4ee3\u7801\u6267\u884c\u5931\u8d25",
                         result=result_data,
                     )
                     await history.touch_session(session_id)
@@ -456,10 +457,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     )
                     result_data["snapshot_id"] = snapshot["id"]
                     result_data["version"] = snapshot["version"]
+                unknown_error = "\u672a\u77e5\u9519\u8bef"
                 assistant_content = (
-                    "参数修改已执行"
+                    "\u4ee3\u7801\u6267\u884c\u5df2\u5b8c\u6210\u3002"
                     if response.success
-                    else f"参数修改失败: {response.error.get('message', '') if response.error else '未知错误'}"
+                    else f"\u4ee3\u7801\u6267\u884c\u5931\u8d25: {response.error.get('message', '') if response.error else unknown_error}"
                 )
                 await history.save_message(
                     panel_id,
@@ -532,9 +534,13 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             elif msg_type == "restore_context":
                 # Restore backend context from history for a panel
                 restore_code = data.get("code")
-                if restore_code:
+                assembly_parts = data.get("assembly_parts") or []
+                if restore_code or assembly_parts:
                     context = _get_context(session_id, panel_id)
-                    context.current_code = restore_code
+                    if restore_code:
+                        context.current_code = restore_code
+                    if assembly_parts:
+                        context.assembly_parts = assembly_parts
                     logger.info(f"Restored context for {session_id}/{panel_id}")
                 await _replay_latest_run(websocket, session_id, panel_id)
 
@@ -544,7 +550,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     "type": "generation_result",
                     "data": {
                         "success": False,
-                        "error": {"type": "Cancelled", "message": "用户取消"},
+                        "error": {"type": "Cancelled", "message": "鐢ㄦ埛鍙栨秷"},
                         "panel_id": panel_id,
                     },
                 })

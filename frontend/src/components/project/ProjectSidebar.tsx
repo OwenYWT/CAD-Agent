@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { deleteHistoryProject, listHistoryProjects, restoreHistoryProject } from "../../services/engineeringService";
 import { useSessionStore } from "../../stores/sessionStore";
+import type { AssemblyPartInfo } from "../../types";
 import type { HistoryProject } from "../../types/engineering";
 import { Icon } from "../ui/Icon";
 import PanelTabs from "../PanelTabs";
@@ -12,7 +13,7 @@ interface ProjectSidebarProps {
   onMobileClose: () => void;
   onNavigate: (view: string) => void;
   activeView: string;
-  restoreContext: (panelId: string, code: string) => void;
+  restoreContext: (panelId: string, code: string, assemblyParts?: AssemblyPartInfo[]) => void;
 }
 
 const NAV = [

@@ -11,6 +11,7 @@ from app.storage.history import (
     list_model_snapshots,
     get_model_snapshot,
     restore_model_snapshot,
+    diff_model_snapshots,
     snapshot_belongs_to_user,
 )
 
@@ -66,6 +67,14 @@ async def api_restore_model_snapshot(snapshot_id: str, user=Depends(get_optional
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Snapshot not found")
     return snapshot
+
+
+@router.get("/snapshots/{from_snapshot_id}/diff/{to_snapshot_id}")
+async def api_diff_model_snapshots(from_snapshot_id: str, to_snapshot_id: str, user=Depends(get_optional_user)):
+    diff = await diff_model_snapshots(from_snapshot_id, to_snapshot_id, _uid(user))
+    if diff is None:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    return diff
 
 
 @router.delete("/sessions/{session_id}")

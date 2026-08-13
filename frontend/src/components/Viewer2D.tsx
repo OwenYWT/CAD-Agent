@@ -44,7 +44,7 @@ function LoadedSvg({ svgUrl }: { svgUrl: string }) {
         {state.error ? (
           <div className="max-w-sm text-center" role="alert">
             <p className="text-sm font-medium text-red-700">二维预览加载失败</p>
-            <p className="mt-1 text-xs text-slate-500">请检查文件是否仍然有效，或重新生成模型。</p>
+            <p className="mt-1 text-xs text-slate-500">请检查文件是否仍然有效，或重新生成模型后再试。</p>
           </div>
         ) : state.content ? (
           <div dangerouslySetInnerHTML={{ __html: state.content }} style={{ transform: `scale(${zoom})`, transformOrigin: "center" }} />

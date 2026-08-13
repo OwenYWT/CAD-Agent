@@ -91,9 +91,11 @@ class ValidationResult(BaseModel):
 
 
 class AssemblyPartInfo(BaseModel):
+    part_id: str | None = None
     name: str
     description: str = ""
     code: str  # individual part code (make_xxx function)
+    code_hash: str | None = None
     status: str = "success"  # "success" | "failed"
     position: list[float] = [0, 0, 0]
     color: str = "lightgray"

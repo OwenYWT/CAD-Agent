@@ -92,9 +92,11 @@ export interface ValidationData {
 }
 
 export interface AssemblyPartInfo {
+  part_id?: string | null;
   name: string;
   description: string;
   code: string;
+  code_hash?: string | null;
   status: "success" | "failed";
   position: number[];
   color: string;

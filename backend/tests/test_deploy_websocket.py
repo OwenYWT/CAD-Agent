@@ -341,6 +341,24 @@ def test_restore_context_no_response_then_still_alive(client, fake_orch):
     assert ctx.current_code == "result = box(1,1)"
 
 
+def test_restore_context_restores_assembly_parts_for_part_edits(client, fake_orch):
+    assembly_parts = [
+        {"part_id": "base", "name": "base", "code": "result = base", "code_hash": "hash-base"},
+        {"part_id": "lid", "name": "lid", "code": "result = lid", "code_hash": "hash-lid"},
+    ]
+    with client.websocket_connect("/ws/sess-assembly-restore") as wsk:
+        wsk.send_json({
+            "type": "restore_context",
+            "code": "result = assembly",
+            "panel_id": "p-assembly-restore",
+            "assembly_parts": assembly_parts,
+        })
+
+    context = ws_mod.sessions["sess-assembly-restore"]["p-assembly-restore"]
+    assert context.current_code == "result = assembly"
+    assert context.assembly_parts == assembly_parts
+
+
 def test_restore_context_replays_latest_run_timeline(client, fake_orch):
     run = asyncio.run(run_store.create_run("sess-replay", "make a replay box", panel_id="p-replay"))
     step = asyncio.run(run_store.start_step(run["id"], "execute_code", {"mode": "3d"}))

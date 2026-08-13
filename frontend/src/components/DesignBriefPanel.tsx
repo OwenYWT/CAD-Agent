@@ -30,7 +30,7 @@ export default function DesignBriefPanel({ brief }: DesignBriefPanelProps) {
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold text-gray-900">{"\u5de5\u7a0b\u8bbe\u8ba1\u7b80\u62a5"}</h3>
           <span className="text-[10px] uppercase tracking-wide rounded-full border border-blue-200 bg-blue-50 text-blue-700 px-2 py-0.5">
-            {brief.manufacturing_posture || "面向 3D 打印"}
+            {brief.manufacturing_posture || "\u9762\u5411 3D \u6253\u5370"}
           </span>
         </div>
         <p className="text-xs text-gray-500 mt-1">
@@ -42,7 +42,7 @@ export default function DesignBriefPanel({ brief }: DesignBriefPanelProps) {
         <div>
           <h4 className="text-xs font-semibold text-gray-700 mb-1">{"\u9700\u6c42\u6458\u8981"}</h4>
           <p className="text-xs text-gray-600">{brief.intent_summary}</p>
-          <p className="text-[10px] text-gray-400 mt-1">{"\u5236\u54c1\u7c7b\u578b\uff1a"}{brief.artifact_type}</p>
+          <p className="text-[10px] text-gray-400 mt-1">{"\u5236\u4ef6\u7c7b\u578b\uff1a"}{brief.artifact_type}</p>
         </div>
 
         {brief.critical_dimensions?.length ? (
@@ -73,11 +73,11 @@ export default function DesignBriefPanel({ brief }: DesignBriefPanelProps) {
           </div>
         ) : null}
 
-        <Section title={"设计假设"} items={brief.assumptions} />
-        <Section title={"功能需求"} items={brief.functional_requirements} />
-        <Section title={"可打印性目标"} items={brief.printability_targets} />
-        <Section title={"验收标准"} items={brief.acceptance_criteria} />
-        <Section title={"待确认问题"} items={brief.open_questions} />
+        <Section title={"\u8bbe\u8ba1\u5047\u8bbe"} items={brief.assumptions} />
+        <Section title={"\u529f\u80fd\u9700\u6c42"} items={brief.functional_requirements} />
+        <Section title={"\u53ef\u6253\u5370\u6027\u76ee\u6807"} items={brief.printability_targets} />
+        <Section title={"\u9a8c\u6536\u6807\u51c6"} items={brief.acceptance_criteria} />
+        <Section title={"\u5f85\u786e\u8ba4\u95ee\u9898"} items={brief.open_questions} />
       </div>
     </div>
   );

@@ -9,7 +9,7 @@
     "vent",
     "case"
   ],
-  "description": "? PCB ?????????????????",
+  "description": "Printable PCB enclosure base with standoffs, vents, and screw posts",
   "description_en": "Printable PCB enclosure base with standoffs, vents, and screw posts",
   "difficulty": "moderate",
   "features_used": [
@@ -35,5 +35,5 @@
     "min_wall_mm": 1.2,
     "pcb_clearance_mm": 0.3
   },
-  "code": "import cadquery as cq\nimport math\n\n# [Case]\n# ????\nwidth_mm = 100  # [60:1:180]\n# ????\ndepth_mm = 70  # [40:1:140]\n# ????\nheight_mm = 18  # [10:1:45]\n# ??\nwall_thickness_mm = 2  # [1.2:0.2:4]\n# ?????\npost_diameter_mm = 7  # [5:0.5:12]\n# ?????\nhole_diameter_mm = 2.8  # [2:0.1:5]\n\nbody = cq.Workplane(\"XY\").box(width_mm, depth_mm, height_mm)\ninner = cq.Workplane(\"XY\").workplane(offset=wall_thickness_mm).box(width_mm - 2 * wall_thickness_mm, depth_mm - 2 * wall_thickness_mm, height_mm)\nresult = body.cut(inner)\npost_points = [(-width_mm/2+12, -depth_mm/2+12), (width_mm/2-12, -depth_mm/2+12), (-width_mm/2+12, depth_mm/2-12), (width_mm/2-12, depth_mm/2-12)]\nposts = cq.Workplane(\"XY\").pushPoints(post_points).circle(post_diameter_mm/2).extrude(height_mm - wall_thickness_mm)\nresult = result.union(posts).faces(\">Z\").workplane().pushPoints(post_points).hole(hole_diameter_mm)\nshow_object(result)"
+  "code": "import cadquery as cq\nimport math\n\n# [Case]\n# [Dimension]\nwidth_mm = 100  # [60:1:180]\n# [Dimension]\ndepth_mm = 70  # [40:1:140]\n# [Dimension]\nheight_mm = 18  # [10:1:45]\n# [Dimension]\nwall_thickness_mm = 2  # [1.2:0.2:4]\n# [Dimension]\npost_diameter_mm = 7  # [5:0.5:12]\n# [Dimension]\nhole_diameter_mm = 2.8  # [2:0.1:5]\n\nbody = cq.Workplane(\"XY\").box(width_mm, depth_mm, height_mm)\ninner = cq.Workplane(\"XY\").workplane(offset=wall_thickness_mm).box(width_mm - 2 * wall_thickness_mm, depth_mm - 2 * wall_thickness_mm, height_mm)\nresult = body.cut(inner)\npost_points = [(-width_mm/2+12, -depth_mm/2+12), (width_mm/2-12, -depth_mm/2+12), (-width_mm/2+12, depth_mm/2-12), (width_mm/2-12, depth_mm/2-12)]\nposts = cq.Workplane(\"XY\").pushPoints(post_points).circle(post_diameter_mm/2).extrude(height_mm - wall_thickness_mm)\nresult = result.union(posts).faces(\">Z\").workplane().pushPoints(post_points).hole(hole_diameter_mm)\nshow_object(result)"
 }
