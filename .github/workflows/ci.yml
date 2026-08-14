@@ -165,7 +165,7 @@ jobs:
           for attempt in {1..120}; do
             if docker exec cad-agent-temporal \
               temporal operator cluster health \
-              --address 127.0.0.1:7233; then
+              --address cad-agent-temporal:7233; then
               break
             fi
             test "$attempt" -lt 120
