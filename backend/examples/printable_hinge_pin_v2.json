@@ -8,7 +8,7 @@
     "clearance",
     "knuckle"
   ],
-  "description": "???????????????",
+  "description": "Printable hinge leaf with pin bore and knuckle clearance",
   "description_en": "Printable hinge leaf with pin bore and knuckle clearance",
   "difficulty": "moderate",
   "features_used": [
@@ -35,5 +35,5 @@
     "clearance_mm": 0.3,
     "min_wall_mm": 1.5
   },
-  "code": "import cadquery as cq\nimport math\n\n# [Hinge]\n# ????\nleaf_length_mm = 60  # [30:1:120]\n# ????\nleaf_width_mm = 28  # [16:1:60]\n# ????\nleaf_thickness_mm = 4  # [2:0.5:8]\n# ??????\nknuckle_diameter_mm = 10  # [6:0.5:18]\n# ?????\npin_hole_diameter_mm = 4.4  # [2:0.1:10]\n\nleaf = cq.Workplane(\"XY\").box(leaf_length_mm, leaf_width_mm, leaf_thickness_mm)\nknuckle = cq.Workplane(\"YZ\").cylinder(leaf_length_mm, knuckle_diameter_mm/2).translate((0, leaf_width_mm/2, leaf_thickness_mm/2))\nresult = leaf.union(knuckle)\npin_cut = cq.Workplane(\"YZ\").cylinder(leaf_length_mm + 2, pin_hole_diameter_mm/2).translate((0, leaf_width_mm/2, leaf_thickness_mm/2))\nresult = result.cut(pin_cut).faces(\">Z\").workplane().pushPoints([(-leaf_length_mm/4, 0), (leaf_length_mm/4, 0)]).hole(3.4)\nshow_object(result)"
+  "code": "import cadquery as cq\nimport math\n\n# [Hinge]\n# [Dimension]\nleaf_length_mm = 60  # [30:1:120]\n# [Dimension]\nleaf_width_mm = 28  # [16:1:60]\n# [Dimension]\nleaf_thickness_mm = 4  # [2:0.5:8]\n# [Dimension]\nknuckle_diameter_mm = 10  # [6:0.5:18]\n# [Dimension]\npin_hole_diameter_mm = 4.4  # [2:0.1:10]\n\nleaf = cq.Workplane(\"XY\").box(leaf_length_mm, leaf_width_mm, leaf_thickness_mm)\nknuckle = cq.Workplane(\"YZ\").cylinder(leaf_length_mm, knuckle_diameter_mm/2).translate((0, leaf_width_mm/2, leaf_thickness_mm/2))\nresult = leaf.union(knuckle)\npin_cut = cq.Workplane(\"YZ\").cylinder(leaf_length_mm + 2, pin_hole_diameter_mm/2).translate((0, leaf_width_mm/2, leaf_thickness_mm/2))\nresult = result.cut(pin_cut).faces(\">Z\").workplane().pushPoints([(-leaf_length_mm/4, 0), (leaf_length_mm/4, 0)]).hole(3.4)\nshow_object(result)"
 }

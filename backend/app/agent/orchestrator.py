@@ -10,6 +10,7 @@ from app.agent.conversation import ConversationContext
 from app.agent.design_brief import ensure_design_brief
 from app.agent.failure_taxonomy import FixPath, classify
 from app.agent.planner import Planner
+from app.agent.assembly_manifest import code_hash, enrich_assembly_parts
 from app.agent.run_steps import ensure_timeline_fields, make_step
 from app.agent.recovery_actions import build_recovery_actions
 from app.agent.state_machine import ExecutionStateMachine
@@ -423,6 +424,8 @@ class Orchestrator:
                     "status": part_status,
                 })
 
+            part_codes = enrich_assembly_parts(part_codes)
+
             if failed_parts and on_step:
                 await _call_step(on_step, StepUpdate(
                     step="fixing_error",
@@ -500,14 +503,16 @@ class Orchestrator:
         if is_assembly and part_codes:
             _assy_parts_info = [
                 AssemblyPartInfo(
+                    part_id=p.get("part_id"),
                     name=p["name"],
                     description=p.get("description", ""),
                     code=p["code"],
+                    code_hash=p.get("code_hash"),
                     status=p.get("status", "success"),
                     position=p.get("position", [0, 0, 0]),
                     color=p.get("color", "lightgray"),
                 )
-                for p in part_codes
+                for p in enrich_assembly_parts(part_codes)
             ]
 
         # Step 4: Execute with retry loop + validation
@@ -876,15 +881,17 @@ class Orchestrator:
             {"part_name": part_name, "instruction": instruction},
         )
         if not context.assembly_parts:
-            result = GenerationResult(
+            return GenerationResult(
                 success=False,
                 error={"type": "ValidationError", "message": "\u5f53\u524d\u4ee3\u7801\u4e0d\u5305\u542b\u88c5\u914d\u4f53\u96f6\u4ef6"},
             )
 
-        # Find the target part
+        context.assembly_parts = enrich_assembly_parts(context.assembly_parts)
+
+        # Find the target part by stable part_id first, then by display name.
         target_idx = None
         for i, p in enumerate(context.assembly_parts):
-            if p["name"] == part_name:
+            if p.get("part_id") == part_name or p.get("name") == part_name:
                 target_idx = i
                 break
 
@@ -965,6 +972,7 @@ class Orchestrator:
             if not line.strip().startswith("show_object")
         )
         context.assembly_parts[target_idx]["code"] = clean_code
+        context.assembly_parts[target_idx]["code_hash"] = code_hash(clean_code)
         context.assembly_parts[target_idx]["status"] = "success"
 
         # Rebuild the assembly
@@ -981,6 +989,7 @@ class Orchestrator:
         )
 
         # Attach updated assembly_parts
+        context.assembly_parts = enrich_assembly_parts(context.assembly_parts)
         assy_parts = [
             AssemblyPartInfo(**p) for p in context.assembly_parts
         ]

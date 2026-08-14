@@ -9,7 +9,7 @@
     "cantilever",
     "FDM"
   ],
-  "description": "?????????????????",
+  "description": "Printable snap-fit clip with root radius and lead-in chamfer",
   "description_en": "Printable snap-fit clip with root radius and lead-in chamfer",
   "difficulty": "moderate",
   "features_used": [
@@ -35,5 +35,5 @@
     "min_wall_mm": 1.2,
     "recommended_material": "PETG"
   },
-  "code": "import cadquery as cq\nimport math\n\n# [Clip]\n# ????\nbase_length_mm = 50  # [25:1:100]\n# ????\nwidth_mm = 16  # [8:1:35]\n# ????\nbase_thickness_mm = 4  # [2:0.5:8]\n# ?????\nbeam_length_mm = 32  # [15:1:70]\n# ?????\nbeam_thickness_mm = 3  # [1.5:0.2:6]\n# ????\nhook_height_mm = 5  # [2:0.5:12]\n\nbase = cq.Workplane(\"XY\").box(base_length_mm, width_mm, base_thickness_mm)\nbeam = cq.Workplane(\"XY\").box(beam_length_mm, width_mm, beam_thickness_mm).translate((base_length_mm/2, 0, base_thickness_mm/2 + beam_thickness_mm/2))\nhook = cq.Workplane(\"XY\").box(5, width_mm, hook_height_mm).translate((base_length_mm/2 + beam_length_mm/2, 0, base_thickness_mm/2 + beam_thickness_mm + hook_height_mm/2))\nresult = base.union(beam).union(hook).edges(\"|Y\").fillet(1.2)\nshow_object(result)"
+  "code": "import cadquery as cq\nimport math\n\n# [Clip]\n# [Dimension]\nbase_length_mm = 50  # [25:1:100]\n# [Dimension]\nwidth_mm = 16  # [8:1:35]\n# [Dimension]\nbase_thickness_mm = 4  # [2:0.5:8]\n# [Dimension]\nbeam_length_mm = 32  # [15:1:70]\n# [Dimension]\nbeam_thickness_mm = 3  # [1.5:0.2:6]\n# [Dimension]\nhook_height_mm = 5  # [2:0.5:12]\n\nbase = cq.Workplane(\"XY\").box(base_length_mm, width_mm, base_thickness_mm)\nbeam = cq.Workplane(\"XY\").box(beam_length_mm, width_mm, beam_thickness_mm).translate((base_length_mm/2, 0, base_thickness_mm/2 + beam_thickness_mm/2))\nhook = cq.Workplane(\"XY\").box(5, width_mm, hook_height_mm).translate((base_length_mm/2 + beam_length_mm/2, 0, base_thickness_mm/2 + beam_thickness_mm + hook_height_mm/2))\nresult = base.union(beam).union(hook).edges(\"|Y\").fillet(1.2)\nshow_object(result)"
 }

@@ -12,6 +12,7 @@ import {
   useSessionStore,
 } from "../stores/sessionStore";
 import type {
+  AssemblyPartInfo,
   CapabilitySelection,
   DurableWSMessage,
   ManufacturingProfile,
@@ -45,6 +46,7 @@ function requestPanelReplay(ws: WebSocket) {
       type: "restore_context",
       panel_id: panelId,
       code: panel?.result?.code || "",
+      assembly_parts: panel?.result?.assembly_parts || [],
     }));
   }
 }
@@ -347,31 +349,31 @@ export function useWebSocket() {
   }, []);
 
   const modifyPart = useCallback((partName: string, instruction: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const panelId = useSessionStore.getState().activePanelId;
-      const panel = useSessionStore.getState().panels.find(
-        (candidate) => candidate.id === panelId,
-      );
-      const identity = panel ? durableIdentityPayload(panel) : {};
-      useSessionStore.getState().addMessage({
-        role: "user",
-        content: `\u4fee\u6539\u96f6\u4ef6 ${partName}: ${instruction}`,
-      });
-      wsRef.current.send(JSON.stringify({
-        type: "modify_part",
-        part_name: partName,
-        instruction,
-        panel_id: panelId,
-        code: panel?.result?.code || "",
-        ...identity,
-        idempotency_key: identity.idempotency_key || createId(),
-      }));
-    }
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return false;
+    const panelId = useSessionStore.getState().activePanelId;
+    const panel = useSessionStore.getState().panels.find(
+      (candidate) => candidate.id === panelId,
+    );
+    const identity = panel ? durableIdentityPayload(panel) : {};
+    useSessionStore.getState().addMessage({
+      role: "user",
+      content: `\u4fee\u6539\u96f6\u4ef6 ${partName}: ${instruction}`,
+    });
+    wsRef.current.send(JSON.stringify({
+      type: "modify_part",
+      part_name: partName,
+      instruction,
+      panel_id: panelId,
+      code: panel?.result?.code || "",
+      ...identity,
+      idempotency_key: identity.idempotency_key || createId(),
+    }));
+    return true;
   }, []);
 
-  const restoreContext = useCallback((panelId: string, code = "") => {
+  const restoreContext = useCallback((panelId: string, code = "", assemblyParts: AssemblyPartInfo[] = []) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "restore_context", panel_id: panelId, code }));
+      wsRef.current.send(JSON.stringify({ type: "restore_context", panel_id: panelId, code, assembly_parts: assemblyParts }));
     }
   }, []);
 

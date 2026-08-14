@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.agent.tool_types import ToolExecutionResult
 from app.api import agent_tools as agent_tools_api
 from app.main import app as production_app
+from app.tools import ToolExecutionResult
 
 
 class FakeOrchestrator:
@@ -11,7 +11,7 @@ class FakeOrchestrator:
         self.context = None
         self.arguments = None
 
-    def list_agent_tools(self):
+    def list_agent_tools(self, _context=None):
         return [
             {
                 "name": "echo",
@@ -22,7 +22,7 @@ class FakeOrchestrator:
             }
         ]
 
-    def agent_tool_schemas(self):
+    def agent_tool_schemas(self, _context=None):
         return [{"type": "function", "function": {"name": "echo", "parameters": {"type": "object"}}}]
 
     async def execute_agent_tool(self, name, arguments, context):
@@ -31,7 +31,6 @@ class FakeOrchestrator:
         return ToolExecutionResult(
             tool_name=name,
             status="success",
-            safety_level="read",
             summary={"arguments": arguments, "confirmed": context.confirmed},
         )
 

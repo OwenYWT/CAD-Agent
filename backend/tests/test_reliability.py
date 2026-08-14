@@ -144,6 +144,48 @@ async def test_planner_retries_truncated_output_with_configured_budget(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_modification_planner_retries_truncated_output(monkeypatch):
+    """A truncated modification plan must be retried before it can execute."""
+    from types import SimpleNamespace
+    from app.agent.planner import Planner
+
+    valid = (
+        '{"description":"加宽底座","modification_type":"dimension_change",'
+        '"target_params":{"width":24},"new_features":[]}'
+    )
+
+    class RecordingCompletions:
+        def __init__(self):
+            self.calls = []
+
+        async def create(self, **kwargs):
+            self.calls.append(kwargs)
+            if len(self.calls) == 1:
+                return SimpleNamespace(choices=[SimpleNamespace(
+                    finish_reason="length",
+                    message=SimpleNamespace(content='{"description":"截断'),
+                )])
+            return SimpleNamespace(choices=[SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(content=valid),
+            )])
+
+    monkeypatch.setattr(settings, "planner_max_tokens", 8192)
+    completions = RecordingCompletions()
+    planner = Planner()
+    planner._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+    plan = await planner.plan_modification(
+        [{"role": "user", "content": "把宽度改成 24mm"}],
+        "width = 20",
+    )
+
+    assert plan.description == "加宽底座"
+    assert len(completions.calls) == 2
+    assert all(call["max_tokens"] == 8192 for call in completions.calls)
+
+
+@pytest.mark.asyncio
 async def test_planner_does_not_retry_nonrecoverable_provider_quota():
     import httpx
     from openai import RateLimitError

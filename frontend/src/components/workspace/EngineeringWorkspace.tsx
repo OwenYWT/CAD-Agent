@@ -19,6 +19,7 @@ import ProjectSidebar from "../project/ProjectSidebar";
 import ProjectStart from "../project/ProjectStart";
 import WorkspaceHeader from "../project/WorkspaceHeader";
 import SettingsDrawer from "../SettingsDrawer";
+import VersionHistoryPanel from "../VersionHistoryPanel";
 import ValidationDialog from "../validation/ValidationDialog";
 import MechanicalWorkspace from "../viewer/MechanicalWorkspace";
 import { Icon } from "../ui/Icon";
@@ -37,7 +38,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const applyDurableChangeSet = useSessionStore(
     (state) => state.applyDurableChangeSet,
   );
-  const { connectionState, sendMessage, executeCode, resumeRun, restoreContext } = useWebSocket();
+  const { connectionState, sendMessage, executeCode, resumeRun, restoreContext, modifyPart } = useWebSocket();
   const model = useMemo(() => adaptEngineeringProject(sessionId, panel), [panel, sessionId]);
   const hasProject = panel.messages.length > 0 || panel.result !== null || panel.isGenerating;
   const [view, setView] = useState<EngineeringDomain>("overview");
@@ -117,25 +118,39 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
       <div className="flex min-h-0 flex-1">
         <ProjectSidebar activeView={view} collapsed={sidebarCollapsed} mobileOpen={mobileSidebar} onCollapse={() => setSidebarCollapsed((value) => !value)} onMobileClose={() => setMobileSidebar(false)} onNavigate={navigate} restoreContext={restoreContext} />
         <div className="min-w-0 flex-1 overflow-y-auto">
-          {(panel.activeRun || panel.stepHistory.length > 0 || panel.artifactUpdates.length > 0 || panel.durable?.agent) ? (
-            <div className="p-4 pb-0 sm:p-6 sm:pb-0">
-              <AgentRunTimeline
-                activeRun={panel.activeRun}
-                artifacts={panel.artifactUpdates}
-                durableAgent={panel.durable?.agent}
-                inspectReport={model.result?.inspect_report}
-                isGenerating={panel.isGenerating}
-                onRerunCode={() => { if (model.result?.code) executeWithProgress(model.result.code); }}
-                onResumeRun={resumeWithProgress}
-                onRetryPrompt={() => { if (latestUserPrompt) startProject(latestUserPrompt, model.result?.manufacturing_profile || null); }}
-                repairHistory={model.result?.repair_history}
-                result={model.result}
-                steps={panel.stepHistory}
-              />
+          <div className={view === "mechanical" ? "flex min-h-full min-w-0 flex-col gap-4 p-4 sm:p-6 xl:flex-row" : "min-w-0 p-4 sm:p-6"}>
+            <div className={view === "mechanical" ? "min-w-0 flex-1 space-y-4" : "min-w-0 space-y-4"}>
+              {(panel.activeRun || panel.stepHistory.length > 0 || panel.artifactUpdates.length > 0 || panel.durable?.agent) ? (
+                <AgentRunTimeline
+                  activeRun={panel.activeRun}
+                  artifacts={panel.artifactUpdates}
+                  durableAgent={panel.durable?.agent}
+                  inspectReport={model.result?.inspect_report}
+                  isGenerating={panel.isGenerating}
+                  onRerunCode={() => { if (model.result?.code) executeWithProgress(model.result.code); }}
+                  onResumeRun={resumeWithProgress}
+                  onRetryPrompt={() => { if (latestUserPrompt) startProject(latestUserPrompt, model.result?.manufacturing_profile || null); }}
+                  repairHistory={model.result?.repair_history}
+                  result={model.result}
+                  steps={panel.stepHistory}
+                />
+              ) : null}
+              {view === "overview" ? <ProjectFlow onOpenStage={openStage} project={model.project} stages={model.stages} task={model.task} /> : null}
+              {view === "mechanical" ? <MechanicalWorkspace currentStep={panel.currentStep} isGenerating={panel.isGenerating} onAgent={() => askAgent()} onBack={() => setView("overview")} onProperties={() => setParametersOpen(true)} result={model.result} /> : null}
             </div>
-          ) : null}
-          {view === "overview" ? <ProjectFlow onOpenStage={openStage} project={model.project} stages={model.stages} task={model.task} /> : null}
-          {view === "mechanical" ? <MechanicalWorkspace currentStep={panel.currentStep} isGenerating={panel.isGenerating} onAgent={() => askAgent()} onBack={() => setView("overview")} onProperties={() => setParametersOpen(true)} result={model.result} /> : null}
+            {view === "mechanical" ? (
+              <div className="min-w-0 w-full shrink-0 xl:sticky xl:top-4 xl:w-[380px] xl:self-start">
+                <VersionHistoryPanel
+                  activeSnapshotId={model.result?.snapshot_id}
+                  currentParts={model.result?.assembly_parts || []}
+                  onModifyPart={modifyPart}
+                  onRestore={restoreSnapshot}
+                  panelId={panel.id}
+                  refreshKey={model.result?.snapshot_id}
+                />
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
       <button aria-label="询问 Agent" className="fixed bottom-4 right-4 z-30 grid h-12 w-12 place-items-center rounded-full bg-[var(--ink)] text-white shadow-xl sm:hidden" onClick={() => askAgent()} type="button"><Icon name="message" size={18} /></button>
@@ -152,6 +167,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
         key={"validation:" + (model.result?.request_id || "empty") + ":" + checksOpen}
         onAskAgent={(prompt) => { setChecksOpen(false); askAgent(prompt); }}
         onClose={() => setChecksOpen(false)}
+        onModifyPart={modifyPart}
         onRerunCode={() => model.result?.code ? executeWithProgress(model.result.code) : undefined}
         onRestore={restoreSnapshot}
         onResumeRun={resumeWithProgress}

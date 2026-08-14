@@ -92,9 +92,11 @@ export interface ValidationData {
 }
 
 export interface AssemblyPartInfo {
+  part_id?: string | null;
   name: string;
   description: string;
   code: string;
+  code_hash?: string | null;
   status: "success" | "failed";
   position: number[];
   color: string;
@@ -227,6 +229,29 @@ export interface ModelSnapshotDetail extends ModelSnapshotSummary {
   validation?: ValidationData | null;
   inspect_report?: InspectReport | null;
   repair_history?: RepairStep[];
+}
+
+export interface SnapshotChangeList {
+  added: string[];
+  removed: string[];
+  changed: string[];
+  unchanged: string[];
+}
+
+export interface ModelSnapshotDiff {
+  from_snapshot_id: string;
+  to_snapshot_id: string;
+  model_changes?: {
+    code_changed?: boolean;
+    prompt_changed?: boolean;
+    source_changed?: boolean;
+    inspect_verdict?: { from?: string | null; to?: string | null };
+    bounding_box?: { from?: unknown; to?: unknown };
+    volume?: { from?: unknown; to?: unknown };
+  };
+  file_changes?: SnapshotChangeList;
+  parameter_changes?: SnapshotChangeList;
+  part_changes?: SnapshotChangeList;
 }
 
 export interface ChatMessage {

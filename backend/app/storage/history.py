@@ -7,6 +7,7 @@ from pathlib import Path
 
 import aiosqlite
 
+from app.agent.assembly_manifest import changed_part_ids, enrich_assembly_parts
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -190,6 +191,7 @@ def _snapshot_status(result: dict) -> str:
 def _snapshot_from_row(row) -> dict:
     result = _json_load(row["result"], {})
     inspect_report = _json_load(row["inspect_report"], None)
+    assembly_parts = result.get("assembly_parts") or []
     return {
         "id": row["id"],
         "panel_id": row["panel_id"],
@@ -209,6 +211,7 @@ def _snapshot_from_row(row) -> dict:
         "created_at": row["created_at"],
         "available_exports": (inspect_report or {}).get("available_exports", []),
         "inspect_verdict": (inspect_report or {}).get("verdict"),
+        "assembly_parts": enrich_assembly_parts(assembly_parts) if assembly_parts else [],
     }
 
 
@@ -666,6 +669,72 @@ async def restore_model_snapshot(snapshot_id: str, user_id: str | None = None) -
         raise
     snapshot["result"] = restored_result
     return snapshot
+
+
+async def diff_model_snapshots(from_snapshot_id: str, to_snapshot_id: str, user_id: str | None = None) -> dict | None:
+    if not await snapshot_belongs_to_user(from_snapshot_id, user_id):
+        return None
+    if not await snapshot_belongs_to_user(to_snapshot_id, user_id):
+        return None
+    before = await get_model_snapshot(from_snapshot_id)
+    after = await get_model_snapshot(to_snapshot_id)
+    if before is None or after is None:
+        return None
+
+    before_files = before.get("files") or {}
+    after_files = after.get("files") or {}
+    before_params = before.get("params") or {}
+    after_params = after.get("params") or {}
+    before_parts = before.get("assembly_parts") or []
+    after_parts = after.get("assembly_parts") or []
+    part_changes = changed_part_ids(before_parts, after_parts)
+    before_report = before.get("inspect_report") or {}
+    after_report = after.get("inspect_report") or {}
+
+    def _diff_keys(before_map: dict, after_map: dict) -> dict[str, list[str]]:
+        before_keys = set(before_map)
+        after_keys = set(after_map)
+        changed = [
+            key
+            for key in sorted(before_keys & after_keys)
+            if before_map.get(key) != after_map.get(key)
+        ]
+        unchanged = [
+            key
+            for key in sorted(before_keys & after_keys)
+            if before_map.get(key) == after_map.get(key)
+        ]
+        return {
+            "added": sorted(after_keys - before_keys),
+            "removed": sorted(before_keys - after_keys),
+            "changed": changed,
+            "unchanged": unchanged,
+        }
+
+    return {
+        "from_snapshot_id": from_snapshot_id,
+        "to_snapshot_id": to_snapshot_id,
+        "model_changes": {
+            "code_changed": before.get("code") != after.get("code"),
+            "prompt_changed": before.get("prompt") != after.get("prompt"),
+            "source_changed": before.get("source") != after.get("source"),
+            "inspect_verdict": {
+                "from": before_report.get("verdict"),
+                "to": after_report.get("verdict"),
+            },
+            "bounding_box": {
+                "from": before_report.get("bounding_box"),
+                "to": after_report.get("bounding_box"),
+            },
+            "volume": {
+                "from": before_report.get("volume"),
+                "to": after_report.get("volume"),
+            },
+        },
+        "file_changes": _diff_keys(before_files, after_files),
+        "parameter_changes": _diff_keys(before_params, after_params),
+        "part_changes": part_changes,
+    }
 
 
 # ---- Feedback (tester ground-truth signal) ----

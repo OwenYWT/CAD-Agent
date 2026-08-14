@@ -39,6 +39,12 @@ const FORBIDDEN_SNIPPETS = [
   "闅惧害",
   "閲嶆柊鍒嗘瀽",
   "闂娓呭崟",
+  "\u5de5\u7a0b\u8bbe\u8ba1\u7b80\u62a5",
+  "\u9762\u5411 3D \u6253\u5370",
+  "\u8bbe\u8ba1\u5047\u8bbe",
+  "\u529f\u80fd\u9700\u6c42",
+  "\u53ef\u6253\u5370\u6027\u76ee\u6807",
+  "\u5f85\u786e\u8ba4\u95ee\u9898",
 ];
 
 test("frontend Chinese copy has no mojibake placeholder remnants", () => {
@@ -54,13 +60,14 @@ test("frontend Chinese copy has no mojibake placeholder remnants", () => {
   assert.deepEqual(failures, []);
 });
 
-
-test("design brief section titles do not render escaped unicode", () => {
+test("design brief section titles use readable Chinese", () => {
   const text = readFileSync(join(FRONTEND_SRC, "components", "DesignBriefPanel.tsx"), "utf8");
 
   assert.equal(text.includes('title="\\u'), false);
-  assert.match(text, /title=\{"设计假设"\}/);
-  assert.match(text, /title=\{"可打印性目标"\}/);
-  assert.match(text, /title=\{"验收标准"\}/);
-  assert.match(text, /title=\{"待确认问题"\}/);
+  assert.match(text, /\\u5de5\\u7a0b\\u8bbe\\u8ba1\\u7b80\\u62a5/);
+  assert.match(text, /\\u9762\\u5411 3D \\u6253\\u5370/);
+  assert.match(text, /\\u8bbe\\u8ba1\\u5047\\u8bbe/);
+  assert.match(text, /\\u529f\\u80fd\\u9700\\u6c42/);
+  assert.match(text, /\\u53ef\\u6253\\u5370\\u6027\\u76ee\\u6807/);
+  assert.match(text, /\\u5f85\\u786e\\u8ba4\\u95ee\\u9898/);
 });

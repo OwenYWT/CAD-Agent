@@ -9,6 +9,7 @@ from uuid import UUID, uuid4, uuid5
 
 from sqlalchemy import text
 
+from app.agent.assembly_manifest import enrich_assembly_parts
 from app.db import tenant_transaction
 from app.domain.identity import (
     IDENTITY_NAMESPACE,
@@ -922,6 +923,17 @@ def _snapshot_from_revision(
         if workflow_status in {"failed", "cancelled", "timed_out"}
         else "unknown"
     )
+    result = manifest.get("result") or {
+        "success": workflow_status == "succeeded",
+        "code": durable.get("code") or "",
+        "parameters": durable.get("parameters"),
+    }
+    assembly_parts = result.get("assembly_parts") or []
+    projected_parts = (
+        enrich_assembly_parts(assembly_parts) if assembly_parts else []
+    )
+    if projected_parts:
+        result = {**result, "assembly_parts": projected_parts}
     return {
         "id": snapshot_id or str(row["id"]),
         "project_id": str(row["project_id"]),
@@ -947,11 +959,7 @@ def _snapshot_from_revision(
             or ""
         ),
         "code": manifest.get("code") or durable.get("code") or "",
-        "result": manifest.get("result") or {
-            "success": workflow_status == "succeeded",
-            "code": durable.get("code") or "",
-            "parameters": durable.get("parameters"),
-        },
+        "result": result,
         "files": manifest.get("files") or {},
         "params": manifest.get("params"),
         "parameters": (
@@ -974,6 +982,7 @@ def _snapshot_from_revision(
             or []
         ),
         "inspect_verdict": (inspect_report or {}).get("verdict"),
+        "assembly_parts": projected_parts,
     }
 
 

@@ -9,7 +9,7 @@
     "FDM",
     "3D printing"
   ],
-  "description": "????????????????????",
+  "description": "Printable parametric box with wall thickness, fillets, and lid clearance",
   "description_en": "Printable parametric box with wall thickness, fillets, and lid clearance",
   "difficulty": "simple",
   "features_used": [
@@ -35,5 +35,5 @@
     "min_wall_mm": 1.2,
     "clearance_mm": 0.25
   },
-  "code": "import cadquery as cq\nimport math\n\n# [Body]\n# ????\nwidth_mm = 90  # [40:1:180]\n# ????\ndepth_mm = 60  # [30:1:140]\n# ????\nheight_mm = 32  # [15:1:90]\n# ??\nwall_thickness_mm = 2  # [1.2:0.2:5]\n# ????\nfillet_radius_mm = 2  # [0.5:0.5:5]\n\nouter = cq.Workplane(\"XY\").box(width_mm, depth_mm, height_mm)\ninner = (\n    cq.Workplane(\"XY\")\n    .workplane(offset=wall_thickness_mm)\n    .box(width_mm - 2 * wall_thickness_mm, depth_mm - 2 * wall_thickness_mm, height_mm)\n)\nresult = outer.cut(inner).edges(\"|Z\").fillet(fillet_radius_mm)\nshow_object(result)"
+  "code": "import cadquery as cq\nimport math\n\n# [Body]\n# [Dimension]\nwidth_mm = 90  # [40:1:180]\n# [Dimension]\ndepth_mm = 60  # [30:1:140]\n# [Dimension]\nheight_mm = 32  # [15:1:90]\n# [Dimension]\nwall_thickness_mm = 2  # [1.2:0.2:5]\n# [Dimension]\nfillet_radius_mm = 2  # [0.5:0.5:5]\n\nouter = cq.Workplane(\"XY\").box(width_mm, depth_mm, height_mm)\ninner = (\n    cq.Workplane(\"XY\")\n    .workplane(offset=wall_thickness_mm)\n    .box(width_mm - 2 * wall_thickness_mm, depth_mm - 2 * wall_thickness_mm, height_mm)\n)\nresult = outer.cut(inner).edges(\"|Z\").fillet(fillet_radius_mm)\nshow_object(result)"
 }

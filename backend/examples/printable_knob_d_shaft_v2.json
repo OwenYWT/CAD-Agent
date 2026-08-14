@@ -8,7 +8,7 @@
     "grip",
     "shaft hole"
   ],
-  "description": "? D ??????????",
+  "description": "Printable knob for a D-shaft with grip ridges",
   "description_en": "Printable knob with D-shaft bore and grip ridges",
   "difficulty": "moderate",
   "features_used": [
@@ -34,5 +34,5 @@
     "fit_clearance_mm": 0.2,
     "min_wall_mm": 1.5
   },
-  "code": "import cadquery as cq\nimport math\n\n# [Knob]\n# ????\nknob_diameter_mm = 36  # [20:1:70]\n# ????\nheight_mm = 18  # [8:1:35]\n# ????\nshaft_diameter_mm = 6.3  # [3:0.1:12]\n# D ?????\nflat_offset_mm = 2.2  # [1:0.1:5]\n# ?????\nridge_count = 18  # [8:1:36]\n\nresult = cq.Workplane(\"XY\").cylinder(height_mm, knob_diameter_mm/2)\nshaft = cq.Workplane(\"XY\").cylinder(height_mm + 2, shaft_diameter_mm/2)\nflat_cut = cq.Workplane(\"XY\").box(shaft_diameter_mm, shaft_diameter_mm, height_mm + 4).translate((flat_offset_mm, 0, 0))\nresult = result.cut(shaft.cut(flat_cut))\nfor i in range(ridge_count):\n    angle = 360 / ridge_count * i\n    ridge = cq.Workplane(\"XY\").box(1.2, 3, height_mm).translate((knob_diameter_mm/2, 0, 0)).rotate((0,0,0), (0,0,1), angle)\n    result = result.union(ridge)\nresult = result.edges().fillet(1)\nshow_object(result)"
+  "code": "import cadquery as cq\nimport math\n\n# [Knob]\n# [Dimension]\nknob_diameter_mm = 36  # [20:1:70]\n# [Dimension]\nheight_mm = 18  # [8:1:35]\n# [Dimension]\nshaft_diameter_mm = 6.3  # [3:0.1:12]\n# [Feature]\nflat_offset_mm = 2.2  # [1:0.1:5]\n# [Dimension]\nridge_count = 18  # [8:1:36]\n\nresult = cq.Workplane(\"XY\").cylinder(height_mm, knob_diameter_mm/2)\nshaft = cq.Workplane(\"XY\").cylinder(height_mm + 2, shaft_diameter_mm/2)\nflat_cut = cq.Workplane(\"XY\").box(shaft_diameter_mm, shaft_diameter_mm, height_mm + 4).translate((flat_offset_mm, 0, 0))\nresult = result.cut(shaft.cut(flat_cut))\nfor i in range(ridge_count):\n    angle = 360 / ridge_count * i\n    ridge = cq.Workplane(\"XY\").box(1.2, 3, height_mm).translate((knob_diameter_mm/2, 0, 0)).rotate((0,0,0), (0,0,1), angle)\n    result = result.union(ridge)\nresult = result.edges().fillet(1)\nshow_object(result)"
 }

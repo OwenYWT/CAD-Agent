@@ -102,6 +102,10 @@ async def test_workspace_revisions_restore_feedback_and_tenant_isolation():
             "code": "result = box(10, 20, 30)",
             "files": {"step": f"/api/files/{request_id}/result.step"},
             "params": {"width": 10},
+            "assembly_parts": [
+                {"part_id": "base", "name": "base", "code": "result = base"},
+                {"part_id": "lid", "name": "lid", "code": "result = lid"},
+            ],
             "inspect_report": {
                 "verdict": "pass",
                 "available_exports": ["step"],
@@ -118,6 +122,14 @@ async def test_workspace_revisions_restore_feedback_and_tenant_isolation():
             "code": "result = box(12, 20, 30)",
             "files": {"step": f"/api/files/{request_id}/result.step"},
             "params": {"width": 12},
+            "assembly_parts": [
+                {"part_id": "base", "name": "base", "code": "result = base"},
+                {
+                    "part_id": "lid",
+                    "name": "lid",
+                    "code": "result = modified_lid",
+                },
+            ],
         },
         "modify",
         "宽度改为 12mm",
@@ -126,6 +138,14 @@ async def test_workspace_revisions_restore_feedback_and_tenant_isolation():
     assert second["version"] == 2
     assert second["parent_snapshot_id"] == first["id"]
     assert [item["version"] for item in await history.list_model_snapshots(panel_id)] == [2, 1]
+    stored_first = await history.get_model_snapshot(first["id"])
+    assert [part["part_id"] for part in stored_first["assembly_parts"]] == [
+        "base",
+        "lid",
+    ]
+    snapshot_diff = await history.diff_model_snapshots(first["id"], second["id"])
+    assert snapshot_diff["part_changes"]["changed"] == ["lid"]
+    assert snapshot_diff["part_changes"]["unchanged"] == ["base"]
     panel_by_id = {
         item["id"]: item
         for item in await history.list_panels(session_id)

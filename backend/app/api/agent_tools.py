@@ -5,53 +5,112 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from app.agent.onshape_tools import build_onshape_tool_registry
-from app.agent.tool_executor import ToolExecutor
-from app.agent.tool_types import ToolExecutionContext
 from app.api.auth import rate_limiter, verify_api_key
+from app.config import settings
+from app.db import tenant_transaction
+from app.principal_context import current_principal
+from app.repositories.audit import append_audit_record
 from app.storage import auth as auth_store
+from app.tools import (
+    PluginLoader,
+    SessionToolPool,
+    ToolContext,
+    ToolExecutionResult,
+    ToolExecutor,
+)
 
 router = APIRouter(prefix="/api/agent/tools", tags=["agent-tools"])
 
 
+async def _audit_agent_tool(
+    result: ToolExecutionResult,
+    arguments: dict[str, Any],
+    context: ToolContext,
+) -> None:
+    if not settings.durable_control_plane_enabled:
+        return
+    principal = current_principal()
+    async with tenant_transaction(
+        principal.tenant_id,
+        principal.principal_id,
+    ) as connection:
+        await append_audit_record(
+            connection,
+            tenant_id=principal.tenant_id,
+            actor_principal_id=principal.principal_id,
+            action=f"agent_tool.{result.status}",
+            target_type="agent_tool",
+            target_id=result.tool_name,
+            payload={
+                "arguments": arguments,
+                "request_id": context.request_id,
+                "session_id": context.session_id,
+                "panel_id": context.panel_id,
+                "safety_level": result.safety_level,
+                "error_type": result.error_type,
+            },
+        )
+
+
 class AgentToolRuntime:
-    """Real connector-tool runtime, independent from the MCAD orchestrator."""
+    """Authenticated API adapter for the standalone plugin framework."""
 
     def __init__(self):
-        self.registry = build_onshape_tool_registry()
-        self.executor = ToolExecutor(self.registry)
+        loader = PluginLoader()
+        loader.load_module(
+            "app.tools.plugins.business.tool_onshape",
+            expected_layer="business",
+        )
+        self.pool = SessionToolPool("agent-tools-api", loader.registry)
+        self.pool.enable_plugin(loader.registry.list_tools(layer="business"))
+        self.executor = ToolExecutor(
+            self.pool,
+            audit_handler=_audit_agent_tool,
+        )
 
-    def list_agent_tools(self) -> list[dict[str, Any]]:
+    def list_agent_tools(
+        self,
+        context: ToolContext | None = None,
+    ) -> list[dict[str, Any]]:
+        active_context = context or ToolContext(
+            session_id=self.pool.session_id,
+            role="admin",
+            allow_shared_onshape=True,
+        )
         return [
             {
-                "name": tool.name,
-                "description": tool.description,
-                "safety_level": tool.safety_level,
-                "requires_confirmation": (
-                    tool.requires_confirmation
-                    or tool.safety_level in {"write", "destructive"}
-                ),
+                **tool.public_metadata(),
                 "parameters": tool.args_model.model_json_schema(),
             }
-            for tool in self.registry.list_tools()
+            for tool in self.pool.list_tools(active_context)
         ]
 
-    def agent_tool_schemas(self) -> list[dict[str, Any]]:
-        return self.registry.to_openai_tools()
+    def agent_tool_schemas(
+        self,
+        context: ToolContext | None = None,
+    ) -> list[dict[str, Any]]:
+        return self.pool.openai_tools(
+            context
+            or ToolContext(
+                session_id=self.pool.session_id,
+                role="admin",
+                allow_shared_onshape=True,
+            )
+        )
 
     async def execute_agent_tool(
         self,
         name: str,
         arguments: dict[str, Any] | str,
-        context: ToolExecutionContext,
+        context: ToolContext,
     ):
         return await self.executor.execute(name, arguments, context)
 
 
 @lru_cache(maxsize=1)
 def _get_orchestrator() -> AgentToolRuntime:
-    # Kept as a local compatibility name for tests and route call sites. This
-    # no longer returns the process-local CAD generation orchestrator.
+    # Compatibility name for existing route/test call sites. This is the
+    # standalone plugin runtime, never the process-local CAD orchestrator.
     return AgentToolRuntime()
 
 
@@ -79,14 +138,40 @@ async def _can_access_shared_onshape(api_key: str | None) -> bool:
     return bool(user and user.get("is_admin"))
 
 
+async def _tool_context(
+    api_key: str | None,
+    *,
+    request_id: str | None = None,
+    session_id: str | None = None,
+    panel_id: str | None = None,
+    confirmed: bool = False,
+) -> ToolContext:
+    shared_access = await _can_access_shared_onshape(api_key)
+    return ToolContext(
+        request_id=request_id,
+        session_id=session_id or "agent-tools-api",
+        panel_id=panel_id,
+        user_id=_owner_key(api_key),
+        auth_principal=api_key,
+        role="admin" if shared_access else "user",
+        allow_shared_onshape=shared_access,
+        enabled_plugins={"onshape"},
+        confirmed=confirmed,
+    )
+
+
 @router.get("")
 async def list_agent_tools(
     request: Request,
     api_key: str | None = Depends(verify_api_key),
 ):
     await rate_limiter.check(request, api_key)
-    orchestrator = _get_orchestrator()
-    return {"tools": orchestrator.list_agent_tools(), "openai_tools": orchestrator.agent_tool_schemas()}
+    context = await _tool_context(api_key)
+    runtime = _get_orchestrator()
+    return {
+        "tools": runtime.list_agent_tools(context),
+        "openai_tools": runtime.agent_tool_schemas(context),
+    }
 
 
 @router.post("/{tool_name}/execute")
@@ -97,14 +182,16 @@ async def execute_agent_tool(
     api_key: str | None = Depends(verify_api_key),
 ):
     await rate_limiter.check(request, api_key)
-    context = ToolExecutionContext(
+    context = await _tool_context(
+        api_key,
         request_id=req.request_id,
         session_id=req.session_id,
         panel_id=req.panel_id,
-        user_id=_owner_key(api_key),
-        auth_principal=api_key,
-        allow_shared_onshape=await _can_access_shared_onshape(api_key),
         confirmed=req.confirmed,
     )
-    result = await _get_orchestrator().execute_agent_tool(tool_name, req.arguments, context)
+    result = await _get_orchestrator().execute_agent_tool(
+        tool_name,
+        req.arguments,
+        context,
+    )
     return result.model_dump()

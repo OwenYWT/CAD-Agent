@@ -187,3 +187,115 @@ def test_snapshot_api_list_detail_and_restore(monkeypatch, tmp_path):
     assert detail.json()["result"]["code"] == "result = api"
     assert restored.status_code == 410
     assert "持久化 MCAD" in restored.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_snapshot_preserves_assembly_parts_for_durable_read():
+    await history.create_session("session-assembly", user_id="user-1")
+    await history.create_panel(
+        "session-assembly",
+        "panel-assembly",
+        user_id="user-1",
+    )
+    snapshot = await history.create_model_snapshot(
+        "panel-assembly",
+        {
+            "success": True,
+            "request_id": "req-assembly",
+            "code": "result = assembly",
+            "assembly_parts": [
+                {
+                    "part_id": "base",
+                    "name": "base",
+                    "code": "result = base",
+                    "code_hash": "hash-base",
+                },
+                {
+                    "part_id": "lid",
+                    "name": "lid",
+                    "code": "result = lid",
+                    "code_hash": "hash-lid",
+                },
+            ],
+        },
+        source="generation",
+        prompt="make assembly",
+    )
+
+    stored = await history.get_model_snapshot(snapshot["id"])
+
+    assert stored["result"]["assembly_parts"][0]["part_id"] == "base"
+    assert stored["result"]["assembly_parts"][0]["code_hash"] == "hash-base"
+    assert stored["result"]["assembly_parts"][1]["part_id"] == "lid"
+    assert stored["result"]["assembly_parts"][1]["code_hash"] == "hash-lid"
+
+
+def test_snapshot_api_diff_prioritizes_file_and_part_changes(
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr(settings, "history_db_path", str(tmp_path / "history.db"))
+    asyncio.run(history.close_db())
+    asyncio.run(history.create_session("session-diff", user_id=None))
+    asyncio.run(history.create_panel("session-diff", "panel-diff", user_id=None))
+    before = asyncio.run(history.create_model_snapshot(
+        "panel-diff",
+        {
+            "success": True,
+            "request_id": "req-before",
+            "code": "result = before",
+            "files": {"step": "/api/files/before/result.step"},
+            "params": {"width": {"value": 10, "comment": "mm"}},
+            "assembly_parts": [
+                {"part_id": "base", "name": "base", "code_hash": "hash-base"},
+                {"part_id": "lid", "name": "lid", "code_hash": "hash-lid"},
+            ],
+            "inspect_report": {
+                "verdict": "pass",
+                "bounding_box": {"x_min": 0, "x_max": 10},
+            },
+        },
+        source="generation",
+    ))
+    after = asyncio.run(history.create_model_snapshot(
+        "panel-diff",
+        {
+            "success": True,
+            "request_id": "req-after",
+            "code": "result = after",
+            "files": {
+                "step": "/api/files/after/result.step",
+                "stl": "/api/files/after/result.stl",
+            },
+            "params": {"width": {"value": 12, "comment": "mm"}},
+            "assembly_parts": [
+                {"part_id": "base", "name": "base", "code_hash": "hash-base"},
+                {"part_id": "lid", "name": "lid", "code_hash": "hash-lid-2"},
+            ],
+            "inspect_report": {
+                "verdict": "warn",
+                "bounding_box": {"x_min": 0, "x_max": 12},
+            },
+        },
+        source="modify_part",
+        parent_snapshot_id=before["id"],
+    ))
+    client = TestClient(app)
+
+    response = client.get(
+        f"/api/history/snapshots/{before['id']}/diff/{after['id']}"
+    )
+
+    assert response.status_code == 200
+    diff = response.json()
+    assert diff["from_snapshot_id"] == before["id"]
+    assert diff["to_snapshot_id"] == after["id"]
+    assert diff["file_changes"]["changed"] == ["step"]
+    assert diff["file_changes"]["added"] == ["stl"]
+    assert diff["part_changes"]["changed"] == ["lid"]
+    assert diff["part_changes"]["unchanged"] == ["base"]
+    assert diff["parameter_changes"]["changed"] == ["width"]
+    assert diff["model_changes"]["inspect_verdict"] == {
+        "from": "pass",
+        "to": "warn",
+    }

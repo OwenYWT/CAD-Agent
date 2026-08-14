@@ -5,12 +5,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.agent.tool_registry import ToolRegistry
-from app.agent.tool_types import AgentTool, ToolExecutionContext, ToolExecutionResult
 from app.integrations.onshape.service import OnshapeService
 from app.models.schemas import OnshapeCreateDocumentRequest, OnshapePublishRequest
 from app.storage import history
 from app.storage.file_ownership import FileOwnershipError, request_belongs_to
+from app.tools.models import ToolContext, ToolExecutionResult, ToolRegistration
 
 
 class OnshapeListDocumentsArgs(BaseModel):
@@ -58,38 +57,32 @@ class OnshapeGetLinksArgs(BaseModel):
 OnshapeServiceFactory = Callable[[], OnshapeService]
 
 
-def build_onshape_tools(
-    service_factory: OnshapeServiceFactory | None = None,
-) -> list[AgentTool]:
+PLUGIN_NAME = "onshape"
+PLUGIN_VERSION = "0.1.0"
+
+
+def build_onshape_tools(service_factory: OnshapeServiceFactory | None = None) -> list[ToolRegistration]:
     get_service = service_factory or OnshapeService
 
-    async def list_documents(
-        args: BaseModel,
-        _context: ToolExecutionContext,
-    ) -> ToolExecutionResult:
-        _require_shared_onshape_access(_context)
+    async def list_documents(args: BaseModel, context: ToolContext) -> ToolExecutionResult:
+        _require_shared_onshape_access(context)
         typed = OnshapeListDocumentsArgs.model_validate(args)
         response = await get_service().list_documents(q=typed.q, offset=typed.offset, limit=typed.limit)
         documents = [_summarize_document(item) for item in response.documents if isinstance(item, dict)]
         return ToolExecutionResult(
             tool_name="onshape_list_documents",
             status="success",
-            safety_level="read",
             summary={"documents": documents, "count": len(documents), "offset": typed.offset, "limit": typed.limit},
             raw=response.model_dump(),
         )
 
-    async def list_elements(
-        args: BaseModel,
-        _context: ToolExecutionContext,
-    ) -> ToolExecutionResult:
-        _require_shared_onshape_access(_context)
+    async def list_elements(args: BaseModel, context: ToolContext) -> ToolExecutionResult:
+        _require_shared_onshape_access(context)
         typed = OnshapeListElementsArgs.model_validate(args)
         response = await get_service().list_elements(typed.document_id, typed.workspace_id)
         return ToolExecutionResult(
             tool_name="onshape_list_elements",
             status="success",
-            safety_level="read",
             summary={
                 "document_id": response["document_id"],
                 "workspace_id": response["workspace_id"],
@@ -99,11 +92,8 @@ def build_onshape_tools(
             raw=response,
         )
 
-    async def list_partstudio_features(
-        args: BaseModel,
-        _context: ToolExecutionContext,
-    ) -> ToolExecutionResult:
-        _require_shared_onshape_access(_context)
+    async def list_partstudio_features(args: BaseModel, context: ToolContext) -> ToolExecutionResult:
+        _require_shared_onshape_access(context)
         typed = OnshapeListPartstudioFeaturesArgs.model_validate(args)
         response = await get_service().list_partstudio_features(
             typed.document_id,
@@ -113,7 +103,6 @@ def build_onshape_tools(
         return ToolExecutionResult(
             tool_name="onshape_list_partstudio_features",
             status="success",
-            safety_level="read",
             summary={
                 "document_id": response["document_id"],
                 "workspace_id": response["workspace_id"],
@@ -124,18 +113,14 @@ def build_onshape_tools(
             raw=response,
         )
 
-    async def create_document(
-        args: BaseModel,
-        _context: ToolExecutionContext,
-    ) -> ToolExecutionResult:
-        _require_shared_onshape_access(_context)
+    async def create_document(args: BaseModel, context: ToolContext) -> ToolExecutionResult:
+        _require_shared_onshape_access(context)
         typed = OnshapeCreateDocumentArgs.model_validate(args)
         response = await get_service().create_document(OnshapeCreateDocumentRequest(**typed.model_dump()))
         payload = response.model_dump()
         return ToolExecutionResult(
             tool_name="onshape_create_document",
             status="success",
-            safety_level="write",
             summary={
                 "document_id": response.id,
                 "name": response.name,
@@ -145,23 +130,19 @@ def build_onshape_tools(
             raw=payload,
         )
 
-    async def publish_step(
-        args: BaseModel,
-        _context: ToolExecutionContext,
-    ) -> ToolExecutionResult:
+    async def publish_step(args: BaseModel, context: ToolContext) -> ToolExecutionResult:
         typed = OnshapePublishStepArgs.model_validate(args)
-        await _require_generated_file_access(typed.request_id, _context)
+        await _require_generated_file_access(typed.request_id, context)
         if typed.document_id:
-            _require_shared_onshape_access(_context)
+            _require_shared_onshape_access(context)
         response = await get_service().publish_step(
             OnshapePublishRequest(**typed.model_dump()),
-            user_id=_context.user_id,
+            user_id=context.user_id,
         )
         payload = response.model_dump()
         return ToolExecutionResult(
             tool_name="onshape_publish_step",
             status="success",
-            safety_level="write",
             summary={
                 "request_id": response.request_id,
                 "status": response.status,
@@ -174,17 +155,13 @@ def build_onshape_tools(
             raw=payload,
         )
 
-    async def get_translation(
-        args: BaseModel,
-        _context: ToolExecutionContext,
-    ) -> ToolExecutionResult:
+    async def get_translation(args: BaseModel, context: ToolContext) -> ToolExecutionResult:
         typed = OnshapeGetTranslationArgs.model_validate(args)
-        await _require_translation_access(typed.translation_id, _context)
+        await _require_translation_access(typed.translation_id, context)
         response = await get_service().get_translation(typed.translation_id)
         return ToolExecutionResult(
             tool_name="onshape_get_translation",
             status="success",
-            safety_level="read",
             summary={
                 "translation_id": typed.translation_id,
                 "status": str(response.get("requestState") or response.get("state") or response.get("status") or ""),
@@ -193,30 +170,22 @@ def build_onshape_tools(
             raw=response,
         )
 
-    async def get_links(
-        args: BaseModel,
-        _context: ToolExecutionContext,
-    ) -> ToolExecutionResult:
+    async def get_links(args: BaseModel, context: ToolContext) -> ToolExecutionResult:
         typed = OnshapeGetLinksArgs.model_validate(args)
-        response = await get_service().get_links(typed.request_id, user_id=_context.user_id)
+        response = await get_service().get_links(typed.request_id, user_id=context.user_id)
         return ToolExecutionResult(
             tool_name="onshape_get_links",
             status="success",
-            safety_level="read",
             summary={"request_id": typed.request_id, "links": response, "count": len(response)},
             raw=response,
         )
 
-    async def refresh_latest_link(
-        args: BaseModel,
-        _context: ToolExecutionContext,
-    ) -> ToolExecutionResult:
+    async def refresh_latest_link(args: BaseModel, context: ToolContext) -> ToolExecutionResult:
         typed = OnshapeGetLinksArgs.model_validate(args)
-        response = await get_service().refresh_latest_link(typed.request_id, user_id=_context.user_id)
+        response = await get_service().refresh_latest_link(typed.request_id, user_id=context.user_id)
         return ToolExecutionResult(
             tool_name="onshape_refresh_latest_link",
             status="success",
-            safety_level="read",
             summary={
                 "request_id": response.get("request_id"),
                 "status": response.get("status"),
@@ -228,72 +197,89 @@ def build_onshape_tools(
         )
 
     return [
-        AgentTool(
+        _admin_tool(
             name="onshape_list_documents",
             description="Search or list Onshape documents visible to the configured Onshape account.",
             args_model=OnshapeListDocumentsArgs,
+            func=list_documents,
             safety_level="read",
-            handler=list_documents,
         ),
-        AgentTool(
+        _admin_tool(
             name="onshape_list_elements",
             description="List elements in an Onshape document workspace, including Part Studios and Assemblies.",
             args_model=OnshapeListElementsArgs,
+            func=list_elements,
             safety_level="read",
-            handler=list_elements,
         ),
-        AgentTool(
+        _admin_tool(
             name="onshape_list_partstudio_features",
             description="List FeatureScript features in an Onshape Part Studio.",
             args_model=OnshapeListPartstudioFeaturesArgs,
+            func=list_partstudio_features,
             safety_level="read",
-            handler=list_partstudio_features,
         ),
-        AgentTool(
+        _admin_tool(
             name="onshape_create_document",
             description="Create a new Onshape document using the configured Onshape account.",
             args_model=OnshapeCreateDocumentArgs,
+            func=create_document,
             safety_level="write",
-            handler=create_document,
             requires_confirmation=True,
         ),
-        AgentTool(
+        _owned_tool(
             name="onshape_publish_step",
             description="Upload a generated STEP/STP artifact into a new or existing Onshape document.",
             args_model=OnshapePublishStepArgs,
+            func=publish_step,
             safety_level="write",
-            handler=publish_step,
             requires_confirmation=True,
             timeout_s=120.0,
         ),
-        AgentTool(
+        _owned_tool(
             name="onshape_get_translation",
             description="Read the status of a previously recorded Onshape translation job.",
             args_model=OnshapeGetTranslationArgs,
+            func=get_translation,
             safety_level="read",
-            handler=get_translation,
         ),
-        AgentTool(
+        _owned_tool(
             name="onshape_get_links",
             description="List Onshape publish links recorded for a CAD-Agent request.",
             args_model=OnshapeGetLinksArgs,
+            func=get_links,
             safety_level="read",
-            handler=get_links,
         ),
-        AgentTool(
+        _owned_tool(
             name="onshape_refresh_latest_link",
             description="Refresh the latest recorded Onshape translation status for a CAD-Agent request.",
             args_model=OnshapeGetLinksArgs,
+            func=refresh_latest_link,
             safety_level="read",
-            handler=refresh_latest_link,
         ),
     ]
 
 
-def build_onshape_tool_registry(
-    service_factory: OnshapeServiceFactory | None = None,
-) -> ToolRegistry:
-    return ToolRegistry(build_onshape_tools(service_factory))
+def _admin_tool(**kwargs: Any) -> ToolRegistration:
+    return ToolRegistration(
+        layer="business",
+        plugin_name=PLUGIN_NAME,
+        version=PLUGIN_VERSION,
+        tags={"admin", "external", "onshape"},
+        visibility="admin",
+        required_roles={"admin"},
+        **kwargs,
+    )
+
+
+def _owned_tool(**kwargs: Any) -> ToolRegistration:
+    return ToolRegistration(
+        layer="business",
+        plugin_name=PLUGIN_NAME,
+        version=PLUGIN_VERSION,
+        tags={"user", "external", "onshape"},
+        visibility="user",
+        **kwargs,
+    )
 
 
 def _summarize_document(raw: dict[str, Any]) -> dict[str, Any]:
@@ -313,15 +299,15 @@ def _summarize_document(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _require_shared_onshape_access(context: ToolExecutionContext) -> None:
-    if context.allow_shared_onshape:
+def _require_shared_onshape_access(context: ToolContext) -> None:
+    if context.allow_shared_onshape or context.role == "admin":
         return
     raise PermissionError("Only administrators can browse or write shared Onshape documents")
 
 
 async def _require_generated_file_access(
     request_id: str,
-    context: ToolExecutionContext,
+    context: ToolContext,
 ) -> None:
     try:
         allowed = await request_belongs_to(request_id, context.auth_principal)
@@ -331,7 +317,10 @@ async def _require_generated_file_access(
         raise PermissionError("Generated STEP file is not available to this principal")
 
 
-async def _require_translation_access(translation_id: str, context: ToolExecutionContext) -> None:
+async def _require_translation_access(translation_id: str, context: ToolContext) -> None:
     link = await history.get_onshape_link_by_translation(translation_id, user_id=context.user_id)
     if not link:
         raise PermissionError("Onshape translation is not available to this principal")
+
+
+PLUGIN_TOOLS = build_onshape_tools()

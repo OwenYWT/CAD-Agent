@@ -4,6 +4,7 @@ import type {
   DurableTaskEvent,
   DurableTaskSnapshot,
   GenerationResult,
+  ModelSnapshotDiff,
   ModelSnapshotDetail,
   ModelSnapshotSummary,
 } from "../types";
@@ -195,6 +196,16 @@ export async function getModelSnapshot(
     `${API_BASE}/api/history/snapshots/${encodeURIComponent(snapshotId)}`,
   );
   return readJson<ModelSnapshotDetail>(response, "版本证据加载失败");
+}
+
+export async function diffModelSnapshots(
+  fromSnapshotId: string,
+  toSnapshotId: string,
+): Promise<ModelSnapshotDiff> {
+  const response = await authFetch(
+    `${API_BASE}/api/history/snapshots/${encodeURIComponent(fromSnapshotId)}/diff/${encodeURIComponent(toSnapshotId)}`,
+  );
+  return readJson<ModelSnapshotDiff>(response, "版本对比加载失败");
 }
 
 export async function analyzeEngineeringResult(requestId: string, code: string, description: string): Promise<DesignAnalysis> {

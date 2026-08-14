@@ -12,16 +12,16 @@ from app.models.schemas import CADPlan, ModificationPlan
 
 logger = logging.getLogger(__name__)
 
-MODIFICATION_SYSTEM_PROMPT = """你是一个 CAD 修改需求分析专家。分析用户对已有零件的修改请求。
+MODIFICATION_SYSTEM_PROMPT = """\u4f60\u662f\u4e00\u4e2a CAD \u4fee\u6539\u9700\u6c42\u5206\u6790\u4e13\u5bb6\u3002\u8bf7\u5206\u6790\u7528\u6237\u5bf9\u5df2\u6709\u96f6\u4ef6\u7684\u4fee\u6539\u8bf7\u6c42\u3002
 
-当前代码:
+\u5f53\u524d\u4ee3\u7801:
 ```python
 {current_code}
 ```
 
-将修改请求解析为 JSON (不要输出其他任何文字):
+\u5c06\u4fee\u6539\u8bf7\u6c42\u89e3\u6790\u4e3a JSON\uff08\u4e0d\u8981\u8f93\u51fa\u5176\u4ed6\u4efb\u4f55\u6587\u5b57\uff09:
 {{
-    "description": "修改描述",
+    "description": "\u4fee\u6539\u63cf\u8ff0",
     "modification_type": "dimension_change|add_feature|remove_feature|redesign",
     "target_params": {{"param_name": new_value}},
     "new_features": ["feature description"]
@@ -41,11 +41,11 @@ class Planner:
         return self._client
 
     _ASSEMBLY_KEYWORDS = re.compile(
-        r"装配|组装|底座.*柱子|多个零件|assembly|assemble|多个.*组合"
-        r"|减速器|减速箱|变速箱|齿轮箱|gearbox|reducer"
-        r"|逆止器|单向离合|backstop|overrunning"
+        r"\u88c5\u914d|\u88c5\u914d\u4f53|\u7ec4\u88c5|\u7ec4\u4ef6|\u7ec4\u5408\u4f53|\u72ec\u7acb\u96f6\u4ef6|\u591a\u4e2a\u96f6\u4ef6|\u591a\u4e2a\u90e8\u4ef6|\u5206\u522b\u5efa\u6a21"
+        r"|\u591a\u4e2a.*\u7ec4\u5408|\u591a\u4e2a.*\u645e|[2-9]\u4e2a.*(\u6b63\u65b9\u4f53|\u65b9\u5757|\u96f6\u4ef6|\u90e8\u4ef6)|\u7531\u4e0a\u5230\u4e0b.*\u645e|\u4ece\u4e0a\u5230\u4e0b.*\u645e"
+        r"|assembly|assemble|gearbox|reducer|backstop|overrunning",
+        re.IGNORECASE,
     )
-
 
     @staticmethod
     def _parse_plan_payload(data: dict) -> CADPlan:
@@ -117,14 +117,14 @@ class Planner:
                 parsed = json.loads(text)
                 plan = self._parse_plan_payload(parsed)
 
-                # Detect assembly intent from user message
+                # Detect assembly intent from user message.
                 user_text = messages[-1]["content"] if messages else ""
                 if self._ASSEMBLY_KEYWORDS.search(user_text):
                     plan.part_type = "assembly"
 
                 return plan
             except RuntimeError:
-                # Missing credentials / unrecoverable config — propagate, don't mask.
+                # Missing credentials / unrecoverable config; propagate, don't mask.
                 raise
             except Exception as e:
                 if find_provider_exception(e) is not None:
@@ -159,10 +159,15 @@ class Planner:
                 elapsed = time.time() - t0
                 choice = response.choices[0]
                 finish_reason = getattr(choice, "finish_reason", None)
-                logger.info(f"Modification planner LLM call done in {elapsed:.1f}s (stop={finish_reason})")
+                logger.info(
+                    "Modification planner LLM call done in %.1fs (stop=%s)",
+                    elapsed,
+                    finish_reason,
+                )
                 if finish_reason == "length":
                     raise ValueError(
-                        f"modification planner output was truncated at {settings.planner_max_tokens} completion tokens"
+                        "modification planner output was truncated at "
+                        f"{settings.planner_max_tokens} completion tokens"
                     )
                 content = choice.message.content
                 if not isinstance(content, str) or not content.strip():
