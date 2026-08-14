@@ -1,6 +1,8 @@
 # MCAD M1 / Durable Agent V2 真实链路验收报告
 
-验收日期：2026-08-13
+真实链路验收日期：2026-08-13
+
+最新合并回归日期：2026-08-14
 
 验收范围：本地单机 M1 控制平面、`PodmanExecutionBackend` 与 Durable Agent V2
 
@@ -42,7 +44,8 @@ V2 Agent 已真实覆盖规划、检索、建模、隔离执行、有限修复�
 
 | 范围 | 结果 |
 | --- | --- |
-| 后端完整测试 | `1115 passed, 122 skipped` |
+| 后端完整测试 | `1132 passed, 122 skipped` |
+| PostgreSQL 模型快照与零件差异链路 | `1 passed`，使用真实 PostgreSQL |
 | 前端 lint | 通过 |
 | 前端生产构建 / TypeScript | 通过；仅保留 Viewer3D chunk 体积警告 |
 | 前端契约测试 | `40 passed, 0 failed` |

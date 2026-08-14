@@ -52,6 +52,7 @@ Fusion 自动化测试与真实桌面验收必须分开表述。没有完成 Win
 
 - [`archive/forgecad-roadmap-2026-07.md`](archive/forgecad-roadmap-2026-07.md)：从旧 `NEXT.md` 提炼的产品研究和候选路线。它不是当前实现清单、排期或接口合同。
 - [`archive/agent-orchestration-upgrade-2026-07.md`](archive/agent-orchestration-upgrade-2026-07.md)：2026-07 的进程内 Agent 编排比较稿；旧架构和实施清单已废弃。
+- [`archive/cadam-orchestration-borrowed-advantages-2026-08.md`](archive/cadam-orchestration-borrowed-advantages-2026-08.md)：Durable Agent 融合 CADAM 编排优点的历史决策记录；当前事实以实现、设计规范和 M1 验收报告为准。
 
 未从本索引列出的 `superpowers/plans/` 文件只保留实施追溯价值，不是当前事实来源。旧 Sprint、重复使用说明和旧交接副本不再保留；更早内容使用 Git 历史追溯。
 

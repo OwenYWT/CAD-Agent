@@ -17,6 +17,7 @@
 - 核心任务事实是 `WorkflowRun -> StepRun -> ExecutionAttempt`、持久事件、`ProjectRevision` 和 `Artifact`；WebSocket 可提交 Durable 请求并订阅/回放事件，但不能承担生命周期。
 - 业务层不能直接调用 Docker、Podman、Kubernetes 或宿主 shell；修改必须携带 `expected_base_revision_id`，外部执行必须幂等。
 - CAD Skills：产品 adapter 在 `backend/app/capabilities`；`third_party/cadskills` 是固定上游快照，不直接写产品逻辑。
+- Agent Tools：插件合同、注册表、会话工具池和执行器在 `backend/app/tools`；写入与破坏性工具必须确认，执行结果必须经过审计边界。
 - Fusion 360：`backend/app/fusion360` 和 `fusion_addin` 使用 typed action、Preview、Approval 和 verified result。模拟/facade 测试不能写成真实 Fusion E2E。
 - 生产配置：`backend/.env.example` 是字段模板，不是可直接上线的配置；认证密钥、邀请码、CORS、模型凭据和设备凭据必须由部署方设置。
 

@@ -8,10 +8,12 @@
 
 - 自然语言生成、修改和执行 CadQuery / ezdxf 设计。
 - Three.js 3D 预览、2D 预览、参数调整、DFM/几何检查和文件下载。
+- 装配零件清单、零件级修改、模型快照与版本差异；恢复旧版本会重新进入 Durable 审查流程。
 - 登录鉴权、邀请码、项目历史、任务进度、文件归属和 WebSocket 实时状态。
 - STEP、STL、DXF、SVG、PNG 等输出，具体格式取决于生成类型和实际产物。
 - 11 项固定版本的 CAD Skills 工作流，以及显式的运行依赖/阻塞状态。
 - 可选 Fusion 360 typed action、Preview、Approval、执行报告和导出链路。
+- 独立三层工具插件运行时，支持插件元数据、会话级启停、权限范围、限流、结构化确认和审计。
 
 未配置的外部运行时不会被伪装成可用：缺少容器、切片器、Gazebo/MoveIt、Implicit CAD 依赖、隔离执行器或打印机授权时，对应能力返回明确的 `blocked` 状态。
 
@@ -27,6 +29,7 @@ FastAPI 控制平面
    ├── Temporal V1：执行、检查与既有 Workflow 历史
    ├── Temporal V2 Agent：规划 → 建模 → 隔离执行 → 修复 → 几何/视觉/DFM → 候选版本封存
    ├── S3 兼容对象存储：不可变 CAD 产物、日志与检查报告
+   ├── Agent Tools：basic / capability / business 插件、权限与确认策略
    └── ExecutionBackend
           └── Docker / Podman 隔离 MCAD Worker
 ```

@@ -21,6 +21,7 @@ backend/app/execution/      ExecutionBackend、ExecutionSpec 与 ExecutionResult
 backend/app/workflows/      Temporal Workflow 定义
 backend/app/workers/        独立 Workflow/Activity Worker
 backend/app/capabilities/   CAD Skills 产品 adapter 与依赖检查
+backend/app/tools/          三层 Agent 工具插件、会话工具池、权限、确认与审计执行边界
 backend/app/fusion360/      Fusion typed contract、Runtime、Agent 与 APS adapter
 backend/benchmark/          需要真实模型与沙箱的手动评测工具
 backend/sandbox/            CadQuery/ezdxf 隔离执行镜像
