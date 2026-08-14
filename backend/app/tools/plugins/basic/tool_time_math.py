@@ -4,7 +4,21 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
-from app.tools.models import ToolContext, ToolRegistration
+from app.tools.models import PluginMetadata, ToolContext, ToolRegistration
+
+
+PLUGIN_NAME = "time_math"
+PLUGIN_VERSION = "0.1.0"
+PLUGIN_META = PluginMetadata(
+    name=PLUGIN_NAME,
+    layer="basic",
+    version=PLUGIN_VERSION,
+    description="Safe built-in tools for UTC time and finite arithmetic.",
+    use_cases=["Read the current UTC time or add two finite numbers."],
+    tags={"time", "math"},
+    safety={"has_write_tools": False, "max_safety_level": "compute"},
+    default_enabled=True,
+)
 
 
 class TimeNowArgs(BaseModel):
@@ -32,7 +46,8 @@ PLUGIN_TOOLS = [
         description="Read the current UTC time from the control plane.",
         args_model=TimeNowArgs,
         layer="basic",
-        plugin_name="time_math",
+        plugin_name=PLUGIN_NAME,
+        version=PLUGIN_VERSION,
         safety_level="read",
         visibility="public",
         enabled_by_default=True,
@@ -43,7 +58,8 @@ PLUGIN_TOOLS = [
         description="Add two finite numeric values.",
         args_model=MathAddArgs,
         layer="basic",
-        plugin_name="time_math",
+        plugin_name=PLUGIN_NAME,
+        version=PLUGIN_VERSION,
         safety_level="compute",
         visibility="public",
         enabled_by_default=True,

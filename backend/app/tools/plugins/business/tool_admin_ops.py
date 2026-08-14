@@ -2,7 +2,26 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from app.tools.models import ToolContext, ToolRegistration
+from app.tools.models import (
+    ConfirmationPolicy,
+    PluginMetadata,
+    ToolContext,
+    ToolRegistration,
+)
+
+
+PLUGIN_NAME = "admin_ops"
+PLUGIN_VERSION = "0.1.0"
+PLUGIN_META = PluginMetadata(
+    name=PLUGIN_NAME,
+    layer="business",
+    version=PLUGIN_VERSION,
+    description="Authenticated administrative tools for tool-runtime verification.",
+    use_cases=["Verify an administrator-approved write tool flow."],
+    tags={"admin", "verification"},
+    auth={"required_roles": ["admin"]},
+    safety={"has_write_tools": True, "requires_confirmation": True},
+)
 
 
 class AdminEchoArgs(BaseModel):
@@ -23,10 +42,17 @@ PLUGIN_TOOLS = [
         description="Return an administrator-approved message for audited tool-flow verification.",
         args_model=AdminEchoArgs,
         layer="business",
-        plugin_name="admin_ops",
+        plugin_name=PLUGIN_NAME,
+        version=PLUGIN_VERSION,
         safety_level="write",
         visibility="admin",
         required_roles={"admin"},
         requires_confirmation=True,
+        confirmation_policy=ConfirmationPolicy(
+            risk_level="low",
+            title="Confirm administrative echo",
+            message="Confirm this audited administrative tool execution.",
+            preview_fields=["message"],
+        ),
     ),
 ]

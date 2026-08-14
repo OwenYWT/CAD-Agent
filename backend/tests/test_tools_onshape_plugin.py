@@ -105,6 +105,10 @@ def onshape_context(**overrides):
 def test_onshape_tools_register_as_business_plugin():
     tools = [registration.to_definition() for registration in tool_onshape.build_onshape_tools(fake_service_factory)]
 
+    assert tool_onshape.PLUGIN_META.name == "onshape"
+    assert tool_onshape.PLUGIN_META.layer == "business"
+    assert tool_onshape.PLUGIN_META.safety["has_write_tools"] is True
+    assert tool_onshape.PLUGIN_META.auth["requires_generated_file_ownership_for_publish"] is True
     assert len(tools) == 8
     assert {tool.layer for tool in tools} == {"business"}
     assert {tool.plugin_name for tool in tools} == {"onshape"}
@@ -161,7 +165,11 @@ async def test_onshape_create_document_requires_confirmation():
     )
 
     assert result.status == "consent_required"
+    assert result.error_code == "confirmation_required"
     assert result.needs_confirmation is True
+    assert result.confirmation is not None
+    assert result.confirmation.risk_level == "high"
+    assert result.confirmation.preview_fields == ["name", "description", "is_public"]
     assert result.layer == "business"
     assert result.plugin_name == "onshape"
 
@@ -211,6 +219,7 @@ async def test_onshape_publish_step_rejects_wrong_generated_file_owner(monkeypat
     )
 
     assert result.status == "permission_required"
+    assert result.error_code == "permission_denied"
     assert result.error_type == "PermissionError"
 
 
@@ -228,6 +237,7 @@ async def test_onshape_publish_step_requires_admin_for_existing_document(monkeyp
     )
 
     assert result.status == "permission_required"
+    assert result.error_code == "permission_denied"
     assert result.error_type == "PermissionError"
 
 

@@ -1,0 +1,49 @@
+from __future__ import annotations
+
+from pydantic import BaseModel, Field
+
+from app.tools.models import ConfirmationPolicy, PluginMetadata, ToolContext, ToolRegistration
+
+
+PLUGIN_NAME = "example_plugin"
+PLUGIN_VERSION = "0.1.0"
+
+
+class ExampleArgs(BaseModel):
+    text: str = Field(..., min_length=1, max_length=256)
+
+
+async def example_tool(args: BaseModel, context: ToolContext) -> dict:
+    typed = ExampleArgs.model_validate(args)
+    return {"text": typed.text, "user_id": context.user_id}
+
+
+PLUGIN_META = PluginMetadata(
+    name=PLUGIN_NAME,
+    layer="capability",
+    version=PLUGIN_VERSION,
+    description="Describe what this plugin module does and when an agent should enable it.",
+    use_cases=["Describe one concrete user intent that should enable this plugin."],
+    tags={"example"},
+    safety={"has_write_tools": False, "max_safety_level": "compute"},
+)
+
+
+PLUGIN_TOOLS = [
+    ToolRegistration(
+        func=example_tool,
+        name="capability_example_tool",
+        description="Describe the concrete action this tool performs.",
+        args_model=ExampleArgs,
+        layer="capability",
+        plugin_name=PLUGIN_NAME,
+        version=PLUGIN_VERSION,
+        tags={"example"},
+        safety_level="compute",
+        visibility="user",
+        required_scopes=set(),
+        requires_confirmation=False,
+        confirmation_policy=None,
+        timeout_s=10.0,
+    ),
+]

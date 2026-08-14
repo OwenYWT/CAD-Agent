@@ -5,7 +5,20 @@ import unicodedata
 
 from pydantic import BaseModel, Field
 
-from app.tools.models import ToolContext, ToolRegistration
+from app.tools.models import PluginMetadata, ToolContext, ToolRegistration
+
+
+PLUGIN_NAME = "text_ops"
+PLUGIN_VERSION = "0.1.0"
+PLUGIN_META = PluginMetadata(
+    name=PLUGIN_NAME,
+    layer="capability",
+    version=PLUGIN_VERSION,
+    description="Deterministic text normalization tools for agent workflows.",
+    use_cases=["Convert user-provided text into a stable ASCII slug."],
+    tags={"text", "normalization"},
+    safety={"has_write_tools": False, "max_safety_level": "compute"},
+)
 
 
 class SlugifyArgs(BaseModel):
@@ -27,7 +40,8 @@ PLUGIN_TOOLS = [
         description="Convert text into a normalized ASCII slug.",
         args_model=SlugifyArgs,
         layer="capability",
-        plugin_name="text_ops",
+        plugin_name=PLUGIN_NAME,
+        version=PLUGIN_VERSION,
         safety_level="compute",
         visibility="user",
     ),

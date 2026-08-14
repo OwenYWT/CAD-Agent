@@ -46,6 +46,7 @@ class ToolExecutor:
                 tool_name=name,
                 status="failure",
                 safety_level=tool.safety_level if tool else "read",
+                error_code="validation_error",
                 error_type="ValidationError",
                 error_message=str(exc),
                 duration_ms=self._duration_ms(started),
@@ -58,6 +59,7 @@ class ToolExecutor:
             result = ToolExecutionResult(
                 tool_name=name,
                 status="permission_required",
+                error_code="tool_unavailable",
                 error_type="ToolUnavailable",
                 error_message=f"Tool is not available for this session: {name}",
                 duration_ms=self._duration_ms(started),
@@ -68,20 +70,32 @@ class ToolExecutor:
             args = tool.args_model.model_validate(raw_arguments)
         except ValidationError as exc:
             return await self._complete(
-                self._failure(tool, started, "ValidationError", str(exc)),
+                self._failure(
+                    tool,
+                    started,
+                    "ValidationError",
+                    str(exc),
+                    error_code="validation_error",
+                ),
                 raw_arguments,
                 active_context,
             )
 
-        if self._requires_confirmation(tool) and not active_context.confirmed:
-            message = f"Tool '{tool.name}' requires confirmation before execution."
+        confirmation_policy = tool.effective_confirmation_policy()
+        if (
+            confirmation_policy
+            and confirmation_policy.required
+            and not active_context.confirmed
+        ):
             result = ToolExecutionResult(
                 tool_name=tool.name,
                 status="consent_required",
                 safety_level=tool.safety_level,
-                error_message=message,
+                error_code="confirmation_required",
+                error_message=confirmation_policy.message,
                 needs_confirmation=True,
-                confirmation_message=message,
+                confirmation_message=confirmation_policy.message,
+                confirmation=confirmation_policy,
                 duration_ms=self._duration_ms(started),
                 layer=tool.layer,
                 plugin_name=tool.plugin_name,
@@ -93,6 +107,7 @@ class ToolExecutor:
                 tool_name=tool.name,
                 status="rate_limited",
                 safety_level=tool.safety_level,
+                error_code="rate_limit_exceeded",
                 error_type="RateLimitExceeded",
                 error_message=f"Tool '{tool.name}' exceeded its configured rate limit.",
                 duration_ms=self._duration_ms(started),
@@ -112,12 +127,14 @@ class ToolExecutor:
                 started,
                 "TimeoutError",
                 f"Tool timed out after {tool.timeout_s:g}s",
+                error_code="timeout",
             )
         except PermissionError as exc:
             result = ToolExecutionResult(
                 tool_name=tool.name,
                 status="permission_required",
                 safety_level=tool.safety_level,
+                error_code="permission_denied",
                 error_type="PermissionError",
                 error_message=str(exc),
                 duration_ms=self._duration_ms(started),
@@ -125,7 +142,13 @@ class ToolExecutor:
                 plugin_name=tool.plugin_name,
             )
         except Exception as exc:
-            result = self._failure(tool, started, type(exc).__name__, str(exc))
+            result = self._failure(
+                tool,
+                started,
+                type(exc).__name__,
+                str(exc),
+                error_code="execution_error",
+            )
         else:
             if isinstance(response, ToolExecutionResult):
                 result = response.model_copy(update={
@@ -151,6 +174,7 @@ class ToolExecutor:
                     started,
                     "InvalidToolResult",
                     "Tool handlers must return a mapping or ToolExecutionResult.",
+                    error_code="execution_error",
                 )
         return await self._complete(result, raw_arguments, active_context)
 
@@ -169,10 +193,6 @@ class ToolExecutor:
         if not isinstance(arguments, dict):
             raise ValueError("Tool arguments must be a JSON object")
         return dict(arguments)
-
-    @staticmethod
-    def _requires_confirmation(tool: ToolDefinition) -> bool:
-        return tool.requires_confirmation or tool.safety_level in {"write", "destructive"}
 
     def _is_rate_limited(self, tool: ToolDefinition, context: ToolContext) -> bool:
         if not tool.rate_limit:
@@ -197,11 +217,14 @@ class ToolExecutor:
         started: float,
         error_type: str,
         error_message: str,
+        *,
+        error_code: str = "execution_error",
     ) -> ToolExecutionResult:
         return ToolExecutionResult(
             tool_name=tool.name,
             status="failure",
             safety_level=tool.safety_level,
+            error_code=error_code,
             error_type=error_type,
             error_message=error_message,
             duration_ms=self._duration_ms(started),
