@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 import pytest
 from pydantic import BaseModel, Field
@@ -23,6 +24,18 @@ def test_loader_imports_single_module_with_multiple_tools(loader):
     assert "basic_math_add" in names
     assert "capability_text_slugify" in names
     assert "business_admin_echo" in names
+
+
+def test_loader_registers_plugin_metadata_for_discovery(loader):
+    catalog = {plugin["name"]: plugin for plugin in loader.registry.plugin_catalog()}
+
+    assert catalog["time_math"]["layer"] == "basic"
+    assert catalog["time_math"]["default_enabled"] is True
+    assert catalog["time_math"]["tool_count"] == 2
+    assert catalog["text_ops"]["layer"] == "capability"
+    assert catalog["text_ops"]["tool_count"] == 1
+    assert catalog["admin_ops"]["layer"] == "business"
+    assert catalog["admin_ops"]["safety"]["requires_confirmation"] is True
 
 
 def test_basic_tools_are_global_but_dynamic_tools_are_session_scoped(loader):
@@ -51,6 +64,22 @@ def test_business_tools_require_admin_visibility(loader):
 
     assert "business_admin_echo" not in {tool.name for tool in session.list_tools(user_context)}
     assert "business_admin_echo" in {tool.name for tool in session.list_tools(admin_context)}
+
+
+def test_session_can_enable_and_disable_plugin_by_name(loader):
+    session = SessionToolPool("session-a", loader.registry)
+
+    enabled = session.enable_plugin_by_name("text_ops", layer="capability")
+    assert enabled == ["capability_text_slugify"]
+    assert "capability_text_slugify" in {tool.name for tool in session.list_tools(ToolContext(session_id="session-a"))}
+
+    disabled = session.disable_plugin("text_ops")
+    assert disabled == ["capability_text_slugify"]
+    assert "capability_text_slugify" not in {tool.name for tool in session.list_tools(ToolContext(session_id="session-a"))}
+
+    reenabled = session.enable_plugin_by_name("text_ops", layer="capability", replace=True)
+    assert reenabled == ["capability_text_slugify"]
+    assert "capability_text_slugify" in {tool.name for tool in session.list_tools(ToolContext(session_id="session-a"))}
 
 
 @pytest.mark.asyncio
@@ -83,6 +112,7 @@ async def test_executor_blocks_unavailable_tool_for_session(loader):
     )
 
     assert result.status == "permission_required"
+    assert result.error_code == "tool_unavailable"
     assert result.error_type == "ToolUnavailable"
 
 
@@ -99,7 +129,11 @@ async def test_executor_requires_confirmation_for_business_tool(loader):
     )
 
     assert result.status == "consent_required"
+    assert result.error_code == "confirmation_required"
     assert result.needs_confirmation is True
+    assert result.confirmation is not None
+    assert result.confirmation.risk_level == "low"
+    assert result.confirmation.preview_fields == ["message"]
 
 
 @pytest.mark.asyncio
@@ -131,6 +165,7 @@ async def test_executor_validates_structured_arguments(loader):
     )
 
     assert result.status == "failure"
+    assert result.error_code == "validation_error"
     assert result.error_type == "ValidationError"
 
 
@@ -167,6 +202,7 @@ async def test_executor_applies_timeout():
     )
 
     assert result.status == "failure"
+    assert result.error_code == "timeout"
     assert result.error_type == "TimeoutError"
 
 
@@ -193,3 +229,45 @@ async def test_executor_applies_session_tool_rate_limit():
 
     assert first.status == "success"
     assert second.status == "rate_limited"
+    assert second.error_code == "rate_limit_exceeded"
+
+
+@pytest.mark.asyncio
+async def test_context_scopes_gate_tool_visibility_and_execution():
+    loader = PluginLoader()
+    tool = ToolRegistration(
+        func=sleep_tool,
+        name="capability_scoped_sleep",
+        description="Scoped sleep.",
+        args_model=SleepArgs,
+        layer="capability",
+        plugin_name="sleep_ops",
+        required_scopes={"tools:sleep"},
+    ).to_definition()
+    loader.registry.register(tool)
+    session = SessionToolPool("session-a", loader.registry)
+    session.enable_tool(tool)
+
+    missing = await ToolExecutor(session).execute(
+        "capability_scoped_sleep",
+        {"delay_s": 0},
+        ToolContext(session_id="session-a", role="user"),
+    )
+    allowed = await ToolExecutor(session).execute(
+        "capability_scoped_sleep",
+        {"delay_s": 0},
+        ToolContext(session_id="session-a", role="user", scopes={"tools:sleep"}),
+    )
+
+    assert missing.status == "permission_required"
+    assert missing.error_code == "tool_unavailable"
+    assert allowed.status == "success"
+
+
+def test_plugin_template_contains_required_exports():
+    template = Path(__file__).resolve().parents[1] / "app/tools/templates/plugin_module.py.template"
+    content = template.read_text(encoding="utf-8")
+
+    assert "PLUGIN_META = PluginMetadata" in content
+    assert "PLUGIN_TOOLS = [" in content
+    assert "ToolRegistration(" in content

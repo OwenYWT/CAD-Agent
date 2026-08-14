@@ -8,9 +8,13 @@ can be wired into an agent later without changing plugin modules.
 from app.tools.executor import ToolExecutor
 from app.tools.loader import PluginLoader
 from app.tools.models import (
+    ConfirmationPolicy,
+    ConfirmationRiskLevel,
     PluginLayer,
+    PluginMetadata,
     ToolContext,
     ToolDefinition,
+    ToolErrorCode,
     ToolExecutionResult,
     ToolRegistration,
     ToolSafetyLevel,
@@ -19,11 +23,15 @@ from app.tools.registry import LayeredToolRegistry, SessionToolPool, ToolRegistr
 
 __all__ = [
     "LayeredToolRegistry",
+    "ConfirmationPolicy",
+    "ConfirmationRiskLevel",
     "PluginLayer",
     "PluginLoader",
+    "PluginMetadata",
     "SessionToolPool",
     "ToolContext",
     "ToolDefinition",
+    "ToolErrorCode",
     "ToolExecutionResult",
     "ToolExecutor",
     "ToolRegistration",

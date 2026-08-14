@@ -30,6 +30,7 @@ class ToolExecutor:
             return ToolExecutionResult(
                 tool_name=name,
                 status="permission_required",
+                error_code="tool_unavailable",
                 error_type="ToolUnavailable",
                 error_message=f"Tool is not available for this session: {name}",
                 duration_ms=self._duration_ms(started),
@@ -38,14 +39,17 @@ class ToolExecutor:
             raw_arguments = self._normalize_arguments(arguments)
             args = tool.args_model.model_validate(raw_arguments)
         except (ValueError, ValidationError) as exc:
-            return self._failure(tool, started, "ValidationError", str(exc))
+            return self._failure(tool, started, "ValidationError", str(exc), error_code="validation_error")
 
-        if tool.requires_confirmation and not active_context.confirmed:
+        confirmation_policy = tool.effective_confirmation_policy()
+        if confirmation_policy and confirmation_policy.required and not active_context.confirmed:
             return ToolExecutionResult(
                 tool_name=tool.name,
                 status="consent_required",
+                error_code="confirmation_required",
                 error_message=f"Tool '{tool.name}' requires confirmation before execution.",
                 needs_confirmation=True,
+                confirmation=confirmation_policy,
                 duration_ms=self._duration_ms(started),
                 layer=tool.layer,
                 plugin_name=tool.plugin_name,
@@ -55,6 +59,7 @@ class ToolExecutor:
             return ToolExecutionResult(
                 tool_name=tool.name,
                 status="rate_limited",
+                error_code="rate_limit_exceeded",
                 error_type="RateLimitExceeded",
                 error_message=f"Tool '{tool.name}' exceeded its configured rate limit.",
                 duration_ms=self._duration_ms(started),
@@ -65,11 +70,18 @@ class ToolExecutor:
         try:
             response = await asyncio.wait_for(tool.handler(args, active_context), timeout=tool.timeout_s)
         except asyncio.TimeoutError:
-            return self._failure(tool, started, "TimeoutError", f"Tool timed out after {tool.timeout_s:g}s")
+            return self._failure(
+                tool,
+                started,
+                "TimeoutError",
+                f"Tool timed out after {tool.timeout_s:g}s",
+                error_code="timeout",
+            )
         except PermissionError as exc:
             return ToolExecutionResult(
                 tool_name=tool.name,
                 status="permission_required",
+                error_code="permission_denied",
                 error_type="PermissionError",
                 error_message=str(exc),
                 duration_ms=self._duration_ms(started),
@@ -77,7 +89,7 @@ class ToolExecutor:
                 plugin_name=tool.plugin_name,
             )
         except Exception as exc:
-            return self._failure(tool, started, type(exc).__name__, str(exc))
+            return self._failure(tool, started, type(exc).__name__, str(exc), error_code="execution_error")
 
         if isinstance(response, ToolExecutionResult):
             return response.model_copy(update={
@@ -128,10 +140,19 @@ class ToolExecutor:
     def _duration_ms(started: float) -> int:
         return int((perf_counter() - started) * 1000)
 
-    def _failure(self, tool: ToolDefinition, started: float, error_type: str, error_message: str) -> ToolExecutionResult:
+    def _failure(
+        self,
+        tool: ToolDefinition,
+        started: float,
+        error_type: str,
+        error_message: str,
+        *,
+        error_code: str = "execution_error",
+    ) -> ToolExecutionResult:
         return ToolExecutionResult(
             tool_name=tool.name,
             status="failure",
+            error_code=error_code,
             error_type=error_type,
             error_message=error_message,
             duration_ms=self._duration_ms(started),
