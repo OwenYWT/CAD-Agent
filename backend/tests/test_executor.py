@@ -61,6 +61,28 @@ class TestSandboxResult:
 class TestModeFileWriting:
     """Verify that _execute_sync writes mode.txt correctly."""
 
+    def test_output_mount_is_writable_by_non_root_worker(self):
+        executor = CadQueryExecutor(runtime_name="docker")
+        mock_container = MagicMock()
+        mock_container.wait.return_value = {"StatusCode": 0}
+
+        def fake_run(image, detach, volumes, **kwargs):
+            output_dir = next(
+                Path(host_path)
+                for host_path, bind_info in volumes.items()
+                if bind_info["bind"] == "/sandbox/output"
+            )
+            assert output_dir.stat().st_mode & 0o777 == 0o777
+            output_dir.joinpath("result.json").write_text(
+                json.dumps({"status": "success", "files": {}})
+            )
+            return mock_container
+
+        executor._client = MagicMock()
+        executor._client.containers.run = fake_run
+
+        assert executor._execute_sync("code").success
+
     def test_3d_mode_writes_mode_file(self):
         executor = CadQueryExecutor()
 

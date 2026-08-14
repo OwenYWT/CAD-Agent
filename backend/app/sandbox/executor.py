@@ -273,8 +273,11 @@ class CadQueryExecutor:
         output_dir = work_dir / "output"
         input_dir.mkdir()
         output_dir.mkdir()
-        if self.runtime == "podman":
-            output_dir.chmod(0o777)
+        # The worker image runs as the fixed non-root UID 1000. Host UID mapping
+        # differs between rootless Podman and Docker, so both runtimes need an
+        # explicitly writable bind mount. The parent work directory remains
+        # private to this execution.
+        output_dir.chmod(0o777)
 
         # Write input code and execution mode
         (input_dir / "input.py").write_text(code,encoding="utf-8")
