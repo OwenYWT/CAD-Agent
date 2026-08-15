@@ -17,7 +17,7 @@ import websockets
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
-from websockets.exceptions import InvalidStatus
+from websockets.exceptions import InvalidHandshake
 
 from app.config import settings
 from app.db import close_database, get_database_engine, tenant_transaction
@@ -301,7 +301,7 @@ async def test_real_websocket_replay_reconnect_slow_consumer_auth_and_retention(
                 f"ws://127.0.0.1:{port}/ws/tasks/{workflow_id}"
                 "?after_sequence=0"
             )
-            with pytest.raises(InvalidStatus):
+            with pytest.raises(InvalidHandshake):
                 async with websockets.connect(
                     unauthorized_uri,
                     subprotocols=[_auth_protocol(OTHER_KEY)],

@@ -250,11 +250,11 @@ async def _start_api(port: int):
                 raise AssertionError("FastAPI exited during startup")
             try:
                 response = await client.get(
-                    f"http://127.0.0.1:{port}/ready",
+                    f"http://127.0.0.1:{port}/health",
                     timeout=1,
                 )
                 if response.status_code == 200:
-                    assert response.json()["status"] == "ready"
+                    assert response.json()["status"] == "ok"
                     return process
             except httpx.HTTPError:
                 pass

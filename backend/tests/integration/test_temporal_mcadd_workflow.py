@@ -789,11 +789,11 @@ async def _start_api(env: dict[str, str], port: int):
                 raise AssertionError("FastAPI exited during startup")
             try:
                 response = await client.get(
-                    f"http://127.0.0.1:{port}/ready",
+                    f"http://127.0.0.1:{port}/health",
                     timeout=1,
                 )
                 if response.status_code == 200:
-                    assert response.json()["status"] == "ready"
+                    assert response.json()["status"] == "ok"
                     return process
             except httpx.HTTPError:
                 pass
@@ -2757,8 +2757,8 @@ async def test_worker_process_crash_retries_with_new_fenced_attempt():
         "DATABASE_URL": TEST_DATABASE_URL,
         "TEMPORAL_TARGET": settings.temporal_target,
         "TEMPORAL_TASK_QUEUE": settings.temporal_task_queue,
-        "SANDBOX_RUNTIME": "podman",
-        "SANDBOX_COMMAND": "podman",
+        "SANDBOX_RUNTIME": settings.sandbox_runtime,
+        "SANDBOX_COMMAND": settings.sandbox_command,
         "SANDBOX_IMAGE": settings.sandbox_image,
         "DURABLE_CONTROL_PLANE_ENABLED": "true",
         "AUTH_REQUIRED": "false",
