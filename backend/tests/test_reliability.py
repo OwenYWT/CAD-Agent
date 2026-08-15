@@ -143,19 +143,103 @@ async def test_planner_retries_truncated_output_with_configured_budget(monkeypat
     assert all(call["max_tokens"] == 8192 for call in completions.calls)
 
 
+@pytest.mark.asyncio
+async def test_modification_planner_retries_truncated_output(monkeypatch):
+    """A truncated modification plan must be retried before it can execute."""
+    from types import SimpleNamespace
+    from app.agent.planner import Planner
+
+    valid = (
+        '{"description":"加宽底座","modification_type":"dimension_change",'
+        '"target_params":{"width":24},"new_features":[]}'
+    )
+
+    class RecordingCompletions:
+        def __init__(self):
+            self.calls = []
+
+        async def create(self, **kwargs):
+            self.calls.append(kwargs)
+            if len(self.calls) == 1:
+                return SimpleNamespace(choices=[SimpleNamespace(
+                    finish_reason="length",
+                    message=SimpleNamespace(content='{"description":"截断'),
+                )])
+            return SimpleNamespace(choices=[SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(content=valid),
+            )])
+
+    monkeypatch.setattr(settings, "planner_max_tokens", 8192)
+    completions = RecordingCompletions()
+    planner = Planner()
+    planner._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+    plan = await planner.plan_modification(
+        [{"role": "user", "content": "把宽度改成 24mm"}],
+        "width = 20",
+    )
+
+    assert plan.description == "加宽底座"
+    assert len(completions.calls) == 2
+    assert all(call["max_tokens"] == 8192 for call in completions.calls)
+
+
+@pytest.mark.asyncio
+async def test_planner_does_not_retry_nonrecoverable_provider_quota():
+    import httpx
+    from openai import RateLimitError
+    from app.agent.planner import Planner
+
+    request = httpx.Request("POST", "https://api.example.test/v1/chat/completions")
+    response = httpx.Response(429, request=request)
+
+    class QuotaCompletions:
+        def __init__(self):
+            self.calls = 0
+
+        async def create(self, **_kwargs):
+            self.calls += 1
+            raise RateLimitError(
+                "insufficient balance",
+                response=response,
+                body={"error": {"type": "exceeded_current_quota_error"}},
+            )
+
+    completions = QuotaCompletions()
+    planner = Planner()
+    planner._client = type(
+        "Client",
+        (),
+        {"chat": type("Chat", (), {"completions": completions})()},
+    )()
+
+    with pytest.raises(RateLimitError):
+        await planner.plan_new([{"role": "user", "content": "一个盒子"}])
+    assert completions.calls == 1
+
+
 # === overall deadline (#17) at the REST layer ===
 
 @pytest.mark.asyncio
 async def test_generate_deadline_returns_504(monkeypatch):
-    """If the pipeline exceeds generate_deadline_s, the endpoint returns 504, not a hang."""
-    from app.api import websocket, generate as generate_api
+    """A Durable projection deadline is surfaced as 504, never a hung request."""
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from app.api import generate as generate_api
     from fastapi import Request
 
-    class SlowOrch:
-        async def generate(self, prompt, output_formats):
-            await asyncio.sleep(5)  # longer than the patched deadline
+    async def submit(_principal, **_kwargs):
+        return SimpleNamespace(workflow_run_id=uuid4())
 
-    monkeypatch.setattr(generate_api, "_get_orchestrator", lambda: SlowOrch())
+    async def wait(_principal, _submission, *, timeout_seconds):
+        raise asyncio.TimeoutError
+
+    monkeypatch.setattr(generate_api, "submit_durable_workflow", submit)
+    monkeypatch.setattr(generate_api, "wait_for_compatibility_response", wait)
+    monkeypatch.setattr(generate_api, "current_principal", lambda: object())
+    monkeypatch.setattr(generate_api.rate_limiter, "check", lambda *_args, **_kwargs: asyncio.sleep(0))
     monkeypatch.setattr(settings, "generate_deadline_s", 0.1)
 
     # minimal Request stub for rate_limiter._client_key
@@ -163,7 +247,15 @@ async def test_generate_deadline_returns_504(monkeypatch):
     req = Request(scope)
 
     from app.models.schemas import GenerateRequest
-    resp = await generate_api.generate(GenerateRequest(prompt="x"), req, api_key=None)
+    identity = {
+        "project_id": uuid4(),
+        "branch_id": uuid4(),
+        "expected_base_revision_id": uuid4(),
+        "idempotency_key": f"deadline-{uuid4()}",
+    }
+    resp = await generate_api.generate(
+        GenerateRequest(prompt="x", **identity), req, api_key=None
+    )
     assert resp.status_code == 504
     import json
     body = json.loads(resp.body)

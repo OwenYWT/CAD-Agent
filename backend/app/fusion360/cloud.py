@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import inspect
 import secrets
 import time
 from dataclasses import dataclass
@@ -35,7 +36,7 @@ class ApsClient:
     def __init__(
         self,
         config: ApsConfig,
-        store: EncryptedTokenStore | None,
+        store: Any | None,
         *,
         transport: httpx.AsyncBaseTransport | None = None,
     ):
@@ -43,7 +44,7 @@ class ApsClient:
         self.store = store
         self.transport = transport
 
-    def _require_configured(self) -> EncryptedTokenStore:
+    def _require_configured(self) -> Any:
         if not self.config.enabled:
             raise FusionConnectorError("CLOUD_NOT_CONFIGURED", "Autodesk Platform Services integration is disabled")
         if not all((self.config.client_id, self.config.client_secret, self.config.redirect_uri, self.store)):
@@ -63,25 +64,44 @@ class ApsClient:
         })
         return {"authorization_url": f"{AUTHORIZE_URL}?{query}", "state": state}
 
+    async def start_oauth_async(self, owner_id: str) -> dict[str, str]:
+        store = self._require_configured()
+        state = secrets.token_urlsafe(32)
+        verifier = secrets.token_urlsafe(64)
+        challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(verifier.encode("ascii")).digest()
+        ).rstrip(b"=").decode("ascii")
+        await _maybe_await(store.create_state(state, owner_id, verifier))
+        query = urlencode({
+            "response_type": "code", "client_id": self.config.client_id,
+            "redirect_uri": self.config.redirect_uri, "scope": MINIMUM_SCOPE,
+            "state": state, "code_challenge": challenge, "code_challenge_method": "S256",
+        })
+        return {"authorization_url": f"{AUTHORIZE_URL}?{query}", "state": state}
+
     async def exchange_code(self, state: str, code: str) -> str:
         store = self._require_configured()
-        owner_id, verifier = store.consume_state(state)
+        owner_id, verifier = await _maybe_await(store.consume_state(state))
         token = await self._token_request({
             "grant_type": "authorization_code", "code": code,
             "redirect_uri": self.config.redirect_uri, "code_verifier": verifier,
         })
-        store.put(owner_id, self._normalize_token(token))
+        normalized = self._normalize_token(token)
+        if hasattr(store, "put_after_state"):
+            await _maybe_await(store.put_after_state(state, normalized))
+        else:
+            await _maybe_await(store.put(owner_id, normalized))
         return owner_id
 
     async def status(self, owner_id: str) -> dict[str, Any]:
         if not self.config.enabled:
             return {"enabled": False, "connected": False, "scope": None}
         store = self._require_configured()
-        token = store.get(owner_id)
+        token = await _maybe_await(store.get(owner_id))
         return {"enabled": True, "connected": token is not None, "scope": token.get("scope") if token else None}
 
     async def delete_token(self, owner_id: str) -> None:
-        self._require_configured().delete(owner_id)
+        await _maybe_await(self._require_configured().delete(owner_id))
 
     async def hubs(self, owner_id: str) -> dict[str, Any]:
         return await self._data_get(owner_id, "/hubs")
@@ -103,7 +123,7 @@ class ApsClient:
 
     async def _access_token(self, owner_id: str) -> str:
         store = self._require_configured()
-        token = store.get(owner_id)
+        token = await _maybe_await(store.get(owner_id))
         if not token:
             raise FusionConnectorError("CLOUD_AUTH_REQUIRED", "Connect an Autodesk account first")
         if float(token.get("expires_at", 0)) <= time.time() + 60:
@@ -114,7 +134,7 @@ class ApsClient:
             if not refreshed.get("refresh_token"):
                 refreshed["refresh_token"] = refresh_token
             token = self._normalize_token(refreshed)
-            store.put(owner_id, token)
+            await _maybe_await(store.put(owner_id, token))
         return token["access_token"]
 
     async def _token_request(self, fields: dict[str, str]) -> dict[str, Any]:
@@ -174,3 +194,7 @@ class ApsClient:
 
 def _segment(value: str) -> str:
     return quote(value, safe="")
+
+
+async def _maybe_await(value):
+    return await value if inspect.isawaitable(value) else value

@@ -4,6 +4,8 @@ timeout handling, container cleanup.
 Unit tests mock Docker — no actual container required.
 """
 import json
+import asyncio
+import threading
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -58,6 +60,28 @@ class TestSandboxResult:
 
 class TestModeFileWriting:
     """Verify that _execute_sync writes mode.txt correctly."""
+
+    def test_output_mount_is_writable_by_non_root_worker(self):
+        executor = CadQueryExecutor(runtime_name="docker")
+        mock_container = MagicMock()
+        mock_container.wait.return_value = {"StatusCode": 0}
+
+        def fake_run(image, detach, volumes, **kwargs):
+            output_dir = next(
+                Path(host_path)
+                for host_path, bind_info in volumes.items()
+                if bind_info["bind"] == "/sandbox/output"
+            )
+            assert output_dir.stat().st_mode & 0o777 == 0o777
+            output_dir.joinpath("result.json").write_text(
+                json.dumps({"status": "success", "files": {}})
+            )
+            return mock_container
+
+        executor._client = MagicMock()
+        executor._client.containers.run = fake_run
+
+        assert executor._execute_sync("code").success
 
     def test_3d_mode_writes_mode_file(self):
         executor = CadQueryExecutor()
@@ -170,6 +194,39 @@ class TestMissingResult:
 # === Podman runtime ===
 
 class TestPodmanRuntime:
+    @pytest.mark.asyncio
+    async def test_cancel_waits_until_physical_podman_execution_is_stopped(self):
+        started = threading.Event()
+        physically_stopped = threading.Event()
+
+        class CancellablePodman:
+            def run(
+                self,
+                input_dir,
+                output_dir,
+                timeout_s,
+                resource_limits=None,
+                cancel_event=None,
+            ):
+                started.set()
+                cancel_event.wait(timeout=2)
+                physically_stopped.set()
+                return 130, "", "cancelled"
+
+            def cancel(self, cancel_event):
+                cancel_event.set()
+
+        executor = CadQueryExecutor(runtime_name="podman")
+        executor._client = CancellablePodman()
+        task = asyncio.create_task(executor.execute("result = None"))
+        assert await asyncio.to_thread(started.wait, 1)
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert physically_stopped.is_set()
+
     def test_podman_runtime_writes_mode_and_invokes_podman(self, monkeypatch):
         from app.config import settings
         import app.sandbox.executor as executor_module
@@ -183,16 +240,26 @@ class TestPodmanRuntime:
             calls.append(cmd)
             if cmd[:3] == ["podman", "image", "exists"]:
                 return MagicMock(returncode=0, stdout="", stderr="")
-            output_mount = next(arg for arg in cmd if arg.endswith(":/sandbox/output:rw"))
-            input_mount = next(arg for arg in cmd if arg.endswith(":/sandbox/input:ro"))
-            output_dir = Path(output_mount.removesuffix(":/sandbox/output:rw"))
-            input_dir = Path(input_mount.removesuffix(":/sandbox/input:ro"))
-            input_dirs_seen.append(input_dir)
-            output_dir.mkdir(parents=True, exist_ok=True)
-            (output_dir / "result.json").write_text(json.dumps({"status": "success", "files": {}}))
-            return MagicMock(returncode=0, stdout="ok", stderr="")
+
+        class FakePopen:
+            def __init__(self, cmd, **_kwargs):
+                calls.append(cmd)
+                output_mount = next(arg for arg in cmd if arg.endswith(":/sandbox/output:rw"))
+                input_mount = next(arg for arg in cmd if arg.endswith(":/sandbox/input:ro"))
+                output_dir = Path(output_mount.removesuffix(":/sandbox/output:rw"))
+                input_dir = Path(input_mount.removesuffix(":/sandbox/input:ro"))
+                input_dirs_seen.append(input_dir)
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "result.json").write_text(
+                    json.dumps({"status": "success", "files": {}})
+                )
+                self.returncode = 0
+
+            def communicate(self, timeout=None):
+                return "ok", ""
 
         monkeypatch.setattr(executor_module.subprocess, "run", fake_run)
+        monkeypatch.setattr(executor_module.subprocess, "Popen", FakePopen)
 
         try:
             result = CadQueryExecutor()._execute_sync("code", mode="2d")
@@ -225,3 +292,33 @@ class TestPodmanRuntime:
                 _ = CadQueryExecutor().client
         finally:
             settings.sandbox_runtime = original_runtime
+
+    def test_podman_exit_137_is_reported_as_oom(self, monkeypatch):
+        from app.config import settings
+        import app.sandbox.executor as executor_module
+
+        original_runtime = settings.sandbox_runtime
+        settings.sandbox_runtime = "podman"
+
+        def fake_run(cmd, capture_output=True, text=True, timeout=None):
+            if cmd[:3] == ["podman", "image", "exists"]:
+                return MagicMock(returncode=0, stdout="", stderr="")
+
+        class FakePopen:
+            returncode = 137
+
+            def __init__(self, cmd, **_kwargs):
+                pass
+
+            def communicate(self, timeout=None):
+                return "", "Killed"
+
+        monkeypatch.setattr(executor_module.subprocess, "run", fake_run)
+        monkeypatch.setattr(executor_module.subprocess, "Popen", FakePopen)
+        try:
+            result = CadQueryExecutor()._execute_sync("code")
+        finally:
+            settings.sandbox_runtime = original_runtime
+
+        assert result.success is False
+        assert result.error_type == "OOMError"

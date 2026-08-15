@@ -4,33 +4,30 @@ import { Icon } from "./ui/Icon";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
-function sanitizeSvg(raw: string): string {
-  let cleaned = raw.replace(/<script[\s\S]*?<\/script>/gi, "");
-  cleaned = cleaned.replace(/on\w+\s*=\s*"[^"]*"/gi, "");
-  cleaned = cleaned.replace(/on\w+\s*=\s*'[^']*'/gi, "");
-  cleaned = cleaned.replace(/<iframe[\s\S]*?(<\/iframe>|\/?>)/gi, "");
-  cleaned = cleaned.replace(/<object[\s\S]*?(<\/object>|\/?>)/gi, "");
-  cleaned = cleaned.replace(/<embed[\s\S]*?\/?>/gi, "");
-  return cleaned.replace(/javascript\s*:/gi, "");
-}
-
 function LoadedSvg({ svgUrl }: { svgUrl: string }) {
-  const [state, setState] = useState<{ content: string | null; error: boolean }>({ content: null, error: false });
+  const [state, setState] = useState<{ objectUrl: string | null; error: boolean }>({ objectUrl: null, error: false });
   const [zoom, setZoom] = useState(1);
 
   useEffect(() => {
     const controller = new AbortController();
+    let objectUrl: string | null = null;
     const target = /^https?:\/\//.test(svgUrl) ? svgUrl : `${API_BASE}${svgUrl}`;
     authFetch(target, { signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.text();
       })
-      .then((text) => setState({ content: sanitizeSvg(text), error: false }))
+      .then((text) => {
+        objectUrl = URL.createObjectURL(new Blob([text], { type: "image/svg+xml" }));
+        setState({ objectUrl, error: false });
+      })
       .catch((error) => {
-        if (error instanceof Error && error.name !== "AbortError") setState({ content: null, error: true });
+        if (error instanceof Error && error.name !== "AbortError") setState({ objectUrl: null, error: true });
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
   }, [svgUrl]);
 
   return (
@@ -46,8 +43,8 @@ function LoadedSvg({ svgUrl }: { svgUrl: string }) {
             <p className="text-sm font-medium text-red-700">二维预览加载失败</p>
             <p className="mt-1 text-xs text-slate-500">请检查文件是否仍然有效，或重新生成模型后再试。</p>
           </div>
-        ) : state.content ? (
-          <div dangerouslySetInnerHTML={{ __html: state.content }} style={{ transform: `scale(${zoom})`, transformOrigin: "center" }} />
+        ) : state.objectUrl ? (
+          <img alt="二维工程图预览" src={state.objectUrl} style={{ transform: `scale(${zoom})`, transformOrigin: "center" }} />
         ) : (
           <div className="flex items-center gap-2 text-sm text-slate-500" role="status"><span className="h-4 w-4 animate-spin rounded-full border-2 border-sky-600 border-t-transparent" />正在加载二维图</div>
         )}

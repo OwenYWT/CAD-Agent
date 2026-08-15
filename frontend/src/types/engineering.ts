@@ -73,6 +73,66 @@ export interface ParameterChange {
   unit?: string;
 }
 
+export type ChangeEvidenceStatus = "changed" | "unchanged" | "unknown";
+
+export interface GeometryMetricChange {
+  label: string;
+  before: number;
+  after: number;
+  unit: string;
+}
+
+export interface FileChange {
+  format: string;
+  kind: "added" | "removed" | "replaced";
+  beforeUrl?: string;
+  afterUrl?: string;
+  evidence: "reference_only" | "sha256";
+}
+
+export interface ChangeSet {
+  id: string;
+  panelId: string;
+  objective: string | null;
+  baseRevisionId: string | null;
+  targetRevisionId: string;
+  baseVersion: number | null;
+  targetVersion: number;
+  requestId: string | null;
+  taskId: string | null;
+  modifiedObjectCount: number | null;
+  parameterChanges: ParameterChange[];
+  code: {
+    status: ChangeEvidenceStatus;
+    beforeLines: number | null;
+    afterLines: number | null;
+  };
+  geometry: {
+    status: ChangeEvidenceStatus;
+    metrics: GeometryMetricChange[];
+  };
+  files: FileChange[];
+  validation: {
+    status: "pass" | "warning" | "fail" | "unknown";
+    summary: string;
+    gates?: Array<{
+      gate: string;
+      mode: string;
+      outcome: string;
+      evidenceId?: string;
+      evidenceHash?: string;
+    }>;
+  };
+  risk: {
+    level: "low" | "medium" | "high" | "unknown";
+    reasons: string[];
+  };
+  agentLogs: string[];
+  createdAt: string;
+  source?: "snapshot" | "durable";
+  reviewStatus?: string;
+}
+
 export interface ExportJob {
   id: string;
   label: string;
@@ -104,8 +164,75 @@ export interface OnshapeLink {
 
 export interface HistoryProject {
   id: string;
+  projectId: string | null;
   name: string;
   updatedAt: string;
+}
+
+export interface DurableArtifact {
+  id: string;
+  revision_id: string;
+  artifact_kind: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  sha256: string;
+  download_url: string;
+  created_at: string;
+}
+
+export interface DurableChangeSetDetail {
+  id: string;
+  project_id: string;
+  branch_id: string;
+  branch_name: string;
+  base_revision_id: string;
+  base_revision_number: number;
+  base_content_hash: string;
+  base_manifest: Record<string, unknown>;
+  candidate_revision_id: string;
+  candidate_revision_number: number;
+  candidate_content_hash: string;
+  candidate_manifest: Record<string, unknown>;
+  source_workflow_run_id?: string | null;
+  objective: string;
+  change_summary: Record<string, unknown>;
+  validation_summary: Record<string, unknown>;
+  risk_summary: Record<string, unknown>;
+  status: string;
+  workflow_status?: string | null;
+  created_at: string;
+  updated_at: string;
+  review_note?: string | null;
+  base_artifacts: DurableArtifact[];
+  candidate_artifacts: DurableArtifact[];
+  audit_log: Array<{
+    id: string;
+    action: string;
+    payload: Record<string, unknown>;
+    occurred_at: string;
+  }>;
+  agent_events?: Array<{
+    sequence: number;
+    event_type: string;
+    payload: Record<string, unknown>;
+    occurred_at: string;
+    projection?: {
+      stage: string;
+      label: string;
+      status: string;
+      message: string;
+      step_key?: string | null;
+      gate?: string | null;
+      outcome?: string | null;
+    } | null;
+  }>;
+}
+
+export interface ChangeSetActionResult {
+  change_set_id: string;
+  status: string;
+  replayed: boolean;
 }
 
 export interface EngineeringProjectModel {

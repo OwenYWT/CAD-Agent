@@ -55,6 +55,7 @@ class ExecutionStateMachine:
     vision_retry_count: int = 0
     last_error_sig: str | None = None
     repeat_error_count: int = 0
+    failure_retries: dict[str, int] = field(default_factory=dict)
     repair_history: list[RepairStep] = field(default_factory=list)
 
     def _trace(self, phase: ExecutionPhase, message: str, *, detail: dict[str, Any] | None = None) -> None:
@@ -203,7 +204,7 @@ class ExecutionStateMachine:
                 "message": getattr(result, "error_message", None) or "\u5df2\u8fbe\u5230\u6700\u5927\u91cd\u8bd5\u6b21\u6570",
             },
             execution_time_ms=getattr(result, "execution_time_ms", 0) if result else 0,
-            attempts=self.max_retries,
+            attempts=self.attempt,
             repair_history=self.repair_history,
             design_brief=self.plan.design_brief if self.plan else None,
         )
@@ -395,6 +396,7 @@ class ExecutionStateMachine:
                             params=params if params else None,
                             execution_time_ms=result.execution_time_ms,
                             attempts=self.attempt,
+                            repair_history=self.repair_history,
                         ))
 
                     validation_data = None
@@ -554,6 +556,19 @@ class ExecutionStateMachine:
                     logger.info("Non-recoverable failure (%s), stopping retries", fc.key)
                     break
 
+                retries_used = self.failure_retries.get(fc.key, 0)
+                retry_budget = getattr(fc, "retry_budget", None)
+                if (
+                    retry_budget is not None
+                    and retries_used >= retry_budget
+                ):
+                    logger.info(
+                        "Retry budget exhausted for %s (%d)",
+                        fc.key,
+                        retry_budget,
+                    )
+                    break
+
                 error_sig = fc.key
                 if error_sig == self.last_error_sig:
                     self.repeat_error_count += 1
@@ -597,6 +612,7 @@ class ExecutionStateMachine:
                             self.plan,
                         ),
                     )
+                    self.failure_retries[fc.key] = retries_used + 1
                     self._trace(
                         ExecutionPhase.REPAIR_CODE,
                         "\u6267\u884c\u5931\u8d25\uff0c\u6b63\u5728\u4fee\u590d",

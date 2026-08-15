@@ -27,6 +27,8 @@ import argparse
 import asyncio
 import json
 import logging
+import platform
+import shutil
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -49,6 +51,20 @@ class _EmptyRetriever:
         return []
 
 
+async def _generate_with_deadline(orch, description: str, timeout_s: float):
+    """Run the real pipeline with the same whole-request deadline as the API.
+
+    The OpenAI-compatible client's timeout is an inactivity timeout, not a wall
+    clock deadline. Providers that emit transport data while still computing can
+    therefore keep a request alive indefinitely unless the pipeline is bounded
+    here as it is in the public FastAPI routes.
+    """
+    return await asyncio.wait_for(
+        orch.generate(description, output_formats=["step", "stl"]),
+        timeout=timeout_s,
+    )
+
+
 def _git_sha() -> str:
     try:
         out = subprocess.run(
@@ -69,13 +85,17 @@ def _git_sha() -> str:
 
 
 def _find_stl(request_id: str | None) -> Path | None:
+    return _find_artifact(request_id, ".stl")
+
+
+def _find_artifact(request_id: str | None, suffix: str) -> Path | None:
     if not request_id:
         return None
     d = Path(settings.file_storage_dir) / request_id
     if not d.exists():
         return None
-    stls = sorted(d.glob("*.stl"))
-    return stls[0] if stls else None
+    matches = sorted(d.glob(f"*{suffix}"))
+    return matches[0] if matches else None
 
 
 def _render(renderer, request_id: str | None, out_dir: Path) -> int:
@@ -91,6 +111,113 @@ def _render(renderer, request_id: str | None, out_dir: Path) -> int:
     except Exception as e:
         logger.warning(f"render failed for {request_id}: {e}")
         return 0
+
+
+def _verify_stl(path: Path | None) -> dict:
+    if path is None:
+        return {"stl_readable": False, "geometry_nonempty": False}
+    try:
+        import trimesh
+
+        loaded = trimesh.load(path, force="scene")
+        geometries = list(loaded.geometry.values())
+        nonempty = any(
+            len(getattr(mesh, "vertices", [])) > 0
+            and len(getattr(mesh, "faces", [])) > 0
+            for mesh in geometries
+        )
+        return {"stl_readable": True, "geometry_nonempty": nonempty}
+    except Exception as exc:
+        return {
+            "stl_readable": False,
+            "geometry_nonempty": False,
+            "stl_error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def _verify_dxf(path: Path | None) -> dict:
+    if path is None:
+        return {"dxf_readable": False}
+    try:
+        import ezdxf
+
+        document = ezdxf.readfile(path)
+        return {"dxf_readable": len(document.modelspace()) > 0}
+    except Exception as exc:
+        return {
+            "dxf_readable": False,
+            "dxf_error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+async def _verify_step(executor, path: Path | None) -> dict:
+    if path is None:
+        return {"step_readable": False}
+
+    result = await executor.execute(
+        "result = cq.importers.importStep('/sandbox/input/source.step')",
+        mode="3d",
+        extra_files={"source.step": path},
+    )
+    try:
+        readable = result.success and any(
+            output.suffix.lower() == ".step" for output in result.files.values()
+        )
+        evidence = {"step_readable": readable}
+        if not readable:
+            evidence["step_error"] = (
+                f"{result.error_type or 'ArtifactError'}: "
+                f"{result.error_message or 'STEP re-import produced no STEP output'}"
+            )
+        return evidence
+    finally:
+        shutil.rmtree(result.work_dir, ignore_errors=True)
+
+
+async def _artifact_evidence(executor, request_id: str | None, path: str, rendered: int) -> dict:
+    if path == "2d":
+        return await asyncio.to_thread(_verify_dxf, _find_artifact(request_id, ".dxf"))
+
+    stl_evidence, step_evidence = await asyncio.gather(
+        asyncio.to_thread(_verify_stl, _find_artifact(request_id, ".stl")),
+        _verify_step(executor, _find_artifact(request_id, ".step")),
+    )
+    return {**stl_evidence, **step_evidence, "rendered_views": rendered}
+
+
+def _runtime_identity() -> dict:
+    runtime = settings.sandbox_runtime.strip().lower()
+    command = "podman" if runtime == "podman" else "docker"
+    identity = {
+        "runtime": runtime,
+        "image": settings.sandbox_image,
+        "host_platform": f"{platform.system().lower()}/{platform.machine().lower()}",
+    }
+    try:
+        result = subprocess.run(
+            [command, "image", "inspect", settings.sandbox_image],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode != 0:
+            identity["inspect_error"] = (result.stderr or result.stdout).strip()
+            return identity
+        inspected = json.loads(result.stdout)[0]
+        image_id = str(inspected.get("Id") or inspected.get("ID") or "")
+        if image_id and not image_id.startswith("sha256:"):
+            image_id = f"sha256:{image_id}"
+        identity.update(
+            {
+                "image_digest": image_id or None,
+                "source_digest": inspected.get("Digest"),
+                "architecture": inspected.get("Architecture"),
+                "os": inspected.get("Os"),
+            }
+        )
+    except Exception as exc:
+        identity["inspect_error"] = f"{type(exc).__name__}: {exc}"
+    return identity
 
 
 async def run_eval(
@@ -117,13 +244,26 @@ async def run_eval(
             logger.info(f"[{cid} run {rep+1}/{n}] {case['description'][:40]}")
             t0 = time.time()
             response = None
+            pipeline_error = None
             try:
-                response = await orch.generate(case["description"], output_formats=["step", "stl"])
+                response = await _generate_with_deadline(
+                    orch,
+                    case["description"],
+                    settings.generate_deadline_s,
+                )
+            except TimeoutError:
+                pipeline_error = (
+                    f"pipeline deadline exceeded after {settings.generate_deadline_s:g}s"
+                )
+                logger.error(f"[{cid} run {rep+1}] {pipeline_error}")
             except Exception as e:
+                pipeline_error = f"{type(e).__name__}: {e}"
                 logger.error(f"[{cid} run {rep+1}] pipeline raised: {e}")
             wall_ms = int((time.time() - t0) * 1000)
 
             row = M.extract_metrics(response, case, wall_time_ms=wall_ms)
+            if pipeline_error is not None:
+                row["error"] = pipeline_error
 
             # render for human spot-check (best-effort, doesn't affect metrics)
             rendered = 0
@@ -133,8 +273,16 @@ async def run_eval(
                 rendered = await asyncio.get_event_loop().run_in_executor(
                     None, _render, renderer, rid, rdir
                 )
+            request_id = getattr(response, "request_id", None) if response else None
+            evidence = await _artifact_evidence(
+                orch.executor,
+                request_id,
+                case.get("path", "extrude_cut"),
+                rendered,
+            )
+            row = M.apply_artifact_gate(row, case, evidence)
             row["rendered_views"] = rendered
-            row["request_id"] = getattr(response, "request_id", None) if response else None
+            row["request_id"] = request_id
 
             status = "PASS" if row["passed"] else "fail"
             logger.info(f"[{cid} run {rep+1}] {status} "
@@ -202,9 +350,11 @@ def main():
         "rag_enabled": not args.no_rag,
         "n_repeats": args.n,
         "concurrency": args.concurrency,
+        "pipeline_deadline_s": settings.generate_deadline_s,
         "n_cases": len(cases),
         "case_set_hash": case_set_hash(),
         "sandbox_runtime": settings.sandbox_runtime,
+        "runtime_identity": _runtime_identity(),
     }
 
     logger.info(f"Starting {run_id}: {len(cases)} cases x{args.n} "
@@ -239,6 +389,8 @@ def main():
         print("=" * 70)
         diff = compare_reports(base, report)
         print_comparison(diff)
+        if not diff["gate_passed"]:
+            raise SystemExit(1)
 
 
 def _print_summary(report: dict):

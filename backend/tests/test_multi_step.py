@@ -87,3 +87,22 @@ class TestPlanDecomposerInit:
         decomposer = PlanDecomposer()
         with pytest.raises(RuntimeError, match="MOONSHOT_API_KEY"):
             _ = decomposer.client
+
+    @pytest.mark.asyncio
+    async def test_simple_parameterized_plan_never_calls_provider(self):
+        from app.agent.multi_step import PlanDecomposer
+        from app.models.schemas import CADPlan
+
+        decomposer = PlanDecomposer()
+        plan = CADPlan(
+            description="Shelf bracket",
+            part_type="bracket",
+            dimensions={"width": 40, "height": 60},
+            features=["two holes"],
+        )
+
+        build_plan = await decomposer.decompose(plan)
+
+        assert build_plan.complexity == "simple"
+        assert len(build_plan.steps) == 1
+        assert decomposer._client is None

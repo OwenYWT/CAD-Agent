@@ -1,4 +1,8 @@
 import type { InspectCheck, InspectReport } from "../types";
+import {
+  engineeringCheckLabel,
+  engineeringSourceLabel,
+} from "../utils/engineeringLabels";
 
 interface InspectReportPanelProps {
   report?: InspectReport | null;
@@ -40,7 +44,7 @@ function CheckRow({ check }: { check: InspectCheck }) {
   return (
     <div className="flex items-start justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2">
       <div>
-        <div className="text-xs font-medium text-gray-700">{check.name}</div>
+        <div className="text-xs font-medium text-gray-700">{engineeringCheckLabel(check.name)}</div>
         <div className="mt-0.5 text-xs text-gray-500">{check.message}</div>
       </div>
       <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${CHECK_META[check.status] || "bg-gray-100 text-gray-600"}`}>
@@ -76,7 +80,7 @@ export default function InspectReportPanel({ report }: InspectReportPanelProps) 
         </div>
         <div className="rounded-lg bg-gray-50 p-2">
           <div className="text-gray-500">{"\u4f53\u79ef"}</div>
-          <div className="mt-1 font-medium text-gray-900">{formatMaybeNumber(report.volume, " mm3")}</div>
+          <div className="mt-1 font-medium text-gray-900">{formatMaybeNumber(report.volume, " mm³")}</div>
         </div>
         <div className="rounded-lg bg-gray-50 p-2">
           <div className="text-gray-500">{"\u6c34\u5bc6\u6027"}</div>
@@ -90,7 +94,9 @@ export default function InspectReportPanel({ report }: InspectReportPanelProps) 
 
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
         <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-700">{"\u4fee\u590d\u6b21\u6570\uff1a"}{report.repair_attempts || 0}</span>
-        <span className="rounded-full bg-slate-100 px-2 py-1">{"\u6765\u6e90\uff1a"}{report.source || "geometry_validator"}</span>
+        <span className="rounded-full bg-slate-100 px-2 py-1">
+          {"\u6765\u6e90\uff1a"}{engineeringSourceLabel(report.source || "geometry_validator")}
+        </span>
         {exports.length > 0 && (
           <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">{"\u5bfc\u51fa\u6587\u4ef6\uff1a"}{exports.join(", ")}</span>
         )}

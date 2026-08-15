@@ -11,8 +11,10 @@ Two outputs:
      based on each case's pass@1 mean. This catches the side-effects of a prompt
      tweak that the aggregate hides (overall flat, but 3 cases broke and 3 fixed).
 
-Exit code is non-zero when there are net regressions (broken > fixed) OR any case
-dropped from passing to failing — so this can gate a nightly run.
+The release gate is intentionally strict. It returns a non-zero exit code for
+non-comparable metadata or case sets, hard/net regressions, pass@1 below the
+baseline noise floor, incomplete successful artifacts, or false success claims.
+This makes the command suitable for CI and nightly release qualification.
 
 Usage:
     cd backend && python -m benchmark.compare reports/baseline.json reports/candidate.json
@@ -27,6 +29,27 @@ import sys
 # of being a real (>0) move. Guards against 1/3 vs 1/3 noise being called a change.
 CASE_DELTA_THRESHOLD = 0.34  # ~ one run out of three
 
+_COMPARABLE_META_PATHS = (
+    ("model", ("model",)),
+    ("llm_provider", ("llm_provider",)),
+    ("temperature", ("temperature",)),
+    ("rag_enabled", ("rag_enabled",)),
+    ("n_repeats", ("n_repeats",)),
+    ("n_cases", ("n_cases",)),
+    ("concurrency", ("concurrency",)),
+    ("pipeline_deadline_s", ("pipeline_deadline_s",)),
+    ("case_set_hash", ("case_set_hash",)),
+    ("sandbox_runtime", ("sandbox_runtime",)),
+    (
+        "runtime_identity.image_digest",
+        ("runtime_identity", "image_digest"),
+    ),
+    (
+        "runtime_identity.architecture",
+        ("runtime_identity", "architecture"),
+    ),
+)
+
 
 def _overall(report: dict) -> dict:
     return report["summary"]["overall"]
@@ -34,6 +57,85 @@ def _overall(report: dict) -> dict:
 
 def _case_pass1(report: dict) -> dict[str, float]:
     return {c["id"]: c["agg"]["pass@1"]["mean"] for c in report["cases"]}
+
+
+def _nested(mapping: dict, path: tuple[str, ...]):
+    value = mapping
+    for key in path:
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return value
+
+
+def _metadata_mismatches(base: dict, cand: dict) -> list[dict]:
+    base_meta = base.get("meta", {})
+    cand_meta = cand.get("meta", {})
+    mismatches = []
+    for field, path in _COMPARABLE_META_PATHS:
+        before = _nested(base_meta, path)
+        after = _nested(cand_meta, path)
+        if before != after:
+            mismatches.append({
+                "field": field,
+                "base": before,
+                "cand": after,
+            })
+    return mismatches
+
+
+def _candidate_artifact_failures(report: dict) -> tuple[list[dict], list[dict]]:
+    failures: list[dict] = []
+    false_successes: list[dict] = []
+    for case in report.get("cases", []):
+        case_id = case.get("id", "?")
+        path = case.get("path", "extrude_cut")
+        for index, run in enumerate(case.get("runs", []), start=1):
+            executed = run.get("executed") is True
+            claimed_pass = run.get("passed") is True
+            gate = run.get("artifact_gate")
+            gate = gate if isinstance(gate, dict) else {}
+
+            if claimed_pass and (not executed or gate.get("passed") is not True):
+                false_successes.append({
+                    "case_id": case_id,
+                    "run": index,
+                    "reason": "报告声称通过，但执行或产物门禁没有通过",
+                })
+
+            # Failed executions are already counted by pass@1. Artifact evidence is
+            # mandatory only when the backend reported a successful execution.
+            if not executed:
+                continue
+
+            if path == "2d":
+                if gate.get("dxf_readable") is not True:
+                    failures.append({
+                        "case_id": case_id,
+                        "run": index,
+                        "reason": "DXF",
+                    })
+                continue
+
+            checks = (
+                ("step_readable", "STEP"),
+                ("stl_readable", "STL"),
+                ("geometry_nonempty", "非空几何"),
+            )
+            for key, reason in checks:
+                if gate.get(key) is not True:
+                    failures.append({
+                        "case_id": case_id,
+                        "run": index,
+                        "reason": reason,
+                    })
+            if int(gate.get("rendered_views") or 0) < 4:
+                failures.append({
+                    "case_id": case_id,
+                    "run": index,
+                    "reason": "四视图",
+                })
+    return failures, false_successes
 
 
 def compare_reports(base: dict, cand: dict) -> dict:
@@ -76,6 +178,29 @@ def compare_reports(base: dict, cand: dict) -> dict:
 
     only_base = sorted(set(bp) - set(cp))
     only_cand = sorted(set(cp) - set(bp))
+    metadata_mismatches = _metadata_mismatches(base, cand)
+    artifact_failures, false_successes = _candidate_artifact_failures(cand)
+    pass1_floor = max(
+        0.0,
+        bo["pass@1"]["mean"] - bo["pass@1"]["std"],
+    )
+    pass1_floor_passed = co["pass@1"]["mean"] >= pass1_floor
+    net = len(fixed) - len(broke)
+    gate_failures = []
+    if metadata_mismatches:
+        gate_failures.append("comparison metadata mismatch")
+    if only_base or only_cand:
+        gate_failures.append("case IDs differ")
+    if hard_regressions:
+        gate_failures.append("hard per-case regression")
+    if net < 0:
+        gate_failures.append("net per-case regression")
+    if not pass1_floor_passed:
+        gate_failures.append("candidate pass@1 is below the baseline one-standard-deviation floor")
+    if artifact_failures:
+        gate_failures.append("successful execution has incomplete artifact evidence")
+    if false_successes:
+        gate_failures.append("false success detected")
 
     return {
         "summary": summary,
@@ -89,6 +214,13 @@ def compare_reports(base: dict, cand: dict) -> dict:
         "meta_cand": cand.get("meta", {}),
         "case_set_changed": base.get("meta", {}).get("case_set_hash")
                             != cand.get("meta", {}).get("case_set_hash"),
+        "metadata_mismatches": metadata_mismatches,
+        "artifact_failures": artifact_failures,
+        "false_successes": false_successes,
+        "pass1_floor": round(pass1_floor, 4),
+        "pass1_floor_passed": pass1_floor_passed,
+        "gate_failures": gate_failures,
+        "gate_passed": not gate_failures,
     }
 
 
@@ -101,6 +233,13 @@ def print_comparison(diff: dict):
               "Per-case diffs still valid for common ids; aggregate deltas suspect.")
     if mb.get("rag_enabled") != mc.get("rag_enabled"):
         print("⚠️  RAG setting differs between reports.")
+    if diff["metadata_mismatches"]:
+        print("\nComparison metadata mismatches:")
+        for mismatch in diff["metadata_mismatches"]:
+            print(
+                f"  {mismatch['field']}: "
+                f"{mismatch['base']!r} != {mismatch['cand']!r}"
+            )
 
     print("\nMetric                  baseline   candidate   delta")
     print("-" * 56)
@@ -126,18 +265,31 @@ def print_comparison(diff: dict):
     if diff["only_in_base"] or diff["only_in_cand"]:
         print(f"  (ids only in base: {diff['only_in_base']}; only in cand: {diff['only_in_cand']})")
 
-    # verdict
-    net = len(diff["fixed"]) - len(diff["broke"])
+    candidate_pass1 = diff["summary"]["pass@1"]["cand"]
+    floor_status = "PASS" if diff["pass1_floor_passed"] else "FAIL"
+    print(
+        f"\npass@1 floor: candidate {candidate_pass1:.1%} "
+        f">= {diff['pass1_floor']:.1%} [{floor_status}]"
+    )
+    if diff["artifact_failures"]:
+        print(f"Artifact evidence failures: {len(diff['artifact_failures'])}")
+        for failure in diff["artifact_failures"][:20]:
+            print(
+                f"  {failure['case_id']} run {failure['run']}: "
+                f"{failure['reason']}"
+            )
+        if len(diff["artifact_failures"]) > 20:
+            print(f"  ... {len(diff['artifact_failures']) - 20} more")
+    if diff["false_successes"]:
+        print(f"False successes: {len(diff['false_successes'])}")
+
     print()
-    if diff["broke"] or diff["hard_regressions"]:
-        if net < 0:
-            print(f"VERDICT: net regression ({len(diff['broke'])} broke vs {len(diff['fixed'])} fixed).")
-        else:
-            print(f"VERDICT: mixed — {len(diff['broke'])} broke, {len(diff['fixed'])} fixed. Review broken cases.")
-    elif diff["fixed"]:
-        print(f"VERDICT: improvement ({len(diff['fixed'])} fixed, 0 broke).")
+    if diff["gate_passed"]:
+        print("RELEASE GATE: PASS")
     else:
-        print("VERDICT: no significant per-case change (within noise).")
+        print("RELEASE GATE: FAIL")
+        for failure in diff["gate_failures"]:
+            print(f"  - {failure}")
 
 
 def main():
@@ -154,9 +306,7 @@ def main():
     diff = compare_reports(base, cand)
     print_comparison(diff)
 
-    # non-zero exit on net regression or any hard regression (gate-friendly)
-    net = len(diff["fixed"]) - len(diff["broke"])
-    sys.exit(1 if (diff["hard_regressions"] or net < 0) else 0)
+    sys.exit(0 if diff["gate_passed"] else 1)
 
 
 if __name__ == "__main__":

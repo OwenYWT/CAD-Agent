@@ -191,15 +191,16 @@ async def test_execution_error_then_recover():
 
 
 @pytest.mark.asyncio
-async def test_all_execution_failures_exhaust_retries():
-    """Every attempt fails in the sandbox → final failure after MAX_RETRIES."""
+async def test_all_execution_failures_report_actual_bounded_attempts():
+    """Repeated non-converging failures report physical attempts, not MAX_RETRIES."""
     orch = build_orchestrator(
         plan=_plan(),
         executor_outcomes=[{"success": False, "error_type": "RuntimeError", "error_message": "boom"}],
     )
     r = await orch.generate("一个零件")
     assert r.success is False
-    assert r.attempts == orch.MAX_RETRIES
+    assert r.attempts == len(orch.executor.calls)
+    assert 1 <= r.attempts < orch.MAX_RETRIES
     assert r.error["type"] in ("RuntimeError", "ExecutionError")
 
 

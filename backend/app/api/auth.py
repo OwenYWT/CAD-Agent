@@ -1,11 +1,15 @@
+import hashlib
 import logging
 import time
+from base64 import urlsafe_b64decode
+from binascii import Error as Base64Error
 from collections import defaultdict
 
 from fastapi import Request, HTTPException, Depends, WebSocket
 from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 
 from app.config import settings
+from app.domain.identity import PrincipalContext
 from app.storage import auth as auth_store
 
 logger = logging.getLogger(__name__)
@@ -14,7 +18,44 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
+async def _bind_authenticated_user(request: Request, user: dict) -> None:
+    if not settings.durable_control_plane_enabled:
+        return
+    from app.repositories.identity import reconcile_authenticated_user
+
+    context = await reconcile_authenticated_user(user)
+    request.state.principal_context = context
+    from app.principal_context import bind_principal
+
+    bind_principal(context)
+
+
+async def _bind_api_key(request: Request, api_key: str) -> None:
+    if not settings.durable_control_plane_enabled:
+        return
+    from app.repositories.identity import reconcile_api_key
+
+    context = await reconcile_api_key(api_key)
+    request.state.principal_context = context
+    from app.principal_context import bind_principal
+
+    bind_principal(context)
+
+
+async def _bind_local_anonymous(request: Request) -> None:
+    if not settings.durable_control_plane_enabled:
+        return
+    from app.repositories.identity import reconcile_local_anonymous
+
+    context = await reconcile_local_anonymous()
+    request.state.principal_context = context
+    from app.principal_context import bind_principal
+
+    bind_principal(context)
+
+
 async def get_current_user(
+    request: Request,
     bearer: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ):
     token = bearer.credentials if bearer else None
@@ -24,10 +65,12 @@ async def get_current_user(
     user = await auth_store.get_user(user_id)
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    await _bind_authenticated_user(request, user)
     return user
 
 
 async def get_optional_user(
+    request: Request,
     bearer: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ):
     """Like get_current_user, but tolerates the local-dev auth-off mode.
@@ -43,8 +86,10 @@ async def get_optional_user(
         if user_id:
             user = await auth_store.get_user(user_id)
             if user:
+                await _bind_authenticated_user(request, user)
                 return user
     if not settings.auth_required and not settings.api_keys:
+        await _bind_local_anonymous(request)
         return None
     raise HTTPException(status_code=401, detail="Invalid or missing login token")
 
@@ -64,18 +109,44 @@ async def verify_api_key(
     if bearer:
         user_id = await auth_store.verify_session_token(bearer.credentials)
         if user_id:
+            user = await auth_store.get_user(user_id)
+            if not user:
+                raise HTTPException(status_code=401, detail="User not found")
+            await _bind_authenticated_user(request, user)
             return f"user:{user_id}"
         if bearer.credentials in settings.api_keys:
+            await _bind_api_key(request, bearer.credentials)
             return bearer.credentials
 
     if x_api_key and x_api_key in settings.api_keys:
         logger.warning("X-API-Key header is deprecated. Use 'Authorization: Bearer <key>' instead.")
+        await _bind_api_key(request, x_api_key)
         return x_api_key
 
     if not settings.auth_required and not settings.api_keys:
+        await _bind_local_anonymous(request)
         return None
 
     raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
+async def get_durable_principal(
+    request: Request,
+    _credential: str | None = Depends(verify_api_key),
+) -> PrincipalContext:
+    """Return the reconciled principal for durable control-plane APIs."""
+    if not settings.durable_control_plane_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Durable control plane is not enabled",
+        )
+    context = getattr(request.state, "principal_context", None)
+    if context is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Durable principal context is unavailable",
+        )
+    return context
 
 
 async def get_ws_user_id(token: str | None) -> str | None:
@@ -93,6 +164,56 @@ async def verify_ws_token(token: str | None) -> bool:
     return token is not None and token in settings.api_keys
 
 
+def websocket_auth_token(websocket: WebSocket) -> tuple[str | None, str | None]:
+    """Read a WebSocket credential without placing it in the request URL.
+
+    Browser WebSocket APIs cannot set an Authorization header. New clients send
+    a base64url credential in a negotiated subprotocol; the query parameter is
+    retained only for compatibility with the legacy socket.
+    """
+    prefix = "cad-agent-auth."
+    offered = websocket.headers.get("sec-websocket-protocol", "")
+    for protocol in (item.strip() for item in offered.split(",")):
+        if not protocol.startswith(prefix):
+            continue
+        encoded = protocol[len(prefix):]
+        if not encoded or len(encoded) > 8192:
+            return None, None
+        try:
+            padding = "=" * (-len(encoded) % 4)
+            token = urlsafe_b64decode(encoded + padding).decode("utf-8")
+        except (Base64Error, UnicodeDecodeError, ValueError):
+            return None, None
+        return (token or None), protocol
+    return websocket.query_params.get("token"), None
+
+
+async def resolve_ws_principal(token: str | None) -> PrincipalContext | None:
+    """Authenticate, reconcile, and bind a durable WebSocket principal."""
+    if not await verify_ws_token(token):
+        return None
+    if not settings.durable_control_plane_enabled:
+        return None
+    from app.domain.identity import (
+        api_key_principal,
+        local_anonymous_principal,
+        user_principal,
+    )
+    from app.principal_context import bind_principal
+    from app.repositories.identity import reconcile_principal
+
+    user_id = await get_ws_user_id(token)
+    if user_id:
+        context = user_principal(user_id)
+    elif token:
+        context = api_key_principal(token)
+    else:
+        context = local_anonymous_principal()
+    reconciled = await reconcile_principal(context)
+    bind_principal(reconciled)
+    return reconciled
+
+
 class RateLimiter:
     """Simple in-memory sliding-window rate limiter per API key / IP."""
 
@@ -105,7 +226,8 @@ class RateLimiter:
 
     def _client_key(self, request: Request | WebSocket, api_key: str | None) -> str:
         if api_key:
-            return f"key:{api_key}"
+            fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+            return f"key-sha256:{fingerprint}"
         # Behind a trusted proxy, the real client IP is the first X-Forwarded-For hop;
         # otherwise request.client.host is the proxy itself (one shared bucket for all).
         if settings.trust_proxy_headers:

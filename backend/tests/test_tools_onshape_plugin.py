@@ -189,7 +189,10 @@ async def test_onshape_create_document_returns_business_summary():
 
 @pytest.mark.asyncio
 async def test_onshape_publish_step_checks_generated_file_owner(monkeypatch):
-    monkeypatch.setattr(tool_onshape, "request_belongs_to", lambda request_id, principal: request_id == "req-1" and principal == "principal-1")
+    async def belongs_to(request_id, principal):
+        return request_id == "req-1" and principal == "principal-1"
+
+    monkeypatch.setattr(tool_onshape, "request_belongs_to", belongs_to)
 
     result = await ToolExecutor(build_session()).execute(
         "onshape_publish_step",
@@ -204,7 +207,10 @@ async def test_onshape_publish_step_checks_generated_file_owner(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_onshape_publish_step_rejects_wrong_generated_file_owner(monkeypatch):
-    monkeypatch.setattr(tool_onshape, "request_belongs_to", lambda _request_id, _principal: False)
+    async def not_owned(_request_id, _principal):
+        return False
+
+    monkeypatch.setattr(tool_onshape, "request_belongs_to", not_owned)
 
     result = await ToolExecutor(build_session()).execute(
         "onshape_publish_step",
@@ -219,7 +225,10 @@ async def test_onshape_publish_step_rejects_wrong_generated_file_owner(monkeypat
 
 @pytest.mark.asyncio
 async def test_onshape_publish_step_requires_admin_for_existing_document(monkeypatch):
-    monkeypatch.setattr(tool_onshape, "request_belongs_to", lambda _request_id, _principal: True)
+    async def belongs_to(_request_id, _principal):
+        return True
+
+    monkeypatch.setattr(tool_onshape, "request_belongs_to", belongs_to)
 
     result = await ToolExecutor(build_session()).execute(
         "onshape_publish_step",

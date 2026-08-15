@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { AuthSession } from "../auth";
 import { saveAuthSession } from "../auth";
+import { BrandMark } from "./common/BrandMark";
 import { Icon } from "./ui/Icon";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
@@ -90,13 +91,15 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   return (
     <main className="flex min-h-[100dvh] items-center justify-center bg-slate-950 p-4 sm:p-6">
       <div className="w-full max-w-[420px]">
-        <div className="mb-6 flex items-center justify-center gap-3 text-white">
-          <span className="flex h-11 w-11 items-center justify-center rounded-md bg-sky-500 text-slate-950"><Icon name="box" size={24} /></span>
-          <div>
-            <h1 className="text-xl font-semibold">CAD Agent</h1>
-            <p className="text-sm text-slate-400">参数化建模工作台</p>
-          </div>
-        </div>
+        <BrandMark
+          className="mb-6 w-full justify-center text-white"
+          description="参数化建模工作台"
+          descriptionClassName="text-sm text-slate-400"
+          nameAs="h1"
+          nameClassName="text-[22px]"
+          size="login"
+          tone="inverse"
+        />
 
         <form className="space-y-5 rounded-lg border border-slate-200 bg-white p-5 shadow-2xl sm:p-7" onSubmit={submit}>
           <div>

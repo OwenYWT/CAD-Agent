@@ -243,6 +243,32 @@ def extract_metrics(response, case: dict, wall_time_ms: int | None = None) -> di
     }
 
 
+def apply_artifact_gate(row: dict, case: dict, evidence: dict) -> dict:
+    """Require materialized, parseable artifacts before a run can pass.
+
+    The semantic/geometry metrics and the artifact checks are intentionally
+    separate: the former evaluates the design, while this gate prevents a
+    successful response with missing or corrupt deliverables from being counted
+    as a product success.
+    """
+    normalized = dict(evidence)
+    if case.get("path") == "2d":
+        gate_passed = normalized.get("dxf_readable") is True
+    else:
+        gate_passed = (
+            normalized.get("step_readable") is True
+            and normalized.get("stl_readable") is True
+            and normalized.get("geometry_nonempty") is True
+            and int(normalized.get("rendered_views") or 0) >= 4
+        )
+
+    normalized["passed"] = gate_passed
+    gated = dict(row)
+    gated["artifact_gate"] = normalized
+    gated["passed"] = bool(row.get("passed")) and gate_passed
+    return gated
+
+
 # --- aggregation helpers ------------------------------------------------------
 
 def _mean(xs: list[float]) -> float:

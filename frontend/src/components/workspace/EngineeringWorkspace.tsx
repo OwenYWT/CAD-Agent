@@ -1,12 +1,17 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AuthUser } from "../../auth";
 import { adaptEngineeringProject } from "../../adapters/projectAdapter";
 import { useWebSocket } from "../../hooks/useWebSocket";
 import { useSessionStore } from "../../stores/sessionStore";
 import type { ManufacturingProfile, ModelSnapshotDetail } from "../../types";
-import type { EngineeringDomain, EngineeringStage } from "../../types/engineering";
+import type {
+  DurableChangeSetDetail,
+  EngineeringDomain,
+  EngineeringStage,
+} from "../../types/engineering";
 import AgentRunTimeline from "../AgentRunTimeline";
 import AgentDrawer from "../agent/AgentDrawer";
+import ChangeSetDialog from "../changes/ChangeSetDialog";
 import ExportDialog from "../export/ExportDialog";
 import ParameterDrawer from "../parameters/ParameterDrawer";
 import ProjectFlow from "../project/ProjectFlow";
@@ -26,8 +31,13 @@ interface EngineeringWorkspaceProps {
 }
 
 export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: EngineeringWorkspaceProps) {
+  const ownerId = useSessionStore((state) => state.ownerId);
+  const bindOwner = useSessionStore((state) => state.bindOwner);
   const sessionId = useSessionStore((state) => state.sessionId);
   const panel = useSessionStore((state) => state.getActivePanel());
+  const applyDurableChangeSet = useSessionStore(
+    (state) => state.applyDurableChangeSet,
+  );
   const { connectionState, sendMessage, executeCode, resumeRun, restoreContext, modifyPart } = useWebSocket();
   const model = useMemo(() => adaptEngineeringProject(sessionId, panel), [panel, sessionId]);
   const hasProject = panel.messages.length > 0 || panel.result !== null || panel.isGenerating;
@@ -40,7 +50,12 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const [agentPrompt, setAgentPrompt] = useState("");
   const [parametersOpen, setParametersOpen] = useState(false);
   const [checksOpen, setChecksOpen] = useState(false);
+  const [changesOpen, setChangesOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+
+  useEffect(() => {
+    bindOwner(user.id);
+  }, [bindOwner, user.id]);
 
   const startProject = (prompt: string, profile: ManufacturingProfile | null = null) => {
     if (!sendMessage(prompt, "auto", profile)) return false;
@@ -61,9 +76,15 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const askAgent = (prompt = "") => { setAgentPrompt(prompt); setAgentOpen(true); };
   const executeWithProgress = (code: string) => {
     if (!executeCode(code)) return false;
-    useSessionStore.getState().beginGeneration();
+    useSessionStore.getState().beginGeneration("正在重新计算模型");
     return true;
   };
+  const syncDurableChangeSet = useCallback(
+    (detail: DurableChangeSetDetail) => {
+      applyDurableChangeSet(detail, panel.id);
+    },
+    [applyDurableChangeSet, panel.id],
+  );
   const resumeWithProgress = (runId: string) => {
     if (!resumeRun(runId)) return false;
     useSessionStore.getState().beginGeneration();
@@ -72,14 +93,12 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
 
   const latestUserPrompt = panel.messages.filter((message) => message.role === "user").at(-1)?.content || "";
   const restoreSnapshot = (snapshot: ModelSnapshotDetail) => {
-    const restoredResult = {
-      ...snapshot.result,
-      snapshot_id: snapshot.id,
-      version: snapshot.version,
-    };
-    useSessionStore.getState().restorePanelResult(panel.id, restoredResult, snapshot.code);
-    restoreContext(panel.id, snapshot.code, snapshot.result.assembly_parts || []);
+    return executeWithProgress(snapshot.code);
   };
+
+  if (ownerId !== user.id) {
+    return <div className="grid min-h-screen place-items-center text-sm text-[var(--muted)]">正在恢复工程会话...</div>;
+  }
 
   if (!hasProject) {
     return <>
@@ -95,16 +114,17 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
 
   return (
     <div className="flex h-[100dvh] min-w-[320px] flex-col overflow-hidden bg-white text-[var(--ink)]">
-      <WorkspaceHeader connection={connectionState} onAgent={() => askAgent()} onBack={() => setView("overview")} onChecks={() => setChecksOpen(true)} onExport={() => setExportOpen(true)} onLogout={onLogout} onMenu={() => setMobileSidebar(true)} onSettings={() => setSettingsOpen(true)} onUserUpdate={onUserUpdate} project={model.project} user={user} />
+      <WorkspaceHeader connection={connectionState} onAgent={() => askAgent()} onBack={() => setView("overview")} onChanges={() => setChangesOpen(true)} onChecks={() => setChecksOpen(true)} onExport={() => setExportOpen(true)} onLogout={onLogout} onMenu={() => setMobileSidebar(true)} onSettings={() => setSettingsOpen(true)} onUserUpdate={onUserUpdate} project={model.project} user={user} />
       <div className="flex min-h-0 flex-1">
         <ProjectSidebar activeView={view} collapsed={sidebarCollapsed} mobileOpen={mobileSidebar} onCollapse={() => setSidebarCollapsed((value) => !value)} onMobileClose={() => setMobileSidebar(false)} onNavigate={navigate} restoreContext={restoreContext} />
         <div className="min-w-0 flex-1 overflow-y-auto">
-          <div className={view === "mechanical" ? "flex min-h-full min-w-0 gap-4 p-4 sm:p-6" : "min-w-0 p-4 sm:p-6"}>
+          <div className={view === "mechanical" ? "flex min-h-full min-w-0 flex-col gap-4 p-4 sm:p-6 xl:flex-row" : "min-w-0 p-4 sm:p-6"}>
             <div className={view === "mechanical" ? "min-w-0 flex-1 space-y-4" : "min-w-0 space-y-4"}>
-              {(panel.activeRun || panel.stepHistory.length > 0 || panel.artifactUpdates.length > 0) ? (
+              {(panel.activeRun || panel.stepHistory.length > 0 || panel.artifactUpdates.length > 0 || panel.durable?.agent) ? (
                 <AgentRunTimeline
                   activeRun={panel.activeRun}
                   artifacts={panel.artifactUpdates}
+                  durableAgent={panel.durable?.agent}
                   inspectReport={model.result?.inspect_report}
                   isGenerating={panel.isGenerating}
                   onRerunCode={() => { if (model.result?.code) executeWithProgress(model.result.code); }}
@@ -116,10 +136,10 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
                 />
               ) : null}
               {view === "overview" ? <ProjectFlow onOpenStage={openStage} project={model.project} stages={model.stages} task={model.task} /> : null}
-              {view === "mechanical" ? <MechanicalWorkspace onAgent={() => askAgent()} onBack={() => setView("overview")} onProperties={() => setParametersOpen(true)} result={model.result} /> : null}
+              {view === "mechanical" ? <MechanicalWorkspace currentStep={panel.currentStep} isGenerating={panel.isGenerating} onAgent={() => askAgent()} onBack={() => setView("overview")} onProperties={() => setParametersOpen(true)} result={model.result} /> : null}
             </div>
             {view === "mechanical" ? (
-              <div className="min-w-0 w-[380px] shrink-0 xl:sticky xl:top-4 xl:self-start">
+              <div className="min-w-0 w-full shrink-0 xl:sticky xl:top-4 xl:w-[380px] xl:self-start">
                 <VersionHistoryPanel
                   activeSnapshotId={model.result?.snapshot_id}
                   currentParts={model.result?.assembly_parts || []}
@@ -141,6 +161,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
         activeSnapshotId={model.result?.snapshot_id}
         activeRun={panel.activeRun}
         artifacts={panel.artifactUpdates}
+        durableAgent={panel.durable?.agent}
         description={latestUserPrompt}
         isGenerating={panel.isGenerating}
         key={"validation:" + (model.result?.request_id || "empty") + ":" + checksOpen}
@@ -156,6 +177,16 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
         refreshKey={model.result?.snapshot_id}
         result={model.result}
         steps={panel.stepHistory}
+      />
+      <ChangeSetDialog
+        activeSnapshotId={model.result?.snapshot_id}
+        changeSetId={panel.durable?.changeSetId}
+        onAskAgent={(prompt) => { setChangesOpen(false); askAgent(prompt); }}
+        onClose={() => setChangesOpen(false)}
+        onDurableChangeSet={syncDurableChangeSet}
+        onRestore={restoreSnapshot}
+        open={changesOpen}
+        panelId={panel.id}
       />
       <ExportDialog jobs={model.exports} onClose={() => setExportOpen(false)} open={exportOpen} requestId={model.result?.request_id} />
       <SettingsDrawer onClose={() => setSettingsOpen(false)} open={settingsOpen} />

@@ -62,19 +62,6 @@ button,
   outline-offset: 2px;
 }
 
-.workspace-brand {
-  display: grid;
-  width: 29px;
-  height: 29px;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 8px;
-  background: var(--ink);
-  color: white;
-  font-size: 12px;
-  font-weight: 700;
-}
-
 .workspace-button {
   display: inline-flex;
   min-height: 34px;

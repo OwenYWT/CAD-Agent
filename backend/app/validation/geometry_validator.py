@@ -33,6 +33,17 @@ class GeometryValidator:
     MIN_WALL_THICKNESS = 0.5
     MAX_DIMENSION = 2000
     MIN_DIMENSION = 0.1
+    # Only these complete groups describe the model's three bounding-box axes.
+    # Feature dimensions such as outer/inner diameter, hole diameter, radius,
+    # wall thickness, and fillet radius must never be counted as XYZ extents.
+    BOUNDING_BOX_DIMENSION_GROUPS = (
+        ("width", "depth", "height"),
+        ("length", "width", "height"),
+        ("length", "depth", "height"),
+        ("length", "width", "thickness"),
+        ("width", "height", "thickness"),
+        ("x", "y", "z"),
+    )
 
     def __init__(self):
         # Reuse the existing ray-cast wall-thickness estimator (no LLM cost)
@@ -159,12 +170,29 @@ class GeometryValidator:
         if expected is None:
             return ValidationRule("expected_dimensions", True, "未指定期望尺寸", "info")
 
-        actual_sorted = sorted(float(e) for e in extents)
-        expected_values = sorted(float(v) for v in expected.values())
-
-        if len(expected_values) != 3:
+        normalized = {str(key).strip().lower(): value for key, value in expected.items()}
+        axis_group = next(
+            (
+                group
+                for group in self.BOUNDING_BOX_DIMENSION_GROUPS
+                if all(axis in normalized for axis in group)
+            ),
+            None,
+        )
+        if axis_group is None:
             return ValidationRule(
-                "expected_dimensions", True, "期望尺寸不完整，跳过检查", "info"
+                "expected_dimensions",
+                True,
+                "未提供完整包围盒轴尺寸，跳过检查",
+                "info",
+            )
+
+        actual_sorted = sorted(float(e) for e in extents)
+        try:
+            expected_values = sorted(float(normalized[axis]) for axis in axis_group)
+        except (TypeError, ValueError):
+            return ValidationRule(
+                "expected_dimensions", False, "包围盒期望尺寸不是有效数值", "error"
             )
 
         max_error = 0.0

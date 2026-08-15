@@ -3,6 +3,7 @@ Phase 2 集成测试
 需要: Docker 运行中 (部分测试), ANTHROPIC_API_KEY 环境变量 (LLM 测试)
 """
 import os
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient, ASGITransport
@@ -73,10 +74,28 @@ async def test_rate_limiting_integration():
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Use /api/execute since it doesn't need LLM
             for _ in range(2):
-                r = await client.post("/api/execute", json={"code": "import cadquery"})
+                r = await client.post(
+                    "/api/execute",
+                    json={
+                        "code": "import cadquery",
+                        "project_id": str(uuid4()),
+                        "branch_id": str(uuid4()),
+                        "expected_base_revision_id": str(uuid4()),
+                        "idempotency_key": f"rate-{uuid4()}",
+                    },
+                )
                 assert r.status_code != 429
 
-            r = await client.post("/api/execute", json={"code": "import cadquery"})
+            r = await client.post(
+                "/api/execute",
+                json={
+                    "code": "import cadquery",
+                    "project_id": str(uuid4()),
+                    "branch_id": str(uuid4()),
+                    "expected_base_revision_id": str(uuid4()),
+                    "idempotency_key": f"rate-{uuid4()}",
+                },
+            )
             assert r.status_code == 429
     finally:
         rate_limiter.rpm = original_rpm

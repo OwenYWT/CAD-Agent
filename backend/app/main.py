@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import shutil
 import time
@@ -10,6 +11,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app.db import close_database, database_readiness
+from app.execution.composition import get_execution_backend
+from app.object_store import object_store_readiness
+from app.temporal_client import (
+    temporal_agent_v2_worker_readiness,
+    temporal_readiness,
+    temporal_worker_readiness,
+)
 
 # Configure logging with request-id correlation
 from app.logging_context import RequestIdFilter
@@ -37,6 +46,13 @@ from app.api.login import router as login_router
 from app.api.capabilities import router as capabilities_router
 from app.api.capability_actions import router as capability_actions_router
 from app.api.onshape import router as onshape_router
+from app.api.agent_tools import router as agent_tools_router
+from app.api.tasks import (
+    durable_task_websocket,
+    router as durable_tasks_router,
+)
+from app.api.changes import router as changes_router
+from app.api.revisions import router as revisions_router
 from app.api.websocket import websocket_endpoint
 from app.fusion360.api import router as fusion360_router
 from app.fusion360.agent_api import router as fusion360_agent_router
@@ -44,7 +60,6 @@ from app.fusion360.agent_api import router as fusion360_agent_router
 logger = logging.getLogger(__name__)
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
-STARTUP_DEPENDENCY_TIMEOUT_S = 5.0
 
 
 def _cleanup_old_files():
@@ -62,10 +77,8 @@ def _cleanup_old_files():
         logger.info(f"Cleaned up {count} old file directories")
 
 
-def _startup_self_check():
-    """Fail loud at boot if the core can't actually generate, instead of dying on the
-    first tester prompt. Checks the three things the audit found missing on a fresh host:
-    LLM key, Docker daemon, sandbox image."""
+def _startup_self_check(execution_backend=None):
+    """Report missing LLM or MCAD execution dependencies before the first request."""
     problems = []
 
     if not settings.has_llm_credentials:
@@ -74,49 +87,11 @@ def _startup_self_check():
             "请在 backend/.env 写入对应的模型 API key。"
         )
 
-    if settings.sandbox_runtime.strip().lower() == "podman":
-        import subprocess
-        command = settings.sandbox_command or "podman"
-        try:
-            result = subprocess.run(
-                [command, "image", "exists", settings.sandbox_image],
-                capture_output=True,
-                text=True,
-                timeout=STARTUP_DEPENDENCY_TIMEOUT_S,
-            )
-        except subprocess.TimeoutExpired:
-            problems.append(
-                f"Podman 自检超时（{STARTUP_DEPENDENCY_TIMEOUT_S:g} 秒）。"
-                "请检查 Podman machine 是否正常运行。"
-            )
-        except OSError as exc:
-            problems.append(f"Podman 不可用: {exc}")
-        else:
-            if result.returncode == 1:
-                problems.append(
-                    f"Sandbox image '{settings.sandbox_image}' not found for Podman. "
-                    "Run: cd backend/sandbox && podman build -t cad-agent-sandbox:latest ."
-                )
-            elif result.returncode != 0:
-                detail = (result.stderr or result.stdout or "未知错误").strip()[:300]
-                problems.append(f"Podman runtime unavailable: {detail}")
-    else:
-        try:
-            import docker
-            try:
-                client = docker.from_env(timeout=STARTUP_DEPENDENCY_TIMEOUT_S)
-                client.ping()
-                try:
-                    client.images.get(settings.sandbox_image)
-                except docker.errors.ImageNotFound:
-                    problems.append(
-                        f"Sandbox image '{settings.sandbox_image}' not found. "
-                        "Run: cd backend/sandbox && docker build -t cad-agent-sandbox:latest ."
-                    )
-            except Exception:
-                problems.append("Docker daemon unavailable. Start Docker or set SANDBOX_RUNTIME=podman.")
-        except Exception:
-            problems.append("docker SDK unavailable. Run: pip install -r requirements.txt")
+    try:
+        backend = execution_backend or get_execution_backend()
+        backend.runtime_snapshot()
+    except Exception as exc:
+        problems.append(f"MCAD ExecutionBackend 不可用: {str(exc)[:300]}")
 
     if problems:
         logger.error(
@@ -124,7 +99,7 @@ def _startup_self_check():
             len(problems), "\n  - ".join(problems),
         )
     else:
-        logger.info("启动自检通过: LLM key + Docker + 沙箱镜像就绪")
+        logger.info("启动自检通过: LLM key + MCAD ExecutionBackend 就绪")
     return problems
 
 
@@ -141,22 +116,63 @@ async def _periodic_cleanup(interval_s: int = 3600):
             logger.warning(f"Periodic cleanup error: {e}")
 
 
+async def _durable_control_plane_readiness() -> dict:
+    if not settings.durable_control_plane_enabled:
+        return {
+            "status": "disabled",
+            "dependencies": {},
+            "problems": [],
+        }
+
+    probes = {
+        "postgresql": database_readiness,
+        "object_store": object_store_readiness,
+        "temporal": temporal_readiness,
+        "temporal_worker": temporal_worker_readiness,
+    }
+    probes["temporal_agent_v2_worker"] = (
+        temporal_agent_v2_worker_readiness
+    )
+    results = await asyncio.gather(
+        *(probe() for probe in probes.values()),
+        return_exceptions=True,
+    )
+    dependencies = {}
+    problems = []
+    for name, result in zip(probes, results, strict=True):
+        if isinstance(result, BaseException):
+            dependencies[name] = {
+                "status": "unavailable",
+                "error_type": type(result).__name__,
+            }
+            # Provider exception messages can include connection credentials.
+            problems.append(f"{name} unavailable ({type(result).__name__})")
+        else:
+            dependencies[name] = result
+    return {
+        "status": "degraded" if problems else "ready",
+        "dependencies": dependencies,
+        "problems": problems,
+    }
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    import asyncio
     # Refuse to boot with an unsafe auth config (empty/placeholder token secret,
     # dev code exposure on). This is a hard gate, not a warning.
     settings.assert_auth_config_safe()
+    settings.assert_sandbox_config_safe()
+    settings.assert_durable_control_plane_config_safe()
     _cleanup_old_files()
-    app.state.startup_problems = _startup_self_check()
+    app.state.execution_backend = get_execution_backend()
+    app.state.startup_problems = _startup_self_check(app.state.execution_backend)
     # Provision admin + default invite eagerly so misconfig surfaces at boot, not
     # on the first request. Both are no-ops when their config is unset/empty.
     from app.storage.auth import ensure_admin_user, ensure_default_invite_code
     await ensure_admin_user()
     await ensure_default_invite_code()
-    from app.agent.recovery import recover_running_runs
-    await recover_running_runs()
+    app.state.reconciled_local_workflow_runs = 0
     cleanup_task = asyncio.create_task(_periodic_cleanup())
     yield
     # Shutdown
@@ -169,6 +185,7 @@ async def lifespan(app: FastAPI):
     await close_rules_db()
     from app.dfm.knowledge_graph import close_db as close_kg_db
     await close_kg_db()
+    await close_database()
 
 
 def create_app() -> FastAPI:
@@ -203,25 +220,42 @@ def create_app() -> FastAPI:
     app.include_router(fusion360_router)
     app.include_router(fusion360_agent_router)
     app.include_router(onshape_router)
+    app.include_router(agent_tools_router)
+    app.include_router(durable_tasks_router)
+    app.include_router(changes_router)
+    app.include_router(revisions_router)
 
     # WebSocket
     app.websocket("/ws/{session_id}")(websocket_endpoint)
+    app.websocket("/ws/tasks/{workflow_run_id}")(durable_task_websocket)
 
     @app.get("/health")
     def health():
         return {"status": "ok"}
 
     @app.get("/ready")
-    def ready():
+    async def ready():
         from fastapi.responses import JSONResponse
 
-        problems = getattr(app.state, "startup_problems", [])
+        durable = await _durable_control_plane_readiness()
+        problems = [
+            *getattr(app.state, "startup_problems", []),
+            *durable["problems"],
+        ]
         if problems:
             return JSONResponse(
                 status_code=503,
-                content={"status": "degraded", "problems": problems},
+                content={
+                    "status": "degraded",
+                    "problems": problems,
+                    "durable_control_plane": durable,
+                },
             )
-        return {"status": "ready", "problems": []}
+        return {
+            "status": "ready",
+            "problems": [],
+            "durable_control_plane": durable,
+        }
 
     if FRONTEND_DIST.exists():
         assets_dir = FRONTEND_DIST / "assets"

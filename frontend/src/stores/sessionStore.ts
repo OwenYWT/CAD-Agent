@@ -1,17 +1,58 @@
 import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 import type {
   AgentStepEvent,
   ArtifactUpdateEvent,
   ChatMessage,
+  DurableTaskEvent,
+  DurableTaskSnapshot,
+  DurableTaskSubmittedEvent,
   GenerationResult,
   MultiStepInfo,
   RunCreatedEvent,
   StepUpdate,
 } from "../types";
 import { createId } from "../lib/createId";
+import {
+  durableResultHeadRevision,
+  durableResultTaskStatus,
+  durableChangeSetHeadRevision,
+  durableSnapshotHeadRevision,
+  durableSnapshotReplayCursor,
+  shouldApplyDurableEvent,
+} from "../adapters/durableTaskAdapter";
+import type { DurableChangeSetDetail } from "../types/engineering";
 
 export interface StepHistoryEntry extends StepUpdate {
   timestamp: number;
+}
+
+export interface DurablePanelContext {
+  projectId: string | null;
+  branchId: string | null;
+  baseRevisionId: string | null;
+  currentRevisionId: string | null;
+  workflowRunId: string | null;
+  changeSetId: string | null;
+  lastEventSequence: number;
+  taskStatus: string | null;
+  preparedResult: GenerationResult | null;
+  agent: DurableTaskSnapshot["agent"];
+}
+
+export function emptyDurableContext(): DurablePanelContext {
+  return {
+    projectId: null,
+    branchId: null,
+    baseRevisionId: null,
+    currentRevisionId: null,
+    workflowRunId: null,
+    changeSetId: null,
+    lastEventSequence: 0,
+    taskStatus: null,
+    preparedResult: null,
+    agent: null,
+  };
 }
 
 export interface ArtifactHistoryEntry extends ArtifactUpdateEvent {
@@ -76,6 +117,7 @@ export interface PanelState {
   baselineVersion: number;
   multiStepProgress: MultiStepInfo[] | null;
   lastError: string | null;
+  durable?: DurablePanelContext;
   activeRun: RunCreatedEvent | null;
   artifactUpdates: ArtifactHistoryEntry[];
 }
@@ -93,15 +135,36 @@ function createPanel(title = "新对话"): PanelState {
     baselineVersion: 0,
     multiStepProgress: null,
     lastError: null,
+    durable: emptyDurableContext(),
     activeRun: null,
     artifactUpdates: [],
   };
 }
 
+function normalizePersistedPanel(
+  panel: Partial<PanelState>,
+): PanelState {
+  const fallback = createPanel(panel.title || "新对话");
+  return {
+    ...fallback,
+    ...panel,
+    messages: panel.messages || [],
+    stepHistory: panel.stepHistory || [],
+    activeRun: panel.activeRun || null,
+    artifactUpdates: panel.artifactUpdates || [],
+    durable: {
+      ...emptyDurableContext(),
+      ...(panel.durable || {}),
+    },
+  };
+}
+
 interface SessionState {
+  ownerId: string | null;
   sessionId: string;
   panels: PanelState[];
   activePanelId: string;
+  bindOwner: (ownerId: string | null) => void;
 
   // Panel management
   addPanel: (title?: string) => string; // returns new panel id
@@ -114,14 +177,30 @@ interface SessionState {
 
   // Actions (operate on active panel)
   addMessage: (msg: ChatMessage) => void;
-  beginGeneration: () => void;
+  beginGeneration: (message?: string) => void;
   setRunCreated: (run: RunCreatedEvent, panelId?: string) => void;
+  setDurableWorkflowStarted: (
+    task: DurableTaskSubmittedEvent,
+    panelId?: string,
+  ) => void;
   setStep: (step: StepUpdate | null, panelId?: string) => void;
   setAgentStep: (step: AgentStepEvent, panelId?: string) => void;
   addArtifactUpdate: (artifact: ArtifactUpdateEvent, panelId?: string) => void;
   setResult: (result: GenerationResult, panelId?: string) => void;
   restorePanelResult: (panelId: string, result: GenerationResult, code: string) => void;
   setError: (error: string, panelId?: string) => void;
+  applyDurableSnapshot: (snapshot: DurableTaskSnapshot, panelId?: string) => void;
+  applyDurableChangeSet: (
+    detail: DurableChangeSetDetail,
+    panelId?: string,
+  ) => void;
+  applyDurableEvent: (event: DurableTaskEvent, panelId?: string) => void;
+  setDurableTaskStatus: (
+    status: string,
+    lastEventSequence: number,
+    panelId?: string,
+  ) => void;
+  resetDurableEventCursor: (sequence: number, panelId?: string) => void;
   reset: () => void;
 
   // Hydrate a panel from history
@@ -134,7 +213,17 @@ interface SessionState {
   // Load full session from backend
   loadSession: (
     sessionId: string,
-    panels: { id: string; title: string; messages: ChatMessage[]; currentCode?: string | null }[],
+    panels: {
+      id: string;
+      title: string;
+      messages: ChatMessage[];
+      currentCode?: string | null;
+      projectId?: string | null;
+      branchId?: string | null;
+      currentRevisionId?: string | null;
+      workflowRunId?: string | null;
+      workflowStatus?: string | null;
+    }[],
   ) => void;
 }
 
@@ -154,7 +243,11 @@ function restoreGenerationResult(
 ): GenerationResult | null {
   const stored = [...messages]
     .reverse()
-    .find((message) => message.result?.success)
+    .find(
+      (message) =>
+        message.result?.success
+        || message.result?.needs_confirmation,
+    )
     ?.result;
   if (stored) {
     return currentCode && !stored.code ? { ...stored, code: currentCode } : stored;
@@ -166,16 +259,57 @@ function restoreGenerationResult(
 
 function restoreLastError(messages: ChatMessage[]): string | null {
   const latest = [...messages].reverse().find((message) => message.result);
-  if (!latest?.result || latest.result.success) return null;
+  if (
+    !latest?.result
+    || latest.result.success
+    || latest.result.needs_confirmation
+    || [
+      "pending",
+      "planning",
+      "running",
+      "waiting_confirmation",
+      "cancelling",
+    ].includes(latest.result.task_status || "")
+  ) {
+    return null;
+  }
   return latest.result.error?.message || "任务执行失败";
+}
+
+function isDurableTaskActive(status?: string | null): boolean {
+  return [
+    "pending",
+    "planning",
+    "running",
+    "waiting_confirmation",
+    "cancelling",
+  ].includes(status || "");
 }
 
 const defaultPanel = createPanel("对话 1");
 
-export const useSessionStore = create<SessionState>((set, get) => ({
+function freshSession(ownerId: string | null) {
+  const panel = createPanel("对话 1");
+  return {
+    ownerId,
+    sessionId: createId(),
+    panels: [panel],
+    activePanelId: panel.id,
+  };
+}
+
+export const useSessionStore = create<SessionState>()(persist((set, get) => ({
+  ownerId: null,
   sessionId: createId(),
   panels: [defaultPanel],
   activePanelId: defaultPanel.id,
+
+  bindOwner: (ownerId) =>
+    set((state) => (
+      state.ownerId === ownerId
+        ? state
+        : freshSession(ownerId)
+    )),
 
   getActivePanel: () => {
     const state = get();
@@ -219,11 +353,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       })),
     })),
 
-  beginGeneration: () =>
+  beginGeneration: (message = "正在理解建模需求") =>
     set((state) => ({
       panels: updatePanel(state.panels, state.activePanelId, (panel) => ({
         isGenerating: true,
-        currentStep: { step: "planning", message: "正在理解建模需求" },
+        currentStep: { step: "planning", message },
         stepHistory: [],
         generationStartTime: Date.now(),
         baselineVersion: panel.baselineVersion + 1,
@@ -327,6 +461,44 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     get().setStep(step, panelId || agentStep.panel_id);
   },
 
+  setDurableWorkflowStarted: (task, panelId) =>
+    set((state) => {
+      const targetId = panelId || task.panel_id || state.activePanelId;
+      return {
+        panels: updatePanel(state.panels, targetId, (panel) => {
+          const sameWorkflow = (
+            panel.durable?.workflowRunId === task.workflow_run_id
+          );
+          return {
+            isGenerating: true,
+            generationStartTime: Date.now(),
+            currentStep: {
+              step: "workflow.created",
+              message: "持久任务已提交",
+              status: "queued",
+            },
+            lastError: null,
+            durable: {
+              ...emptyDurableContext(),
+              projectId: task.project_id,
+              branchId: task.branch_id,
+              baseRevisionId: task.expected_base_revision_id,
+              currentRevisionId: task.expected_base_revision_id,
+              workflowRunId: task.workflow_run_id,
+              lastEventSequence: sameWorkflow
+                ? panel.durable?.lastEventSequence || 0
+                : 0,
+              taskStatus: task.status,
+              preparedResult: sameWorkflow
+                ? panel.durable?.preparedResult || null
+                : null,
+              agent: sameWorkflow ? panel.durable?.agent || null : null,
+            },
+          };
+        }),
+      };
+    }),
+
   addArtifactUpdate: (artifact, panelId) =>
     set((state) => {
       const targetId = panelId || artifact.panel_id || state.activePanelId;
@@ -343,6 +515,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const targetId = panelId || state.activePanelId;
       return {
         panels: updatePanel(state.panels, targetId, (p) => {
+          const previousWorkflowRunId = p.durable?.workflowRunId || null;
+          const nextWorkflowRunId = result.workflow_run_id
+            || previousWorkflowRunId;
           const assistantMsg: ChatMessage = {
             role: "assistant",
             content: result.needs_confirmation
@@ -368,6 +543,30 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             stepHistory: nextStepHistory,
             generationStartTime: null,
             messages: [...p.messages, assistantMsg],
+            durable: {
+              ...(p.durable || emptyDurableContext()),
+              projectId: result.project_id || p.durable?.projectId || null,
+              branchId: result.branch_id || p.durable?.branchId || null,
+              baseRevisionId: result.expected_base_revision_id
+                || p.durable?.baseRevisionId
+                || null,
+              currentRevisionId: durableResultHeadRevision(
+                result,
+                p.durable?.currentRevisionId || null,
+              ),
+              workflowRunId: nextWorkflowRunId,
+              changeSetId: result.change_set_id
+                || p.durable?.changeSetId
+                || null,
+              lastEventSequence: result.workflow_run_id
+                && result.workflow_run_id !== previousWorkflowRunId
+                ? 0
+                : p.durable?.lastEventSequence || 0,
+              taskStatus: durableResultTaskStatus(
+                result,
+                p.durable?.taskStatus || null,
+              ),
+            },
           };
         }),
       };
@@ -392,6 +591,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           activeRun: null,
           artifactUpdates: [],
           messages: [...panel.messages, restoreMessage],
+          durable: {
+            ...(panel.durable || emptyDurableContext()),
+            currentRevisionId: durableResultHeadRevision(
+              result,
+              panel.durable?.currentRevisionId || null,
+            ),
+          },
         };
       }),
     })),
@@ -421,13 +627,217 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       };
     }),
 
+  applyDurableSnapshot: (snapshot, panelId) =>
+    set((state) => {
+      const targetId = panelId || state.activePanelId;
+      return {
+        panels: updatePanel(state.panels, targetId, (panel) => {
+          const terminal = [
+            "succeeded",
+            "failed",
+            "cancelled",
+            "timed_out",
+          ].includes(snapshot.status);
+          const prepared = (
+            panel.durable?.preparedResult
+            || (
+              typeof snapshot.request_payload.primary?.source_code
+                === "string"
+                ? {
+                    success: false,
+                    code: snapshot.request_payload.primary.source_code,
+                  } as GenerationResult
+                : null
+            )
+          );
+          const files = Object.fromEntries(
+            (snapshot.artifacts || []).map((artifact) => [
+              artifact.artifact_kind,
+              artifact.download_url,
+            ]),
+          );
+          const terminalResult = terminal
+            ? {
+                ...(prepared || { success: false }),
+                request_id: snapshot.id,
+                success: snapshot.status === "succeeded",
+                files,
+                project_id: snapshot.project_id,
+                branch_id: snapshot.request_payload.branch_id,
+                expected_base_revision_id:
+                  snapshot.request_payload.expected_base_revision_id,
+                revision_id:
+                  snapshot.change_set?.candidate_revision_id,
+                workflow_run_id: snapshot.id,
+                change_set_id: snapshot.change_set?.id,
+                task_status: snapshot.status,
+                error: snapshot.status === "succeeded"
+                  ? undefined
+                  : {
+                      type: snapshot.error_code || "WorkflowFailed",
+                      message: snapshot.error_message || "持久任务执行失败",
+                    },
+              } as GenerationResult
+            : panel.result;
+          return {
+          durable: {
+            ...(panel.durable || emptyDurableContext()),
+            projectId: snapshot.project_id,
+            branchId: snapshot.request_payload.branch_id
+              || panel.durable?.branchId
+              || null,
+            baseRevisionId: snapshot.request_payload.expected_base_revision_id
+              || snapshot.change_set?.base_revision_id
+              || panel.durable?.baseRevisionId
+              || null,
+            currentRevisionId: durableSnapshotHeadRevision(
+              snapshot,
+              panel.durable?.currentRevisionId || null,
+            ),
+            workflowRunId: snapshot.id,
+            changeSetId: snapshot.change_set?.id
+              || panel.durable?.changeSetId
+              || null,
+            // A snapshot is metadata, not proof that preceding events were
+            // consumed. Keep the actual replay cursor until each event arrives.
+            lastEventSequence: durableSnapshotReplayCursor(
+              panel.durable?.workflowRunId || null,
+              panel.durable?.lastEventSequence || 0,
+              snapshot,
+            ),
+            taskStatus: snapshot.status,
+            agent: snapshot.agent || null,
+          },
+          result: terminalResult,
+          isGenerating: !terminal,
+          lastError: terminal
+            ? (
+                snapshot.status === "succeeded"
+                  ? null
+                  : snapshot.error_message || "持久任务执行失败"
+              )
+            : panel.lastError,
+          };
+        }),
+      };
+    }),
+
+  applyDurableEvent: (event, panelId) =>
+    set((state) => {
+      const targetId = panelId || state.activePanelId;
+      return {
+        panels: updatePanel(state.panels, targetId, (panel) => {
+          const durable = panel.durable || emptyDurableContext();
+          if (!shouldApplyDurableEvent(durable.lastEventSequence, event)) {
+            return {};
+          }
+          const preparedPayload = event.event_type === "source.prepared"
+            ? {
+                success: false,
+                needs_confirmation:
+                  event.payload.needs_confirmation === true,
+                code: typeof event.payload.source_code === "string"
+                  ? event.payload.source_code
+                  : undefined,
+                plan: typeof event.payload.plan === "object"
+                  ? event.payload.plan
+                  : undefined,
+                design_brief:
+                  typeof event.payload.design_brief === "object"
+                    ? event.payload.design_brief
+                    : undefined,
+                manufacturing_profile:
+                  typeof event.payload.manufacturing_profile === "object"
+                    ? event.payload.manufacturing_profile
+                    : undefined,
+                workflow_run_id: event.workflow_run_id,
+                project_id: durable.projectId || undefined,
+                branch_id: durable.branchId || undefined,
+                expected_base_revision_id:
+                  durable.baseRevisionId || undefined,
+              } as GenerationResult
+            : null;
+          return {
+            durable: {
+              ...durable,
+              workflowRunId: event.workflow_run_id,
+              lastEventSequence: event.sequence,
+              preparedResult:
+                preparedPayload || durable.preparedResult,
+              agent: durable.agent,
+            },
+            result: preparedPayload?.needs_confirmation
+              ? preparedPayload
+              : panel.result,
+            isGenerating: preparedPayload?.needs_confirmation
+              ? false
+              : panel.isGenerating,
+          };
+        }),
+      };
+    }),
+
+  applyDurableChangeSet: (detail, panelId) =>
+    set((state) => {
+      const targetId = panelId || state.activePanelId;
+      return {
+        panels: updatePanel(state.panels, targetId, (panel) => ({
+          durable: {
+            ...(panel.durable || emptyDurableContext()),
+            projectId: detail.project_id,
+            branchId: detail.branch_id,
+            baseRevisionId: detail.base_revision_id,
+            currentRevisionId: durableChangeSetHeadRevision(detail),
+            workflowRunId: detail.source_workflow_run_id
+              || panel.durable?.workflowRunId
+              || null,
+            changeSetId: detail.id,
+            taskStatus: detail.workflow_status
+              || panel.durable?.taskStatus
+              || null,
+          },
+        })),
+      };
+    }),
+
+  setDurableTaskStatus: (status, lastEventSequence, panelId) =>
+    set((state) => {
+      const targetId = panelId || state.activePanelId;
+      return {
+        panels: updatePanel(state.panels, targetId, (panel) => ({
+          durable: {
+            ...(panel.durable || emptyDurableContext()),
+            lastEventSequence: Math.max(
+              lastEventSequence,
+              panel.durable?.lastEventSequence || 0,
+            ),
+            taskStatus: status,
+          },
+          isGenerating: ![
+            "succeeded",
+            "failed",
+            "cancelled",
+            "timed_out",
+          ].includes(status),
+        })),
+      };
+    }),
+
+  resetDurableEventCursor: (sequence, panelId) =>
+    set((state) => {
+      const targetId = panelId || state.activePanelId;
+      return {
+        panels: updatePanel(state.panels, targetId, (panel) => ({
+          durable: {
+            ...(panel.durable || emptyDurableContext()),
+            lastEventSequence: Math.max(0, sequence),
+          },
+        })),
+      };
+    }),
+
   reset: () => {
-    const panel = createPanel("对话 1");
-    set({
-      sessionId: createId(),
-      panels: [panel],
-      activePanelId: panel.id,
-    });
+    set(freshSession(get().ownerId));
   },
 
   hydratePanel: (panelId, messages, code) =>
@@ -443,20 +853,77 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })),
 
   loadSession: (sessionId, panels) => {
-    const panelStates = panels.map((p) => ({
-      ...createPanel(p.title),
-      id: p.id,
-      messages: p.messages,
-      result: restoreGenerationResult(p.messages, p.currentCode),
-      lastError: restoreLastError(p.messages),
-      activeRun: null,
-      artifactUpdates: [],
-      baselineVersion: 1,
-    }));
+    const panelStates = panels.map((p) => {
+      const result = restoreGenerationResult(
+        p.messages,
+        p.currentCode,
+      );
+      const workflowStatus = (
+        p.workflowStatus
+        || result?.task_status
+        || null
+      );
+      return {
+        ...createPanel(p.title),
+        id: p.id,
+        messages: p.messages,
+        result,
+        isGenerating: isDurableTaskActive(workflowStatus),
+        generationStartTime: isDurableTaskActive(workflowStatus)
+          ? Date.now()
+          : null,
+        lastError: restoreLastError(p.messages),
+        activeRun: null,
+        artifactUpdates: [],
+        baselineVersion: 1,
+        durable: {
+          ...emptyDurableContext(),
+          projectId: p.projectId || null,
+          branchId: p.branchId || null,
+          baseRevisionId: p.currentRevisionId || null,
+          currentRevisionId: p.currentRevisionId || null,
+          workflowRunId: (
+            p.workflowRunId
+            || result?.workflow_run_id
+            || null
+          ),
+          changeSetId: result?.change_set_id || null,
+          taskStatus: workflowStatus,
+          preparedResult: result,
+        },
+      };
+    });
     set({
       sessionId,
       panels: panelStates.length > 0 ? panelStates : [createPanel("对话 1")],
       activePanelId: panelStates.length > 0 ? panelStates[0].id : createId(),
     });
+  },
+}), {
+  name: "wordswave-engineering-session",
+  storage: createJSONStorage(() => sessionStorage),
+  partialize: (state) => ({
+    ownerId: state.ownerId,
+    sessionId: state.sessionId,
+    panels: state.panels,
+    activePanelId: state.activePanelId,
+  }),
+  merge: (persistedState, currentState) => {
+    const saved = persistedState as Partial<SessionState>;
+    const panels = Array.isArray(saved.panels) && saved.panels.length > 0
+      ? saved.panels.map((panel) => normalizePersistedPanel(panel))
+      : currentState.panels;
+    const requestedActivePanelId = saved.activePanelId;
+    const activePanelId = panels.some(
+      (panel) => panel.id === requestedActivePanelId,
+    )
+      ? requestedActivePanelId as string
+      : panels[0].id;
+    return {
+      ...currentState,
+      ...saved,
+      panels,
+      activePanelId,
+    };
   },
 }));

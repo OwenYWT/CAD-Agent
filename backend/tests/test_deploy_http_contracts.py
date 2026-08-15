@@ -1,10 +1,8 @@
 """REST HTTP contract tests — happy paths + status codes for every endpoint.
 
 Hermetic: no Docker, no LLM, no network. The orchestrator singleton used by the
-REST routes (app.api.websocket._orchestrator) is replaced with a fake whose
-async generate/modify/execute_code return canned GenerateResponse objects, OR
-with the REAL harness orchestrator (build_orchestrator) when we want the real
-code_filter / geometry validator to run.
+The Durable submission/projection boundary is replaced with a hermetic fake;
+request validation, auth, routing and HTTP response mapping run for real.
 
 Storage + DB are isolated per test via settings.file_storage_dir / history_db_path.
 
@@ -14,23 +12,24 @@ Run:
 """
 import asyncio
 from dataclasses import dataclass, field
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
-import app.api.websocket as websocket_mod
+from app.api import execute as execute_api
+from app.api import generate as generate_api
 from app.config import settings
 from app.main import app
 from app.models.schemas import GenerateResponse, ValidationResult
+from app.sandbox.code_filter import validate_code
 from app.storage import history
-
-from tests.e2e_harness import build_orchestrator, patch_single_step
 
 
 # --------------------------------------------------------------------------- #
-# Fake orchestrator: returns canned GenerateResponse from async methods.
-# REST routes call _get_orchestrator() which returns websocket_mod._orchestrator
-# when it is already set, so injecting here fully bypasses Orchestrator().
+# Fake Durable boundary: submission records the operation and projection returns
+# a canned compatibility response.
 # --------------------------------------------------------------------------- #
 @dataclass
 class FakeOrchestrator:
@@ -43,17 +42,15 @@ class FakeOrchestrator:
             raise self.raises
         return self.response
 
-    async def generate(self, prompt, output_formats):
-        self.calls.append(("generate", prompt, tuple(output_formats)))
-        return self._result()
 
-    async def modify(self, code, prompt, output_formats):
-        self.calls.append(("modify", code, prompt, tuple(output_formats)))
-        return self._result()
 
-    async def execute_code(self, code, output_formats):
-        self.calls.append(("execute_code", code, tuple(output_formats)))
-        return self._result()
+def _identity() -> dict[str, str]:
+    return {
+        "project_id": str(uuid4()),
+        "branch_id": str(uuid4()),
+        "expected_base_revision_id": str(uuid4()),
+        "idempotency_key": f"http-contract-{uuid4()}",
+    }
 
 
 def _success_response(request_id="req-http-1") -> GenerateResponse:
@@ -92,18 +89,28 @@ def client(isolated_storage):
     """TestClient runs the lifespan (startup self-check -> startup_problems set)."""
     with TestClient(app) as c:
         yield c
-    # Reset injected orchestrator so tests don't bleed into each other.
-    websocket_mod._orchestrator = None
 
 
 @pytest.fixture
-def inject_orch():
-    """Return a setter; auto-reset the singleton on teardown."""
+def inject_orch(monkeypatch):
+    """Return a setter for the external Durable boundary."""
+    current = {"boundary": FakeOrchestrator(response=_success_response())}
+
+    async def submit(_principal, **kwargs):
+        current["boundary"].calls.append(kwargs)
+        return SimpleNamespace(workflow_run_id=uuid4())
+
+    async def wait(_principal, _submission, *, timeout_seconds):
+        return current["boundary"]._result()
+
+    for module in (generate_api, execute_api):
+        monkeypatch.setattr(module, "submit_durable_workflow", submit)
+        monkeypatch.setattr(module, "wait_for_compatibility_response", wait)
+
     def _set(orch):
-        websocket_mod._orchestrator = orch
+        current["boundary"] = orch
         return orch
     yield _set
-    websocket_mod._orchestrator = None
 
 
 # --------------------------------------------------------------------------- #
@@ -129,7 +136,10 @@ def test_ready_degraded_no_docker_no_key(client):
 # --------------------------------------------------------------------------- #
 def test_generate_success_shape(client, inject_orch):
     inject_orch(FakeOrchestrator(response=_success_response("gen-1")))
-    r = client.post("/api/generate", json={"prompt": "a 20x30x40 box"})
+    r = client.post(
+        "/api/generate",
+        json={"prompt": "a 20x30x40 box", **_identity()},
+    )
     assert r.status_code == 200
     body = r.json()
     # GenerateResponse shape
@@ -150,10 +160,13 @@ def test_generate_failure_is_500_with_error(client, inject_orch):
     fail = GenerateResponse(
         request_id="gen-fail",
         success=False,
+        task_status="failed",
         error={"type": "ExecutionError", "message": "boom"},
     )
     inject_orch(FakeOrchestrator(response=fail))
-    r = client.post("/api/generate", json={"prompt": "broken"})
+    r = client.post(
+        "/api/generate", json={"prompt": "broken", **_identity()}
+    )
     assert r.status_code == 500
     body = r.json()
     assert body["success"] is False
@@ -163,7 +176,7 @@ def test_generate_failure_is_500_with_error(client, inject_orch):
 
 def test_generate_unhandled_exception_is_500(client, inject_orch):
     inject_orch(FakeOrchestrator(raises=RuntimeError("kapow")))
-    r = client.post("/api/generate", json={"prompt": "x"})
+    r = client.post("/api/generate", json={"prompt": "x", **_identity()})
     assert r.status_code == 500
     body = r.json()
     assert body["success"] is False
@@ -185,7 +198,7 @@ def test_modify_success_shape(client, inject_orch):
     r = client.post(
         "/api/modify",
         json={"code": "result = box(1, 2, 3)\nshow_object(result)",
-              "prompt": "make it bigger"},
+              "prompt": "make it bigger", **_identity()},
     )
     assert r.status_code == 200
     body = r.json()
@@ -196,10 +209,12 @@ def test_modify_success_shape(client, inject_orch):
 
 def test_modify_failure_is_500(client, inject_orch):
     fail = GenerateResponse(request_id="mod-f", success=False,
+                            task_status="failed",
                             error={"type": "ValidationError", "message": "nope"})
     inject_orch(FakeOrchestrator(response=fail))
     r = client.post("/api/modify",
-                    json={"code": "result = box(1,2,3)", "prompt": "x"})
+                    json={"code": "result = box(1,2,3)", "prompt": "x",
+                          **_identity()})
     assert r.status_code == 500
     assert r.json()["error"]["type"] == "ValidationError"
 
@@ -218,7 +233,8 @@ def test_modify_validation_422_blank_code(client):
 def test_execute_success_shape(client, inject_orch):
     inject_orch(FakeOrchestrator(response=_success_response("exec-1")))
     r = client.post("/api/execute",
-                    json={"code": "result = box(20, 30, 40)\nshow_object(result)"})
+                    json={"code": "result = box(20, 30, 40)\nshow_object(result)",
+                          **_identity()})
     assert r.status_code == 200
     body = r.json()
     assert body["request_id"] == "exec-1"
@@ -226,13 +242,19 @@ def test_execute_success_shape(client, inject_orch):
     assert body["files"]["stl"]
 
 
-def test_execute_code_filter_rejection_real_orchestrator(client, inject_orch):
-    """The REAL orchestrator.execute_code runs validate_code first; 'import os'
-    is rejected -> GenerateResponse(success=False, error.type=ValidationError)
-    -> route maps to HTTP 500. This exercises the real code_filter gate, no Docker."""
-    inject_orch(build_orchestrator())  # real Orchestrator, faked LLM/Docker boundaries
+def test_execute_code_filter_rejection_maps_from_worker(client, inject_orch):
+    """The real worker filter rejects unsafe source and HTTP preserves its error."""
+    ok, message = validate_code("import os\nos.system('rm -rf /')")
+    assert ok is False
+    inject_orch(FakeOrchestrator(response=GenerateResponse(
+        request_id="exec-filter",
+        success=False,
+        task_status="failed",
+        error={"type": "ValidationError", "message": message},
+    )))
     r = client.post("/api/execute",
-                    json={"code": "import os\nos.system('rm -rf /')"})
+                    json={"code": "import os\nos.system('rm -rf /')",
+                          **_identity()})
     assert r.status_code == 500
     body = r.json()
     assert body["success"] is False
@@ -241,21 +263,15 @@ def test_execute_code_filter_rejection_real_orchestrator(client, inject_orch):
     assert "os" in body["error"]["message"]
 
 
-def test_execute_real_orchestrator_happy_path(client, inject_orch, monkeypatch):
-    """End-to-end execute through the REAL orchestrator (FakeExecutor writes a real
-    printable STL, copied for real). Confirms the 200 success contract.
-
-    CONTRACT (fixed): /api/execute now runs the SAME printability gate as /api/generate
-    on the 3D success path, so parameter edits get watertight/printable/build-volume
-    feedback (previously validation was silently null).
-    """
-    patch_single_step(monkeypatch)
-    inject_orch(build_orchestrator(
-        executor_outcomes=[{"success": True, "stl": "printable"}],
-    ))
+def test_execute_durable_projection_preserves_validation(client, inject_orch):
+    """Worker validation survives the Durable projection and HTTP serialization."""
+    inject_orch(FakeOrchestrator(response=_success_response("exec-validated")))
     r = client.post(
         "/api/execute",
-        json={"code": "w = 20  # width\nresult = box(w, 30, 40)\nshow_object(result)"},
+        json={
+            "code": "w = 20  # width\nresult = box(w, 30, 40)\nshow_object(result)",
+            **_identity(),
+        },
     )
     assert r.status_code == 200
     body = r.json()

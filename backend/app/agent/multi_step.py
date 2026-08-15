@@ -9,6 +9,8 @@ from pathlib import Path
 
 
 from app.config import settings, make_llm_client
+from app.agent.failure_taxonomy import FixPath, classify
+from app.llm import find_provider_exception
 from app.models.schemas import CADPlan, GenerateResponse, ParamConfig, StepUpdate
 
 logger = logging.getLogger(__name__)
@@ -82,7 +84,30 @@ class PlanDecomposer:
             self._client = make_llm_client()
         return self._client
 
-    async def decompose(self, plan: CADPlan) -> BuildPlan:
+    async def decompose(
+        self,
+        plan: CADPlan,
+        *,
+        allow_fallback: bool = True,
+    ) -> BuildPlan:
+        # Most parameterized parts do not benefit from a second LLM planning
+        # round-trip.  Keep decomposition for genuinely feature-rich/custom
+        # geometry; this also makes provider use explicit and bounded.
+        if (
+            plan.part_type not in {"custom", "organic", "assembly"}
+            and len(plan.features) <= 2
+            and len(plan.constraints) <= 2
+        ):
+            return BuildPlan(
+                steps=[
+                    BuildStep(
+                        phase=BuildPhase.BASE,
+                        description=plan.description,
+                    )
+                ],
+                complexity="simple",
+            )
+
         user_content = (
             f"零件描述: {plan.description}\n"
             f"类型: {plan.part_type}\n"
@@ -129,6 +154,10 @@ class PlanDecomposer:
             return BuildPlan(steps=steps[:6], complexity=complexity)
 
         except Exception as e:
+            if find_provider_exception(e) is not None:
+                raise
+            if not allow_fallback:
+                raise
             logger.warning(f"PlanDecomposer failed: {e}, using single-step fallback")
             return BuildPlan(
                 steps=[BuildStep(phase=BuildPhase.BASE, description=plan.description)],
@@ -152,6 +181,8 @@ class MultiStepExecutor:
         request_id = str(uuid.uuid4())
         total = len(build_plan.steps)
         failed_steps: list[str] = []
+        terminal_failure: tuple[str, str] | None = None
+        execution_attempts = 0
 
         for i, step in enumerate(build_plan.steps):
             if on_step:
@@ -197,6 +228,7 @@ class MultiStepExecutor:
 
                 test_code = accumulated_code + "\n" + snippet + "\nshow_object(result)"
                 result = await self.executor.execute(test_code)
+                execution_attempts += 1
 
                 try:
                     if result.success:
@@ -209,6 +241,23 @@ class MultiStepExecutor:
                         last_error_type = result.error_type
                         last_error_msg = result.error_message
                         last_traceback = result.traceback
+                        failure = classify(
+                            result.error_type,
+                            result.error_message,
+                            result.traceback,
+                            gate="exec",
+                        )
+                        if failure.fix_path is FixPath.HARD_STOP:
+                            terminal_failure = (
+                                result.error_type or "ExecutionError",
+                                result.error_message or "Execution failed",
+                            )
+                            break
+                        if (
+                            failure.retry_budget is not None
+                            and attempt > failure.retry_budget
+                        ):
+                            break
                 finally:
                     shutil.rmtree(result.work_dir, ignore_errors=True)
 
@@ -216,6 +265,20 @@ class MultiStepExecutor:
                 step.error = last_error_msg
                 failed_steps.append(step.description)
                 logger.warning(f"Step {i + 1} failed after {self.MAX_STEP_RETRIES} retries: {step.error}")
+            if terminal_failure:
+                break
+
+        if terminal_failure:
+            return GenerateResponse(
+                request_id=request_id,
+                success=False,
+                code=accumulated_code,
+                error={
+                    "type": terminal_failure[0],
+                    "message": terminal_failure[1],
+                },
+                attempts=execution_attempts,
+            )
 
         # Final execution with show_object
         final_code = accumulated_code + "\nshow_object(result)"
@@ -224,6 +287,7 @@ class MultiStepExecutor:
             await _call_step(on_step, StepUpdate(step="executing", message="正在执行最终代码..."))
 
         final_result = await self.executor.execute(final_code)
+        execution_attempts += 1
 
         try:
             if final_result.success:

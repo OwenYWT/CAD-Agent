@@ -72,16 +72,24 @@ def test_gate_validation_error_maps_disallowed_import():
     assert classify("ValidationError", "禁止导入模块: os", gate="ValidationError").key == "disallowed_import"
 
 
-@pytest.mark.parametrize("etype,key,path", [
-    ("DockerUnavailable", "docker_unavailable", FixPath.HARD_STOP),
-    ("DockerError", "docker_error", FixPath.HARD_STOP),
-    ("RuntimeError", "sandbox_no_output", FixPath.HARD_STOP),
-    ("TimeoutError", "exec_timeout", FixPath.CODE),
+@pytest.mark.parametrize("etype,key,path,retry_budget", [
+    ("SandboxUnavailable", "sandbox_unavailable", FixPath.HARD_STOP, 0),
+    ("DockerUnavailable", "sandbox_unavailable", FixPath.HARD_STOP, 0),
+    ("ContainerLaunchError", "container_launch", FixPath.HARD_STOP, 0),
+    ("DockerError", "container_launch", FixPath.HARD_STOP, 0),
+    ("ArtifactRejected", "artifact_rejected", FixPath.HARD_STOP, 0),
+    ("ExecutionCancelled", "execution_cancelled", FixPath.HARD_STOP, 0),
+    ("ExecutionTimeout", "exec_timeout", FixPath.CODE, 1),
+    ("TimeoutError", "exec_timeout", FixPath.CODE, 1),
+    ("ExecutionOOM", "exec_oom", FixPath.CODE, 1),
+    ("InvalidCode", "invalid_code", FixPath.CODE, 2),
+    ("CADKernelError", "cad_kernel", FixPath.CODE, 2),
 ])
-def test_infra_error_types(etype, key, path):
+def test_execution_error_types(etype, key, path, retry_budget):
     fc = classify(etype, "boom", gate="exec")
     assert fc.key == key
     assert fc.fix_path is path
+    assert fc.retry_budget == retry_budget
 
 
 def test_vision_gates():
@@ -122,5 +130,7 @@ def test_render_prompt_table_covers_code_classes():
 def test_render_prompt_table_excludes_infra_and_vision():
     table = render_prompt_table()
     assert "DockerUnavailable" not in table
+    assert "SandboxUnavailable" not in table
+    assert "ArtifactRejected" not in table
     assert "vision" not in table
     assert "未知错误" not in table  # unknown is excluded

@@ -54,7 +54,7 @@ def test_upload_rejects_traversal_and_unknown_file_types(client):
 
 
 def test_action_endpoint_uses_allowlisted_runtime_and_hides_host_paths(client, monkeypatch):
-    def fake_execute(self, capability, action, params, request_id=None):
+    async def fake_execute(self, capability, action, params, request_id=None):
         run_id = request_id or "run123"
         output = self.artifacts.write_bytes(run_id, "result.step", b"STEP", suffixes={".step"})
         return {
@@ -69,7 +69,7 @@ def test_action_endpoint_uses_allowlisted_runtime_and_hides_host_paths(client, m
             "blocked_reasons": [],
         }
 
-    monkeypatch.setattr(CapabilityRuntime, "execute", fake_execute)
+    monkeypatch.setattr(CapabilityRuntime, "execute_async", fake_execute)
     response = client.post(
         "/api/capability-actions/cad/inspect",
         json={"params": {}, "request_id": "run123"},

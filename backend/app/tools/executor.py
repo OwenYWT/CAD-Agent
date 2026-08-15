@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import defaultdict, deque
+from collections.abc import Awaitable, Callable, Mapping
 from time import monotonic, perf_counter
 from typing import Any
 
@@ -12,9 +13,21 @@ from app.tools.models import ToolContext, ToolDefinition, ToolExecutionResult
 from app.tools.registry import SessionToolPool
 
 
+ToolAuditHandler = Callable[
+    [ToolExecutionResult, dict[str, Any], ToolContext],
+    Awaitable[None] | None,
+]
+
+
 class ToolExecutor:
-    def __init__(self, pool: SessionToolPool):
+    def __init__(
+        self,
+        pool: SessionToolPool,
+        *,
+        audit_handler: ToolAuditHandler | None = None,
+    ):
         self.pool = pool
+        self.audit_handler = audit_handler
         self._rate_windows: dict[tuple[str, str], deque[float]] = defaultdict(deque)
 
     async def execute(
@@ -26,8 +39,24 @@ class ToolExecutor:
         started = perf_counter()
         active_context = context or ToolContext(session_id=self.pool.session_id)
         tool = self.pool.get(name, active_context)
+        try:
+            raw_arguments = self._normalize_arguments(arguments)
+        except ValueError as exc:
+            result = ToolExecutionResult(
+                tool_name=name,
+                status="failure",
+                safety_level=tool.safety_level if tool else "read",
+                error_code="validation_error",
+                error_type="ValidationError",
+                error_message=str(exc),
+                duration_ms=self._duration_ms(started),
+                layer=tool.layer if tool else None,
+                plugin_name=tool.plugin_name if tool else None,
+            )
+            return await self._complete(result, {}, active_context)
+
         if tool is None:
-            return ToolExecutionResult(
+            result = ToolExecutionResult(
                 tool_name=name,
                 status="permission_required",
                 error_code="tool_unavailable",
@@ -35,30 +64,49 @@ class ToolExecutor:
                 error_message=f"Tool is not available for this session: {name}",
                 duration_ms=self._duration_ms(started),
             )
+            return await self._complete(result, raw_arguments, active_context)
+
         try:
-            raw_arguments = self._normalize_arguments(arguments)
             args = tool.args_model.model_validate(raw_arguments)
-        except (ValueError, ValidationError) as exc:
-            return self._failure(tool, started, "ValidationError", str(exc), error_code="validation_error")
+        except ValidationError as exc:
+            return await self._complete(
+                self._failure(
+                    tool,
+                    started,
+                    "ValidationError",
+                    str(exc),
+                    error_code="validation_error",
+                ),
+                raw_arguments,
+                active_context,
+            )
 
         confirmation_policy = tool.effective_confirmation_policy()
-        if confirmation_policy and confirmation_policy.required and not active_context.confirmed:
-            return ToolExecutionResult(
+        if (
+            confirmation_policy
+            and confirmation_policy.required
+            and not active_context.confirmed
+        ):
+            result = ToolExecutionResult(
                 tool_name=tool.name,
                 status="consent_required",
+                safety_level=tool.safety_level,
                 error_code="confirmation_required",
-                error_message=f"Tool '{tool.name}' requires confirmation before execution.",
+                error_message=confirmation_policy.message,
                 needs_confirmation=True,
+                confirmation_message=confirmation_policy.message,
                 confirmation=confirmation_policy,
                 duration_ms=self._duration_ms(started),
                 layer=tool.layer,
                 plugin_name=tool.plugin_name,
             )
+            return await self._complete(result, raw_arguments, active_context)
 
         if self._is_rate_limited(tool, active_context):
-            return ToolExecutionResult(
+            result = ToolExecutionResult(
                 tool_name=tool.name,
                 status="rate_limited",
+                safety_level=tool.safety_level,
                 error_code="rate_limit_exceeded",
                 error_type="RateLimitExceeded",
                 error_message=f"Tool '{tool.name}' exceeded its configured rate limit.",
@@ -66,11 +114,15 @@ class ToolExecutor:
                 layer=tool.layer,
                 plugin_name=tool.plugin_name,
             )
+            return await self._complete(result, raw_arguments, active_context)
 
         try:
-            response = await asyncio.wait_for(tool.handler(args, active_context), timeout=tool.timeout_s)
+            response = await asyncio.wait_for(
+                tool.handler(args, active_context),
+                timeout=tool.timeout_s,
+            )
         except asyncio.TimeoutError:
-            return self._failure(
+            result = self._failure(
                 tool,
                 started,
                 "TimeoutError",
@@ -78,9 +130,10 @@ class ToolExecutor:
                 error_code="timeout",
             )
         except PermissionError as exc:
-            return ToolExecutionResult(
+            result = ToolExecutionResult(
                 tool_name=tool.name,
                 status="permission_required",
+                safety_level=tool.safety_level,
                 error_code="permission_denied",
                 error_type="PermissionError",
                 error_message=str(exc),
@@ -89,23 +142,41 @@ class ToolExecutor:
                 plugin_name=tool.plugin_name,
             )
         except Exception as exc:
-            return self._failure(tool, started, type(exc).__name__, str(exc), error_code="execution_error")
-
-        if isinstance(response, ToolExecutionResult):
-            return response.model_copy(update={
-                "duration_ms": response.duration_ms or self._duration_ms(started),
-                "layer": response.layer or tool.layer,
-                "plugin_name": response.plugin_name or tool.plugin_name,
-            })
-        return ToolExecutionResult(
-            tool_name=tool.name,
-            status="success",
-            summary=dict(response),
-            raw=response,
-            duration_ms=self._duration_ms(started),
-            layer=tool.layer,
-            plugin_name=tool.plugin_name,
-        )
+            result = self._failure(
+                tool,
+                started,
+                type(exc).__name__,
+                str(exc),
+                error_code="execution_error",
+            )
+        else:
+            if isinstance(response, ToolExecutionResult):
+                result = response.model_copy(update={
+                    "duration_ms": response.duration_ms or self._duration_ms(started),
+                    "safety_level": tool.safety_level,
+                    "layer": response.layer or tool.layer,
+                    "plugin_name": response.plugin_name or tool.plugin_name,
+                })
+            elif isinstance(response, Mapping):
+                result = ToolExecutionResult(
+                    tool_name=tool.name,
+                    status="success",
+                    safety_level=tool.safety_level,
+                    summary=dict(response),
+                    raw=response,
+                    duration_ms=self._duration_ms(started),
+                    layer=tool.layer,
+                    plugin_name=tool.plugin_name,
+                )
+            else:
+                result = self._failure(
+                    tool,
+                    started,
+                    "InvalidToolResult",
+                    "Tool handlers must return a mapping or ToolExecutionResult.",
+                    error_code="execution_error",
+                )
+        return await self._complete(result, raw_arguments, active_context)
 
     @staticmethod
     def _normalize_arguments(arguments: dict[str, Any] | str | None) -> dict[str, Any]:
@@ -152,6 +223,7 @@ class ToolExecutor:
         return ToolExecutionResult(
             tool_name=tool.name,
             status="failure",
+            safety_level=tool.safety_level,
             error_code=error_code,
             error_type=error_type,
             error_message=error_message,
@@ -159,3 +231,15 @@ class ToolExecutor:
             layer=tool.layer,
             plugin_name=tool.plugin_name,
         )
+
+    async def _complete(
+        self,
+        result: ToolExecutionResult,
+        arguments: dict[str, Any],
+        context: ToolContext,
+    ) -> ToolExecutionResult:
+        if self.audit_handler is not None:
+            maybe_awaitable = self.audit_handler(result, arguments, context)
+            if maybe_awaitable is not None:
+                await maybe_awaitable
+        return result

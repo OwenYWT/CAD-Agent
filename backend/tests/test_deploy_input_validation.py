@@ -3,58 +3,63 @@
 Angle: malformed / hostile / boundary input must yield a CLEAN 4xx (422 from
 pydantic, 400 from explicit endpoint guards) — NEVER a 500 or an unhandled crash.
 
-All hermetic: no Docker, no LLM, no network. Where an endpoint would actually
-drive the orchestrator on a VALID-but-weird body (e.g. junk output_formats,
-unicode prompts that pass schema), we inject a trivially-successful fake
-orchestrator so we exercise the *validation boundary* without touching Docker.
-
-Reuses the singleton injection contract:
-  app.api.websocket._orchestrator = <fake>   (read by _get_orchestrator()).
-generate.py / execute.py / batch.py all import _get_orchestrator from websocket.
+All hermetic: no containers, LLM or network. Valid bodies use a successful fake
+at the Durable submission/projection boundary; schema and route logic stay real.
 """
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
-import app.api.websocket as ws
+from app.api import batch as batch_api
+from app.api import execute as execute_api
+from app.api import generate as generate_api
 from app.config import settings
 from app.main import app
 from app.models.schemas import GenerateResponse
 
 
-# --- a fake orchestrator that never touches Docker/LLM ------------------------
+def _identity() -> dict[str, str]:
+    return {
+        "project_id": str(uuid.uuid4()),
+        "branch_id": str(uuid.uuid4()),
+        "expected_base_revision_id": str(uuid.uuid4()),
+        "idempotency_key": f"input-validation-{uuid.uuid4()}",
+    }
 
-class _OkOrchestrator:
-    """Returns a successful GenerateResponse for any prompt/code/format.
-    Used so 'valid but weird' bodies exercise validation, not the real pipeline."""
 
-    async def generate(self, prompt, output_formats):
-        return GenerateResponse(request_id=str(uuid.uuid4()), success=True, files={"stl": "x"})
-
-    async def modify(self, code, prompt, output_formats):
-        return GenerateResponse(request_id=str(uuid.uuid4()), success=True, files={"stl": "x"})
-
-    async def execute_code(self, code, output_formats):
-        return GenerateResponse(request_id=str(uuid.uuid4()), success=True, files={"stl": "x"})
+def _batch_items(count: int) -> list[dict]:
+    return [{"prompt": f"box {i}", **_identity()} for i in range(count)]
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     """TestClient with isolated storage/DB, auth OFF, rate-limit effectively off,
-    and a fake OK orchestrator injected into the REST singleton."""
+    and a successful Durable boundary."""
     monkeypatch.setattr(settings, "file_storage_dir", str(tmp_path / "files"))
     monkeypatch.setattr(settings, "history_db_path", str(tmp_path / "history.db"))
     monkeypatch.setattr(settings, "api_keys", [])  # auth off
     monkeypatch.setattr(settings, "rate_limit_per_minute", 0)  # disable limiter
 
-    prev = ws._orchestrator
-    ws._orchestrator = _OkOrchestrator()
-    try:
-        with TestClient(app) as c:
-            yield c
-    finally:
-        ws._orchestrator = prev
+    async def submit(_principal, **_kwargs):
+        return SimpleNamespace(workflow_run_id=uuid.uuid4())
+
+    async def wait(_principal, submission, *, timeout_seconds):
+        return GenerateResponse(
+            request_id=str(submission.workflow_run_id),
+            success=True,
+            task_status="succeeded",
+            files={"stl": "x"},
+        )
+
+    for module in (generate_api, execute_api, batch_api):
+        monkeypatch.setattr(module, "submit_durable_workflow", submit)
+    for module in (generate_api, execute_api, batch_api):
+        monkeypatch.setattr(module, "wait_for_compatibility_response", wait)
+
+    with TestClient(app) as c:
+        yield c
 
 
 # ============================================================================ #
@@ -79,7 +84,9 @@ def test_generate_prompt_too_long_422(client):
 
 def test_generate_prompt_at_max_len_ok(client):
     # exactly 10000 chars is the boundary -> valid
-    r = client.post("/api/generate", json={"prompt": "x" * 10000})
+    r = client.post(
+        "/api/generate", json={"prompt": "x" * 10000, **_identity()}
+    )
     assert r.status_code == 200
     assert r.json()["success"] is True
 
@@ -103,7 +110,9 @@ def test_generate_unicode_emoji_control_chars_accepted(client):
     # unicode + emoji + control chars (NUL, bell, vertical tab) pass schema and
     # are handed through; must NOT 500.
     prompt = "螺栓 M8 \U0001f527 设计\x00\x07\x0b‮gadget"
-    r = client.post("/api/generate", json={"prompt": prompt})
+    r = client.post(
+        "/api/generate", json={"prompt": prompt, **_identity()}
+    )
     assert r.status_code == 200, r.text
     assert r.json()["success"] is True
 
@@ -118,7 +127,10 @@ def test_generate_output_formats_junk_value_rejected(client):
 
 def test_generate_output_formats_valid_accepted(client):
     # the declared allowlist still passes
-    r = client.post("/api/generate", json={"prompt": "box", "output_formats": ["stl", "step", "dxf", "svg"]})
+    r = client.post(
+        "/api/generate",
+        json={"prompt": "box", "output_formats": ["stl", "step", "dxf", "svg"], **_identity()},
+    )
     assert r.status_code == 200, r.text
 
 
@@ -131,7 +143,10 @@ def test_generate_output_formats_wrong_type_422(client):
 def test_generate_output_formats_list_of_int_422(client):
     # list[str] with int members -> pydantic coerces? str() of int is allowed in
     # lax mode... assert it never 500s and is a clean status.
-    r = client.post("/api/generate", json={"prompt": "box", "output_formats": [1, 2]})
+    r = client.post(
+        "/api/generate",
+        json={"prompt": "box", "output_formats": [1, 2], **_identity()},
+    )
     assert r.status_code in (200, 422), r.text
     assert r.status_code != 500
 
@@ -139,7 +154,7 @@ def test_generate_output_formats_list_of_int_422(client):
 def test_generate_extra_unknown_fields_ignored(client):
     r = client.post(
         "/api/generate",
-        json={"prompt": "box", "totally_unknown": "x", "nested": {"a": 1}},
+        json={"prompt": "box", "totally_unknown": "x", "nested": {"a": 1}, **_identity()},
     )
     assert r.status_code == 200, r.text
 
@@ -208,7 +223,9 @@ def test_execute_code_too_long_422(client):
 
 def test_execute_code_at_max_len_ok(client):
     # exactly 50000 chars -> valid boundary (fake orchestrator returns success)
-    r = client.post("/api/execute", json={"code": "x" * 50000})
+    r = client.post(
+        "/api/execute", json={"code": "x" * 50000, **_identity()}
+    )
     assert r.status_code == 200, r.text
 
 
@@ -281,13 +298,13 @@ def test_feedback_malformed_json_422(client):
 # ============================================================================ #
 
 def test_batch_21_items_400(client):
-    items = [{"prompt": f"box {i}"} for i in range(21)]
+    items = _batch_items(21)
     r = client.post("/api/batch/generate", json={"items": items})
     assert r.status_code == 400, r.text
 
 
 def test_batch_exactly_20_items_ok(client):
-    items = [{"prompt": f"box {i}"} for i in range(20)]
+    items = _batch_items(20)
     r = client.post("/api/batch/generate", json={"items": items})
     assert r.status_code == 200, r.text
     body = r.json()

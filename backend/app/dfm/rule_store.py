@@ -107,6 +107,10 @@ async def _seed_defaults():
 
 
 async def list_rule_sets() -> list[DFMRuleSet]:
+    if settings.durable_control_plane_enabled:
+        from app.dfm import postgres_store
+
+        return await postgres_store.list_rule_sets()
     db = await _get_db()
     cursor = await db.execute("SELECT id, name, process FROM rule_sets ORDER BY process")
     rows = await cursor.fetchall()
@@ -118,6 +122,10 @@ async def list_rule_sets() -> list[DFMRuleSet]:
 
 
 async def get_rules_for_set(rule_set_id: str) -> list[DFMRule]:
+    if settings.durable_control_plane_enabled:
+        from app.dfm import postgres_store
+
+        return await postgres_store.get_rules_for_set(rule_set_id)
     db = await _get_db()
     cursor = await db.execute(
         "SELECT * FROM rules WHERE rule_set_id = ? ORDER BY category, severity",
@@ -129,6 +137,10 @@ async def get_rules_for_set(rule_set_id: str) -> list[DFMRule]:
 
 async def get_rules_by_process(process: str) -> list[DFMRule]:
     """Get all enabled rules for a process (across all rule sets)."""
+    if settings.durable_control_plane_enabled:
+        from app.dfm import postgres_store
+
+        return await postgres_store.get_rules_by_process(process)
     db = await _get_db()
     cursor = await db.execute(
         "SELECT * FROM rules WHERE process = ? AND enabled = 1 ORDER BY category, severity",
@@ -140,6 +152,10 @@ async def get_rules_by_process(process: str) -> list[DFMRule]:
 
 async def get_all_enabled_rules() -> list[DFMRule]:
     """Get all enabled rules across all processes."""
+    if settings.durable_control_plane_enabled:
+        from app.dfm import postgres_store
+
+        return await postgres_store.get_all_enabled_rules()
     db = await _get_db()
     cursor = await db.execute(
         "SELECT * FROM rules WHERE enabled = 1 ORDER BY process, category, severity"
@@ -149,6 +165,10 @@ async def get_all_enabled_rules() -> list[DFMRule]:
 
 
 async def update_rule(rule_id: str, updates: dict) -> DFMRule | None:
+    if settings.durable_control_plane_enabled:
+        from app.dfm import postgres_store
+
+        return await postgres_store.update_rule(rule_id, updates)
     db = await _get_db()
     allowed = {"threshold_min", "threshold_max", "severity", "enabled", "description", "suggestion_template"}
     filtered = {k: v for k, v in updates.items() if k in allowed}
@@ -166,6 +186,14 @@ async def update_rule(rule_id: str, updates: dict) -> DFMRule | None:
 
 
 async def clone_rule_set(source_id: str, new_id: str, new_name: str) -> DFMRuleSet | None:
+    if settings.durable_control_plane_enabled:
+        from app.dfm import postgres_store
+
+        return await postgres_store.clone_rule_set(
+            source_id,
+            new_id,
+            new_name,
+        )
     db = await _get_db()
     cursor = await db.execute("SELECT * FROM rule_sets WHERE id = ?", (source_id,))
     src = await cursor.fetchone()
@@ -200,6 +228,10 @@ async def clone_rule_set(source_id: str, new_id: str, new_name: str) -> DFMRuleS
 
 
 async def delete_rule_set(set_id: str) -> bool:
+    if settings.durable_control_plane_enabled:
+        from app.dfm import postgres_store
+
+        return await postgres_store.delete_rule_set(set_id)
     if set_id.startswith("default_"):
         return False  # Cannot delete built-in sets
     db = await _get_db()

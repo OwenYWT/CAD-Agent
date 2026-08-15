@@ -1,0 +1,114 @@
+"""Compatibility and fail-closed checks for the durable write boundary."""
+from __future__ import annotations
+
+from uuid import uuid4
+
+import pytest
+from pydantic import ValidationError
+
+from app.api.batch import AsyncGenerateRequest, BatchItem
+from app.api.websocket import _durable_identity_payload
+from app.models.schemas import ExecuteRequest, GenerateRequest, ModifyRequest
+
+
+def _identity():
+    return {
+        "project_id": uuid4(),
+        "branch_id": uuid4(),
+        "expected_base_revision_id": uuid4(),
+        "idempotency_key": f"request-{uuid4()}",
+    }
+
+
+def test_durable_identity_is_always_required():
+    for model, payload in (
+        (GenerateRequest, {"prompt": "创建支架"}),
+        (ModifyRequest, {
+            "code": "result = box(1, 1, 1)",
+            "prompt": "加厚",
+        }),
+        (ExecuteRequest, {"code": "result = box(2, 2, 2)"}),
+        (BatchItem, {"prompt": "创建面板"}),
+        (AsyncGenerateRequest, {"prompt": "创建外壳"}),
+    ):
+        with pytest.raises(ValidationError, match="durable MCAD writes"):
+            model.model_validate(payload)
+    with pytest.raises(ValidationError, match="durable MCAD writes"):
+        _durable_identity_payload({"type": "execute_code"})
+
+
+@pytest.mark.parametrize(
+    ("model", "payload"),
+    [
+        (GenerateRequest, {"prompt": "创建支架"}),
+        (
+            ModifyRequest,
+            {"code": "result = box(1, 1, 1)", "prompt": "加厚"},
+        ),
+        (ExecuteRequest, {"code": "result = box(2, 2, 2)"}),
+        (BatchItem, {"prompt": "创建面板"}),
+        (AsyncGenerateRequest, {"prompt": "创建外壳"}),
+    ],
+)
+def test_rejects_incomplete_optimistic_concurrency_identity(model, payload):
+    with pytest.raises(ValidationError, match="expected_base_revision_id"):
+        model.model_validate(payload)
+
+
+def test_accepts_one_complete_identity_across_http_and_websocket():
+    identity = _identity()
+
+    request = ExecuteRequest.model_validate({
+        "code": "result = box(2, 2, 2)",
+        **identity,
+    })
+    websocket = _durable_identity_payload(identity)
+
+    assert request.expected_base_revision_id == identity[
+        "expected_base_revision_id"
+    ]
+    assert websocket == {
+        key: str(value) if key != "idempotency_key" else value
+        for key, value in identity.items()
+    }
+
+
+def test_current_and_stale_identities_remain_distinct_across_all_parsers():
+    project_id = uuid4()
+    branch_id = uuid4()
+    current_revision_id = uuid4()
+    stale_revision_id = uuid4()
+    current = {
+        "project_id": project_id,
+        "branch_id": branch_id,
+        "expected_base_revision_id": current_revision_id,
+        "idempotency_key": f"current-{uuid4()}",
+    }
+    stale = {
+        **current,
+        "expected_base_revision_id": stale_revision_id,
+        "idempotency_key": f"stale-{uuid4()}",
+    }
+    parsers = [
+        (GenerateRequest, {"prompt": "创建支架"}),
+        (ModifyRequest, {
+            "code": "result = box(1, 1, 1)",
+            "prompt": "加厚",
+        }),
+        (ExecuteRequest, {"code": "result = box(2, 2, 2)"}),
+        (BatchItem, {"prompt": "创建面板"}),
+        (AsyncGenerateRequest, {"prompt": "创建外壳"}),
+    ]
+    for model, payload in parsers:
+        current_request = model.model_validate({**payload, **current})
+        stale_request = model.model_validate({**payload, **stale})
+        assert current_request.expected_base_revision_id == current_revision_id
+        assert stale_request.expected_base_revision_id == stale_revision_id
+        assert current_request.idempotency_key != stale_request.idempotency_key
+
+    assert _durable_identity_payload(current)[
+        "expected_base_revision_id"
+    ] == str(current_revision_id)
+    assert _durable_identity_payload(stale)[
+        "expected_base_revision_id"
+    ] == str(stale_revision_id)

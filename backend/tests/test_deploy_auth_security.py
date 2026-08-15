@@ -13,6 +13,9 @@ Covers:
   5. WS auth: bad session_id -> close 4001; api_keys set + missing/bad token -> 4003.
   6. Rate limiter: low rpm -> 429 after the budget is spent.
 """
+from types import SimpleNamespace
+from uuid import uuid4
+
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -20,7 +23,7 @@ from starlette.websockets import WebSocketDisconnect
 import app.main as appmain
 from app.config import settings
 from app.api import auth as auth_mod
-from app.api import websocket as ws_mod
+from app.api import execute as execute_api
 from app.models.schemas import GenerateResponse
 from app.sandbox.code_filter import validate_code
 
@@ -48,30 +51,43 @@ def _isolate(tmp_path, monkeypatch):
     auth_mod.rate_limiter._windows.clear()
 
 
-class _FakeOrch:
-    """Minimal orchestrator stub for /api/execute: validate_code still runs inside
-    the route's orchestrator.execute_code in the REAL orchestrator, but for the
-    auth/rate-limit tests we only need a successful echo."""
+def _identity():
+    return {
+        "project_id": str(uuid4()),
+        "branch_id": str(uuid4()),
+        "expected_base_revision_id": str(uuid4()),
+        "idempotency_key": f"security-{uuid4()}",
+    }
 
-    async def execute_code(self, code, output_formats=None):
-        # Mirror the real orchestrator's code_filter gate so the execute-path
-        # code_filter test is genuine.
-        ok, msg = validate_code(code)
-        if not ok:
-            return GenerateResponse(
-                request_id="r", success=False,
-                error={"type": "ValidationError", "message": msg},
-            )
-        return GenerateResponse(request_id="r", success=True, code=code)
+
+def _execute_payload(code: str) -> dict:
+    return {"code": code, **_identity()}
 
 
 @pytest.fixture
-def fake_orch():
-    """Inject a fake orchestrator into the route singleton; reset on teardown."""
-    prev = ws_mod._orchestrator
-    ws_mod._orchestrator = _FakeOrch()
-    yield ws_mod._orchestrator
-    ws_mod._orchestrator = prev
+def fake_orch(monkeypatch):
+    """Stub only the external Durable boundary; route/auth behavior stays real."""
+    async def submit(_principal, **kwargs):
+        return SimpleNamespace(workflow_run_id=uuid4(), kwargs=kwargs)
+
+    async def wait(_principal, submission, timeout_seconds):
+        code = submission.kwargs["code"]
+        ok, message = validate_code(code)
+        return GenerateResponse(
+            request_id=str(submission.workflow_run_id),
+            success=ok,
+            code=code if ok else None,
+            task_status="succeeded" if ok else "failed",
+            error=(
+                None
+                if ok
+                else {"type": "ValidationError", "message": message}
+            ),
+        )
+
+    monkeypatch.setattr(execute_api, "submit_durable_workflow", submit)
+    monkeypatch.setattr(execute_api, "wait_for_compatibility_response", wait)
+    return submit
 
 
 # --------------------------------------------------------------------------- #
@@ -112,7 +128,10 @@ def test_auth_off_parts_reachable_no_creds(client):
 
 
 def test_auth_off_execute_reachable_no_creds(client, fake_orch):
-    r = client.post("/api/execute", json={"code": "result = 1", "output_formats": ["stl"]})
+    r = client.post(
+        "/api/execute",
+        json={**_execute_payload("result = 1"), "output_formats": ["stl"]},
+    )
     assert r.status_code == 200
     assert r.json()["success"] is True
 
@@ -167,12 +186,12 @@ def test_auth_on_rejects_wrong_x_api_key(client, monkeypatch):
 def test_auth_on_protects_execute(client, monkeypatch, fake_orch):
     monkeypatch.setattr(settings, "api_keys", ["k1"])
     # without creds -> 401
-    r = client.post("/api/execute", json={"code": "result = 1"})
+    r = client.post("/api/execute", json=_execute_payload("result = 1"))
     assert r.status_code == 401
     # with bearer -> success
     r = client.post(
         "/api/execute",
-        json={"code": "result = 1"},
+        json=_execute_payload("result = 1"),
         headers={"Authorization": "Bearer k1"},
     )
     assert r.status_code == 200
@@ -315,7 +334,10 @@ def test_code_filter_allows_safe(code):
 def test_execute_route_rejects_blocked_import(client, fake_orch):
     """The /api/execute path surfaces a code_filter rejection as a 500 with a
     ValidationError body (route returns 500 when response.success is False)."""
-    r = client.post("/api/execute", json={"code": "import os\nresult = 1"})
+    r = client.post(
+        "/api/execute",
+        json=_execute_payload("import os\nresult = 1"),
+    )
     assert r.status_code == 500
     body = r.json()
     assert body["success"] is False
@@ -325,7 +347,9 @@ def test_execute_route_rejects_blocked_import(client, fake_orch):
 def test_execute_route_allows_safe_code(client, fake_orch):
     r = client.post(
         "/api/execute",
-        json={"code": "import cadquery as cq\nresult = cq.Workplane().box(1,1,1)"},
+        json=_execute_payload(
+            "import cadquery as cq\nresult = cq.Workplane().box(1,1,1)"
+        ),
     )
     assert r.status_code == 200
     assert r.json()["success"] is True
@@ -383,7 +407,9 @@ def test_rate_limiter_returns_429_after_budget(client, fake_orch, monkeypatch):
 
     codes = []
     for _ in range(4):
-        r = client.post("/api/execute", json={"code": "result = 1"})
+        r = client.post(
+            "/api/execute", json=_execute_payload("result = 1")
+        )
         codes.append(r.status_code)
 
     assert codes[:2] == [200, 200]
@@ -396,7 +422,9 @@ def test_rate_limiter_disabled_when_rpm_zero(client, fake_orch, monkeypatch):
     auth_mod.rate_limiter.rpm = 0
     auth_mod.rate_limiter._windows.clear()
     codes = [
-        client.post("/api/execute", json={"code": "result = 1"}).status_code
+        client.post(
+            "/api/execute", json=_execute_payload("result = 1")
+        ).status_code
         for _ in range(5)
     ]
     assert all(c == 200 for c in codes)

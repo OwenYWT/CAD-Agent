@@ -1,12 +1,13 @@
+import hashlib
 import re
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from app.api.auth import verify_api_key
 from app.config import settings
-from app.storage.file_ownership import request_belongs_to
+from app.storage.file_ownership import get_project_file, request_belongs_to
 
 router = APIRouter()
 
@@ -17,13 +18,14 @@ MEDIA_TYPES = {
     ".dxf": "application/dxf",
     ".svg": "image/svg+xml",
     ".png": "image/png",
+    ".json": "application/json",
     ".py": "text/x-python",
     ".bas": "text/plain",
 }
 
 # Allowed file extensions for download
 _ALLOWED_EXTENSIONS = frozenset({
-    ".step", ".stp", ".stl", ".dxf", ".svg", ".png", ".py", ".bas",
+    ".step", ".stp", ".stl", ".dxf", ".svg", ".png", ".json", ".py", ".bas",
 })
 
 # request_id must be a UUID-like string (hex + hyphens)
@@ -42,7 +44,7 @@ async def download_file(
     # Validate request_id format
     if not _SAFE_ID_PATTERN.match(request_id):
         raise HTTPException(status_code=400, detail="Invalid request ID format")
-    if not request_belongs_to(request_id, _credential):
+    if not await request_belongs_to(request_id, _credential):
         raise HTTPException(status_code=404, detail="File not found")
 
     # Reject path traversal and special characters in filename
@@ -56,6 +58,30 @@ async def download_file(
     suffix = Path(filename).suffix.lower()
     if suffix not in _ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"File type '{suffix}' not allowed")
+
+    if settings.durable_control_plane_enabled:
+        metadata = await get_project_file(request_id, filename)
+        if metadata is None:
+            raise HTTPException(status_code=404, detail="File not found")
+        from app.object_store import get_object
+
+        payload = await get_object(metadata["object_key"])
+        if (
+            len(payload) != metadata["size_bytes"]
+            or hashlib.sha256(payload).hexdigest() != metadata["sha256"]
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail="Stored file failed checksum verification",
+            )
+        return Response(
+            content=payload,
+            media_type=metadata["content_type"],
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "ETag": f'"{metadata["sha256"]}"',
+            },
+        )
 
     # Resolve and verify the path stays within storage dir
     storage_dir = Path(settings.file_storage_dir).resolve()

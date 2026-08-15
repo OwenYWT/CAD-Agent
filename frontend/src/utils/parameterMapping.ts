@@ -10,6 +10,35 @@ export interface EngineeringParameterGroups {
   standard: CADParameter[];
 }
 
+const PARAMETER_LABELS: Record<string, string> = {
+  width: "宽度",
+  height: "高度",
+  depth: "深度",
+  length: "长度",
+  thickness: "厚度",
+  radius: "半径",
+  diameter: "直径",
+};
+
+export function parameterDisplayLabel(
+  name: string,
+  supplied?: string | null,
+) {
+  const normalized = name.trim().toLowerCase();
+  const candidate = supplied?.trim();
+  if (
+    candidate
+    && candidate.toLowerCase() !== normalized
+    && !Object.prototype.hasOwnProperty.call(
+      PARAMETER_LABELS,
+      candidate.toLowerCase(),
+    )
+  ) {
+    return candidate;
+  }
+  return PARAMETER_LABELS[normalized] || candidate || name;
+}
+
 function normalizeTokenText(value: string) {
   return value
     .toLowerCase()

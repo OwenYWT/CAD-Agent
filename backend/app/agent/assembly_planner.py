@@ -61,7 +61,12 @@ class AssemblyPlanner:
             self._client = make_llm_client()
         return self._client
 
-    async def plan_assembly(self, plan: CADPlan) -> AssemblyPlan:
+    async def plan_assembly(
+        self,
+        plan: CADPlan,
+        *,
+        allow_fallback: bool = True,
+    ) -> AssemblyPlan:
         user_content = (
             f"\u88c5\u914d\u4f53\u63cf\u8ff0: {plan.description}\n"
             f"\u5c3a\u5bf8: {plan.dimensions}\n"
@@ -98,6 +103,8 @@ class AssemblyPlanner:
                 assembly_description=parsed.get("assembly_description", plan.description),
             )
         except Exception as e:
+            if not allow_fallback:
+                raise
             logger.warning(f"AssemblyPlanner parse failed: {e}, falling back to single part")
             return AssemblyPlan(
                 parts=[

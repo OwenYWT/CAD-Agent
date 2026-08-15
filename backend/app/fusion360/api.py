@@ -21,6 +21,7 @@ from .cloud import ApsClient, ApsConfig
 from .contract import CAD_ACTION_ADAPTER, ContextRequest, VerifyRequest
 from .errors import FusionConnectorError, map_exception
 from .token_store import EncryptedTokenStore
+from .postgres_token_store import PostgresEncryptedTokenStore
 
 class _StructuredFusionRoute(APIRoute):
     """Keep dependency failures inside the public CadError envelope."""
@@ -80,12 +81,21 @@ def _aps_client() -> ApsClient:
         settings.fusion_cloud_enabled, settings.fusion_aps_client_id,
         settings.fusion_aps_client_secret, settings.fusion_aps_redirect_uri,
         settings.fusion_token_encryption_key, settings.fusion_token_db_path,
+        settings.durable_control_plane_enabled,
     )
     if _aps_client_cache and _aps_client_cache[0] == key:
         return _aps_client_cache[1]
     store = None
     if settings.fusion_cloud_enabled and settings.fusion_token_encryption_key:
-        store = EncryptedTokenStore(settings.fusion_token_db_path, settings.fusion_token_encryption_key)
+        if settings.durable_control_plane_enabled:
+            store = PostgresEncryptedTokenStore(
+                settings.fusion_token_encryption_key
+            )
+        else:
+            store = EncryptedTokenStore(
+                settings.fusion_token_db_path,
+                settings.fusion_token_encryption_key,
+            )
     client = ApsClient(
         ApsConfig(
             enabled=settings.fusion_cloud_enabled,
@@ -229,7 +239,7 @@ async def cloud_status(request: Request, credential: str | None = Depends(verify
 async def cloud_oauth_start(request: Request, credential: str | None = Depends(verify_api_key)):
     try:
         await _gate(request, credential)
-        return _aps_client().start_oauth(_owner_id(credential))
+        return await _aps_client().start_oauth_async(_owner_id(credential))
     except Exception as exc:
         return _error_response(exc)
 

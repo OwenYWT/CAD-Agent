@@ -320,7 +320,7 @@ export default function DesignAnalysis({
   hasResult,
   is2D,
   canAnalyze = true,
-  disabledReason = '生成 CAD 模型后才能进行 AI 设计审查。请先回答待确认问题，并完成模型生成。',
+  disabledReason = '生成 CAD 模型后才能进行 AI 设计审查。请先回答\u5f85\u786e\u8ba4\u95ee\u9898，并完成模型生成。',
   onAnnotationsReady,
   selectedAnnotation,
   onSelectAnnotation,

@@ -1,13 +1,20 @@
-from pydantic import Field
+import re
+from urllib.parse import urlsplit
+
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    app_environment: str = "development"
     dashscope_api_key: str | None = None
     moonshot_api_key: str | None = None
     llm_provider: str = "moonshot"
     llm_base_url: str = "https://api.moonshot.cn/v1"
     llm_model: str = "kimi-k2.7-code"
+    # Provider model dedicated to image inputs. Azure or other compatible
+    # deployments must override this with their own vision-capable deployment.
+    vision_model: str = "moonshot-v1-32k-vision-preview"
     llm_reasoning_effort: str | None = None
     planner_max_tokens: int = Field(default=8192, ge=2048, le=32768)
     azure_openai_endpoint: str | None = None
@@ -15,10 +22,34 @@ class Settings(BaseSettings):
     azure_openai_api_version: str = "2025-03-01-preview"
     sandbox_runtime: str = "docker"
     sandbox_command: str | None = None
-    sandbox_image: str = "cad-agent-sandbox:latest"
+    sandbox_image: str = "cad-agent-sandbox:dev"
     sandbox_timeout_s: int = 60
     sandbox_memory_limit: str = "512m"
     sandbox_max_concurrent: int = 4  # cap simultaneous container spawns (each = CPU+RAM)
+    # M1 durable control plane. Development keeps this disabled until its real
+    # dependencies are intentionally started; production fails closed.
+    durable_control_plane_enabled: bool = False
+    database_url: str = Field(default="", repr=False)
+    database_pool_size: int = Field(default=10, ge=1, le=100)
+    database_max_overflow: int = Field(default=20, ge=0, le=200)
+    dependency_readiness_timeout_s: float = Field(default=5.0, ge=0.5, le=30.0)
+    object_store_endpoint_url: str = ""
+    object_store_access_key: str = Field(default="", repr=False)
+    object_store_secret_key: str = Field(default="", repr=False)
+    object_store_bucket: str = "cad-agent-artifacts"
+    object_store_region: str = "us-east-1"
+    object_store_presign_ttl_s: int = Field(default=900, ge=60, le=3600)
+    artifact_upload_ttl_s: int = Field(default=900, ge=60, le=3600)
+    artifact_max_upload_bytes: int = Field(
+        default=2 * 1024 * 1024 * 1024,
+        ge=1,
+        le=10 * 1024 * 1024 * 1024,
+    )
+    artifact_orphan_grace_s: int = Field(default=3600, ge=0, le=604800)
+    temporal_target: str = ""
+    temporal_namespace: str = "default"
+    temporal_task_queue: str = "cad-agent-mcad"
+    temporal_agent_v2_task_queue: str = "cad-agent-mcad-v2"
     file_storage_dir: str = "./data/files"
     history_db_path: str = "./data/history.db"
     file_ttl_hours: int = 24  # generated files older than this are cleaned up
@@ -124,9 +155,25 @@ class Settings(BaseSettings):
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
+    @model_validator(mode="after")
+    def keep_temporal_workflow_versions_isolated(self) -> "Settings":
+        if (
+            self.temporal_agent_v2_task_queue.strip()
+            == self.temporal_task_queue.strip()
+        ):
+            raise ValueError(
+                "TEMPORAL_AGENT_V2_TASK_QUEUE must be different from "
+                "TEMPORAL_TASK_QUEUE"
+            )
+        return self
+
     @property
     def normalized_llm_provider(self) -> str:
         return self.llm_provider.strip().lower()
+
+    @property
+    def effective_vision_model(self) -> str:
+        return self.vision_model.strip() or self.llm_model
 
     @property
     def has_llm_credentials(self) -> bool:
@@ -192,6 +239,131 @@ class Settings(BaseSettings):
         if problems:
             raise RuntimeError(
                 "Unsafe auth configuration (set AUTH_REQUIRED=false only for local dev):\n  - "
+                + "\n  - ".join(problems)
+            )
+
+    def sandbox_config_problems(self) -> list[str]:
+        """Validate the worker image reference at the deployment boundary.
+
+        Local development may use a human-readable tag while production-like
+        environments must identify the exact OCI manifest that was validated.
+        """
+        environment = self.app_environment.strip().lower()
+        if environment in {"development", "dev", "local", "test"}:
+            return []
+        if not re.fullmatch(r"[^@\s]+@sha256:[0-9a-f]{64}", self.sandbox_image.strip()):
+            return [
+                "SANDBOX_IMAGE must use an immutable digest outside local development "
+                "(for example registry.example/cad-agent-sandbox@sha256:<64 hex chars>); "
+                "mutable tags such as latest are not allowed."
+            ]
+        return []
+
+    def assert_sandbox_config_safe(self) -> None:
+        problems = self.sandbox_config_problems()
+        if problems:
+            raise RuntimeError("Unsafe sandbox configuration:\n  - " + "\n  - ".join(problems))
+
+    def durable_control_plane_config_problems(self) -> list[str]:
+        """Validate deployment-owned PostgreSQL, object-store, and Temporal config."""
+        environment = self.app_environment.strip().lower()
+        production_like = environment not in {
+            "development",
+            "dev",
+            "local",
+            "test",
+        }
+        if not self.durable_control_plane_enabled:
+            if production_like:
+                return [
+                    "DURABLE_CONTROL_PLANE_ENABLED must be true outside local "
+                    "development."
+                ]
+            return []
+
+        problems: list[str] = []
+        if not self.database_url.strip():
+            problems.append("DATABASE_URL is required.")
+        elif not self.database_url.startswith("postgresql+asyncpg://"):
+            problems.append(
+                "DATABASE_URL must use the postgresql+asyncpg driver."
+            )
+
+        required = {
+            "OBJECT_STORE_ENDPOINT_URL": self.object_store_endpoint_url,
+            "OBJECT_STORE_ACCESS_KEY": self.object_store_access_key,
+            "OBJECT_STORE_SECRET_KEY": self.object_store_secret_key,
+            "OBJECT_STORE_BUCKET": self.object_store_bucket,
+            "TEMPORAL_TARGET": self.temporal_target,
+            "TEMPORAL_NAMESPACE": self.temporal_namespace,
+            "TEMPORAL_TASK_QUEUE": self.temporal_task_queue,
+        }
+        required["TEMPORAL_AGENT_V2_TASK_QUEUE"] = (
+            self.temporal_agent_v2_task_queue
+        )
+        for name, value in required.items():
+            if not value.strip():
+                problems.append(f"{name} is required.")
+
+        if self.object_store_bucket and not re.fullmatch(
+            r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]",
+            self.object_store_bucket,
+        ):
+            problems.append(
+                "OBJECT_STORE_BUCKET must be a valid lowercase S3 bucket name."
+            )
+
+        placeholders = {
+            "change-me",
+            "changeme",
+            "password",
+            "secret",
+            "minioadmin",
+            "<password>",
+            "<secret>",
+        }
+
+        def _is_placeholder(value: str) -> bool:
+            normalized = value.strip().lower()
+            return (
+                normalized in placeholders
+                or (normalized.startswith("<") and normalized.endswith(">"))
+            )
+
+        if _is_placeholder(self.object_store_access_key):
+            problems.append(
+                "OBJECT_STORE_ACCESS_KEY is a known placeholder and must be replaced."
+            )
+        if _is_placeholder(self.object_store_secret_key):
+            problems.append(
+                "OBJECT_STORE_SECRET_KEY is a known placeholder and must be replaced."
+            )
+
+        if self.database_url.startswith("postgresql+asyncpg://"):
+            try:
+                password = urlsplit(self.database_url).password or ""
+            except ValueError:
+                password = ""
+            if not password:
+                problems.append("DATABASE_URL must contain a database password.")
+            elif _is_placeholder(password):
+                problems.append(
+                    "DATABASE_URL contains a placeholder password and must be replaced."
+                )
+
+        if production_like and self.object_store_endpoint_url:
+            endpoint = urlsplit(self.object_store_endpoint_url)
+            if endpoint.scheme != "https":
+                problems.append(
+                    "OBJECT_STORE_ENDPOINT_URL must use HTTPS outside local development."
+                )
+        return problems
+
+    def assert_durable_control_plane_config_safe(self) -> None:
+        problems = self.durable_control_plane_config_problems()
+        if problems:
+            raise RuntimeError(
+                "Unsafe durable control-plane configuration:\n  - "
                 + "\n  - ".join(problems)
             )
 

@@ -28,7 +28,7 @@ def enrich_assembly_parts(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for index, raw_part in enumerate(parts):
         part = deepcopy(raw_part)
         name = str(part.get("name") or f"part-{index + 1}")
-        part_id = str(part.get("part_id") or stable_part_id(name, existing_ids))
+        part_id = stable_part_id(str(part.get("part_id") or name), existing_ids)
         existing_ids.add(part_id)
         part["part_id"] = part_id
         part.setdefault("name", name)
@@ -38,7 +38,10 @@ def enrich_assembly_parts(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         part.setdefault("color", "lightgray")
         part_code = str(part.get("code") or "")
         part["code"] = part_code
-        part.setdefault("code_hash", code_hash(part_code))
+        if part_code:
+            part["code_hash"] = code_hash(part_code)
+        else:
+            part.setdefault("code_hash", code_hash(part_code))
         enriched.append(part)
     return enriched
 

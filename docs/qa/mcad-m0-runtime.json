@@ -1,0 +1,149 @@
+{
+  "schema_version": "mcad-runtime-verification.v1",
+  "recorded_at": "2026-07-27T14:06:47Z",
+  "base_commit": "940cf47dd495252c1f97272bea29693db967f34f",
+  "image": {
+    "reference": "cad-agent-sandbox:m0-unified",
+    "id": "93f5ccaaa89b74d8fbfb30b50d5ff10deb05396fe64043d75f1ff5f72dc65cb6",
+    "digest": "sha256:71d372fc6d5f87f3483d3b797f091ece9f849222930519870bee7ed668c11c2e",
+    "architecture": "arm64",
+    "os": "linux",
+    "size_bytes": 3431693954
+  },
+  "isolation": {
+    "profile": "full multi-engine diagnostic probe",
+    "network": "none",
+    "root_filesystem": "read-only",
+    "linux_capabilities": "all dropped",
+    "no_new_privileges": true,
+    "pid_limit": 512,
+    "memory_limit_mib": 2048,
+    "cpu_limit": 2
+  },
+  "execution_attempt_limits": {
+    "default_memory_mib": 1024,
+    "snapshot_memory_mib": 1536,
+    "cpu_limit": 2,
+    "network": "none",
+    "root_filesystem": "read-only"
+  },
+  "runtime_probe": {
+    "status": "success",
+    "verified_operations": [
+      "cadquery_generate",
+      "build123d_generate",
+      "implicit_cad_export",
+      "step_export",
+      "stl_export",
+      "dxf_export",
+      "svg_export",
+      "png_snapshot",
+      "cad_inspect"
+    ],
+    "artifacts": {
+      "cad_snapshot_png": 18976,
+      "dxf": 15536,
+      "implicit_snapshot_png": 10145,
+      "implicit_stl": 583284,
+      "inspect_json": 390,
+      "build123d_step": 16386,
+      "cadquery_step": 20235,
+      "cadquery_stl": 26084,
+      "cadquery_svg": 11474
+    },
+    "versions": {
+      "python": "3.12.10",
+      "node": "22.17.0",
+      "cadquery": "2.8.0",
+      "build123d": "0.11.1",
+      "cadquery-ocp": "7.9.3.1.1",
+      "cadquery-ocp-proxy": "7.9.3.1.1",
+      "cadpy": "0.3.9",
+      "ezdxf": "1.4.2",
+      "numpy": "2.4.6",
+      "pillow": "11.2.1",
+      "playwright": "1.60.0",
+      "scipy": "1.18.0",
+      "trimesh": "4.12.2",
+      "vtk": "9.6.2",
+      "node_playwright": "1.60.0",
+      "three": "0.160.0",
+      "gifenc": "1.0.3"
+    }
+  },
+  "tests": {
+    "real_sandbox_and_execution": {
+      "passed": 36,
+      "failed": 0,
+      "duration_seconds": 32.56,
+      "includes": [
+        "real build123d STEP with a through-hole",
+        "OCP DFM face, edge, wall, hole, and feature extraction",
+        "CAD inspect, STL export, PNG snapshot, DXF generation, and implicit-CAD export",
+        "host file access denial",
+        "network API denial",
+        "process execution denial"
+      ]
+    },
+    "business_execution_wiring": {
+      "passed": 86,
+      "failed": 0,
+      "skipped": 2,
+      "duration_seconds": 1.88,
+      "direct_container_imports": 0
+    },
+    "real_rest": {
+      "health": 200,
+      "ready": 200,
+      "execute": {
+        "http_status": 200,
+        "step_sha256": "f6d8240e1990fb6560e02ffb34cdfa0bc78b28094288895408ffe4637843d9d3",
+        "stl_sha256": "1f6eb33434dc55c7e9e13e02386cea1d69e55c4d835a5135c46484921e958367"
+      },
+      "capability_generate_inspect_export": "succeeded",
+      "dfm": {
+        "face_count": 7,
+        "edge_count": 30,
+        "hole_diameter_mm": 4.0,
+        "false_fillet_detected": false
+      },
+      "generate_modify": {
+        "status": "blocked_by_external_service",
+        "provider": "moonshot",
+        "provider_http_status": 429,
+        "reason": "insufficient balance",
+        "api_http_status": 503,
+        "api_error_type": "ProviderQuotaError",
+        "provider_requests_per_api_call": 1,
+        "public_message_redacted": true,
+        "application_log_redacted": true
+      },
+      "runtime_unavailable": {
+        "ready_http_status": 503,
+        "execute_http_status": 500,
+        "error_type": "SandboxUnavailable",
+        "attempts": 1,
+        "llm_repairs": 0
+      }
+    },
+    "failure_normalization": {
+      "unit": {
+        "passed": 102,
+        "failed": 0,
+        "skipped": 1
+      },
+      "real_podman": {
+        "passed": 1,
+        "failed": 0,
+        "duration_seconds": 11.19,
+        "verified": [
+          "InvalidCode",
+          "CADKernelError",
+          "ExecutionTimeout",
+          "ExecutionOOM"
+        ]
+      }
+    },
+    "git_diff_check": "passed"
+  }
+}

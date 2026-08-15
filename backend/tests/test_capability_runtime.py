@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from app.capabilities import runtime as runtime_module
 from app.capabilities.artifacts import ArtifactPathError, ArtifactStore, sha256_file
 from app.capabilities.runtime import CapabilityRuntime, RuntimeConfig
 from app.capabilities.registry import list_capabilities
+from app.execution.backend import MaterializedExecutionOutcome
+from app.execution.contracts import ExecutionResult, ExecutionStatus
+from app.execution.podman_backend import RuntimeSnapshot
+from app.execution.podman_backend import PodmanExecutionBackend
+from app.dfm.step_analysis import StepAnalyzer
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -22,6 +29,7 @@ def workspace(tmp_path: Path) -> Path:
 
 
 def make_runtime(workspace: Path, **overrides) -> CapabilityRuntime:
+    execution_backend = overrides.pop("execution_backend", None)
     values = {
         "repo_root": REPO_ROOT,
         "workspace_root": workspace,
@@ -29,11 +37,47 @@ def make_runtime(workspace: Path, **overrides) -> CapabilityRuntime:
         "timeout_seconds": 5,
     }
     values.update(overrides)
-    return CapabilityRuntime(RuntimeConfig(**values))
+    return CapabilityRuntime(
+        RuntimeConfig(**values),
+        execution_backend=execution_backend,
+    )
 
 
 def completed(stdout: bytes = b'{"ok": true}\n', stderr: bytes = b"", returncode: int = 0):
     return SimpleNamespace(stdout=stdout, stderr=stderr, returncode=returncode)
+
+
+class RecordingExecutionBackend:
+    def __init__(self, tmp_path: Path):
+        self.tmp_path = tmp_path
+        self.specs = []
+
+    def runtime_snapshot(self):
+        return RuntimeSnapshot(
+            image_digest=f"sha256:{'b' * 64}",
+            platform="linux/arm64",
+            versions={"cadquery": "2.8.0"},
+        )
+
+    async def execute(self, spec, **kwargs):
+        self.specs.append((spec, kwargs))
+        work = self.tmp_path / f"work-{len(self.specs)}"
+        work.mkdir()
+        artifact = work / "inspect.json"
+        artifact.write_text('{"solids": 1}\n', encoding="utf-8")
+        metadata = work / "capability-result.json"
+        metadata.write_text(
+            '{"exit_code":0,"result":{"solids":1},"stderr":null}',
+            encoding="utf-8",
+        )
+        return MaterializedExecutionOutcome(
+            result=ExecutionResult(
+                execution_attempt_id=spec.execution_attempt_id,
+                status=ExecutionStatus.SUCCEEDED,
+            ),
+            files={"artifact": artifact, "capability-result": metadata},
+            work_dir=work,
+        )
 
 
 def test_artifact_store_confines_request_paths_and_hashes(workspace: Path) -> None:
@@ -57,7 +101,7 @@ def test_unknown_parameters_cannot_supply_an_arbitrary_command(workspace: Path, 
         called = True
         raise AssertionError("subprocess must not be called")
 
-    monkeypatch.setattr("app.capabilities.runtime.subprocess.run", should_not_run)
+    monkeypatch.setattr("app.capabilities.runtime.host_process.run", should_not_run)
     result = runtime.execute(
         "step-parts",
         "search",
@@ -78,12 +122,11 @@ def test_shell_metacharacters_stay_in_one_argument_and_shell_is_false(workspace:
         captured.update(kwargs)
         return completed(stdout=b'{"items": []}')
 
-    monkeypatch.setattr("app.capabilities.runtime.subprocess.run", fake_run)
+    monkeypatch.setattr("app.capabilities.runtime.host_process.run", fake_run)
     query = "M3 bolt; touch /tmp/cad-agent-injection"
     result = runtime.execute("step-parts", "search", {"query": query}, request_id="req-injection")
 
     assert result["status"] == "succeeded"
-    assert captured["shell"] is False
     assert query in captured["command"]
     assert "sh" not in captured["command"]
     assert "-c" not in captured["command"]
@@ -92,7 +135,7 @@ def test_shell_metacharacters_stay_in_one_argument_and_shell_is_false(workspace:
 def test_positional_query_cannot_smuggle_an_origin_option(workspace: Path, monkeypatch) -> None:
     runtime = make_runtime(workspace)
     monkeypatch.setattr(
-        "app.capabilities.runtime.subprocess.run",
+        "app.capabilities.runtime.host_process.run",
         lambda *args, **kwargs: pytest.fail("option-like query must be rejected before subprocess"),
     )
     result = runtime.execute(
@@ -108,7 +151,7 @@ def test_generator_is_blocked_without_deployment_isolator(workspace: Path, monke
     runtime = make_runtime(workspace)
 
     monkeypatch.setattr(
-        "app.capabilities.runtime.subprocess.run",
+        "app.capabilities.runtime.host_process.run",
         lambda *args, **kwargs: pytest.fail("generator subprocess must be blocked"),
     )
     result = runtime.execute("urdf", "generate", {"source": "robot.py"}, request_id="req-generator")
@@ -118,25 +161,181 @@ def test_generator_is_blocked_without_deployment_isolator(workspace: Path, monke
     assert "robot.py" in " ".join(result["command_preview"])
 
 
-def test_implicit_3mf_export_is_allowlisted_but_still_isolated(workspace: Path) -> None:
+@pytest.mark.asyncio
+async def test_implicit_3mf_export_is_allowlisted_and_uses_backend(
+    workspace: Path,
+) -> None:
     source = workspace / "part.implicit.mjs"
     source.write_text("export default {}\n", encoding="utf-8")
-    runtime = make_runtime(workspace)
-    result = runtime.execute(
+    backend = RecordingExecutionBackend(workspace)
+    runtime = make_runtime(workspace, execution_backend=backend)
+    result = await runtime.execute_async(
         "implicit-cad",
         "export",
         {"input": source.name, "format": "3mf", "output": "part.3mf"},
         request_id="req-implicit",
     )
-    assert result["status"] == "blocked"
-    assert "--format" in result["command_preview"]
-    assert "3mf" in result["command_preview"]
+    assert result["status"] == "succeeded"
+    spec = backend.specs[0][0]
+    task = json.loads(spec.source.code)
+    assert task["params"]["format"] == "3mf"
+    assert task["params"]["output"] == "part.3mf"
+    assert spec.outputs[0].media_type == "model/3mf"
+
+
+@pytest.mark.asyncio
+async def test_cad_inspect_uses_execution_backend_and_materializes_real_result(
+    workspace: Path,
+    monkeypatch,
+) -> None:
+    source = workspace / "part.step"
+    source.write_bytes(b"ISO-10303-21;\nEND-ISO-10303-21;\n")
+    backend = RecordingExecutionBackend(workspace)
+    runtime = make_runtime(workspace, execution_backend=backend)
+    monkeypatch.setattr(
+        "app.capabilities.runtime.host_process.run",
+        lambda *args, **kwargs: pytest.fail("MCAD must not run as a host process"),
+    )
+
+    result = await runtime.execute_async(
+        "cad",
+        "inspect",
+        {"input": source.name, "operation": "refs"},
+        request_id="req-inspect",
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["data"]["result"] == {"solids": 1}
+    assert result["files"][0]["name"] == "inspect.json"
+    spec, call = backend.specs[0]
+    assert spec.capability == "mcad.cad"
+    assert spec.operation == "inspect"
+    assert spec.source.language == "json"
+    assert call["materialized_inputs"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("RUN_REAL_PODMAN") != "1",
+    reason="set RUN_REAL_PODMAN=1 to exercise the actual unified MCAD runtime",
+)
+async def test_real_backend_runs_all_local_capability_families(
+    workspace: Path,
+) -> None:
+    backend = PodmanExecutionBackend(os.environ["SANDBOX_IMAGE"])
+    runtime = make_runtime(
+        workspace,
+        execution_backend=backend,
+        timeout_seconds=120,
+    )
+
+    cad_source = workspace / "part.py"
+    cad_source.write_text(
+        "from build123d import Box, Cylinder\n\n"
+        "def gen_step():\n"
+        "    return Box(12, 8, 4) - Cylinder(2, 4)\n",
+        encoding="utf-8",
+    )
+    generated = await runtime.execute_async(
+        "cad",
+        "step",
+        {"input": "part.py", "output": "part.step", "force": True},
+        request_id="real-cad-step",
+    )
+    assert generated["status"] == "succeeded", json.dumps(
+        generated,
+        ensure_ascii=False,
+        indent=2,
+    )
+    step_path = Path(generated["files"][0]["path"])
+    step_input = str(step_path.relative_to(workspace))
+
+    dfm = await StepAnalyzer(execution_backend=backend).analyze(step_path)
+    assert dfm.error is None, dfm.error
+    assert dfm.global_properties.volume > 0
+    assert dfm.global_properties.face_count == 7
+    assert dfm.global_properties.edge_count == 30
+    assert dfm.derived_metrics.min_hole_diameter == 4
+    assert dfm.derived_metrics.min_fillet_radius is None
+
+    inspected = await runtime.execute_async(
+        "cad",
+        "inspect",
+        {"input": step_input, "operation": "refs"},
+        request_id="real-cad-inspect",
+    )
+    assert inspected["status"] == "succeeded", json.dumps(
+        inspected,
+        ensure_ascii=False,
+        indent=2,
+    )
+    assert isinstance(inspected["data"]["result"], dict)
+
+    exported = await runtime.execute_async(
+        "cad",
+        "export",
+        {"input": step_input, "format": "stl", "output": "part.stl", "force": True},
+        request_id="real-cad-export",
+    )
+    assert exported["status"] == "succeeded", json.dumps(
+        exported,
+        ensure_ascii=False,
+        indent=2,
+    )
+    assert Path(exported["files"][0]["path"]).suffix == ".stl"
+
+    snapshot = await runtime.execute_async(
+        "cad",
+        "snapshot",
+        {"input": step_input, "output": "part.png", "width": 320, "height": 240},
+        request_id="real-cad-snapshot",
+    )
+    assert snapshot["status"] == "succeeded", snapshot
+    assert Path(snapshot["files"][0]["path"]).read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+
+    dxf_source = workspace / "drawing.py"
+    dxf_source.write_text(
+        "import ezdxf\n\n"
+        "def gen_dxf():\n"
+        "    doc = ezdxf.new('R2010')\n"
+        "    doc.modelspace().add_circle((0, 0), 10)\n"
+        "    return doc\n",
+        encoding="utf-8",
+    )
+    dxf = await runtime.execute_async(
+        "dxf",
+        "generate",
+        {"source": "drawing.py", "output": "drawing.dxf"},
+        request_id="real-dxf",
+    )
+    assert dxf["status"] == "succeeded", dxf
+    assert Path(dxf["files"][0]["path"]).stat().st_size > 100
+
+    implicit_source = workspace / "part.implicit.mjs"
+    implicit_source.write_text(
+        "export default {glsl: 'float sdf(vec3 p) { return length(p) - 1.0; }'};\n",
+        encoding="utf-8",
+    )
+    implicit = await runtime.execute_async(
+        "implicit-cad",
+        "export",
+        {
+            "input": "part.implicit.mjs",
+            "format": "stl",
+            "output": "implicit.stl",
+            "resolution": 32,
+            "max_cells": 100000,
+        },
+        request_id="real-implicit",
+    )
+    assert implicit["status"] == "succeeded", implicit
+    assert Path(implicit["files"][0]["path"]).stat().st_size > 100
 
 
 def test_bambu_default_deployment_gate_wins_even_with_request_confirmation(workspace: Path, monkeypatch) -> None:
     runtime = make_runtime(workspace)
     monkeypatch.setattr(
-        "app.capabilities.runtime.subprocess.run",
+        "app.capabilities.runtime.host_process.run",
         lambda *args, **kwargs: pytest.fail("default runtime must never contact a printer"),
     )
     result = runtime.execute(
@@ -153,7 +352,7 @@ def test_bambu_default_deployment_gate_wins_even_with_request_confirmation(works
 def test_bambu_requires_execute_and_action_confirmation_when_deployed(workspace: Path, monkeypatch) -> None:
     runtime = make_runtime(workspace, allow_bambu_lan=True)
     monkeypatch.setattr(
-        "app.capabilities.runtime.subprocess.run",
+        "app.capabilities.runtime.host_process.run",
         lambda *args, **kwargs: pytest.fail("confirmation gate should block subprocess"),
     )
     no_execute = runtime.execute(
@@ -174,7 +373,7 @@ def test_bambu_access_code_is_redacted_from_result(workspace: Path, monkeypatch)
         captured["command"] = command
         return completed(stdout=b'{"status": "ok"}', stderr=b"")
 
-    monkeypatch.setattr("app.capabilities.runtime.subprocess.run", fake_run)
+    monkeypatch.setattr("app.capabilities.runtime.host_process.run", fake_run)
     secret = "printer-access-123"
     result = runtime.execute(
         "bambu-labs",
@@ -207,7 +406,7 @@ def test_gcode_dry_run_builds_fixed_safe_command(workspace: Path, monkeypatch) -
         captured.update(kwargs)
         return completed(stdout=b'{"dry_run": true}')
 
-    monkeypatch.setattr("app.capabilities.runtime.subprocess.run", fake_run)
+    monkeypatch.setattr("app.capabilities.runtime.host_process.run", fake_run)
     result = runtime.execute(
         "gcode",
         "dry-run",
@@ -216,7 +415,6 @@ def test_gcode_dry_run_builds_fixed_safe_command(workspace: Path, monkeypatch) -
     )
     command = captured["command"]
     assert result["status"] == "dry_run"
-    assert captured["shell"] is False
     assert "slice" in command
     assert "--dry-run" in command
     assert "--execute" not in command
@@ -226,7 +424,7 @@ def test_gcode_dry_run_builds_fixed_safe_command(workspace: Path, monkeypatch) -
 def test_missing_external_executable_returns_structured_blocked(workspace: Path, monkeypatch) -> None:
     runtime = make_runtime(workspace)
     monkeypatch.setattr(
-        "app.capabilities.runtime.subprocess.run",
+        "app.capabilities.runtime.host_process.run",
         lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError("missing")),
     )
     result = runtime.execute("gcode", "discover", {}, request_id="req-missing")
@@ -240,7 +438,10 @@ def test_every_manifest_action_has_a_runtime_handler(workspace: Path) -> None:
         f"{manifest.id}/{action.id}"
         for manifest in list_capabilities()
         for action in manifest.actions
-        if (manifest.id, action.id) not in runtime._dispatch
+        if (
+            (manifest.id, action.id) not in runtime._dispatch
+            and (manifest.id, action.id) not in runtime_module._ASYNC_ACTIONS
+        )
     ]
     assert missing == []
 

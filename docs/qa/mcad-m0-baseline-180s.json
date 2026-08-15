@@ -1,0 +1,6590 @@
+{
+  "meta": {
+    "run_id": "eval_20260726T073018Z_9d27dd9_deadline-180s",
+    "timestamp": "20260726T073018Z",
+    "git_sha": "9d27dd9",
+    "model": "kimi-k2.7-code",
+    "llm_provider": "moonshot",
+    "temperature": 0.2,
+    "rag_enabled": true,
+    "n_repeats": 3,
+    "concurrency": 4,
+    "n_cases": 50,
+    "case_set_hash": "ceea5cb4e4eb",
+    "sandbox_runtime": "podman",
+    "runtime_identity": {
+      "runtime": "podman",
+      "image": "cad-agent-sandbox:m0-baseline-3629b54",
+      "host_platform": "darwin/arm64",
+      "image_digest": "sha256:5fa2d755fce931ac2325d53ce6aa84fd800aa31f522b7eba11159a728eb1c642",
+      "source_digest": "sha256:1d2e7fc7e82bc3c4e8e4101e40a54e884676dc8003e1dedc5ca86ec8a0da5725",
+      "architecture": "arm64",
+      "os": "linux"
+    },
+    "derived_from_run_id": "eval_20260726T073018Z_9d27dd9",
+    "pipeline_deadline_s": 180.0,
+    "baseline_derivation": "real source runs completing after the product pipeline deadline are counted as timeout failures",
+    "observed_unbounded_total_wall_s": 27694.2
+  },
+  "summary": {
+    "overall": {
+      "n_cases": 50,
+      "pass@1": {
+        "mean": 0.0533,
+        "std": 0.1559
+      },
+      "pass@k": 0.12,
+      "pass^k": 0.0,
+      "verdict_pass_rate": {
+        "mean": 0.0267,
+        "std": 0.1135
+      },
+      "printable_rate": {
+        "mean": 0.0533,
+        "std": 0.1559
+      },
+      "one_shot_rate": {
+        "mean": 0.0533,
+        "std": 0.1559
+      },
+      "avg_wall_ms": 92431
+    },
+    "by_difficulty": {
+      "simple": {
+        "n_cases": 14,
+        "pass@1": {
+          "mean": 0.1905,
+          "std": 0.252
+        },
+        "pass@k": 0.4286,
+        "pass^k": 0.0,
+        "verdict_pass_rate": {
+          "mean": 0.0952,
+          "std": 0.2038
+        },
+        "printable_rate": {
+          "mean": 0.1905,
+          "std": 0.252
+        },
+        "one_shot_rate": {
+          "mean": 0.1905,
+          "std": 0.252
+        },
+        "avg_wall_ms": 161316
+      },
+      "moderate": {
+        "n_cases": 24,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "pass@k": 0.0,
+        "pass^k": 0.0,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "avg_wall_ms": 97852
+      },
+      "complex": {
+        "n_cases": 12,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "pass@k": 0.0,
+        "pass^k": 0.0,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "avg_wall_ms": 1222
+      }
+    },
+    "by_path": {
+      "2d": {
+        "n_cases": 2,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "pass@k": 0.0,
+        "pass^k": 0.0,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "avg_wall_ms": 1250
+      },
+      "assembly": {
+        "n_cases": 1,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "pass@k": 0.0,
+        "pass^k": 0.0,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "avg_wall_ms": 1279
+      },
+      "extrude_cut": {
+        "n_cases": 44,
+        "pass@1": {
+          "mean": 0.0606,
+          "std": 0.1651
+        },
+        "pass@k": 0.1364,
+        "pass^k": 0.0,
+        "verdict_pass_rate": {
+          "mean": 0.0303,
+          "std": 0.1207
+        },
+        "printable_rate": {
+          "mean": 0.0606,
+          "std": 0.1651
+        },
+        "one_shot_rate": {
+          "mean": 0.0606,
+          "std": 0.1651
+        },
+        "avg_wall_ms": 104868
+      },
+      "loft": {
+        "n_cases": 1,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "pass@k": 0.0,
+        "pass^k": 0.0,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "avg_wall_ms": 1210
+      },
+      "revolve": {
+        "n_cases": 1,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "pass@k": 0.0,
+        "pass^k": 0.0,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "avg_wall_ms": 1165
+      },
+      "sweep": {
+        "n_cases": 1,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "pass@k": 0.0,
+        "pass^k": 0.0,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "avg_wall_ms": 1207
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "P01",
+      "difficulty": "simple",
+      "path": "extrude_cut",
+      "description": "一个圆柱形桌脚垫，直径 35mm、高 12mm，底面平整贴地",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 318463,
+          "observed_post_deadline_passed": true,
+          "observed_post_deadline_request_id": "2d47bad5-10a7-401a-afcd-4986ab878c08"
+        },
+        {
+          "executed": true,
+          "verdict": "pass",
+          "verdict_pass": true,
+          "watertight": true,
+          "printable": true,
+          "dim_match": true,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 1,
+          "one_shot": true,
+          "exec_time_ms": 1071,
+          "wall_time_ms": 107578,
+          "error": null,
+          "passed": true,
+          "artifact_gate": {
+            "stl_readable": true,
+            "geometry_nonempty": true,
+            "step_readable": true,
+            "rendered_views": 4,
+            "passed": true
+          },
+          "rendered_views": 4,
+          "request_id": "a5689249-4dea-4770-9830-2ee797bce696"
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 256218,
+          "observed_post_deadline_passed": true,
+          "observed_post_deadline_request_id": "88522e23-37a6-476b-93fc-adad48e20ecb"
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "pass@k": true,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "avg_attempts": 0.33,
+        "avg_wall_ms": 155859
+      }
+    },
+    {
+      "id": "P02",
+      "difficulty": "simple",
+      "path": "extrude_cut",
+      "description": "牙刷架底座，70x45x6mm 的圆角板，表面四个直径 18mm 的浅圆槽放牙刷",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 368046,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 261413,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 184875,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 180000
+      }
+    },
+    {
+      "id": "P03",
+      "difficulty": "simple",
+      "path": "extrude_cut",
+      "description": "防滑橡胶脚的替代件，正方形 28x28mm 高 9mm，顶部中心一个 M4 沉孔",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 196013,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 238031,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 199107,
+          "observed_post_deadline_passed": true,
+          "observed_post_deadline_request_id": "cd7963ea-924a-4136-b671-81857134822e"
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 180000
+      }
+    },
+    {
+      "id": "P04",
+      "difficulty": "simple",
+      "path": "extrude_cut",
+      "description": "数据线收纳的圆形线扣，外径 22mm，中间一条 6mm 宽的开口卡槽，厚 8mm",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 242354,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 190991,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 328138,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 180000
+      }
+    },
+    {
+      "id": "P05",
+      "difficulty": "simple",
+      "path": "extrude_cut",
+      "description": "冰箱贴底板，60x60x4mm 的薄板，背面一个直径 20mm 深 2mm 的圆形磁铁凹槽",
+      "runs": [
+        {
+          "executed": true,
+          "verdict": "warn",
+          "verdict_pass": false,
+          "watertight": true,
+          "printable": true,
+          "dim_match": true,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": 100,
+          "attempts": 1,
+          "one_shot": true,
+          "exec_time_ms": 982,
+          "wall_time_ms": 95326,
+          "error": null,
+          "passed": true,
+          "artifact_gate": {
+            "stl_readable": true,
+            "geometry_nonempty": true,
+            "step_readable": true,
+            "rendered_views": 4,
+            "passed": true
+          },
+          "rendered_views": 4,
+          "request_id": "edfd83c9-3036-4596-87ac-778185d2aee7"
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 175512,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": true,
+          "verdict": "warn",
+          "verdict_pass": false,
+          "watertight": true,
+          "printable": true,
+          "dim_match": true,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 1,
+          "one_shot": true,
+          "exec_time_ms": 967,
+          "wall_time_ms": 31627,
+          "error": null,
+          "passed": true,
+          "artifact_gate": {
+            "stl_readable": true,
+            "geometry_nonempty": true,
+            "step_readable": true,
+            "rendered_views": 4,
+            "passed": true
+          },
+          "rendered_views": 4,
+          "request_id": "eb8ec35d-d6bf-480f-b07c-815bab786583"
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.6667,
+          "std": 0.5774,
+          "n": 3
+        },
+        "pass@k": true,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.6667,
+          "std": 0.5774,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.6667,
+          "std": 0.5774,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.6667,
+          "std": 0.5774,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.6667,
+          "std": 0.5774,
+          "n": 3
+        },
+        "avg_attempts": 0.67,
+        "avg_wall_ms": 100822
+      }
+    },
+    {
+      "id": "P06",
+      "difficulty": "simple",
+      "path": "extrude_cut",
+      "description": "圆锥形漏斗塞，上口直径 30mm，下口直径 18mm，高 25mm，实心",
+      "runs": [
+        {
+          "executed": true,
+          "verdict": "pass",
+          "verdict_pass": true,
+          "watertight": true,
+          "printable": true,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 1,
+          "one_shot": true,
+          "exec_time_ms": 979,
+          "wall_time_ms": 66447,
+          "error": null,
+          "passed": true,
+          "artifact_gate": {
+            "stl_readable": true,
+            "geometry_nonempty": true,
+            "step_readable": true,
+            "rendered_views": 4,
+            "passed": true
+          },
+          "rendered_views": 4,
+          "request_id": "437070f8-8479-42ea-a935-ea1be5eac8c4"
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 185922,
+          "observed_post_deadline_passed": true,
+          "observed_post_deadline_request_id": "9468de60-2b5d-4146-bce7-a2b59a30509d"
+        },
+        {
+          "executed": true,
+          "verdict": "pass",
+          "verdict_pass": true,
+          "watertight": true,
+          "printable": true,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 1,
+          "one_shot": true,
+          "exec_time_ms": 936,
+          "wall_time_ms": 10837,
+          "error": null,
+          "passed": true,
+          "artifact_gate": {
+            "stl_readable": true,
+            "geometry_nonempty": true,
+            "step_readable": true,
+            "rendered_views": 4,
+            "passed": true
+          },
+          "rendered_views": 4,
+          "request_id": "33936620-e88b-4c3a-b675-31b28ad32f63"
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.6667,
+          "std": 0.5774,
+          "n": 3
+        },
+        "pass@k": true,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.6667,
+          "std": 0.5774,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.6667,
+          "std": 0.5774,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.6667,
+          "std": 0.5774,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.6667,
+          "std": 0.5774,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.67,
+        "avg_wall_ms": 85761
+      }
+    },
+    {
+      "id": "P07",
+      "difficulty": "simple",
+      "path": "extrude_cut",
+      "description": "桌面理线槽盖片，长 90mm 宽 20mm 厚 3mm，两端各一个 R10 的半圆缺口",
+      "runs": [
+        {
+          "executed": true,
+          "verdict": "warn",
+          "verdict_pass": false,
+          "watertight": true,
+          "printable": true,
+          "dim_match": true,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 1,
+          "one_shot": true,
+          "exec_time_ms": 1008,
+          "wall_time_ms": 141268,
+          "error": null,
+          "passed": true,
+          "artifact_gate": {
+            "stl_readable": true,
+            "geometry_nonempty": true,
+            "step_readable": true,
+            "rendered_views": 4,
+            "passed": true
+          },
+          "rendered_views": 4,
+          "request_id": "90a512cd-f31e-4206-87b6-efe4402d46a8"
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 187425,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 249014,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "pass@k": true,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "avg_attempts": 0.33,
+        "avg_wall_ms": 167089
+      }
+    },
+    {
+      "id": "P08",
+      "difficulty": "simple",
+      "path": "extrude_cut",
+      "description": "门把手垫圈，外径 48mm 内径 26mm 厚 5mm 的环形件",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 259521,
+          "observed_post_deadline_passed": true,
+          "observed_post_deadline_request_id": "7ec4461c-8fa3-4887-beda-6538689b3e52"
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 266705,
+          "observed_post_deadline_passed": true,
+          "observed_post_deadline_request_id": "e407492a-16df-4766-9aa5-e3dbb7e5e16f"
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 207463,
+          "observed_post_deadline_passed": true,
+          "observed_post_deadline_request_id": "edc4fcee-4b8b-42c6-b843-8348195469c9"
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 180000
+      }
+    },
+    {
+      "id": "P09",
+      "difficulty": "simple",
+      "path": "extrude_cut",
+      "description": "三角形书立支脚，等边三角形边长 40mm，厚 8mm，竖直放置",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 267529,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": "18530d42-4f6d-4032-90c4-1b0cdf2dc707"
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 259736,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": "2bba23bd-16c9-4b70-a5f2-9353ee01b7ed"
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 314268,
+          "observed_post_deadline_passed": true,
+          "observed_post_deadline_request_id": "c0f6fb26-1d59-4923-b202-aa2d00295ebd"
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 180000
+      }
+    },
+    {
+      "id": "P10",
+      "difficulty": "simple",
+      "path": "extrude_cut",
+      "description": "标签夹，55x18x10mm 的长方块，沿长边开一条 2mm 宽 8mm 深的插槽",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 241999,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": true,
+          "verdict": "warn",
+          "verdict_pass": false,
+          "watertight": true,
+          "printable": true,
+          "dim_match": true,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 1,
+          "one_shot": true,
+          "exec_time_ms": 1007,
+          "wall_time_ms": 116756,
+          "error": null,
+          "passed": true,
+          "artifact_gate": {
+            "stl_readable": true,
+            "geometry_nonempty": true,
+            "step_readable": true,
+            "rendered_views": 4,
+            "passed": true
+          },
+          "rendered_views": 4,
+          "request_id": "0a1a801e-3749-41e5-bbfe-7a6b934b0b5a"
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 308352,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "pass@k": true,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "avg_attempts": 0.33,
+        "avg_wall_ms": 158919
+      }
+    },
+    {
+      "id": "P11",
+      "difficulty": "simple",
+      "path": "extrude_cut",
+      "description": "圆形按钮帽，直径 16mm 高 10mm，顶部 R3 圆顶，底部一个直径 4mm 深 6mm 的轴孔",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 242169,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 242241,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 203440,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 180000
+      }
+    },
+    {
+      "id": "P12",
+      "difficulty": "simple",
+      "path": "extrude_cut",
+      "description": "六角形杯垫，对边距 95mm，厚 5mm，边缘 R2 圆角",
+      "runs": [
+        {
+          "executed": true,
+          "verdict": "pass",
+          "verdict_pass": true,
+          "watertight": true,
+          "printable": true,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 1,
+          "one_shot": true,
+          "exec_time_ms": 1007,
+          "wall_time_ms": 95656,
+          "error": null,
+          "passed": true,
+          "artifact_gate": {
+            "stl_readable": true,
+            "geometry_nonempty": true,
+            "step_readable": true,
+            "rendered_views": 4,
+            "passed": true
+          },
+          "rendered_views": 4,
+          "request_id": "f0832634-9795-4810-b7eb-a1bc2686c931"
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 236479,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": "7a19ab28-8aac-4394-8ee2-b542b86d92bc"
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 183500,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": "0818970d-d246-4e79-beb8-35d6ae1b456f"
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "pass@k": true,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.3333,
+          "std": 0.5774,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.33,
+        "avg_wall_ms": 151885
+      }
+    },
+    {
+      "id": "P13",
+      "difficulty": "simple",
+      "path": "extrude_cut",
+      "description": "笔筒分隔插片，65x65x2mm 十字形隔板，中间开十字槽互插",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 175093,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 211258,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 409591,
+          "observed_post_deadline_passed": true,
+          "observed_post_deadline_request_id": "9bfcaf6c-0535-4d55-b0be-05b142e61256"
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 178364
+      }
+    },
+    {
+      "id": "P14",
+      "difficulty": "simple",
+      "path": "extrude_cut",
+      "description": "圆角三角形吊牌，最长边 50mm 厚 3mm，顶角一个直径 5mm 的挂绳孔",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 261524,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 180283,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 179156,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 179719
+      }
+    },
+    {
+      "id": "P15",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "手机平放充电支架，底座 75x70mm，背靠板倾斜 65 度高 55mm，底部一个直径 12mm 的过线孔",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 5043934,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 193479,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 3043619,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 180000
+      }
+    },
+    {
+      "id": "P16",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "桌沿挂耳机的 C 形夹钩，夹口开度 26mm，钩臂厚 6mm，挂钩内径 22mm",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 23281776,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 21066289,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 20531894,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 180000
+      }
+    },
+    {
+      "id": "P17",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "磁吸笔筒底座，外径 60mm 高 70mm 壁厚 2.5mm，底部内嵌三个直径 10mm 深 3mm 的磁铁孔",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 18459336,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 2371494,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 258004,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 180000
+      }
+    },
+    {
+      "id": "P18",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "可堆叠收纳盒，外形 100x70x40mm 壁厚 2mm，顶口外翻 3mm 唇边便于叠放",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 267936,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 200716,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 177229,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 179076
+      }
+    },
+    {
+      "id": "P19",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "键盘抬升脚，底面 30x25mm，楔形倾角 7 度，最高处 18mm，底部防滑横纹",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 237595,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 46129,
+          "error": "{'type': 'NeedsConfirmation', 'message': '请先回答设计简报中的待确认问题，再继续生成 CAD 模型。'}",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": "2aae748d-a88b-4987-81ff-a899f1dc13e7"
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 389367,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 135376
+      }
+    },
+    {
+      "id": "P20",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "平板电脑横放支架，整体 120x80mm，前挡边高 15mm，背撑倾角 60 度，重心靠后防倒",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 253752,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 329438,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 335257,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 180000
+      }
+    },
+    {
+      "id": "P21",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "牙膏挤压器滚轮夹，主体 40x25x15mm，中间 3mm 宽的扁缝供牙膏管穿过，侧面一个旋钮轴孔直径 6mm",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 394012,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 271967,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 251072,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 180000
+      }
+    },
+    {
+      "id": "P22",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "墙面挂物排钩，背板 120x30x4mm，三个向上 J 形钩等距分布，背板四角 M4 安装孔",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 242202,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 241775,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 338765,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 180000
+      }
+    },
+    {
+      "id": "P23",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "圆形分格调味盒，外径 90mm 高 35mm，内部十字隔成四格，壁厚 2mm",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 253252,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 258222,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 205749,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 180000
+      }
+    },
+    {
+      "id": "P24",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "耳机绕线收纳盘，外径 70mm 中心柱直径 20mm，外圈挡边高 10mm，整体盘状",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 210903,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 201072,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 187104,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 180000
+      }
+    },
+    {
+      "id": "P25",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "桌面便签夹，底座 50x40x8mm，背部竖起一片 50x35x3mm 的夹板，顶部开 1.5mm 的夹缝",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 242060,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 275109,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 200492,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 180000
+      }
+    },
+    {
+      "id": "P26",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "可调节书本阅读架的卡齿支腿，长 110mm 宽 30mm 厚 6mm，一端 5 级棘齿调角",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 245376,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 246690,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 205539,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 180000
+      }
+    },
+    {
+      "id": "P27",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "圆顶按压式垃圾袋夹，半球形帽直径 40mm，下方一个开口 18mm 的弹性夹口",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 298105,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 180000,
+          "error": "pipeline deadline exceeded after 180s",
+          "passed": false,
+          "artifact_gate": {
+            "step_readable": false,
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null,
+          "observed_post_deadline_wall_ms": 197491,
+          "observed_post_deadline_passed": false,
+          "observed_post_deadline_request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 122040,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 160680
+      }
+    },
+    {
+      "id": "P28",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "USB 集线器固定座，65x30x20mm，顶面一个 62x10mm 的卡槽，两侧 M3 沉头螺丝孔",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 121487,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 61758,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1095,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 61447
+      }
+    },
+    {
+      "id": "P29",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "牙线盒壁挂支架，背板 50x60mm，前面一个抱住直径 45mm 圆盒的半圆托，背板两个安装孔",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1110,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1141,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1122,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1124
+      }
+    },
+    {
+      "id": "P30",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "桌面手机+手表二合一托，底座 100x60mm，手机槽倾斜 60 度，旁边一个直径 40mm 的表带凹坑",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1136,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1287,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1214,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1212
+      }
+    },
+    {
+      "id": "P31",
+      "difficulty": "complex",
+      "path": "extrude_cut",
+      "description": "桌面多功能笔插收纳，120x90x60mm，分三个高低不同的隔仓，外壁 2mm，底部四角圆角 R5",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1183,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1077,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1243,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1168
+      }
+    },
+    {
+      "id": "P32",
+      "difficulty": "complex",
+      "path": "extrude_cut",
+      "description": "Raspberry Pi 风格外壳，95x65x30mm 壁厚 2mm，四角内置 M2.5 螺柱高 6mm，侧面一个 16x8mm 的接口开窗",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1066,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1159,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1167,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1131
+      }
+    },
+    {
+      "id": "P33",
+      "difficulty": "complex",
+      "path": "extrude_cut",
+      "description": "带加强筋的悬臂显示器挂钩，背板 60x80mm，悬臂伸出 70mm，背面三条三角加强筋，背板四个 M4 孔",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1211,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1327,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1291,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1276
+      }
+    },
+    {
+      "id": "P34",
+      "difficulty": "complex",
+      "path": "extrude_cut",
+      "description": "可堆叠零件盒带分隔，外形 110x80x45mm，内部 2x3 格，前壁有一个 30x20mm 的取件缺口，顶部叠放导轨",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1181,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1235,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1181,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1199
+      }
+    },
+    {
+      "id": "P35",
+      "difficulty": "complex",
+      "path": "extrude_cut",
+      "description": "蜂窝镂空笔筒，外径 80mm 高 95mm 壁厚 3mm，侧壁六边形蜂窝镂空阵列，底部实心",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1193,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1111,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1162,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1155
+      }
+    },
+    {
+      "id": "P36",
+      "difficulty": "complex",
+      "path": "extrude_cut",
+      "description": "带铰链翻盖的小药盒，盒体 60x40x20mm，翻盖一体打印活动铰链，盒身分两格",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1307,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1115,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1340,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1254
+      }
+    },
+    {
+      "id": "P37",
+      "difficulty": "complex",
+      "path": "extrude_cut",
+      "description": "电源适配器壁挂篮，托住 80x50x30mm 的适配器，底托加前挡，背板两个 M4 孔，侧面散热长槽",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1195,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1595,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1157,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1316
+      }
+    },
+    {
+      "id": "P38",
+      "difficulty": "complex",
+      "path": "extrude_cut",
+      "description": "桌面线缆理线塔，圆柱形外径 50mm 高 120mm，沿高度螺旋开五个出线侧缝，中空走线",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1548,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1122,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1157,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1276
+      }
+    },
+    {
+      "id": "M01",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "方形法兰盘，外形 70x70mm 厚 8mm，中心孔直径 30mm，四角各一个 M6 螺栓孔边距 10mm",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1198,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1109,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1258,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1188
+      }
+    },
+    {
+      "id": "M02",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "两端不等径的双台阶轴，左段直径 12mm 长 25mm，右段直径 18mm 长 35mm，同轴",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1375,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1307,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1193,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1292
+      }
+    },
+    {
+      "id": "M03",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "T 形连接支架，竖板 60x40x6mm 与横板 60x30x6mm 垂直相交，交接处 R4 圆角，每板两个 M5 孔",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1224,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1206,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1051,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1160
+      }
+    },
+    {
+      "id": "M04",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "带凸缘的衬套，外径 24mm 主体长 30mm，一端凸缘外径 34mm 厚 4mm，通孔直径 12mm",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1091,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1127,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1172,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1130
+      }
+    },
+    {
+      "id": "M05",
+      "difficulty": "complex",
+      "path": "extrude_cut",
+      "description": "直齿轮简化件，分度圆约 48mm，16 齿，厚 10mm，中心轴孔直径 10mm 带 3mm 键槽",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1266,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1074,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1244,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1195
+      }
+    },
+    {
+      "id": "M06",
+      "difficulty": "moderate",
+      "path": "extrude_cut",
+      "description": "滑轨滑块，35x35x20mm，底面一条 12mm 宽 6mm 深的燕尾槽，顶部一个 M5 螺纹孔",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1116,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1087,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1095,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1099
+      }
+    },
+    {
+      "id": "X01",
+      "difficulty": "moderate",
+      "path": "2d",
+      "description": "画一个法兰垫片的 2D 激光切割轮廓 DXF，外径 60mm，中心孔 25mm，六个直径 5mm 的螺栓孔在 PCD 45mm 上",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1358,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "dxf_readable": false,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1289,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "dxf_readable": false,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1159,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "dxf_readable": false,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1269
+      }
+    },
+    {
+      "id": "X02",
+      "difficulty": "moderate",
+      "path": "2d",
+      "description": "输出一个齿形垫片的 2D 轮廓 DXF 用于激光切割，外径 40mm，内孔 20mm，外缘 12 个矩形齿",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1215,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "dxf_readable": false,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1319,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "dxf_readable": false,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1155,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "dxf_readable": false,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1230
+      }
+    },
+    {
+      "id": "X03",
+      "difficulty": "moderate",
+      "path": "revolve",
+      "description": "一个圆锥形灯罩，下口直径 120mm，上口直径 60mm，高 90mm，壁厚 2mm 的回转薄壁体",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1151,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1161,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1184,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1165
+      }
+    },
+    {
+      "id": "X04",
+      "difficulty": "complex",
+      "path": "sweep",
+      "description": "一个 90 度弯管，管外径 28mm 内径 22mm，弯曲半径 45mm，两端各有 20mm 直管段",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1116,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1076,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1428,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1207
+      }
+    },
+    {
+      "id": "X05",
+      "difficulty": "complex",
+      "path": "loft",
+      "description": "一个方变圆的过渡接头，底部 60x60mm 方口，顶部直径 40mm 圆口，高 50mm，壁厚 2mm",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1465,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1102,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1064,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1210
+      }
+    },
+    {
+      "id": "X06",
+      "difficulty": "complex",
+      "path": "assembly",
+      "description": "一个简单的桌面支架装配体：方形底座 80x80x10mm 加一根直径 20mm 高 100mm 的立柱，立柱顶端一个 60x40x8mm 的平台",
+      "runs": [
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1199,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1317,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        },
+        {
+          "executed": false,
+          "verdict": null,
+          "verdict_pass": false,
+          "watertight": null,
+          "printable": null,
+          "dim_match": null,
+          "part_type_match": null,
+          "feature_match": null,
+          "dfm_score": null,
+          "attempts": 0,
+          "one_shot": false,
+          "exec_time_ms": 0,
+          "wall_time_ms": 1321,
+          "error": "pipeline raised / None response",
+          "passed": false,
+          "artifact_gate": {
+            "stl_readable": false,
+            "geometry_nonempty": false,
+            "step_readable": false,
+            "rendered_views": 0,
+            "passed": false
+          },
+          "rendered_views": 0,
+          "request_id": null
+        }
+      ],
+      "agg": {
+        "n_runs": 3,
+        "pass@1": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "pass@k": false,
+        "pass^k": false,
+        "verdict_pass_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "printable_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "watertight_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "one_shot_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "dim_match_rate": {
+          "mean": 0.0,
+          "std": 0.0,
+          "n": 3
+        },
+        "avg_attempts": 0.0,
+        "avg_wall_ms": 1279
+      }
+    }
+  ]
+}

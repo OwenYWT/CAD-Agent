@@ -1,6 +1,6 @@
 # CADAM 编排优点借鉴档案（2026-08）
 
-> 状态：归档说明，不代表当前所有能力都已完全闭环。  
+> 状态：归档说明，不代表当前所有能力都已完全闭环。
 > 范围：总结近期提交中从 CADAM 借鉴到 CAD-Agent 的编排优点、落点和收益。
 
 ## 归档目的
@@ -110,7 +110,7 @@ CADAM 的思路不是“恢复一个进度条”，而是恢复一整套可解�
 
 ## 关键落点文件
 
-- `docs/agent-orchestration-upgrade.md`
+- `docs/archive/agent-orchestration-upgrade-2026-07.md`
 - `backend/app/storage/history.py`
 - `backend/app/agent/run_store.py`
 - `backend/app/agent/recovery.py`

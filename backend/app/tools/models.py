@@ -24,7 +24,9 @@ ConfirmationRiskLevel = Literal["low", "medium", "high", "critical"]
 
 
 class ToolContext(BaseModel):
+    request_id: str | None = Field(None, min_length=1, max_length=128)
     session_id: str | None = Field(None, min_length=1, max_length=128)
+    panel_id: str | None = Field(None, min_length=1, max_length=128)
     user_id: str | None = Field(None, min_length=1, max_length=128)
     auth_principal: str | None = None
     role: str | None = Field(None, min_length=1, max_length=64)
@@ -57,6 +59,7 @@ class ConfirmationPolicy(BaseModel):
 class ToolExecutionResult(BaseModel):
     tool_name: str
     status: ToolStatus
+    safety_level: ToolSafetyLevel = "read"
     summary: dict[str, Any] = Field(default_factory=dict)
     raw: Any = None
     error_code: ToolErrorCode | None = None
@@ -64,6 +67,7 @@ class ToolExecutionResult(BaseModel):
     error_message: str | None = None
     duration_ms: int = 0
     needs_confirmation: bool = False
+    confirmation_message: str | None = None
     confirmation: ConfirmationPolicy | None = None
     layer: PluginLayer | None = None
     plugin_name: str | None = None
@@ -187,11 +191,15 @@ class ToolDefinition(BaseModel):
         }
 
     def effective_confirmation_policy(self) -> ConfirmationPolicy | None:
+        requires_confirmation = (
+            self.requires_confirmation
+            or self.safety_level in {"write", "destructive"}
+        )
         if self.confirmation_policy:
-            if self.requires_confirmation and not self.confirmation_policy.required:
+            if requires_confirmation and not self.confirmation_policy.required:
                 return self.confirmation_policy.model_copy(update={"required": True})
             return self.confirmation_policy
-        if self.requires_confirmation:
+        if requires_confirmation:
             return ConfirmationPolicy()
         return None
 

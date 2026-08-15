@@ -159,7 +159,7 @@ def build_onshape_tools(service_factory: OnshapeServiceFactory | None = None) ->
 
     async def publish_step(args: BaseModel, context: ToolContext) -> ToolExecutionResult:
         typed = OnshapePublishStepArgs.model_validate(args)
-        _require_generated_file_access(typed.request_id, context)
+        await _require_generated_file_access(typed.request_id, context)
         if typed.document_id:
             _require_shared_onshape_access(context)
         response = await get_service().publish_step(
@@ -344,9 +344,12 @@ def _require_shared_onshape_access(context: ToolContext) -> None:
     raise PermissionError("Only administrators can browse or write shared Onshape documents")
 
 
-def _require_generated_file_access(request_id: str, context: ToolContext) -> None:
+async def _require_generated_file_access(
+    request_id: str,
+    context: ToolContext,
+) -> None:
     try:
-        allowed = request_belongs_to(request_id, context.auth_principal)
+        allowed = await request_belongs_to(request_id, context.auth_principal)
     except FileOwnershipError as exc:
         raise PermissionError(str(exc)) from exc
     if not allowed:

@@ -14,6 +14,7 @@ from app.models.schemas import (
     OnshapePublishResponse,
 )
 from app.storage import history
+from app.storage.file_ownership import hydrate_project_files
 
 _SAFE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 _SAFE_FILENAME_PATTERN = re.compile(r"^[a-zA-Z0-9._-]+$")
@@ -82,6 +83,11 @@ class OnshapeService:
         )
 
     async def publish_step(self, req: OnshapePublishRequest, user_id: str | None = None) -> OnshapePublishResponse:
+        if settings.durable_control_plane_enabled:
+            await hydrate_project_files(
+                req.request_id,
+                extensions={".step", ".stp"},
+            )
         step_path = _find_step_file(req.request_id, req.step_filename)
         document_raw: dict[str, Any] = {}
         if req.document_id:

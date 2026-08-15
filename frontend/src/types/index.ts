@@ -175,9 +175,17 @@ export interface CADPlanBrief {
 
 export interface GenerationResult {
   request_id?: string;
+  task_id?: string;
   needs_confirmation?: boolean;
   manufacturing_profile?: ManufacturingProfile | null;
   snapshot_id?: string;
+  project_id?: string;
+  branch_id?: string;
+  expected_base_revision_id?: string;
+  revision_id?: string;
+  workflow_run_id?: string;
+  change_set_id?: string;
+  task_status?: string;
   version?: number;
   success: boolean;
   files?: Record<string, string>;
@@ -198,6 +206,9 @@ export interface GenerationResult {
 
 export interface ModelSnapshotSummary {
   id: string;
+  project_id?: string;
+  branch_id?: string;
+  revision_id?: string;
   panel_id: string;
   parent_snapshot_id?: string | null;
   version: number;
@@ -212,6 +223,35 @@ export interface ModelSnapshotSummary {
 export interface ModelSnapshotDetail extends ModelSnapshotSummary {
   code: string;
   result: GenerationResult;
+  files?: Record<string, string>;
+  params?: Record<string, ParamConfig> | null;
+  parameters?: CADParameter[] | null;
+  validation?: ValidationData | null;
+  inspect_report?: InspectReport | null;
+  repair_history?: RepairStep[];
+}
+
+export interface SnapshotChangeList {
+  added: string[];
+  removed: string[];
+  changed: string[];
+  unchanged: string[];
+}
+
+export interface ModelSnapshotDiff {
+  from_snapshot_id: string;
+  to_snapshot_id: string;
+  model_changes?: {
+    code_changed?: boolean;
+    prompt_changed?: boolean;
+    source_changed?: boolean;
+    inspect_verdict?: { from?: string | null; to?: string | null };
+    bounding_box?: { from?: unknown; to?: unknown };
+    volume?: { from?: unknown; to?: unknown };
+  };
+  file_changes?: SnapshotChangeList;
+  parameter_changes?: SnapshotChangeList;
+  part_changes?: SnapshotChangeList;
 }
 
 export interface ChatMessage {
@@ -298,14 +338,137 @@ export interface Annotation3D {
   face_ids?: number[] | null;
 }
 
+export interface DurableTaskSubmittedEvent {
+  workflow_run_id: string;
+  project_id: string;
+  branch_id: string;
+  expected_base_revision_id: string;
+  panel_id: string;
+  status: string;
+}
+
 export type WSMessage =
   | { type: "step_update"; data: StepUpdate & { panel_id?: string } }
   | { type: "run_created"; data: RunCreatedEvent }
   | { type: "agent_step"; data: AgentStepEvent }
   | { type: "artifact_update"; data: ArtifactUpdateEvent }
+  | {
+      type: "task_submitted";
+      data: DurableTaskSubmittedEvent;
+    }
   | { type: "diagnostics"; data: { panel_id?: string; message: string; detail?: Record<string, unknown> | null } }
   | { type: "generation_result"; data: GenerationResult & { panel_id?: string } }
+  | {
+      type: "task_status";
+      data: {
+        task_id?: string | null;
+        panel_id?: string;
+        status: string;
+      };
+    }
   | { type: "assistant_message"; data: { content: string } };
+
+export interface DurableTaskEvent {
+  id: string;
+  workflow_run_id: string;
+  sequence: number;
+  event_type: string;
+  payload: Record<string, unknown>;
+  projection?: DurableAgentEventProjection | null;
+  occurred_at: string;
+}
+
+export interface DurableAgentEventProjection {
+  stage: string;
+  label: string;
+  status: StepStatus;
+  message: string;
+  step_key?: string | null;
+  step_kind?: string | null;
+  attempt_number?: number | null;
+  gate?: string | null;
+  mode?: string | null;
+  outcome?: string | null;
+  evidence_id?: string | null;
+  evidence_hash?: string | null;
+  risk_count?: number | null;
+}
+
+export interface DurableAgentValidationProjection {
+  evidence_id: string;
+  evidence_hash: string;
+  gate: string;
+  mode: string;
+  outcome: string;
+  issues: string[];
+  violations: Record<string, unknown>[];
+}
+
+export interface DurableAgentSnapshotProjection {
+  current_stage: string;
+  current_step_key?: string | null;
+  current_step_kind?: string | null;
+  current_status: string;
+  candidate_build_id?: string | null;
+  candidate_status?: string | null;
+  repair_count: number;
+  plan?: Record<string, unknown> | null;
+  validations: DurableAgentValidationProjection[];
+  risk_summary?: Record<string, unknown> | null;
+}
+
+export interface DurableTaskSnapshot {
+  id: string;
+  project_id: string;
+  kind: string;
+  status: string;
+  request_payload: {
+    branch_id?: string;
+    expected_base_revision_id?: string;
+    primary?: {
+      source_code?: string;
+      [key: string]: unknown;
+    } | null;
+    [key: string]: unknown;
+  };
+  last_event_sequence: number;
+  error_code?: string | null;
+  error_message?: string | null;
+  artifacts?: {
+    id: string;
+    revision_id: string;
+    artifact_kind: string;
+    filename: string;
+    content_type: string;
+    size_bytes: number;
+    sha256: string;
+    download_url: string;
+  }[];
+  change_set?: {
+    id: string;
+    status: string;
+    base_revision_id: string;
+    candidate_revision_id: string;
+    objective: string;
+  } | null;
+  agent?: DurableAgentSnapshotProjection | null;
+}
+
+export type DurableWSMessage =
+  | { type: "task_snapshot"; data: DurableTaskSnapshot }
+  | { type: "task_event"; data: DurableTaskEvent }
+  | {
+      type: "task_stream_complete";
+      data: {
+        workflow_run_id: string;
+        status: string;
+        last_event_sequence: number;
+      };
+    }
+  | {
+      type: "cursor_expired";
+      data: { earliest_sequence: number; current_sequence: number };
+    };
 
 export type CapabilityId =
   | "cad"

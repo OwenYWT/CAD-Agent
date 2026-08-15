@@ -12,6 +12,13 @@
 | [`CLAUDE.md`](../CLAUDE.md) | 代码代理 | 本仓库工作边界、验证命令和文档维护规则 |
 | [`backend/benchmark/README.md`](../backend/benchmark/README.md) | 模型/生成链路维护者 | 真实 LLM + sandbox 的手动评测基线 |
 
+## MCAD 架构验收
+
+| 文档 | 作用 |
+| --- | --- |
+| [`qa/mcad-m0-report.md`](qa/mcad-m0-report.md) | 固定 Runtime、统一 ExecutionBackend 与隔离执行的 M0 证据 |
+| [`qa/mcad-m1-report.md`](qa/mcad-m1-report.md) | PostgreSQL、Temporal、不可变 Artifact、Revision、WebSocket 和真实 Podman 的 M1 验收结果 |
+
 ## Fusion 360 Connector
 
 这些文档各自承担不同职责，不互相复制完整内容：
@@ -34,11 +41,20 @@ Fusion 自动化测试与真实桌面验收必须分开表述。没有完成 Win
 - `schemas/fusion360/**` 是由 `backend/app/fusion360/contract.py` 等源码生成的 wire schema，不手工编辑。
 - `.gstack/qa-reports/**`、`frontend/qa/**`、测试截图和 benchmark reports 是测试证据或 harness，不是产品文档入口；其中 `.gstack` 与 benchmark 输出已被 Git 忽略。
 
+## 当前架构改造
+
+- [`superpowers/specs/2026-07-25-commercial-mcad-execution-design.md`](superpowers/specs/2026-07-25-commercial-mcad-execution-design.md)
+  定义 M0 本地 MCAD、M1 持久控制平面和 M2 隔离计算扩展的已批准目标、边界与真实验收要求。
+- [`superpowers/specs/2026-08-12-durable-agent-fusion-design.md`](superpowers/specs/2026-08-12-durable-agent-fusion-design.md)
+  定义已落地的 V2 Durable Agent 规划、建模、修复、几何/视觉/DFM 验证和候选版本封存边界。
+
 ## 历史归档
 
 - [`archive/forgecad-roadmap-2026-07.md`](archive/forgecad-roadmap-2026-07.md)：从旧 `NEXT.md` 提炼的产品研究和候选路线。它不是当前实现清单、排期或接口合同。
+- [`archive/agent-orchestration-upgrade-2026-07.md`](archive/agent-orchestration-upgrade-2026-07.md)：2026-07 的进程内 Agent 编排比较稿；旧架构和实施清单已废弃。
+- [`archive/cadam-orchestration-borrowed-advantages-2026-08.md`](archive/cadam-orchestration-borrowed-advantages-2026-08.md)：Durable Agent 融合 CADAM 编排优点的历史决策记录；当前事实以实现、设计规范和 M1 验收报告为准。
 
-已完成的一次性 implementation plan/spec、旧 Sprint、重复使用说明和旧交接副本已删除。需要追溯时使用 Git 历史，不再把它们放在当前文档树里。
+未从本索引列出的 `superpowers/plans/` 文件只保留实施追溯价值，不是当前事实来源。旧 Sprint、重复使用说明和旧交接副本不再保留；更早内容使用 Git 历史追溯。
 
 ## 维护规则
 

@@ -6,7 +6,8 @@ from pathlib import Path
 
 from app.dfm.models import StepAnalysisResult
 from app.dfm.step_analyzer_script import STEP_ANALYSIS_SCRIPT
-from app.sandbox.executor import CadQueryExecutor
+from app.execution.compat_executor import CompatibilityExecutor
+from app.execution.composition import get_execution_backend
 
 logger = logging.getLogger(__name__)
 
@@ -14,13 +15,13 @@ logger = logging.getLogger(__name__)
 class StepAnalyzer:
     """Runs OCP-based STEP analysis inside the sandbox container."""
 
-    def __init__(self, executor: CadQueryExecutor | None = None):
-        self._executor = executor
+    def __init__(self, executor=None, *, execution_backend=None):
+        self._executor = executor or CompatibilityExecutor(
+            execution_backend or get_execution_backend()
+        )
 
     @property
-    def executor(self) -> CadQueryExecutor:
-        if self._executor is None:
-            self._executor = CadQueryExecutor()
+    def executor(self):
         return self._executor
 
     async def analyze(self, step_path: Path) -> StepAnalysisResult:

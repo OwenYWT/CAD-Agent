@@ -7,6 +7,7 @@ import time
 from app.agent.design_brief import ensure_design_brief
 from app.agent.prompts import PLANNER_SYSTEM_PROMPT
 from app.config import settings, make_llm_client
+from app.llm import find_provider_exception
 from app.models.schemas import CADPlan, ModificationPlan
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,38 @@ class Planner:
 
     @staticmethod
     def _parse_plan_payload(data: dict) -> CADPlan:
-        plan = CADPlan(**data)
+        normalized = dict(data)
+        raw_brief = data.get("design_brief")
+        if isinstance(raw_brief, dict):
+            brief = dict(raw_brief)
+            dimensions = []
+            invalid_values = 0
+            for raw_dimension in raw_brief.get("critical_dimensions") or []:
+                if not isinstance(raw_dimension, dict):
+                    dimensions.append(raw_dimension)
+                    continue
+                dimension = dict(raw_dimension)
+                value = dimension.get("value")
+                if value is not None:
+                    try:
+                        float(value)
+                    except (TypeError, ValueError):
+                        # The optional brief sometimes describes a composite
+                        # envelope such as "120×90×60" in one value. The primary
+                        # CADPlan dimensions remain the numeric source of truth;
+                        # preserve the label/reason but mark this scalar unknown.
+                        dimension["value"] = None
+                        invalid_values += 1
+                dimensions.append(dimension)
+            brief["critical_dimensions"] = dimensions
+            normalized["design_brief"] = brief
+            if invalid_values:
+                logger.warning(
+                    "Planner ignored %d non-scalar optional brief dimension value(s)",
+                    invalid_values,
+                )
+
+        plan = CADPlan(**normalized)
         ensure_design_brief(plan)
         return plan
 
@@ -95,6 +127,12 @@ class Planner:
                 # Missing credentials / unrecoverable config; propagate, don't mask.
                 raise
             except Exception as e:
+                if find_provider_exception(e) is not None:
+                    logger.warning(
+                        "Planner provider request is non-retryable: %s",
+                        type(e).__name__,
+                    )
+                    raise
                 # Recoverable: malformed JSON, schema validation, transient API errors.
                 # Log unexpected types with traceback so real bugs aren't hidden.
                 if isinstance(e, (json.JSONDecodeError, ValueError, TypeError)):
@@ -118,8 +156,20 @@ class Planner:
                     messages=[{"role": "system", "content": system}] + messages,
                     response_format={"type": "json_object"},
                 )
-                logger.info(f"Modification planner LLM call done in {time.time()-t0:.1f}s")
-                content = response.choices[0].message.content
+                elapsed = time.time() - t0
+                choice = response.choices[0]
+                finish_reason = getattr(choice, "finish_reason", None)
+                logger.info(
+                    "Modification planner LLM call done in %.1fs (stop=%s)",
+                    elapsed,
+                    finish_reason,
+                )
+                if finish_reason == "length":
+                    raise ValueError(
+                        "modification planner output was truncated at "
+                        f"{settings.planner_max_tokens} completion tokens"
+                    )
+                content = choice.message.content
                 if not isinstance(content, str) or not content.strip():
                     raise ValueError("modification planner model returned empty content")
                 text = content.strip()
@@ -133,6 +183,12 @@ class Planner:
             except RuntimeError:
                 raise
             except Exception as e:
+                if find_provider_exception(e) is not None:
+                    logger.warning(
+                        "Modification planner provider request is non-retryable: %s",
+                        type(e).__name__,
+                    )
+                    raise
                 if isinstance(e, (json.JSONDecodeError, ValueError, TypeError)):
                     logger.warning(f"Modification planner attempt {attempt + 1} parse/validation failed: {e}")
                 else:

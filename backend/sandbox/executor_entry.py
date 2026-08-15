@@ -18,6 +18,12 @@ os.makedirs("/sandbox/output", exist_ok=True)
 
 def main():
     try:
+        task_path = "/sandbox/input/task.json"
+        if os.path.exists(task_path):
+            from capability_entry import main as capability_main
+
+            raise SystemExit(capability_main())
+
         # Read input code
         with open("/sandbox/input/input.py", "r") as f:
             code = f.read()
@@ -29,18 +35,21 @@ def main():
             exec_mode = open(mode_path).read().strip().lower()
 
         # Pre-import allowed modules
+        import build123d as b3d
         import cadquery as cq
         import math
         import numpy as np
 
         _ALLOWED_ROOTS = {
-            "cadquery", "cq", "math", "numpy", "np",
+            "build123d", "b3d", "cadquery", "cq", "math", "numpy", "np",
             # OCP (OpenCascade) modules — needed for STEP geometry analysis
             "OCP",
         }
 
         # Pre-imported module shortcuts (returned directly for simple imports)
         _PRE_IMPORTED = {
+            "build123d": b3d,
+            "b3d": b3d,
             "cadquery": cq,
             "cq": cq,
             "math": math,
@@ -115,6 +124,7 @@ def main():
             "ValueError": ValueError,
             "TypeError": TypeError,
             "RuntimeError": RuntimeError,
+            "Exception": Exception,
             "KeyError": KeyError,
             "IndexError": IndexError,
             "AttributeError": AttributeError,
@@ -131,6 +141,8 @@ def main():
         # Build safe globals
         safe_globals = {
             "__builtins__": safe_builtins,
+            "build123d": b3d,
+            "b3d": b3d,
             "cq": cq,
             "cadquery": cq,
             "math": math,
@@ -187,7 +199,15 @@ def main():
                 step_path = f"/sandbox/output/{name}.step"
                 stl_path = f"/sandbox/output/{name}.stl"
 
-                if isinstance(obj, cq.Assembly):
+                if isinstance(obj, b3d.Shape):
+                    # build123d uses the same OCP kernel but has its own shape
+                    # wrapper and exporters. Keep this path native so generated
+                    # build123d code is not coerced through CadQuery internals.
+                    b3d.export_step(obj, step_path)
+                    files[f"{name}.step"] = step_path
+                    b3d.export_stl(obj, stl_path)
+                    files[f"{name}.stl"] = stl_path
+                elif isinstance(obj, cq.Assembly):
                     # Assembly: use .save() for STEP, merge to compound for STL
                     obj.save(step_path)
                     files[f"{name}.step"] = step_path

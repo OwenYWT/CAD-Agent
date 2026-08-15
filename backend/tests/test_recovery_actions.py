@@ -81,3 +81,18 @@ def test_build_recovery_actions_for_inspect_warning():
 
     assert actions[0].action_type == "fix_printability"
     assert "Wall thickness may be too thin" in actions[0].reason
+
+
+def test_nonrecoverable_failure_does_not_offer_fake_simplification():
+    result = GenerationResult(
+        success=False,
+        error={
+            "type": "SandboxUnavailable",
+            "message": "MCAD execution backend is unavailable",
+        },
+    )
+
+    actions = build_recovery_actions(result)
+
+    assert "retry_simpler" not in {action.action_type for action in actions}
+    assert "explain" in {action.action_type for action in actions}
