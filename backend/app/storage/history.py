@@ -215,6 +215,32 @@ def _snapshot_from_row(row) -> dict:
     }
 
 
+def _restored_snapshot_result(snapshot: dict) -> dict:
+    restored_result = dict(snapshot["result"] or {})
+    restored_result["snapshot_id"] = snapshot["id"]
+    restored_result["version"] = snapshot["version"]
+    restored_result["panel_id"] = snapshot["panel_id"]
+    if not restored_result.get("files"):
+        restored_result["files"] = snapshot.get("files") or {}
+    for field in (
+        "params",
+        "parameters",
+        "validation",
+        "inspect_report",
+        "repair_history",
+        "assembly_parts",
+        "available_exports",
+        "inspect_verdict",
+    ):
+        if not restored_result.get(field):
+            value = snapshot.get(field)
+            if value is not None:
+                restored_result[field] = value
+    if not restored_result.get("status") and snapshot.get("status") is not None:
+        restored_result["status"] = snapshot["status"]
+    return restored_result
+
+
 # ---- Sessions ----
 
 async def create_session(session_id: str, title: str = "", user_id: str | None = None) -> dict:
@@ -637,12 +663,10 @@ async def restore_model_snapshot(snapshot_id: str, user_id: str | None = None) -
     snapshot = await get_model_snapshot(snapshot_id)
     if snapshot is None:
         return None
-    restored_result = {
-        **snapshot["result"],
-        "snapshot_id": snapshot["id"],
-        "version": snapshot["version"],
-        "panel_id": snapshot["panel_id"],
-    }
+    restored_result = _restored_snapshot_result(snapshot)
+    restored_result["revision_id"] = snapshot.get("revision_id")
+    restored_result["project_id"] = snapshot.get("project_id")
+    restored_result["branch_id"] = snapshot.get("branch_id")
     db = await get_db()
     try:
         await db.execute(

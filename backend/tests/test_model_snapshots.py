@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+from uuid import uuid4
 
 import pytest
 import pytest_asyncio
@@ -148,6 +150,84 @@ async def test_restore_model_snapshot_updates_panel_current_code():
 
 
 @pytest.mark.asyncio
+async def test_postgres_panel_id_for_revision_matches_panel_branch_hash():
+    panel_id = f"panel-{uuid4().hex}"
+    project_id = uuid4()
+    branch_id = uuid4()
+    branch_name = "panel-" + hashlib.sha256(panel_id.encode("utf-8")).hexdigest()[:16]
+
+    class FakeResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def mappings(self):
+            return self
+
+        def all(self):
+            return self._rows
+
+    class FakeConnection:
+        async def scalar(self, *args, **kwargs):
+            return branch_name
+
+        async def execute(self, *args, **kwargs):
+            return FakeResult([
+                {"id": "other-panel"},
+                {"id": panel_id},
+            ])
+
+    resolved = await __import__("app.storage.postgres_history", fromlist=["_panel_id_for_revision"])._panel_id_for_revision(
+        FakeConnection(),
+        uuid4(),
+        project_id,
+        branch_id,
+    )
+
+    assert resolved == panel_id
+
+
+def test_restored_snapshot_result_merges_snapshot_metadata():
+    snapshot = {
+        "id": "snap-1",
+        "version": 4,
+        "panel_id": "panel-1",
+        "status": "pass",
+        "result": {
+            "success": True,
+            "code": "result = restored",
+        },
+        "files": {"stl": "/api/files/req-1/result.stl"},
+        "params": {"width": {"value": 10}},
+        "parameters": [{"name": "width", "value": 10}],
+        "validation": {"is_watertight": True},
+        "inspect_report": {"verdict": "pass"},
+        "repair_history": [{"step": "fix"}],
+        "assembly_parts": [{"part_id": "base"}],
+        "available_exports": ["stl"],
+        "inspect_verdict": "pass",
+    }
+
+    restored = history._restored_snapshot_result(snapshot)
+
+    assert restored["snapshot_id"] == "snap-1"
+    assert restored["version"] == 4
+    assert restored["panel_id"] == "panel-1"
+    assert restored["files"] == {"stl": "/api/files/req-1/result.stl"}
+    assert restored["params"] == {"width": {"value": 10}}
+    assert restored["parameters"] == [{"name": "width", "value": 10}]
+    assert restored["validation"] == {"is_watertight": True}
+    assert restored["inspect_report"] == {"verdict": "pass"}
+    assert restored["repair_history"] == [{"step": "fix"}]
+    assert restored["assembly_parts"] == [{"part_id": "base"}]
+    assert restored["available_exports"] == ["stl"]
+    assert restored["inspect_verdict"] == "pass"
+
+    postgres_restored = __import__("app.storage.postgres_history", fromlist=["_restored_snapshot_result"])._restored_snapshot_result(snapshot)
+    assert postgres_restored["files"] == restored["files"]
+    assert postgres_restored["inspect_report"] == restored["inspect_report"]
+
+
+@pytest.mark.asyncio
 async def test_delete_session_cascades_model_snapshots():
     await history.create_session("session-1", user_id="user-1")
     await history.create_panel("session-1", "panel-1", user_id="user-1")
@@ -185,8 +265,9 @@ def test_snapshot_api_list_detail_and_restore(monkeypatch, tmp_path):
     assert listed.json()[0]["available_exports"] == ["stl"]
     assert detail.status_code == 200
     assert detail.json()["result"]["code"] == "result = api"
-    assert restored.status_code == 410
-    assert "持久化 MCAD" in restored.json()["detail"]
+    assert restored.status_code == 200
+    assert restored.json()["result"]["files"] == {"stl": "/api/files/req-1/result.stl"}
+    assert restored.json()["result"]["inspect_report"] == {"verdict": "pass", "available_exports": ["stl"]}
 
 
 @pytest.mark.asyncio

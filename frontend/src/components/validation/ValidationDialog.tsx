@@ -29,7 +29,7 @@ interface ValidationDialogProps {
   refreshKey?: string | number | null;
   onClose: () => void;
   onAskAgent: (prompt: string) => void;
-  onRestore: (snapshot: ModelSnapshotDetail) => boolean | void;
+  onRestore: (snapshot: ModelSnapshotDetail) => boolean | void | Promise<boolean | void>;
   onRetryPrompt: () => unknown;
   onRerunCode: () => unknown;
   onResumeRun: (runId: string) => unknown;
@@ -71,8 +71,6 @@ export default function ValidationDialog({
   const canAnalyzeDesign = Boolean(
     result?.success &&
       result.request_id &&
-      result.code &&
-      result.files?.stl &&
       !result.needs_confirmation,
   );
 

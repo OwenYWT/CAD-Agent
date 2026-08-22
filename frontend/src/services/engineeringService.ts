@@ -198,6 +198,16 @@ export async function getModelSnapshot(
   return readJson<ModelSnapshotDetail>(response, "版本证据加载失败");
 }
 
+export async function restoreModelSnapshot(
+  snapshotId: string,
+): Promise<ModelSnapshotDetail> {
+  const response = await authFetch(
+    `${API_BASE}/api/history/snapshots/${encodeURIComponent(snapshotId)}/restore`,
+    { method: "POST" },
+  );
+  return readJson<ModelSnapshotDetail>(response, "Snapshot restore failed");
+}
+
 export async function diffModelSnapshots(
   fromSnapshotId: string,
   toSnapshotId: string,

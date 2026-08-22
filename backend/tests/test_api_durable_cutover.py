@@ -292,13 +292,27 @@ async def test_async_generate_returns_persisted_workflow_id(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cutover_disables_legacy_snapshot_restore_writer(monkeypatch):
-    with pytest.raises(HTTPException) as error:
-        await history_api.api_restore_model_snapshot(
-            "legacy-snapshot",
-            user=None,
-        )
-    assert error.value.status_code == 410
+async def test_cutover_restore_endpoint_delegates_to_storage(monkeypatch):
+    calls = []
+
+    async def snapshot_belongs_to_user(snapshot_id, user_id):
+        calls.append(("belongs", snapshot_id, user_id))
+        return True
+
+    async def restore_model_snapshot(snapshot_id, user_id):
+        calls.append(("restore", snapshot_id, user_id))
+        return {"id": snapshot_id, "code": "result = restored", "result": {"code": "result = restored"}}
+
+    monkeypatch.setattr(history_api, "snapshot_belongs_to_user", snapshot_belongs_to_user)
+    monkeypatch.setattr(history_api, "restore_model_snapshot", restore_model_snapshot)
+
+    response = await history_api.api_restore_model_snapshot(
+        "legacy-snapshot",
+        user=None,
+    )
+
+    assert calls == [("belongs", "legacy-snapshot", None), ("restore", "legacy-snapshot", None)]
+    assert response["code"] == "result = restored"
 
 
 @pytest.mark.asyncio

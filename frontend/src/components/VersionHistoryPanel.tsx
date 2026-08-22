@@ -16,23 +16,20 @@ import {
   engineeringSourceLabel,
   engineeringStatusLabel,
 } from "../utils/engineeringLabels";
-
 interface VersionHistoryPanelProps {
   panelId: string;
   activeSnapshotId?: string | null;
   refreshKey?: string | number | null;
-  onRestore: (snapshot: ModelSnapshotDetail) => boolean | void;
+  onRestore: (snapshot: ModelSnapshotDetail) => boolean | void | Promise<boolean | void>;
   currentParts?: AssemblyPartInfo[] | null;
   onModifyPart?: (partName: string, instruction: string) => boolean | void;
 }
-
 const STATUS_CLASS: Record<string, string> = {
   pass: "border-emerald-200 bg-emerald-50 text-emerald-700",
   warn: "border-amber-200 bg-amber-50 text-amber-700",
   fail: "border-red-200 bg-red-50 text-red-700",
   unknown: "border-gray-200 bg-gray-50 text-gray-600",
 };
-
 function formatTime(iso: string) {
   try {
     return new Date(iso).toLocaleString();
@@ -40,12 +37,10 @@ function formatTime(iso: string) {
     return iso;
   }
 }
-
 function formatVector(position?: number[] | null) {
   if (!position?.length) return "—";
   return position.map((value) => Number.isFinite(value) ? value.toFixed(2) : String(value)).join(", ");
 }
-
 export default function VersionHistoryPanel({
   panelId,
   activeSnapshotId,
@@ -62,13 +57,11 @@ export default function VersionHistoryPanel({
   const [selectedPartName, setSelectedPartName] = useState("");
   const [modifyInstruction, setModifyInstruction] = useState("只修改该零件，其他零件代码保持完全不变。");
   const [error, setError] = useState<string | null>(null);
-
   const parts = useMemo(() => currentParts ?? [], [currentParts]);
   const selectedPart = useMemo(
     () => parts.find((part) => part.name === selectedPartName) || parts[0] || null,
     [parts, selectedPartName],
   );
-
   const loadSnapshots = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -80,25 +73,22 @@ export default function VersionHistoryPanel({
       setLoading(false);
     }
   }, [panelId]);
-
   useEffect(() => {
     const timer = window.setTimeout(() => void loadSnapshots(), 0);
     return () => window.clearTimeout(timer);
   }, [loadSnapshots, refreshKey]);
-
   const restoreSnapshot = async (snapshotId: string) => {
     setRestoringId(snapshotId);
     setError(null);
     try {
-      const accepted = onRestore(await getModelSnapshot(snapshotId));
-      if (accepted === false) throw new Error("当前连接不可用，未提交版本恢复任务");
+      const accepted = await onRestore(await getModelSnapshot(snapshotId));
+      if (accepted === false) throw new Error("Restore request was rejected.");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "版本恢复失败");
+      setError(reason instanceof Error ? reason.message : "Snapshot restore failed");
     } finally {
       setRestoringId(null);
     }
   };
-
   const loadDiff = async (snapshotId: string) => {
     if (!activeSnapshotId || activeSnapshotId === snapshotId) return;
     const cacheKey = `${activeSnapshotId}:${snapshotId}`;
@@ -113,7 +103,6 @@ export default function VersionHistoryPanel({
       setDiffLoadingKey(null);
     }
   };
-
   const renderChanges = (label: string, changes?: SnapshotChangeList) => {
     if (!changes) return null;
     return (
@@ -129,7 +118,6 @@ export default function VersionHistoryPanel({
       </div>
     );
   };
-
   const handleModifyPart = () => {
     if (!onModifyPart || !selectedPart) {
       setError("请先选择一个零件");
@@ -146,7 +134,6 @@ export default function VersionHistoryPanel({
       setError("当前连接不可用，未提交零件修改任务");
     }
   };
-
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -156,9 +143,7 @@ export default function VersionHistoryPanel({
         </div>
         <button className="rounded bg-white px-2 py-1 text-xs text-indigo-600 shadow-sm hover:text-indigo-700 disabled:text-gray-400" disabled={loading} onClick={loadSnapshots} type="button">刷新版本</button>
       </div>
-
       {error ? <div className="mb-3 rounded bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div> : null}
-
       <div className="space-y-3">
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
@@ -203,7 +188,6 @@ export default function VersionHistoryPanel({
             <div className="rounded-md border border-dashed border-slate-300 bg-white p-3 text-xs text-slate-500">当前结果尚未包含装配零件。生成装配体后会在这里显示子零件。</div>
           )}
         </div>
-
         <div className="rounded-lg border border-slate-200 bg-white p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h4 className="text-xs font-semibold text-slate-800">历史版本</h4>

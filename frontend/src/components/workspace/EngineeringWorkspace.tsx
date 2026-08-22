@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AuthUser } from "../../auth";
 import { adaptEngineeringProject } from "../../adapters/projectAdapter";
+import { restoreModelSnapshot } from "../../services/engineeringService";
 import { useWebSocket } from "../../hooks/useWebSocket";
 import { useSessionStore } from "../../stores/sessionStore";
 import type { ManufacturingProfile, ModelSnapshotDetail } from "../../types";
@@ -76,7 +77,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const askAgent = (prompt = "") => { setAgentPrompt(prompt); setAgentOpen(true); };
   const executeWithProgress = (code: string) => {
     if (!executeCode(code)) return false;
-    useSessionStore.getState().beginGeneration("正在重新计算模型");
+    useSessionStore.getState().beginGeneration("\u6b63\u5728\u91cd\u65b0\u8ba1\u7b97\u6a21\u578b");
     return true;
   };
   const syncDurableChangeSet = useCallback(
@@ -92,12 +93,33 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   };
 
   const latestUserPrompt = panel.messages.filter((message) => message.role === "user").at(-1)?.content || "";
-  const restoreSnapshot = (snapshot: ModelSnapshotDetail) => {
-    return executeWithProgress(snapshot.code);
+  const restoreSnapshot = async (snapshot: ModelSnapshotDetail) => {
+    const restored = await restoreModelSnapshot(snapshot.id);
+    const restoredRevisionId = restored.result.revision_id || restored.revision_id || undefined;
+    const restoredResult = {
+      ...restored.result,
+      revision_id: restoredRevisionId,
+      expected_base_revision_id: restoredRevisionId || restored.result.expected_base_revision_id,
+      project_id: restored.result.project_id || restored.project_id,
+      branch_id: restored.result.branch_id || restored.branch_id,
+      files: restored.result.files || restored.files || {},
+      params: restored.result.params || restored.params || undefined,
+      parameters: restored.result.parameters || restored.parameters || undefined,
+      validation: restored.result.validation || restored.validation || undefined,
+      inspect_report: restored.result.inspect_report || restored.inspect_report || undefined,
+      repair_history: restored.result.repair_history || restored.repair_history || undefined,
+    };
+    useSessionStore.getState().restorePanelResult(
+      panel.id,
+      restoredResult,
+      restored.code,
+    );
+    setView("mechanical");
+    return true;
   };
 
   if (ownerId !== user.id) {
-    return <div className="grid min-h-screen place-items-center text-sm text-[var(--muted)]">正在恢复工程会话...</div>;
+    return <div className="grid min-h-screen place-items-center text-sm text-[var(--muted)]">{"\u6b63\u5728\u6062\u590d\u5de5\u7a0b\u4f1a\u8bdd..."}</div>;
   }
 
   if (!hasProject) {
@@ -105,7 +127,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
       <ProjectStart connectionState={connectionState} onOpenHistory={() => setStartHistory(true)} onStart={startProject} />
       {startHistory ? (
         <div className="start-history-overlay">
-          <button aria-label="关闭历史项目" className="start-history-overlay__backdrop" onClick={() => setStartHistory(false)} type="button" />
+          <button aria-label="\u5173\u95ed\u5386\u53f2\u9879\u76ee" className="start-history-overlay__backdrop" onClick={() => setStartHistory(false)} type="button" />
           <ProjectSidebar activeView="overview" collapsed={false} mobileOpen onCollapse={() => {}} onMobileClose={() => setStartHistory(false)} onNavigate={() => setStartHistory(false)} restoreContext={restoreContext} />
         </div>
       ) : null}
@@ -153,7 +175,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
           </div>
         </div>
       </div>
-      <button aria-label="询问 Agent" className="fixed bottom-4 right-4 z-30 grid h-12 w-12 place-items-center rounded-full bg-[var(--ink)] text-white shadow-xl sm:hidden" onClick={() => askAgent()} type="button"><Icon name="message" size={18} /></button>
+      <button aria-label="\u8be2\u95ee Agent" className="fixed bottom-4 right-4 z-30 grid h-12 w-12 place-items-center rounded-full bg-[var(--ink)] text-white shadow-xl sm:hidden" onClick={() => askAgent()} type="button"><Icon name="message" size={18} /></button>
 
       <ParameterDrawer isGenerating={panel.isGenerating} key={`parameters:${model.result?.request_id || "empty"}:${parametersOpen}`} onClose={() => setParametersOpen(false)} onExecute={executeWithProgress} open={parametersOpen} parameters={model.parameters} result={model.result} />
       <AgentDrawer connection={connectionState} context={view} key={`${view}:${agentPrompt}:${agentOpen}`} onClose={() => { setAgentOpen(false); setAgentPrompt(""); }} onSend={sendMessage} open={agentOpen} suggestedPrompt={agentPrompt} />

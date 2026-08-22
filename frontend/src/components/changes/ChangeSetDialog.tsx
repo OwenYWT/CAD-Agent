@@ -27,7 +27,7 @@ interface ChangeSetDialogProps {
   activeSnapshotId?: string | null;
   changeSetId?: string | null;
   onClose: () => void;
-  onRestore: (snapshot: ModelSnapshotDetail) => boolean | void;
+  onRestore: (snapshot: ModelSnapshotDetail) => boolean | void | Promise<boolean | void>;
   onAskAgent: (prompt: string) => void;
   onDurableChangeSet: (detail: DurableChangeSetDetail) => void;
 }
@@ -139,7 +139,7 @@ export default function ChangeSetDialog({
         return;
       }
       const restored = await getModelSnapshot(changeSet.baseRevisionId);
-      const accepted = onRestore(restored);
+      const accepted = await onRestore(restored);
       if (accepted === false) {
         throw new Error("当前连接不可用，未提交回滚任务");
       }
