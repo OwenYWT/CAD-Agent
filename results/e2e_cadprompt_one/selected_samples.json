@@ -1,0 +1,13 @@
+[
+  {
+    "sample_id": "00004935",
+    "dataset": "CADPrompt",
+    "source_path": "data\\CADPrompt\\00004935",
+    "metadata": {
+      "prompt_file": "Natural_Language_Descriptions_Prompt_with_specific_measurements.txt",
+      "code_file": "Python_Code.py"
+    },
+    "prompt_chars": 444,
+    "reference_code_chars": 416
+  }
+]

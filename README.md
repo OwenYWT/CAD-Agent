@@ -1,77 +1,61 @@
-﻿# CAD Agent Web
+# CAD-Agent Independent Evaluation Package
 
-Natural language to CAD file web application. The product is browser-first: users generate, preview, adjust, analyze, and download CAD outputs directly from the Web UI.
+This directory is an independent evaluation handoff package. It is not part of
+`CAD-Agent/`, but it can call the current CAD-Agent backend algorithm for batch
+benchmarking.
 
-## Architecture
+## What is included
 
-```
-React Web App -> REST + WebSocket -> CAD Agent FastAPI -> Podman/Docker Sandbox
-```
+- `data/`: packaged CADPrompt and CAD-Coder evaluation data.
+- `results/`: historical outputs and future run outputs.
+- `evaluator.py`: base CLI for `reference` and `generate` passes.
+- `evaluate_cadprompt.py`: CADPrompt end-to-end generation plus STL quality.
+- `evaluate_cadcoder.py`: CAD-Coder reference baseline plus generation quality.
+- `quality_eval.py`: STL mesh comparison and scoring utilities.
+- `direct_algorithm.py`: recommended current-algorithm runner. It calls the
+  CAD-Agent durable workflow path in-process.
+- `eval_config.py`: centralized path configuration.
 
-## Stack
+## Handoff reading order
 
-- **Backend**: Python 3.11, FastAPI, CadQuery, ezdxf, trimesh
-- **Frontend**: React, TypeScript, Three.js, TailwindCSS, Vite
-- **LLM**: Azure OpenAI (`LLM_PROVIDER=azure`) or OpenAI-compatible APIs
-- **Sandbox**: Docker or Podman image `cad-agent-sandbox:latest` for isolated CAD code execution
-- **Output files**: STEP, STL, DXF, SVG, PNG where supported by the generation pipeline
+1. `DATASETS.md`: datasets, file layout, and sample schema.
+2. `EVALUATION_METHODS.md`: evaluation modes and commands.
+3. `METRICS.md`: result fields and quality metrics.
+4. `ALGORITHM_INTEGRATION.md`: how the CAD-Agent algorithm is connected.
+5. `PREREQUISITES.md`: environment and runtime prerequisites.
+6. `E2E_USAGE.md`: command cookbook for end-to-end runs.
 
-## Quick Start
+## Smoke checks
 
-### Backend
-
-```bash
-cd backend
-pip install -r requirements.txt
-export LLM_PROVIDER=azure
-export AZURE_OPENAI_ENDPOINT=https://secalgo-azure-openai.openai.azure.com/
-export AZURE_OPENAI_API_KEY=<AZURE_OPENAI_API_KEY>
-export AZURE_OPENAI_API_VERSION=2025-03-01-preview
-export LLM_MODEL=gpt-5
-export LLM_REASONING_EFFORT=minimal
-export SANDBOX_RUNTIME=podman
-uvicorn app.main:app --reload --port 8000
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
+```powershell
+cd <eval_algorithms>
+python evaluator.py --dataset both --mode generate --limit 1 --dry-run --output-dir results\handoff_smoke_eval
+python evaluate_cadprompt.py --limit 1 --output-dir results\handoff_smoke_cadprompt --dry-run
+python evaluate_cadcoder.py --limit 1 --output-dir results\handoff_smoke_cadcoder --dry-run
+python -m unittest discover -s tests -p "test_*.py"
 ```
 
-Open `http://localhost:5173`.
+## Recommended current-algorithm runs
 
-### Sandbox
+Use `--runner direct` unless you intentionally need REST API testing:
 
-Use Podman when Docker is unavailable:
-
-```bash
-cd backend/sandbox
-podman build -t cad-agent-sandbox:latest .
-export SANDBOX_RUNTIME=podman
+```powershell
+cd <eval_algorithms>
+python evaluate_cadprompt.py --runner direct --limit 2 --output-dir results\cadprompt_current_2
+python evaluate_cadcoder.py --runner direct --limit 2 --output-dir results\cadcoder_current_2
 ```
 
-Docker remains supported as the default runtime:
+If CAD-Agent is not located at the sibling path, set:
 
-```bash
-cd backend/sandbox
-docker build -t cad-agent-sandbox:latest .
+```powershell
+$env:CAD_AGENT_ROOT="<path-to-CAD-Agent>"
 ```
 
-## Single-Service Web Deployment
+## Important notes
 
-Build the frontend and serve it from FastAPI:
-
-```bash
-cd frontend
-npm run build
-
-cd ../backend
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-After `frontend/dist` exists, FastAPI serves the Web app at `/` while API routes continue to use `/api`, `/health`, and `/ws/{session_id}`.
-
-
+- Existing folders under `results/` are historical outputs. Do not treat them as
+  current-algorithm results unless their run command is known.
+- The current default runner is not the old `Orchestrator` shortcut. It enters
+  the current CAD-Agent durable workflow submission path.
+- `--runner http` is kept for advanced REST checks, but current REST write APIs
+  require durable revision identity. It is not the default handoff path.
