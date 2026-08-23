@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a rounded square with a length of 0.74999 units and a width of 0.73843 units, and then extrude it to a height of 0.11078 units with a fillet of 0.038 units on the edges.
+version https://git-lfs.github.com/spec/v1
+oid sha256:b69611e289a68b84a4c1281834b80c2e23bd1b840a564aa23eabd15681bd2462
+size 212

@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a complex 3D object. Begin by sketching a parallelogram defined by the points [(0.6147, 0), (1.500795, 0), (0.886095, 0.354438), (0, 0.354438)] and extruding it to a height of 0.425326 units. Then, draw a square inside this extruded parallelogram with dimensions 0.306589 units by 0.25874 units. Following that, negatively extrude the square (remove material) to create a square-shaped hole going through the extruded parallelogram, aligning the square centrally within the parallelogram and ensuring the hole spans the entire height of the parallelogram.
+version https://git-lfs.github.com/spec/v1
+oid sha256:a4890859dac3d431a1c90983e3961be116a5d8aa6194b5e0652a90f8f68c5429
+size 598

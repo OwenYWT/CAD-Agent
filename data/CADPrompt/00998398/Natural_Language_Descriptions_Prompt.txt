@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create an irregular, 3D, pentagonal prism. First, draw a sketch of an irregular pentagon, where the bottom, flat, edge is the shortest edge. Next, extrude this sketch by an amount almost two times the height of the pentagon. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:25d4202c796b2a2d38942d81de70d61b60ed9447000ce53b010809d8c495bef2
+size 261

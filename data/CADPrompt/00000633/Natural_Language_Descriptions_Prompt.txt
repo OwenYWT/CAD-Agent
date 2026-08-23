@@ -1,1 +1,3 @@
- Write a python code using CADQuery to create a rectangle with a circular hole in the middle.
+version https://git-lfs.github.com/spec/v1
+oid sha256:5262a3873637ff85679e776b7b829cbea9db2316e91f5bbec16e03d9908b7827
+size 93

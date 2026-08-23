@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create a long hollow cylinder. The hollow cylinder should have a small inner radius.
+version https://git-lfs.github.com/spec/v1
+oid sha256:706b2c30138a183f97a31713e54dd4a90e56405a53264915581b91c9d990d888
+size 121

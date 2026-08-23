@@ -1,9 +1,3 @@
-import cadquery as cq
-
-diameter:float = 1.5
-height:float = 0.6
-cut_distance:float = 0.075
-part:cq.Workplane = cq.Workplane("XY").cylinder(height, diameter/2).faces("Z").shell(-cut_distance)
-
-part = part.translate((0, 0, height/2))
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:e1cfde4ed8b97d6771cf6d706a2ff777356c93365d21bfc502c71a84d6c08048
+size 276

@@ -1,1 +1,3 @@
-  Write Python code using CADQuery to create a square and extrude it. The length should be twice the width.
+version https://git-lfs.github.com/spec/v1
+oid sha256:e4de7d6643aea195f332d952d5a30c2734d7fa1ddb5a64077b410f476b782144
+size 107

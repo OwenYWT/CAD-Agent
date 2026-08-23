@@ -1,2 +1,3 @@
- 
-Write a python code using CADQuery to create an extruded sketch of a rectangle. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:61ab6b142b786193ea3a34871a2159ba0223d5a3edf623302a25aeac3156fc46
+size 82

@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a rectangular object. Draw a sketch of a rectangle with round, filleted edges.
+version https://git-lfs.github.com/spec/v1
+oid sha256:8e546d6c627e7bcf33cd0c367bd7e7b3c768cb3ad0addd550ea66c17a4795c08
+size 121

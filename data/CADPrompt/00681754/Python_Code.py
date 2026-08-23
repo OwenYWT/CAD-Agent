@@ -1,21 +1,3 @@
-import cadquery as cq
-
-length:float = 1.09115
-width:float = 1.5
-height:float = 0.361568
-diameter:float = 0.427203
-extrude:float = 0.271176
-
-part:cq.Workplane = (
-    cq.Workplane("XY")
-    .box(length, width, height)
-    .faces("Z")
-    .workplane()
-    .circle(diameter/2)
-    .extrude(extrude)
-)
-
-part = part.translate((0,0,height/2))
-
-
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:e41c3dec477d905869affd05e3923d1ad65223fba1264b6a300b1594dc9803a1
+size 384

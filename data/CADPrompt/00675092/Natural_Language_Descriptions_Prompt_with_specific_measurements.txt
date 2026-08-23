@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a right triangular prism with specific dimensions. The triangle should have a base of 0.75 units and a height of 0.75 units, and it should be extruded to a thickness of 0.03 units. The triangle should be oriented in the ZX plane and then translated to center it along the Y-axis.
+version https://git-lfs.github.com/spec/v1
+oid sha256:8f440c558a43e38de68d1e9438f1070bff5871378a71021c9ad87a4b8edbd60c
+size 322

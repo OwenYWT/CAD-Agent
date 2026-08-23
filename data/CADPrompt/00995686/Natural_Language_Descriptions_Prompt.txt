@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a 3D object that resembles an open pipe. First, sketch a hollow cylinder. Next, cut out a sector of that hollow cylinder. You should be left with an imagine resembling a pipe missing a portion. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:a5b03c7fae364e6fa44ca2d46be07ea8528dbda6c07e17a5456c08d72eb9dfed
+size 237

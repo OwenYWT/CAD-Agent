@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a cylinder with a diameter of 1.27949 units. Then, create an empty rectangle in the center of the cylinder with a length of 0.787604 units and a width of 0.506095 units.
+version https://git-lfs.github.com/spec/v1
+oid sha256:d810685566e38258675e59fdc78707568131a969cdb04577b8b1562c5ea490c3
+size 212

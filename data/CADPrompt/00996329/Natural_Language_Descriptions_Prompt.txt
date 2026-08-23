@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a small L-shaped bracket. Create a sketch of an "L" and then extrude this object. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:e045ec9176d10bd5ac6c1bf69fb951f3ea2196e3f3b24d482187fb2223e16502
+size 125

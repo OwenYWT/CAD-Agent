@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a rectangular plate with holes in it. First, create a sketch of a long and wide rectangle. Next, cutout three circles from the rectangle. These circles should be symmetric and much smaller than the rectangle. Align the circular cutouts near the top left corner of the rectangle, with one subsequent to the other along the rectangles length.
+version https://git-lfs.github.com/spec/v1
+oid sha256:4cb1f43d25920707d2072117cdcb8f76d0d2b87819c2a630f6ea595c6cff6941
+size 383

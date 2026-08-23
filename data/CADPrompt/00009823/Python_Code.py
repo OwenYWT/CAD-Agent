@@ -1,9 +1,3 @@
-import cadquery as cq
-
-sides:int = 6
-length:float = 1.5
-extrude:float = 0.016238
-
-part:cq.Workplane = cq.Workplane("XY").polygon(sides, length).extrude(extrude)
-
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:8d77e057427fed22637cd0e204f09768e63b21c8f91b2658b507da06014923ec
+size 207

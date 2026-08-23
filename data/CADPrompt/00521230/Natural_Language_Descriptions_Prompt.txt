@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a long and thin cylinder. Next, create three circular holes, with a diameter slightly smaller than that of the cylinder. Positioning one of the holes near the top of the cylinder and the other two near the bottom of the cylinder. The hole near the bottom should be slightly closer to the cylinders center.
+version https://git-lfs.github.com/spec/v1
+oid sha256:d07f05f1a50de7c4e2d58f7948e4835113d02dc129abf6c33dca8baee18737a5
+size 348

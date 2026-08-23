@@ -1,24 +1,3 @@
-import cadquery as cq
-from typing import List,Tuple
-
-height:float = 0.32592
-length:float = 0.75
-top_length:float = 0.280098
-width:float = 0.023387
-
-pts:List[Tuple[float, float]] = [
-    (0,0),
-    (0,height),
-    (top_length,height),
-    (length,0)
-]
-
-angle:cq.Workplane = (
-    cq.Workplane("ZY")
-    .polyline(pts)
-    .close()
-    .extrude(width)
-)
-
-part:cq.Workplane = angle.rotate((0,0,1),(0,0,0),180)
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:6ac4a1f03c92a7e24572f6eaa2df06e69d234ed78e60ea0cbc14e0ee67a7e22a
+size 452

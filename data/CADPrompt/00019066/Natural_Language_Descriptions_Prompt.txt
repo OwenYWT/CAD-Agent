@@ -1,1 +1,3 @@
-Write Python code using CADQuery to a 3D model. Start by creating a marginally extruded rectangle such that the length of the rectangle is approximately 1.5 times its width. Now add a very small rectangluar rod pointing upwards from one of the corners of the rectangular surface. The height of the rod should be 3 times the length of the rectangle. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:5c11b81013c20e922cedd748022071f6aa91403ba56742b74e5c871d748d7da6
+size 350

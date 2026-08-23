@@ -1,2 +1,3 @@
- 
-Write Python code using CADQuery to create a cylinder that includes a very small hole. First, draw the outer circle and perform a positive extrusion. Then, draw a very small circle within the outer circle and negatively extrude it, creating a hole in the outer cylinder.
+version https://git-lfs.github.com/spec/v1
+oid sha256:815392c08c6235e2a33005eb3d44cb4880b7f175d3b3fc90abd1df39c9efd7dd
+size 272

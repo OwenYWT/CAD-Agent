@@ -1,1 +1,3 @@
-  Write Python code using CADQuery to create a rectangle and extrude it, with an empty large circle and position it in the center of the square. Then, create two small circles, one on the left and the other on the right of the large circle.
+version https://git-lfs.github.com/spec/v1
+oid sha256:205f77d31bd5d143be395cbafac163f08bc151a3e89832a391208a7c27b2984e
+size 240

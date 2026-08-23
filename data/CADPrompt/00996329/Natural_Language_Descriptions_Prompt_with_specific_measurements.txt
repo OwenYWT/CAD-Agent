@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a small L-shaped bracket with specific dimensions. The bracket should have a width of 0.333333 units, a height of 0.083333 units, and a length of 0.666667 units (calculated as 0.75 minus the height). Create a sketch of an "L" and then extrude this object to form the 3D bracket.
+version https://git-lfs.github.com/spec/v1
+oid sha256:98ab04676711acf3ba14e30547825beb4808e9dbb8947641c3e83e822e041b04
+size 321

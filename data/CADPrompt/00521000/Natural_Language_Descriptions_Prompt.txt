@@ -1,1 +1,3 @@
-  Write Python code using CADQuery to create a ring. The width of the ring should be small. Next, create three small circular holes, positioning them in a triangular formation. These small holes should have a diameter that is smaller than the width of the ring. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:26582fed3f3f72597a06f0060270c74499e7d44160aae166cee3ec5bb06ffa09
+size 262

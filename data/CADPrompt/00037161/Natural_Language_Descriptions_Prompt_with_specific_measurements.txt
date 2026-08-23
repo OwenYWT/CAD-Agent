@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a square with dimensions 1.5 units in length and width, and 0.0255 units in height. Then, create a smaller empty rectangle in the center of the square, with dimensions 0.12 units in length and 0.24 units in width, and the same height as the square.
+version https://git-lfs.github.com/spec/v1
+oid sha256:787b8bd55e81b193da95bf127be7f8c678c30b08cd70f842c2094c262508f22c
+size 291

@@ -1,2 +1,3 @@
- 
-Write Python code using CADQuery to create a rhombus and extrude it.
+version https://git-lfs.github.com/spec/v1
+oid sha256:3e2219361e23f1e14108a9df0181e57438396928db13a73436fa5f97102318d7
+size 70

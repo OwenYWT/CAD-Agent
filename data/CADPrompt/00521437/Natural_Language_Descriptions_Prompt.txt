@@ -1,1 +1,3 @@
-  Write Python code using CADQuery to create an extruded rectangle with two precisely shaped rectangular holes. To create the object, start with a sketch of a thin rectangle whose width is approximately 10-15 times its height. Slightly extrude this rectangle. Then, on top of this extruded shape, sketch two symmetric rectangles and extrude them negatively to create two rectangular holes in the original extruded shape. These rectangular holes should be slightly less than half the size of the original rectangle. Position them so that they don't touch each other or any edge of the original rectangle. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:5c6505475445dfafed78cdf1c66d99471a008bcbae667dd2f3b8394cbaa96084
+size 604

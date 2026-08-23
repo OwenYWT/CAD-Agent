@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a cylinder. Next, create a second cylinder with the same height but smaller diameter. The second cylinder should connect to the center of the first cylinders base. Then, create a third cylinder with a shorter height and larger diameter relative to the first two cylinders. This third cylinder should connect to the center of the second cylinders other base. Finally, create a small circular cut-out extending the length of all three cylinders relative to their centers.
+version https://git-lfs.github.com/spec/v1
+oid sha256:e05be7ee0bf22475bc6d2cfcc539433fbc0ed237b7fc1770c4f7a1e8f188d4d4
+size 512

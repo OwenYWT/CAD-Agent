@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a square and slightly extrude it. Then, create four tiny circular holes, positioning each one near a corner. Then, create a hollow cylinder and extrude it, positioning it so that it intersects the square in the middle. The hollow cylinder should extend through the square.
+version https://git-lfs.github.com/spec/v1
+oid sha256:1df0db6d1f7a472f75e5869f427693fb75077ada7b80ddd540fc5cad25c5439e
+size 315

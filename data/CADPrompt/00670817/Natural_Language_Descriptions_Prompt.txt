@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a circular object. First, draw a sketch of a circle and extrude it by a small amount. Next, create a circular hole at the center of this object, with a radius of half of the original circle.
+version https://git-lfs.github.com/spec/v1
+oid sha256:ff61429df22ce004671f0e9bd0599501176f02242dc9878aad06e1fad12b329d
+size 233

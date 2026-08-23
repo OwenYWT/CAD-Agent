@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a rectangular 3D object with dimensions 0.75 units in length, 0.5 units in width, and 0.375 units in height, and include a semi-circular cutout. Begin by creating a sketch of the rectangle and then extrude it to the specified height. Next, sketch a semi-circle with a diameter of 0.5357 units on one of the longer sides of the rectangle. Ensure that the flat edge of the semi-circle aligns perfectly with the rectangle's surface. Finally, negatively extrude this semi-circle to create a cutout in the original rectangular object, enhancing its design and functionality.
+version https://git-lfs.github.com/spec/v1
+oid sha256:185b4b1ef9362fb29c4ed4fd53fdf8767a1301e70699f85c88e42660978ea7f2
+size 612

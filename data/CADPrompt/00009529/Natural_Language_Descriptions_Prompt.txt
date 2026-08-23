@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create abstract 3D model. Start with a extruded rectangle such that the length of the rectangle is approximately three times it's width. Next, place two extruded squares on the left and right side of the rectangle. These squares should have a surface area smaller than that of the rectangle. The surface area of the square on the left is 75% smaller than the square on the right. The larger square is also extruded by twice the amount of the smaller square. Finally make sure the two squares are connected to the left and right edges of the rectangle.
+version https://git-lfs.github.com/spec/v1
+oid sha256:e43d5de6b43e9c36692d0172c9e149022f70170af35ead2fdc5af42aad4f8044
+size 588

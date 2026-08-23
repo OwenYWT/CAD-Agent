@@ -1,22 +1,3 @@
-import cadquery as cq
-
-pts = [
-    (0,0.101205-0.002436),
-    (0.115639,0-0.002435),
-    (0.61483+0.135171-0.017388-0.002292,0-0.002435),
-    #center
-    (1.30586,0.616516),
-    (0.61483+0.135171,1.25576-0.002562),
-    (0.115639+0.019678,1.25576-0.002562),
-    (0,1.25576-0.101205+0.025816),
-]
-
-part = (
-    cq.Workplane("XY")
-    .polyline(pts)
-    .close()
-    .extrude(0.023051)
-)
-
-part = part.rotate((0,0,1),(0,0,0),-90).translate((0.605354,-0.75,0))
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:d4a3601c01a0e935a1af276de2f7a9a71247d883e47524690adab3e677229430
+size 500

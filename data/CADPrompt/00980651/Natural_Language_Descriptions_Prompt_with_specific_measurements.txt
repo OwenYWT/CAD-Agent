@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a hexagon with 6 sides and a side length of 1.47802 units, extrude it to a height of 0.5 units, and then create a cylinder with a diameter of 1.2 units and a height of 0.25 units. Place the cylinder on top of the hexagon and ensure that the cylinder is extruded to half the height of the hexagon.
+version https://git-lfs.github.com/spec/v1
+oid sha256:9ae7b953d22c1e323e176f4183e5ef114da7329e85c0f70cc9da101bf81ad119
+size 339

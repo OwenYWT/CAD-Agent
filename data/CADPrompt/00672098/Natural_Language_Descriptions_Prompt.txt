@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a U-shaped object. Draw a sketch of a rectangular "U" and extrude this sketch by a small amount.
+version https://git-lfs.github.com/spec/v1
+oid sha256:552d63b54399eb67321de42feaa390444680ed544a0e3f81cc80123565e0b616
+size 139

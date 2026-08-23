@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create a cylinder, it should be short but have a large diameter. Then create a short and narrow rectangular prism, with a length slightly longer than the cylinder. It should sit horizontally on top of the cylinder.
+version https://git-lfs.github.com/spec/v1
+oid sha256:a481a7fd043d75834b6db0b23b9bd55b697b2f14249d5aa6f9045f2a2db76d64
+size 251

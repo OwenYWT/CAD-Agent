@@ -1,1 +1,3 @@
-  Write Python code using CADQuery to create a pipe with a thin flange at one end. The pipe should be hollow, constructed using two extrusions  a positive extrusion for the inner circle and a negative extrusion for the outer circle. The outer circle should be a very thin flange. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:49b83f64748489fcdb2d309a3c73aa9d62b2d2526c8be77e43d20b8264828c8c
+size 280

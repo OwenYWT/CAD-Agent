@@ -1,13 +1,3 @@
-import cadquery as cq
-base_diameter:float = 1.5
-base_height:float = 0.114796
-
-top_diameter:float = 1.17857
-top_height:float = 0.306123
-
-base:cq.Workplane = cq.Workplane("XY").circle(base_diameter/2).extrude(base_height)
-top:cq.Workplane = cq.Workplane("XY").circle(top_diameter/2).extrude(top_height) 
-
-part:cq.Workplane = base.union(top.translate((0, 0, base_height)))
-
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:05f6b7821d2ba80e355ee582985620a1f6b2d0e8db4e1465c8fa271077931c4d
+size 416

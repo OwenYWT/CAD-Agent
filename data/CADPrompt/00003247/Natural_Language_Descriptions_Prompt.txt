@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create a long rectangular prism.
+version https://git-lfs.github.com/spec/v1
+oid sha256:e1b0e4558bcd19080a0662c989caea069bb4517cfc26432d9d52665dd407e857
+size 69

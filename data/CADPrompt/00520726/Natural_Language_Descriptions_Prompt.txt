@@ -1,1 +1,3 @@
-  Write Python code using CADQuery to create a 1x1 elongated Lego brick. Start by extruding a square where the extrusion length is almost twice the length of the square's side. Then, keeping the top of the extruded square, hollow out the remaining portion. Finally, on top of the cube, extrude a circle that is about 1/7th the height of the square's extrusion.
+version https://git-lfs.github.com/spec/v1
+oid sha256:4577155ab0234067fca0bbbb2567f04855304416d264011cf1d1af3ad97b1c3e
+size 360

@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a ring and extrude it along the x-axis.
+version https://git-lfs.github.com/spec/v1
+oid sha256:2b0a1ca1b24b7b2852a21475daf92fabd65716dbde74b58d4e88f5c457ac9180
+size 82

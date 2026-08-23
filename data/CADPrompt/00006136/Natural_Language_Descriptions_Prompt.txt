@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create a right triangle and extrude it.
+version https://git-lfs.github.com/spec/v1
+oid sha256:7ccf1479d3829df2acf51bf4ecbd011d0a7ee28df76068a58acfc87460232953
+size 76

@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create a pentagon-like object and extrude it. Each of the top-two edges of the pentagon should be broken down into two edges at an obtuse angle very close to 180 degrees.
+version https://git-lfs.github.com/spec/v1
+oid sha256:f4b13470016497911b1b7efa9c037577118c3a1de2cf6bcbe56d7ddcdb82fc94
+size 207

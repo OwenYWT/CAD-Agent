@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a trapezoid plate. First draw a sketch of an isosceles trapezium, with a base angle of around 70 degrees. Next, extrude this sketch by a small amount. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:3c6ee7016d6ae493ba2d8e03097b88c86a155b1709fc5f8b84b53d79b4c89245
+size 194

@@ -1,1 +1,3 @@
- Write Python code with CADQuery to create two shapes touching each other. The first shape is a large cube, and the second shape is a right triangular prism. The second shape should be 1/4th the size of the first shape. Where they touch, two of their edges should align.
+version https://git-lfs.github.com/spec/v1
+oid sha256:b1c77ee90f0ccdec12fd17c3b463ec8266568cbf5e6deffa88bf8c95174868fb
+size 270

@@ -1,1 +1,3 @@
-Write Python code using CADQuery to generate an open box. First generate the base of the box. In order to do that, sketch a rectangle whose width is twice its height and extrude it to a small depth. On top surface of the base, sketch the four walls of the box. You can use two concentric rectangles to represent the walls. Add a small chamfer/rounded edge for the inside corners of the wall. Now extrude this sketch upwards to get the final 3D object.
+version https://git-lfs.github.com/spec/v1
+oid sha256:9132d9e9aa12e86a1f13cc09e38d302ac0a95b6c4ef05b3e6c7c289a77dccd8d
+size 451

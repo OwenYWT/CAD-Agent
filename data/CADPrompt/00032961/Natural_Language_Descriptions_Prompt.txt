@@ -1,1 +1,3 @@
-  Write Python code using CADQuery to create an object that resembles a corner brace plate connector. Sketch a very long rectangle with two semi-circular ends and then extrude it. Next, create two holes, positioning each near one end of the semi-cicles center.
+version https://git-lfs.github.com/spec/v1
+oid sha256:db542c1fc1db7cdee84be307da9d2f8c335183722a39d38aa183ff6e2ac4e064
+size 260

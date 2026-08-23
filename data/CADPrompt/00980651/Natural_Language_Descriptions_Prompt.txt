@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a hexagon, extrude it, and then create a cylinder slightly smaller than the hexagon. Place it on top of the hexagon and extrude it to half the height of the hexagon.
+version https://git-lfs.github.com/spec/v1
+oid sha256:b285925150031e96ef2f342474fd4f1da18e04ce55f25365859f82e04e26f6dd
+size 208

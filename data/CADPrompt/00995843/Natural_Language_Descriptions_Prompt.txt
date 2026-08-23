@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a tiered cylindrical 3D object. Start by creating a sketch of a circle and then extrude it to resemble a cylinder. Next, draw another smaller circle, with half the radius as the original circle, on the cylinder centered at the same point. Extrude this smaller circle outwards, by an amount smaller than the original cylinder, to resemble a smaller cylinder sitting on top of a larger cylinder. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:311e68a06793d3a01e0aa6de894ed706453990d8e5f5cb8eb16cd52ff52ffdfd
+size 437

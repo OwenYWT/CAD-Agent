@@ -1,1 +1,3 @@
-Write Python code using CADQuery to generate a CAD model of a cylindrical 3D object. To make the object first draw a circle and extrude it to get a cylinder. On the top surface of the cylinder draw a thin rectangle that is centered on the center of the circle. The width of rectangle is about 4/5th the diameter of the circle. The height of rectangle is small, about 1/10th the width of rectangle. Now, extrude this rectangle to about half the height of the cylinder to get the final 3D object.
+version https://git-lfs.github.com/spec/v1
+oid sha256:6da72c3a5416f9e3a6052ab15722b2d26171fb7739a5cd9d51d1ad70c6ca83bc
+size 494

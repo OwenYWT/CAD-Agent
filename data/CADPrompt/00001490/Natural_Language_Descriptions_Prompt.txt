@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create a large cylinder. This cylinder should be larger in diameter than it is in height. At the center of the cylinder include a small circular cutout extending the height of the cylinder.
+version https://git-lfs.github.com/spec/v1
+oid sha256:839878cd15f7b2ff15589c54ce3c708ee25510810c13776c020a838aec157378
+size 226

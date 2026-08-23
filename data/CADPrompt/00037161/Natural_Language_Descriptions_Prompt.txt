@@ -1,1 +1,3 @@
-  Write Python code using CADQuery to create a square. Then, create a tiny empty rectangle in the center of the square.
+version https://git-lfs.github.com/spec/v1
+oid sha256:82364a86da4d6f2fc536384d73279df0173af909b97c233b860cd124191de4c1
+size 119

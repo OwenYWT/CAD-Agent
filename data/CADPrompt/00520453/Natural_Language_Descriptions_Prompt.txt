@@ -1,2 +1,3 @@
- 
-Write Python code using CADQuery to create a long isosceles triangle, and then extrude it.
+version https://git-lfs.github.com/spec/v1
+oid sha256:ccf16fcd14abc6c9ee51b39027efcb71d8de2fa12b2bd422f6c21f3c95739ce3
+size 92

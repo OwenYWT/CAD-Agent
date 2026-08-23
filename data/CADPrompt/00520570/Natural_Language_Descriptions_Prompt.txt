@@ -1,2 +1,3 @@
- 
-Write Python code using CADQuery to create an isosceles trapezoid.
+version https://git-lfs.github.com/spec/v1
+oid sha256:0461a6edfac17047e6d4c868fbcb8a945378328143ab6181d9008ec96d6302ce
+size 68

@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a cylindrical ring with a height of 0.26068 units and an outer diameter of 1.5 units. The ring should have a central hole with a diameter reduced by 0.013033 units from both sides of the outer diameter. After creating the ring, extrude it along the y-axis.
+version https://git-lfs.github.com/spec/v1
+oid sha256:4b790b4157a1dd8425a51927821593299355ddba7893437d09000dbfe0354c83
+size 299

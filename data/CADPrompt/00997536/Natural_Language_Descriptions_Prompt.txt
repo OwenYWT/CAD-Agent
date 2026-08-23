@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a cylindrical object with a octagonal hole within it. First, create a sketch of a circle and extrude it to create a cylinder. Next, create a sketch of a smaller, regular octagon on the cylinder and negatively extrude it to create an octagonal hole within the cylinder. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:ba97cb274a63ca123a62c388069d488483f40768432fbdd43f88b127f22622f0
+size 312

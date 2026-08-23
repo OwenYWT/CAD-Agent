@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a short, cylindrical object with a circular hole through the center. First, create a circle and then extrude it to form a cylinder. Next, draw a smaller circle centered at the same point, with a radius of about half of that of the first circle, and then negatively extrude it to form a hole. Finally. create a small square connected to the outer edge of the cylinder, and negatively extrude it, by the same amount, to create a channel along the height of the cylinder. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:0e11988ae1816186eeeb6f8926fbba0d833ed1c851b4a155ef9f709da4a3a15f
+size 512

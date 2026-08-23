@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create two shapes that touch each other. The first shape is a large cube with dimensions 0.747683 units for length, width, and height. The second shape is a right triangular prism, which is 1/4th the size of the cube, with a base length and height of 0.498375 units and an extrusion length equal to the cube's length. The triangular prism should be positioned such that two of its edges align with the edges of the cube.
+version https://git-lfs.github.com/spec/v1
+oid sha256:203ef0d028fbc095f9dda5f4f670837ab8a593c0bc6c7283e78cbf4d2ceb09dc
+size 456

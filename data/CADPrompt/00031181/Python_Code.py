@@ -1,10 +1,3 @@
-import cadquery as cq
-
-length:float = 0.61135
-width:float = 0.36026
-height:float =  0.33843
-
-part:cq.Workplane = cq.Workplane("XY").box(length, width, height)
-
-part = part.translate((length/2, width/2, height/2))
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:b72f0d36acb7c62d8d68f09c9e12b7b73c9a4513f8324c2da85019906ffc78dc
+size 258

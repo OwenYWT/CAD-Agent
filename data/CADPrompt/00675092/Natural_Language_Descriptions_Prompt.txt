@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a triangular object. Draw a sketch of a right triangle and marginally extrude it.
+version https://git-lfs.github.com/spec/v1
+oid sha256:37f15dbd3bc8d4cc01b8b1f8791ae7adebafe02590aef3b0fd2f2dd6108db44a
+size 124

@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a 3D object resembling an upside-down table. First, draw a sketch of a block "U"-shaped object, wherein the upright columns have a slightly larger width than the horizontal section. Next, extrude this sketch to create an object to resemble an inverted table. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:5e1e94026b424b5fed5c6d48114e6137507ff5f985d1aa42ef5681e65eb410f1
+size 302

@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a cylindrical 3D object. First, draw a sketch of a circle. Next, cutout a small isosceles trapezium from the top of the circle. The sketch should look like a small trapezoidal sector of the circle has been cutout. Finally, extrude this entire sketch. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:7a8471d2963891a973fec989174cbfe16e421054cbcc37bacf996cf2d253cd73
+size 294

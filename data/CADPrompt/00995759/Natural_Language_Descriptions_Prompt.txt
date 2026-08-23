@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a rectangular 3D object with a semi-circular cutout. First, draw a sketch of a rectangle, and then extrude it. Next, draw a sketch of a semi-circle on the rectangle, such that the flat edge of the semi-circle is on the longer side of the rectangle. Finally, negatively extrude this semi-circle to create a cutout in the original rectangular object. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:73c141d8cdf4df83a4cb1dc8b3a004a2b14267e653fe257dd1866bbe321b2850
+size 392

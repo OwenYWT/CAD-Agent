@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create a hexagon and slightly extrude it. Then, create a second smaller hexagon on the top of the first hexagon. Next, create third smaller hexagon on the top of the second hexagon. Finally, create a triangle on the top of the third hexagon. Each shape should be slightly less extrude than that of the one before it and no shapes vertices should align with another shapes.  
+version https://git-lfs.github.com/spec/v1
+oid sha256:15e352bb61ef159f6a3fbc0da6a6ee734bc89dd44e48c17ffe20c8412f1be277
+size 411

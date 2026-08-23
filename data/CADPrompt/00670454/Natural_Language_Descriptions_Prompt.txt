@@ -1,1 +1,3 @@
-Write python code using CADQuery to create a rectangular object. First, create a sketch of a rectangle and extrude it by a small amount. Next, add two small holes on the left side of the rectangle at the top and bottom of the object. The final object should look like a page with two holes from a hole-puncher.
+version https://git-lfs.github.com/spec/v1
+oid sha256:25a94dd6481f57e89292adbe50a75d7d9dc9b9aef935cf06552006dce17bdd2a
+size 310

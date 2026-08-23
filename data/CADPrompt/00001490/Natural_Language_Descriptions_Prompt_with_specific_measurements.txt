@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a cylinder with a height of 0.48649 units and a radius of 0.75 units. Include a central circular cutout with a diameter of 0.243243243243244 units that extends through the entire height of the cylinder.
+version https://git-lfs.github.com/spec/v1
+oid sha256:1bb17a4d176617c0c7863cc08c01146d99d634f9ea9be3dd2c36b56d246c84d5
+size 245

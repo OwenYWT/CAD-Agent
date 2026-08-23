@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create a rectangular prism that is tall, very long, and very narrow.
+version https://git-lfs.github.com/spec/v1
+oid sha256:2fb698cde638e51ee1278765dc1fa296c8d75b258f648b9e6db195ddc687a451
+size 105

@@ -1,9 +1,3 @@
-import cadquery as cq
-
-height:float = 1.23718
-radius:float = 0.54452/2
-
-part:cq.Workplane  = cq.Workplane("XY").cylinder(height, radius)
-
-part = part.translate((0, 0, height/2))
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:6603ee41fbdf7a4ac52668e5df5bcd9051377b82f2dd4e1d593db0e498f77da5
+size 223

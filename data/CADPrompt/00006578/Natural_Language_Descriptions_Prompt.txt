@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a rectangle. Then, create four small holes within the rectangle, each one positioned close to a different corner.
+version https://git-lfs.github.com/spec/v1
+oid sha256:e7d2be4dbf92268b4c0e495a928dea58c8bf1afbc1d6c8294fa5d96af2007151
+size 156

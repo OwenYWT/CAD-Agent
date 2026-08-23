@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a simple desk. First, create the surface of the table, and then create two legs to the table. One leg is connected to the left side of the table, and another leg is connected to the right side of the table. The length of each leg is approximately 1/3 of the length of the table. Both legs are extruded by the same amount as the table.
+version https://git-lfs.github.com/spec/v1
+oid sha256:e10bb7937573e7b0f8b8a7e91c98d1d7ad721022ae0be26dd113fb61bfe6f453
+size 377

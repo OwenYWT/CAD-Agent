@@ -1,2 +1,3 @@
- 
-Write Python code using CADQuery to create a "L" shape and extrude it.
+version https://git-lfs.github.com/spec/v1
+oid sha256:f8d9fb212c83157fb159366804205be1b0ed1700db012c80c834464a57a3ac7f
+size 72

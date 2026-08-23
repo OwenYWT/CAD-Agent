@@ -1,1 +1,3 @@
-  Write Python code using CADQuery to create a complex 3D object. Begin by drawing a U-shaped sketch, rectangular in form, on the X-Y plane. Extrude this sketch along the Z-axis. Subsequently, create two square sketches positioned at the bottom left and bottom right corners of the U-shaped object. Ensure that the square on the left slightly overlaps with the U's bottom left corner, and the square on the right slightly overlaps with the U's bottom right corner. Extrude both squares along the Z-axis to the same extent as the original U-shaped object.
+version https://git-lfs.github.com/spec/v1
+oid sha256:e86d99d600fc761a8c1a497c9a17ac799e4f40b334d096c53250803c8ff4c541
+size 554

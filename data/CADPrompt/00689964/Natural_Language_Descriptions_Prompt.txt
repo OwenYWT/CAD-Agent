@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a 3D object that resembles a screw with a hexagonal head. First, draw a sketch of a regular hexagon and extrude it. Next, draw a smaller circle inside the hexagon, centered at the same point as the hexagon, and then extrude it outward to resemble a screw-bolt. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:6003059a9bbfb0fc8ea1b937b3f96e9b76af43e61a667a49830e0dcea7826a6e
+size 304

@@ -1,9 +1,3 @@
-import cadquery as cq
-
-arc:cq.Workplane = cq.Workplane("XZ").radiusArc((0.180047,0.18),0.18)
-rect:cq.Workplane = cq.Workplane("XY").center(-0.0075/2,0).rect(0.0075,0.750037)
-
-part:cq.Workplane = rect.sweep(arc).translate((0,0,0)).rotate((0,0,1),(0,0,0),180)
-part = part.translate((0.180047,-0.75003/2,0))
-
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:d0a7d6ff57b08d157153f132978971c0227719dbf4f3379b627bff7327460f81
+size 351

@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create a big circle and then extrude it. Next, create a slightly smaller extruded circle on top of the first circle.
+version https://git-lfs.github.com/spec/v1
+oid sha256:7dd01668092fcbc32479e372131169cf9bcce9af0c2a2f5e495386d56138a824
+size 153

@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a long rectangle and extrude it. Next, create two holes, positioning them at the close to end of the rectangle.
+version https://git-lfs.github.com/spec/v1
+oid sha256:d264e22fb87d57ae8c421021e5a1d4167b489792d58c0c91de584306814ba12e
+size 154

@@ -1,16 +1,3 @@
-import cadquery as cq
-from typing import List,Tuple
-
-length:float = 1.5
-width:float = 0.150756
-extrude:float = 0.188445
-
-pts:List[Tuple[float, float]] = [
-    (0, 0),
-    (0, width),
-    (length, 0)
-]
-part:cq.Workplane = cq.Workplane("XY").polyline(pts).close().extrude(extrude)
-
-part = part.translate((-length/2, -width/2, -extrude/2)).rotate((0,0,1),(0,0,0),90)
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:d1954768d488bd093653c8ceae6274b04e5c562314d82e506e0cc94c6e40597b
+size 409

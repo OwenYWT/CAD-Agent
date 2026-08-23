@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a 3D object that resembles an open book. First, draw two rectangles that connect to form an obtuse angle. Now extrude this sketch, so that there is only one edge where the rectangles connect.
+version https://git-lfs.github.com/spec/v1
+oid sha256:e0572102774847deb03a1bab547a6c7dee84b31d923b5e6f8f59a95d1acdbbc9
+size 234

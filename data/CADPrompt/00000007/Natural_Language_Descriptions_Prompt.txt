@@ -1,1 +1,3 @@
- write a python code using CADQuery to create an extruded sketch of a circle. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:fc8281e2666e7d1aa7313ae1263d5ca00975802b8040ab0d09be28f65cccdad7
+size 78

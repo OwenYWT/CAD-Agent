@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a pentagon, where the lower part of the pentagon is rectangular. Next, extrude this pentagon to create a pentagonal prism.
+version https://git-lfs.github.com/spec/v1
+oid sha256:b42da81ee6b276ef8453b6d27aa3340c8c39f582b1e92e962abca57ec3cc9c97
+size 165

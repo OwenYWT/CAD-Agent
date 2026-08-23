@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create a big cylinder. Then, connected to the center of the first cylinders base, create a second cylinder that is slightly smaller in diameter but larger in height relative to the first cylinder.
+version https://git-lfs.github.com/spec/v1
+oid sha256:59b2c24beb8407e1003100fd930f51deb2d963864046877f53590fd0ca031929
+size 233

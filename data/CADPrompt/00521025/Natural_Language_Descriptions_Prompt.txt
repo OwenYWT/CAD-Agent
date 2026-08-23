@@ -1,1 +1,3 @@
-  Write Python code using CADQuery to create a rectangle and then slightly extrude it. Next, create rectangular hole that is 1/8th the size of the original rectangle. This hole should be centered close to the bottom of the first rectangle and positioned horizontally.
+version https://git-lfs.github.com/spec/v1
+oid sha256:1ae8f9cc81505c75876a5da391a1ebcd81202adefa99ea4bf089da49b0d7825e
+size 267

@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a long 3D trapezoidal prism. First, create a sketch of a isosceles trapezium. Next, extrude the trapezium by a large amount. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:6b70bfcf91f17506e0a5c9cc76f9d8571cad3a5ed9bcd8d79f1307d3089620d3
+size 168

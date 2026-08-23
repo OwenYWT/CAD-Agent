@@ -1,15 +1,3 @@
-import cadquery as cq
-
-height:float = 0.75
-diameter:float = 0.07812
-hole_diameter:float = 0.046741
-
-part:cq.Workplane = (
-    cq.Workplane("XY")
-    .cylinder(height, diameter/2)
-    .faces(">Z")
-    .hole(hole_diameter, height)
-)
-
-part = part.translate((0,0,height/2))
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:fea81991b5c0b887382ee4b9147605c7aaade22b25a9ee6e5df8929b0f6bb934
+size 315

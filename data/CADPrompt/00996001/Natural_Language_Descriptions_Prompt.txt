@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a 3D object resembling an upside-down table with a circular hole through the horizontal surface. First, draw a sketch of a "U"-shaped object, wherein the upright columns have a twice the width of the horizontal section. Next, extrude this sketch to create an object to resemble an inverted table. Finally, create a small circular hole at the center of the horizontal surface of the table. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:a36bfef1aaddcdf866aceac2019e44c82d3ff4d57abfd950494b410a46cfce96
+size 432

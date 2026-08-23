@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a circle, extrude it. Then create four small holes, position them in a square dimension.
+version https://git-lfs.github.com/spec/v1
+oid sha256:f9c5d5267b629b0a0a03040b84aa02f0202f60723e82e51ba6e11c8bf8770c40
+size 131

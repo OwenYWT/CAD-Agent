@@ -1,1 +1,3 @@
- Write a Python script using CADQuery to create a rectangle and slightly extrude it. Then, create a rectangular cut-out that positioned at the midpoint of its length and slightly above the midpoint of its height relative to the first rectangle.
+version https://git-lfs.github.com/spec/v1
+oid sha256:447369cbf115c182b727aca0d904fb739bb84eacdbbe743fe769d3d737bde419
+size 244

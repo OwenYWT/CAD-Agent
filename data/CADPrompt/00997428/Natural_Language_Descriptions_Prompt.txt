@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a hollow cylindrical object that looks like a bucket. First, create a sketch of a circle and extrude it to create a cylinder. Next, create sketch of a smaller circle and negatively extrude it such that there is a hole in the cylinder. Make sure you extrude it by an amount smaller than the original extrusion so that the hole in the cylinder doesn't go all the way through the cylinder. Finally, create a horizontal cylindrical rod. Place the cylindrical rod towards the top of the cylinder such that it passes through each side of the cylinder. The length of the rod should be slightly larger than the diameter of the cylinder. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:6b7368749a7f72d4e47f2b18707d61a608b89d2543ac48da049bf4b45497bd93
+size 672

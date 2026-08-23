@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create a table with four legs. First, create a rectangle, and then create four long extruded squares that link to the bottom of each corner of the rectangle.
+version https://git-lfs.github.com/spec/v1
+oid sha256:07f2e5e98ca402912c90f6734e7fb268bd4580e05d1bb60012e30af9f97f1f7c
+size 194

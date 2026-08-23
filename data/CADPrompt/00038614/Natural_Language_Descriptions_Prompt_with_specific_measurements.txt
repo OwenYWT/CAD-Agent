@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a square-shaped frame with an outer length of 1.5 units, an outer width of 1.5 units, an inside padding of 0.17649 units, and an extrusion height of 0.00265 units.
+version https://git-lfs.github.com/spec/v1
+oid sha256:cf55d3709d00875bc0934ff035b125e2cc4e7432845493971eab1f235140781d
+size 206

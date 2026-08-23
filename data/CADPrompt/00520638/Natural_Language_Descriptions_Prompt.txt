@@ -1,2 +1,3 @@
- 
-Write Python code using CADQuery to create a "R" shape and extrude it.
+version https://git-lfs.github.com/spec/v1
+oid sha256:6622129e7f832d60275b13b3d0eb093469a43e035543af2f5ac478a2a738b1ab
+size 72

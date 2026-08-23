@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a trapezoidal prism with specific dimensions. The trapezoid should have a base length of 1.49593 units, a top length of 0.910569 units, and a height of 0.382114 units. The trapezoid should be centered and shifted slightly along the x-axis by 0.026423 units. The resulting trapezoidal face should then be extruded to a width of 0.589754 units to form the prism.
+version https://git-lfs.github.com/spec/v1
+oid sha256:94079609ef864a92e6e41b47ce3498c75fe1e03435bc41ea6551912b092c1e75
+size 403

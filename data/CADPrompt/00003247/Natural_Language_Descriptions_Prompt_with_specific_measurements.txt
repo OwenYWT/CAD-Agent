@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a long rectangular prism with a length of 0.3 units, a width of 0.7 units, and a height of 0.3 units.
+version https://git-lfs.github.com/spec/v1
+oid sha256:22d925bcf0066a56e226466b061bc63a0ae8869c85bb470b06fe60e55fb5fd09
+size 144

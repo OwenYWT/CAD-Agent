@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a 3D cylindrical object with multiple holes in it. First, create a large, short cylinder. Next, create a hole with 1/8th diameter as that of the cylinder, it should be at the center of the cylinder going all the way through. Finally, create three even smaller holes, in a triangular formation, around the first hole in the cylinder. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:18a473f39ad56df6a5a4d5739fae59e2188641133442d190edad4ee7a217ff42
+size 376

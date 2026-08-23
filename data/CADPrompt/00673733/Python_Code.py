@@ -1,12 +1,3 @@
-import cadquery as cq
-
-width:float = 0.75
-diameter:float = 0.249945
-padding:float = 0.125404
-
-cylinder:cq.Workplane = cq.Workplane("XZ").cylinder(width, diameter/2)
-
-part = cylinder.cut(cylinder.translate((0,0,padding)))
-part = part.translate((0,-width/2,0))
-
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:e726ea090f1fb10be1ad517bcdad370d6bd482bca94290f6732cfd684e1bb423
+size 305

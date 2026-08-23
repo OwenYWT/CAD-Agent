@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a complex 3D object. Begin by creating a sketch of two overlapping circles, each with a radius of 0.489821 units. Position these circles such that their centers are offset by 0.260308 units along the x-axis. Next, create two smaller overlapping circles with a radius of 0.319623 units, centered at the same points as the larger circles. These smaller circles will serve as cutouts to create holes in the original shape. Finally, extrude the resulting 2D shape to a height of 0.006808 units to form the 3D object.
+version https://git-lfs.github.com/spec/v1
+oid sha256:cf2aa5d187acca62f886e08112738ca5f3e477726181d80982f6f9683114194c
+size 555

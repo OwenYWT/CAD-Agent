@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create large sqaure and sligthly extrude it. Next, cutout a large right triangle from the bottom-right corner of the rectangle. The corner of the triangles right angle should align with the sqaures corner.
+version https://git-lfs.github.com/spec/v1
+oid sha256:3db2256afb06e998e8636bf37a81c7c55202c239bce1c8c2b1e3db6da8a6c627
+size 241

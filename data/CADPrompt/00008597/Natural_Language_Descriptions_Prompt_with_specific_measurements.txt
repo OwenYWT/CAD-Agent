@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a square with a length of 1.5 units and a width of 1.5 units, and then extrude it to a height of 0.75 units.
+version https://git-lfs.github.com/spec/v1
+oid sha256:1efde285c48f7fc05ab9ce630525a9ab83290d7716636c30c8c721fcf183d630
+size 151

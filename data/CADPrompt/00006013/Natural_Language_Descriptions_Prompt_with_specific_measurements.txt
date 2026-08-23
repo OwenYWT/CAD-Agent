@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a rectangle with a length of 0.42 units and a width of 0.75 units, and then extrude it by 0.015 units.
+version https://git-lfs.github.com/spec/v1
+oid sha256:9a31614330ed3f667f6733fdff4c7b7ad041943241566cb6852234299ec3a150
+size 145

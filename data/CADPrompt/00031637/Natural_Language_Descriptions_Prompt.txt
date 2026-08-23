@@ -1,1 +1,3 @@
-  Write Python code using CADQuery to create a long rectangular prism. Then, cut out a small rectangular prism from the right side of the original shape. This cut out should be the same width, 1/4th the length, and 3/4th the height of the original shape.
+version https://git-lfs.github.com/spec/v1
+oid sha256:afeca74e584f6384b1110ad196752f2c5413c164d73a8d32c54b488f0d6c9ff8
+size 254

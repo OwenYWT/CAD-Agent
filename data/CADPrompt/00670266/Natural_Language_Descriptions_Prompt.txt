@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a 3D object that resembles a tag. To create the 3D object, sketch a rectangle with the top edges rounded, then extrude it. Slightly below the top edges, but centered, make a small circular cutout.
+version https://git-lfs.github.com/spec/v1
+oid sha256:d836582e8a917cccf19232934594d5926880f0e8738e0b04dfec6eb8ed168105
+size 239

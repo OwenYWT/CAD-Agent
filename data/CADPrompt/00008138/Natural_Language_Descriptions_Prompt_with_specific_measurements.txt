@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a hollow cylinder with a height of 0.75 units, an outer diameter of 0.07812 units, and an inner diameter of 0.046741 units. The cylinder should be centered vertically by translating it along the Z-axis by half its height.
+version https://git-lfs.github.com/spec/v1
+oid sha256:d9395cf6ab7fba584e379699e27c1781bfdc6ca4bea7bad5ef944bcdd747a2a6
+size 264

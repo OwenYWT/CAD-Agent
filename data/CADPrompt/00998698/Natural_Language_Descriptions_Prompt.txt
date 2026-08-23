@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create an inverted desk, with hexagonal legs. First, draw a rectangular sketch, and cutout four small, right-angle triangles from each corner of the rectangle to create an octagonal surface. Next, extrude this sketch by a small amount. Draw two large, regular hexagons, placed symmetrically on opposite ends of the octagonal surface. The hexagons should be the same size and should align perfectly with each end of the surface. Finally, extrude these hexagons outwards to give the appearance of two hexagonal columns protruding from a horizontal surface. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:cb32eb0ce1d746734368796d760d9c9aa9153c59c64783fc5329c625151e9d5b
+size 591

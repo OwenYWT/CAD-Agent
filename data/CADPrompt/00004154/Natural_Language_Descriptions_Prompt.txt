@@ -1,2 +1,3 @@
- 
-Write a python code using CADQuery to create a rounded rectangle, and then extrude it.
+version https://git-lfs.github.com/spec/v1
+oid sha256:49205bfa5467e6d45348cb985154b47106137e88946eec09311bb6356efc3950
+size 88

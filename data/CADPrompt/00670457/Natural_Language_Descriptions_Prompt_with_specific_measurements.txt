@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a long rectangular object with specific dimensions. Start by creating a sketch of a long rectangle with a length of 0.051687 units and a width of 0.120604 units. Next, draw a sketch of an isosceles trapezium where the base of the trapezium is the same length as the shorter edge of the rectangle, which is 0.051687 units. Connect this trapezium to the rectangle such that the base of the trapezium is attached to the shorter edge of the rectangle. Finally, extrude this combined shape to a height of 0.75 units to form the 3D object.
+version https://git-lfs.github.com/spec/v1
+oid sha256:15fc75a5d13619a55a6dcd48aad70eaf7f90c949f9c9187d9116b81643d40c92
+size 576

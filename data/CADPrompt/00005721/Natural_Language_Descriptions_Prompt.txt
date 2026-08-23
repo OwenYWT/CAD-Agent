@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create an obtuse scalene triangle.
+version https://git-lfs.github.com/spec/v1
+oid sha256:b2e50473e7e9e2fb83b992894e7a8aa6cd256506bd181adc922b044aff0c3aae
+size 71

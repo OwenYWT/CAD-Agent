@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create a large rectangle and marginally extrude it.
+version https://git-lfs.github.com/spec/v1
+oid sha256:7ea9f10f30b360fd62dbc46d97440c05bae3a2c9e789f6657b13262aedd5779a
+size 88

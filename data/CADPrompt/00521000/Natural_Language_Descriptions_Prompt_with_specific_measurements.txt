@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a ring with a height of 0.010714 units and an outer diameter of 1.5 units. The ring should have an inner diameter calculated by subtracting 0.342858 units (0.171429*2) from the outer diameter. Next, create three small circular holes within the ring, positioning them in a triangular formation. Each hole should have a diameter of 0.105429 units and be placed equidistant from each other, with their centers located at a radius of (outer diameter/2 - (outer diameter - inner diameter)/4) from the center of the ring. Rotate the final object by -90 degrees around the Z-axis to align it as needed.
+version https://git-lfs.github.com/spec/v1
+oid sha256:8362c19ddc377c6ac0d4cd5f3d33d1c4ac9c8753a418672933bdc47d14ff2ba8
+size 638

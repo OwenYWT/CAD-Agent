@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a 3D shape that resembles a right-angled triangular rack used in a pool game, where the height of the triangle is more than twice its base. Start by creating a hollow right-angled triangle sketch with a base length of 0.037173 units and a height of 0.759401 units. Then, extrude this sketch to a thickness of 0.015931 units to form the 3D object.
+version https://git-lfs.github.com/spec/v1
+oid sha256:aab1b989bf5dde0e17794916e591f2f62ba8b03db4c66af0deaa9337c671b83e
+size 389

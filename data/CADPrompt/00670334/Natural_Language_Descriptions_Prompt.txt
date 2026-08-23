@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a rectangular object. First, create a sketch of a rectangle, then extrude it. Next, add a circular hole at the center of the rectangle.
+version https://git-lfs.github.com/spec/v1
+oid sha256:dc4bb3bfab80b4fd84ea73b3ff5d5fb42d4b26b4a5725f80468087ea8bd35a35
+size 178

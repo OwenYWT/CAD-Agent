@@ -1,2 +1,3 @@
- 
-Write Python code using CADQuery to create a bench. Begin by sketching a shape resembling the letter 'h' on the X-Y axis. Then, extrude this sketch along the Z-axis to form an object that resembles a bench.
+version https://git-lfs.github.com/spec/v1
+oid sha256:b46a3f3a8a932a6c28ae3f29406db424cfb5f34ce250edb1c9e594c9fbae254c
+size 208

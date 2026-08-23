@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a ring with a height of 0.01463 units, an outer diameter of 1.5 units, and an inner hole diameter of 1.45232 units.
+version https://git-lfs.github.com/spec/v1
+oid sha256:618840e92e656892c6779c2093ff7c336b5223ca428ae8c0c08ca856693dc2da
+size 158

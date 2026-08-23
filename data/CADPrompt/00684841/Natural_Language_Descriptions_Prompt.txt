@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a curved, 3D object. First, create a sketch of a minor sector of a circle and then extrude it. Next, create a sketch of another sector, centered at the same point, but with a marginally smaller radius and place it on the original object. Negatively extrude this sketch to cutout the inside of the original object to leave a small sector from a hollow-cylinder. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:dbc8ef507d62664ca1632a5e9762124d6699f749d4557279d1f8099589a9e045
+size 404

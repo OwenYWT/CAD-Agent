@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a cylindrical object. Create a sketch of two circles which overlap, and extrude this sketch.
+version https://git-lfs.github.com/spec/v1
+oid sha256:168e6369ba774baa573ce2acb2dd2138c2bf37a455cc1dbcf4bafdc0e7f0cfc0
+size 135

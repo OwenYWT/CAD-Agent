@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a 3D object that resembles a three step pedestal. First, you can create a side profile of the pedestal. You can do it by creating three rectangles joined to each other. First draw a big rectangle that will represent the base level. On top of this draw a smaller rectangle that represents the second step. On top of this second rectangle draw a third, even smaller rectangle, that represents the third step. Make sure the three rectangles are connected and form a closed shape. Extrude this profile to get a 3D model of the three step pedestal.
+version https://git-lfs.github.com/spec/v1
+oid sha256:eb9b30daf81fd9e2cf0f4ac95782922660698d67d59d232d00ceb9d7c7704302
+size 586

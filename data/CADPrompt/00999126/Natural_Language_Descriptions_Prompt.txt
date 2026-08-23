@@ -1,1 +1,3 @@
-Write Python code using CADQuery to generate a rectangular 3D object with cutouts. To generate the object, first sketch a rectangle whose width is three times its height. On the left and right edges of the rectangle, make two rectangular cutouts. The left cutout is three times longer than right cutout. Now, extrude this sketch to a small depth to get final 3D object.
+version https://git-lfs.github.com/spec/v1
+oid sha256:2dde59e7eb647f76cc90efa7e0c77e5c6884b75db174b7ad0b8cb647e52e5e0b
+size 369

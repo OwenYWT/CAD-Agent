@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create a cylinder. This cylinder should be short but have a very large diameter. Then, include a small circular cutout at the center of the cylinder.
+version https://git-lfs.github.com/spec/v1
+oid sha256:337fbaa32596b48d75c97899a22c64c631c87f63cb2b7ea14bfcdf068a9ae85e
+size 186

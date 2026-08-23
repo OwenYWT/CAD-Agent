@@ -1,2 +1,3 @@
- 
-Write Python code using CADQuery to create a cylinder and slightly extrude it. Next, create a second cylinder in the middle of the first one, and then extrude it. Then, cut off a small rectangle in the first cylinder, positioning it on the right side of the second cylinder.
+version https://git-lfs.github.com/spec/v1
+oid sha256:b970a41d8e075ca332bed07433ccf6e7d4fcea2b3428cfd0449e1ddad5adbdae
+size 276

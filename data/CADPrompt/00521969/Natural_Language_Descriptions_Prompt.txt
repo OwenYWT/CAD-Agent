@@ -1,2 +1,3 @@
- 
-Write Python code using CADQuery to create a rounded square, and then extrude it.
+version https://git-lfs.github.com/spec/v1
+oid sha256:457edf27db6def5e2edcd8ac3561342d44d01f668e767411f198e722b1013707
+size 83

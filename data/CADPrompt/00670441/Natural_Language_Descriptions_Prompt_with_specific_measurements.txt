@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a regular octagon with each side measuring 1.00328 units, then extrude it to a height of 0.271665 units. After extrusion, rotate the object 22.4 degrees around the Z-axis and -90 degrees around the X-axis, then translate it to the position (-0.176576, 0, 0.286546).
+version https://git-lfs.github.com/spec/v1
+oid sha256:13086e534a293c95268b3997649a56c7d6be395c2f06589331d60590c70defa0
+size 308

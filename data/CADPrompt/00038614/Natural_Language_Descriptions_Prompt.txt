@@ -1,1 +1,3 @@
-  Write Python code using CADQuery to create a square shaped frame.
+version https://git-lfs.github.com/spec/v1
+oid sha256:7ef0f06853a143d0d118ed739aff790b1190e034c7e7b983383b24397907114c
+size 67

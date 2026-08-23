@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a large cylinder with a diameter of 0.059646 units and a height of 0.750036 units. Then, extrude this cylinder. Next, create a smaller, longer cylinder on the bottom of the first cylinder with a diameter that is half of the first cylinder (approximately 0.029823 units) and a length that is five times the length of the first cylinder (approximately 3.75018 units).
+version https://git-lfs.github.com/spec/v1
+oid sha256:bc51e9c212723569c8dacd392e2b4a25afd3804f94801f2735328178916178e7
+size 408

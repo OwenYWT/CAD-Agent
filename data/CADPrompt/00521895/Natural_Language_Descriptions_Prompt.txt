@@ -1,2 +1,3 @@
- 
-Write Python code using CADQuery to create a rectangle, and then extrude it. Next, create a hollow cylinder in the middle of the rectangle.
+version https://git-lfs.github.com/spec/v1
+oid sha256:8df57e861c4ba8e8552d7538671f23df962fdd3669480059d3ca4bb50f204c16
+size 141

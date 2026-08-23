@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a right triangle with a base of 0.20312 units and a height of 0.20312 units, then extrude it to a height of 0.75 units. Rotate the resulting 3D object by -90 degrees around the Y-axis.
+version https://git-lfs.github.com/spec/v1
+oid sha256:71797cb478f481c841b80d3fd6b34dc553ce3df1bf60e06fef42ab789c011cc6
+size 227

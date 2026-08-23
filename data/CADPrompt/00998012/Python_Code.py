@@ -1,24 +1,3 @@
-import cadquery as cq
-
-length = 0.9375
-width = 1.5
-height = 0.375
-
-base = (
-    cq.Workplane("XY")
-    .box(length, width, height)
-)
-
-a_length = 0.234375
-a_height = 0.328125
-arm = cq.Workplane("XY").box(a_length, length, a_height)
-
-part = (
-    base
-    .union(arm.translate((-length/2+a_length/2,width/2-length/2,height/2+a_height/2)))
-    .union(arm.rotate((0,0,1),(0,0,0),90).translate((0,width/2-a_length/2,height/2+a_height/2)))
-)
-
-part = part.translate((0,0,height/2))
-
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:1492250ebf556f2a7178b0ed1e15f5b88f0c861e530bbea3a9a73f19bed0eae8
+size 521

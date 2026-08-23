@@ -1,16 +1,3 @@
-import cadquery as cq
-
-length:float = 1.5
-width:float = 1.5
-
-inside_padding:float = 0.17649
-extrude:float = 0.00265
-
-outline:cq.Sketch = (
-    cq.Sketch()
-    .rect(length, width)
-    .rect(length - inside_padding*2, width - inside_padding*2, mode="s")
-)
-
-part:cq.Workplane = cq.Workplane("XY").placeSketch(outline).extrude(extrude)
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:890dca42e14b2f8298e6ecee6b7c46be52427ead24f0f17c8c85274ffd637520
+size 378

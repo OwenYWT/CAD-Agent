@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a ring.
+version https://git-lfs.github.com/spec/v1
+oid sha256:f05d5353406c045c576b4fd6ad626336510b70917b7032fad2b8d424062a8702
+size 50

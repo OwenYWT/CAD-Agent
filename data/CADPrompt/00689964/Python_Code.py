@@ -1,15 +1,3 @@
-import cadquery as cq
-
-diameter:float = 0.321427
-cylinder_length:float = 0.75025
-
-sides:int = 6
-length:float = 0.61859
-extrude:float = 0.214286
-
-cylinder = cq.Workplane("XZ").cylinder(cylinder_length, diameter/2)
-part:cq.Workplane = cylinder.faces("-Y").polygon(sides, length).workplane().extrude(extrude)
-
-part = part.translate((0,cylinder_length/2,0))
-
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:f461d1e3f361f9e7d0099d658406e7f822ad1f2a49136121b0177bb10810bdf8
+size 400

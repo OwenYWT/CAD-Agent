@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create complex, tiered 3D object. First, draw a sketch of a regular hexagon and extrude it. Next, draw a sketch of a smaller square, on top of the hexagon, centered at the same point as the hexagon. Rotate this square such that none of the edges of the square are parallel to the edges of the hexagon. Finally, extrude this square upwards such that it gives the appearance of a square placed on top of a hexagon. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:3049ef43b20c9e64c09c03aef1887ca2c307440febffcbaa1c6aadc93cca83ec
+size 449

@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a complex, rectangular 3D object. First, draw a sketch of a rectangle, and then extrude it. Next, create a "L"-shaped sketch, on top the rectangle aligned with one of the corners of the rectangle. Extrude this sketch upwards to give the appearance of an L-shaped block on top of a rectangular block. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:bf1a71c8d75422d4de47b9aa49f52a04fa9943d5d01fb7b9e062b8992c0c7fb5
+size 343

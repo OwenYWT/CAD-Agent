@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create a cylinder. Then, cut a portion out of the top of the cylinder. You need to remove a portion that is approximately 1/4th the length and diameter of the original cylinder. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:d9c77d4373b9439fd24da45972d589e43725c70a5b16372ca2233c65713ff972
+size 215

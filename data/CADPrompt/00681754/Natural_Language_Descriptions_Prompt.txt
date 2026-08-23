@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a 3D object that looks like a rectangular block with a cylinder placed at the top. First, draw a sketch of a rectangle, and then extrude it. Next, draw a sketch of a circle at the center of the rectangle. The diameter of the circle should be approximately 1/4th of the length of the rectangle. Finally, extrude this circle upwards to create the image of a cylinder placed on top of a rectangle. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:ea1f1c95ea476e97573dd6f16a90083c8df23522034f6b2d4f014d417f8113a7
+size 438

@@ -1,1 +1,3 @@
-  Write Python code using CADQuery to create a 3D object that resembles a tag. To create the 3D object, sketch a filled U-shaped figure. This sketch can be made by adding a semi-circle at the bottom of a rectangle. Extrude this sketch. Next, at the respective center of the semi-circle, make a circular cutout that has the same height and 1/4th size diameter as the semi-circle.
+version https://git-lfs.github.com/spec/v1
+oid sha256:accdf1a183a1fd1049c1797834bd83ab11601e4687978ff6cc0c5a01bd63ae44
+size 378

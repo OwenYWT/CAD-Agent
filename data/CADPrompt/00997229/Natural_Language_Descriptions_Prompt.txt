@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a 3D object that resembles a box end wrench. First, create a sketch of a long rectangle. Next, replace the ends of the rectangle with two circles, they should have a larger diameter than the width of the rectangle. There should be one circle on each end, and one slightly larger than the other. Now extrude this sketch. Finally, create two circular holes within the two circular ends of this object. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:96c423523ce8ee62057047b84fae23784ceb75ebb62f1c937d30f5c3c2f87965
+size 443

@@ -1,2 +1,3 @@
- 
-Write Python code using CADQuery to create a large hollow cylinder and extrude it. Then, create a circle at the bottom of the cylinder to close it. Next, create a tiny hollow circle in the middle of the circle.
+version https://git-lfs.github.com/spec/v1
+oid sha256:01eed2a0e1445fb5bddebfe689659fcde4df200df097e2fe5eab0342abe91365
+size 212

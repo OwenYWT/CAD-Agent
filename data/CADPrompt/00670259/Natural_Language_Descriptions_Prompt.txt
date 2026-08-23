@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a long rectangular pipe.
+version https://git-lfs.github.com/spec/v1
+oid sha256:2745da5565563b64d0f8491c2ad385ef3cba782f4d48030e96dcc8d800bab770
+size 67

@@ -1,17 +1,3 @@
-{
-    "Ground_Truth": {
-        "Number_of_Faces": 580,
-        "Number_of_Unique_Edges": 870,
-        "Number_of_Vertices": 286,
-        "Width_mm": 0.59571,
-        "Height_mm": 1.4996,
-        "Depth_mm": 0.08571,
-        "Bounding_Box_Center": "Vector (0.2864227774553001, 0.0, 0.04285714402794836)",
-        "Aspect_Ratio_XY": 0.39725,
-        "Aspect_Ratio_XZ": 6.95,
-        "Aspect_Ratio_YZ": 17.49528,
-        "Is_Solid": true,
-        "Volume_cubic_mm": 0.05187,
-        "Surface_Area_square_mm": 1.58832
-    }
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:61b0293cf53db6be4d5e6ee1b65f8900ff502ff13f50fa9d3da344afb401ca13
+size 522

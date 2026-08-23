@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create an object that resembles a pillar. Begin by creating a square base on the X-Z plane with dimensions 0.307377 units by 0.307377 units. Extrude this square by 0.012295 units along the Y-axis. Next, sketch a smaller rectangle centered at the same location as the square, with the same length of 0.307377 units but approximately half its width, around 0.184426 units. Extrude this smaller rectangle by a significant amount, specifically 0.737705 units along the Y-axis, to form the main body of the pillar.
+version https://git-lfs.github.com/spec/v1
+oid sha256:fdeaca19a05af56c76f179dba3be6f52bcc12d32ced2d172be1a78d4e03bc784
+size 545

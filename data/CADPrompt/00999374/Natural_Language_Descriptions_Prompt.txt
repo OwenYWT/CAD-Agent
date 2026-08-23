@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a complex 3D object that looks like a shovel excavator. First create a sketch of an irregular rhombus and extrude it. Next, create a sketch of a rectangular prism, and attach the rectangular prism to the center of one of the extruded edges on the rhombus. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:56533da6a3b965534b34f073374898ea0f71f9705ce842cb6041090ac2f1069e
+size 299

@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a rectangular object. First, create a sketch of a rectangle. Next, create four small square cutouts from the rectangle at each corner. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:b8f73fe7ade44f4e76c507ff0c5ce018345c55b0dfaaa144b9182509acd48939
+size 178

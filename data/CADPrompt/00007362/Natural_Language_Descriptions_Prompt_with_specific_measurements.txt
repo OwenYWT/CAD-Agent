@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a rectangular prism with a length of 0.75 units, a width of 0.06429 units, and a height of 0.03929 units. The prism should be positioned such that its center aligns with the origin in the CAD workspace.
+version https://git-lfs.github.com/spec/v1
+oid sha256:4b04583906b396b7e5f37f1f8f23a09d38ea83e96cadeef8c01c6ace14383ea4
+size 245

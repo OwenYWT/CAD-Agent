@@ -1,12 +1,3 @@
-import cadquery as cq
-
-extrude:float = 0.440903
-diameter:float = 1.5
-
-part:cq.Workplane = (
-    cq.Workplane("XY")
-    .cylinder(extrude, diameter/2)
-)
-
-part = part.translate((0, 0, extrude/2)).rotate((1,0,0),(0,0,0),-90)
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:808cba52a74e77d5ec59e4bd26160b13c1e14c383c368521624711572085506f
+size 267

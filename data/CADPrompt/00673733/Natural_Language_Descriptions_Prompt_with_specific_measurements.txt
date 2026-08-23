@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a 3D crescent-shaped object by first constructing a cylinder with a width of 0.75 units and a diameter of 0.249945 units. Then, create a second cylinder with the same dimensions but translated by 0.125404 units along the Z-axis. Subtract the second cylinder from the first to form a crescent shape, and finally, translate the resulting shape by half the width in the negative Y direction to center it.
+version https://git-lfs.github.com/spec/v1
+oid sha256:01263511d3ef395c24307370e52336b06fb16de361e38605e5ade7797d8ac627
+size 444

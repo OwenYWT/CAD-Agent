@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a tiered rectangular 3D object. First, create a sketch of a rectangle and extrude it. Next, create a sketch of a slightly smaller rectangle with the same length, but slightly smaller width. The second rectangle should be centered at the same position as the original rectangle, and extruded it by the same amount as the first rectangle. The final object should look like two rectangles placed on top of each other such that the rectangle on top is slightly smaller.
+version https://git-lfs.github.com/spec/v1
+oid sha256:fb4533734e88bb7fae1dea49a326c82a039efe077ed3c643ef648d455bc3bf21
+size 508

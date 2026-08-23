@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a 3D model consisting of two extruded rectangles, each with a length of 0.0625 units, a width of 0.75 units, and a height of 0.0034 units. These rectangles should be connected at their edges, similar to the intersection between a wall and the floor, and positioned perpendicular to each other. The connection should occur along their elongated edge, forming a right angle between the two rectangles.
+version https://git-lfs.github.com/spec/v1
+oid sha256:71af9c26d35f3c028822d584b25ad78b4dbe54d5c79a30edd6596089e0710b8d
+size 442

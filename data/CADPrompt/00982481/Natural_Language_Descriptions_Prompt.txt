@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a cylinder, extrude it, and then create a circle larger than the cylinder's size. Place it near the top of the cylinder and extrude it.
+version https://git-lfs.github.com/spec/v1
+oid sha256:1683876a3535feb1d6c2911f76ac9f57ce080b126b5ec625d290e3f2c112368b
+size 178

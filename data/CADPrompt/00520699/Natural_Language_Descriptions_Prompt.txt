@@ -1,1 +1,3 @@
-  Write Python code using CADQuery to create a 3D object resembling a thermometer. To create the object, begin by sketching a small circle and slightly extrude it. Then, add a very long rectangle at the top edge of the circle, it should be extruded slightly less than the circle.
+version https://git-lfs.github.com/spec/v1
+oid sha256:313bc393b18450888ee96108e0054b535f68d91c73589ce6d169b9e09eb9bc97
+size 279

@@ -1,1 +1,3 @@
- Write Python code using CADQuery to create a long rectangular prism. Then, cut out a semi-circle shape from the length of the rectanglular prism.
+version https://git-lfs.github.com/spec/v1
+oid sha256:656e3fcdb97ff244720d80d503f4b124532e1c011fa058abeb98d129fe4086e7
+size 146

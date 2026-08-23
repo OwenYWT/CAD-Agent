@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create rectangle, and then extrude it. Next, add a circular hole in the middle of the rectangle such that the hole is slightly closer to the left side than the right
+version https://git-lfs.github.com/spec/v1
+oid sha256:056eb3abccd9465b8150bcdd312c5f778c5e8998fd33ed71f60ccb19a298a113
+size 201

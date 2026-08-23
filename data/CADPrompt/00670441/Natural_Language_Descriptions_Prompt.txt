@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a regular octagon, and then extrude it.
+version https://git-lfs.github.com/spec/v1
+oid sha256:8290ba661d997adc19963232ed48b069c0bd55c9aad5fea0310f5a8f70b9a0ea
+size 82

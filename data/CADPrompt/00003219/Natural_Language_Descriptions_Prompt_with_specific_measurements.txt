@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a long cylinder with a height of 1.23718 units and a radius of 0.27226 units.
+version https://git-lfs.github.com/spec/v1
+oid sha256:66722bf3738690e17382cafcd297c91b91aa284e38d7f124b0e88aa902cebc3a
+size 120

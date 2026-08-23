@@ -1,22 +1,3 @@
-import cadquery as cq
-
-length:float = 1.125
-width:float = 1.5
-height:float = 0.039474
-
-padding_length:float = 0.108553
-padding_width:float = 0.098684
-hole_diameter:float = 0.059211
-
-part:cq.Workplane = (
-    cq.Workplane("XY")
-    .box(length,width,height).faces(">Z")
-    .workplane()
-    .rect(length - padding_length*2 - hole_diameter, width - padding_width*2 - hole_diameter, forConstruction=True)
-    .edges("<X")
-    .vertices()
-    .hole(hole_diameter)
-)
-
-part = part.translate((0,0,height/2))
-cq.exporters.export(part, 'Ground_Truth.stl')
+version https://git-lfs.github.com/spec/v1
+oid sha256:969bae72db6821bbfc9c6828a567f2dae17034c8c6092949ab76c9760974e0c9
+size 546

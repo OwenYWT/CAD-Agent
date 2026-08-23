@@ -1,1 +1,3 @@
-  Write Python code using CADQuery to create a rectangular plate with two small, symmetric holes. First, create a sketch of the rectangle and extrude it. Then, cut out two small symmetric circles from the extruded rectangle.  These cut outs should be parallel to each other and slightly offset from the rectangle's centerline. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:c5adaca1df29edd359cc3dd0e6aff0c5c7bd0f9f9ec25fa65c0b2fdd42066c5e
+size 327

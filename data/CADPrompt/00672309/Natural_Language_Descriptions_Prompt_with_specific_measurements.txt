@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a short, cylindrical object with specific dimensions. Begin by creating a cylinder with a height of 0.6 units and a diameter of approximately 1.498046 units. Next, create a circular hole through the center of the cylinder; the hole should have a diameter of approximately 0.748126 units and extend through the entire height of the cylinder. Finally, attach a small rectangular channel to the outer edge of the cylinder. This channel should have a length of 0.188827 units, a width approximately equal to half the diameter of the cylinder, and a depth equal to the height of the cylinder. The channel should be positioned with a small padding of approximately 0.142454 units from the edge of the cylinder.
+version https://git-lfs.github.com/spec/v1
+oid sha256:055743087af8f02c6bb73c28271161320efbf75b43ac4ee0b255e29a97f13ef8
+size 747

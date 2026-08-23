@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a cylinder with a height of 0.681818 units and a diameter of 0.681818 units. Then, extrude this cylinder. Next, create a circle with a diameter larger than the cylinder's, specifically 1.5 units, and place it near the top of the cylinder. Finally, extrude this circle to form another cylindrical segment with a height of 0.252273 units.
+version https://git-lfs.github.com/spec/v1
+oid sha256:feb8fafaa186d616f3d884b5ff70b3b00f1b9cf3d7a3d28e46ddd2259c9f230b
+size 379

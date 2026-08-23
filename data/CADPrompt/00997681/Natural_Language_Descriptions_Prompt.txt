@@ -1,1 +1,3 @@
-Write Python code using CADQuery to create a 3D rectangular object with two filleted corners. First, draw a sketch of a long rectangle. Next, replace two corners of one of the longer edges of the rectangle with rounded corners. Finally, extrude this object. 
+version https://git-lfs.github.com/spec/v1
+oid sha256:067c021d15ee2d340fe455eb0541d760e9015972dee2eb3dc424de11e2c4ac56
+size 258
