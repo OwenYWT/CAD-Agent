@@ -30,6 +30,10 @@ python -m benchmark.eval --cases P01,X01 --n 1
 python -m benchmark.eval --n 3
 #   产出 reports/eval_<UTC>_<gitsha>.json + reports/<run_id>/renders/
 
+# 3b) 只跑中等难度（24 个 moderate case）——视觉精修的主要目标区间
+python -m benchmark.eval --difficulty medium --n 3
+#   difficulty 接受 simple/moderate/complex，也接受 easy/medium/hard 别名；可与 --cases 叠加
+
 # 4) 改了 prompt 后，跑候选并直接对比基线
 python -m benchmark.eval --n 3 --baseline reports/eval_<基线>.json
 
@@ -53,6 +57,19 @@ python -m benchmark.eval --n 3 --no-rag
 人工复核：每次运行保存 4 视角渲染图于 `reports/<run_id>/renders/<case>_run<n>/`，自动指标抓不到的「尺寸对但形状错」靠看图兜底。
 
 > 已知口径差异：复杂件走 multi-step 路径时只填 `validation` 不填 `inspect_report`（见 `multi_step.py`），所以这些 case 的 `verdict_pass` 恒为 False，但 `printable`/`passed` 仍从 `validation` 正确取到。读 `verdict_pass_rate` 时按 `by_path` 分组看，别把 multi-step 的低 verdict 误读为质量差。
+
+## 视觉精修对评测的影响
+
+[视觉精修](../../docs/visual-refinement.md)会改变结果，程度不亚于换 prompt 或换模型，因此它的配置写进了报告 metadata：`vision_model`、`visual_refinement_enabled`、`visual_refinement_max_iterations`、`vision_render_px`。
+
+对比两份报告前先核对这几项。关掉视觉精修（`VISUAL_REFINEMENT_ENABLED=false`）跑一次，可以量出它单独贡献了多少：
+
+```bash
+VISUAL_REFINEMENT_ENABLED=false python -m benchmark.eval --difficulty medium --n 3
+python -m benchmark.eval --difficulty medium --n 3 --baseline reports/eval_<关闭那次>.json
+```
+
+注意每个 case 的耗时会随迭代预算上升：每轮多一次沙箱执行和一次视觉调用。循环只接受可证明更优的候选，所以提高预算不会让 `pass@1` 下降，只会更慢更贵。
 
 ## 怎么读 compare 结果
 

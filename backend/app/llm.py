@@ -221,7 +221,7 @@ def create_llm_client(llm_settings: Settings = settings):
     else:
         raw_client = AsyncOpenAI(
             api_key=llm_settings.llm_api_key,
-            base_url=llm_settings.llm_base_url,
+            base_url=llm_settings.effective_llm_base_url,
             timeout=llm_settings.llm_timeout_s,
             max_retries=0,
         )

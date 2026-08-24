@@ -470,13 +470,20 @@ class McadAgentWorkflowV2:
                     "step_index": 30_000 + plan_step_index * 10 + render_index,
                     "gate_mode": policy["mode"],
                     "timeout_seconds": 120,
+                    # Burned into the render so the request is legible in the
+                    # image the inspector is looking at.
+                    "objective": plan["objective"],
                 },
                 suffix=(
                     f"render-visual-{current['step']['step_key']}-{render_index:02d}"
                 ),
                 execution=True,
             )
-            if rendered.get("outcome") == "indeterminate":
+            # A render step that carries an outcome has already settled the gate:
+            # either it failed to render, or it found stored validation evidence
+            # for this manifest and returned it. Either way there is nothing left
+            # to judge, and it has no `renders` to judge with.
+            if rendered.get("outcome") is not None:
                 visual = rendered
             else:
                 visual = await self._activity(
@@ -490,6 +497,13 @@ class McadAgentWorkflowV2:
                         "render_attempt_id": rendered["attempt_id"],
                         "render_step_id": rendered["step_id"],
                         "renders": rendered["renders"],
+                        "supplementary_renders": rendered.get(
+                            "supplementary_renders"
+                        )
+                        or [],
+                        # Measured in the worker; authoritative for the gate, so
+                        # the inspector never re-decides a dimension by eye.
+                        "geometry": rendered.get("geometry") or {},
                         "runtime_provenance": rendered["runtime_provenance"],
                         "objective": plan["objective"],
                         "design_brief": plan["design_brief"],
@@ -541,6 +555,14 @@ class McadAgentWorkflowV2:
                     "step_index": 40_000 + plan_step_index * 10 + visual_repairs,
                     "issues": judgment.get("issues") or (),
                     "suggestions": judgment.get("suggestions") or (),
+                    # The repair looks at the renders of the build it is fixing,
+                    # rather than working from a description of them.
+                    "renders": rendered.get("renders") or [],
+                    "supplementary_renders": rendered.get("supplementary_renders")
+                    or [],
+                    "geometry": rendered.get("geometry") or {},
+                    "objective": plan["objective"],
+                    "design_brief": plan["design_brief"],
                 },
                 suffix=repair_step_key,
             )

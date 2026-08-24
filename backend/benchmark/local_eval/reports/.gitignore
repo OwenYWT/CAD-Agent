@@ -1,0 +1,10 @@
+# Ad-hoc run output is ignored: every run is a fresh sample of a stochastic
+# pipeline, so tracking each one adds churn without adding information.
+eval-*
+
+# Baselines ARE tracked, including their renders. They are the reference
+# measurements this harness reproduces, and the four-view renders are the manual
+# spot-check the benchmark relies on for "right size, wrong shape" cases that no
+# automatic metric catches (see ../../README.md).
+!.gitignore
+!baseline-*

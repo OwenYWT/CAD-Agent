@@ -308,22 +308,57 @@ async def run_eval(
     return {"summary": summary, "cases": case_entries}
 
 
-def _select_cases(spec: str) -> list[dict]:
+_DIFFICULTY_ALIASES = {
+    "easy": "simple",
+    "simple": "simple",
+    "medium": "moderate",
+    "moderate": "moderate",
+    "hard": "complex",
+    "complex": "complex",
+}
+
+
+def _select_cases(spec: str, difficulty: str | None = None) -> list[dict]:
     if spec == "all":
-        return EVAL_CASES
-    ids = [s.strip() for s in spec.split(",") if s.strip()]
-    out = []
-    for i in ids:
-        if i not in EVAL_CASES_BY_ID:
-            raise SystemExit(f"unknown case id: {i}")
-        out.append(EVAL_CASES_BY_ID[i])
-    return out
+        selected = list(EVAL_CASES)
+    else:
+        ids = [s.strip() for s in spec.split(",") if s.strip()]
+        selected = []
+        for i in ids:
+            if i not in EVAL_CASES_BY_ID:
+                raise SystemExit(f"unknown case id: {i}")
+            selected.append(EVAL_CASES_BY_ID[i])
+
+    if difficulty:
+        wanted = {
+            _DIFFICULTY_ALIASES.get(item.strip().lower(), item.strip().lower())
+            for item in difficulty.split(",")
+            if item.strip()
+        }
+        unknown = wanted - set(_DIFFICULTY_ALIASES.values())
+        if unknown:
+            raise SystemExit(
+                f"unknown difficulty: {sorted(unknown)}; "
+                f"use simple/moderate/complex (or easy/medium/hard)"
+            )
+        selected = [case for case in selected if case["difficulty"] in wanted]
+        if not selected:
+            raise SystemExit(f"no cases match difficulty {sorted(wanted)}")
+    return selected
 
 
 def main():
     ap = argparse.ArgumentParser(description="CAD Agent standard eval harness.")
     ap.add_argument("--n", type=int, default=3, help="repeats per case (default 3)")
     ap.add_argument("--cases", default="all", help="'all' or comma-separated ids (P01,X01)")
+    ap.add_argument(
+        "--difficulty",
+        default=None,
+        help=(
+            "restrict to one or more difficulty tiers: simple, moderate, complex "
+            "(easy/medium/hard are accepted as aliases). Combines with --cases."
+        ),
+    )
     ap.add_argument("--no-rag", action="store_true", help="disable retriever (zero-shot)")
     ap.add_argument("--concurrency", type=int, default=4, help="parallel generations (default 4)")
     ap.add_argument("--no-render", action="store_true", help="skip render PNGs (faster)")
@@ -333,7 +368,7 @@ def main():
     if not settings.has_llm_credentials:
         raise SystemExit(f"LLM credentials missing: {settings.llm_credentials_error}")
 
-    cases = _select_cases(args.cases)
+    cases = _select_cases(args.cases, args.difficulty)
     sha = _git_sha()
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_id = f"eval_{ts}_{sha}"
@@ -352,9 +387,18 @@ def main():
         "concurrency": args.concurrency,
         "pipeline_deadline_s": settings.generate_deadline_s,
         "n_cases": len(cases),
+        "difficulty_filter": args.difficulty,
         "case_set_hash": case_set_hash(),
         "sandbox_runtime": settings.sandbox_runtime,
         "runtime_identity": _runtime_identity(),
+        # The visual gate changes results as much as the prompt does, so its
+        # configuration belongs in the metadata two reports are compared on.
+        "vision_model": settings.effective_vision_model,
+        "visual_refinement_enabled": settings.visual_refinement_enabled,
+        "visual_refinement_max_iterations": (
+            settings.visual_refinement_max_iterations
+        ),
+        "vision_render_px": settings.vision_render_px,
     }
 
     logger.info(f"Starting {run_id}: {len(cases)} cases x{args.n} "

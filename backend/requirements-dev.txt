@@ -1,3 +1,8 @@
 -r requirements.txt
 pytest>=8.3,<10
 pytest-asyncio>=0.24,<2
+# Boolean backend for trimesh. Only the visual-gate tests need it, to build a
+# test solid with real holes and pockets; without it those tests skip and the
+# hole-detection assertions never run. Not a runtime dependency: the product
+# cuts geometry with CadQuery inside the sandbox.
+manifold3d>=2.5,<4

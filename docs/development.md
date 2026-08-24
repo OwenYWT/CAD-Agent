@@ -75,6 +75,8 @@ SANDBOX_IMAGE=cad-agent-sandbox:dev
 
 Runtime 的 Python、CadQuery、build123d、OCP、Node 和上游 CAD Skills 版本由 `backend/sandbox/runtime-lock.json` 及固定依赖锁定。生产镜像必须使用 OCI digest；本地 tag 只允许开发环境。
 
+镜像里还包含 `backend/app/visual_refine/mesh_views.py` 和 `facts.py`——渲染与网格测量在 Worker 内完成，与控制平面用的是同一份文件。**改动这两个文件后必须重建镜像**，否则视觉门看到的仍是旧渲染。相关设计见[视觉精修](visual-refinement.md)。
+
 ## 启动开发服务
 
 ### 方式 A：完整 Compose

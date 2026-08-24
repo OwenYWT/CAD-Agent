@@ -61,6 +61,67 @@ def test_empty_vision_model_explicitly_reuses_primary_model():
     assert settings.effective_vision_model == "multimodal-primary"
 
 
+def test_dashscope_provider_resolves_key_and_default_endpoint():
+    settings = Settings(
+        _env_file=None,
+        llm_provider="dashscope",
+        dashscope_api_key="ds-key",
+    )
+
+    assert settings.llm_api_key == "ds-key"
+    assert settings.has_llm_credentials is True
+    assert (
+        settings.effective_llm_base_url
+        == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
+
+
+def test_dashscope_without_a_key_names_the_variable_to_set():
+    settings = Settings(_env_file=None, llm_provider="dashscope")
+
+    assert settings.has_llm_credentials is False
+    assert "DASHSCOPE_API_KEY" in settings.llm_credentials_error
+
+
+def test_a_stale_base_url_from_another_provider_is_not_used():
+    """A half-edited .env must not send one provider's key to another's host."""
+    settings = Settings(
+        _env_file=None,
+        llm_provider="dashscope",
+        dashscope_api_key="ds-key",
+        llm_base_url="https://api.moonshot.cn/v1",
+    )
+
+    assert (
+        settings.effective_llm_base_url
+        == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
+
+
+def test_a_deliberate_custom_endpoint_is_preserved():
+    """A gateway or proxy is not a stale value and must survive."""
+    settings = Settings(
+        _env_file=None,
+        llm_provider="dashscope",
+        dashscope_api_key="ds-key",
+        llm_base_url="https://llm-gateway.internal/v1",
+    )
+
+    assert settings.effective_llm_base_url == "https://llm-gateway.internal/v1"
+
+
+def test_openai_compatible_has_no_default_endpoint():
+    """It is a generic escape hatch, so its URL must stay whatever was set."""
+    settings = Settings(
+        _env_file=None,
+        llm_provider="openai_compatible",
+        dashscope_api_key="compat-key",
+        llm_base_url="https://compat.example/v1",
+    )
+
+    assert settings.effective_llm_base_url == "https://compat.example/v1"
+
+
 def test_openai_compatible_still_uses_dashscope_key():
     settings = Settings(
         _env_file=None,

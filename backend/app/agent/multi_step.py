@@ -308,10 +308,19 @@ class MultiStepExecutor:
                         geo_result = await geo_validator.validate(stl_path, expected_dims)
 
                         from app.models.schemas import ValidationResult, BoundingBox
+                        # Carry the full validator output. Dropping printable,
+                        # fits_build_volume and min_wall_thickness here (they are
+                        # all already computed on geo_result, and the single-step
+                        # path does propagate them) left every multi-step part
+                        # reporting printable=None to the UI and to the eval.
                         validation_data = ValidationResult(
                             is_watertight=geo_result.is_watertight,
                             bounding_box=BoundingBox(**geo_result.bounding_box),
                             volume=geo_result.volume,
+                            printable=geo_result.printable,
+                            fits_build_volume=geo_result.fits_build_volume,
+                            min_wall_thickness=geo_result.min_wall_thickness,
+                            print_warnings=geo_result.print_warnings,
                         )
 
                         if on_step:
@@ -323,90 +332,85 @@ class MultiStepExecutor:
                     except Exception as e:
                         logger.warning(f"Multi-step geometry validation skipped: {e}")
 
-                # Vision validation + auto-fix (max 3 rounds)
+                # VLM-in-the-loop refinement. The loop renders the built solid,
+                # measures it, has a vision model inspect the renders and repairs
+                # the source with those same renders in view, keeping only a
+                # candidate it can show is better than the one it started from.
                 if stl_path:
                     try:
-                        from app.rendering.renderer import CADRenderer
-                        from app.validation.vision_validator import VisionValidator
+                        from app.agent.visual_gate import refine_visually
 
-                        renderer = CADRenderer()
-                        vision_validator = VisionValidator()
-                        user_prompt = plan.description if plan else ""
-
-                        for vision_round in range(2):
+                        async def _progress(message: str) -> None:
                             if on_step:
-                                round_msg = f"正在进行视觉校验 ({vision_round + 1}/2)..." if vision_round > 0 else "正在进行视觉校验..."
-                                await _call_step(on_step, StepUpdate(
-                                    step="executing", message=round_msg
-                                ))
+                                await _call_step(
+                                    on_step,
+                                    StepUpdate(step="fixing_error", message=message),
+                                )
 
-                            renders_dir = final_result.work_dir / "renders"
-                            if renders_dir.exists():
-                                shutil.rmtree(renders_dir)
-                            stl_path = self._find_file_in_output(final_result.work_dir, ".stl")
-                            if not stl_path:
-                                break
-                            render_paths = renderer.render_stl(stl_path, renders_dir)
-                            if not render_paths:
-                                break
+                        if on_step:
+                            await _call_step(on_step, StepUpdate(
+                                step="executing", message="正在进行视觉校验..."
+                            ))
 
-                            vision_result = await vision_validator.validate(
-                                user_prompt, render_paths, final_code
+                        refinement = await refine_visually(
+                            source_code=final_code,
+                            objective=plan.description if plan else "",
+                            executor=self.executor,
+                            work_dir=final_result.work_dir / "visual-refine",
+                            plan=plan,
+                            model_path=stl_path,
+                            on_progress=_progress,
+                        )
+                        if refinement is not None:
+                            outcome, builder = refinement
+                            logger.info("Multi-step %s", outcome.summary_line())
+                            rebuilt = (
+                                builder.result_for(outcome.source_code)
+                                if outcome.changed
+                                else None
                             )
-                            # Stop on a confirmed match OR an indeterminate result (None);
-                            # only an EXPLICIT mismatch (is_match is False) drives a fix round.
-                            if vision_result.is_match is not False:
-                                if on_step and vision_round > 0 and vision_result.is_match:
-                                    await _call_step(on_step, StepUpdate(
-                                        step="executing", message="视觉校验通过"
-                                    ))
-                                break
-
-                            logger.info(f"Vision round {vision_round + 1} issues: {vision_result.issues}")
-                            if on_step:
-                                issues_str = "; ".join(vision_result.issues[:2])
-                                await _call_step(on_step, StepUpdate(
-                                    step="fixing_error",
-                                    message=f"视觉校验不通过 ({vision_round + 1}/2)，正在修复: {issues_str}",
-                                ))
-
-                            fixed_code = await self.code_gen.fix_visual_issues(
-                                final_code, vision_result.issues, vision_result.suggestions,
-                                on_step=on_step,
-                            )
-
-                            shutil.rmtree(final_result.work_dir, ignore_errors=True)
-                            retry_result = await self.executor.execute(fixed_code)
-
-                            if retry_result.success:
-                                final_code = fixed_code
-                                final_result = retry_result
+                            if rebuilt is not None and rebuilt.success:
+                                shutil.rmtree(
+                                    final_result.work_dir, ignore_errors=True
+                                )
+                                final_code = outcome.source_code
+                                final_result = rebuilt
                                 files = self._copy_output_files(
                                     final_result.work_dir, request_id, ["step", "stl"]
                                 )
                                 params = self._extract_params(final_code)
 
-                                new_stl = self._find_file_in_output(final_result.work_dir, ".stl")
+                                new_stl = self._find_file_in_output(
+                                    final_result.work_dir, ".stl"
+                                )
                                 if new_stl and geo_validator:
                                     try:
-                                        geo_result = await geo_validator.validate(new_stl, expected_dims)
+                                        geo_result = await geo_validator.validate(
+                                            new_stl, expected_dims
+                                        )
                                         validation_data = ValidationResult(
                                             is_watertight=geo_result.is_watertight,
-                                            bounding_box=BoundingBox(**geo_result.bounding_box),
+                                            bounding_box=BoundingBox(
+                                                **geo_result.bounding_box
+                                            ),
                                             volume=geo_result.volume,
+                                            printable=geo_result.printable,
+                                            fits_build_volume=(
+                                                geo_result.fits_build_volume
+                                            ),
+                                            min_wall_thickness=(
+                                                geo_result.min_wall_thickness
+                                            ),
+                                            print_warnings=geo_result.print_warnings,
                                         )
                                     except Exception:
                                         pass
-                            else:
-                                logger.warning(f"Vision fix round {vision_round + 1} failed: {retry_result.error_message}")
-                                shutil.rmtree(retry_result.work_dir, ignore_errors=True)
-                                if on_step:
-                                    await _call_step(on_step, StepUpdate(
-                                        step="executing", message=f"视觉修复第 {vision_round + 1} 轮未成功"
-                                    ))
-                                break
+                            if on_step and outcome.status == "passed":
+                                await _call_step(on_step, StepUpdate(
+                                    step="executing", message="视觉校验通过"
+                                ))
                     except Exception as e:
-                        logger.warning(f"Multi-step vision validation skipped: {e}")
+                        logger.warning(f"Multi-step visual refinement skipped: {e}")
 
                 return GenerateResponse(
                     request_id=request_id,

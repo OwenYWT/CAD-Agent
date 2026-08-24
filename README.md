@@ -7,6 +7,7 @@
 ## 当前能力
 
 - 自然语言生成、修改和执行 CadQuery / ezdxf 设计。
+- VLM 视觉精修：渲染带真实尺寸、毫米网格和剖视图的工程视图，测量网格事实，由视觉模型逐条评审，并带着渲染图修复代码；只保留可证明更优的候选。见 [视觉精修](docs/visual-refinement.md)。
 - Three.js 3D 预览、2D 预览、参数调整、DFM/几何检查和文件下载。
 - 装配零件清单、零件级修改、模型快照与版本差异；恢复旧版本会重新进入 Durable 审查流程。
 - 登录鉴权、邀请码、项目历史、任务进度、文件归属和 WebSocket 实时状态。
@@ -89,6 +90,7 @@ docker compose up -d --build
 
 - [文档索引](docs/README.md)
 - [本地开发与交接](docs/development.md)
+- [视觉精修（VLM-in-the-loop）](docs/visual-refinement.md)
 - [部署与上线检查](DEPLOY.md)
 - [评测基线](backend/benchmark/README.md)
 - [Fusion 360 文档入口](docs/README.md#fusion-360-connector)

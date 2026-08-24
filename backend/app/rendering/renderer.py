@@ -1,101 +1,96 @@
+"""Legacy renderer surface, now backed by the depth-buffered engine.
+
+``CADRenderer.render_stl`` keeps its signature because the orchestrator, the
+multi-step path, the eval harness and several tests call it. What changed is
+underneath: renders come from :mod:`app.visual_refine.mesh_views`, so they are
+opaque, framed on the subject and carry dimensions and a millimetre grid,
+instead of the semi-transparent unscaled matplotlib output that made through
+holes look like solid pillars.
+
+New code should prefer ``app.visual_refine.renderers.MeshViewRenderer``, which
+also returns measured geometry alongside the images.
+"""
+from __future__ import annotations
+
 import logging
-import os
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-_RENDER_CACHE_DIR = Path(tempfile.gettempdir()) / "cad-agent-render-cache"
-os.environ.setdefault("MPLCONFIGDIR", str(_RENDER_CACHE_DIR / "matplotlib"))
-os.environ.setdefault("XDG_CACHE_HOME", str(_RENDER_CACHE_DIR))
-
-import matplotlib
-import numpy as np
-import trimesh
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from app.visual_refine.mesh_views import (
+    SECTION_VIEW,
+    STANDARD_VIEWS,
+    ViewSpec,
+    render_views,
+)
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class CameraAngle:
+    """Kept for callers that build their own view list."""
+
     name: str
     elevation: float  # degrees
-    azimuth: float    # degrees
-    distance: float = 0  # 0 = auto-calculate
+    azimuth: float  # degrees
+    distance: float = 0  # unused; the engine frames each view on its extents
+
+    def to_view(self) -> ViewSpec:
+        for view in STANDARD_VIEWS + (SECTION_VIEW,):
+            if view.name == self.name:
+                return view
+        return ViewSpec(
+            name=self.name, elevation=self.elevation, azimuth=self.azimuth
+        )
 
 
 STANDARD_ANGLES = [
-    CameraAngle("front",     elevation=0,   azimuth=0),
-    CameraAngle("right",     elevation=0,   azimuth=90),
-    CameraAngle("top",       elevation=90,  azimuth=0),
-    CameraAngle("isometric", elevation=35,  azimuth=45),
+    CameraAngle(view.name, elevation=view.elevation, azimuth=view.azimuth)
+    for view in STANDARD_VIEWS
 ]
 
 
 class CADRenderer:
+    """Renders a model file to PNG views on disk."""
+
+    def __init__(self, *, width: int = 768, height: int = 768) -> None:
+        self._width = width
+        self._height = height
+
     def render_stl(
         self,
         stl_path: Path,
         output_dir: Path,
-        angles: list[CameraAngle] = STANDARD_ANGLES,
+        angles: list[CameraAngle] | None = None,
+        *,
+        include_section: bool = False,
+        footer: tuple[str, ...] = (),
     ) -> list[Path]:
-        output_dir.mkdir(parents=True, exist_ok=True)
+        """Render ``stl_path`` and return the written image paths.
 
-        mesh = trimesh.load(stl_path, force="mesh")
-        if not isinstance(mesh, trimesh.Trimesh) or mesh.is_empty:
-            raise ValueError(f"STL contains no renderable mesh: {stl_path}")
-        mesh.apply_translation(-mesh.centroid)
+        Produces the four standard views unless ``include_section`` asks for the
+        cutaway as well; callers of this legacy surface expect exactly four
+        files. The refinement loop uses ``MeshViewRenderer`` and opts into the
+        section view there.
 
-        result_paths = []
-        for angle in angles:
-            out_path = output_dir / f"{angle.name}.png"
-            figure = plt.figure(figsize=(5.12, 5.12), dpi=100, facecolor="#f8fafc")
-            try:
-                axis = figure.add_subplot(111, projection="3d")
-                triangles = mesh.vertices[mesh.faces]
-                collection = Poly3DCollection(
-                    triangles,
-                    facecolor="#b8c6d1",
-                    edgecolor="#52606d",
-                    linewidth=0.18,
-                    alpha=1.0,
-                )
-                axis.add_collection3d(collection)
-
-                bounds = mesh.bounds
-                center = bounds.mean(axis=0)
-                extents = np.maximum(bounds[1] - bounds[0], 1e-3)
-                radius = float(max(extents) * 0.58)
-                axis.set_xlim(center[0] - radius, center[0] + radius)
-                axis.set_ylim(center[1] - radius, center[1] + radius)
-                axis.set_zlim(center[2] - radius, center[2] + radius)
-                axis.set_box_aspect((1, 1, 1))
-                axis.set_proj_type("ortho")
-                axis.view_init(elev=angle.elevation, azim=angle.azimuth)
-                axis.set_axis_off()
-                figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
-                figure.savefig(
-                    out_path,
-                    format="png",
-                    dpi=100,
-                    facecolor=figure.get_facecolor(),
-                )
-                if out_path.stat().st_size > 100:
-                    result_paths.append(out_path)
-                else:
-                    out_path.unlink(missing_ok=True)
-            except Exception as exc:
-                out_path.unlink(missing_ok=True)
-                logger.warning(
-                    "CAD render failed for %s view of %s: %s",
-                    angle.name,
-                    stl_path,
-                    exc,
-                )
-            finally:
-                plt.close(figure)
-
-        return result_paths
+        Returns an empty list rather than raising when the mesh cannot be
+        rendered: callers treat "no renders" as an honest indeterminate visual
+        result, and a render failure must not take down a generation that
+        otherwise succeeded.
+        """
+        selected = [angle.to_view() for angle in (angles or STANDARD_ANGLES)]
+        if include_section:
+            selected.append(SECTION_VIEW)
+        try:
+            rendered = render_views(
+                Path(stl_path),
+                Path(output_dir),
+                views=selected,
+                width=self._width,
+                height=self._height,
+                footer=footer,
+            )
+        except Exception as exc:
+            logger.warning("CAD render failed for %s: %s", stl_path, exc)
+            return []
+        return [view.path for view in rendered]

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import shutil
 import socket
@@ -26,6 +27,7 @@ from app.agent.durable_repair import (
 )
 from app.agent.orchestrator import Orchestrator
 from app.api.error_messages import public_generation_error
+from app.config import settings
 from app.db import tenant_transaction
 from app.dfm.models import StepAnalysisResult
 from app.dfm.step_analyzer_script import STEP_ANALYSIS_SCRIPT
@@ -107,6 +109,9 @@ from app.workflows.temporal import (
 )
 
 
+_ACTIVITY_LOG = logging.getLogger(__name__)
+
+
 def _uuid(payload: dict[str, Any], key: str) -> UUID:
     return UUID(str(payload[key]))
 
@@ -120,6 +125,38 @@ def _agent_v2_request(payload: dict[str, Any]) -> McadAgentWorkflowV2Request:
 
 def _worker_id() -> str:
     return f"temporal:{socket.gethostname()}:{os.getpid()}"
+
+
+async def _download_optional_renders(
+    declarations: Any, temp_dir: Path, *, prefix: str = ""
+) -> tuple[Path, ...]:
+    """Fetch renders whose absence must not fail the caller.
+
+    Used for the supplementary section view, and for handing the repair step the
+    renders of the build it is fixing. Neither is part of the four-render durable
+    contract, so any failure here degrades to "one fewer picture" rather than
+    failing a gate. A mismatched hash is still dropped: unverified bytes never
+    reach the vision model.
+    """
+    paths: list[Path] = []
+    for item in declarations or ():
+        try:
+            declaration = dict(item)
+            filename = str(declaration["filename"])
+            if filename != Path(filename).name:
+                continue
+            path = temp_dir / f"{prefix}{filename}"
+            downloaded = await download_object(str(declaration["object_key"]), path)
+            if (
+                downloaded["sha256"] != str(declaration["sha256"])
+                or downloaded["size_bytes"] != int(declaration["size_bytes"])
+            ):
+                path.unlink(missing_ok=True)
+                continue
+            paths.append(path)
+        except Exception:
+            _ACTIVITY_LOG.warning("optional render was skipped", exc_info=True)
+    return tuple(paths)
 
 
 _MODELING_MEDIA_TYPES = {
@@ -2685,11 +2722,20 @@ class McadWorkflowActivities:
                     "report": report.durable_evidence(),
                     "attempt_id": str(attempt_id),
                 }
+            # The objective travels into the render so the request is legible in
+            # the image itself, and the section view is requested explicitly
+            # because the worker may only emit declared artifacts.
+            render_px = int(settings.vision_render_px)
             task = {
                 "schema_version": "mcad-capability-task.v1",
                 "capability": "visual",
                 "operation": "render",
-                "params": {"width": 512, "height": 512},
+                "params": {
+                    "width": render_px,
+                    "height": render_px,
+                    "include_section": True,
+                    "objective": str(payload.get("objective") or ""),
+                },
                 "inputs": {"model": declaration.filename},
             }
             source_code = json.dumps(
@@ -2723,11 +2769,21 @@ class McadWorkflowActivities:
                         for view in ("front", "right", "top", "isometric")
                     ]
                     + [
+                        # The section view is supplementary evidence. Declaring it
+                        # required would let an optional cutaway reject an
+                        # otherwise complete four-view render and turn a healthy
+                        # gate indeterminate.
+                        OutputDeclaration(
+                            name="section",
+                            media_type="image/png",
+                            required=False,
+                            max_size_bytes=4 * 1024 * 1024,
+                        ),
                         OutputDeclaration(
                             name="capability-result",
                             media_type="application/json",
                             max_size_bytes=512 * 1024,
-                        )
+                        ),
                     ]
                 ),
                 runtime=RuntimeRequirement(
@@ -2792,12 +2848,14 @@ class McadWorkflowActivities:
                 }
             metadata_path = outcome.files.get("capability-result")
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            view_facts = {
+            render_result = dict(metadata["result"])
+            view_facts = {item["view"]: item for item in render_result["views"]}
+            supplementary_facts = {
                 item["view"]: item
-                for item in dict(metadata["result"])["views"]
+                for item in render_result.get("supplementary_views") or ()
             }
-            renders: list[dict[str, Any]] = []
-            for view in ("front", "right", "top", "isometric"):
+
+            async def _upload_render(view: str, fact: dict[str, Any]) -> dict[str, Any]:
                 path = outcome.files[view]
                 declared = next(
                     item for item in outcome.result.outputs if item.name == path.name
@@ -2817,14 +2875,29 @@ class McadWorkflowActivities:
                         type="agent_visual_render_integrity_failed",
                         non_retryable=True,
                     )
-                fact = dict(view_facts[view])
-                fact["object_key"] = object_key
+                return {**fact, "object_key": object_key}
+
+            renders: list[dict[str, Any]] = []
+            for view in ("front", "right", "top", "isometric"):
+                stored = await _upload_render(view, dict(view_facts[view]))
                 renders.append(
-                    VisualRenderEvidence.model_validate(fact).model_dump(mode="json")
+                    VisualRenderEvidence.model_validate(stored).model_dump(mode="json")
                 )
+
+            # The section view is supplementary evidence, not part of the
+            # four-render contract, so it is kept outside `renders` and is
+            # optional at every point downstream.
+            supplementary: list[dict[str, Any]] = []
+            for view, fact in supplementary_facts.items():
+                if view not in outcome.files:
+                    continue
+                supplementary.append(await _upload_render(view, dict(fact)))
+
             result_payload = {
                 "status": "rendered",
                 "renders": renders,
+                "supplementary_renders": supplementary,
+                "geometry": render_result.get("geometry") or {},
                 "runtime_provenance": runtime_provenance,
                 "attempt_id": str(attempt_id),
                 "step_id": str(step_id),
@@ -2906,12 +2979,24 @@ class McadWorkflowActivities:
                 ):
                     raise ValueError("visual render object integrity mismatch")
                 paths.append(path)
+
+            # Supplementary section views are best-effort: they sharpen the
+            # judgement of cavities and blind holes, and a missing one must never
+            # turn a renderable candidate into an indeterminate gate.
+            extra_paths = await _download_optional_renders(
+                payload.get("supplementary_renders") or (),
+                temp_dir,
+                prefix="supplementary-",
+            )
+
             report = await self.durable_visual.report(
                 objective=str(payload["objective"]),
                 design_brief=dict(payload["design_brief"]),
                 render_paths=tuple(paths),
                 renders=render_models,
                 runtime_provenance=dict(payload["runtime_provenance"]),
+                geometry=dict(payload.get("geometry") or {}),
+                supplementary_render_paths=extra_paths,
             )
             evidence = report.durable_evidence()
             async with tenant_transaction(
@@ -2997,13 +3082,26 @@ class McadWorkflowActivities:
                 step_index=int(payload["step_index"]),
                 kind="agent_visual_repair",
             )
+        # The repair sees the renders of the build it is fixing. Without them the
+        # model is patching code from a written description of a picture it was
+        # never shown, which is where the old repair path lost most of its edits.
+        repair_dir = Path(tempfile.mkdtemp(prefix="agent_visual_repair_"))
         try:
+            render_paths = await _download_optional_renders(
+                list(payload.get("renders") or ())
+                + list(payload.get("supplementary_renders") or ()),
+                repair_dir,
+            )
             repaired, provenance = await self.durable_visual.repair(
                 source_code=str(source["source_code"]),
                 issues=tuple(str(item) for item in payload.get("issues") or ()),
                 suggestions=tuple(
                     str(item) for item in payload.get("suggestions") or ()
                 ),
+                objective=str(payload.get("objective") or ""),
+                design_brief=dict(payload.get("design_brief") or {}),
+                render_paths=render_paths,
+                geometry=dict(payload.get("geometry") or {}),
             )
             async with tenant_transaction(
                 request.tenant_id,
@@ -3065,6 +3163,8 @@ class McadWorkflowActivities:
                 error_message=str(exc)[:4000],
             )
             raise
+        finally:
+            shutil.rmtree(repair_dir, ignore_errors=True)
 
     @activity.defn(name="agent_v2.validate_dfm")
     async def agent_validate_dfm(self, payload: dict[str, Any]) -> dict[str, Any]:

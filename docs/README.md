@@ -12,6 +12,12 @@
 | [`CLAUDE.md`](../CLAUDE.md) | 代码代理 | 本仓库工作边界、验证命令和文档维护规则 |
 | [`backend/benchmark/README.md`](../backend/benchmark/README.md) | 模型/生成链路维护者 | 真实 LLM + sandbox 的手动评测基线 |
 
+## 生成质量
+
+| 文档 | 作用 |
+| --- | --- |
+| [`visual-refinement.md`](visual-refinement.md) | VLM 视觉精修：可测量渲染、测量与观察的分工、单调收敛的修复循环、分层边界与配置 |
+
 ## MCAD 架构验收
 
 | 文档 | 作用 |

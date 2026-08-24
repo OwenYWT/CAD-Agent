@@ -150,7 +150,7 @@ class CadQueryAnalyzer:
             )
 
         # Also check show_object inside loops
-        if re.search(r'for\s+.*:.*\n(?:\s+.*\n)*?\s+show_object\s*\(', code, re.MULTILINE):
+        if self._show_object_inside_loop(code):
             warnings.append(
                 "show_object() 出现在循环体内，这会输出多个独立实体。"
                 "应在循环体内用 result = result.union(feature) 合并，"
@@ -158,6 +158,36 @@ class CadQueryAnalyzer:
             )
 
         return warnings
+
+    @staticmethod
+    def _show_object_inside_loop(code: str) -> bool:
+        """Report whether any show_object() call sits inside a loop body.
+
+        This replaces a regex -- ``for\\s+.*:.*\\n(?:\\s+.*\\n)*?\\s+show_object\\s*\\(``
+        -- whose nested quantifiers ranged over overlapping character classes
+        (``\\s`` and ``.`` both match a space). On generated code containing a
+        loop with no later show_object it backtracked exponentially: measured at
+        1s for a 12-line loop body, 17s at 14 lines, and roughly 16x per two
+        further lines. Because analyze_code() runs on every generation, a single
+        such part pinned the event loop and stalled the whole worker.
+
+        Indentation tracking is exact for the shapes that matter here and is
+        linear in the length of the code.
+        """
+        loop_indents: list[int] = []
+        for line in code.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            indent = len(line) - len(line.lstrip())
+            # Leaving a block closes every loop at or deeper than this level.
+            while loop_indents and indent <= loop_indents[-1]:
+                loop_indents.pop()
+            if loop_indents and re.search(r"\bshow_object\s*\(", stripped):
+                return True
+            if re.match(r"(?:for|while)\b.*:", stripped):
+                loop_indents.append(indent)
+        return False
 
 
 # Singleton

@@ -385,8 +385,12 @@ def _visual_render(task: dict[str, Any]) -> tuple[dict[str, Path], dict[str, Any
     outputs, report = render_four_views(
         source,
         OUTPUT_ROOT,
-        width=int(params.get("width", 512)),
-        height=int(params.get("height", 512)),
+        width=int(params.get("width", 768)),
+        height=int(params.get("height", 768)),
+        # The caller declares whether it also accepts the section view, so a
+        # worker never emits an artifact the execution contract did not declare.
+        include_section=bool(params.get("include_section", False)),
+        objective=str(params.get("objective", "")),
     )
     return outputs, {
         "exit_code": 0,

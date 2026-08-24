@@ -1,0 +1,1398 @@
+{
+  "runs": {
+    "P05": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": true,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": 100,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 2939,
+        "wall_time_ms": 27892,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P03": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": true,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 3043,
+        "wall_time_ms": 30404,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P02": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": true,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2264,
+        "wall_time_ms": 49411,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P06": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 2515,
+        "wall_time_ms": 21887,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P01": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": true,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 4114,
+        "wall_time_ms": 63571,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P08": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": true,
+        "part_type_match": null,
+        "feature_match": false,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 2428,
+        "wall_time_ms": 19822,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P04": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 3,
+        "one_shot": false,
+        "exec_time_ms": 2149,
+        "wall_time_ms": 74460,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P09": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 2642,
+        "wall_time_ms": 19090,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P07": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": false,
+        "printable": false,
+        "dim_match": true,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2444,
+        "wall_time_ms": 53256,
+        "error": null,
+        "passed": false,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P12": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 2438,
+        "wall_time_ms": 20295,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P14": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 2732,
+        "wall_time_ms": 40293,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P10": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": true,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2462,
+        "wall_time_ms": 80468,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P11": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": false,
+        "printable": false,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2373,
+        "wall_time_ms": 80016,
+        "error": null,
+        "passed": false,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P13": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 4,
+        "one_shot": false,
+        "exec_time_ms": 2823,
+        "wall_time_ms": 87145,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P17": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": false,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 2505,
+        "wall_time_ms": 32850,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P15": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": false,
+        "printable": false,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2536,
+        "wall_time_ms": 98059,
+        "error": null,
+        "passed": false,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P16": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2366,
+        "wall_time_ms": 78098,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P18": [
+      {
+        "executed": false,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": null,
+        "printable": null,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 9,
+        "one_shot": false,
+        "exec_time_ms": 2428,
+        "wall_time_ms": 62392,
+        "error": "{'type': 'StdFail_NotDone', 'message': 'BRep_API: command not done'}",
+        "passed": false,
+        "artifact_gate": {
+          "stl_readable": false,
+          "geometry_nonempty": false,
+          "step_readable": false,
+          "rendered_views": 0,
+          "passed": false
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P19": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 2641,
+        "wall_time_ms": 52821,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P23": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 3108,
+        "wall_time_ms": 44830,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P21": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": false,
+        "printable": false,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2696,
+        "wall_time_ms": 86669,
+        "error": null,
+        "passed": false,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P20": [
+      {
+        "executed": true,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2444,
+        "wall_time_ms": 112757,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P24": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 3053,
+        "wall_time_ms": 94811,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P25": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2494,
+        "wall_time_ms": 74236,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P22": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2924,
+        "wall_time_ms": 142665,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P26": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 2244,
+        "wall_time_ms": 67791,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P27": [
+      {
+        "executed": false,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": null,
+        "printable": null,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 7,
+        "one_shot": false,
+        "exec_time_ms": 2307,
+        "wall_time_ms": 72314,
+        "error": "{'type': 'StdFail_NotDone', 'message': 'BRep_API: command not done'}",
+        "passed": false,
+        "artifact_gate": {
+          "stl_readable": false,
+          "geometry_nonempty": false,
+          "step_readable": false,
+          "rendered_views": 0,
+          "passed": false
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P28": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 3,
+        "one_shot": false,
+        "exec_time_ms": 2371,
+        "wall_time_ms": 92983,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P29": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2295,
+        "wall_time_ms": 78006,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P31": [
+      {
+        "executed": true,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2776,
+        "wall_time_ms": 69957,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "P30": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2538,
+        "wall_time_ms": 99734,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P32": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": true,
+        "part_type_match": null,
+        "feature_match": false,
+        "dfm_score": null,
+        "attempts": 7,
+        "one_shot": false,
+        "exec_time_ms": 2753,
+        "wall_time_ms": 106533,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "P34": [
+      {
+        "executed": true,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 6,
+        "one_shot": false,
+        "exec_time_ms": 2600,
+        "wall_time_ms": 78996,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "P33": [
+      {
+        "executed": true,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 4,
+        "one_shot": false,
+        "exec_time_ms": 2893,
+        "wall_time_ms": 90976,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "P35": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 3420,
+        "wall_time_ms": 90563,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "P36": [
+      {
+        "executed": true,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2890,
+        "wall_time_ms": 89267,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "M02": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 2320,
+        "wall_time_ms": 21085,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P38": [
+      {
+        "executed": true,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 6,
+        "one_shot": false,
+        "exec_time_ms": 2909,
+        "wall_time_ms": 62679,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "P37": [
+      {
+        "executed": true,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 6,
+        "one_shot": false,
+        "exec_time_ms": 2806,
+        "wall_time_ms": 167159,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "M01": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": true,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 2548,
+        "wall_time_ms": 132205,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "M04": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 2233,
+        "wall_time_ms": 91575,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "X01": [
+      {
+        "executed": true,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": null,
+        "printable": null,
+        "dim_match": null,
+        "part_type_match": true,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 2221,
+        "wall_time_ms": 14524,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "dxf_readable": true,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "2d"
+      }
+    ],
+    "X02": [
+      {
+        "executed": true,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": null,
+        "printable": null,
+        "dim_match": null,
+        "part_type_match": true,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 2778,
+        "wall_time_ms": 16827,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "dxf_readable": true,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "2d"
+      }
+    ],
+    "M03": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2787,
+        "wall_time_ms": 131914,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "M06": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 2611,
+        "wall_time_ms": 39271,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "X05": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": true,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 4602,
+        "wall_time_ms": 63487,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "loft"
+      }
+    ],
+    "X06": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": true,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 3032,
+        "wall_time_ms": 77955,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "assembly"
+      }
+    ],
+    "X04": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": false,
+        "printable": false,
+        "dim_match": null,
+        "part_type_match": true,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 3767,
+        "wall_time_ms": 96358,
+        "error": null,
+        "passed": false,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "sweep"
+      }
+    ],
+    "M05": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 3603,
+        "wall_time_ms": 126710,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "X03": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": true,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 3031,
+        "wall_time_ms": 33229,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "revolve"
+      }
+    ]
+  }
+}

@@ -1,0 +1,74 @@
+﻿cases: 50   repeats: 1
+model: qwen3-coder-plus   vision: qwen3-vl-plus
+visual refinement: True (max 3 iterations)
+deadline per generation: 900.0s
+------------------------------------------------------------------------------
+  [  1/50]  P02 simple    PASS  exec=True print=True dim=True 84s 
+  [  2/50]  P03 simple    PASS  exec=True print=True dim=True 121s 
+  [  3/50]  P01 simple    PASS  exec=True print=True dim=True 124s 
+  [  4/50]  P04 simple    PASS  exec=True print=True dim=None 137s 
+  [  5/50]  P05 simple    PASS  exec=True print=True dim=True 82s 
+  [  6/50]  P08 simple    PASS  exec=True print=True dim=True 34s 
+  [  7/50]  P06 simple    PASS  exec=True print=True dim=None 83s 
+  [  8/50]  P07 simple    PASS  exec=True print=True dim=True 101s 
+  [  9/50]  P11 simple    PASS  exec=True print=True dim=None 43s 
+  [ 10/50]  P09 simple    PASS  exec=True print=True dim=None 135s 
+  [ 11/50]  P13 simple    PASS  exec=True print=True dim=None 93s 
+  [ 12/50]  P12 simple    PASS  exec=True print=True dim=None 123s 
+  [ 13/50]  P14 simple    PASS  exec=True print=True dim=None 77s 
+  [ 14/50]  P10 simple    PASS  exec=True print=True dim=True 331s 
+  [ 15/50]  P15 moderate  PASS  exec=True print=True dim=None 149s 
+  [ 16/50]  P17 moderate  PASS  exec=True print=True dim=None 143s 
+  [ 17/50]  P19 moderate  PASS  exec=True print=True dim=None 163s 
+  [ 18/50]  P20 moderate  PASS  exec=True print=True dim=None 188s 
+  [ 19/50]  P16 moderate  PASS  exec=True print=True dim=None 389s 
+  [ 20/50]  P21 moderate  PASS  exec=True print=True dim=None 145s 
+  [ 21/50]  P18 moderate  fail  exec=True print=True dim=False 429s 
+  [ 22/50]  P22 moderate  PASS  exec=True print=True dim=None 228s 
+  [ 23/50]  P23 moderate  PASS  exec=True print=True dim=None 226s 
+  [ 24/50]  P24 moderate  PASS  exec=True print=True dim=None 187s 
+  [ 25/50]  P25 moderate  PASS  exec=True print=True dim=None 150s 
+  [ 26/50]  P26 moderate  fail  exec=True print=False dim=None 202s 
+  [ 27/50]  P29 moderate  PASS  exec=True print=True dim=None 108s 
+  [ 28/50]  P27 moderate  PASS  exec=True print=True dim=None 233s 
+  [ 29/50]  P28 moderate  PASS  exec=True print=True dim=None 276s 
+  [ 30/50]  P30 moderate  PASS  exec=True print=True dim=None 211s 
+  [ 31/50]  P32 complex   PASS  exec=True print=True dim=True 163s 
+  [ 32/50]  P31 complex   PASS  exec=True print=True dim=None 230s 
+  [ 33/50]  P33 complex   PASS  exec=True print=True dim=None 278s 
+  [ 34/50]  P34 complex   PASS  exec=True print=True dim=None 236s 
+  [ 35/50]  P38 complex   PASS  exec=True print=True dim=None 152s 
+  [ 36/50]  P35 complex   PASS  exec=True print=True dim=None 412s 
+  [ 37/50]  P37 complex   PASS  exec=True print=True dim=None 234s 
+  [ 38/50]  M01 moderate  PASS  exec=True print=True dim=True 68s 
+  [ 39/50]  M02 moderate  PASS  exec=True print=True dim=None 80s 
+  [ 40/50]  M04 moderate  PASS  exec=True print=True dim=None 137s 
+  [ 41/50]  M05 complex   fail  exec=True print=False dim=None 125s 
+  [ 42/50]  P36 complex   PASS  exec=True print=True dim=None 585s 
+  [ 43/50]  X01 moderate  PASS  exec=True print=None dim=None 22s 
+  [ 44/50]  X02 moderate  PASS  exec=True print=None dim=None 24s 
+  [ 45/50]  M03 moderate  PASS  exec=True print=True dim=None 275s 
+  [ 46/50]  X03 moderate  PASS  exec=True print=True dim=None 70s 
+  [ 47/50]  M06 moderate  PASS  exec=True print=True dim=None 142s 
+  [ 48/50]  X05 complex   PASS  exec=True print=True dim=None 95s 
+  [ 49/50]  X04 complex   fail  exec=True print=False dim=None 182s 
+  [ 50/50]  X06 complex   PASS  exec=True print=True dim=None 144s 
+
+==============================================================================
+OVERALL pass@1 : 92.0%  (46/50)
+==============================================================================
+  simple   : 100.0%  (14/14)
+  moderate : 91.7%  (22/24)
+  complex  : 83.3%  (10/12)
+
+  executed        : 100.0%
+  printable       : 93.8%
+  dim_match       : 90.0%
+
+FAILING CASES (4):
+   P18 moderate  dims off
+   P26 moderate  printable=False
+   M05 complex   printable=False
+   X04 complex   printable=False
+
+report written to E:\programming\CAD-Agent\backend\benchmark\local_eval\reports\eval-20260824-170356-dashscope-visual.json

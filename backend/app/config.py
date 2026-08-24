@@ -4,17 +4,64 @@ from urllib.parse import urlsplit
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
+# Default OpenAI-compatible endpoint per provider name, so switching provider
+# does not also require restating LLM_BASE_URL. A provider absent from this
+# table (notably "openai_compatible") has no default and must set the URL.
+_PROVIDER_BASE_URLS: dict[str, str] = {
+    "moonshot": "https://api.moonshot.cn/v1",
+    "openai": "https://api.openai.com/v1",
+    "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+}
+
+
+def _points_elsewhere(configured: str, default: str) -> bool:
+    """True when a configured base URL belongs to a different known provider.
+
+    Guards the common half-edited .env: LLM_PROVIDER is switched but the stale
+    LLM_BASE_URL from the previous provider is left behind, which otherwise
+    sends every request to the wrong host with the new provider's key.
+    """
+    host = (urlsplit(configured).hostname or "").lower()
+    if not host:
+        return True
+    if host == (urlsplit(default).hostname or "").lower():
+        return False
+    return any(
+        host == (urlsplit(known).hostname or "").lower()
+        for known in _PROVIDER_BASE_URLS.values()
+    )
+
 
 class Settings(BaseSettings):
     app_environment: str = "development"
     dashscope_api_key: str | None = None
     moonshot_api_key: str | None = None
+    # Used when LLM_PROVIDER=openai. Kept as its own field rather than reusing
+    # the dashscope slot so a deployment can hold several provider keys at once
+    # and switch with one variable.
+    openai_api_key: str | None = None
     llm_provider: str = "moonshot"
     llm_base_url: str = "https://api.moonshot.cn/v1"
     llm_model: str = "kimi-k2.7-code"
     # Provider model dedicated to image inputs. Azure or other compatible
     # deployments must override this with their own vision-capable deployment.
     vision_model: str = "moonshot-v1-32k-vision-preview"
+
+    # --- VLM-in-the-loop refinement (app.visual_refine) ---
+    # Renders the produced solid, measures it, has a vision model inspect it and
+    # feeds those renders back into the repair step. Disable to fall back to the
+    # plain single-shot visual gate.
+    visual_refinement_enabled: bool = True
+    # How many build -> render -> critique -> patch turns one generation may
+    # spend. Each turn costs one sandbox execution and one vision call.
+    visual_refinement_max_iterations: int = Field(default=3, ge=1, le=6)
+    # Render size handed to the vision model. Below ~640 px the burned-in
+    # dimension text stops being legible to the model and the measurements that
+    # make the gate accurate are wasted.
+    vision_render_px: int = Field(default=768, ge=384, le=1536)
+    vision_render_supersample: int = Field(default=2, ge=1, le=4)
+    vision_critic_max_tokens: int = Field(default=2048, ge=512, le=16384)
+    vision_patcher_max_tokens: int = Field(default=8192, ge=1024, le=32768)
     llm_reasoning_effort: str | None = None
     planner_max_tokens: int = Field(default=8192, ge=2048, le=32768)
     azure_openai_endpoint: str | None = None
@@ -185,7 +232,29 @@ class Settings(BaseSettings):
     def llm_api_key(self) -> str | None:
         if self.normalized_llm_provider == "moonshot":
             return self.moonshot_api_key
+        if self.normalized_llm_provider == "openai":
+            return self.openai_api_key
+        # dashscope and openai_compatible both read DASHSCOPE_API_KEY, which is
+        # also the historical fallback for any other compatible endpoint.
         return self.dashscope_api_key
+
+    @property
+    def effective_llm_base_url(self) -> str:
+        """Base URL for the active provider.
+
+        LLM_BASE_URL still wins when a deployment sets it (a gateway, a proxy, a
+        compatible endpoint). It just no longer has to be restated when the only
+        thing that changed is the provider name. The default is only substituted
+        when nothing is configured or when the value still points at a different
+        provider's endpoint, which is what a half-edited .env looks like.
+        """
+        configured = self.llm_base_url.strip()
+        default = _PROVIDER_BASE_URLS.get(self.normalized_llm_provider)
+        if default is None:
+            return configured
+        if not configured or _points_elsewhere(configured, default):
+            return default
+        return configured
 
     @property
     def llm_credentials_error(self) -> str:
@@ -193,7 +262,11 @@ class Settings(BaseSettings):
             return "AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY are required for Azure OpenAI operations"
         if self.normalized_llm_provider == "moonshot":
             return "MOONSHOT_API_KEY is required when LLM_PROVIDER=moonshot"
-        return "LLM credentials are required: set Azure OpenAI variables when LLM_PROVIDER=azure, MOONSHOT_API_KEY when LLM_PROVIDER=moonshot, or DASHSCOPE_API_KEY when LLM_PROVIDER=openai_compatible"
+        if self.normalized_llm_provider == "openai":
+            return "OPENAI_API_KEY is required when LLM_PROVIDER=openai"
+        if self.normalized_llm_provider == "dashscope":
+            return "DASHSCOPE_API_KEY is required when LLM_PROVIDER=dashscope"
+        return "LLM credentials are required: set Azure OpenAI variables when LLM_PROVIDER=azure, MOONSHOT_API_KEY when LLM_PROVIDER=moonshot, OPENAI_API_KEY when LLM_PROVIDER=openai, or DASHSCOPE_API_KEY when LLM_PROVIDER=dashscope or openai_compatible"
 
     @property
     def has_onshape_credentials(self) -> bool:

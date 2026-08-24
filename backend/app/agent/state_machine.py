@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import shutil
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from app.agent.failure_taxonomy import FixPath, classify
 from app.agent.run_steps import ensure_timeline_fields
 from app.agent.step_runner import decide_next_step
+from app.agent.visual_gate import refine_visually
 from app.models.schemas import BoundingBox, GenerateResponse, RepairStep, StepUpdate, ValidationResult
 from app.sandbox.code_analyzer import analyze_code
 from app.sandbox.code_filter import validate_code
@@ -35,6 +38,65 @@ class ExecutionTraceItem:
     attempt: int
     message: str
     detail: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class _RefinedBuild:
+    """A candidate the visual loop proved better, re-derived for publication."""
+
+    result: Any
+    files: dict[str, str]
+    params: dict[str, Any]
+    validation: Any | None
+    inspect_report: Any | None
+
+
+async def _already_repaired(source_code: str) -> str:
+    """Adapt an in-hand result to the awaitable ``_persist_repair_step`` expects.
+
+    The refinement loop has already produced and validated the repaired source,
+    so the persisted repair step records it rather than generating it again.
+    """
+    return source_code
+
+
+class _RetryAfterVisualRepair:
+    """Sentinel: the visual gate rewrote the code and wants a fresh attempt."""
+
+    __slots__ = ()
+
+
+_RETRY_AFTER_VISUAL_REPAIR = _RetryAfterVisualRepair()
+
+
+async def _validate_visually(
+    validator: Any,
+    *,
+    user_prompt: str,
+    render_paths: Any,
+    code: str,
+    model_path: Any = None,
+    plan: Any = None,
+) -> Any:
+    """Call a visual validator, offering the mesh only if it accepts one.
+
+    The real validator measures the mesh when handed one, which is what lets it
+    settle size and hole count instead of asking a model to read them off a
+    picture. Test doubles and any third-party validator implement only the
+    original three-argument call, so the extra evidence is offered by inspecting
+    the signature rather than by catching TypeError -- which would also swallow a
+    genuine TypeError raised inside the validator.
+    """
+    extra: dict[str, Any] = {}
+    try:
+        accepted = inspect.signature(validator.validate).parameters
+        if "model_path" in accepted:
+            extra["model_path"] = model_path
+        if "plan" in accepted:
+            extra["plan"] = plan
+    except (TypeError, ValueError):  # builtins and C callables have no signature
+        pass
+    return await validator.validate(user_prompt, render_paths, code, **extra)
 
 
 @dataclass
@@ -166,6 +228,248 @@ class ExecutionStateMachine:
             },
         )
         return repaired
+
+    async def _run_visual_gate(
+        self,
+        *,
+        result: Any,
+        stl_path: Any,
+        inspect_report: Any,
+        attempt: int,
+    ) -> "_RefinedBuild | _RetryAfterVisualRepair | None":
+        """Inspect the produced model and act on what the inspection found.
+
+        Two modes share this one entry point. The primary mode is the VLM
+        refinement loop, which renders, measures, critiques and repairs across
+        several candidates and returns the best it can prove. When refinement is
+        not configured -- no vision credentials, or it is switched off -- the
+        gate degrades to a single-shot judgement over the injected renderer and
+        validator instead of silently skipping inspection altogether.
+        """
+        await self._emit_step("executing", "正在运行视觉校验...")
+        self._trace(ExecutionPhase.VISION_VALIDATE, "正在运行视觉校验")
+
+        async def _progress(message: str) -> None:
+            await self._emit_step("fixing_error", message)
+
+        try:
+            refinement = await refine_visually(
+                source_code=self.code,
+                objective=self.user_prompt or (self.plan.description if self.plan else ""),
+                executor=self.orchestrator.executor,
+                work_dir=Path(result.work_dir) / "visual-refine",
+                plan=self.plan,
+                model_path=Path(stl_path),
+                on_progress=_progress,
+            )
+        except Exception as exc:  # pragma: no cover - refinement is best-effort
+            logger.warning("Visual refinement failed: %s", exc)
+            refinement = None
+
+        if refinement is None:
+            return await self._judge_visually_once(
+                result=result,
+                stl_path=stl_path,
+                inspect_report=inspect_report,
+                attempt=attempt,
+            )
+
+        outcome, builder = refinement
+        self._trace(
+            ExecutionPhase.VISION_VALIDATE,
+            outcome.summary_line(),
+            detail={"status": outcome.status, "iterations": outcome.iterations},
+        )
+
+        if outcome.status == "indeterminate":
+            reason = (
+                outcome.critique.indeterminate_reason
+                if outcome.critique is not None
+                else "Vision validation was indeterminate"
+            )
+            self.orchestrator._add_indeterminate_vision_check(inspect_report, reason)
+            return None
+
+        # A defect the loop could not clear is still a finding. Reporting it as a
+        # warning keeps the result honest instead of shipping a known-wrong model
+        # with a clean inspect report.
+        if outcome.critique is not None and outcome.critique.is_match is False:
+            self.orchestrator._add_indeterminate_vision_check(
+                inspect_report,
+                "视觉校验未通过: "
+                + (
+                    "; ".join(
+                        check.observed or check.requirement
+                        for check in outcome.critique.failures[:3]
+                    )
+                    or "模型与需求不一致"
+                ),
+            )
+
+        if not outcome.changed:
+            return None
+
+        rebuilt = builder.result_for(outcome.source_code)
+        if rebuilt is None or not getattr(rebuilt, "success", False):
+            # The loop reported a better candidate but its build is not available
+            # to publish. Keeping the current one is the honest outcome.
+            return None
+
+        issues = "; ".join(
+            check.observed or check.requirement
+            for check in (outcome.critique.failures if outcome.critique else ())
+        )
+        self.repair_history.append(
+            RepairStep(
+                attempt=attempt,
+                stage="vision",
+                error_type="VisionMismatch",
+                message=issues or "visual refinement improved the model",
+                action="fix_visual_issues",
+                status="repaired",
+            )
+        )
+        prev_code = self.code
+        self.code = await self._persist_repair_step(
+            stage="vision",
+            error_type="VisionMismatch",
+            message=issues or "visual refinement improved the model",
+            action="fix_visual_issues",
+            prev_code=prev_code,
+            repair_coro=_already_repaired(outcome.source_code),
+        )
+        return await self._adopt_refined_build(rebuilt, inspect_report)
+
+    async def _judge_visually_once(
+        self,
+        *,
+        result: Any,
+        stl_path: Any,
+        inspect_report: Any,
+        attempt: int,
+    ) -> "_RetryAfterVisualRepair | None":
+        """Single-shot visual gate: render, judge once, repair once if needed.
+
+        This is the degraded mode used when the refinement loop is unavailable.
+        It reaches the provider through the orchestrator's renderer and
+        validator, which is also the seam the hermetic end-to-end harness
+        injects, so the gate stays exercised in tests that have no provider.
+        """
+        renderer = getattr(self.orchestrator, "renderer", None)
+        validator = getattr(self.orchestrator, "vision_validator", None)
+        if renderer is None or validator is None:
+            self.orchestrator._add_indeterminate_vision_check(
+                inspect_report, "Visual validation is not configured"
+            )
+            return None
+        if self.vision_retry_count >= 2:
+            return None
+
+        try:
+            render_paths = renderer.render_stl(stl_path, result.work_dir / "renders")
+            if not render_paths:
+                self.orchestrator._add_indeterminate_vision_check(
+                    inspect_report, "No render images were generated"
+                )
+                return None
+
+            judgment = await _validate_visually(
+                validator,
+                user_prompt=self.user_prompt,
+                render_paths=render_paths,
+                code=self.code,
+                model_path=stl_path,
+                plan=self.plan,
+            )
+        except Exception as exc:  # pragma: no cover - best-effort validation
+            logger.warning("Vision validation skipped: %s", exc)
+            self.orchestrator._add_indeterminate_vision_check(
+                inspect_report, "Vision validation was skipped"
+            )
+            return None
+
+        if judgment.is_match is None:
+            self.orchestrator._add_indeterminate_vision_check(
+                inspect_report,
+                "; ".join(judgment.issues) or "Vision validation was indeterminate",
+            )
+            return None
+        if judgment.is_match or attempt >= self.max_retries:
+            return None
+
+        message = "; ".join(judgment.issues)
+        self.vision_retry_count += 1
+        self._trace(
+            ExecutionPhase.REPAIR_CODE,
+            "Vision mismatch, repairing",
+            detail={"error_type": "VisionMismatch", "message": message},
+        )
+        await self._emit_step("fixing_error", "视觉校验失败，正在自动修复...")
+        self.repair_history.append(
+            RepairStep(
+                attempt=attempt,
+                stage="vision",
+                error_type="VisionMismatch",
+                message=message,
+                action="fix_visual_issues",
+                status="repaired",
+            )
+        )
+        prev_code = self.code
+        self.code = await self._persist_repair_step(
+            stage="vision",
+            error_type="VisionMismatch",
+            message=message,
+            action="fix_visual_issues",
+            prev_code=prev_code,
+            repair_coro=self.orchestrator.code_gen.fix_visual_issues(
+                self.code,
+                judgment.issues,
+                judgment.suggestions,
+                on_step=self.on_step,
+            ),
+        )
+        return _RETRY_AFTER_VISUAL_REPAIR
+
+    async def _adopt_refined_build(
+        self, rebuilt: Any, inspect_report: Any
+    ) -> "_RefinedBuild":
+        """Re-derive files, params and geometry facts for an adopted candidate."""
+        files = self.orchestrator._copy_output_files(
+            rebuilt.work_dir, self.request_id, self.output_formats
+        )
+        params = self.orchestrator._extract_params(self.code)
+        validation_data = None
+        refreshed_report = inspect_report
+
+        stl_path = self.orchestrator._find_stl_in_output(rebuilt.work_dir)
+        if stl_path:
+            expected_dims = self.plan.dimensions if self.plan else None
+            geometry = await self.orchestrator.geometry_validator.validate(
+                stl_path, expected_dims
+            )
+            validation_data = ValidationResult(
+                is_watertight=geometry.is_watertight,
+                bounding_box=BoundingBox(**geometry.bounding_box),
+                volume=geometry.volume,
+                printable=geometry.printable,
+                fits_build_volume=geometry.fits_build_volume,
+                min_wall_thickness=geometry.min_wall_thickness,
+                print_warnings=geometry.print_warnings,
+            )
+            refreshed_report = build_inspect_report(
+                geometry,
+                available_exports=sorted(files.keys()),
+                repair_attempts=len(self.repair_history),
+                source="geometry_validator",
+            )
+        return _RefinedBuild(
+            result=rebuilt,
+            files=files,
+            params=params,
+            validation=validation_data,
+            inspect_report=refreshed_report,
+        )
 
     async def _finalize_success(self, response: GenerateResponse) -> GenerateResponse:
         step = await self._start_persisted_step(
@@ -462,71 +766,25 @@ class ExecutionStateMachine:
                             )
                             continue
 
-                        if self.vision_retry_count < 2 and stl_path:
-                            try:
-                                await self._emit_step("executing", "\u6b63\u5728\u8fd0\u884c\u89c6\u89c9\u6821\u9a8c...")
-                                self._trace(ExecutionPhase.VISION_VALIDATE, "\u6b63\u5728\u8fd0\u884c\u89c6\u89c9\u6821\u9a8c")
-                                renders_dir = result.work_dir / "renders"
-                                render_paths = self.orchestrator.renderer.render_stl(stl_path, renders_dir)
-                                if not render_paths:
-                                    logger.warning("No render images produced, vision validation indeterminate")
-                                    self.orchestrator._add_indeterminate_vision_check(
-                                        inspect_report, "No render images were generated"
-                                    )
-                                else:
-                                    vision_result = await self.orchestrator.vision_validator.validate(
-                                        self.user_prompt, render_paths, self.code
-                                    )
-                                    if vision_result.is_match is False and attempt < self.max_retries:
-                                        self.vision_retry_count += 1
-                                        self._trace(
-                                            ExecutionPhase.REPAIR_CODE,
-                                            "Vision mismatch, repairing",
-                                            detail={
-                                                "error_type": "VisionMismatch",
-                                                "message": "; ".join(vision_result.issues),
-                                            },
-                                        )
-                                        await self._emit_step(
-                                            "fixing_error",
-                                            "\u89c6\u89c9\u6821\u9a8c\u5931\u8d25\uff0c\u6b63\u5728\u81ea\u52a8\u4fee\u590d...",
-                                        )
-                                        self.repair_history.append(
-                                            RepairStep(
-                                                attempt=attempt,
-                                                stage="vision",
-                                                error_type="VisionMismatch",
-                                                message="; ".join(vision_result.issues),
-                                                action="fix_visual_issues",
-                                                status="repaired",
-                                            )
-                                        )
-                                        prev_code = self.code
-                                        self.code = await self._persist_repair_step(
-                                            stage="vision",
-                                            error_type="VisionMismatch",
-                                            message="; ".join(vision_result.issues),
-                                            action="fix_visual_issues",
-                                            prev_code=prev_code,
-                                            repair_coro=self.orchestrator.code_gen.fix_visual_issues(
-                                                self.code,
-                                                vision_result.issues,
-                                                vision_result.suggestions,
-                                                on_step=self.on_step,
-                                            ),
-                                        )
-                                        continue
-
-                                    if vision_result.is_match is None:
-                                        self.orchestrator._add_indeterminate_vision_check(
-                                            inspect_report,
-                                            "; ".join(vision_result.issues) or "Vision validation was indeterminate",
-                                        )
-                            except Exception as exc:  # pragma: no cover - best-effort validation
-                                logger.warning("Vision validation skipped: %s", exc)
-                                self.orchestrator._add_indeterminate_vision_check(
-                                    inspect_report, "Vision validation was skipped"
-                                )
+                        if stl_path:
+                            gate = await self._run_visual_gate(
+                                result=result,
+                                stl_path=stl_path,
+                                inspect_report=inspect_report,
+                                attempt=attempt,
+                            )
+                            if gate is _RETRY_AFTER_VISUAL_REPAIR:
+                                continue
+                            if gate is not None:
+                                # The refinement loop already re-executed and
+                                # re-judged its own candidates, so there is
+                                # nothing to retry here: adopt the build it
+                                # proved best.
+                                result = gate.result
+                                files = gate.files
+                                params = gate.params
+                                validation_data = gate.validation or validation_data
+                                inspect_report = gate.inspect_report or inspect_report
 
                     self._trace(
                         ExecutionPhase.COMPLETE,

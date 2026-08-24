@@ -25,7 +25,8 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 把随机值写入 `AUTH_TOKEN_SECRET`，并检查以下配置：
 
-- 设置真实 `MOONSHOT_API_KEY`，或完整配置 Azure/OpenAI-compatible provider。
+- 设置真实 `MOONSHOT_API_KEY`，或完整配置 OpenAI（`LLM_PROVIDER=openai` + `OPENAI_API_KEY`）、Azure 或其他 OpenAI-compatible provider。
+- 设置支持图像输入的 `VISION_MODEL`。它同时驱动视觉评审和带图修复（见[视觉精修](docs/visual-refinement.md)），配置错误会让视觉门恒为 indeterminate。`VISUAL_REFINEMENT_MAX_ITERATIONS` 决定每次生成最多额外消耗几次沙箱执行和视觉调用。
 - 保持 `AUTH_REQUIRED=true`、`AUTH_DEV_EXPOSE_CODE=false` 和 `DURABLE_CONTROL_PLANE_ENABLED=true`。MCAD 写请求只有 Durable 链路，不再存在可切换的旧写链路。
 - 设置 `DATABASE_URL=postgresql+asyncpg://...`，数据库密码如含特殊字符必须 URL 编码。
 - 设置对象存储 endpoint、access key、secret 和 bucket；非本地环境必须使用 HTTPS。
@@ -52,7 +53,9 @@ export SANDBOX_IMAGE='registry.example.com/wordswave/mcad-runtime@sha256:<digest
 
 ## 2. 构建并启动
 
-从仓库根目录构建、验证并推送 MCAD Runtime。生产部署不能使用 `latest` 或其他可变 tag：
+从仓库根目录构建、验证并推送 MCAD Runtime。生产部署不能使用 `latest` 或其他可变 tag。
+
+> 渲染器和网格测量代码（`backend/app/visual_refine/mesh_views.py`、`facts.py`）已随镜像分发，Worker 与控制平面运行同一份文件。**升级时必须重建并重新推送镜像**，否则 Worker 仍在跑旧渲染，视觉门读不到烧录尺寸。
 
 ```bash
 docker build -f backend/sandbox/Dockerfile -t registry.example.com/wordswave/mcad-runtime:<version> .

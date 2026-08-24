@@ -1,3 +1,4 @@
+import json
 import hashlib
 from pathlib import Path
 
@@ -191,9 +192,22 @@ async def test_visual_judgment_uses_configured_vision_model(tmp_path, monkeypatc
                 choices=[
                     SimpleNamespace(
                         message=SimpleNamespace(
-                            content=(
-                                '{"is_match":true,"confidence":0.95,'
-                                '"issues":[],"suggestions":[]}'
+                            content=json.dumps(
+                                {
+                                    "checks": [
+                                        {"key": key, "verdict": "satisfied"}
+                                        for key in (
+                                            "shape.overall_form",
+                                            "shape.proportions",
+                                            "features.present",
+                                            "features.attached",
+                                            "geometry.sane",
+                                        )
+                                    ],
+                                    "issues": [],
+                                    "suggestions": [],
+                                    "confidence": 0.95,
+                                }
                             )
                         ),
                         finish_reason="stop",
@@ -247,5 +261,14 @@ async def test_visual_judgment_uses_configured_vision_model(tmp_path, monkeypatc
     assert judgment.is_match is True
     assert seen["model"] == "moonshot-vision-test"
     assert seen["response_format"] == {"type": "json_object"}
-    assert len(seen["messages"][1]["content"]) == 5
+    # A requirement briefing, the four renders, then the per-key closing ask.
+    content = seen["messages"][1]["content"]
+    assert [part["type"] for part in content] == [
+        "text",
+        "image_url",
+        "image_url",
+        "image_url",
+        "image_url",
+        "text",
+    ]
     assert provenance["model"] == "moonshot-vision-test"

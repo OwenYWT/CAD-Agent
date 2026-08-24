@@ -195,7 +195,8 @@ def test_cad_renderer_writes_four_real_views(tmp_path):
     stl_path = tmp_path / "box.stl"
     trimesh.creation.box(extents=(20, 10, 5)).export(stl_path)
 
-    rendered = CADRenderer().render_stl(stl_path, tmp_path / "renders")
+    renderer = CADRenderer()
+    rendered = renderer.render_stl(stl_path, tmp_path / "renders")
 
     assert {path.name for path in rendered} == {
         "front.png",
@@ -205,9 +206,35 @@ def test_cad_renderer_writes_four_real_views(tmp_path):
     }
     for path in rendered:
         with Image.open(path) as image:
-            assert image.size == (512, 512)
+            # Renders carry burned-in dimensions, a millimetre grid and a scale
+            # bar for the vision gate to read. They are deliberately larger than
+            # the old 512px output, below which that text stops being legible.
+            assert image.size == (renderer._width, renderer._height)
+            assert image.size >= (640, 640)
             assert image.format == "PNG"
             assert ImageStat.Stat(image.convert("RGB")).var != [0.0, 0.0, 0.0]
+
+
+def test_cad_renderer_can_add_a_section_view(tmp_path):
+    """The cutaway is opt-in: the four-view set is a durable contract."""
+    import trimesh
+
+    from app.rendering.renderer import CADRenderer
+
+    stl_path = tmp_path / "box.stl"
+    trimesh.creation.box(extents=(20, 10, 5)).export(stl_path)
+
+    rendered = CADRenderer().render_stl(
+        stl_path, tmp_path / "renders", include_section=True
+    )
+
+    assert {path.name for path in rendered} == {
+        "front.png",
+        "right.png",
+        "top.png",
+        "isometric.png",
+        "section.png",
+    }
 
 
 # === DXF renderer ===

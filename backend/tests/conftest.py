@@ -14,6 +14,11 @@ def pytest_configure(config):
         "markers",
         "auth: exercises the login/auth system with auth_required ON",
     )
+    config.addinivalue_line(
+        "markers",
+        "visual_refinement: exercises the VLM refinement loop instead of the "
+        "injected single-shot visual gate",
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -26,3 +31,22 @@ def _auth_off_by_default(request, monkeypatch):
     if request.node.get_closest_marker("auth"):
         return
     monkeypatch.setattr(settings, "auth_required", False, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _visual_refinement_off_by_default(request, monkeypatch):
+    """Keep the hermetic suite off the VLM refinement path by default.
+
+    Settings load from `backend/.env`, and every developer is told to create one
+    with real provider credentials. Without this, whether a test calls a live
+    vision API depends on whether the machine running it happens to have a key --
+    the suite would pass on CI and make paid network calls on a laptop.
+
+    Tests that drive the visual gate inject their own renderer and validator into
+    the orchestrator, which is the single-shot path; the loop's own behaviour is
+    covered hermetically in test_visual_refine_loop.py with fake ports. A test
+    that genuinely wants the loop opts in with the `visual_refinement` marker.
+    """
+    if request.node.get_closest_marker("visual_refinement"):
+        return
+    monkeypatch.setattr(settings, "visual_refinement_enabled", False, raising=False)
