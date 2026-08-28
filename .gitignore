@@ -62,3 +62,8 @@ chroma_data/
 *.pdb
 *.baml
 .gstack/
+
+# Stray CAD output left in the CWD by 2D eval cases whose generated code
+# writes a bare relative filename instead of the declared output path.
+backend/output.dxf
+backend/output.svg

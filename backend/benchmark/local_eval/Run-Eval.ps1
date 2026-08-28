@@ -37,13 +37,16 @@
     reported per-case wall clock, because cases then queue behind each other.
 
 .PARAMETER Provider
-    Which model provider to evaluate against.
-      env       - use whatever backend/.env already configures (default)
-      openai    - OpenAI, needs OPENAI_API_KEY
-      dashscope - Alibaba DashScope / Qwen, needs DASHSCOPE_API_KEY
-    Selecting a provider sets LLM_PROVIDER, LLM_MODEL and VISION_MODEL as
-    process environment variables, which take precedence over backend/.env.
-    The API key itself is never read by this script: Settings loads .env.
+    Which model preset to evaluate against.
+      env            - use whatever backend/.env already configures (default)
+      openai         - OpenAI gpt-5.4, needs OPENAI_API_KEY
+      dashscope      - DashScope Qwen, needs DASHSCOPE_API_KEY
+      dashscope-kimi - Moonshot Kimi k3 for language, Qwen for vision,
+                       both served through DashScope
+    Selecting a preset sets LLM_PROVIDER, LLM_MODEL, VISION_MODEL, LLM_BASE_URL
+    and LLM_TIMEOUT_S as process environment variables, which take precedence
+    over backend/.env. The API key itself is never read by this script:
+    Settings loads .env.
 
 .PARAMETER Model
     Override the planning / code-generation model for the chosen provider.
@@ -69,7 +72,7 @@ param(
     [int]$Concurrency = 5,
     [int]$DeadlineSeconds = 900,
     [string]$Out = '',
-    [ValidateSet('env', 'openai', 'dashscope')]
+    [ValidateSet('env', 'openai', 'dashscope', 'dashscope-kimi')]
     [string]$Provider = 'env',
     [string]$Model = '',
     [string]$VisionModel = '',
@@ -208,9 +211,15 @@ $EnvFile = Join-Path $BackendDir '.env'
 # Timeout is per provider because Qwen's reasoning models emit thousands of
 # thinking tokens per call and legitimately need minutes, where the OpenAI
 # default of 180s is generous.
+# These are PRESET names, not provider names: 'dashscope-kimi' routes Moonshot's
+# Kimi through DashScope, so the preset it selects and the LLM_PROVIDER it sets
+# are deliberately different values.
 $providerDefaults = @{
-    'openai'    = @{ Key = 'OPENAI_API_KEY';    Model = 'gpt-5.4';          Vision = 'gpt-5.4';       Timeout = 180 }
-    'dashscope' = @{ Key = 'DASHSCOPE_API_KEY'; Model = 'qwen3-coder-plus'; Vision = 'qwen3-vl-plus'; Timeout = 420 }
+    'openai'         = @{ Provider = 'openai';    Key = 'OPENAI_API_KEY';    Model = 'gpt-5.4';          Vision = 'gpt-5.4';       Timeout = 180 }
+    'dashscope'      = @{ Provider = 'dashscope'; Key = 'DASHSCOPE_API_KEY'; Model = 'qwen3-coder-plus'; Vision = 'qwen3-vl-plus'; Timeout = 420 }
+    # Kimi has no vision variant on DashScope, so the visual gate stays on Qwen
+    # while planning and code generation move to Kimi.
+    'dashscope-kimi' = @{ Provider = 'dashscope'; Key = 'DASHSCOPE_API_KEY'; Model = 'kimi-k3';          Vision = 'qwen3-vl-plus'; Timeout = 420 }
 }
 
 $requiredKey = $null
@@ -228,7 +237,7 @@ else {
 
     # Process-scoped, and precedence over .env: pydantic-settings reads real
     # environment variables ahead of the env_file.
-    $env:LLM_PROVIDER = $Provider
+    $env:LLM_PROVIDER = $chosen.Provider
     $env:LLM_MODEL = $useModel
     $env:VISION_MODEL = $useVision
     # A stale LLM_BASE_URL in .env would otherwise point the new provider's key
@@ -237,7 +246,8 @@ else {
     $env:LLM_BASE_URL = ''
     $env:LLM_TIMEOUT_S = $chosen.Timeout
 
-    Write-Ok "provider    : $Provider"
+    Write-Ok "preset      : $Provider"
+    Write-Ok "provider    : $($chosen.Provider)"
     Write-Ok "model       : $useModel"
     Write-Ok "vision model: $useVision"
     Write-Ok "call timeout: $($chosen.Timeout)s"

@@ -16,11 +16,16 @@
 
 ## 选择 provider
 
-| 入口 | provider | 语言模型 | 视觉模型 |
+| 入口 | `LLM_PROVIDER` | 语言模型（规划+生码） | 视觉模型（评审+改码） |
 |---|---|---|---|
 | `Run-Eval.cmd` | 按 `backend/.env` | 由 `.env` 决定 | 由 `.env` 决定 |
-| `run_eval_dashscope.cmd` | DashScope（Qwen） | `qwen3-coder-plus` | `qwen3-vl-plus` |
-| `.\Run-Eval.ps1 -Provider openai` | OpenAI | `gpt-5.4` | `gpt-5.4` |
+| `.\Run-Eval.ps1 -Provider openai` | `openai` | `gpt-5.4` | `gpt-5.4` |
+| `run_eval_dashscope.cmd` | `dashscope` | `qwen3-coder-plus` | `qwen3-vl-plus` |
+| `run_eval_dashscope_kimi.cmd` | `dashscope` | `kimi-k3` | `qwen3-vl-plus` |
+
+`-Provider` 的取值是**预设名**而不是 provider 名：`dashscope-kimi` 会把
+`LLM_PROVIDER` 设成 `dashscope`，只把语言模型换成 Kimi。DashScope 上没有 Kimi 的
+视觉版本，所以视觉门仍然走 `qwen3-vl-plus`。
 
 `-Provider` 只设置进程级环境变量（`LLM_PROVIDER` / `LLM_MODEL` / `VISION_MODEL` /
 `LLM_BASE_URL` / `LLM_TIMEOUT_S`），它们优先级高于 `.env`。**脚本本身不读取任何密钥**：
@@ -32,23 +37,40 @@
 .\run_eval_dashscope.cmd -Model qwen3-max -VisionModel qwen3-vl-flash
 ```
 
-### 两个 provider 的实测结果（各 50 个 case，n=1）
+### 实测结果（全部 50 个 case，均为 n=1）
 
-| provider | 模型 | pass@1 | simple | moderate | complex | 单 case 墙钟中位数 |
+| 语言模型 | pass@1 | simple | moderate | complex | 墙钟中位数 | 并发 |
 |---|---|---|---|---|---|---|
-| OpenAI | `gpt-5.4` | 43/50 (86.0%) | 85.7% | 83.3% | 91.7% | 74s |
-| DashScope | `qwen3-coder-plus` + `qwen3-vl-plus` | 46/50 (92.0%) | 100% | 91.7% | 83.3% | 145s |
+| `gpt-5.4` (OpenAI) | 43/50 (86.0%) | 85.7% | 83.3% | 91.7% | 74s | 4 |
+| `qwen3-coder-plus` | 46/50 (92.0%) | 100% | 91.7% | 83.3% | 145s | 4 |
+| `kimi-k3` 第 1 次 | 40/50 (80.0%) | 78.6% | 79.2% | 83.3% | 286s | 4 |
+| `kimi-k3` 第 2 次 | 42/50 (84.0%) | 71.4% | 91.7% | 83.3% | 374s | 8 |
 
-基线报告：`reports/baseline-2026-08-23-visual.json`、
-`reports/baseline-2026-08-24-dashscope-visual.json`。用
-`report_timing.py <a.json> <b.json>` 并排打印。
+视觉模型：OpenAI 用 `gpt-5.4`，三个 DashScope 跑法都用 `qwen3-vl-plus`。
+基线报告在 `reports/baseline-*.json`，用 `report_timing.py <a.json> <b.json>` 并排打印。
 
-> **不要据此断言 DashScope 更准。** 两次都是 `n=1`。逐 case 对比显示 **7 个 case 翻转**
-> （DashScope 修好 P07/P11/P15/P21/P27，弄坏 M05/P26），而净差只有 3 个——
-> 抖动幅度大于差值，说明主要是采样噪声而非能力差异。要下结论需要 `-N 3` 以上并用
-> [`compare.py`](../compare.py) 检验显著性。
+> ### 这张表**不能**用来排名
 >
-> 能确定的是**耗时**：DashScope 慢 2.4 倍（均值 173s vs 71s，最慢 585s vs 167s）。
+> 最有信息量的不是 provider 之间的差，而是**同一个模型跑两次的差**：
+> `kimi-k3` 两次分别是 **80.0% 和 84.0%**，配置完全相同，只有并发不同
+> （并发本身已验证不是原因，见下）。失败构成也整体换了一批——
+> 第 1 次是 7 个 planner / 1 个尺寸，第 2 次是 3 个 planner / 3 个尺寸，
+> 两次都失败的只有 P03 和 X02。
+>
+> 也就是说，**单次 50-case 运行的抖动约 ±4 个百分点**。表里 `gpt-5.4` 86% 与
+> `qwen3-coder-plus` 92% 的差距落在这个抖动范围内，**不构成能力差异的证据**。
+> 要真的比较，必须 `-N 3` 以上并用 [`compare.py`](../compare.py) 检验显著性。
+>
+> 能确定的只有**耗时**：差距大到不可能是噪声。GPT 中位数 74s，Qwen 145s，
+> Kimi 374s，且只有 Kimi 撞到过 deadline（X06 在 1171s 超时）。
+
+#### 并发不影响准确率
+
+第 1 次 Kimi 运行有 7 个 case 挂在 planner JSON 上，一度以为是并发争抢导致的。
+实测否定了这个猜测：把 7 个 planner 调用同时打出去（叠加在另一个正在跑的评测上），
+6/7 通过；失败率在并发 2、4、8 下都是 ~14%，与并发无关。
+把并发从 2 提到 8 之后总耗时从约 2 小时降到约 45 分钟，pass@1 反而更高。
+**这里可以放心加并发。**
 
 ### DashScope 的模型是怎么选的
 
@@ -67,6 +89,42 @@
 视觉侧 `qwen3-vl-plus`、`qwen3-vl-flash`、`qwen-vl-max` 实测都在 3–5s，
 选了能力最强的 `qwen3-vl-plus`。注意视觉模型不只看图，还要**改代码**，
 所以它的代码能力同样重要。
+
+### DashScope 上的 Kimi
+
+DashScope 也转售 Moonshot 的 Kimi。实测单次生码调用：
+
+| 模型 | 耗时 | 说明 |
+|---|---|---|
+| `kimi-k3` | 21.1s | 最新，作为 `dashscope-kimi` 预设的默认语言模型 |
+| `kimi-k2.7-code` | 17.6s | 代码专用，也是仓库 `settings.llm_model` 的默认值 |
+| `kimi-k2-thinking` | 37.5s | 推理型，明显更慢 |
+| `kimi/kimi-k3` 等带 `kimi/` 前缀的 | — | 本账号未开通，返回 “product is not activated” |
+
+> **Kimi 不接受 `temperature`**（返回 400，直接失败而不是降级）。原先
+> `app/llm.py` 是按 **provider** 判断要不要去掉采样参数的（`provider == "moonshot"`），
+> 所以经 DashScope 转售的 Kimi 全部漏判、每个请求都 400。已改成按**模型名**判断
+> （`_is_kimi_model`），任何 provider 下的 Kimi 都能正确处理。
+
+#### 未修复：kimi-k3 的 planner JSON 退化
+
+约 **14%** 的 planner 调用会返回**语法非法的 JSON**，而且不是被截断——
+`finish_reason` 是正常的 `stop`，长度也没到上限，但内容退化成重复垃圾：
+
+```
+: "    :","    ,"%22    ,        : "    :","    ,"%22    ]    }":"    "},"}
+```
+
+（空 key、混入 URL 编码的 `%22`、大量填充空格。）即使已经传了
+`response_format={"type": "json_object"}` 也会发生。
+
+planner 本身已经重试 2 次。如果失败是独立的，14% 的单次失败率重试两次后应该只剩约 3%，
+但实测**整案失败率就是 ~14%**，说明失败与 prompt 相关而非随机——
+P03 在三次运行里全部失败可以佐证。
+
+影响不止评测：`kimi-k2.7-code` 就是仓库 `settings.llm_model` 的默认值，
+生产链路同样会踩到。**尚未修复**，可能的方向是提高 planner 重试次数，
+或把「`stop` 但 JSON 非法」单独识别为可重试错误。
 
 ## 这不是产品链路
 

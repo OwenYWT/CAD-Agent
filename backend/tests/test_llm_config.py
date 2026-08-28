@@ -299,3 +299,46 @@ async def test_chat_adapter_records_non_secret_completion_provenance():
     assert len(provenance["request_hash"]) == 64
     assert len(provenance["response_hash"]) == 64
     assert provenance["usage"]["total_tokens"] == 10
+
+
+def test_kimi_via_a_non_moonshot_provider_drops_temperature():
+    """Kimi rejects `temperature` with a 400, whoever is serving it.
+
+    DashScope resells kimi-k3; keying the rule on the provider name alone let
+    `temperature` through and failed every single request.
+    """
+    from app.llm import build_chat_params
+
+    settings = Settings(
+        _env_file=None, llm_provider="dashscope", dashscope_api_key="ds-key"
+    )
+    params = build_chat_params(
+        model="kimi-k3",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=1024,
+        temperature=0.1,
+        llm_settings=settings,
+    )
+
+    assert "temperature" not in params
+    assert "max_tokens" not in params
+    assert params["max_completion_tokens"] == 1024
+
+
+def test_a_qwen_model_on_dashscope_keeps_its_sampling_params():
+    """The Kimi rule must not swallow ordinary DashScope models."""
+    from app.llm import build_chat_params
+
+    settings = Settings(
+        _env_file=None, llm_provider="dashscope", dashscope_api_key="ds-key"
+    )
+    params = build_chat_params(
+        model="qwen3-coder-plus",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=1024,
+        temperature=0.1,
+        llm_settings=settings,
+    )
+
+    assert params["temperature"] == 0.1
+    assert params["max_tokens"] == 1024

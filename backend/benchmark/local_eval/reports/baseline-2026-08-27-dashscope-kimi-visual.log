@@ -1,0 +1,83 @@
+﻿cases: 50   repeats: 1
+model: kimi-k3   vision: qwen3-vl-plus
+visual refinement: True (max 3 iterations)
+deadline per generation: 1200.0s
+------------------------------------------------------------------------------
+  [  1/50]  P03 simple    fail  exec=False print=None dim=None 42s ValueError: planner model did not return a valid CAD plan
+  [  2/50]  P02 simple    fail  exec=False print=None dim=None 61s ValueError: planner model did not return a valid CAD plan
+  [  3/50]  P06 simple    PASS  exec=True print=True dim=None 97s 
+  [  4/50]  P01 simple    PASS  exec=True print=True dim=True 109s 
+  [  5/50]  P05 simple    PASS  exec=True print=True dim=True 170s 
+  [  6/50]  P04 simple    PASS  exec=True print=True dim=None 234s 
+  [  7/50]  P08 simple    fail  exec=True print=True dim=False 245s 
+  [  8/50]  P09 simple    PASS  exec=True print=True dim=None 254s 
+  [  9/50]  P11 simple    PASS  exec=True print=True dim=None 278s 
+  [ 10/50]  P10 simple    PASS  exec=True print=True dim=True 378s 
+  [ 11/50]  P07 simple    fail  exec=True print=True dim=False 473s 
+  [ 12/50]  P12 simple    PASS  exec=True print=True dim=None 407s 
+  [ 13/50]  P13 simple    PASS  exec=True print=True dim=None 374s 
+  [ 14/50]  P15 moderate  PASS  exec=True print=True dim=None 320s 
+  [ 15/50]  P14 simple    PASS  exec=True print=True dim=None 390s 
+  [ 16/50]  P17 moderate  PASS  exec=True print=True dim=None 267s 
+  [ 17/50]  P16 moderate  PASS  exec=True print=True dim=None 485s 
+  [ 18/50]  P21 moderate  PASS  exec=True print=True dim=None 256s 
+  [ 19/50]  P20 moderate  PASS  exec=True print=True dim=None 329s 
+  [ 20/50]  P24 moderate  PASS  exec=True print=True dim=None 228s 
+  [ 21/50]  P23 moderate  PASS  exec=True print=True dim=None 286s 
+  [ 22/50]  P18 moderate  fail  exec=True print=True dim=False 584s 
+  [ 23/50]  P22 moderate  PASS  exec=True print=True dim=None 497s 
+  [ 24/50]  P26 moderate  PASS  exec=True print=True dim=None 374s 
+  [ 25/50]  P27 moderate  PASS  exec=True print=True dim=None 351s 
+  [ 26/50]  P19 moderate  PASS  exec=True print=True dim=None 744s 
+  [ 27/50]  P33 complex   fail  exec=False print=None dim=None 133s ValueError: planner model did not return a valid CAD plan
+  [ 28/50]  P25 moderate  PASS  exec=True print=True dim=None 599s 
+  [ 29/50]  P28 moderate  PASS  exec=True print=True dim=None 544s 
+  [ 30/50]  P29 moderate  PASS  exec=True print=True dim=None 547s 
+  [ 31/50]  P32 complex   PASS  exec=True print=True dim=True 359s 
+  [ 32/50]  P30 moderate  PASS  exec=True print=True dim=None 543s 
+  [ 33/50]  P35 complex   PASS  exec=True print=True dim=None 347s 
+  [ 34/50]  P34 complex   PASS  exec=True print=True dim=None 487s 
+  [ 35/50]  M01 moderate  PASS  exec=True print=True dim=True 170s 
+  [ 36/50]  P31 complex   PASS  exec=True print=True dim=None 735s 
+  [ 37/50]  M02 moderate  PASS  exec=True print=True dim=None 364s 
+  [ 38/50]  P38 complex   PASS  exec=True print=True dim=None 562s 
+  [ 39/50]  X01 moderate  PASS  exec=True print=None dim=None 137s 
+  [ 40/50]  M04 moderate  PASS  exec=True print=True dim=None 366s 
+  [ 41/50]  M05 complex   PASS  exec=True print=True dim=None 484s 
+  [ 42/50]  P37 complex   PASS  exec=True print=True dim=None 825s 
+  [ 43/50]  X03 moderate  PASS  exec=True print=True dim=None 224s 
+  [ 44/50]  M03 moderate  PASS  exec=True print=True dim=None 622s 
+  [ 45/50]  P36 complex   PASS  exec=True print=True dim=None 980s 
+  [ 46/50]  X02 moderate  fail  exec=False print=None dim=None 376s {'type': 'ValueError', 'message': '2D mode: expected a DXF o
+  [ 47/50]  M06 moderate  PASS  exec=True print=True dim=None 733s 
+  [ 48/50]  X04 complex   PASS  exec=True print=True dim=None 536s 
+  [ 49/50]  X05 complex   PASS  exec=True print=True dim=None 556s 
+  [ 50/50]  X06 complex   fail  exec=False print=None dim=None 1171s APITimeoutError: Request timed out.
+
+==============================================================================
+OVERALL pass@1 : 84.0%  (42/50)
+==============================================================================
+  simple   : 71.4%  (10/14)
+  moderate : 91.7%  (22/24)
+  complex  : 83.3%  (10/12)
+
+  executed        : 90.0%
+  printable       : 100.0%
+  dim_match       : 62.5%
+
+FAILING CASES (8):
+   P03 simple    did not execute; artifact gate {'stl_readable': False, 'geometry_nonempty': False, 'step_readable': False, 'rendered_views': 0, 'passed': False}
+        ValueError: planner model did not return a valid CAD plan
+   P02 simple    did not execute; artifact gate {'stl_readable': False, 'geometry_nonempty': False, 'step_readable': False, 'rendered_views': 0, 'passed': False}
+        ValueError: planner model did not return a valid CAD plan
+   P08 simple    dims off
+   P07 simple    dims off
+   P18 moderate  dims off
+   P33 complex   did not execute; artifact gate {'stl_readable': False, 'geometry_nonempty': False, 'step_readable': False, 'rendered_views': 0, 'passed': False}
+        ValueError: planner model did not return a valid CAD plan
+   X02 moderate  did not execute; artifact gate {'dxf_readable': False, 'passed': False}
+        {'type': 'ValueError', 'message': '2D mode: expected a DXF output but no .dxf file was created.'}
+   X06 complex   did not execute; artifact gate {'stl_readable': False, 'geometry_nonempty': False, 'step_readable': False, 'rendered_views': 0, 'passed': False}
+        APITimeoutError: Request timed out.
+
+report written to E:\programming\CAD-Agent\backend\benchmark\local_eval\reports\eval-20260827-221353-dashscope-kimi-visual.json

@@ -118,8 +118,30 @@ def _is_gpt5_model(model: str) -> bool:
     return model.lower().startswith("gpt-5")
 
 
+def _is_kimi_model(model: str) -> bool:
+    """Kimi identified by MODEL name, not by provider.
+
+    Kimi is served by Moonshot directly and also resold through other
+    OpenAI-compatible endpoints (DashScope hosts kimi-k3, kimi-k2.7-code and
+    friends). Deciding on the provider alone missed those, and Kimi rejects
+    `temperature` outright with a 400 -- which failed every request rather than
+    degrading. The model name travels with the model, so key off that.
+    """
+    name = model.lower()
+    return name.startswith("kimi") or name.startswith("moonshot")
+
+
 def _is_moonshot_provider(llm_settings: Settings) -> bool:
     return llm_settings.normalized_llm_provider == "moonshot"
+
+
+def _rejects_sampling_params(model: str, llm_settings: Settings) -> bool:
+    """Models that refuse `temperature` and want `max_completion_tokens`."""
+    return (
+        _is_gpt5_model(model)
+        or _is_kimi_model(model)
+        or _is_moonshot_provider(llm_settings)
+    )
 
 
 def build_chat_params(
@@ -134,7 +156,7 @@ def build_chat_params(
     params: dict[str, Any] = {"model": model, "messages": messages}
     params.update(extra)
 
-    if _is_gpt5_model(model) or _is_moonshot_provider(llm_settings):
+    if _rejects_sampling_params(model, llm_settings):
         if max_tokens is not None and "max_completion_tokens" not in params:
             params["max_completion_tokens"] = max_tokens
         if _is_gpt5_model(model) and llm_settings.llm_reasoning_effort and "reasoning_effort" not in params:

@@ -1,0 +1,3267 @@
+{
+  "meta": {
+    "model": "kimi-k3",
+    "vision_model": "qwen3-vl-plus",
+    "visual_refinement_enabled": true,
+    "visual_refinement_max_iterations": 3,
+    "n_repeats": 1,
+    "n_cases": 50,
+    "executor": "LocalCadQueryExecutor (no container runtime on host)"
+  },
+  "summary": {
+    "pass@1": 0.84,
+    "by_difficulty": {
+      "simple": 0.7142857142857143,
+      "moderate": 0.9166666666666666,
+      "complex": 0.8333333333333334
+    }
+  },
+  "by_case": {
+    "P03": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": false,
+      "pass^k": false,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 0.0,
+      "avg_wall_ms": 42002
+    },
+    "P02": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": false,
+      "pass^k": false,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 0.0,
+      "avg_wall_ms": 60876
+    },
+    "P06": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 1.0,
+      "avg_wall_ms": 97113
+    },
+    "P01": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 1.0,
+      "avg_wall_ms": 109175
+    },
+    "P05": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 169577
+    },
+    "P04": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 233537
+    },
+    "P08": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": false,
+      "pass^k": false,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 244953
+    },
+    "P09": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 253853
+    },
+    "P11": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 278216
+    },
+    "P10": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 377766
+    },
+    "P07": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": false,
+      "pass^k": false,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 473348
+    },
+    "P12": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 407479
+    },
+    "P13": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 1.0,
+      "avg_wall_ms": 374230
+    },
+    "P15": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 319887
+    },
+    "P14": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 390102
+    },
+    "P17": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 266516
+    },
+    "P16": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 485224
+    },
+    "P21": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 256352
+    },
+    "P20": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 328831
+    },
+    "P24": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 227606
+    },
+    "P23": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 286048
+    },
+    "P18": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": false,
+      "pass^k": false,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 584173
+    },
+    "P22": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 497400
+    },
+    "P26": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 373982
+    },
+    "P27": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 350957
+    },
+    "P19": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 743989
+    },
+    "P33": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": false,
+      "pass^k": false,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 0.0,
+      "avg_wall_ms": 133177
+    },
+    "P25": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 4.0,
+      "avg_wall_ms": 598814
+    },
+    "P28": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 544053
+    },
+    "P29": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 546822
+    },
+    "P32": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 359169
+    },
+    "P30": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 543463
+    },
+    "P35": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 347428
+    },
+    "P34": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 486725
+    },
+    "M01": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 1.0,
+      "avg_wall_ms": 170344
+    },
+    "P31": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 735475
+    },
+    "M02": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 363670
+    },
+    "P38": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 4.0,
+      "avg_wall_ms": 561664
+    },
+    "X01": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 1.0,
+      "avg_wall_ms": 137379
+    },
+    "M04": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 366192
+    },
+    "M05": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 484185
+    },
+    "P37": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 824874
+    },
+    "X03": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 1.0,
+      "avg_wall_ms": 224415
+    },
+    "M03": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 621530
+    },
+    "P36": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 980161
+    },
+    "X02": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": false,
+      "pass^k": false,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 4.0,
+      "avg_wall_ms": 376355
+    },
+    "M06": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 5.0,
+      "avg_wall_ms": 733314
+    },
+    "X04": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 2.0,
+      "avg_wall_ms": 536491
+    },
+    "X05": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": true,
+      "pass^k": true,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 1.0,
+      "avg_wall_ms": 556437
+    },
+    "X06": {
+      "n_runs": 1,
+      "pass@1": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "pass@k": false,
+      "pass^k": false,
+      "verdict_pass_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "printable_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "watertight_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "one_shot_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "dim_match_rate": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 1
+      },
+      "avg_attempts": 0.0,
+      "avg_wall_ms": 1171374
+    }
+  },
+  "runs": {
+    "P03": [
+      {
+        "executed": false,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": null,
+        "printable": null,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 0,
+        "one_shot": false,
+        "exec_time_ms": 0,
+        "wall_time_ms": 42002,
+        "error": "ValueError: planner model did not return a valid CAD plan",
+        "passed": false,
+        "artifact_gate": {
+          "stl_readable": false,
+          "geometry_nonempty": false,
+          "step_readable": false,
+          "rendered_views": 0,
+          "passed": false
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P02": [
+      {
+        "executed": false,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": null,
+        "printable": null,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 0,
+        "one_shot": false,
+        "exec_time_ms": 0,
+        "wall_time_ms": 60876,
+        "error": "ValueError: planner model did not return a valid CAD plan",
+        "passed": false,
+        "artifact_gate": {
+          "stl_readable": false,
+          "geometry_nonempty": false,
+          "step_readable": false,
+          "rendered_views": 0,
+          "passed": false
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P06": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 1994,
+        "wall_time_ms": 97113,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P01": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": true,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 2151,
+        "wall_time_ms": 109175,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P05": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": true,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": 100,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 2072,
+        "wall_time_ms": 169577,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P04": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 1951,
+        "wall_time_ms": 233537,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P08": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": false,
+        "part_type_match": null,
+        "feature_match": false,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 1925,
+        "wall_time_ms": 244953,
+        "error": null,
+        "passed": false,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P09": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 1920,
+        "wall_time_ms": 253853,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P11": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 1873,
+        "wall_time_ms": 278216,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P10": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": true,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 1980,
+        "wall_time_ms": 377766,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P07": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": false,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 1822,
+        "wall_time_ms": 473348,
+        "error": null,
+        "passed": false,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P12": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 1996,
+        "wall_time_ms": 407479,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P13": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 1919,
+        "wall_time_ms": 374230,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P15": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 1926,
+        "wall_time_ms": 319887,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P14": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2041,
+        "wall_time_ms": 390102,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "simple",
+        "path": "extrude_cut"
+      }
+    ],
+    "P17": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": false,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 1939,
+        "wall_time_ms": 266516,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P16": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 1902,
+        "wall_time_ms": 485224,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P21": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 2107,
+        "wall_time_ms": 256352,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P20": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 1898,
+        "wall_time_ms": 328831,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P24": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 2027,
+        "wall_time_ms": 227606,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P23": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 1997,
+        "wall_time_ms": 286048,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P18": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": false,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 1994,
+        "wall_time_ms": 584173,
+        "error": null,
+        "passed": false,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P22": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 1862,
+        "wall_time_ms": 497400,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P26": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 1943,
+        "wall_time_ms": 373982,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P27": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 2063,
+        "wall_time_ms": 350957,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P19": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2012,
+        "wall_time_ms": 743989,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P33": [
+      {
+        "executed": false,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": null,
+        "printable": null,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 0,
+        "one_shot": false,
+        "exec_time_ms": 0,
+        "wall_time_ms": 133177,
+        "error": "ValueError: planner model did not return a valid CAD plan",
+        "passed": false,
+        "artifact_gate": {
+          "stl_readable": false,
+          "geometry_nonempty": false,
+          "step_readable": false,
+          "rendered_views": 0,
+          "passed": false
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "P25": [
+      {
+        "executed": true,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 4,
+        "one_shot": false,
+        "exec_time_ms": 1864,
+        "wall_time_ms": 598814,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P28": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 1968,
+        "wall_time_ms": 544053,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P29": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 1896,
+        "wall_time_ms": 546822,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P32": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": true,
+        "part_type_match": null,
+        "feature_match": false,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 2051,
+        "wall_time_ms": 359169,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "P30": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 1920,
+        "wall_time_ms": 543463,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P35": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 2167,
+        "wall_time_ms": 347428,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "P34": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 2077,
+        "wall_time_ms": 486725,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "M01": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": true,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 2042,
+        "wall_time_ms": 170344,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P31": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2142,
+        "wall_time_ms": 735475,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "M02": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 1943,
+        "wall_time_ms": 363670,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P38": [
+      {
+        "executed": true,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 4,
+        "one_shot": false,
+        "exec_time_ms": 2084,
+        "wall_time_ms": 561664,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "X01": [
+      {
+        "executed": true,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": null,
+        "printable": null,
+        "dim_match": null,
+        "part_type_match": true,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 2033,
+        "wall_time_ms": 137379,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "dxf_readable": true,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "2d"
+      }
+    ],
+    "M04": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 1931,
+        "wall_time_ms": 366192,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "M05": [
+      {
+        "executed": true,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2032,
+        "wall_time_ms": 484185,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "P37": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 2233,
+        "wall_time_ms": 824874,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "X03": [
+      {
+        "executed": true,
+        "verdict": "pass",
+        "verdict_pass": true,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": true,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 1888,
+        "wall_time_ms": 224415,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "revolve"
+      }
+    ],
+    "M03": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 1940,
+        "wall_time_ms": 621530,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "P36": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 1899,
+        "wall_time_ms": 980161,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "extrude_cut"
+      }
+    ],
+    "X02": [
+      {
+        "executed": false,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": null,
+        "printable": null,
+        "dim_match": null,
+        "part_type_match": true,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 4,
+        "one_shot": false,
+        "exec_time_ms": 1905,
+        "wall_time_ms": 376355,
+        "error": "{'type': 'ValueError', 'message': '2D mode: expected a DXF output but no .dxf file was created.'}",
+        "passed": false,
+        "artifact_gate": {
+          "dxf_readable": false,
+          "passed": false
+        },
+        "difficulty": "moderate",
+        "path": "2d"
+      }
+    ],
+    "M06": [
+      {
+        "executed": true,
+        "verdict": "fail",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": true,
+        "dfm_score": null,
+        "attempts": 5,
+        "one_shot": false,
+        "exec_time_ms": 1931,
+        "wall_time_ms": 733314,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "moderate",
+        "path": "extrude_cut"
+      }
+    ],
+    "X04": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": true,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 2,
+        "one_shot": false,
+        "exec_time_ms": 1962,
+        "wall_time_ms": 536491,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "sweep"
+      }
+    ],
+    "X05": [
+      {
+        "executed": true,
+        "verdict": "warn",
+        "verdict_pass": false,
+        "watertight": true,
+        "printable": true,
+        "dim_match": null,
+        "part_type_match": true,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 1,
+        "one_shot": true,
+        "exec_time_ms": 1969,
+        "wall_time_ms": 556437,
+        "error": null,
+        "passed": true,
+        "artifact_gate": {
+          "stl_readable": true,
+          "geometry_nonempty": true,
+          "step_readable": true,
+          "rendered_views": 4,
+          "passed": true
+        },
+        "difficulty": "complex",
+        "path": "loft"
+      }
+    ],
+    "X06": [
+      {
+        "executed": false,
+        "verdict": null,
+        "verdict_pass": false,
+        "watertight": null,
+        "printable": null,
+        "dim_match": null,
+        "part_type_match": null,
+        "feature_match": null,
+        "dfm_score": null,
+        "attempts": 0,
+        "one_shot": false,
+        "exec_time_ms": 0,
+        "wall_time_ms": 1171374,
+        "error": "APITimeoutError: Request timed out.",
+        "passed": false,
+        "artifact_gate": {
+          "stl_readable": false,
+          "geometry_nonempty": false,
+          "step_readable": false,
+          "rendered_views": 0,
+          "passed": false
+        },
+        "difficulty": "complex",
+        "path": "assembly"
+      }
+    ]
+  }
+}
