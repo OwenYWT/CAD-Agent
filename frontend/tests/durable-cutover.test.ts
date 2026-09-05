@@ -25,6 +25,10 @@ const ENGINEERING_SERVICE = readFileSync(
   join(ROOT, "frontend/src/services/engineeringService.ts"),
   "utf8",
 );
+const POSTGRES_HISTORY = readFileSync(
+  join(ROOT, "backend/app/storage/postgres_history.py"),
+  "utf8",
+);
 
 
 test("conversational writes and clarification carry durable workflow identity", () => {
@@ -56,12 +60,31 @@ test("persisted source and immutable artifacts produce the terminal result", () 
 });
 
 
+test("a failed durable modification preserves the last successful model", () => {
+  assert.match(
+    STORE,
+    /terminal[\s\S]*snapshot\.status !== "succeeded"[\s\S]*panel\.result\?\.success[\s\S]*\? panel\.result[\s\S]*: snapshotResult/,
+  );
+});
+
+
+test("history snapshot details hydrate verified FreeCAD parameter state", () => {
+  assert.match(POSTGRES_HISTORY, /read_verified_state_artifact/);
+  assert.match(POSTGRES_HISTORY, /project_state_parameters/);
+  assert.match(POSTGRES_HISTORY, /"parameter_state_sha256": state_sha256/);
+  assert.match(
+    SOCKET,
+    /expectedStateSha256[\s\S]*panel\?\.result\?\.parameter_state_sha256/,
+  );
+});
+
+
 test("version restore no longer calls the legacy branch-head writer", () => {
   assert.doesNotMatch(HISTORY, /restoreModelSnapshot/);
   assert.doesNotMatch(CHANGE_SET, /restoreModelSnapshot/);
   assert.match(HISTORY, /getModelSnapshot/);
   assert.match(
     HISTORY,
-    /恢复会重新执行已保存代码，并生成可审查的 Change Set/,
+    /原生版本从 FCStd 恢复，源码版本重新执行已保存代码；生成候选后需审查提交/,
   );
 });

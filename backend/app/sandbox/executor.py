@@ -5,7 +5,7 @@ import tempfile
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import docker
@@ -22,6 +22,8 @@ class SandboxResult:
     traceback: str | None
     execution_time_ms: int
     work_dir: Path
+    error_code: str | None = None
+    error_details: dict = field(default_factory=dict)
 
 
 class PodmanRuntime:
@@ -500,12 +502,31 @@ class CadQueryExecutor:
                 work_dir=work_dir,
             )
         else:
+            structured = result_data.get("error")
+            if not isinstance(structured, dict):
+                structured = {}
+            is_structured = (
+                structured.get("schema_version") == "mcad-error.v1"
+                and isinstance(structured.get("code"), str)
+                and isinstance(structured.get("message"), str)
+                and isinstance(structured.get("details", {}), dict)
+            )
             return SandboxResult(
                 success=False,
                 files={},
-                error_type=result_data.get("error_type"),
-                error_message=result_data.get("error_message"),
+                error_type=(
+                    result_data.get("error_type")
+                    if not is_structured
+                    else "StructuredExecutionError"
+                ),
+                error_message=(
+                    structured.get("message")
+                    if is_structured
+                    else result_data.get("error_message")
+                ),
                 traceback=result_data.get("traceback"),
                 execution_time_ms=elapsed,
                 work_dir=work_dir,
+                error_code=(structured.get("code") if is_structured else None),
+                error_details=(dict(structured) if is_structured else {}),
             )

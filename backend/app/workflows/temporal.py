@@ -23,6 +23,131 @@ from app.temporal_client import (
 )
 
 
+class OperationContextV1(BaseModel):
+    """Frozen record of how a public request became a durable CAD operation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["mcad-operation-context.v1"] = (
+        "mcad-operation-context.v1"
+    )
+    rule: Literal[
+        "explicit_rest_operation",
+        "explicit_modify_part",
+        "explicit_parameter_edit",
+        "explicit_history_restore",
+        "explicit_ui_intent",
+        "legacy_editable_base_present",
+        "legacy_empty_panel",
+    ]
+    source_channel: Literal["rest", "session_websocket"]
+    panel_id: str | None = Field(default=None, min_length=1, max_length=500)
+    requested_operation: Literal["generate", "modify"] | None = None
+    resolved_operation: Literal["generate", "modify"]
+    requested_modeling_backend: Literal["auto", "freecad", "cadquery"] | None = (
+        None
+    )
+    submission_modeling_backend: Literal["auto", "freecad", "cadquery"]
+    base_revision_id: UUID
+    base_source_kind: Literal[
+        "fcstd_artifact",
+        "agent_generated_source",
+        "revision_manifest_source",
+        "request_code",
+        "none",
+    ]
+    base_source_id: UUID | None = None
+    base_source_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+
+    @model_validator(mode="after")
+    def validate_source_and_channel(self) -> "OperationContextV1":
+        if self.source_channel == "session_websocket" and self.panel_id is None:
+            raise ValueError("session WebSocket operation context requires panel_id")
+        if self.source_channel == "rest" and self.panel_id is not None:
+            raise ValueError("REST operation context cannot include panel_id")
+        if self.resolved_operation == "modify" and (
+            self.submission_modeling_backend == "auto"
+        ):
+            raise ValueError("modify operation context requires a concrete backend")
+        if self.base_source_kind == "fcstd_artifact":
+            if self.submission_modeling_backend != "freecad":
+                raise ValueError("FCStd source requires FreeCAD")
+            if self.base_source_id is None or self.base_source_sha256 is None:
+                raise ValueError("FCStd source requires id and SHA-256")
+        elif self.base_source_kind in {
+            "agent_generated_source",
+            "revision_manifest_source",
+        }:
+            if self.submission_modeling_backend != "cadquery":
+                raise ValueError("persisted source requires CadQuery")
+            if self.base_source_sha256 is None:
+                raise ValueError("persisted source requires SHA-256")
+            if (
+                self.base_source_kind == "agent_generated_source"
+                and self.base_source_id is None
+            ):
+                raise ValueError("agent source requires source id")
+        elif self.base_source_kind == "request_code":
+            if self.source_channel != "rest":
+                raise ValueError("request code is valid only for REST")
+            if self.submission_modeling_backend != "cadquery":
+                raise ValueError("request code requires CadQuery")
+            if self.base_source_id is not None or self.base_source_sha256 is None:
+                raise ValueError("request code requires only SHA-256 identity")
+        elif self.base_source_kind == "none":
+            if self.resolved_operation != "generate":
+                raise ValueError("missing source is valid only for generate")
+            if self.submission_modeling_backend not in {"auto", "cadquery"}:
+                raise ValueError("source-free generation requires auto or CadQuery")
+            if self.base_source_id is not None or self.base_source_sha256 is not None:
+                raise ValueError("source-free generation cannot have source identity")
+        return self
+
+
+class FreeCADParameterUpdateV1(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    parameter_id: str = Field(
+        min_length=3,
+        max_length=161,
+        pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,79}\.[A-Za-z_][A-Za-z0-9_]{0,79}$",
+    )
+    value: float = Field(allow_inf_nan=False)
+
+
+class FreeCADStructuredModificationV1(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["freecad-structured-modification.v1"] = (
+        "freecad-structured-modification.v1"
+    )
+    expected_state_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    parameter_updates: tuple[FreeCADParameterUpdateV1, ...] = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+    @model_validator(mode="after")
+    def unique_updates(self) -> "FreeCADStructuredModificationV1":
+        identifiers = [update.parameter_id for update in self.parameter_updates]
+        if len(identifiers) != len(set(identifiers)):
+            raise ValueError("parameter_duplicate_update")
+        return self
+
+
+class FreeCADRevisionRestoreV1(BaseModel):
+    """Server-resolved immutable input, distinct from the target branch head."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source_revision_id: UUID
+    source_artifact_id: UUID
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class McadOutputRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -101,7 +226,7 @@ class McadSourcePreparationRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=10_000)
     existing_code: str | None = Field(default=None, max_length=50_000)
     manufacturing_profile: dict[str, Any] | None = None
-    output_formats: tuple[Literal["step", "stl", "dxf", "svg"], ...] = (
+    output_formats: tuple[Literal["fcstd", "step", "stl", "dxf", "svg"], ...] = (
         "step",
         "stl",
     )
@@ -164,8 +289,14 @@ class McadAgentWorkflowV2Request(BaseModel):
     branch_id: UUID
     expected_base_revision_id: UUID
     operation: Literal["generate", "modify"]
+    # Missing on historical V2 payloads, which must keep replaying through the
+    # original source-code branch. New durable submissions set this explicitly.
+    modeling_backend: Literal["auto", "cadquery", "freecad"] = "cadquery"
     objective: str = Field(min_length=1, max_length=4000)
     existing_code: str | None = Field(default=None, max_length=50_000)
+    operation_context: OperationContextV1 | None = None
+    structured_modification: FreeCADStructuredModificationV1 | None = None
+    revision_restore: FreeCADRevisionRestoreV1 | None = None
     manufacturing_profile: dict[str, Any] | None = None
     output_formats: tuple[Literal["step", "stl", "dxf", "svg"], ...] = (
         "step",
@@ -175,12 +306,46 @@ class McadAgentWorkflowV2Request(BaseModel):
 
     @model_validator(mode="after")
     def validate_operation_inputs(self) -> "McadAgentWorkflowV2Request":
-        if self.operation == "modify" and not self.existing_code:
+        if self.revision_restore is not None and (
+            self.operation != "modify"
+            or self.modeling_backend != "freecad"
+            or self.existing_code is not None
+            or self.structured_modification is not None
+        ):
+            raise ValueError("revision restore requires code-free FreeCAD modify only")
+        if self.structured_modification is not None and (
+            self.operation != "modify"
+            or self.modeling_backend != "freecad"
+            or self.existing_code is not None
+        ):
+            raise ValueError(
+                "structured modification requires code-free FreeCAD modify"
+            )
+        if (
+            self.modeling_backend == "cadquery"
+            and self.operation == "modify"
+            and not self.existing_code
+        ):
             raise ValueError("modify planning requires existing_code")
         if self.operation == "generate" and self.existing_code is not None:
             raise ValueError("generate planning cannot include existing_code")
         if not self.output_formats:
             raise ValueError("output_formats cannot be empty")
+        if self.modeling_backend == "freecad" and set(self.output_formats) - {
+            "fcstd",
+            "step",
+            "stl",
+            "dxf",
+        }:
+            raise ValueError("FreeCAD output formats must be fcstd/step/stl/dxf")
+        if self.operation_context is not None:
+            if self.operation_context.resolved_operation != self.operation:
+                raise ValueError("operation context does not match request operation")
+            if (
+                self.operation_context.submission_modeling_backend
+                != self.modeling_backend
+            ):
+                raise ValueError("operation context does not match request backend")
         return self
 
     def temporal_payload(self) -> dict:
@@ -258,9 +423,13 @@ def mcad_agent_v2_request_payload(
     manufacturing_profile: dict[str, Any] | None,
     output_formats: tuple[str, ...],
     confirmation_timeout_seconds: int,
+    modeling_backend: Literal["auto", "cadquery", "freecad"] = "cadquery",
+    operation_context: OperationContextV1 | None = None,
+    structured_modification: FreeCADStructuredModificationV1 | None = None,
+    revision_restore: FreeCADRevisionRestoreV1 | None = None,
 ) -> dict[str, Any]:
     """Canonical immutable V2 payload used by WorkflowRun idempotency."""
-    return {
+    payload = {
         "branch_id": str(branch_id),
         "expected_base_revision_id": str(expected_base_revision_id),
         "operation": operation,
@@ -270,6 +439,17 @@ def mcad_agent_v2_request_payload(
         "output_formats": list(output_formats),
         "confirmation_timeout_seconds": confirmation_timeout_seconds,
     }
+    if modeling_backend != "cadquery":
+        payload["modeling_backend"] = modeling_backend
+    if operation_context is not None:
+        payload["operation_context"] = operation_context.model_dump(mode="json")
+    if structured_modification is not None:
+        payload["structured_modification"] = structured_modification.model_dump(
+            mode="json"
+        )
+    if revision_restore is not None:
+        payload["revision_restore"] = revision_restore.model_dump(mode="json")
+    return payload
 
 
 async def start_mcad_agent_v2_workflow(
@@ -288,6 +468,10 @@ async def start_mcad_agent_v2_workflow(
     output_formats: tuple[str, ...] = ("step", "stl"),
     confirmation_timeout_seconds: int = 3600,
     require_worker_ready: bool = True,
+    modeling_backend: Literal["auto", "cadquery", "freecad"] = "cadquery",
+    operation_context: OperationContextV1 | None = None,
+    structured_modification: FreeCADStructuredModificationV1 | None = None,
+    revision_restore: FreeCADRevisionRestoreV1 | None = None,
 ) -> tuple[UUID, WorkflowHandle]:
     """Fail closed on V2 readiness, persist once, then start V2 idempotently."""
     objective = objective.strip()
@@ -302,6 +486,10 @@ async def start_mcad_agent_v2_workflow(
         manufacturing_profile=manufacturing_profile,
         output_formats=output_formats,
         confirmation_timeout_seconds=confirmation_timeout_seconds,
+        modeling_backend=modeling_backend,
+        operation_context=operation_context,
+        structured_modification=structured_modification,
+        revision_restore=revision_restore,
     )
     # New work is accepted only when V2 has pollers. An already-persisted
     # idempotent submission may re-enter this boundary without readiness so a
@@ -326,6 +514,10 @@ async def start_mcad_agent_v2_workflow(
         branch_id=branch_id,
         expected_base_revision_id=expected_base_revision_id,
         operation=operation,
+        modeling_backend=modeling_backend,
+        operation_context=operation_context,
+        structured_modification=structured_modification,
+        revision_restore=revision_restore,
         objective=objective,
         existing_code=existing_code,
         manufacturing_profile=manufacturing_profile,

@@ -26,8 +26,9 @@ class Settings(BaseSettings):
     sandbox_timeout_s: int = 60
     sandbox_memory_limit: str = "512m"
     sandbox_max_concurrent: int = 4  # cap simultaneous container spawns (each = CPU+RAM)
-    # M1 durable control plane. Development keeps this disabled until its real
-    # dependencies are intentionally started; production fails closed.
+    # The interactive product has one durable write path.  The false value is
+    # retained only so hermetic APP_ENVIRONMENT=test processes can opt out of
+    # external services; every runnable environment fails closed below.
     durable_control_plane_enabled: bool = False
     database_url: str = Field(default="", repr=False)
     database_pool_size: int = Field(default=10, ge=1, le=100)
@@ -274,12 +275,12 @@ class Settings(BaseSettings):
             "test",
         }
         if not self.durable_control_plane_enabled:
-            if production_like:
-                return [
-                    "DURABLE_CONTROL_PLANE_ENABLED must be true outside local "
-                    "development."
-                ]
-            return []
+            if environment == "test":
+                return []
+            return [
+                "DURABLE_CONTROL_PLANE_ENABLED must be true because browser "
+                "and REST write paths require the durable control plane."
+            ]
 
         problems: list[str] = []
         if not self.database_url.strip():

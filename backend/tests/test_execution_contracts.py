@@ -164,6 +164,20 @@ def test_execution_result_records_terminal_artifacts_error_and_provenance():
     assert result.outputs[0].sha256 == "c" * 64
 
 
+def test_historical_execution_error_payload_keeps_new_fields_optional():
+    error = ExecutionError.model_validate({
+        "category": "cad_kernel",
+        "code": "legacy_failure",
+        "message": "legacy persisted row",
+        "evidence": {},
+    })
+
+    assert error.operation_id is None
+    assert error.action is None
+    assert error.details == {}
+    assert error.retryable is False
+
+
 def test_success_result_cannot_contain_error():
     with pytest.raises(ValidationError):
         ExecutionResult(

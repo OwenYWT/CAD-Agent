@@ -8,6 +8,7 @@ success result when an optional renderer or exporter is unavailable.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.metadata
 import json
 import os
@@ -91,6 +92,22 @@ def _verify_versions(lock: dict[str, Any]) -> dict[str, str]:
     versions["node"] = node
     if node != lock["node"]["version"]:
         raise ProbeFailure(f"Node version mismatch: {node} != {lock['node']['version']}")
+
+    freecad_probe = _run(
+        [
+            lock["freecad"]["command"],
+            "-c",
+            "import FreeCAD as App; print('.'.join(App.Version()[:3]))",
+        ],
+        cwd=Path("/tmp"),
+        timeout=30,
+    )
+    freecad_version = freecad_probe.stdout.strip()
+    versions["freecad"] = freecad_version
+    if freecad_version != lock["freecad"]["version"]:
+        raise ProbeFailure(
+            f"FreeCAD version mismatch: {freecad_version} != {lock['freecad']['version']}"
+        )
 
     implicit_package = (
         SKILLS_ROOT / "implicit-cad" / "scripts" / "packages" / "implicitjs"
@@ -214,6 +231,17 @@ def _probe_python_cad(work: Path, build123d_source: Path, dxf_source: Path) -> d
     stl_mesh = trimesh.load_mesh(cadquery_stl, force="mesh")
     if stl_mesh.is_empty or len(stl_mesh.faces) == 0:
         raise ProbeFailure("trimesh found no faces in the STL artifact")
+    multibody_stl = work / "cadquery-multibody.stl"
+    multibody = cq.Compound.makeCompound([
+        cq.Workplane("XY").box(4, 4, 4).val(),
+        cq.Workplane("XY").box(4, 4, 4).translate((10, 0, 0)).val(),
+    ])
+    cq.exporters.export(multibody, str(multibody_stl), exportType="STL")
+    multibody_mesh = trimesh.load_mesh(multibody_stl, force="mesh", process=False)
+    multibody_mesh.merge_vertices(digits_vertex=8)
+    multibody_mesh.process(validate=True)
+    if len(multibody_mesh.split(only_watertight=False)) != 2:
+        raise ProbeFailure("trimesh could not split a two-solid STL artifact")
     ezdxf.readfile(dxf_path)
     ET.parse(cadquery_svg)
     if _require_file(cad_png, minimum_bytes=100).read_bytes()[:8] != PNG_SIGNATURE:
@@ -293,10 +321,44 @@ def run_probe(output_dir: Path) -> dict[str, Any]:
         **_probe_python_cad(output_dir, build123d_source, dxf_source),
         **_probe_implicit_cad(output_dir, implicit_source),
     }
+    freecad_process = _run(
+        [
+            lock["freecad"]["command"],
+            "-c",
+            (
+                "exec(compile(open('/opt/cad-agent/freecad_runtime_probe.py', "
+                "encoding='utf-8').read(), "
+                "'/opt/cad-agent/freecad_runtime_probe.py', 'exec'))"
+            ),
+        ],
+        cwd=output_dir,
+        timeout=300,
+    )
+    freecad_probe = None
+    for line in reversed(freecad_process.stdout.splitlines()):
+        try:
+            candidate = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict):
+            freecad_probe = candidate
+            break
+    if (
+        freecad_probe is None
+        or freecad_probe.get("schema_version") != "mcad-runtime-probe.v2"
+    ):
+        raise ProbeFailure("FreeCAD operation probe returned no valid v2 result")
+    checks = list(freecad_probe.get("checks") or ())
+    if not checks or any(check.get("status") != "passed" for check in checks):
+        raise ProbeFailure("FreeCAD operation probe did not pass every check")
     return {
         "status": "success",
-        "schema_version": lock["schema_version"],
+        "schema_version": "mcad-runtime-probe.v2",
+        "runtime_lock_sha256": hashlib.sha256(
+            LOCK_PATH.read_bytes()
+        ).hexdigest(),
         "versions": versions,
+        "checks": checks,
         "artifacts": {
             name: {
                 "path": str(path),
@@ -304,7 +366,7 @@ def run_probe(output_dir: Path) -> dict[str, Any]:
             }
             for name, path in artifacts.items()
         },
-        "verified_operations": lock["verified_operations"],
+        "verified_operations": [check["id"] for check in checks],
     }
 
 

@@ -5,6 +5,7 @@ import time
 from pydantic import BaseModel
 
 from app.config import settings, make_llm_client
+from app.llm import find_provider_exception
 from app.models.schemas import CADPlan
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,8 @@ ASSEMBLY_DECOMPOSE_PROMPT = """\u4f60\u662f CAD \u88c5\u914d\u4f53\u8bbe\u8ba1\u
 4. \u6bcf\u4e2a\u96f6\u4ef6\u7ed9\u51fa name\u3001description\uff08\u542b\u5173\u952e\u5c3a\u5bf8\uff09\u3001dimensions\u3001position [x,y,z] \u548c color\u3002
 5. \u989c\u8272\u4ece\u4ee5\u4e0b\u503c\u9009\u62e9: lightgray, steelblue, orange, green, red, gold, silver\u3002
 6. \u6700\u591a 8 \u4e2a\u96f6\u4ef6\uff0c\u4f18\u5148\u62c6\u5206\u4e3b\u8981\u7ed3\u6784\u4ef6\u3002
-7. \u4f4d\u7f6e\u5750\u6807\u4ee5 mm \u4e3a\u5355\u4f4d\uff0c\u88c5\u914d\u4f53\u4e2d\u5fc3\u5728\u539f\u70b9\u3002
+7. \u4f4d\u7f6e\u5750\u6807\u4ee5 mm \u4e3a\u5355\u4f4d\u3002position [x,y,z] \u4e25\u683c\u8868\u793a\u96f6\u4ef6\u8f74\u5411\u5305\u56f4\u76d2\u5e95\u9762\u4e2d\u5fc3\u5728\u88c5\u914d\u5750\u6807\u7cfb\u4e2d\u7684\u76ee\u6807\u70b9\uff1ax/y \u662f\u5e95\u9762\u4e2d\u5fc3\uff0cz \u662f\u5e95\u9762\u9ad8\u5ea6\u3002\u4e0d\u5f97\u628a position \u89e3\u91ca\u4e3a\u5305\u56f4\u76d2\u4e2d\u5fc3\u3002
+8. \u7528\u6237\u660e\u786e\u7ed9\u51fa position \u65f6\u5fc5\u987b\u539f\u6837\u4fdd\u7559\uff1b\u7528\u6237\u672a\u7ed9\u51fa\u65f6\uff0c\u518d\u6309\u5e95\u9762\u4e2d\u5fc3\u8bed\u4e49\u89c4\u5212\u65e0\u91cd\u53e0\u7684\u9ed8\u8ba4\u5e03\u5c40\u3002
 
 \u8f93\u51fa JSON\uff08\u4e0d\u8981\u8f93\u51fa\u5176\u4ed6\u6587\u5b57\uff09:
 {
@@ -73,46 +75,89 @@ class AssemblyPlanner:
             f"\u7279\u5f81: {plan.features}\n"
         )
 
-        t0 = time.time()
-        logger.info("AssemblyPlanner LLM call start")
-        response = await self.client.chat.completions.create(
-            model=settings.llm_model,
-            max_tokens=2048,
-            temperature=0.1,
-            messages=[
-                {"role": "system", "content": ASSEMBLY_DECOMPOSE_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-        )
-        logger.info(f"AssemblyPlanner LLM call done in {time.time() - t0:.1f}s")
-
-        text = response.choices[0].message.content.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1]
-            if text.endswith("```"):
-                text = text[:-3]
-            text = text.strip()
-
-        try:
-            parsed = json.loads(text)
-            parts = [AssemblyPart(**p) for p in parsed.get("parts", [])]
-            if not parts:
-                raise ValueError("No parts in plan")
-            return AssemblyPlan(
-                parts=parts[:8],
-                assembly_description=parsed.get("assembly_description", plan.description),
-            )
-        except Exception as e:
-            if not allow_fallback:
-                raise
-            logger.warning(f"AssemblyPlanner parse failed: {e}, falling back to single part")
-            return AssemblyPlan(
-                parts=[
-                    AssemblyPart(
-                        name="main",
-                        description=plan.description,
-                        dimensions=plan.dimensions,
+        last_error: Exception | None = None
+        for attempt in range(2):
+            try:
+                t0 = time.time()
+                logger.info(
+                    "AssemblyPlanner LLM call start (attempt=%d)",
+                    attempt + 1,
+                )
+                response = await self.client.chat.completions.create(
+                    model=settings.llm_model,
+                    max_tokens=2048,
+                    temperature=0.1,
+                    messages=[
+                        {"role": "system", "content": ASSEMBLY_DECOMPOSE_PROMPT},
+                        {"role": "user", "content": user_content},
+                    ],
+                    response_format={"type": "json_object"},
+                )
+                choice = response.choices[0]
+                finish_reason = getattr(choice, "finish_reason", None)
+                logger.info(
+                    "AssemblyPlanner LLM call done in %.1fs (stop=%s)",
+                    time.time() - t0,
+                    finish_reason,
+                )
+                if finish_reason == "length":
+                    raise ValueError(
+                        "assembly planner output was truncated at 2048 completion tokens"
                     )
-                ],
-                assembly_description=plan.description,
-            )
+                content = choice.message.content
+                if not isinstance(content, str) or not content.strip():
+                    raise ValueError("assembly planner model returned empty content")
+                text = content.strip()
+                if text.startswith("```"):
+                    text = text.split("\n", 1)[1]
+                    if text.endswith("```"):
+                        text = text[:-3]
+                    text = text.strip()
+
+                parsed = json.loads(text)
+                if not isinstance(parsed, dict):
+                    raise ValueError(
+                        "assembly planner response must be a JSON object"
+                    )
+                parts = [
+                    AssemblyPart(**item)
+                    for item in parsed.get("parts", [])
+                ]
+                if not parts:
+                    raise ValueError("assembly planner returned no parts")
+                return AssemblyPlan(
+                    parts=parts[:8],
+                    assembly_description=parsed.get(
+                        "assembly_description",
+                        plan.description,
+                    ),
+                )
+            except RuntimeError:
+                raise
+            except Exception as exc:
+                if find_provider_exception(exc) is not None:
+                    raise
+                last_error = exc
+                logger.warning(
+                    "AssemblyPlanner attempt %d parse/validation failed: %s",
+                    attempt + 1,
+                    exc,
+                )
+
+        if not allow_fallback:
+            raise ValueError(
+                "assembly planner model did not return a valid assembly plan"
+            ) from last_error
+        logger.warning(
+            "AssemblyPlanner exhausted valid responses; falling back to single part"
+        )
+        return AssemblyPlan(
+            parts=[
+                AssemblyPart(
+                    name="main",
+                    description=plan.description,
+                    dimensions=plan.dimensions,
+                )
+            ],
+            assembly_description=plan.description,
+        )

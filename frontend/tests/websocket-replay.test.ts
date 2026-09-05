@@ -129,6 +129,7 @@ function snapshot(
     cancellation_requested_at: null,
     error_code: null,
     error_message: null,
+    error: null,
     created_at: "2026-07-30T12:00:00Z",
     started_at: "2026-07-30T12:00:01Z",
     updated_at: "2026-07-30T12:00:02Z",
@@ -248,4 +249,17 @@ test("Change Set actions update the branch head used by the next write", () => {
   assert.equal(durableChangeSetHeadRevision(detail), "revision-2");
   detail.status = "rolled_back";
   assert.equal(durableChangeSetHeadRevision(detail), "revision-1");
+});
+
+test("an uncommitted result never advances or rewinds a known branch head", () => {
+  const candidate = {
+    success: true,
+    revision_id: "candidate-2",
+    expected_base_revision_id: "base-1",
+    change_set_id: "change-1",
+  } as GenerationResult;
+  assert.equal(durableResultHeadRevision(candidate, "base-1"), "base-1");
+  assert.equal(durableResultHeadRevision(candidate, "candidate-2"), "candidate-2");
+  assert.equal(durableResultHeadRevision(candidate, null), "base-1");
+  assert.equal(durableResultHeadRevision({ ...candidate, expected_base_revision_id: undefined }, null), null);
 });

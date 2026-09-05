@@ -24,7 +24,11 @@ export interface CADParameter {
   unit?: string | null;
   group?: string | null;
   comment?: string | null;
-  line: number;
+  line?: number | null;
+  source?: "code" | "freecad";
+  object_name?: string | null;
+  property_name?: string | null;
+  property_type?: string | null;
 }
 
 export type StepStatus = "queued" | "running" | "success" | "warn" | "failed" | "skipped";
@@ -82,9 +86,20 @@ export interface BoundingBox {
 }
 
 export interface ValidationData {
-  is_watertight: boolean;
-  bounding_box: BoundingBox | null;
-  volume: number;
+  // Legacy mesh measurements are absent in durable gate-only summaries.
+  is_watertight?: boolean;
+  bounding_box?: BoundingBox | null;
+  volume?: number;
+  status?: string;
+  issue_count?: number;
+  gates?: Array<{
+    gate: string;
+    mode: string;
+    outcome: string;
+    evidence_id?: string;
+    evidence_hash?: string;
+    issues?: string[];
+  }>;
   printable?: boolean | null;
   fits_build_volume?: boolean | null;
   min_wall_thickness?: number | null;
@@ -192,11 +207,17 @@ export interface GenerationResult {
   code?: string;
   params?: Record<string, ParamConfig>;
   parameters?: CADParameter[] | null;
+  parameter_state_sha256?: string | null;
   execution_time_ms?: number;
   attempts?: number;
   repair_history?: RepairStep[];
   recovery_actions?: RecoveryAction[];
-  error?: { type: string; message: string };
+  error?: {
+    type: string;
+    message: string;
+    details?: Record<string, unknown>;
+    retryable?: boolean;
+  };
   validation?: ValidationData;
   assembly_parts?: AssemblyPartInfo[];
   inspect_report?: InspectReport | null;
@@ -415,6 +436,61 @@ export interface DurableAgentSnapshotProjection {
   plan?: Record<string, unknown> | null;
   validations: DurableAgentValidationProjection[];
   risk_summary?: Record<string, unknown> | null;
+  bom?: DurableBOMProjection | null;
+}
+
+export interface DurableBOMProjection {
+  status: "pending" | "running" | "succeeded" | "not_applicable"
+    | "missing" | "failed" | "unsupported" | "cancelled";
+  revision_id?: string | null;
+  evidence_id?: string | null;
+  json_download_url?: string | null;
+  csv_download_url?: string | null;
+  error?: StructuredExecutionError | null;
+}
+
+export interface FreeCADBOMRow {
+  index: string;
+  name: string;
+  quantity: number;
+  file_name: string;
+  properties: Record<string, string>;
+}
+
+export interface FreeCADBOMDocument {
+  schema_version: "freecad-bom.v1";
+  source: Record<string, unknown>;
+  generator: Record<string, unknown>;
+  columns: string[];
+  rows: FreeCADBOMRow[];
+}
+
+export interface DurableAffectedObject {
+  object_id: string;
+  object_type: "part" | "assembly" | "feature" | "profile" | "file";
+  label: string;
+  change: "create" | "modify" | "remove" | "inspect";
+}
+
+export interface DurableConfirmationProjection {
+  status: "waiting";
+  workflow_run_id: string;
+  reason: string;
+  plan_hash: string;
+  affected_objects: DurableAffectedObject[];
+}
+
+export interface StructuredExecutionError {
+  category: "user_input" | "user_code" | "cad_kernel" | "validation"
+    | "infrastructure" | "timeout" | "resource" | "artifact"
+    | "cancellation" | "internal";
+  code: string;
+  message: string;
+  operation_id?: string | null;
+  action?: string | null;
+  details: Record<string, string | number | boolean | null | string[] | number[]>;
+  retryable: boolean;
+  evidence: Record<string, string | number | boolean | null>;
 }
 
 export interface DurableTaskSnapshot {
@@ -434,6 +510,9 @@ export interface DurableTaskSnapshot {
   last_event_sequence: number;
   error_code?: string | null;
   error_message?: string | null;
+  error?: StructuredExecutionError | null;
+  parameters?: CADParameter[];
+  parameter_state_sha256?: string | null;
   artifacts?: {
     id: string;
     revision_id: string;
@@ -452,6 +531,7 @@ export interface DurableTaskSnapshot {
     objective: string;
   } | null;
   agent?: DurableAgentSnapshotProjection | null;
+  confirmation?: DurableConfirmationProjection | null;
 }
 
 export type DurableWSMessage =
@@ -507,7 +587,7 @@ export interface CapabilityDependency {
   label: string;
   kind: string;
   required: boolean;
-  available?: boolean;
+  available?: boolean | null;
   detail?: string | null;
 }
 

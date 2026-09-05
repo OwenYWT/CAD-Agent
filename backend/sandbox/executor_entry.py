@@ -179,6 +179,13 @@ def main():
             # 2D mode: expect DXF file at /sandbox/output/result.dxf
             dxf_path = "/sandbox/output/result.dxf"
             if os.path.exists(dxf_path):
+                import ezdxf
+                document = ezdxf.readfile(dxf_path)
+                if document.units != ezdxf.units.MM:
+                    raise ValueError(
+                        "dxf_units_not_millimetres: generated coordinates must be in mm; "
+                        "set doc.units = ezdxf.units.MM before saving"
+                    )
                 files["result.dxf"] = dxf_path
             else:
                 raise ValueError(
@@ -208,12 +215,29 @@ def main():
                     b3d.export_stl(obj, stl_path)
                     files[f"{name}.stl"] = stl_path
                 elif isinstance(obj, cq.Assembly):
-                    # Assembly: use .save() for STEP, merge to compound for STL
+                    # Preserve component bodies and hierarchy in STEP.  STL has
+                    # no assembly/component topology; coincident faces between
+                    # touching closed components become a non-manifold mesh if
+                    # the raw compound is tessellated.  Boolean-fuse the preview
+                    # shape so the exported surface is a real watertight model.
+                    # Disconnected components remain multiple closed solids.
                     obj.save(step_path)
                     files[f"{name}.step"] = step_path
                     try:
                         compound = obj.toCompound()
-                        cq.exporters.export(cq.Workplane().add(compound), stl_path, exportType="STL")
+                        preview_shape = compound
+                        solids = list(compound.Solids())
+                        if len(solids) > 1:
+                            preview_shape = solids[0]
+                            for solid in solids[1:]:
+                                preview_shape = preview_shape.fuse(solid)
+                        if not preview_shape.isValid():
+                            raise ValueError("assembly preview fusion produced invalid geometry")
+                        cq.exporters.export(
+                            cq.Workplane().add(preview_shape),
+                            stl_path,
+                            exportType="STL",
+                        )
                         files[f"{name}.stl"] = stl_path
                     except Exception as e:
                         print(f"Warning: STL export for assembly failed: {e}")

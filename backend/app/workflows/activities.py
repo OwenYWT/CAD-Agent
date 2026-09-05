@@ -17,7 +17,7 @@ from sqlalchemy import text
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from app.agent.durable_plan import AgentPlan
+from app.agent.durable_plan import AgentPlan, normalize_agent_plan_backend
 from app.agent.durable_plan import AgentPlanStep
 from app.agent.durable_planner import DurableAgentPlanner
 from app.agent.durable_repair import (
@@ -31,9 +31,11 @@ from app.dfm.models import StepAnalysisResult
 from app.dfm.step_analyzer_script import STEP_ANALYSIS_SCRIPT
 from app.domain.runs import AttemptStatus, StepStatus, WorkflowStatus
 from app.execution.backend import ExecutionBackend, MaterializedExecutionOutcome
+from app.execution.canonical import canonical_sha256
 from app.execution.composition import get_execution_backend
 from app.execution.contracts import (
     ArtifactInput,
+    ExecutionError,
     ExecutionSource,
     ExecutionSpec,
     ExecutionStatus,
@@ -41,7 +43,18 @@ from app.execution.contracts import (
     ResourceLimits,
     RuntimeRequirement,
 )
+from app.freecad.contracts import FreeCADOperationPlan
+from app.freecad.bom_contracts import (
+    FreeCADBOMDocumentV1,
+    FreeCADBOMRequestV1,
+)
+from app.freecad.state_contract import (
+    ParameterStateError,
+    compile_parameter_operation_plan,
+)
+from app.freecad.operation_generator import FreeCADOperationGenerator
 from app.object_store import download_object, get_object, put_file, sha256_object
+from app.repositories.artifacts import committed_artifact_for_revision
 from app.repositories.revisions import (
     StaleBaseRevision,
     create_candidate_change_set,
@@ -118,17 +131,35 @@ def _agent_v2_request(payload: dict[str, Any]) -> McadAgentWorkflowV2Request:
     )
 
 
+def _revision_restore_operation_plan(request: McadAgentWorkflowV2Request) -> FreeCADOperationPlan:
+    restore = request.revision_restore
+    if restore is None:
+        raise ValueError("revision restore source is required")
+    prefix = f"restore-{restore.source_revision_id.hex}"
+    return FreeCADOperationPlan.model_validate({
+        "operations": [
+            {"op_id": f"{prefix}-inspect", "action": "document.inspect", "args": {}},
+            {"op_id": f"{prefix}-export", "action": "document.export", "args": {
+                "formats": list(dict.fromkeys(("fcstd", *request.output_formats))),
+                "basename": "model",
+            }},
+        ],
+    })
+
+
 def _worker_id() -> str:
     return f"temporal:{socket.gethostname()}:{os.getpid()}"
 
 
 _MODELING_MEDIA_TYPES = {
+    "fcstd": "application/vnd.freecad.fcstd",
     "step": "model/step",
     "stl": "model/stl",
     "dxf": "image/vnd.dxf",
     "svg": "image/svg+xml",
     "png": "image/png",
     "json": "application/json",
+    "state": "application/json",
 }
 
 
@@ -977,6 +1008,7 @@ async def _mark_execution_failure(
     status: ExecutionStatus,
     error_code: str,
     error_message: str,
+    error: ExecutionError | None = None,
 ) -> None:
     tenant_id = _uuid(payload, "tenant_id")
     principal_id = _uuid(payload, "principal_id")
@@ -1007,6 +1039,7 @@ async def _mark_execution_failure(
                 target=target_attempt,
                 error_code=error_code,
                 error_message=error_message,
+                error=error,
             )
         step_status = await connection.scalar(
             text("SELECT status FROM step_runs WHERE id=:id FOR UPDATE"),
@@ -1020,6 +1053,7 @@ async def _mark_execution_failure(
                 target=target_step,
                 error_code=error_code,
                 error_message=error_message,
+                error=error,
             )
         change_set_id = payload.get("change_set_id")
         if change_set_id:
@@ -1308,6 +1342,7 @@ class McadWorkflowActivities:
         durable_modeling: DurableModelingSourceGenerator | None = None,
         durable_repair: DurableRepairSourceGenerator | None = None,
         durable_visual: DurableVisualValidator | None = None,
+        freecad_operations: FreeCADOperationGenerator | None = None,
     ):
         self.backend = backend or get_execution_backend()
         self.source_preparer = source_preparer or SourcePreparer(
@@ -1317,9 +1352,87 @@ class McadWorkflowActivities:
         self.durable_modeling = durable_modeling or DurableModelingSourceGenerator()
         self.durable_repair = durable_repair or DurableRepairSourceGenerator()
         self.durable_visual = durable_visual or DurableVisualValidator()
+        self.freecad_operations = freecad_operations or FreeCADOperationGenerator()
+
+    async def _freecad_revision_artifact(
+        self,
+        request: McadAgentWorkflowV2Request,
+        artifact_kind: str,
+    ) -> dict[str, Any]:
+        async with tenant_transaction(
+            request.tenant_id,
+            request.principal_id,
+        ) as connection:
+            artifact = await committed_artifact_for_revision(
+                connection,
+                tenant_id=request.tenant_id,
+                project_id=request.project_id,
+                revision_id=(
+                    request.revision_restore.source_revision_id
+                    if request.revision_restore else request.expected_base_revision_id
+                ),
+                artifact_kind=artifact_kind,
+            )
+        if artifact is None:
+            raise ApplicationError(
+                f"base revision has no {artifact_kind} artifact",
+                type=f"agent_freecad_base_{artifact_kind}_missing",
+                non_retryable=True,
+            )
+        if request.revision_restore is not None and artifact_kind == "fcstd" and (
+            artifact["id"] != request.revision_restore.source_artifact_id
+            or str(artifact["sha256"]) != request.revision_restore.source_sha256
+        ):
+            raise ApplicationError(
+                "historical FCStd artifact identity differs from the accepted restore request",
+                type="revision_restore_source_changed", non_retryable=True,
+            )
+        return artifact
+
+    async def _freecad_revision_state(
+        self,
+        request: McadAgentWorkflowV2Request,
+    ) -> dict[str, Any]:
+        artifact = await self._freecad_revision_artifact(request, "state")
+        payload = await get_object(str(artifact["object_key"]))
+        if (
+            len(payload) != int(artifact["size_bytes"])
+            or hashlib.sha256(payload).hexdigest() != str(artifact["sha256"])
+        ):
+            raise ApplicationError(
+                "base revision state artifact failed integrity verification",
+                type="agent_freecad_base_state_rejected",
+                non_retryable=True,
+            )
+        try:
+            state = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ApplicationError(
+                "base revision state artifact is not valid JSON",
+                type="agent_freecad_base_state_invalid",
+                non_retryable=True,
+            ) from exc
+        if not isinstance(state, dict) or state.get("schema_version") not in {
+            "freecad-state.v1",
+            "freecad-state.v2",
+        }:
+            raise ApplicationError(
+                "base revision state artifact has an unsupported schema",
+                type="agent_freecad_base_state_invalid",
+                non_retryable=True,
+            )
+        return state
 
     @staticmethod
     def _agent_planning_error(exc: Exception) -> ApplicationError:
+        if isinstance(exc, ApplicationError):
+            return exc
+        if isinstance(exc, ParameterStateError):
+            return ApplicationError(
+                str(exc),
+                type=exc.code,
+                non_retryable=True,
+            )
         public = public_generation_error(exc)
         non_retryable = (
             is_nonretryable_provider_error(exc)
@@ -1360,19 +1473,85 @@ class McadWorkflowActivities:
                 kind="agent_requirements",
             )
         try:
-            if request.operation == "generate":
+            base_state: dict[str, Any] | None = None
+            if request.revision_restore is not None:
+                requirements = ModificationPlan(
+                    description=f"从历史 FCStd 恢复版本 {request.revision_restore.source_revision_id}",
+                    modification_type="revision_restore",
+                )
+            elif request.operation == "generate":
                 requirements = await self.durable_planner.requirements_generation(
                     request.objective
                 )
             else:
+                if request.modeling_backend == "freecad":
+                    if request.structured_modification is not None:
+                        state_artifact = await self._freecad_revision_artifact(
+                            request,
+                            "state",
+                        )
+                        if str(state_artifact["sha256"]) != (
+                            request.structured_modification.expected_state_sha256
+                        ):
+                            raise ParameterStateError(
+                                "parameter_state_stale",
+                                "parameter state hash differs from the committed revision",
+                            )
+                    base_state = await self._freecad_revision_state(request)
+                    if request.structured_modification is not None:
+                        if base_state.get("schema_version") != "freecad-state.v2":
+                            raise ParameterStateError(
+                                "parameter_state_missing",
+                                "structured parameter editing requires freecad-state.v2",
+                            )
+                        compile_parameter_operation_plan(
+                            base_state,
+                            request.structured_modification.model_dump(mode="json"),
+                            output_formats=request.output_formats,
+                        )
+                        requirements = ModificationPlan(
+                            description="更新已验证的 FreeCAD 参数",
+                            modification_type="structured_parameter_edit",
+                            target_params={
+                                update.parameter_id: update.value
+                                for update in request.structured_modification.parameter_updates
+                            },
+                        )
+                        result = {
+                            "step_key": step_key,
+                            "operation": request.operation,
+                            "requirements": requirements.model_dump(mode="json"),
+                            "base_state": base_state,
+                        }
+                        async with tenant_transaction(
+                            tenant_id,
+                            principal_id,
+                        ) as connection:
+                            return await _complete_agent_logical_step(
+                                connection,
+                                tenant_id=tenant_id,
+                                workflow_id=workflow_id,
+                                step_id=step_id,
+                                event_type=event_type,
+                                result=result,
+                            )
+                    model_context = json.dumps(
+                        base_state,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                else:
+                    model_context = request.existing_code or ""
                 requirements = await self.durable_planner.requirements_modification(
-                    request.existing_code or "",
+                    model_context,
                     request.objective,
                 )
             result = {
                 "step_key": step_key,
                 "operation": request.operation,
                 "requirements": requirements.model_dump(mode="json"),
+                "base_state": base_state,
             }
         except Exception as exc:
             error = self._agent_planning_error(exc)
@@ -1431,7 +1610,13 @@ class McadWorkflowActivities:
             )
         try:
             plan = CADPlan.model_validate(payload["requirements"])
-            decomposition = await self.durable_planner.decompose_generation(plan)
+            if (
+                request.modeling_backend == "freecad"
+                and plan.part_type not in {"assembly", "profile_2d"}
+            ):
+                decomposition = None
+            else:
+                decomposition = await self.durable_planner.decompose_generation(plan)
             result = {
                 "step_key": step_key,
                 "decomposition": decomposition,
@@ -1491,12 +1676,22 @@ class McadWorkflowActivities:
         try:
             if request.operation == "generate":
                 requirements = CADPlan.model_validate(payload["requirements"])
-                plan = self.durable_planner.compose_generation(
-                    request.objective,
-                    requirements,
-                    decomposition=payload.get("decomposition"),
-                    output_formats=request.output_formats,
-                )
+                if (
+                    request.modeling_backend == "freecad"
+                    and requirements.part_type not in {"assembly", "profile_2d"}
+                ):
+                    plan = self.durable_planner.compose_freecad_generation(
+                        request.objective,
+                        requirements,
+                        output_formats=request.output_formats,
+                    )
+                else:
+                    plan = self.durable_planner.compose_generation(
+                        request.objective,
+                        requirements,
+                        decomposition=payload.get("decomposition"),
+                        output_formats=request.output_formats,
+                    )
             else:
                 requirements = ModificationPlan.model_validate(
                     payload["requirements"]
@@ -1507,13 +1702,38 @@ class McadWorkflowActivities:
                     expected_base_revision_id=request.expected_base_revision_id,
                     output_formats=request.output_formats,
                 )
+            if bool(payload.get("backend_policy_v1")):
+                plan = normalize_agent_plan_backend(
+                    operation=request.operation,
+                    request_modeling_backend=request.modeling_backend,
+                    plan_candidate=plan,
+                )
+            if request.revision_restore is not None:
+                restored_plan = plan.temporal_payload()
+                # Restoration must fail on invalid history, never redesign it.
+                for gate in restored_plan["validation_policy"].values():
+                    gate["repair_budget"] = 0
+                restored_plan["design_brief"]["acceptance_criteria"] = [
+                    "历史 FCStd 可打开并重算，保留原始特征和参数",
+                    "新导出产物通过必需几何检查，审查提交前不改变当前版本",
+                ]
+                restored_plan["confirmation_reason"] = "确认从历史原生文件生成恢复候选；当前版本仅在审查提交后改变。"
+                plan = AgentPlan.model_validate(restored_plan)
+            plan_payload = plan.temporal_payload()
+            if plan.modeling_backend == "freecad" or (
+                not bool(payload.get("backend_policy_v1"))
+                and request.modeling_backend == "freecad"
+                and plan.model_kind not in {"assembly", "profile_2d"}
+            ):
+                plan_payload["modeling_strategy"] = "freecad_operations"
             result = {
                 "step_key": step_key,
-                "plan": plan.temporal_payload(),
+                "plan": plan_payload,
                 "requires_confirmation": (
                     plan.confirmation_policy.value == "required"
                 ),
                 "confirmation_reason": plan.confirmation_reason,
+                "plan_hash": canonical_sha256(plan_payload),
             }
         except Exception as exc:
             error = self._agent_planning_error(exc)
@@ -1735,7 +1955,10 @@ class McadWorkflowActivities:
         failure = dict(payload["failure"])
         repair_index = int(payload["repair_index"])
         original_step_key = str(payload["original_step_key"])
-        repair_step_key = f"repair-{original_step_key}-{repair_index:02d}"
+        repair_step_key = str(
+            payload.get("repair_step_key")
+            or f"repair-{original_step_key}-{repair_index:02d}"
+        )
         decision = decide_repair(
             category=str(failure["category"]),
             error_code=str(failure["error_code"]),
@@ -1909,6 +2132,348 @@ class McadWorkflowActivities:
             )
             raise error from exc
 
+    @activity.defn(name="agent_v2.generate_operations")
+    async def agent_generate_operations(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        request = _agent_v2_request(payload)
+        plan = AgentPlan.model_validate(payload["plan"])
+        if (
+            plan.modeling_backend != "freecad"
+            and request.modeling_backend != "freecad"
+        ):
+            raise ApplicationError(
+                "FreeCAD operation generation requires the FreeCAD backend",
+                type="invalid_freecad_modeling_backend",
+                non_retryable=True,
+            )
+        step = AgentPlanStep.model_validate(payload["step"])
+        candidate_build_id = _uuid(payload, "candidate_build_id")
+        async with tenant_transaction(
+            request.tenant_id,
+            request.principal_id,
+        ) as connection:
+            replay = await get_generated_source_for_step(
+                connection,
+                tenant_id=request.tenant_id,
+                workflow_id=request.workflow_run_id,
+                step_key=step.step_key,
+            )
+            if replay is not None:
+                FreeCADOperationPlan.model_validate_json(replay["source_code"])
+                return {
+                    "source_id": str(replay["id"]),
+                    "source_hash": replay["source_hash"],
+                    "source_code": replay["source_code"],
+                    "mode": "3d",
+                    "generator_kind": replay["generator_kind"],
+                    "provenance": {
+                        "provider": replay["provider"],
+                        "model": replay["model"],
+                        "provider_response_id": replay["provider_response_id"],
+                        "request_hash": replay["request_hash"],
+                        "response_hash": replay["response_hash"],
+                        "finish_reason": replay["finish_reason"],
+                        "usage": dict(replay["usage"]),
+                    },
+                    "replayed": True,
+                }
+            step_id = await _start_agent_logical_step(
+                connection,
+                tenant_id=request.tenant_id,
+                workflow_id=request.workflow_run_id,
+                step_key=step.step_key,
+                step_index=int(payload["step_index"]),
+                kind="agent_freecad_operations",
+            )
+        try:
+            if request.revision_restore is not None:
+                operation_plan = _revision_restore_operation_plan(request)
+                source_code = operation_plan.model_dump_json()
+                generator_kind = "native-revision-restore-v1"
+                provenance = {
+                    "provider": "cad-agent", "model": generator_kind,
+                    "provider_response_id": None,
+                    "request_hash": canonical_sha256(request.revision_restore.model_dump(mode="json")),
+                    "response_hash": hashlib.sha256(source_code.encode("utf-8")).hexdigest(),
+                    "finish_reason": "deterministic", "usage": {},
+                }
+            elif request.structured_modification is not None:
+                operation_plan = compile_parameter_operation_plan(
+                    dict(payload["base_state"]),
+                    request.structured_modification.model_dump(mode="json"),
+                    output_formats=request.output_formats,
+                )
+                source_code = operation_plan.model_dump_json()
+                source_hash = hashlib.sha256(
+                    source_code.encode("utf-8")
+                ).hexdigest()
+                generator_kind = "structured-parameter-compiler-v1"
+                provenance = {
+                    "provider": "cad-agent",
+                    "model": generator_kind,
+                    "provider_response_id": None,
+                    "request_hash": canonical_sha256({
+                        "state_sha256": (
+                            request.structured_modification.expected_state_sha256
+                        ),
+                        "parameter_updates": [
+                            update.model_dump(mode="json")
+                            for update in request.structured_modification.parameter_updates
+                        ],
+                    }),
+                    "response_hash": source_hash,
+                    "finish_reason": "deterministic",
+                    "usage": {},
+                }
+            else:
+                generated = await self.freecad_operations.generate(
+                    plan=plan,
+                    requirements=dict(payload["requirements"]),
+                    base_state=(
+                        dict(payload["base_state"])
+                        if payload.get("base_state") is not None
+                        else None
+                    ),
+                    output_formats=request.output_formats,
+                )
+                source_code = generated.source_code
+                generator_kind = generated.generator_kind
+                provenance = generated.provenance
+            async with tenant_transaction(
+                request.tenant_id,
+                request.principal_id,
+            ) as connection:
+                recorded = await record_generated_source(
+                    connection,
+                    tenant_id=request.tenant_id,
+                    candidate_build_id=candidate_build_id,
+                    workflow_id=request.workflow_run_id,
+                    step_id=step_id,
+                    source_code=source_code,
+                    generator_kind=generator_kind,
+                    provider=str(provenance["provider"]),
+                    model=str(provenance["model"]),
+                    provider_response_id=(
+                        str(provenance["provider_response_id"])
+                        if provenance.get("provider_response_id")
+                        else None
+                    ),
+                    request_hash=str(provenance["request_hash"]),
+                    response_hash=str(provenance["response_hash"]),
+                    finish_reason=(
+                        str(provenance["finish_reason"])
+                        if provenance.get("finish_reason")
+                        else None
+                    ),
+                    usage=dict(provenance.get("usage") or {}),
+                )
+            return {
+                "source_id": str(recorded.source_id),
+                "source_hash": recorded.source_hash,
+                "source_code": source_code,
+                "mode": "3d",
+                "generator_kind": generator_kind,
+                "provenance": provenance,
+                "replayed": recorded.replayed,
+            }
+        except Exception as exc:
+            error = self._agent_planning_error(exc)
+            await _fail_agent_logical_step(
+                tenant_id=request.tenant_id,
+                principal_id=request.principal_id,
+                workflow_id=request.workflow_run_id,
+                step_key=step.step_key,
+                error_code=error.type or "agent_freecad_operation_generation_failed",
+                error_message=str(error),
+            )
+            raise error from exc
+
+    @activity.defn(name="agent_v2.repair_operations")
+    async def agent_repair_operations(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        request = _agent_v2_request(payload)
+        if request.revision_restore is not None:
+            raise ApplicationError(
+                "historical revision restoration cannot rewrite model operations",
+                type="revision_restore_repair_forbidden", non_retryable=True,
+            )
+        candidate_build_id = _uuid(payload, "candidate_build_id")
+        source_id = _uuid(payload, "source_id")
+        failure = dict(payload["failure"])
+        repair_index = int(payload["repair_index"])
+        original_step_key = str(payload["original_step_key"])
+        repair_step_key = str(
+            payload.get("repair_step_key")
+            or f"repair-{original_step_key}-{repair_index:02d}"
+        )
+        decision = decide_repair(
+            category=str(failure["category"]),
+            error_code=str(failure["error_code"]),
+            error_message=str(failure["error_message"]),
+            runtime_error_type=(
+                str(failure["runtime_error_type"])
+                if failure.get("runtime_error_type")
+                else None
+            ),
+            repair_count=repair_index - 1,
+            seen_signatures=tuple(
+                str(item) for item in payload.get("seen_signatures") or ()
+            ),
+        )
+        if not decision.repairable:
+            raise ApplicationError(
+                decision.reason,
+                {
+                    "failure_class": decision.failure_class,
+                    "strategy": decision.strategy,
+                    "signature": decision.signature,
+                },
+                type="agent_freecad_repair_not_allowed",
+                non_retryable=True,
+            )
+        async with tenant_transaction(
+            request.tenant_id,
+            request.principal_id,
+        ) as connection:
+            replay = await get_generated_source_for_step(
+                connection,
+                tenant_id=request.tenant_id,
+                workflow_id=request.workflow_run_id,
+                step_key=repair_step_key,
+            )
+            if replay is not None:
+                FreeCADOperationPlan.model_validate_json(replay["source_code"])
+                return {
+                    "source_id": str(replay["id"]),
+                    "source_hash": replay["source_hash"],
+                    "source_code": replay["source_code"],
+                    "repair_step_key": repair_step_key,
+                    "failure_class": decision.failure_class,
+                    "strategy": decision.strategy,
+                    "signature": decision.signature,
+                    "replayed": True,
+                }
+            source = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT source_code, source_hash
+                        FROM agent_generated_sources
+                        WHERE tenant_id=:tenant_id AND id=:source_id
+                          AND candidate_build_id=:candidate_build_id
+                        """
+                    ),
+                    {
+                        "tenant_id": request.tenant_id,
+                        "source_id": source_id,
+                        "candidate_build_id": candidate_build_id,
+                    },
+                )
+            ).mappings().one_or_none()
+            if source is None:
+                raise ApplicationError(
+                    "FreeCAD repair input does not belong to candidate",
+                    type="agent_freecad_repair_source_missing",
+                    non_retryable=True,
+                )
+            if str(source["source_hash"]) != str(payload["source_hash"]):
+                raise ApplicationError(
+                    "FreeCAD repair input hash does not match persisted source",
+                    type="agent_freecad_repair_source_hash_mismatch",
+                    non_retryable=True,
+                )
+            step_id = await _start_agent_logical_step(
+                connection,
+                tenant_id=request.tenant_id,
+                workflow_id=request.workflow_run_id,
+                step_key=repair_step_key,
+                step_index=int(payload["step_index"]),
+                kind="agent_freecad_repair",
+            )
+        try:
+            repaired = await self.freecad_operations.repair(
+                source_code=str(source["source_code"]),
+                failure=failure,
+                base_state=(
+                    dict(payload["base_state"])
+                    if payload.get("base_state") is not None
+                    else None
+                ),
+                output_formats=request.output_formats,
+            )
+            provenance = repaired.provenance
+            async with tenant_transaction(
+                request.tenant_id,
+                request.principal_id,
+            ) as connection:
+                recorded = await record_generated_source(
+                    connection,
+                    tenant_id=request.tenant_id,
+                    candidate_build_id=candidate_build_id,
+                    workflow_id=request.workflow_run_id,
+                    step_id=step_id,
+                    predecessor_source_id=source_id,
+                    source_code=repaired.source_code,
+                    generator_kind=f"repair:{decision.failure_class}:freecad_operations",
+                    provider=str(provenance["provider"]),
+                    model=str(provenance["model"]),
+                    provider_response_id=(
+                        str(provenance["provider_response_id"])
+                        if provenance.get("provider_response_id")
+                        else None
+                    ),
+                    request_hash=str(provenance["request_hash"]),
+                    response_hash=str(provenance["response_hash"]),
+                    finish_reason=(
+                        str(provenance["finish_reason"])
+                        if provenance.get("finish_reason")
+                        else None
+                    ),
+                    usage=dict(provenance.get("usage") or {}),
+                )
+                await append_workflow_event(
+                    connection,
+                    tenant_id=request.tenant_id,
+                    workflow_id=request.workflow_run_id,
+                    event_type="agent.freecad.operations_repaired",
+                    payload={
+                        "repair_step_key": repair_step_key,
+                        "prior_source_id": str(source_id),
+                        "source_id": str(recorded.source_id),
+                        "source_hash": recorded.source_hash,
+                        "failure_class": decision.failure_class,
+                        "strategy": decision.strategy,
+                        "signature": decision.signature,
+                        "error_code": failure["error_code"],
+                    },
+                )
+            return {
+                "source_id": str(recorded.source_id),
+                "source_hash": recorded.source_hash,
+                "source_code": repaired.source_code,
+                "repair_step_key": repair_step_key,
+                "failure_class": decision.failure_class,
+                "strategy": decision.strategy,
+                "signature": decision.signature,
+                "provenance": provenance,
+                "replayed": recorded.replayed,
+            }
+        except Exception as exc:
+            error = self._agent_planning_error(exc)
+            await _fail_agent_logical_step(
+                tenant_id=request.tenant_id,
+                principal_id=request.principal_id,
+                workflow_id=request.workflow_run_id,
+                step_key=repair_step_key,
+                error_code=error.type or "agent_freecad_repair_failed",
+                error_message=str(error),
+            )
+            raise error from exc
+
     @activity.defn(name="agent_v2.execute_model")
     async def agent_execute_model(
         self,
@@ -2016,12 +2581,9 @@ class McadWorkflowActivities:
                     status=outcome.result.status,
                     error_code=code,
                     error_message=message,
+                    error=error,
                 )
-                retryable = bool(
-                    error
-                    and error.category.value
-                    in {"infrastructure", "timeout", "resource"}
-                )
+                retryable = bool(error and error.retryable)
                 raise ApplicationError(
                     message,
                     {
@@ -2198,6 +2760,433 @@ class McadWorkflowActivities:
                     pass
             if outcome is not None and outcome.work_dir is not None:
                 shutil.rmtree(outcome.work_dir, ignore_errors=True)
+
+    @activity.defn(name="agent_v2.execute_freecad")
+    async def agent_execute_freecad(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        info = activity.info()
+        request = _agent_v2_request(payload)
+        plan = AgentPlan.model_validate(payload["plan"])
+        if (
+            plan.modeling_backend != "freecad"
+            and request.modeling_backend != "freecad"
+        ):
+            raise ApplicationError(
+                "FreeCAD execution requires the FreeCAD backend",
+                type="invalid_freecad_modeling_backend",
+                non_retryable=True,
+            )
+        step = AgentPlanStep.model_validate(payload["step"])
+        run_step_key = str(payload.get("run_step_key") or step.step_key)
+        candidate_build_id = _uuid(payload, "candidate_build_id")
+        async with tenant_transaction(
+            request.tenant_id,
+            request.principal_id,
+        ) as connection:
+            replay = await get_staging_manifest_for_step(
+                connection,
+                tenant_id=request.tenant_id,
+                candidate_build_id=candidate_build_id,
+                workflow_id=request.workflow_run_id,
+                step_key=run_step_key,
+            )
+            if replay is not None:
+                return {
+                    **dict(replay["result_payload"] or {}),
+                    "staging_manifest_id": str(replay["id"]),
+                    "manifest_hash": replay["manifest_hash"],
+                    "manifest": dict(replay["manifest"]),
+                    "replayed": True,
+                }
+            head_revision_id = await connection.scalar(
+                text(
+                    """
+                    SELECT head_revision_id FROM project_branches
+                    WHERE tenant_id=:tenant_id AND project_id=:project_id
+                      AND id=:branch_id
+                    """
+                ),
+                {
+                    "tenant_id": request.tenant_id,
+                    "project_id": request.project_id,
+                    "branch_id": request.branch_id,
+                },
+            )
+        if head_revision_id is None:
+            raise ApplicationError(
+                "FreeCAD execution branch does not exist",
+                type="agent_freecad_branch_missing",
+                non_retryable=True,
+            )
+        if head_revision_id != request.expected_base_revision_id:
+            raise ApplicationError(
+                "expected base revision is no longer the branch head",
+                type="stale_base_revision",
+                non_retryable=True,
+            )
+
+        source_code = str(payload["source_code"])
+        source_hash = hashlib.sha256(source_code.encode("utf-8")).hexdigest()
+        if source_hash != str(payload["source_hash"]):
+            raise ApplicationError(
+                "FreeCAD operation plan hash does not match persisted source",
+                type="agent_source_hash_mismatch",
+                non_retryable=True,
+            )
+        try:
+            operation_plan = FreeCADOperationPlan.model_validate_json(source_code)
+        except Exception as exc:
+            raise ApplicationError(
+                "persisted FreeCAD operation plan is invalid",
+                type="agent_freecad_operation_plan_invalid",
+                non_retryable=True,
+            ) from exc
+
+        temp_dir = Path(tempfile.mkdtemp(prefix="agent_freecad_"))
+        declarations: list[ArtifactInput] = []
+        materialized: dict[str, Path] = {}
+        task_inputs: dict[str, str] = {}
+        try:
+            if request.operation == "modify":
+                artifact = await self._freecad_revision_artifact(request, "fcstd")
+                base_path = temp_dir / "base.FCStd"
+                downloaded = await download_object(
+                    str(artifact["object_key"]),
+                    base_path,
+                )
+                if (
+                    downloaded["sha256"] != str(artifact["sha256"])
+                    or downloaded["size_bytes"] != int(artifact["size_bytes"])
+                ):
+                    raise ApplicationError(
+                        "base FCStd artifact failed integrity verification",
+                        type="agent_freecad_base_fcstd_rejected",
+                        non_retryable=True,
+                    )
+                input_revision_id = (
+                    request.revision_restore.source_revision_id
+                    if request.revision_restore else request.expected_base_revision_id
+                )
+                artifact_id = f"{input_revision_id}:fcstd"
+                declarations.append(
+                    ArtifactInput(
+                        artifact_id=artifact_id,
+                        filename=base_path.name,
+                        sha256=str(artifact["sha256"]),
+                        size_bytes=int(artifact["size_bytes"]),
+                        media_type=str(artifact["content_type"]),
+                    )
+                )
+                materialized[artifact_id] = base_path
+                task_inputs["base"] = base_path.name
+
+            task = {
+                "schema_version": "mcad-capability-task.v1",
+                "capability": "freecad",
+                "operation": "execute",
+                "params": {
+                    "plan": operation_plan.model_dump(mode="json"),
+                    "expected_revision_id": str(request.expected_base_revision_id),
+                },
+                "inputs": task_inputs,
+            }
+            if request.revision_restore is not None:
+                task["params"]["expected_revision_id"] = str(request.revision_restore.source_revision_id)
+            task_source = json.dumps(
+                task,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            export_formats = tuple(
+                operation_plan.operations[-1].typed_args().formats
+            )
+            outputs = tuple(
+                [
+                    OutputDeclaration(
+                        name=name,
+                        media_type=_MODELING_MEDIA_TYPES[name],
+                        max_size_bytes=128 * 1024 * 1024,
+                    )
+                    for name in (*export_formats, "state")
+                ]
+                + [
+                    OutputDeclaration(
+                        name="capability-result",
+                        media_type="application/json",
+                        max_size_bytes=2 * 1024 * 1024,
+                    )
+                ]
+            )
+            attempt_id, step_id, lease_token, lease_generation = (
+                await _prepare_agent_execution_attempt(
+                    payload,
+                    temporal_attempt=info.attempt,
+                )
+            )
+            outcome: MaterializedExecutionOutcome | None = None
+            upload_heartbeat: asyncio.Task | None = None
+            try:
+                snapshot = await asyncio.to_thread(self.backend.runtime_snapshot)
+                spec = ExecutionSpec(
+                    execution_attempt_id=str(attempt_id),
+                    workflow_run_id=str(request.workflow_run_id),
+                    step_run_id=str(step_id),
+                    tenant_id=str(request.tenant_id),
+                    project_id=str(request.project_id),
+                    expected_base_revision_id=str(
+                        request.expected_base_revision_id
+                    ),
+                    idempotency_key=(
+                        f"agent-v2:freecad:{request.workflow_run_id}:"
+                        f"{run_step_key}:attempt:{info.attempt}"
+                    ),
+                    capability="mcad.freecad",
+                    operation="execute",
+                    mode="3d",
+                    source=ExecutionSource(
+                        language="json",
+                        code=task_source,
+                        sha256=hashlib.sha256(
+                            task_source.encode("utf-8")
+                        ).hexdigest(),
+                    ),
+                    inputs=tuple(declarations),
+                    outputs=outputs,
+                    runtime=RuntimeRequirement(
+                        image_digest=snapshot.image_digest,
+                        platform=snapshot.platform,
+                        sandbox_tier="ephemeral-job",
+                    ),
+                    limits=ResourceLimits(
+                        timeout_seconds=int(payload.get("timeout_seconds") or 180),
+                        memory_bytes=1536 * 1024 * 1024,
+                        cpu_millis=2000,
+                        pids=512,
+                        output_bytes=384 * 1024 * 1024,
+                    ),
+                    metadata={
+                        "candidate_build_id": str(candidate_build_id),
+                        "source_id": str(payload["source_id"]),
+                        "plan_step_key": step.step_key,
+                        "run_step_key": run_step_key,
+                        "modeling_backend": "freecad",
+                        "temporal_activity_id": info.activity_id,
+                        "temporal_attempt": info.attempt,
+                    },
+                )
+                outcome = await _run_backend_with_heartbeats(
+                    self.backend,
+                    spec,
+                    tenant_id=request.tenant_id,
+                    principal_id=request.principal_id,
+                    attempt_id=attempt_id,
+                    lease_token=lease_token,
+                    lease_generation=lease_generation,
+                    materialized_inputs=materialized,
+                )
+                if activity.is_cancelled():
+                    raise asyncio.CancelledError
+                if outcome.result.status is not ExecutionStatus.SUCCEEDED:
+                    error = outcome.result.error
+                    code = error.code if error else "freecad_execution_failed"
+                    message = error.message if error else "FreeCAD execution failed"
+                    await _mark_execution_failure(
+                        payload,
+                        attempt_id=attempt_id,
+                        step_id=step_id,
+                        status=outcome.result.status,
+                        error_code=code,
+                        error_message=message,
+                        error=error,
+                    )
+                    retryable = bool(error and error.retryable)
+                    raise ApplicationError(
+                        message,
+                        {
+                            "execution_attempt_id": str(attempt_id),
+                            "category": (
+                                error.category.value if error else "cad_kernel"
+                            ),
+                            "error_code": code,
+                            "error_message": message,
+                            "runtime_error_type": (
+                                error.evidence.get("runtime_error_type")
+                                if error
+                                else None
+                            ),
+                        },
+                        type=code,
+                        non_retryable=not retryable,
+                    )
+
+                upload_heartbeat = asyncio.create_task(
+                    _heartbeat_loop(
+                        tenant_id=request.tenant_id,
+                        principal_id=request.principal_id,
+                        attempt_id=attempt_id,
+                        lease_token=lease_token,
+                        lease_generation=lease_generation,
+                    )
+                )
+                staged_outputs: list[dict[str, Any]] = []
+                for output_name, path in outcome.files.items():
+                    declared = next(
+                        item
+                        for item in outcome.result.outputs
+                        if item.name == path.name
+                    )
+                    object_key = (
+                        "staging/agent/tenants/"
+                        f"{request.tenant_id}/candidates/{candidate_build_id}/"
+                        f"attempts/{attempt_id}/{declared.sha256}/"
+                        f"{Path(declared.name).name}"
+                    )
+                    uploaded = await put_file(
+                        object_key,
+                        path,
+                        content_type=declared.media_type,
+                    )
+                    if (
+                        uploaded["sha256"] != declared.sha256
+                        or uploaded["size_bytes"] != declared.size_bytes
+                    ):
+                        raise ApplicationError(
+                            "staged FreeCAD object does not match declaration",
+                            type="agent_staging_integrity_failed",
+                            non_retryable=True,
+                        )
+                    staged_outputs.append(
+                        {
+                            "format": output_name,
+                            "filename": Path(declared.name).name,
+                            "object_key": object_key,
+                            "sha256": declared.sha256,
+                            "size_bytes": declared.size_bytes,
+                            "content_type": declared.media_type,
+                        }
+                    )
+                upload_heartbeat.cancel()
+                try:
+                    await upload_heartbeat
+                except asyncio.CancelledError:
+                    pass
+                upload_heartbeat = None
+                manifest = {
+                    "schema_version": "agent-staging-manifest.v1",
+                    "candidate_build_id": str(candidate_build_id),
+                    "workflow_run_id": str(request.workflow_run_id),
+                    "step_run_id": str(step_id),
+                    "execution_attempt_id": str(attempt_id),
+                    "source_id": str(payload["source_id"]),
+                    "source_hash": source_hash,
+                    "plan_step_key": step.step_key,
+                    "run_step_key": run_step_key,
+                    "modeling_backend": "freecad",
+                    "base_revision_id": str(request.expected_base_revision_id),
+                    "outputs": staged_outputs,
+                    "runtime_provenance": (
+                        outcome.result.provenance.model_dump(mode="json")
+                        if outcome.result.provenance
+                        else None
+                    ),
+                }
+                if request.revision_restore is not None:
+                    manifest["revision_restore"] = request.revision_restore.model_dump(mode="json")
+                result_payload = {
+                    "status": "succeeded",
+                    "attempt_id": str(attempt_id),
+                    "source_id": str(payload["source_id"]),
+                    "source_hash": source_hash,
+                    "outputs": staged_outputs,
+                    "execution_result": outcome.result.model_dump(mode="json"),
+                }
+                async with tenant_transaction(
+                    request.tenant_id,
+                    request.principal_id,
+                ) as connection:
+                    await complete_attempt(
+                        connection,
+                        attempt_id,
+                        lease_token=lease_token,
+                        lease_generation=lease_generation,
+                        result_payload=result_payload,
+                    )
+                    accepted = await accept_staging_manifest(
+                        connection,
+                        tenant_id=request.tenant_id,
+                        candidate_build_id=candidate_build_id,
+                        workflow_id=request.workflow_run_id,
+                        step_id=step_id,
+                        attempt_id=attempt_id,
+                        lease_generation=lease_generation,
+                        manifest=manifest,
+                        lease_token=lease_token,
+                        supersedes_id=(
+                            _uuid(payload, "supersedes_staging_manifest_id")
+                            if payload.get("supersedes_staging_manifest_id")
+                            else None
+                        ),
+                    )
+                    await transition_step(
+                        connection,
+                        step_id,
+                        expected=StepStatus.RUNNING,
+                        target=StepStatus.SUCCEEDED,
+                    )
+                return {
+                    **result_payload,
+                    "staging_manifest_id": str(accepted.staging_manifest_id),
+                    "manifest_hash": accepted.manifest_hash,
+                    "manifest": manifest,
+                    "replayed": accepted.replayed,
+                }
+            except asyncio.CancelledError:
+                await _mark_execution_failure(
+                    payload,
+                    attempt_id=attempt_id,
+                    step_id=step_id,
+                    status=ExecutionStatus.CANCELLED,
+                    error_code="freecad_execution_cancelled",
+                    error_message="FreeCAD execution was cancelled.",
+                )
+                raise
+            except ApplicationError as exc:
+                await _mark_execution_failure(
+                    payload,
+                    attempt_id=attempt_id,
+                    step_id=step_id,
+                    status=ExecutionStatus.FAILED,
+                    error_code=(exc.type or "agent_freecad_execution_failed")[:200],
+                    error_message=str(exc)[:4000],
+                )
+                raise
+            except Exception as exc:
+                await _mark_execution_failure(
+                    payload,
+                    attempt_id=attempt_id,
+                    step_id=step_id,
+                    status=ExecutionStatus.FAILED,
+                    error_code="agent_freecad_execution_failed",
+                    error_message=str(exc)[:4000],
+                )
+                raise ApplicationError(
+                    str(exc)[:4000],
+                    type="agent_freecad_execution_failed",
+                ) from exc
+            finally:
+                if upload_heartbeat is not None:
+                    upload_heartbeat.cancel()
+                    try:
+                        await upload_heartbeat
+                    except asyncio.CancelledError:
+                        pass
+                if outcome is not None and outcome.work_dir is not None:
+                    shutil.rmtree(outcome.work_dir, ignore_errors=True)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     @activity.defn(name="agent_v2.validate_geometry")
     async def agent_validate_geometry(
@@ -3345,6 +4334,465 @@ class McadWorkflowActivities:
                 "report": evidence,
                 "attempt_id": str(attempt_id),
             }
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            if outcome is not None and outcome.work_dir is not None:
+                shutil.rmtree(outcome.work_dir, ignore_errors=True)
+
+    @activity.defn(name="agent_v2.generate_bom")
+    async def agent_generate_bom(self, payload: dict[str, Any]) -> dict[str, Any]:
+        info = activity.info()
+        request = _agent_v2_request(payload)
+        plan = AgentPlan.model_validate(payload["plan"])
+        candidate_build_id = _uuid(payload, "candidate_build_id")
+        step_key = "agent-native-bom"
+        attempt_id, step_id, lease_token, lease_generation = (
+            await _prepare_agent_validation_attempt(
+                payload,
+                temporal_attempt=info.attempt,
+                step_key=step_key,
+                step_index=60_000,
+                step_kind="agent_bom",
+            )
+        )
+
+        async def fail_preflight(
+            *,
+            code: str,
+            message: str,
+            category: str,
+            retryable: bool = False,
+        ) -> None:
+            error = ExecutionError(
+                category=category,
+                code=code,
+                message=message,
+                retryable=retryable,
+            )
+            await _mark_execution_failure(
+                payload,
+                attempt_id=attempt_id,
+                step_id=step_id,
+                status=ExecutionStatus.FAILED,
+                error_code=error.code,
+                error_message=error.message,
+                error=error,
+            )
+
+        if plan.model_kind != "assembly" or plan.validation_policy.bom.mode.value != "required":
+            await fail_preflight(
+                code="bom_source_not_assembly",
+                message="native BOM is valid only for required assembly plans",
+                category="validation",
+            )
+            raise ApplicationError(
+                "native BOM is valid only for required assembly plans",
+                type="bom_source_not_assembly",
+                non_retryable=True,
+            )
+        try:
+            async with tenant_transaction(
+                request.tenant_id,
+                request.principal_id,
+            ) as connection:
+                rows = [
+                    dict(row)
+                    for row in (
+                        await connection.execute(
+                            text(
+                                """
+                                SELECT m.id, s.step_key,
+                                       m.execution_attempt_id,
+                                       m.manifest, m.manifest_hash
+                                FROM agent_staging_manifests AS m
+                                JOIN step_runs AS s
+                                  ON s.tenant_id=m.tenant_id
+                                 AND s.workflow_run_id=m.workflow_run_id
+                                 AND s.id=m.step_run_id
+                                WHERE m.tenant_id=:tenant_id
+                                  AND m.candidate_build_id=:candidate_build_id
+                                  AND m.workflow_run_id=:workflow_id
+                                  AND m.status='accepted'
+                                ORDER BY m.created_at, m.id
+                                """
+                            ),
+                            {
+                                "tenant_id": request.tenant_id,
+                                "candidate_build_id": candidate_build_id,
+                                "workflow_id": request.workflow_run_id,
+                            },
+                        )
+                    ).mappings().all()
+                ]
+        except Exception as exc:
+            await fail_preflight(
+                code="bom_input_query_failed",
+                message="assembly BOM inputs could not be loaded",
+                category="infrastructure",
+                retryable=True,
+            )
+            raise ApplicationError(
+                "assembly BOM inputs could not be loaded",
+                type="bom_input_query_failed",
+            ) from exc
+        by_step: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            by_step.setdefault(str(row["step_key"]), []).append(row)
+        combine_step = next(
+            step for step in plan.steps if step.kind == "assembly_combine"
+        )
+        part_steps = [step for step in plan.steps if step.kind == "assembly_part"]
+        required_steps = [combine_step.step_key, *(step.step_key for step in part_steps)]
+        if any(len(by_step.get(step_key, ())) != 1 for step_key in required_steps):
+            error_code = (
+                "bom_input_ambiguous"
+                if any(len(by_step.get(key, ())) > 1 for key in required_steps)
+                else "bom_input_missing"
+            )
+            await fail_preflight(
+                code=error_code,
+                message="assembly BOM inputs are missing or ambiguous",
+                category="artifact",
+            )
+            raise ApplicationError(
+                "assembly BOM inputs are missing or ambiguous",
+                type=error_code,
+                non_retryable=True,
+            )
+        selected = {key: by_step[key][0] for key in required_steps}
+        temp_dir = Path(tempfile.mkdtemp(prefix="agent_bom_"))
+        outcome: MaterializedExecutionOutcome | None = None
+        try:
+            declarations: list[ArtifactInput] = []
+            materialized: dict[str, Path] = {}
+            task_inputs: dict[str, str] = {}
+            source_artifacts: dict[str, dict[str, Any]] = {}
+            for step in (combine_step, *part_steps):
+                row = selected[step.step_key]
+                manifest = dict(row["manifest"])
+                step_outputs = [
+                    dict(item)
+                    for item in manifest.get("outputs") or ()
+                    if str(item.get("format") or "").lower() == "step"
+                ]
+                if len(step_outputs) != 1:
+                    raise ApplicationError(
+                        "assembly BOM requires one STEP per plan step",
+                        type=(
+                            "bom_input_ambiguous"
+                            if len(step_outputs) > 1
+                            else "bom_input_missing"
+                        ),
+                        non_retryable=True,
+                    )
+                output = step_outputs[0]
+                role = (
+                    "assembly"
+                    if step.kind == "assembly_combine"
+                    else f"component:{step.step_key}"
+                )
+                filename = (
+                    "combine.step"
+                    if step.kind == "assembly_combine"
+                    else f"{step.step_key}.step"
+                )
+                local_path = temp_dir / filename
+                downloaded = await download_object(
+                    str(output["object_key"]),
+                    local_path,
+                )
+                if (
+                    downloaded["sha256"] != str(output["sha256"])
+                    or downloaded["size_bytes"] != int(output["size_bytes"])
+                ):
+                    raise ApplicationError(
+                        "assembly BOM input failed integrity verification",
+                        type="bom_input_integrity_failed",
+                        non_retryable=True,
+                    )
+                artifact_id = role
+                declarations.append(ArtifactInput(
+                    artifact_id=artifact_id,
+                    filename=filename,
+                    sha256=str(output["sha256"]),
+                    size_bytes=int(output["size_bytes"]),
+                    media_type=str(output["content_type"]),
+                ))
+                materialized[artifact_id] = local_path
+                task_inputs[role] = filename
+                source_artifacts[step.step_key] = {
+                    "step_key": step.step_key,
+                    "staging_manifest_id": str(row["id"]),
+                    "artifact_role": "step",
+                    "filename": filename,
+                    "sha256": str(output["sha256"]),
+                }
+            snapshot = await asyncio.to_thread(self.backend.runtime_snapshot)
+            bom_request = FreeCADBOMRequestV1(
+                candidate_build_id=candidate_build_id,
+                base_revision_id=request.expected_base_revision_id,
+                plan_hash=canonical_sha256(plan.temporal_payload()),
+                runtime_image_digest=snapshot.image_digest,
+                combine_step_key=combine_step.step_key,
+                components=tuple({
+                    "step_key": step.step_key,
+                    "label": step.part_name,
+                    "position_mm": step.part_position,
+                    "artifact_id": f"component:{step.step_key}",
+                    "quantity": 1,
+                } for step in part_steps),
+                property_columns=(),
+            )
+            task = {
+                "schema_version": "mcad-capability-task.v1",
+                "capability": "freecad",
+                "operation": "bom",
+                "params": {"request": bom_request.model_dump(mode="json")},
+                "inputs": task_inputs,
+            }
+            source_code = json.dumps(
+                task,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            spec = ExecutionSpec(
+                execution_attempt_id=str(attempt_id),
+                workflow_run_id=str(request.workflow_run_id),
+                step_run_id=str(step_id),
+                tenant_id=str(request.tenant_id),
+                project_id=str(request.project_id),
+                expected_base_revision_id=str(request.expected_base_revision_id),
+                idempotency_key=(
+                    f"agent-v2:bom:{request.workflow_run_id}:attempt:{info.attempt}"
+                ),
+                capability="mcad.freecad",
+                operation="bom",
+                mode="analysis",
+                source=ExecutionSource(
+                    language="json",
+                    code=source_code,
+                    sha256=hashlib.sha256(source_code.encode()).hexdigest(),
+                ),
+                inputs=tuple(declarations),
+                outputs=(
+                    OutputDeclaration(
+                        name="bom-json",
+                        media_type="application/json",
+                        max_size_bytes=16 * 1024 * 1024,
+                    ),
+                    OutputDeclaration(
+                        name="bom-csv",
+                        media_type="text/csv; charset=utf-8",
+                        max_size_bytes=16 * 1024 * 1024,
+                    ),
+                    OutputDeclaration(
+                        name="capability-result",
+                        media_type="application/json",
+                        max_size_bytes=512 * 1024,
+                    ),
+                ),
+                runtime=RuntimeRequirement(
+                    image_digest=snapshot.image_digest,
+                    platform=snapshot.platform,
+                    sandbox_tier="ephemeral-job",
+                ),
+                limits=ResourceLimits(
+                    timeout_seconds=180,
+                    memory_bytes=1536 * 1024 * 1024,
+                    cpu_millis=2000,
+                    pids=512,
+                    output_bytes=384 * 1024 * 1024,
+                ),
+                metadata={
+                    "candidate_build_id": str(candidate_build_id),
+                    "gate": "bom",
+                },
+            )
+            outcome = await _run_backend_with_heartbeats(
+                self.backend,
+                spec,
+                tenant_id=request.tenant_id,
+                principal_id=request.principal_id,
+                attempt_id=attempt_id,
+                lease_token=lease_token,
+                lease_generation=lease_generation,
+                materialized_inputs=materialized,
+            )
+            if outcome.result.status is not ExecutionStatus.SUCCEEDED:
+                error = outcome.result.error or ExecutionError(
+                    category="cad_kernel",
+                    code="bom_generation_failed",
+                    message="native Assembly BOM execution failed",
+                )
+                await _mark_execution_failure(
+                    payload,
+                    attempt_id=attempt_id,
+                    step_id=step_id,
+                    status=outcome.result.status,
+                    error_code=error.code,
+                    error_message=error.message,
+                    error=error,
+                )
+                raise ApplicationError(
+                    error.message,
+                    type=error.code,
+                    non_retryable=not error.retryable,
+                )
+            runner_path = outcome.files["bom-json"]
+            runner = json.loads(runner_path.read_text(encoding="utf-8"))
+            if (
+                runner.get("schema_version") != "freecad-bom-runner.v1"
+                or runner.get("generator", {}).get("runtime_image_digest")
+                != snapshot.image_digest
+            ):
+                raise ApplicationError(
+                    "native BOM result provenance is invalid",
+                    type="bom_generation_failed",
+                    non_retryable=True,
+                )
+            bom_document = FreeCADBOMDocumentV1(
+                source={
+                    "candidate_build_id": str(candidate_build_id),
+                    "base_revision_id": str(request.expected_base_revision_id),
+                    "plan_hash": canonical_sha256(plan.temporal_payload()),
+                    "combine": {
+                        key: value
+                        for key, value in source_artifacts[combine_step.step_key].items()
+                        if key != "step_key"
+                    },
+                    "components": [
+                        source_artifacts[step.step_key] for step in part_steps
+                    ],
+                },
+                generator=dict(runner["generator"]),
+                columns=tuple(runner["columns"]),
+                rows=tuple(runner["rows"]),
+            )
+            runner_path.write_text(
+                json.dumps(
+                    bom_document.model_dump(mode="json"),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                encoding="utf-8",
+            )
+            bom_artifacts = []
+            for role, filename, content_type in (
+                ("bom-json", "bom.json", "application/json"),
+                ("bom-csv", "bom.csv", "text/csv; charset=utf-8"),
+            ):
+                path = outcome.files[role]
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                object_key = (
+                    "staging/agent/tenants/"
+                    f"{request.tenant_id}/candidates/{candidate_build_id}/"
+                    f"validation/{attempt_id}/{digest}/{filename}"
+                )
+                uploaded = await put_file(
+                    object_key,
+                    path,
+                    content_type=content_type,
+                )
+                bom_artifacts.append({
+                    "role": role,
+                    "filename": filename,
+                    "object_key": object_key,
+                    "sha256": uploaded["sha256"],
+                    "size_bytes": uploaded["size_bytes"],
+                    "content_type": content_type,
+                })
+            evidence = {
+                "schema_version": "agent-bom-evidence.v1",
+                "source_manifest_id": str(selected[combine_step.step_key]["id"]),
+                "artifacts": bom_artifacts,
+                "runtime_provenance": (
+                    outcome.result.provenance.model_dump(mode="json")
+                    if outcome.result.provenance
+                    else None
+                ),
+            }
+            recorded = await _record_agent_validation_outcome(
+                payload,
+                candidate_build_id=candidate_build_id,
+                staging_manifest_id=UUID(str(selected[combine_step.step_key]["id"])),
+                gate="bom",
+                mode="required",
+                outcome="passed",
+                evidence=evidence,
+                attempt_id=attempt_id,
+                step_id=step_id,
+                execution_status=ExecutionStatus.SUCCEEDED,
+                lease_token=lease_token,
+                lease_generation=lease_generation,
+                result_payload={
+                    "status": "succeeded",
+                    "gate": "bom",
+                    "outcome": "passed",
+                    "document": bom_document.model_dump(mode="json"),
+                },
+                error_code=None,
+                error_message=None,
+            )
+            return {
+                "status": "succeeded",
+                "outcome": "passed",
+                "evidence_id": str(recorded.evidence_id),
+                "evidence_hash": recorded.evidence_hash,
+            }
+        except ApplicationError as exc:
+            code = str(exc.type or "bom_generation_failed")
+            category = (
+                "artifact"
+                if code.startswith("bom_input_")
+                else "infrastructure"
+                if code == "bom_runtime_unsupported"
+                else "validation"
+                if code in {
+                    "bom_source_not_assembly",
+                    "bom_source_hierarchy_lost",
+                    "bom_source_geometry_mismatch",
+                    "bom_empty",
+                }
+                else "cad_kernel"
+            )
+            error = ExecutionError(
+                category=category,
+                code=code,
+                message=str(exc)[:4000],
+            )
+            await _mark_execution_failure(
+                payload,
+                attempt_id=attempt_id,
+                step_id=step_id,
+                status=ExecutionStatus.FAILED,
+                error_code=error.code,
+                error_message=error.message,
+                error=error,
+            )
+            raise
+        except Exception as exc:
+            error = ExecutionError(
+                category="cad_kernel",
+                code="bom_generation_failed",
+                message="native Assembly BOM generation failed",
+                evidence={"runtime_error_type": type(exc).__name__},
+            )
+            await _mark_execution_failure(
+                payload,
+                attempt_id=attempt_id,
+                step_id=step_id,
+                status=ExecutionStatus.FAILED,
+                error_code=error.code,
+                error_message=error.message,
+                error=error,
+            )
+            raise ApplicationError(
+                error.message,
+                type=error.code,
+                non_retryable=True,
+            ) from exc
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
             if outcome is not None and outcome.work_dir is not None:
@@ -4897,13 +6345,17 @@ class McadWorkflowActivities:
             self.agent_allocate_candidate,
             self.agent_terminate_candidate,
             self.agent_generate_source,
+            self.agent_generate_operations,
             self.agent_repair_source,
+            self.agent_repair_operations,
             self.agent_execute_model,
+            self.agent_execute_freecad,
             self.agent_validate_geometry,
             self.agent_render_visual,
             self.agent_judge_visual,
             self.agent_repair_visual,
             self.agent_validate_dfm,
+            self.agent_generate_bom,
             self.agent_seal_candidate,
             self.wait_confirmation,
             self.resume_after_confirmation,

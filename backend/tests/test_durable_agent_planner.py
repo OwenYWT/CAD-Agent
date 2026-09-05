@@ -111,6 +111,27 @@ async def test_simple_known_part_skips_decomposer_and_source_generation():
 
 
 @pytest.mark.asyncio
+async def test_complex_2d_profile_never_becomes_a_freecad_solid_plan():
+    from app.agent.durable_plan import normalize_agent_plan_backend
+
+    service, decomposer, _ = _planner(_cad_plan(
+        part_type="profile_2d",
+        features=["80x40 outline", "central diameter 8 hole", "dimension annotations"],
+        constraints=["millimetres", "closed outer contour", "cutting profile"],
+    ))
+    result = await service.plan_generation("DXF 80x40 with central diameter 8 hole")
+    normalized = normalize_agent_plan_backend(
+        operation="generate", request_modeling_backend="auto", plan_candidate=result,
+    )
+    assert normalized.model_kind == "profile_2d"
+    assert normalized.modeling_backend == "cadquery"
+    assert normalized.modeling_strategy == "profile_2d"
+    assert len(normalized.steps) == 1
+    assert normalized.steps[0].output_formats == ("dxf",)
+    assert decomposer.calls == 0
+
+
+@pytest.mark.asyncio
 async def test_complex_part_maps_ordered_build_plan_without_code():
     plan = _cad_plan(
         part_type="custom",
@@ -146,6 +167,28 @@ async def test_complex_part_maps_ordered_build_plan_without_code():
     assert result.steps[2].depends_on == ("model-02-primary",)
     assert result.steps[-1].output_formats == ("step", "stl")
     assert decomposer.calls == 1
+
+
+def test_freecad_complex_requirements_compose_one_atomic_model_step():
+    plan = _cad_plan(
+        part_type="plate",
+        features=["base plate", "center hole", "edge fillet"],
+    )
+    service, decomposer, assembly = _planner(plan)
+
+    result = service.compose_freecad_generation(
+        "Create a plate with a hole and fillet",
+        plan,
+        output_formats=("step", "stl"),
+    )
+
+    assert result.model_kind == "simple"
+    assert result.modeling_strategy == "freecad_operations"
+    assert len(result.steps) == 1
+    assert result.steps[0].step_key == "model-main"
+    assert result.steps[0].output_formats == ("step", "stl")
+    assert decomposer.calls == 0
+    assert assembly.calls == 0
 
 
 @pytest.mark.asyncio

@@ -20,17 +20,20 @@ test("WordsWave branding is centralized and covers every product surface", () =>
   assert.match(brand, /h-9 w-9/);
   assert.match(brand, />W<\/span>/);
 
-  assert.match(read("src/components/project/ProjectStart.tsx"), /<BrandMark className="text-base"/);
+  assert.match(read("src/components/project/ProjectStart.tsx"), /<BrandMark className="type-section-heading"/);
+  const projectSidebar = read("src/components/project/ProjectSidebar.tsx");
+  assert.match(projectSidebar, /<BrandMark[^>]*showName=\{!collapsed\}/);
   const workspaceHeader = read("src/components/project/WorkspaceHeader.tsx");
-  assert.match(workspaceHeader, /<BrandMark[^>]*showName=\{false\}/);
-  assert.match(workspaceHeader, /aria-label=\{`WordsWave，返回项目流程：\$\{props\.project\.name\}`\}/);
+  assert.match(workspaceHeader, /aria-label=\{translate\(`返回项目流程：\$\{props\.project\.name\}`\)\}/);
+  assert.match(workspaceHeader, /data-i18n-skip>\{props\.project\.name\}/);
 
   const loginPage = read("src/components/LoginPage.tsx");
   assert.match(loginPage, /<BrandMark/);
-  assert.match(loginPage, /className="mb-6 w-full justify-center text-white"/);
+  assert.match(loginPage, /className="ww-login-brand"/);
+  assert.match(loginPage, /<LanguageSwitch className="workspace-button ww-auth-language"/);
   assert.match(loginPage, /description="参数化建模工作台"/);
   assert.match(loginPage, /nameAs="h1"/);
-  assert.match(loginPage, /nameClassName="text-\[22px\]"/);
+  assert.match(loginPage, /nameClassName="type-display-heading"/);
 
   const html = read("index.html");
   assert.match(html, /<title>WordsWave<\/title>/);

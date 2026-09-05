@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 MODIFICATION_SYSTEM_PROMPT = """\u4f60\u662f\u4e00\u4e2a CAD \u4fee\u6539\u9700\u6c42\u5206\u6790\u4e13\u5bb6\u3002\u8bf7\u5206\u6790\u7528\u6237\u5bf9\u5df2\u6709\u96f6\u4ef6\u7684\u4fee\u6539\u8bf7\u6c42\u3002
 
-\u5f53\u524d\u4ee3\u7801:
-```python
+\u5f53\u524d\u53ef\u7f16\u8f91\u6a21\u578b\u4e0a\u4e0b\u6587\uff08\u53ef\u80fd\u662f MCAD \u6e90\u7801\uff0c\u4e5f\u53ef\u80fd\u662f\u7ed3\u6784\u5316 FreeCAD \u72b6\u6001\uff09:
+```
 {current_code}
 ```
 
@@ -31,6 +31,29 @@ MODIFICATION_SYSTEM_PROMPT = """\u4f60\u662f\u4e00\u4e2a CAD \u4fee\u6539\u9700\
 class Planner:
     def __init__(self):
         self._client = None
+
+    @staticmethod
+    def _parse_modification_payload(data: dict) -> ModificationPlan:
+        normalized = dict(data)
+        raw_params = data.get("target_params") or {}
+        if not isinstance(raw_params, dict):
+            return ModificationPlan(**normalized)
+        params: dict[str, float | object] = {}
+        unit_scales = {"": 1.0, "mm": 1.0, "cm": 10.0, "in": 25.4, "inch": 25.4}
+        for key, value in raw_params.items():
+            if isinstance(value, str):
+                match = re.fullmatch(
+                    r"\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*"
+                    r"(mm|cm|in|inch)?\s*",
+                    value,
+                    re.IGNORECASE,
+                )
+                if match is not None:
+                    unit = (match.group(2) or "").lower()
+                    value = float(match.group(1)) * unit_scales[unit]
+            params[str(key)] = value
+        normalized["target_params"] = params
+        return ModificationPlan(**normalized)
 
     @property
     def client(self):
@@ -179,7 +202,7 @@ class Planner:
                         text = text[:-3]
                     text = text.strip()
                 parsed = json.loads(text)
-                return ModificationPlan(**parsed)
+                return self._parse_modification_payload(parsed)
             except RuntimeError:
                 raise
             except Exception as e:

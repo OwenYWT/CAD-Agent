@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -15,6 +16,10 @@ from app.api.auth import rate_limiter
 from app.config import settings
 from app.main import app
 from app.services.durable_submission import WorkspaceIdentity
+from app.services.operation_resolution import (
+    RevisionSourceInventory,
+    TrustedBaseSource,
+)
 from app.storage import history
 
 
@@ -30,7 +35,7 @@ def _identity() -> dict[str, str]:
 @pytest.fixture
 def durable_ws(tmp_path, monkeypatch):
     """Patch only infrastructure boundaries; the real WS route handles messages."""
-    monkeypatch.setattr(settings, "durable_control_plane_enabled", False)
+    monkeypatch.setattr(settings, "durable_control_plane_enabled", True)
     monkeypatch.setattr(settings, "history_db_path", str(tmp_path / "history.db"))
     monkeypatch.setattr(settings, "api_keys", [])
     monkeypatch.setattr(rate_limiter, "rpm", 0)
@@ -41,6 +46,7 @@ def durable_ws(tmp_path, monkeypatch):
         "submit": [],
         "cancel": [],
     }
+    panel_sessions: dict[str, str] = {}
     workspace = WorkspaceIdentity(
         project_id=uuid4(),
         branch_id=uuid4(),
@@ -51,6 +57,16 @@ def durable_ws(tmp_path, monkeypatch):
         calls["workspace"].append((principal, kwargs))
         return workspace
 
+    async def reconcile(principal):
+        return principal
+
+    async def session_writable_by_user(_session_id, _user_id):
+        return True
+
+    async def panel_writable_by_session(panel_id, session_id, _user_id):
+        owner_session_id = panel_sessions.get(panel_id)
+        return owner_session_id is None or owner_session_id == session_id
+
     async def submit(principal, **kwargs):
         workflow_run_id = uuid4()
         calls["submit"].append((principal, kwargs, workflow_run_id))
@@ -59,10 +75,38 @@ def durable_ws(tmp_path, monkeypatch):
     async def cancel(**kwargs):
         calls["cancel"].append(kwargs)
 
+    inventory = {"value": RevisionSourceInventory()}
+
+    async def load_inventory(_principal, **_kwargs):
+        return inventory["value"]
+
     monkeypatch.setattr(ws_api, "ensure_workspace_identity", ensure)
+    from app.repositories import identity as identity_repository
+
+    monkeypatch.setattr(identity_repository, "reconcile_principal", reconcile)
+    monkeypatch.setattr(
+        history,
+        "session_writable_by_user",
+        session_writable_by_user,
+    )
+    monkeypatch.setattr(
+        history,
+        "panel_writable_by_session",
+        panel_writable_by_session,
+    )
     monkeypatch.setattr(ws_api, "submit_durable_workflow", submit)
     monkeypatch.setattr(ws_api, "cancel_mcad_workflow", cancel)
-    yield SimpleNamespace(calls=calls, workspace=workspace)
+    monkeypatch.setattr(
+        ws_api,
+        "load_revision_source_inventory",
+        load_inventory,
+    )
+    yield SimpleNamespace(
+        calls=calls,
+        workspace=workspace,
+        inventory=inventory,
+        panel_sessions=panel_sessions,
+    )
     asyncio.run(history.close_db())
     ws_api.sessions.clear()
     rate_limiter._windows.clear()
@@ -71,6 +115,18 @@ def durable_ws(tmp_path, monkeypatch):
 @pytest.fixture
 def client():
     return TestClient(app)
+
+
+def test_websocket_fails_closed_when_durable_runtime_is_disabled(
+    client, monkeypatch
+):
+    monkeypatch.setattr(settings, "durable_control_plane_enabled", False)
+
+    with pytest.raises(WebSocketDisconnect) as error:
+        with client.websocket_connect("/ws/session-durable-required") as socket:
+            socket.receive_json()
+
+    assert error.value.code == 1013
 
 
 def test_first_prompt_creates_workspace_then_submits(client, durable_ws):
@@ -128,6 +184,16 @@ def test_dxf_prompt_keeps_durable_generate_path(client, durable_ws):
 def test_existing_project_writes_submit_durable(
     client, durable_ws, payload, operation
 ):
+    if operation == "modify":
+        code = payload["code"]
+        durable_ws.inventory["value"] = RevisionSourceInventory(cadquery=(
+            TrustedBaseSource(
+                kind="revision_manifest_source",
+                source_id=uuid4(),
+                sha256=hashlib.sha256(code.encode("utf-8")).hexdigest(),
+                code=code,
+            ),
+        ))
     with client.websocket_connect(f"/ws/session-{operation}") as socket:
         socket.send_json({"panel_id": f"panel-{operation}", **payload, **_identity()})
         message = socket.receive_json()
@@ -311,8 +377,7 @@ def test_disconnect_never_cancels_durable_workflow(client, durable_ws):
 
 
 def test_panel_cannot_be_reused_across_sessions(client, durable_ws):
-    asyncio.run(history.create_session("owner-session", title="owner"))
-    asyncio.run(history.create_panel("owner-session", "shared-panel"))
+    durable_ws.panel_sessions["shared-panel"] = "owner-session"
 
     with pytest.raises(WebSocketDisconnect) as error:
         with client.websocket_connect("/ws/other-session") as socket:

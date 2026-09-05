@@ -29,7 +29,11 @@ class CADParameter(BaseModel):
     unit: str | None = None
     group: str | None = None
     comment: str | None = None
-    line: int
+    line: int | None = None
+    source: Literal["code", "freecad"] = "code"
+    object_name: str | None = None
+    property_name: str | None = None
+    property_type: str | None = None
 
 
 def _to_number(text: str) -> float:

@@ -105,7 +105,13 @@ def _validate_stl(path: Path, *, role: str) -> dict[str, Any]:
     import trimesh
 
     result = _common(path, role=role, artifact_format="stl")
-    mesh = trimesh.load_mesh(path, force="mesh")
+    mesh = trimesh.load_mesh(path, force="mesh", process=False)
+    # Binary/ASCII STL repeats vertices per triangle and FreeCAD may emit
+    # duplicate or degenerate triangles at analytic-surface seams. Normalize
+    # only numerically identical vertices (1e-8 mm) and invalid duplicate
+    # faces; do not fill holes or otherwise heal failed geometry.
+    mesh.merge_vertices(digits_vertex=8)
+    mesh.process(validate=True)
     dimensions = tuple(float(item) for item in mesh.bounding_box.extents)
     bounds = mesh.bounding_box.bounds
     valid = bool(
@@ -153,6 +159,9 @@ def _validate_dxf(path: Path, *, role: str) -> dict[str, Any]:
 
     result = _common(path, role=role, artifact_format="dxf")
     document = ezdxf.readfile(path)
+    if document.units != ezdxf.units.MM:
+        result["issues"].append(f"dxf_units_not_millimetres:{document.units}")
+        return result
     entities = tuple(document.modelspace())
     extents = bbox.extents(entities, fast=False)
     if not extents.has_data:

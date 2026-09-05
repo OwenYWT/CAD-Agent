@@ -253,6 +253,63 @@ def _candidate_artifact_rows(
                     }
                 )
             continue
+        if evidence["gate"] == "bom":
+            artifacts = list(report.get("artifacts") or ())
+            if {str(item.get("role")) for item in artifacts} != {
+                "bom-json",
+                "bom-csv",
+            }:
+                raise CandidateSealVerificationError(
+                    "selected BOM evidence is incomplete"
+                )
+            for item in artifacts:
+                role = str(item["role"])
+                filename = _safe_filename(str(item["filename"]))
+                product_filename = _safe_filename(f"{step_key}-{filename}")
+                digest = str(item.get("sha256") or "")
+                size_bytes = int(item.get("size_bytes") or 0)
+                source_key = str(item.get("object_key") or "")
+                expected_prefix = (
+                    f"staging/agent/tenants/{tenant_id}/candidates/"
+                    f"{candidate_build_id}/validation/"
+                )
+                if (
+                    product_filename in filenames
+                    or not _SHA256_RE.fullmatch(digest)
+                    or size_bytes < 1
+                    or not source_key.startswith(expected_prefix)
+                    or evidence["execution_attempt_id"] is None
+                ):
+                    raise CandidateSealVerificationError(
+                        "selected BOM artifact declaration is invalid"
+                    )
+                filenames.add(product_filename)
+                rows.append({
+                    "manifest_id": evidence["staging_manifest_id"],
+                    "attempt_id": evidence["execution_attempt_id"],
+                    "step_key": step_key,
+                    "artifact_kind": (
+                        "bom_json" if role == "bom-json" else "bom_csv"
+                    ),
+                    "filename": product_filename,
+                    "content_type": str(item["content_type"]),
+                    "size_bytes": size_bytes,
+                    "sha256": digest,
+                    "staging_object_key": source_key,
+                    "object_key": _candidate_final_object_key(
+                        tenant_id=tenant_id,
+                        project_id=project_id,
+                        candidate_build_id=candidate_build_id,
+                        sha256=digest,
+                        filename=product_filename,
+                    ),
+                    "runtime_metadata": {
+                        **dict(report.get("runtime_provenance") or {}),
+                        "validation_evidence_id": str(evidence["id"]),
+                        "validation_gate": "bom",
+                    },
+                })
+            continue
         if evidence["gate"] != "dfm":
             continue
         report_artifact = dict(report.get("report_artifact") or {})
@@ -425,9 +482,23 @@ async def _load_candidate_seal_selection(
     policy = dict(plan["validation_policy"])
     evidence_rows: list[dict[str, Any]] = []
     for supplied, manifest_id in zip(selected, manifest_ids, strict=True):
-        for gate in ("geometry", "visual", "dfm"):
+        for gate in ("geometry", "visual", "dfm", "bom"):
             mode = str(policy[gate]["mode"])
             evidence_id = supplied.get(f"{gate}_evidence_id")
+            if (
+                gate == "bom"
+                and plan["model_kind"] == "assembly"
+                and supplied["step_key"] != next(
+                step["step_key"]
+                for step in plan["steps"]
+                if step["kind"] == "assembly_combine"
+                )
+            ):
+                if evidence_id is not None:
+                    raise CandidateSealVerificationError(
+                        "BOM evidence belongs only to the assembly combine manifest"
+                    )
+                continue
             if mode == "disabled":
                 if evidence_id is not None:
                     raise CandidateSealVerificationError(
@@ -664,6 +735,26 @@ async def seal_agent_candidate(
         ],
         "validation": validation_summary,
         "risks": risk_summary,
+        "bom": {
+            "status": (
+                "succeeded" if plan.get("model_kind") == "assembly"
+                else "not_applicable"
+            ),
+            "evidence_id": next(
+                (
+                    str(row["id"])
+                    for row in evidence
+                    if row["gate"] == "bom"
+                ),
+                None,
+            ),
+            "json_artifact_kind": (
+                "bom_json" if plan.get("model_kind") == "assembly" else None
+            ),
+            "csv_artifact_kind": (
+                "bom_csv" if plan.get("model_kind") == "assembly" else None
+            ),
+        },
     }
     committed: list[CommittedArtifact] = []
     async with tenant_transaction(tenant_id, principal_id) as connection:

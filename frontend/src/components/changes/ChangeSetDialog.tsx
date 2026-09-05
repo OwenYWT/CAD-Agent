@@ -213,7 +213,7 @@ export default function ChangeSetDialog({
       description="仅展示版本快照、任务结果、参数、几何指标、文件引用和验证记录能够证实的变化；缺失证据保持未知。"
       footer={(
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <span className="mr-auto text-[11px] text-[var(--faint)]">
+          <span className="mr-auto type-caption text-[var(--faint)]">
             {changeSet?.source === "durable"
               ? `审查状态：${changeSet.reviewStatus || "未知"}`
               : "当前为兼容快照审查；持久 Change Set 建立后可执行接受与提交。"}
@@ -303,10 +303,10 @@ export default function ChangeSetDialog({
         {changeSet ? (
           <>
             {changeSet.source === "durable" ? (
-              <label className="block text-xs text-[var(--muted)]">
+              <label className="block type-control text-[var(--muted)]">
                 审查意见
                 <textarea
-                  className="mt-2 min-h-20 w-full resize-y rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                  className="mt-2 min-h-20 w-full resize-y rounded-lg border border-[var(--line)] bg-white px-3 py-2 type-control text-[var(--ink)] outline-none focus:border-[var(--accent)]"
                   maxLength={4000}
                   onChange={(event) => setReviewNote(event.target.value)}
                   placeholder="拒绝或请求修改时必填；接受时可选。"
@@ -315,34 +315,34 @@ export default function ChangeSetDialog({
               </label>
             ) : null}
             <section className="border-b border-[var(--line)] pb-4">
-              <div className="grid gap-3 text-xs sm:grid-cols-3">
+              <div className="grid gap-3 type-body sm:grid-cols-3">
                 <div><p className="text-[var(--faint)]">修改目标</p><p className="mt-1 text-[var(--ink)]">{changeSet.objective || "未记录"}</p></div>
                 <div><p className="text-[var(--faint)]">版本关系</p><p className="mt-1 text-[var(--ink)]">{changeSet.baseVersion ? `v${changeSet.baseVersion} → v${changeSet.targetVersion}` : `父版本未知 → v${changeSet.targetVersion}`}</p></div>
                 <div><p className="text-[var(--faint)]">修改对象数</p><p className="mt-1 text-[var(--ink)]">{changeSet.modifiedObjectCount ?? "未知"}</p></div>
               </div>
-              <p className="mt-3 break-all text-[10px] text-[var(--faint)]">
+              <p className="mt-3 break-all type-caption text-[var(--faint)]">
                 任务 {changeSet.taskId || "未记录"} · 请求 {changeSet.requestId || "未记录"}
               </p>
             </section>
 
             <section>
-              <h3 className="text-xs font-semibold text-[var(--ink)]">参数变化</h3>
+              <h3 className="type-section-heading  text-[var(--ink)]">参数变化</h3>
               {changeSet.parameterChanges.length ? (
                 <div className="mt-2 overflow-hidden rounded-lg border border-[var(--line)]">
                   {changeSet.parameterChanges.map((change) => (
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-[var(--line)] px-3 py-2 text-xs last:border-b-0" key={change.parameterId}>
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-[var(--line)] px-3 py-2 type-body last:border-b-0" key={change.parameterId}>
                       <span className="truncate text-[var(--ink)]">{change.label}</span>
                       <span className="text-[var(--muted)]">{change.before} → {change.after}{change.unit || ""}</span>
                     </div>
                   ))}
                 </div>
-              ) : <p className="mt-2 text-xs text-[var(--faint)]">没有父版本参数证据，或已记录参数值未变化。</p>}
+              ) : <p className="mt-2 type-body text-[var(--faint)]">没有父版本参数证据，或已记录参数值未变化。</p>}
             </section>
 
             <section className="grid gap-4 sm:grid-cols-2">
               <div>
-                <h3 className="text-xs font-semibold text-[var(--ink)]">代码与几何</h3>
-                <dl className="mt-2 space-y-2 text-xs text-[var(--muted)]">
+                <h3 className="type-section-heading  text-[var(--ink)]">代码与几何</h3>
+                <dl className="mt-2 space-y-2 type-body text-[var(--muted)]">
                   <div className="flex justify-between gap-3"><dt>代码</dt><dd>{statusLabel(changeSet.code.status)}</dd></div>
                   <div className="flex justify-between gap-3"><dt>几何</dt><dd>{statusLabel(changeSet.geometry.status)}</dd></div>
                   {changeSet.geometry.metrics.map((metric) => (
@@ -351,10 +351,10 @@ export default function ChangeSetDialog({
                 </dl>
               </div>
               <div>
-                <h3 className="text-xs font-semibold text-[var(--ink)]">验证与风险</h3>
-                <p className="mt-2 text-xs text-[var(--muted)]">验证：{validationLabel(changeSet.validation.status)} · {changeSet.validation.summary}</p>
+                <h3 className="type-section-heading  text-[var(--ink)]">验证与风险</h3>
+                <p className="mt-2 type-body text-[var(--muted)]">验证：{validationLabel(changeSet.validation.status)} · {changeSet.validation.summary}</p>
                 {changeSet.validation.gates?.length ? (
-                  <ul className="mt-2 space-y-1 text-[11px] text-[var(--faint)]">
+                  <ul className="mt-2 space-y-1 type-caption text-[var(--faint)]">
                     {changeSet.validation.gates.map((gate) => (
                       <li key={gate.evidenceId || `${gate.gate}:${gate.outcome}`} title={gate.evidenceHash}>
                         · {gate.gate.toUpperCase()} · {gate.mode === "required" ? "必需" : "建议"} · {gate.outcome === "passed" ? "通过" : gate.outcome === "failed" ? "存在问题" : "未能判定"}
@@ -362,21 +362,21 @@ export default function ChangeSetDialog({
                     ))}
                   </ul>
                 ) : null}
-                <p className="mt-2 text-xs text-[var(--muted)]">风险：{riskLabel(changeSet.risk.level)}</p>
-                <ul className="mt-1 space-y-1 text-[11px] text-[var(--faint)]">
+                <p className="mt-2 type-body text-[var(--muted)]">风险：{riskLabel(changeSet.risk.level)}</p>
+                <ul className="mt-1 space-y-1 type-caption text-[var(--faint)]">
                   {changeSet.risk.reasons.map((reason) => <li key={reason}>· {reason}</li>)}
                 </ul>
               </div>
             </section>
 
             <section>
-              <h3 className="text-xs font-semibold text-[var(--ink)]">文件变化</h3>
+              <h3 className="type-section-heading  text-[var(--ink)]">文件变化</h3>
               {changeSet.files.length ? (
                 <div className="mt-2 space-y-2">
-                  {changeSet.files.map((file) => (
-                    <div className="rounded-lg border border-[var(--line)] px-3 py-2 text-xs" key={`${file.format}:${file.kind}`}>
+                  {changeSet.files.map((file, index) => (
+                    <div className="rounded-lg border border-[var(--line)] px-3 py-2 type-body" key={`${file.format}:${file.kind}:${index}`}>
                       <p className="text-[var(--ink)]">{file.format} · {fileKindLabel(file.kind)}</p>
-                      <p className="mt-1 break-all text-[10px] text-[var(--faint)]">
+                      <p className="mt-1 break-all type-caption text-[var(--faint)]">
                         {file.evidence === "sha256"
                           ? "文件内容变化已由不可变 Artifact 的 SHA-256 证实。"
                           : "仅能证实文件引用变化；当前元数据没有 SHA-256，不能声称内容已变化。"}
@@ -384,16 +384,16 @@ export default function ChangeSetDialog({
                     </div>
                   ))}
                 </div>
-              ) : <p className="mt-2 text-xs text-[var(--faint)]">没有可证实的文件引用变化。</p>}
+              ) : <p className="mt-2 type-body text-[var(--faint)]">没有可证实的文件引用变化。</p>}
             </section>
 
             <section>
-              <h3 className="text-xs font-semibold text-[var(--ink)]">Agent 操作日志</h3>
+              <h3 className="type-section-heading  text-[var(--ink)]">Agent 操作日志</h3>
               {changeSet.agentLogs.length ? (
-                <ol className="mt-2 space-y-1 text-xs text-[var(--muted)]">
+                <ol className="mt-2 space-y-1 type-body text-[var(--muted)]">
                   {changeSet.agentLogs.map((log) => <li key={log}>{log}</li>)}
                 </ol>
-              ) : <p className="mt-2 text-xs text-[var(--faint)]">没有已持久化的 Agent 操作日志。</p>}
+              ) : <p className="mt-2 type-body text-[var(--faint)]">没有已持久化的 Agent 操作日志。</p>}
             </section>
           </>
         ) : null}

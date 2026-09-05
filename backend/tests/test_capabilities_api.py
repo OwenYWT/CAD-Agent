@@ -71,7 +71,7 @@ def test_list_returns_all_11_pinned_manifests(client):
         expected_reasons = [
             dependency["detail"]
             for dependency in manifest["dependencies"]
-            if dependency["required"] and not dependency["available"]
+            if dependency["required"] and dependency["available"] is False
         ]
         if not expected_reasons and not any(action["available"] for action in manifest["actions"]):
             expected_reasons = list(dict.fromkeys(
@@ -202,6 +202,15 @@ def test_optional_viewer_reuse_launcher_does_not_block_server(monkeypatch):
 def test_python_dependency_uses_project_311_baseline():
     dependency = registry._python_runtime_dependency()
     assert "3.11 or newer" in dependency.detail
+
+
+def test_unprobed_network_does_not_permanently_disable_standard_part_search():
+    manifest = registry.get_capability("step-parts")
+    dependency = next(dep for dep in manifest.dependencies if dep.kind == "network")
+    assert dependency.required is True
+    assert dependency.available is None
+    assert next(action for action in manifest.actions if action.id == "search").available is True
+    assert manifest.blocked_reasons == []
 
 
 def test_uploaded_generators_are_not_reported_available_without_isolator(monkeypatch):

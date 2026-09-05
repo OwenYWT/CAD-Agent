@@ -12,6 +12,45 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app.domain.artifacts import CommittedArtifact
 
 
+async def committed_artifact_for_revision(
+    connection: AsyncConnection,
+    *,
+    tenant_id: UUID,
+    project_id: UUID,
+    revision_id: UUID,
+    artifact_kind: str,
+) -> dict[str, Any] | None:
+    """Resolve one immutable revision artifact by kind, failing on ambiguity."""
+    rows = (
+        await connection.execute(
+            text(
+                """
+                SELECT id, revision_id, workflow_run_id, attempt_id,
+                       artifact_kind, filename, content_type, size_bytes,
+                       sha256, object_key, runtime_metadata, created_at
+                FROM artifacts
+                WHERE tenant_id=:tenant_id AND project_id=:project_id
+                  AND revision_id=:revision_id
+                  AND lower(artifact_kind)=lower(:artifact_kind)
+                ORDER BY created_at DESC, id DESC
+                LIMIT 2
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "project_id": project_id,
+                "revision_id": revision_id,
+                "artifact_kind": artifact_kind,
+            },
+        )
+    ).mappings().all()
+    if len(rows) > 1:
+        raise ValueError(
+            f"revision has multiple {artifact_kind!r} artifacts"
+        )
+    return dict(rows[0]) if rows else None
+
+
 async def insert_upload_authorization(
     connection: AsyncConnection,
     *,

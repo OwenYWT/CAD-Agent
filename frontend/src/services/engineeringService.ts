@@ -4,6 +4,7 @@ import type {
   DurableTaskEvent,
   DurableTaskSnapshot,
   GenerationResult,
+  FreeCADBOMDocument,
   ModelSnapshotDiff,
   ModelSnapshotDetail,
   ModelSnapshotSummary,
@@ -47,6 +48,8 @@ export interface RestoredProject {
     currentRevisionId: string | null;
     workflowRunId: string | null;
     workflowStatus: string | null;
+    changeSetId: string | null;
+    taskSnapshot: DurableTaskSnapshot | null;
   }>;
 }
 
@@ -61,10 +64,29 @@ function apiErrorMessage(detail: unknown, fallback: string): string {
   return fallback;
 }
 
+export class EngineeringApiError extends Error {
+  code: string | null;
+  retryable: boolean;
+
+  constructor(message: string, code: string | null, retryable = false) {
+    super(message);
+    this.name = "EngineeringApiError";
+    this.code = code;
+    this.retryable = retryable;
+  }
+}
+
 async function readJson<T>(response: Response, fallback: string): Promise<T> {
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { detail?: unknown };
-    throw new Error(apiErrorMessage(body.detail, fallback));
+    const nested = body.detail && typeof body.detail === "object"
+      ? body.detail as Record<string, unknown>
+      : null;
+    throw new EngineeringApiError(
+      apiErrorMessage(body.detail, fallback),
+      typeof nested?.code === "string" ? nested.code : null,
+      nested?.retryable === true,
+    );
   }
   return response.json() as Promise<T>;
 }
@@ -89,8 +111,15 @@ export async function restoreHistoryProject(sessionId: string): Promise<Restored
   const panelResponse = await authFetch(`${API_BASE}/api/history/sessions/${sessionId}/panels`);
   const panels = await readJson<PanelSummary[]>(panelResponse, "项目面板加载失败");
   const hydrated = await Promise.all(panels.map(async (panel) => {
-    const response = await authFetch(`${API_BASE}/api/history/panels/${panel.id}/messages`);
-    const messages = await readJson<MessageData[]>(response, "项目消息加载失败");
+    const workflowRunId = panel.active_workflow_run_id || null;
+    const [messages, taskSnapshot] = await Promise.all([
+      authFetch(`${API_BASE}/api/history/panels/${panel.id}/messages`).then(
+        (response) => readJson<MessageData[]>(response, "项目消息加载失败"),
+      ),
+      workflowRunId
+        ? getDurableTaskSnapshot(workflowRunId)
+        : Promise.resolve(null),
+    ]);
     return {
       id: panel.id,
       title: panel.title || "工程任务",
@@ -99,8 +128,12 @@ export async function restoreHistoryProject(sessionId: string): Promise<Restored
       projectId: panel.project_id || null,
       branchId: panel.branch_id || null,
       currentRevisionId: panel.current_revision_id || null,
-      workflowRunId: panel.active_workflow_run_id || null,
-      workflowStatus: panel.active_workflow_status || null,
+      workflowRunId,
+      workflowStatus: taskSnapshot?.status
+        || panel.active_workflow_status
+        || null,
+      changeSetId: taskSnapshot?.change_set?.id || null,
+      taskSnapshot,
     };
   }));
   return { sessionId, panels: hydrated };
@@ -137,6 +170,41 @@ export async function listDurableTaskEvents(
     `${API_BASE}/api/tasks/${encodeURIComponent(workflowRunId)}/events?${query}`,
   );
   return readJson<DurableTaskEventPage>(response, "任务事件加载失败");
+}
+
+export interface DurableConfirmationResult {
+  workflow_run_id: string;
+  accepted: boolean;
+  status: "signal_delivered";
+}
+
+export async function confirmDurableTask(
+  workflowRunId: string,
+  accepted: boolean,
+  note = "",
+): Promise<DurableConfirmationResult> {
+  const response = await authFetch(
+    `${API_BASE}/api/tasks/${encodeURIComponent(workflowRunId)}/confirmation`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accepted, note }),
+    },
+  );
+  return readJson<DurableConfirmationResult>(response, "任务确认失败");
+}
+
+export async function getRevisionBOM(
+  projectId: string,
+  revisionId: string,
+  signal?: AbortSignal,
+): Promise<FreeCADBOMDocument> {
+  const response = await authFetch(
+    `${API_BASE}/api/projects/${encodeURIComponent(projectId)}`
+      + `/revisions/${encodeURIComponent(revisionId)}/bom`,
+    { signal },
+  );
+  return readJson<FreeCADBOMDocument>(response, "BOM 加载失败");
 }
 
 export async function getDurableChangeSet(
@@ -196,16 +264,6 @@ export async function getModelSnapshot(
     `${API_BASE}/api/history/snapshots/${encodeURIComponent(snapshotId)}`,
   );
   return readJson<ModelSnapshotDetail>(response, "版本证据加载失败");
-}
-
-export async function restoreModelSnapshot(
-  snapshotId: string,
-): Promise<ModelSnapshotDetail> {
-  const response = await authFetch(
-    `${API_BASE}/api/history/snapshots/${encodeURIComponent(snapshotId)}/restore`,
-    { method: "POST" },
-  );
-  return readJson<ModelSnapshotDetail>(response, "Snapshot restore failed");
 }
 
 export async function diffModelSnapshots(

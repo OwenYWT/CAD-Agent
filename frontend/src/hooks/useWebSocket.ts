@@ -30,6 +30,12 @@ export function durableIdentityPayload(panel: PanelState) {
   return durableWriteIdentity(durable);
 }
 
+export function operationIntentForPanel(
+  panel: PanelState | undefined,
+): "generate" | "modify" {
+  return panel?.result?.success ? "modify" : "generate";
+}
+
 function requestPanelReplay(ws: WebSocket) {
   const state = useSessionStore.getState();
   const panelIds = new Set<string>();
@@ -288,6 +294,7 @@ export function useWebSocket() {
     ws.send(JSON.stringify({
       type: "user_message",
       text,
+      operation_intent: operationIntentForPanel(panel),
       capability,
       panel_id: panelId,
       workflow_run_id: panel?.durable?.workflowRunId || undefined,
@@ -311,6 +318,23 @@ export function useWebSocket() {
       panel_id: panelId,
       ...identity,
       idempotency_key: identity.idempotency_key || createId(),
+    }));
+    return true;
+  }, []);
+
+  const restoreRevision = useCallback((revisionId: string) => {
+    const ws = wsRef.current;
+    if (ws?.readyState !== WebSocket.OPEN) return false;
+    const state = useSessionStore.getState();
+    const panel = state.panels.find((candidate) => candidate.id === state.activePanelId);
+    if (!panel || panel.isGenerating || !revisionId) return false;
+    const identity = durableIdentityPayload(panel);
+    if (!identity.project_id) return false;
+    ws.send(JSON.stringify({
+      type: "restore_revision",
+      source_revision_id: revisionId,
+      panel_id: panel.id,
+      ...identity,
     }));
     return true;
   }, []);
@@ -364,7 +388,31 @@ export function useWebSocket() {
       part_name: partName,
       instruction,
       panel_id: panelId,
-      code: panel?.result?.code || "",
+      code: panel?.result?.code || undefined,
+      ...identity,
+      idempotency_key: identity.idempotency_key || createId(),
+    }));
+    return true;
+  }, []);
+
+  const modifyParameters = useCallback((
+    updates: { parameter_id: string; value: number }[],
+    expectedStateSha256?: string | null,
+  ) => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return false;
+    const state = useSessionStore.getState();
+    const panelId = state.activePanelId;
+    const panel = state.panels.find((candidate) => candidate.id === panelId);
+    const stateSha256 = expectedStateSha256
+      || panel?.result?.parameter_state_sha256;
+    if (!panel || !stateSha256 || updates.length === 0) return false;
+    const identity = durableIdentityPayload(panel);
+    if (!identity.project_id) return false;
+    wsRef.current.send(JSON.stringify({
+      type: "modify_parameters",
+      updates,
+      expected_state_sha256: stateSha256,
+      panel_id: panelId,
       ...identity,
       idempotency_key: identity.idempotency_key || createId(),
     }));
@@ -381,9 +429,11 @@ export function useWebSocket() {
     connectionState,
     sendMessage,
     executeCode,
+    restoreRevision,
     resumeRun,
     cancelGeneration,
     modifyPart,
+    modifyParameters,
     restoreContext,
   };
 }

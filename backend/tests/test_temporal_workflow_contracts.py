@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.workflows.temporal import (
+    McadAgentWorkflowV2Request,
     McadExecutionRequest,
     McadSourcePreparationRequest,
     McadWorkflowRequest,
@@ -101,3 +102,21 @@ def test_workflow_rejects_missing_or_duplicate_execution_source():
                 prompt="创建支架",
             ),
         )
+
+
+def test_freecad_modify_uses_revision_state_without_existing_code():
+    request = McadAgentWorkflowV2Request(
+        workflow_run_id=uuid4(),
+        tenant_id=uuid4(),
+        project_id=uuid4(),
+        principal_id=uuid4(),
+        branch_id=uuid4(),
+        expected_base_revision_id=uuid4(),
+        operation="modify",
+        modeling_backend="freecad",
+        objective="Set Pad Length to 20 mm",
+        output_formats=("step", "stl"),
+    )
+
+    assert request.existing_code is None
+    assert request.modeling_backend == "freecad"

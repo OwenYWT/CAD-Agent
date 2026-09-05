@@ -80,7 +80,7 @@ def _dependency(
     label: str,
     kind: str,
     required: bool,
-    available: bool,
+    available: bool | None,
     detail: str,
 ) -> CapabilityDependency:
     return CapabilityDependency(
@@ -262,7 +262,7 @@ def _gcode_dependencies() -> list[CapabilityDependency]:
 def _network_dependency(dependency_id: str, label: str, detail: str) -> CapabilityDependency:
     # A catalog GET must not perform DNS/network traffic, and network reachability
     # cannot be inferred from a vendored client script.
-    return _dependency(dependency_id, label, "network", True, False, detail)
+    return _dependency(dependency_id, label, "network", True, None, detail)
 
 
 def _bambu_dependencies() -> list[CapabilityDependency]:
@@ -511,7 +511,7 @@ _DISPLAY_ORDER = {
 def _build_manifest(spec: dict[str, Any]) -> CapabilityManifest:
     dependency_factory = spec["dependencies"]
     dependencies = [_vendored_dependency(spec["id"]), *dependency_factory()]
-    blocked_reasons = [dependency.detail for dependency in dependencies if dependency.required and not dependency.available]
+    blocked_reasons = [dependency.detail for dependency in dependencies if dependency.required and dependency.available is False]
     actions = [action.model_copy() for action in spec["actions"]]
     if blocked_reasons:
         reason = "; ".join(blocked_reasons)

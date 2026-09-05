@@ -38,6 +38,7 @@ export interface DurablePanelContext {
   taskStatus: string | null;
   preparedResult: GenerationResult | null;
   agent: DurableTaskSnapshot["agent"];
+  confirmation: DurableTaskSnapshot["confirmation"];
 }
 
 export function emptyDurableContext(): DurablePanelContext {
@@ -52,6 +53,7 @@ export function emptyDurableContext(): DurablePanelContext {
     taskStatus: null,
     preparedResult: null,
     agent: null,
+    confirmation: null,
   };
 }
 
@@ -63,6 +65,7 @@ function hasTerminalStep(history: StepHistoryEntry[]) {
   return history.some(
     (entry) =>
       entry.step === "complete" ||
+      entry.step === "cancelled" ||
       entry.step === "failed" ||
       entry.status === "failed" ||
       entry.stage_id === "design_confirmation",
@@ -79,7 +82,7 @@ function isStepGenerating(step: StepUpdate | null) {
   return step.status === "running" || step.status === "queued";
 }
 
-function terminalStepFromResult(success: boolean, needsConfirmation = false): StepHistoryEntry {
+function terminalStepFromResult(success: boolean, needsConfirmation = false, cancelled = false): StepHistoryEntry {
   const timestamp = Date.now();
   if (needsConfirmation) {
     return {
@@ -94,10 +97,10 @@ function terminalStepFromResult(success: boolean, needsConfirmation = false): St
     };
   }
   return {
-    step: success ? "complete" : "failed",
-    message: success ? "\u751f\u6210\u5b8c\u6210" : "\u751f\u6210\u5931\u8d25",
-    status: success ? "success" : "failed",
-    stage_id: success ? "complete" : "failed",
+    step: cancelled ? "cancelled" : success ? "complete" : "failed",
+    message: cancelled ? "任务已取消" : success ? "\u751f\u6210\u5b8c\u6210" : "\u751f\u6210\u5931\u8d25",
+    status: cancelled ? "skipped" : success ? "success" : "failed",
+    stage_id: cancelled ? "cancelled" : success ? "complete" : "failed",
     started_at: new Date(timestamp).toISOString(),
     duration_ms: null,
     detail: { source: "frontend_result" },
@@ -223,6 +226,7 @@ interface SessionState {
       currentRevisionId?: string | null;
       workflowRunId?: string | null;
       workflowStatus?: string | null;
+      changeSetId?: string | null;
     }[],
   ) => void;
 }
@@ -493,6 +497,9 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
                 ? panel.durable?.preparedResult || null
                 : null,
               agent: sameWorkflow ? panel.durable?.agent || null : null,
+              confirmation: sameWorkflow
+                ? panel.durable?.confirmation || null
+                : null,
             },
           };
         }),
@@ -516,11 +523,12 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
       return {
         panels: updatePanel(state.panels, targetId, (p) => {
           const previousWorkflowRunId = p.durable?.workflowRunId || null;
+          const cancelled = result.task_status === "cancelled";
           const nextWorkflowRunId = result.workflow_run_id
             || previousWorkflowRunId;
           const assistantMsg: ChatMessage = {
             role: "assistant",
-            content: result.needs_confirmation
+            content: cancelled ? "任务已取消" : result.needs_confirmation
               ? "设计简报需要确认"
               : result.success
                 ? "CAD 模型已生成"
@@ -529,14 +537,14 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
           };
           const nextStepHistory = hasTerminalStep(p.stepHistory)
             ? p.stepHistory
-            : [...p.stepHistory, terminalStepFromResult(Boolean(result.success), Boolean(result.needs_confirmation))];
+            : [...p.stepHistory, terminalStepFromResult(Boolean(result.success), Boolean(result.needs_confirmation), cancelled)];
 
           return {
             result: result.success || result.needs_confirmation ? result : p.result,
-            lastError: result.success || result.needs_confirmation ? null : result.error?.message || "任务执行失败",
+            lastError: cancelled || result.success || result.needs_confirmation ? null : result.error?.message || "任务执行失败",
             isGenerating: false,
             activeRun: p.activeRun
-              ? { ...p.activeRun, status: result.success ? "succeeded" : result.needs_confirmation ? "blocked" : "failed" }
+              ? { ...p.activeRun, status: cancelled ? "cancelled" : result.success ? "succeeded" : result.needs_confirmation ? "blocked" : "failed" }
               : p.activeRun,
             currentStep: null,
             multiStepProgress: null,
@@ -576,11 +584,10 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
     set((state) => ({
       panels: updatePanel(state.panels, panelId, (panel) => {
         const restoredResult = { ...result, code };
-        const restoredHeadRevision =
-          restoredResult.revision_id
-          || restoredResult.expected_base_revision_id
-          || panel.durable?.currentRevisionId
-          || null;
+        const restoredHeadRevision = durableResultHeadRevision(
+          restoredResult,
+          panel.durable?.currentRevisionId || null,
+        );
         const restoreMessage: ChatMessage = {
           role: "assistant",
           content: `\u5df2\u6062\u590d\u7248\u672c ${result.version ?? ""}`.trim(),
@@ -642,6 +649,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
       const targetId = panelId || state.activePanelId;
       return {
         panels: updatePanel(state.panels, targetId, (panel) => {
+          const cancelled = snapshot.status === "cancelled";
           const terminal = [
             "succeeded",
             "failed",
@@ -666,7 +674,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
               artifact.download_url,
             ]),
           );
-          const terminalResult = terminal
+          const snapshotResult = terminal
             ? {
                 ...(prepared || { success: false }),
                 request_id: snapshot.id,
@@ -681,14 +689,39 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
                 workflow_run_id: snapshot.id,
                 change_set_id: snapshot.change_set?.id,
                 task_status: snapshot.status,
-                error: snapshot.status === "succeeded"
+                parameters: snapshot.parameters || prepared?.parameters || null,
+                parameter_state_sha256:
+                  snapshot.parameter_state_sha256
+                  || prepared?.parameter_state_sha256
+                  || null,
+                error: snapshot.status === "succeeded" || cancelled
                   ? undefined
                   : {
-                      type: snapshot.error_code || "WorkflowFailed",
-                      message: snapshot.error_message || "持久任务执行失败",
+                      type: snapshot.error?.code
+                        || snapshot.error_code
+                        || "WorkflowFailed",
+                      message: snapshot.error?.message
+                        || snapshot.error_message
+                        || "持久任务执行失败",
+                      details: snapshot.error
+                        ? {
+                            category: snapshot.error.category,
+                            operation_id: snapshot.error.operation_id,
+                            action: snapshot.error.action,
+                            ...snapshot.error.details,
+                          }
+                        : undefined,
+                      retryable: snapshot.error?.retryable,
                     },
               } as GenerationResult
             : panel.result;
+          const terminalResult = (
+            terminal
+            && snapshot.status !== "succeeded"
+            && panel.result?.success
+          )
+            ? panel.result
+            : snapshotResult;
           return {
           durable: {
             ...(panel.durable || emptyDurableContext()),
@@ -717,14 +750,17 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
             ),
             taskStatus: snapshot.status,
             agent: snapshot.agent || null,
+            confirmation: snapshot.confirmation || null,
           },
           result: terminalResult,
           isGenerating: !terminal,
           lastError: terminal
             ? (
-                snapshot.status === "succeeded"
+                snapshot.status === "succeeded" || cancelled
                   ? null
-                  : snapshot.error_message || "持久任务执行失败"
+                  : snapshot.error?.message
+                    || snapshot.error_message
+                    || "持久任务执行失败"
               )
             : panel.lastError,
           };
@@ -897,7 +933,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
             || result?.workflow_run_id
             || null
           ),
-          changeSetId: result?.change_set_id || null,
+          changeSetId: p.changeSetId || result?.change_set_id || null,
           taskStatus: workflowStatus,
           preparedResult: result,
         },

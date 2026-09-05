@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import text
@@ -15,14 +15,17 @@ from app.domain.projects import Permission
 from app.models.schemas import GenerateResponse, ManufacturingProfile
 from app.execution.canonical import canonical_sha256
 from app.repositories.projects import principal_has_permission
+from app.repositories.artifacts import committed_artifact_for_revision
 from app.repositories.revisions import (
     StaleBaseRevision,
     create_initial_branch,
 )
 from app.workflows.temporal import (
+    FreeCADStructuredModificationV1,
+    FreeCADRevisionRestoreV1,
     McadExecutionRequest,
     McadOutputRequest,
-    McadSourcePreparationRequest,
+    OperationContextV1,
     mcad_workflow_request_payload,
     mcad_agent_v2_request_payload,
     start_mcad_agent_v2_workflow,
@@ -54,6 +57,60 @@ class WorkspaceIdentity:
     project_id: UUID
     branch_id: UUID
     head_revision_id: UUID
+
+
+async def resolve_native_revision_restore(
+    principal: PrincipalContext,
+    *,
+    project_id: UUID,
+    branch_id: UUID,
+    expected_base_revision_id: UUID,
+    source_revision_id: UUID,
+    panel_id: str,
+) -> tuple[FreeCADRevisionRestoreV1, OperationContextV1]:
+    """Resolve only a same-panel historical artifact, never a client path/hash."""
+    async with tenant_transaction(principal.tenant_id, principal.principal_id) as connection:
+        if not await principal_has_permission(
+            connection, tenant_id=principal.tenant_id, project_id=project_id,
+            principal_id=principal.principal_id, permission=Permission.MODIFY_DESIGN,
+        ):
+            raise PermissionError("无权恢复该项目的历史版本")
+        source = await connection.scalar(
+            text("""
+                SELECT r.id FROM project_revisions r
+                JOIN project_branches b ON b.id=r.branch_id AND b.tenant_id=r.tenant_id
+                WHERE r.tenant_id=:tenant_id AND r.project_id=:project_id
+                  AND r.id=:source_revision_id AND r.branch_id=:branch_id
+                  AND b.project_id=:project_id AND b.name=:branch_name
+            """),
+            {
+                "tenant_id": principal.tenant_id, "project_id": project_id,
+                "branch_id": branch_id, "source_revision_id": source_revision_id,
+                "branch_name": "panel-" + hashlib.sha256(panel_id.encode("utf-8")).hexdigest()[:16],
+            },
+        )
+        if source is None:
+            raise ValueError("未找到当前工程面板的历史版本")
+        try:
+            artifact = await committed_artifact_for_revision(
+                connection, tenant_id=principal.tenant_id, project_id=project_id,
+                revision_id=source_revision_id, artifact_kind="fcstd",
+            )
+        except ValueError as exc:
+            raise ValueError("历史版本包含多个 FCStd，无法确定恢复来源") from exc
+        if artifact is None:
+            raise ValueError("历史版本没有可恢复的原生 FCStd 文件")
+    restore = FreeCADRevisionRestoreV1(
+        source_revision_id=source_revision_id,
+        source_artifact_id=artifact["id"], source_sha256=str(artifact["sha256"]),
+    )
+    return restore, OperationContextV1(
+        rule="explicit_history_restore", source_channel="session_websocket",
+        panel_id=panel_id, requested_operation="modify", resolved_operation="modify",
+        submission_modeling_backend="freecad", base_revision_id=expected_base_revision_id,
+        base_source_kind="fcstd_artifact", base_source_id=restore.source_artifact_id,
+        base_source_sha256=restore.source_sha256,
+    )
 
 
 async def ensure_workspace_identity(
@@ -221,6 +278,10 @@ async def submit_durable_workflow(
     code: str | None = None,
     manufacturing_profile: ManufacturingProfile | dict | None = None,
     require_confirmation: bool = False,
+    modeling_backend: Literal["auto", "freecad", "cadquery"] | None = None,
+    operation_context: OperationContextV1 | None = None,
+    structured_modification: FreeCADStructuredModificationV1 | None = None,
+    revision_restore: FreeCADRevisionRestoreV1 | None = None,
 ) -> DurableSubmission:
     normalized_objective = objective.strip()
     normalized_idempotency_key = idempotency_key.strip()
@@ -234,6 +295,29 @@ async def submit_durable_workflow(
             "idempotency_key must contain 1 to 500 characters"
         )
     normalized_profile = None
+    if revision_restore is not None and (
+        operation != "modify" or modeling_backend != "freecad"
+        or code is not None or structured_modification is not None
+        or operation_context is None
+        or operation_context.rule != "explicit_history_restore"
+        or operation_context.base_revision_id != expected_base_revision_id
+        or operation_context.base_source_id != revision_restore.source_artifact_id
+        or operation_context.base_source_sha256 != revision_restore.source_sha256
+    ):
+        raise ValueError("native revision restore requires a server-resolved FreeCAD source")
+    if operation == "generate" and modeling_backend is None:
+        modeling_backend = (
+            "cadquery"
+            if set(output_formats).issubset({"dxf", "svg"})
+            else "auto"
+        )
+    if operation == "modify" and (
+        modeling_backend not in {"freecad", "cadquery"}
+        or operation_context is None
+    ):
+        raise ValueError(
+            "modify submission requires resolved backend and operation context"
+        )
     if operation == "execute":
         if not code:
             raise ValueError("execute requires source code")
@@ -250,21 +334,15 @@ async def submit_durable_workflow(
             else None
         )
         primary = None
-        preparation = McadSourcePreparationRequest(
-            operation=operation,
-            prompt=objective,
-            existing_code=code if operation == "modify" else None,
-            output_formats=tuple(output_formats),
-            manufacturing_profile=(
-                normalized_profile.model_dump(mode="json")
-                if normalized_profile
-                else None
-            ),
-        )
+        # Agent V2 owns preparation. The FreeCAD branch resolves editable state
+        # from the expected base revision instead of requiring client-side code.
+        preparation = None
     else:
         raise ValueError(f"unsupported durable operation: {operation}")
 
     is_agent_v2 = operation in {"generate", "modify"}
+    if is_agent_v2 and modeling_backend is None:
+        raise ValueError("agent submission requires a modeling backend")
     kind = (
         f"mcad.agent.v2.{operation}"
         if is_agent_v2
@@ -284,6 +362,10 @@ async def submit_durable_workflow(
             ),
             output_formats=tuple(output_formats),
             confirmation_timeout_seconds=3600,
+            modeling_backend=modeling_backend,
+            operation_context=operation_context,
+            structured_modification=structured_modification,
+            **({"revision_restore": revision_restore} if revision_restore else {}),
         )
         if is_agent_v2
         else mcad_workflow_request_payload(
@@ -321,15 +403,52 @@ async def submit_durable_workflow(
             )
         ).mappings().one_or_none()
     if existing is not None:
+        legacy_backend = (
+            "cadquery"
+            if set(output_formats).issubset({"dxf", "svg"})
+            else "freecad"
+        )
+        legacy_generate_hash = (
+            canonical_sha256(
+                mcad_agent_v2_request_payload(
+                    branch_id=branch_id,
+                    expected_base_revision_id=expected_base_revision_id,
+                    operation="generate",
+                    objective=normalized_objective,
+                    existing_code=None,
+                    manufacturing_profile=(
+                        normalized_profile.model_dump(mode="json")
+                        if normalized_profile
+                        else None
+                    ),
+                    output_formats=tuple(output_formats),
+                    confirmation_timeout_seconds=3600,
+                    modeling_backend=legacy_backend,
+                    operation_context=None,
+                    structured_modification=None,
+                )
+            )
+            if operation == "generate"
+            else None
+        )
+        legacy_generate_replay = (
+            legacy_generate_hash is not None
+            and existing["request_payload_hash"] == legacy_generate_hash
+        )
         expected = {
             "project_id": project_id,
             "requested_by_principal_id": principal.principal_id,
             "kind": kind,
             "request_payload_hash": payload_hash,
         }
-        if any(
+        identity_conflict = any(
             existing[field] != value
             for field, value in expected.items()
+            if field != "request_payload_hash"
+        )
+        if identity_conflict or (
+            existing["request_payload_hash"] != payload_hash
+            and not legacy_generate_replay
         ):
             raise IdempotencyConflict(
                 "workflow idempotency key was reused with a different payload"
@@ -337,6 +456,8 @@ async def submit_durable_workflow(
         # Re-enter the idempotent start boundary. This repairs the crash window
         # where WorkflowRun committed but the Temporal start call did not.
         if is_agent_v2:
+            start_backend = legacy_backend if legacy_generate_replay else modeling_backend
+            start_context = None if legacy_generate_replay else operation_context
             workflow_run_id, handle = await start_mcad_agent_v2_workflow(
                 tenant_id=principal.tenant_id,
                 project_id=project_id,
@@ -355,6 +476,12 @@ async def submit_durable_workflow(
                 ),
                 output_formats=tuple(output_formats),
                 require_worker_ready=False,
+                modeling_backend=start_backend,
+                operation_context=start_context,
+                structured_modification=(
+                    None if legacy_generate_replay else structured_modification
+                ),
+                **({"revision_restore": revision_restore} if revision_restore else {}),
             )
         else:
             workflow_run_id, handle = await start_mcad_workflow(
@@ -404,6 +531,10 @@ async def submit_durable_workflow(
                 else None
             ),
             output_formats=tuple(output_formats),
+            modeling_backend=modeling_backend,
+            operation_context=operation_context,
+            structured_modification=structured_modification,
+            **({"revision_restore": revision_restore} if revision_restore else {}),
         )
     else:
         workflow_run_id, handle = await start_mcad_workflow(

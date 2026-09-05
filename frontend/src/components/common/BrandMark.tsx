@@ -26,7 +26,7 @@ export function BrandMark({
   const Name = nameAs;
   const markSize = size === "login" ? "h-9 w-9 rounded-lg" : "h-7 w-7 rounded-lg";
   const fallbackTone = tone === "inverse"
-    ? "bg-white text-slate-950"
+    ? "bg-white text-[var(--ink)]"
     : "bg-[var(--ink)] text-white";
 
   return (
@@ -36,7 +36,7 @@ export function BrandMark({
       role={showName ? undefined : "img"}
     >
       {failed ? (
-        <span aria-hidden="true" className={`grid shrink-0 place-items-center text-xs font-semibold ${markSize} ${fallbackTone}`}>W</span>
+        <span aria-hidden="true" className={`grid shrink-0 place-items-center type-body  ${markSize} ${fallbackTone}`}>W</span>
       ) : (
         <img
           alt=""
@@ -48,7 +48,7 @@ export function BrandMark({
       )}
       {showName ? (
         <span className="min-w-0">
-          <Name className={`block font-semibold ${nameClassName}`}>WordsWave</Name>
+          <Name className={`block  ${nameClassName}`}>WordsWave</Name>
           {description ? <span className={`block ${descriptionClassName}`}>{description}</span> : null}
         </span>
       ) : null}

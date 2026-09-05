@@ -12,6 +12,7 @@ from app.agent.durable_repair import DurableRepairSourceGenerator
 from app.db import database_readiness
 from app.execution.backend import ExecutionBackend
 from app.execution.composition import get_execution_backend
+from app.freecad.operation_generator import FreeCADOperationGenerator
 from app.object_store import object_store_readiness
 from app.temporal_client import get_temporal_client
 from app.workflows.activities import McadWorkflowActivities
@@ -43,6 +44,7 @@ def build_agent_v2_workflow_worker(
     durable_modeling: DurableModelingSourceGenerator | None = None,
     durable_repair: DurableRepairSourceGenerator | None = None,
     durable_visual: DurableVisualValidator | None = None,
+    freecad_operations: FreeCADOperationGenerator | None = None,
 ) -> Worker:
     """Build the version-isolated V2 worker on its dedicated task queue."""
     activities = McadWorkflowActivities(
@@ -51,6 +53,7 @@ def build_agent_v2_workflow_worker(
         durable_modeling=durable_modeling,
         durable_repair=durable_repair,
         durable_visual=durable_visual,
+        freecad_operations=freecad_operations,
     )
     return Worker(
         client,

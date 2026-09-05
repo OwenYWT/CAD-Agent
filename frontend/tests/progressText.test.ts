@@ -7,7 +7,6 @@ const PROJECT_ROOT = join(import.meta.dirname, "..", "..");
 
 const FILES_TO_CHECK = [
   "frontend/src/stores/sessionStore.ts",
-  "frontend/src/components/MultiStepProgress.tsx",
   "frontend/src/components/AgentRunTimeline.tsx",
   "backend/app/api/websocket.py",
   "backend/app/agent/multi_step.py",

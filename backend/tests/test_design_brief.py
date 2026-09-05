@@ -220,3 +220,19 @@ def test_generate_response_can_embed_plan_and_brief_together():
 
     assert payload["plan"]["design_brief"]["artifact_type"] == "hook"
     assert payload["design_brief"]["artifact_type"] == "hook"
+
+
+def test_modification_parser_normalizes_explicit_length_units_only():
+    plan = Planner._parse_modification_payload(
+        {
+            "description": "Change the hole diameter",
+            "modification_type": "dimension_change",
+            "target_params": {
+                "Hole.Diameter": "8.00 mm",
+                "Pad.Length": "1 cm",
+            },
+            "new_features": ["chamfer:size=1"],
+        }
+    )
+
+    assert plan.target_params == {"Hole.Diameter": 8.0, "Pad.Length": 10.0}

@@ -13,6 +13,7 @@ Identifier = Annotated[str, Field(min_length=1, max_length=200)]
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 ImageDigest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 JsonPrimitive = str | int | float | bool | None
+ErrorDetailValue = JsonPrimitive | list[str] | list[int]
 
 
 class FrozenContract(BaseModel):
@@ -139,6 +140,10 @@ class ExecutionError(FrozenContract):
     category: ExecutionErrorCategory
     code: Identifier
     message: str = Field(min_length=1, max_length=4000)
+    operation_id: str | None = Field(default=None, max_length=200)
+    action: str | None = Field(default=None, max_length=200)
+    details: dict[str, ErrorDetailValue] = Field(default_factory=dict)
+    retryable: bool = False
     evidence: dict[str, JsonPrimitive] = Field(default_factory=dict)
 
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { authFetch } from "../auth";
 import { useCapabilities } from "../hooks/useCapabilities";
+import { useI18n } from "../i18n/I18nContext";
 import type { CapabilityId } from "../types";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
@@ -55,7 +56,7 @@ interface RunResult {
 
 const STATUS_STYLE: Record<RunResult["status"], string> = {
   succeeded: "bg-emerald-50 text-emerald-800",
-  dry_run: "bg-sky-50 text-sky-800",
+  dry_run: "bg-[var(--agent-soft)] text-[var(--agent)]",
   blocked: "bg-amber-50 text-amber-900",
   failed: "bg-red-50 text-red-800",
 };
@@ -72,6 +73,7 @@ function stripSecrets(value: unknown): unknown {
 }
 
 export default function CapabilityRunner() {
+  const { translate } = useI18n();
   const { capabilities, loading } = useCapabilities();
   const [capabilityId, setCapabilityId] = useState<CapabilityId>("step-parts");
   const capability = capabilities.find((item) => item.id === capabilityId) ?? capabilities[0];
@@ -180,88 +182,88 @@ export default function CapabilityRunner() {
     }
   };
 
-  if (loading && capabilities.length === 0) return <div className="p-4 text-xs text-slate-500">正在载入能力…</div>;
+  if (loading && capabilities.length === 0) return <div className="p-4 type-body text-[var(--muted)]">正在载入能力…</div>;
 
   return (
     <section aria-labelledby="capability-runner-title" className="space-y-4 p-4">
       <div>
-        <h3 className="text-sm font-semibold text-slate-800" id="capability-runner-title">结构化能力运行器</h3>
-        <p className="mt-1 text-xs leading-5 text-slate-500">上传输入产物并调用固定 action。参数不能提供任意命令或宿主路径；缺少外部依赖时返回 blocked。</p>
+        <h3 className="type-section-heading  text-[var(--ink)]" id="capability-runner-title">结构化能力运行器</h3>
+        <p className="mt-1 type-body  text-[var(--muted)]">上传输入产物并调用固定 action。参数不能提供任意命令或宿主路径；缺少外部依赖时返回 blocked。</p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="space-y-1 text-[11px] font-medium text-slate-600">
+        <label className="space-y-1 type-control  text-[var(--muted)]">
           能力
-          <select className="min-h-10 w-full rounded-md border border-slate-200 bg-white px-2 text-xs" onChange={(event) => changeCapability(event.target.value as CapabilityId)} value={capability?.id}>
+          <select className="min-h-10 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface)] px-2 type-control" onChange={(event) => changeCapability(event.target.value as CapabilityId)} value={capability?.id}>
             {capabilities.map((item) => <option key={item.id} value={item.id}>{item.name}{item.available === false ? "（依赖受限）" : ""}</option>)}
           </select>
         </label>
-        <label className="space-y-1 text-[11px] font-medium text-slate-600">
+        <label className="space-y-1 type-control  text-[var(--muted)]">
           Action
-          <select className="min-h-10 w-full rounded-md border border-slate-200 bg-white px-2 text-xs" onChange={(event) => changeAction(event.target.value)} value={action?.id ?? ""}>
+          <select className="min-h-10 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface)] px-2 type-control" onChange={(event) => changeAction(event.target.value)} value={action?.id ?? ""}>
             {capability?.actions.map((item) => <option key={item.id} value={item.id}>{item.id} · {item.name}</option>)}
           </select>
         </label>
       </div>
 
       {capability?.risk_level === "physical_action" || action?.requires_confirmation ? (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-[11px] leading-5 text-red-800">
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 type-caption  text-red-800">
           此 action 可能影响真实设备。默认不会执行；部署级开关、execute 和 action 专用确认必须同时通过。请确认构建板清空、耗材/喷嘴/机型正确且操作员在场。
         </div>
       ) : null}
 
       {action?.available === false ? (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-[11px] leading-5 text-amber-900" role="status">
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 type-caption  text-amber-900" role="status">
           {action.blocked_reason || "当前部署缺少此 action 所需依赖。"}
         </div>
       ) : null}
 
-      <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+      <div className="rounded-md border border-[var(--line)] bg-[var(--surface-soft)] p-3">
         <div className="flex flex-wrap items-end gap-2">
-          <label className="min-w-28 flex-1 space-y-1 text-[11px] font-medium text-slate-600">
+          <label className="min-w-28 flex-1 space-y-1 type-control  text-[var(--muted)]">
             将上传路径写入参数
-            <select className="min-h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-xs" onChange={(event) => setUploadKey(event.target.value)} value={uploadKey}>
+            <select className="min-h-9 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface)] px-2 type-control" onChange={(event) => setUploadKey(event.target.value)} value={uploadKey}>
               {UPLOAD_KEYS.map((key) => <option key={key} value={key}>{key}</option>)}
             </select>
           </label>
-          <label className="min-h-9 cursor-pointer rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-white hover:bg-slate-700">
+          <label className="min-h-9 cursor-pointer rounded-md bg-[var(--ink)] px-3 py-2 type-control  text-white hover:opacity-90">
             {uploading ? "上传中…" : "选择并上传文件"}
             <input className="sr-only" disabled={uploading || running} onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); event.target.value = ""; }} type="file" />
           </label>
         </div>
       </div>
 
-      <label className="block space-y-1 text-[11px] font-medium text-slate-600">
+      <label className="block space-y-1 type-control  text-[var(--muted)]">
         Action 参数（JSON）
-        <textarea aria-label="Action 参数 JSON" className="min-h-52 w-full rounded-md border border-slate-200 bg-slate-950 p-3 font-mono text-[11px] leading-5 text-emerald-300 outline-none focus:border-sky-500" onChange={(event) => setParamsText(event.target.value)} spellCheck={false} value={paramsText} />
+        <textarea aria-label={translate("Action 参数 JSON")} className="min-h-52 w-full rounded-md border border-[var(--line-strong)] bg-[#f5f5f2] p-3 font-mono type-control  text-[var(--ink)] outline-none focus:border-[var(--agent)]" data-i18n-skip onChange={(event) => setParamsText(event.target.value)} spellCheck={false} value={paramsText} />
       </label>
 
-      <button className="min-h-11 w-full rounded-md bg-sky-700 px-4 text-sm font-medium text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50" disabled={running || uploading || !action || action.available === false} onClick={() => void run()} type="button">
+      <button className="workspace-button workspace-button--primary min-h-11 w-full" disabled={running || uploading || !action || action.available === false} onClick={() => void run()} type="button">
         {running ? "正在运行…" : `运行 ${capability?.name ?? ""} / ${action?.id ?? ""}`}
       </button>
 
-      {error ? <div className="rounded-md bg-red-50 p-3 text-xs text-red-800" role="alert">{error}</div> : null}
+      {error ? <div className="rounded-md bg-red-50 p-3 type-body text-red-800" role="alert">{error}</div> : null}
 
       {result ? (
-        <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
+        <div className="space-y-3 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-3">
           <div className="flex items-center justify-between gap-2">
-            <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${STATUS_STYLE[result.status]}`}>{result.status}</span>
-            <code className="text-[10px] text-slate-400">{result.request_id}</code>
+            <span className={`rounded-full px-2 py-1 type-caption  ${STATUS_STYLE[result.status]}`}>{result.status}</span>
+            <code className="type-caption text-[var(--faint)]" data-i18n-skip>{result.request_id}</code>
           </div>
-          {result.blocked_reasons?.length ? <ul className="list-disc space-y-1 pl-5 text-xs text-amber-900">{result.blocked_reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul> : null}
-          {result.error ? <p className="text-xs text-red-700">{result.error}</p> : null}
+          {result.blocked_reasons?.length ? <ul className="list-disc space-y-1 pl-5 type-body text-amber-900">{result.blocked_reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul> : null}
+          {result.error ? <p className="type-body text-red-700">{result.error}</p> : null}
           {result.files?.length ? (
             <div className="space-y-1">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">产物</p>
+              <p className="type-caption  uppercase tracking-wide text-[var(--faint)]">产物</p>
               {result.files.map((file) => (
-                <button className="flex min-h-10 w-full items-center justify-between rounded-md border border-slate-200 px-3 text-left text-xs text-slate-700 hover:bg-sky-50" key={`${file.name}:${file.sha256}`} onClick={() => void download(file)} type="button">
-                  <span>{file.name}</span><span className="text-sky-700">下载</span>
+                <button className="flex min-h-10 w-full items-center justify-between rounded-md border border-[var(--line)] px-3 text-left type-control text-[var(--ink)] hover:bg-[var(--subtle)]" key={`${file.name}:${file.sha256}`} onClick={() => void download(file)} type="button">
+                  <span>{file.name}</span><span className="text-[var(--agent)]">下载</span>
                 </button>
               ))}
             </div>
           ) : null}
-          {result.command_preview?.length ? <details><summary className="cursor-pointer text-xs text-slate-500">安全命令预览</summary><pre className="mt-2 overflow-x-auto rounded bg-slate-950 p-2 text-[10px] text-slate-300">{result.command_preview.join(" ")}</pre></details> : null}
-          {result.data != null ? <details><summary className="cursor-pointer text-xs text-slate-500">运行数据</summary><pre className="mt-2 max-h-72 overflow-auto rounded bg-slate-50 p-2 text-[10px] text-slate-600">{JSON.stringify(result.data, null, 2)}</pre></details> : null}
+          {result.command_preview?.length ? <details><summary className="cursor-pointer type-body text-[var(--muted)]">安全命令预览</summary><pre className="mt-2 overflow-x-auto rounded bg-[#f5f5f2] p-2 type-caption text-[var(--ink)]" data-i18n-skip>{result.command_preview.join(" ")}</pre></details> : null}
+          {result.data != null ? <details><summary className="cursor-pointer type-body text-[var(--muted)]">运行数据</summary><pre className="mt-2 max-h-72 overflow-auto rounded bg-[var(--subtle)] p-2 type-caption text-[var(--muted)]" data-i18n-skip>{JSON.stringify(result.data, null, 2)}</pre></details> : null}
         </div>
       ) : null}
     </section>

@@ -37,6 +37,25 @@ def test_durable_identity_is_always_required():
         _durable_identity_payload({"type": "execute_code"})
 
 
+def test_rest_write_schema_exposes_non_nullable_required_identity():
+    schema = ModifyRequest.model_json_schema()
+
+    assert {
+        "project_id",
+        "branch_id",
+        "expected_base_revision_id",
+        "idempotency_key",
+        "prompt",
+    } <= set(schema["required"])
+    for field in (
+        "project_id",
+        "branch_id",
+        "expected_base_revision_id",
+        "idempotency_key",
+    ):
+        assert "anyOf" not in schema["properties"][field]
+
+
 @pytest.mark.parametrize(
     ("model", "payload"),
     [
@@ -71,6 +90,27 @@ def test_accepts_one_complete_identity_across_http_and_websocket():
         key: str(value) if key != "idempotency_key" else value
         for key, value in identity.items()
     }
+
+
+def test_modify_request_accepts_real_freecad_request_without_source_code():
+    request = ModifyRequest.model_validate({
+        **_identity(),
+        "prompt": "将孔径修改为 8 mm",
+        "modeling_backend": "freecad",
+    })
+
+    assert request.code is None
+    assert request.modeling_backend == "freecad"
+
+
+def test_modify_request_defaults_to_auto_for_legacy_compatibility():
+    request = ModifyRequest.model_validate({
+        **_identity(),
+        "prompt": "加厚",
+        "code": "result = box(1, 1, 1)",
+    })
+
+    assert request.modeling_backend == "auto"
 
 
 def test_current_and_stale_identities_remain_distinct_across_all_parsers():

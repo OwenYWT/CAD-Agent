@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from app.geometry_ir.contracts import Axis
+from app.geometry_ir.identity import feature_candidates, slug_identifier, unique_identifier
 from app.validation.durable_geometry import DurableGeometryReport
 
 from .contracts import VerificationEvidence, VerificationTarget, VerificationType
@@ -45,8 +46,7 @@ def _mapping_view(value: Any) -> Mapping[str, Any]:
 
 
 def _slugify(value: str) -> str:
-    cleaned = re.sub(r"[^a-z0-9]+", "-", value.casefold()).strip("-")
-    return cleaned or "target"
+    return slug_identifier(value, fallback="target")
 
 
 def _infer_axis(text: str) -> Axis | None:
@@ -66,20 +66,6 @@ def _infer_target_type(text: str) -> VerificationType:
         if needle in lowered:
             return target_type
     return VerificationType.OVERALL_DIMENSION
-
-
-def _feature_candidates(plan_data: Mapping[str, Any]) -> list[tuple[str, str]]:
-    candidates: list[tuple[str, str]] = []
-    for item in plan_data.get("features") or []:
-        text = str(item).strip()
-        if text:
-            candidates.append((_slugify(text), text))
-    for step in plan_data.get("steps") or []:
-        step_data = _mapping_view(step)
-        text = str(step_data.get("description") or step_data.get("step_key") or "").strip()
-        if text:
-            candidates.append((_slugify(str(step_data.get("step_key") or text)), text))
-    return candidates
 
 
 def _match_feature_id(text: str, candidates: Sequence[tuple[str, str]]) -> str | None:
@@ -128,18 +114,13 @@ def _advisory_sources(plan_data: Mapping[str, Any]) -> list[tuple[str, Verificat
 
 def build_verification_targets(plan_like: Any) -> tuple[VerificationTarget, ...]:
     plan_data = _mapping_view(plan_like)
-    candidates = _feature_candidates(plan_data)
+    candidates = feature_candidates(plan_data)
     targets: list[VerificationTarget] = []
     seen_ids: set[str] = set()
 
     for name, value, _, severity in _dimension_sources(plan_data):
         target_type = _infer_target_type(name)
-        target_id = _slugify(name)
-        suffix = 2
-        while target_id in seen_ids:
-            target_id = f"{_slugify(name)}-{suffix:02d}"
-            suffix += 1
-        seen_ids.add(target_id)
+        target_id = unique_identifier(_slugify(name), seen_ids)
         targets.append(
             VerificationTarget(
                 target_id=target_id,
@@ -155,12 +136,7 @@ def build_verification_targets(plan_like: Any) -> tuple[VerificationTarget, ...]
         )
 
     for text, target_type in _advisory_sources(plan_data):
-        target_id = _slugify(text)
-        suffix = 2
-        while target_id in seen_ids:
-            target_id = f"{_slugify(text)}-{suffix:02d}"
-            suffix += 1
-        seen_ids.add(target_id)
+        target_id = unique_identifier(_slugify(text), seen_ids)
         targets.append(
             VerificationTarget(
                 target_id=target_id,

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from "react";
 import type { GenerationResult, StepUpdate } from "../../types";
+import { engineeringTaskEventLabel } from "../../utils/engineeringLabels";
 import { Icon } from "../ui/Icon";
 import Viewer2D from "../Viewer2D";
 
@@ -12,6 +13,7 @@ interface MechanicalWorkspaceProps {
   onBack: () => void;
   onProperties: () => void;
   onAgent: () => void;
+  onInspector?: () => void;
 }
 
 export default function MechanicalWorkspace({
@@ -21,35 +23,40 @@ export default function MechanicalWorkspace({
   onBack,
   onProperties,
   onAgent,
+  onInspector,
 }: MechanicalWorkspaceProps) {
   const [viewerKey, setViewerKey] = useState(0);
   const stlUrl = result?.files?.stl || null;
   const svgUrl = result?.files?.svg || null;
   const is2D = Boolean(svgUrl && !stlUrl);
+  const files = Object.entries(result?.files || {});
+  const activeUrl = stlUrl || svgUrl || files[0]?.[1] || "";
+  const activeFilename = activeUrl ? decodeURIComponent(activeUrl.split("/").pop()?.split("?")[0] || "工程模型") : "等待生成";
 
 
   return (
-    <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-white">
-      <header className="flex min-h-[46px] shrink-0 items-center gap-2 overflow-x-auto border-b border-[var(--line)] px-3 sm:px-4">
-        <button className="workspace-button workspace-button--ghost shrink-0" onClick={onBack} type="button">{String.fromCharCode(0x8fd4, 0x56de, 0x9879, 0x76ee)}</button>
-        <h1 className="shrink-0 text-sm font-semibold text-[var(--ink)]">{String.fromCharCode(0x673a, 0x68b0, 0x8bbe, 0x8ba1)}</h1>
-        <span className="hidden text-xs text-[var(--faint)] md:inline">{String.fromCharCode(0x53, 0x54, 0x45, 0x50, 0x20, 0x2f, 0x20, 0x53, 0x54, 0x4c, 0x20, 0x2f, 0x20, 0x53, 0x56, 0x47, 0x20, 0x9884, 0x89c8)}</span>
+    <section className="ww-viewer-shell">
+      <header className="ww-viewer-toolbar">
+        <button aria-label="打开项目流程" className="workspace-icon-button shrink-0" onClick={onBack} title="项目流程" type="button"><Icon name="clock" size={15} /></button>
+        <div className="ww-viewer-title"><strong>模型</strong><span>{activeFilename}</span></div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <button className="workspace-button workspace-button--ghost" onClick={() => setViewerKey((key) => key + 1)} type="button"><Icon name="rotate" size={14} />{String.fromCharCode(0x5237, 0x65b0, 0x89c6, 0x56fe)}</button>
-          <button className="workspace-button" onClick={onProperties} type="button"><Icon name="settings" size={14} />{String.fromCharCode(0x5c5e, 0x6027)}</button>
+          <span className="ww-viewer-hint hidden 2xl:inline">拖动旋转 · 滚轮缩放 · 右键平移</span>
+          <button aria-label="适应视图" className="workspace-icon-button" onClick={() => setViewerKey((key) => key + 1)} title="适应视图" type="button"><Icon name="rotate" size={14} /></button>
+          <button className="workspace-button" onClick={onProperties} type="button"><Icon name="sliders" size={14} />参数</button>
+          {onInspector ? <button className="workspace-button xl:hidden" onClick={onInspector} type="button"><Icon name="sliders" size={14} />检查器</button> : null}
         </div>
       </header>
-      <div className="relative min-h-0 flex-1 overflow-hidden bg-[#f4f4f1]">
+      <div className="ww-viewer-canvas">
         <div className="absolute left-3 top-3 z-10 flex gap-2">
           <span className="workspace-chip bg-white">{result?.request_id ? `任务 ${result.request_id.slice(0, 8)}` : "等待生成"}</span>
           {result?.validation?.is_watertight ? <span className="workspace-chip bg-white text-emerald-700">已闭合</span> : null}
         </div>
         {isGenerating ? (
-          <div className="absolute left-1/2 top-4 z-20 flex w-[min(92%,520px)] -translate-x-1/2 items-center gap-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sky-900 shadow-lg" role="status">
-            <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-sky-600 border-t-transparent" />
+          <div className="absolute left-1/2 top-4 z-20 flex w-[min(92%,520px)] -translate-x-1/2 items-center gap-3 rounded-lg border border-[var(--agent-border)] bg-[var(--agent-soft)] px-4 py-3 text-[var(--ink)] shadow-lg" role="status">
+            <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[var(--agent)] border-t-transparent" />
             <div className="min-w-0">
-              <p className="text-xs font-medium">正在重新计算模型</p>
-              <p className="mt-0.5 truncate text-[11px] text-sky-700">{currentStep?.message || "正在等待执行进度"}</p>
+              <p className="type-body ">正在重新计算模型</p>
+              <p className="mt-0.5 truncate type-caption text-[var(--agent)]">{engineeringTaskEventLabel(currentStep?.message || "正在等待执行进度")}</p>
             </div>
           </div>
         ) : null}
@@ -57,7 +64,7 @@ export default function MechanicalWorkspace({
           {is2D ? (
             <Viewer2D key={svgUrl} svgUrl={svgUrl} />
           ) : (
-            <Suspense fallback={<div className="grid h-full place-items-center text-sm text-[var(--muted)]">{String.fromCharCode(0x6b63, 0x5728, 0x52a0, 0x8f7d, 0x20, 0x33, 0x44, 0x20, 0x6a21, 0x578b, 0x2e, 0x2e, 0x2e)}</div>}>
+            <Suspense fallback={<div className="grid h-full place-items-center type-body text-[var(--muted)]">{String.fromCharCode(0x6b63, 0x5728, 0x52a0, 0x8f7d, 0x20, 0x33, 0x44, 0x20, 0x6a21, 0x578b, 0x2e, 0x2e, 0x2e)}</div>}>
               <Viewer3D key={`${stlUrl}:${viewerKey}`} stlUrl={stlUrl} />
             </Suspense>
           )}
@@ -68,6 +75,11 @@ export default function MechanicalWorkspace({
           </div>
         ) : null}
       </div>
+      <footer className="ww-viewer-statusbar">
+        <span>{is2D ? "SVG 预览" : "STL 预览"}</span>
+        <span>{files.length ? `${files.length} 个工程文件` : "尚无工程文件"}</span>
+        <span className="ml-auto">{result?.validation?.is_watertight ? "模型已闭合" : result?.success ? "模型已生成" : isGenerating ? "正在生成" : "等待任务"}</span>
+      </footer>
     </section>
   );
 }

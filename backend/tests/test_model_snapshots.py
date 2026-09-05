@@ -265,9 +265,11 @@ def test_snapshot_api_list_detail_and_restore(monkeypatch, tmp_path):
     assert listed.json()[0]["available_exports"] == ["stl"]
     assert detail.status_code == 200
     assert detail.json()["result"]["code"] == "result = api"
-    assert restored.status_code == 200
-    assert restored.json()["result"]["files"] == {"stl": "/api/files/req-1/result.stl"}
-    assert restored.json()["result"]["inspect_report"] == {"verdict": "pass", "available_exports": ["stl"]}
+    assert detail.json()["result"]["files"] == {"stl": "/api/files/req-1/result.stl"}
+    assert detail.json()["result"]["inspect_report"] == {"verdict": "pass", "available_exports": ["stl"]}
+    assert restored.status_code == 410
+    assert client.get(f"/api/history/snapshots/{snapshot['id']}").json() == detail.json()
+    assert client.get("/api/history/panels/panel-1/snapshots").json() == listed.json()
 
 
 @pytest.mark.asyncio

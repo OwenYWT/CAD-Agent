@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import quote
 from uuid import UUID, uuid4, uuid5
 
 from sqlalchemy import text
@@ -17,6 +19,10 @@ from app.domain.identity import (
     user_principal,
 )
 from app.execution.canonical import canonical_sha256
+from app.freecad.state_contract import (
+    project_state_parameters,
+    read_verified_state_artifact,
+)
 from app.parameters import extract_parameters
 from app.principal_context import current_principal
 from app.repositories.identity import ensure_principal
@@ -61,6 +67,23 @@ def _source_parameters(source_code: str | None) -> list[dict] | None:
 def _durable_revision_projection(
     manifest: dict[str, Any],
 ) -> dict[str, Any] | None:
+    if manifest.get("schema_version") == "mcad-agent-revision-manifest.v1":
+        files, _ = _revision_artifact_projection(
+            manifest.get("artifacts") or [],
+            manifest.get("workflow_run_id"),
+        )
+        operation = str(manifest.get("operation") or "")
+        return {
+            "source": {"generate": "generation", "modify": "modify_part"}.get(operation, operation),
+            "prompt": str(manifest.get("objective") or ""),
+            "code": "",
+            "parameters": None,
+            "files": files,
+            "available_exports": list(dict.fromkeys(
+                key.split(":", 1)[0] for key in files
+                if key.split(":", 1)[0] in {"fcstd", "step", "stl", "dxf", "svg"}
+            )),
+        }
     if manifest.get("schema_version") != "mcad-revision-manifest.v1":
         return None
     executions = [
@@ -98,6 +121,31 @@ def _durable_revision_projection(
         "parameters": _source_parameters(source_code),
         "available_exports": available_exports,
     }
+
+
+def _revision_artifact_projection(
+    artifacts: list[Any],
+    workflow_run_id: str | None = None,
+) -> tuple[dict[str, str], dict[str, str] | None]:
+    """Project authenticated URLs separately from immutable comparison identity."""
+    rows = [dict(item) for item in artifacts if isinstance(item, dict) or hasattr(item, "keys")]
+    counts = Counter(str(item.get("artifact_kind") or "") for item in rows)
+    files: dict[str, str] = {}
+    fingerprints: dict[str, str] = {}
+    for item in rows:
+        kind = str(item.get("artifact_kind") or "")
+        filename = str(item.get("filename") or "")
+        workflow = str(item.get("workflow_run_id") or workflow_run_id or "")
+        if not kind or not filename or not workflow:
+            continue
+        key = kind if counts[kind] == 1 else f"{kind}:{filename}"
+        if key in files:
+            raise ValueError("revision has ambiguous artifact identity")
+        files[key] = f"/api/files/{quote(workflow, safe='')}/{quote(filename, safe='')}"
+        digest = str(item.get("sha256") or "")
+        if len(digest) == 64 and all(char in "0123456789abcdef" for char in digest):
+            fingerprints[f"{kind}:{filename}"] = digest
+    return files, fingerprints if files and len(fingerprints) == len(files) else None
 
 
 def _session(row: Any) -> dict:
@@ -927,6 +975,8 @@ def _snapshot_from_revision(
         "success": workflow_status == "succeeded",
         "code": durable.get("code") or "",
         "parameters": durable.get("parameters"),
+        "files": durable.get("files") or {},
+        "validation": manifest.get("validation"),
     }
     assembly_parts = result.get("assembly_parts") or []
     projected_parts = (
@@ -960,7 +1010,7 @@ def _snapshot_from_revision(
         ),
         "code": manifest.get("code") or durable.get("code") or "",
         "result": result,
-        "files": manifest.get("files") or {},
+        "files": manifest.get("files") or durable.get("files") or {},
         "params": manifest.get("params"),
         "parameters": (
             manifest.get("parameters")
@@ -1287,7 +1337,11 @@ async def list_model_snapshots(panel_id: str) -> list[dict]:
     )
 
 
-async def get_model_snapshot(snapshot_id: str) -> dict | None:
+async def get_model_snapshot(
+    snapshot_id: str,
+    *,
+    include_artifact_fingerprints: bool = False,
+) -> dict | None:
     context = current_principal()
     async with tenant_transaction(
         context.tenant_id,
@@ -1317,70 +1371,92 @@ async def get_model_snapshot(snapshot_id: str) -> dict | None:
                     {"tenant": context.tenant_id, "id": revision_id},
                 )
             ).mappings().one_or_none()
-        if row is not None:
-            snapshot = _snapshot_from_revision(row)
+        imported = None
+        if row is None:
+            imported = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT r.*, m.legacy_snapshot_id, m.panel_id,
+                               m.legacy_version, m.source, m.prompt, m.status
+                        FROM legacy_snapshot_mappings m
+                        JOIN project_revisions r
+                          ON r.tenant_id=m.tenant_id
+                         AND r.project_id=m.project_id
+                         AND r.id=m.revision_id
+                        WHERE m.tenant_id=:tenant
+                          AND m.legacy_snapshot_id=:snapshot
+                        """
+                    ),
+                    {"tenant": context.tenant_id, "snapshot": snapshot_id},
+                )
+            ).mappings().one_or_none()
+            row = imported
+        if row is None:
+            return None
+        artifact_rows = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT artifact_kind, filename, workflow_run_id,
+                           size_bytes, sha256, object_key
+                    FROM artifacts
+                    WHERE tenant_id=:tenant AND revision_id=:revision
+                    ORDER BY created_at, filename
+                    """
+                ),
+                {"tenant": context.tenant_id, "revision": row["id"]},
+            )
+        ).mappings().all()
+        snapshot = _snapshot_from_revision(
+            row,
+            snapshot_id=snapshot_id if imported is not None else None,
+            metadata=imported,
+        )
+        if not snapshot.get("panel_id"):
+            snapshot["panel_id"] = await _panel_id_for_revision(
+                connection,
+                context.tenant_id,
+                row["project_id"],
+                row["branch_id"],
+            )
+        # Revision-bound artifacts are authoritative. Older history may only
+        # carry a source workflow; preserve its download projection as fallback.
+        if not artifact_rows:
             workflow_files = await _workflow_files(
                 connection,
                 context.tenant_id,
                 row.get("source_workflow_run_id"),
             )
             if workflow_files:
-                snapshot["files"] = workflow_files
-                snapshot["result"] = {
-                    **snapshot["result"],
-                    "files": workflow_files,
-                }
-            if not snapshot.get("panel_id"):
-                snapshot["panel_id"] = await _panel_id_for_revision(
-                    connection,
-                    context.tenant_id,
-                    row["project_id"],
-                    row["branch_id"],
-                )
-            return snapshot
-        imported = (
-            await connection.execute(
-                text(
-                    """
-                    SELECT r.*, m.legacy_snapshot_id, m.panel_id,
-                           m.legacy_version, m.source, m.prompt, m.status
-                    FROM legacy_snapshot_mappings m
-                    JOIN project_revisions r
-                      ON r.tenant_id=m.tenant_id
-                     AND r.project_id=m.project_id
-                     AND r.id=m.revision_id
-                    WHERE m.tenant_id=:tenant
-                      AND m.legacy_snapshot_id=:snapshot
-                    """
-                ),
-                {"tenant": context.tenant_id, "snapshot": snapshot_id},
-            )
-        ).mappings().one_or_none()
-    if imported is None:
-        return None
-    snapshot = _snapshot_from_revision(
-        imported,
-        snapshot_id=snapshot_id,
-        metadata=imported,
-    )
-    workflow_files = await _workflow_files(
-        connection,
-        context.tenant_id,
-        imported.get("source_workflow_run_id"),
-    )
-    if workflow_files:
-        snapshot["files"] = workflow_files
-        snapshot["result"] = {
-            **snapshot["result"],
-            "files": workflow_files,
-        }
-    if not snapshot.get("panel_id"):
-        snapshot["panel_id"] = await _panel_id_for_revision(
-            connection,
-            context.tenant_id,
-            imported["project_id"],
-            imported["branch_id"],
+                files = {**snapshot["files"], **workflow_files}
+                snapshot["files"] = files
+                snapshot["result"] = {**dict(snapshot["result"] or {}), "files": files}
+    if artifact_rows:
+        files, fingerprints = _revision_artifact_projection(artifact_rows)
+        snapshot["files"] = files
+        snapshot["result"] = {**dict(snapshot["result"] or {}), "files": files}
+        if include_artifact_fingerprints:
+            snapshot["_file_fingerprints"] = fingerprints
+    state_artifacts = [
+        dict(artifact)
+        for artifact in artifact_rows
+        if artifact["artifact_kind"] == "state"
+    ]
+    if len(state_artifacts) == 1:
+        state, state_sha256 = await read_verified_state_artifact(
+            state_artifacts,
         )
+        parameters = [
+            parameter.model_dump(mode="json")
+            for parameter in project_state_parameters(state)
+        ]
+        snapshot["parameters"] = parameters or None
+        snapshot["result"] = {
+            **dict(snapshot["result"] or {}),
+            "parameters": parameters or None,
+            "parameter_state_sha256": state_sha256,
+        }
     return snapshot
 
 

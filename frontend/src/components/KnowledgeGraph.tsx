@@ -127,7 +127,7 @@ export default function KnowledgeGraph() {
           setOpen(true);
           if (processes.length === 0) void fetchProcesses();
         }}
-        className="text-xs text-gray-400 hover:text-gray-600 mt-1"
+        className="ww-settings-entry"
       >
         工艺知识图谱
       </button>
@@ -135,12 +135,12 @@ export default function KnowledgeGraph() {
   }
 
   return (
-    <div className="bg-gray-50 border-t border-gray-200 p-3 space-y-2">
+    <div className="space-y-3 border-t border-[var(--line)] bg-[var(--surface-soft)] p-4">
       <div className="flex items-center justify-between">
-        <h4 className="text-xs font-medium text-gray-700">工艺知识图谱</h4>
+        <h4 className="type-section-heading  text-[var(--ink)]">工艺知识图谱</h4>
         <button
           onClick={() => setOpen(false)}
-          className="text-xs text-gray-400 hover:text-gray-600"
+          className="type-control text-[var(--faint)] hover:text-[var(--ink)]"
         >
           收起
         </button>
@@ -155,10 +155,10 @@ export default function KnowledgeGraph() {
               setTab(t);
               if (t === "suppliers") void fetchSuppliers();
             }}
-            className={`text-xs px-2 py-0.5 rounded ${
+            className={`min-h-8 rounded-md border px-2 type-control ${
               tab === t
-                ? "bg-indigo-500 text-white"
-                : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                ? "border-[var(--agent-border)] bg-[var(--agent-soft)] text-[var(--agent)]"
+                : "border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:bg-[var(--subtle)]"
             }`}
           >
             {t === "processes" ? "工艺-材料" : t === "recommend" ? "智能推荐" : "供应商"}
@@ -166,7 +166,7 @@ export default function KnowledgeGraph() {
         ))}
       </div>
 
-      {loading && <p className="text-xs text-gray-400">加载中...</p>}
+      {loading && <p className="type-body text-[var(--faint)]">加载中...</p>}
 
       {/* Process-Material tab */}
       {tab === "processes" && (
@@ -179,10 +179,10 @@ export default function KnowledgeGraph() {
                   setActiveProcess(p.id);
                   void fetchMaterials(p.id);
                 }}
-                className={`text-xs px-2 py-0.5 rounded ${
+                className={`min-h-8 rounded-md border px-2 type-control ${
                   activeProcess === p.id
-                    ? "bg-indigo-500 text-white"
-                    : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                    ? "border-[var(--agent-border)] bg-[var(--agent-soft)] text-[var(--agent)]"
+                    : "border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:bg-[var(--subtle)]"
                 }`}
               >
                 {PROCESS_LABELS[p.id] || p.name}
@@ -192,26 +192,26 @@ export default function KnowledgeGraph() {
 
           <div className="space-y-1 max-h-40 overflow-y-auto">
             {materials.map((m) => (
-              <div key={m.material.id} className="text-xs bg-white rounded p-1.5 flex items-start gap-2">
-                <span className="font-medium text-gray-700 shrink-0">{m.material.name}</span>
-                <div className="text-gray-400 flex flex-wrap gap-1">
+              <div key={m.material.id} className="flex items-start gap-2 rounded-md border border-[var(--line)] bg-[var(--surface)] p-2 type-body">
+                <span className="shrink-0  text-[var(--ink)]">{m.material.name}</span>
+                <div className="flex flex-wrap gap-1 text-[var(--faint)]">
                   {m.constraints.min_wall != null && (
-                    <span className="bg-gray-100 px-1 rounded">壁厚≥{String(m.constraints.min_wall)}mm</span>
+                    <span className="rounded bg-[var(--subtle)] px-1">壁厚≥{String(m.constraints.min_wall)}mm</span>
                   )}
                   {m.constraints.max_size != null && (
-                    <span className="bg-gray-100 px-1 rounded">尺寸≤{String(m.constraints.max_size)}mm</span>
+                    <span className="rounded bg-[var(--subtle)] px-1">尺寸≤{String(m.constraints.max_size)}mm</span>
                   )}
                   {m.constraints.tolerance != null && (
-                    <span className="bg-gray-100 px-1 rounded">±{String(m.constraints.tolerance)}mm</span>
+                    <span className="rounded bg-[var(--subtle)] px-1">±{String(m.constraints.tolerance)}mm</span>
                   )}
                   {m.constraints.draft_angle != null && (
-                    <span className="bg-gray-100 px-1 rounded">拔模≥{String(m.constraints.draft_angle)}°</span>
+                    <span className="rounded bg-[var(--subtle)] px-1">拔模≥{String(m.constraints.draft_angle)}°</span>
                   )}
                 </div>
               </div>
             ))}
             {materials.length === 0 && !loading && (
-              <p className="text-xs text-gray-400">无支持材料记录</p>
+              <p className="type-body text-[var(--faint)]">无支持材料记录</p>
             )}
           </div>
         </>
@@ -222,28 +222,28 @@ export default function KnowledgeGraph() {
         <>
           <div className="flex gap-1.5 items-end">
             <div>
-              <label className="text-[10px] text-gray-400">最大尺寸 (mm)</label>
+              <label className="type-control text-[var(--faint)]">最大尺寸 (mm)</label>
               <input
                 type="number"
                 value={recDim}
                 onChange={(e) => setRecDim(e.target.value)}
-                className="w-20 text-xs border border-gray-300 rounded px-1.5 py-0.5"
+                className="min-h-9 w-20 rounded-md border border-[var(--line-strong)] bg-[var(--surface)] px-2 type-control"
                 placeholder="200"
               />
             </div>
             <div>
-              <label className="text-[10px] text-gray-400">材料偏好</label>
+              <label className="type-control text-[var(--faint)]">材料偏好</label>
               <input
                 type="text"
                 value={recMat}
                 onChange={(e) => setRecMat(e.target.value)}
-                className="w-24 text-xs border border-gray-300 rounded px-1.5 py-0.5"
+                className="min-h-9 w-24 rounded-md border border-[var(--line-strong)] bg-[var(--surface)] px-2 type-control"
                 placeholder="铝合金"
               />
             </div>
             <button
               onClick={handleRecommend}
-              className="text-xs bg-indigo-500 text-white px-2 py-0.5 rounded hover:bg-indigo-600"
+              className="workspace-button workspace-button--primary min-h-9"
             >
               推荐
             </button>
@@ -254,27 +254,27 @@ export default function KnowledgeGraph() {
               {recommendations.map((r) => (
                 <div
                   key={r.process_id}
-                  className={`text-xs rounded p-1.5 ${
+                  className={`type-body rounded p-1.5 ${
                     r.score >= 0.7
-                      ? "bg-green-50 border border-green-200"
+                      ? "bg-emerald-50 border border-emerald-200"
                       : r.score >= 0.3
                         ? "bg-amber-50 border border-amber-200"
                         : "bg-red-50 border border-red-200"
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-medium text-gray-700">{r.process_name}</span>
-                    <span className={`font-bold ${
-                      r.score >= 0.7 ? "text-green-600" : r.score >= 0.3 ? "text-amber-600" : "text-red-500"
+                    <span className=" text-[var(--ink)]">{r.process_name}</span>
+                    <span className={` ${
+                      r.score >= 0.7 ? "text-emerald-600" : r.score >= 0.3 ? "text-amber-600" : "text-red-500"
                     }`}>
                       {(r.score * 100).toFixed(0)}%
                     </span>
                   </div>
                   {r.material_name && (
-                    <div className="text-gray-500">材料: {r.material_name}</div>
+                    <div className="text-[var(--muted)]">材料: {r.material_name}</div>
                   )}
                   {r.notes.map((n, i) => (
-                    <div key={i} className="text-gray-400">{n}</div>
+                    <div key={i} className="text-[var(--faint)]">{n}</div>
                   ))}
                 </div>
               ))}
@@ -288,8 +288,8 @@ export default function KnowledgeGraph() {
         <>
           <div className="space-y-1 max-h-40 overflow-y-auto">
             {suppliers.map((s) => (
-              <div key={s.id} className="text-xs bg-white rounded p-1.5 flex items-center justify-between">
-                <span className="font-medium text-gray-700">{s.name}</span>
+              <div key={s.id} className="flex items-center justify-between rounded-md border border-[var(--line)] bg-[var(--surface)] p-2 type-body">
+                <span className=" text-[var(--ink)]">{s.name}</span>
                 <button
                   onClick={() => handleDeleteSupplier(s.id)}
                   className="text-red-400 hover:text-red-600"
@@ -299,12 +299,12 @@ export default function KnowledgeGraph() {
               </div>
             ))}
             {suppliers.length === 0 && !loading && (
-              <p className="text-xs text-gray-400">暂无供应商记录</p>
+              <p className="type-body text-[var(--faint)]">暂无供应商记录</p>
             )}
           </div>
           <button
             onClick={handleAddSupplier}
-            className="text-xs text-indigo-500 hover:text-indigo-700"
+            className="type-control  text-[var(--agent)] hover:underline"
           >
             + 添加供应商
           </button>

@@ -27,3 +27,12 @@ def test_planner_prompt_requires_chinese_design_brief_fields():
 
     assert "design_brief 内所有面向用户展示的字段必须使用中文" in PLANNER_SYSTEM_PROMPT
     assert "open_questions 必须使用中文疑问句" in PLANNER_SYSTEM_PROMPT
+
+
+def test_planner_prompt_closes_plain_cylinder_machine_contract():
+    assert 'features 只能是 ["base_cylinder:diameter=<diameter>,height=<height>"]' in (
+        PLANNER_SYSTEM_PROMPT
+    )
+    assert 'constraints 只能是 ["sketch_fully_constrained=true"]' in (
+        PLANNER_SYSTEM_PROMPT
+    )

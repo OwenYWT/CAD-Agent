@@ -83,12 +83,20 @@ def test_generate_prompt_too_long_422(client):
 
 
 def test_generate_prompt_at_max_len_ok(client):
-    # exactly 10000 chars is the boundary -> valid
+    # Exactly 4000 chars is the durable objective boundary.
     r = client.post(
-        "/api/generate", json={"prompt": "x" * 10000, **_identity()}
+        "/api/generate", json={"prompt": "x" * 4000, **_identity()}
     )
     assert r.status_code == 200
     assert r.json()["success"] is True
+
+
+@pytest.mark.parametrize("endpoint", ["/api/generate", "/api/generate/async"])
+@pytest.mark.parametrize("prompt", ["", "   ", "x" * 4001], ids=["empty", "whitespace", "over-limit"])
+def test_prompt_boundary_returns_422_not_server_error(client, endpoint, prompt):
+    response = client.post(endpoint, json={"prompt": prompt, **_identity()})
+    assert response.status_code == 422
+    assert isinstance(response.json()["detail"], list)
 
 
 def test_generate_prompt_wrong_type_int_422(client):

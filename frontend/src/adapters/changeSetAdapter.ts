@@ -187,12 +187,22 @@ function validationEvidence(
       summary: `检查报告：${verdictLabel}，来源 ${sourceLabel}`,
     };
   }
-  if (result.validation) {
+  if (typeof result.validation?.is_watertight === "boolean") {
     return {
       status: result.validation.is_watertight ? "pass" : "fail",
       summary: result.validation.is_watertight
         ? "几何验证记录为闭合网格。"
         : "几何验证记录为非闭合网格。",
+    };
+  }
+  if (result.validation?.gates?.length) {
+    const gates = result.validation.gates.filter((gate) => gate.mode !== "disabled");
+    if (!gates.length) return { status: "unknown", summary: "所有门禁均未启用，没有已执行的验证证据。" };
+    const failedRequired = gates.some((gate) => gate.mode === "required" && gate.outcome === "failed");
+    const incomplete = gates.some((gate) => gate.outcome !== "passed");
+    return {
+      status: failedRequired ? "fail" : incomplete ? "warning" : "pass",
+      summary: failedRequired ? "必需门禁未通过。" : incomplete ? "仍有未通过或无法确认的检查，请查看各项证据。" : "已记录的工程门禁通过，不代表未执行的检查已通过。",
     };
   }
   if (!result.success && result.error) {

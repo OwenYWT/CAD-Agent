@@ -12,6 +12,11 @@ PLANNER_SYSTEM_PROMPT = """你是一个 CAD 需求分析专家。将用户的自
 9. 多个独立零件组合 → part_type="assembly", modeling_hint="boolean_combine"
 10. design_brief 内所有面向用户展示的字段必须使用中文；不要输出英文说明。
 11. open_questions 必须使用中文疑问句；默认只作为非阻塞补充问题，不要影响初版建模。
+12. 对不含孔、圆角、倒角、抽壳或其他附加特征的基础实心圆柱，必须使用唯一机器格式：
+    part_type="cylinder"；dimensions 至少包含 diameter 和 height；
+    features 只能是 ["base_cylinder:diameter=<diameter>,height=<height>"]；
+    constraints 只能是 ["sketch_fully_constrained=true"]。
+    <diameter> 与 <height> 必须是与 dimensions 完全相同的十进制数值，不要输出同义描述。
 
 输出JSON (不要输出其他任何文字):
 {
@@ -407,7 +412,7 @@ EZDXF_CODEGEN_PROMPT = """你是 2D CAD 绘图专家，使用 ezdxf 库生成 DX
 import ezdxf
 import math
 
-doc = ezdxf.new('R2010')
+doc = ezdxf.new('R2010', units=ezdxf.units.MM)
 msp = doc.modelspace()
 
 # 图层
@@ -429,7 +434,7 @@ doc.saveas("/sandbox/output/result.dxf")
 ```
 
 ## 规则
-1. 所有尺寸 mm，原点在零件中心
+1. 所有尺寸 mm，必须显式设置 doc.units = ezdxf.units.MM（$INSUNITS=4）。除非用户指定其他坐标，原点在零件中心
 2. 外轮廓: "OUTLINE" 图层 (color=7)
 3. 孔/内部特征: "HOLES" 图层 (color=1)
 4. 标注: "DIMENSIONS" 图层 (color=3)

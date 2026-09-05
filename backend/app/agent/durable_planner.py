@@ -10,7 +10,10 @@ from app.agent.durable_plan import (
     AffectedObject,
     AgentPlan,
     AgentPlanStep,
+    AgentValidationPolicy,
     ConfirmationPolicy,
+    GateMode,
+    ValidationGatePolicy,
 )
 from app.agent.multi_step import BuildPhase, BuildPlan, BuildStep, PlanDecomposer
 from app.agent.orchestrator import requires_design_confirmation
@@ -34,6 +37,10 @@ class DurableAgentPlanner:
 
     @staticmethod
     def _is_simple(plan: CADPlan) -> bool:
+        # DXF is one 2D document, not an incremental 3D feature tree. Feature
+        # count must not send a profile through the FreeCAD solid backend.
+        if plan.part_type == "profile_2d":
+            return True
         return (
             plan.part_type not in {"custom", "organic", "assembly"}
             and len(plan.features) <= 2
@@ -65,12 +72,12 @@ class DurableAgentPlanner:
 
     @staticmethod
     def _strategy(plan: CADPlan) -> str:
-        if plan.modeling_hint.strip():
-            return plan.modeling_hint.strip()
         if plan.part_type == "profile_2d":
             return "profile_2d"
         if plan.part_type == "assembly":
             return "assembly_combine"
+        if plan.modeling_hint.strip():
+            return plan.modeling_hint.strip()
         return "parametric"
 
     async def plan_generation(
@@ -230,6 +237,47 @@ class DurableAgentPlanner:
             confirmation_reason=reason,
         )
 
+    def compose_freecad_generation(
+        self,
+        objective: str,
+        plan: CADPlan,
+        *,
+        output_formats: tuple[str, ...] = ("step", "stl"),
+    ) -> AgentPlan:
+        """Compose one atomic FreeCAD step from the complete typed requirements."""
+        if plan.part_type in {"assembly", "profile_2d"}:
+            raise ValueError(
+                "FreeCAD MVP generation does not author assemblies or 2D profiles"
+            )
+        brief = ensure_design_brief(plan)
+        confirmation, reason = self._confirmation(brief)
+        return AgentPlan(
+            objective=objective,
+            operation="generate",
+            model_kind="simple",
+            modeling_strategy="freecad_operations",
+            design_brief=brief,
+            affected_objects=(
+                AffectedObject(
+                    object_id="part-main",
+                    object_type="part",
+                    label=brief.intent_summary or plan.description,
+                    change="create",
+                ),
+            ),
+            steps=(
+                AgentPlanStep(
+                    step_key="model-main",
+                    kind="model",
+                    description=plan.description,
+                    affected_object_ids=("part-main",),
+                    output_formats=tuple(output_formats),
+                ),
+            ),
+            confirmation_policy=confirmation,
+            confirmation_reason=reason,
+        )
+
     def _assembly_plan(
         self,
         objective: str,
@@ -286,6 +334,12 @@ class DurableAgentPlanner:
             steps=tuple(steps),
             confirmation_policy=confirmation,
             confirmation_reason=reason,
+            validation_policy=AgentValidationPolicy(
+                bom=ValidationGatePolicy(
+                    mode=GateMode.REQUIRED,
+                    repair_budget=0,
+                ),
+            ),
         )
 
     async def plan_modification(

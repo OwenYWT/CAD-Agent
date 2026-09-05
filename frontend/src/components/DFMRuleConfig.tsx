@@ -90,7 +90,7 @@ export default function DFMRuleConfig() {
           setOpen(true);
           if (ruleSets.length === 0) void fetchRuleSets();
         }}
-        className="text-xs text-gray-400 hover:text-gray-600 mt-1"
+        className="ww-settings-entry"
       >
         DFM 规则配置
       </button>
@@ -101,19 +101,19 @@ export default function DFMRuleConfig() {
   const processes = [...new Set(ruleSets.map((rs) => rs.process))];
 
   return (
-    <div className="bg-gray-50 border-t border-gray-200 p-3 space-y-2">
+    <div className="space-y-3 border-t border-[var(--line)] bg-[var(--surface-soft)] p-4">
       <div className="flex items-center justify-between">
-        <h4 className="text-xs font-medium text-gray-700">DFM 规则配置</h4>
+        <h4 className="type-section-heading  text-[var(--ink)]">DFM 规则配置</h4>
         <button
           onClick={() => setOpen(false)}
-          className="text-xs text-gray-400 hover:text-gray-600"
+          className="type-control text-[var(--faint)] hover:text-[var(--ink)]"
         >
           收起
         </button>
       </div>
 
       {loading ? (
-        <p className="text-xs text-gray-400">加载中...</p>
+        <p className="type-body text-[var(--faint)]">加载中...</p>
       ) : (
         <>
           {/* Process tabs */}
@@ -122,10 +122,10 @@ export default function DFMRuleConfig() {
               <button
                 key={p}
                 onClick={() => setActiveProcess(p)}
-                className={`text-xs px-2 py-0.5 rounded ${
+                className={`min-h-8 rounded-md border px-2 type-control ${
                   activeProcess === p
-                    ? "bg-indigo-500 text-white"
-                    : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                    ? "border-[var(--agent-border)] bg-[var(--agent-soft)] text-[var(--agent)]"
+                    : "border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:bg-[var(--subtle)]"
                 }`}
               >
                 {PROCESS_LABELS[p] || p}
@@ -139,8 +139,8 @@ export default function DFMRuleConfig() {
               {activeRuleSet.rules.map((rule) => (
                 <div
                   key={rule.id}
-                  className={`flex items-center gap-2 text-xs p-1.5 rounded ${
-                    rule.enabled ? "bg-white" : "bg-gray-100 opacity-60"
+                  className={`flex items-center gap-2 type-body p-1.5 rounded ${
+                    rule.enabled ? "border border-[var(--line)] bg-[var(--surface)]" : "bg-[var(--subtle)] opacity-60"
                   }`}
                 >
                   <input
@@ -152,10 +152,10 @@ export default function DFMRuleConfig() {
                     className="shrink-0"
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-gray-700 truncate">
+                    <div className="truncate  text-[var(--ink)]">
                       {rule.description}
                     </div>
-                    <div className="text-gray-400">
+                    <div className="text-[var(--faint)]">
                       {rule.check_type === "geometric" ? "精确计算" : "AI 推理"}
                       {" · "}
                       {rule.severity}
@@ -163,7 +163,7 @@ export default function DFMRuleConfig() {
                   </div>
                   {rule.check_type === "geometric" && rule.threshold_min !== null && (
                     <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-gray-400">≥</span>
+                      <span className="text-[var(--faint)]">≥</span>
                       <input
                         type="number"
                         value={rule.threshold_min}
@@ -174,15 +174,15 @@ export default function DFMRuleConfig() {
                             parseFloat(e.target.value),
                           )
                         }
-                        className="w-14 border border-gray-300 rounded px-1 py-0.5 text-center text-xs"
+                        className="w-14 rounded-md border border-[var(--line-strong)] bg-[var(--surface)] px-1 py-1 text-center type-control text-[var(--ink)]"
                         step={0.1}
                       />
-                      <span className="text-gray-400">{rule.unit}</span>
+                      <span className="text-[var(--faint)]">{rule.unit}</span>
                     </div>
                   )}
                   {rule.check_type === "geometric" && rule.threshold_max !== null && (
                     <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-gray-400">≤</span>
+                      <span className="text-[var(--faint)]">≤</span>
                       <input
                         type="number"
                         value={rule.threshold_max}
@@ -193,10 +193,10 @@ export default function DFMRuleConfig() {
                             parseFloat(e.target.value),
                           )
                         }
-                        className="w-14 border border-gray-300 rounded px-1 py-0.5 text-center text-xs"
+                        className="w-14 rounded-md border border-[var(--line-strong)] bg-[var(--surface)] px-1 py-1 text-center type-control text-[var(--ink)]"
                         step={0.1}
                       />
-                      <span className="text-gray-400">{rule.unit}</span>
+                      <span className="text-[var(--faint)]">{rule.unit}</span>
                     </div>
                   )}
                 </div>

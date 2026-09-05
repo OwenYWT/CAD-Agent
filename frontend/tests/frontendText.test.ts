@@ -11,7 +11,6 @@ const FILES_TO_CHECK = [
   "components/VersionHistoryPanel.tsx",
   "components/DesignBriefPanel.tsx",
   "components/InspectReportPanel.tsx",
-  "components/DesignAnalysis.tsx",
   "utils/manufacturingProfiles.ts",
   "utils/suggestions.ts",
 ];

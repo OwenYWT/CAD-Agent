@@ -23,7 +23,7 @@ class CapabilityDependency(BaseModel):
     label: str
     kind: str
     required: bool
-    available: bool
+    available: bool | None  # None: checked at action time, not known missing
     detail: str
 
 

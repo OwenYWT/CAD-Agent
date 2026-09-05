@@ -10,6 +10,7 @@ from app.api.auth import verify_api_key, rate_limiter
 from app.config import settings
 from app.models.schemas import (
     DurableRequestIdentity,
+    DurablePrompt,
     GenerateResponse,
     ManufacturingProfile,
 )
@@ -19,6 +20,7 @@ from app.services.durable_submission import (
     submit_durable_workflow,
     wait_for_compatibility_response,
 )
+from app.services.operation_resolution import resolve_rest_generate_submission
 
 router = APIRouter(prefix="/api", tags=["batch"])
 
@@ -43,7 +45,7 @@ class BatchResponse(BaseModel):
 
 
 class AsyncGenerateRequest(DurableRequestIdentity):
-    prompt: str
+    prompt: DurablePrompt
     manufacturing_profile: ManufacturingProfile | None = None
     output_formats: list[str] = ["step", "stl"]
 
@@ -75,6 +77,10 @@ async def batch_generate(
 
     async def run_one(item: BatchItem) -> GenerateResponse:
         async with semaphore:
+            resolution = resolve_rest_generate_submission(
+                base_revision_id=item.expected_base_revision_id,
+                output_formats=item.output_formats,
+            )
             submission = await submit_durable_workflow(
                 current_principal(),
                 project_id=item.project_id,
@@ -87,6 +93,8 @@ async def batch_generate(
                 objective=item.prompt,
                 output_formats=item.output_formats,
                 manufacturing_profile=item.manufacturing_profile,
+                modeling_backend=resolution.modeling_backend,
+                operation_context=resolution.operation_context,
             )
             return await wait_for_compatibility_response(
                 current_principal(),
@@ -131,6 +139,10 @@ async def generate_async(
     """异步生成；任务由持久工作流执行，与 API 进程生命周期解耦。"""
     await rate_limiter.check(request, api_key)
 
+    resolution = resolve_rest_generate_submission(
+        base_revision_id=req.expected_base_revision_id,
+        output_formats=req.output_formats,
+    )
     submission = await submit_durable_workflow(
         current_principal(),
         project_id=req.project_id,
@@ -141,6 +153,8 @@ async def generate_async(
         objective=req.prompt,
         output_formats=req.output_formats,
         manufacturing_profile=req.manufacturing_profile,
+        modeling_backend=resolution.modeling_backend,
+        operation_context=resolution.operation_context,
     )
     return AsyncTaskStatus(
         task_id=str(submission.workflow_run_id),

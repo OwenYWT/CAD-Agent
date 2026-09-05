@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any
 
 from app.validation.verification.evaluator import (
@@ -21,6 +20,7 @@ from .contracts import (
     SketchEntity,
     SketchEntityType,
 )
+from .identity import bounded_identifier, feature_candidates, slug_identifier, unique_identifier
 
 
 def _mapping_view(value: Any) -> Mapping[str, Any]:
@@ -35,8 +35,7 @@ def _mapping_view(value: Any) -> Mapping[str, Any]:
 
 
 def _slugify(value: str) -> str:
-    cleaned = re.sub(r"[^a-z0-9]+", "-", value.casefold()).strip("-")
-    return cleaned or "item"
+    return slug_identifier(value, fallback="item")
 
 
 def _feature_type_from_text(value: str) -> FeatureType:
@@ -93,12 +92,7 @@ def _build_parameters(plan_data: Mapping[str, Any]) -> tuple[Parameter, ...]:
     def add_parameter(name: str, value: Any, source: ParameterSource, feature_id: str | None = None) -> None:
         if value is None:
             return
-        parameter_id = _slugify(name)
-        suffix = 2
-        while parameter_id in seen:
-            parameter_id = f"{_slugify(name)}-{suffix:02d}"
-            suffix += 1
-        seen.add(parameter_id)
+        parameter_id = unique_identifier(_slugify(name), seen)
         parameters.append(
             Parameter(
                 parameter_id=parameter_id,
@@ -144,12 +138,12 @@ def _build_sketches(plan_data: Mapping[str, Any], feature_id: str) -> tuple[Sket
         plane = "custom"
     return (
         Sketch(
-            sketch_id=f"{feature_id}-sketch",
+            sketch_id=bounded_identifier(f"{feature_id}-sketch"),
             plane=plane,
             feature_id=feature_id,
             entities=(
                 SketchEntity(
-                    entity_id=f"{feature_id}-profile",
+                    entity_id=bounded_identifier(f"{feature_id}-profile"),
                     entity_type=SketchEntityType.PROFILE,
                     parameters={"source": part_type},
                 ),
@@ -161,27 +155,7 @@ def _build_sketches(plan_data: Mapping[str, Any], feature_id: str) -> tuple[Sket
 
 def _build_features(plan_data: Mapping[str, Any]) -> tuple[Feature, ...]:
     features: list[Feature] = []
-    feature_names = [str(item).strip() for item in plan_data.get("features") or () if str(item).strip()]
-    steps = plan_data.get("steps") or ()
-    if not feature_names and steps:
-        for step in steps:
-            step_data = _mapping_view(step)
-            description = str(step_data.get("description") or step_data.get("step_key") or "").strip()
-            if description:
-                feature_names.append(description)
-    if not feature_names:
-        feature_names = [_primary_feature_name(plan_data)]
-
-    seen_ids: set[str] = set()
-    for index, name in enumerate(feature_names, start=1):
-        feature_id = _slugify(name)
-        if feature_id == "item":
-            feature_id = f"feature-{index:02d}"
-        suffix = 2
-        while feature_id in seen_ids:
-            feature_id = f"{_slugify(name)}-{suffix:02d}"
-            suffix += 1
-        seen_ids.add(feature_id)
+    for feature_id, name in feature_candidates(plan_data):
         feature_type = _feature_type_from_text(name)
         features.append(
             Feature(

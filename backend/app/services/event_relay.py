@@ -6,6 +6,8 @@ or an API process remaining alive.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 from uuid import UUID
 
@@ -15,6 +17,16 @@ from app.db import tenant_transaction
 from app.domain.identity import PrincipalContext
 from app.domain.projects import Permission
 from app.domain.runs import WorkflowStatus
+from app.agent.durable_plan import AgentPlan, ConfirmationPolicy
+from app.execution.canonical import canonical_sha256
+from app.execution.contracts import ExecutionError, ExecutionErrorCategory
+from app.freecad.state_contract import (
+    project_state_parameters,
+    read_verified_state_artifact,
+)
+from app.parameters import CADParameter
+from app.freecad.bom_contracts import FreeCADBOMDocumentV1
+from app.object_store import get_object
 from app.object_store import presign_get
 from app.repositories.projects import principal_has_permission
 
@@ -59,6 +71,279 @@ _GATE_LABEL = {
     "visual": "视觉检查",
     "dfm": "DFM 检查",
 }
+
+
+class ConfirmationProjectionInvalid(RuntimeError):
+    pass
+
+
+class BOMReadError(RuntimeError):
+    def __init__(self, code: str, message: str, *, status_code: int) -> None:
+        super().__init__(message)
+        self.code = code
+        self.status_code = status_code
+
+
+def _parameter_change_evidence(
+    base_parameters: list[CADParameter],
+    candidate_parameters: list[CADParameter],
+) -> list[dict[str, Any]]:
+    """Compare parameters only when their durable FreeCAD identity is stable."""
+    before = {parameter.name: parameter for parameter in base_parameters}
+    changes: list[dict[str, Any]] = []
+    for parameter in candidate_parameters:
+        previous = before.get(parameter.name)
+        if previous is None or previous.unit != parameter.unit:
+            continue
+        if previous.value == parameter.value:
+            continue
+        changes.append({
+            "parameter_id": parameter.name,
+            "label": parameter.display_name,
+            "before": previous.value,
+            "after": parameter.value,
+            "unit": parameter.unit or "",
+        })
+    return changes
+
+
+async def _change_set_parameter_changes(
+    artifact_rows: list[dict[str, Any]],
+    *,
+    base_revision_id: UUID,
+    candidate_revision_id: UUID,
+) -> list[dict[str, Any]]:
+    base_artifacts = [
+        row for row in artifact_rows if row["revision_id"] == base_revision_id
+    ]
+    candidate_artifacts = [
+        row for row in artifact_rows if row["revision_id"] == candidate_revision_id
+    ]
+    if (
+        sum(row["artifact_kind"] == "state" for row in base_artifacts) != 1
+        or sum(row["artifact_kind"] == "state" for row in candidate_artifacts) != 1
+    ):
+        return []
+    base_state, _ = await read_verified_state_artifact(base_artifacts)
+    candidate_state, _ = await read_verified_state_artifact(candidate_artifacts)
+    return _parameter_change_evidence(
+        project_state_parameters(base_state),
+        project_state_parameters(candidate_state),
+    )
+
+
+def _decode_execution_error(
+    row: dict[str, Any],
+    *,
+    fallback_status: str,
+) -> dict[str, Any] | None:
+    raw = row.get("error_details")
+    if isinstance(raw, dict) and raw:
+        return ExecutionError.model_validate(raw).model_dump(mode="json")
+    code = row.get("error_code")
+    message = row.get("error_message")
+    if not code and not message:
+        return None
+    return ExecutionError(
+        category=(
+            ExecutionErrorCategory.TIMEOUT
+            if fallback_status == "timed_out"
+            else ExecutionErrorCategory.INTERNAL
+        ),
+        code=str(
+            code
+            or (
+                "execution_timed_out"
+                if fallback_status == "timed_out"
+                else "execution_failed"
+            )
+        ),
+        message=str(
+            message
+            or (
+                "Execution timed out"
+                if fallback_status == "timed_out"
+                else "Execution failed"
+            )
+        ),
+    ).model_dump(mode="json")
+
+
+def _project_task_error(
+    *,
+    workflow_status: str,
+    steps: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if workflow_status not in {"failed", "timed_out"}:
+        return None
+    terminal_steps = [
+        step for step in steps
+        if step.get("status") in {"failed", "timed_out"}
+    ]
+    if not terminal_steps:
+        return None
+    step = max(
+        terminal_steps,
+        key=lambda item: (
+            item.get("updated_at") or item.get("completed_at") or "",
+            int(item.get("step_index") or 0),
+        ),
+    )
+    terminal_attempts = [
+        attempt for attempt in step.get("attempts", [])
+        if attempt.get("status") in {"failed", "timed_out"}
+    ]
+    if terminal_attempts:
+        attempt = max(
+            terminal_attempts,
+            key=lambda item: int(item.get("attempt_number") or 0),
+        )
+        error = _decode_execution_error(
+            attempt,
+            fallback_status=str(attempt.get("status") or workflow_status),
+        )
+        if error is not None:
+            return error
+    return _decode_execution_error(
+        step,
+        fallback_status=str(step.get("status") or workflow_status),
+    )
+
+
+def _project_task_bom(
+    *,
+    workflow_status: str,
+    plan_payload: dict[str, Any] | None,
+    steps: list[dict[str, Any]],
+    artifacts: list[dict[str, Any]],
+    change_set: dict[str, Any] | None,
+    validation_rows: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if not isinstance(plan_payload, dict):
+        return None
+    if plan_payload.get("model_kind") != "assembly":
+        return {
+            "status": "not_applicable",
+            "revision_id": (
+                change_set.get("candidate_revision_id") if change_set else None
+            ),
+            "evidence_id": None,
+            "json_download_url": None,
+            "csv_download_url": None,
+            "error": None,
+        }
+    bom_step = next(
+        (step for step in steps if step.get("kind") == "agent_bom"),
+        None,
+    )
+    evidence_id = next(
+        (
+            row["id"]
+            for row in validation_rows
+            if row.get("gate") == "bom" and row.get("outcome") == "passed"
+        ),
+        None,
+    )
+    by_kind = {str(row["artifact_kind"]): row for row in artifacts}
+    if (
+        change_set is not None
+        and evidence_id is not None
+        and "bom_json" in by_kind
+        and "bom_csv" in by_kind
+    ):
+        return {
+            "status": "succeeded",
+            "revision_id": change_set["candidate_revision_id"],
+            "evidence_id": evidence_id,
+            "json_download_url": (
+                f"/api/files/{by_kind['bom_json']['workflow_run_id']}/"
+                f"{by_kind['bom_json']['filename']}"
+            ),
+            "csv_download_url": (
+                f"/api/files/{by_kind['bom_csv']['workflow_run_id']}/"
+                f"{by_kind['bom_csv']['filename']}"
+            ),
+            "error": None,
+        }
+    if workflow_status == "cancelled":
+        status = "cancelled"
+        error = None
+    elif workflow_status in {"failed", "timed_out"}:
+        error = (
+            bom_step.get("error")
+            if bom_step is not None
+            else _project_task_error(
+                workflow_status=workflow_status,
+                steps=steps,
+            )
+        )
+        status = (
+            "unsupported"
+            if error and error.get("code") == "bom_runtime_unsupported"
+            else "failed"
+        )
+    else:
+        status = (
+            "running"
+            if bom_step and bom_step.get("status") in {"running", "succeeded"}
+            else "pending"
+        )
+        error = None
+    return {
+        "status": status,
+        "revision_id": None,
+        "evidence_id": None,
+        "json_download_url": None,
+        "csv_download_url": None,
+        "error": error,
+    }
+
+
+def _confirmation_projection(
+    *,
+    workflow_status: str,
+    workflow_run_id: UUID,
+    plan_event_payload: dict[str, Any] | None,
+    workflow_kind: str,
+) -> dict[str, Any] | None:
+    if workflow_status != "waiting_confirmation":
+        return None
+    # Historical V1 execution workflows keep their existing confirmation API;
+    # the plan-backed card belongs to the durable Agent V2 contract.
+    if not workflow_kind.startswith("mcad.agent.v2"):
+        return None
+    try:
+        if not isinstance(plan_event_payload, dict):
+            raise ValueError("plan event is missing")
+        raw_plan = plan_event_payload.get("plan")
+        if not isinstance(raw_plan, dict):
+            raise ValueError("plan payload is missing")
+        plan = AgentPlan.model_validate(raw_plan)
+        if (
+            not bool(plan_event_payload.get("requires_confirmation"))
+            or plan.confirmation_policy is not ConfirmationPolicy.REQUIRED
+        ):
+            raise ValueError("persisted plan does not require confirmation")
+        reason = str(
+            plan_event_payload.get("confirmation_reason")
+            or plan.confirmation_reason
+            or ""
+        ).strip()
+        if not reason or len(reason) > 1000:
+            raise ValueError("confirmation reason is invalid")
+        return {
+            "status": "waiting",
+            "workflow_run_id": workflow_run_id,
+            "reason": reason,
+            "plan_hash": canonical_sha256(raw_plan),
+            "affected_objects": [
+                item.model_dump(mode="json") for item in plan.affected_objects
+            ],
+        }
+    except Exception as exc:
+        raise ConfirmationProjectionInvalid(
+            "confirmation_projection_invalid"
+        ) from exc
 
 
 def _project_status(value: Any, fallback: str = "running") -> str:
@@ -320,7 +605,8 @@ async def get_task_snapshot(
                 text(
                     """
                     SELECT id, step_key, step_index, kind, status,
-                           attempt_count, error_code, error_message
+                           attempt_count, error_code, error_message,
+                           error_details, updated_at, completed_at
                     FROM step_runs
                     WHERE workflow_run_id=:workflow_run_id
                     ORDER BY step_index, created_at
@@ -334,7 +620,8 @@ async def get_task_snapshot(
                 text(
                     """
                     SELECT id, step_run_id, attempt_number, status, worker_id,
-                           error_code, error_message, started_at, completed_at
+                           error_code, error_message, error_details,
+                           started_at, updated_at, completed_at
                     FROM execution_attempts
                     WHERE workflow_run_id=:workflow_run_id
                     ORDER BY step_run_id, attempt_number
@@ -347,8 +634,9 @@ async def get_task_snapshot(
             await connection.execute(
                 text(
                     """
-                    SELECT id, revision_id, artifact_kind, filename,
-                           content_type, size_bytes, sha256, created_at
+                    SELECT id, revision_id, workflow_run_id, artifact_kind, filename,
+                           content_type, size_bytes, sha256, object_key,
+                           created_at
                     FROM artifacts
                     WHERE workflow_run_id=:workflow_run_id
                     ORDER BY created_at, filename
@@ -382,10 +670,10 @@ async def get_task_snapshot(
                 {"workflow_run_id": workflow_run_id},
             )
         ).mappings().one_or_none()
-        plan_payload = await connection.scalar(
+        plan_event_payload = await connection.scalar(
             text(
                 """
-                SELECT payload->'plan' FROM task_events
+                SELECT payload FROM task_events
                 WHERE workflow_run_id=:workflow_run_id
                   AND event_type='agent.plan.completed'
                 ORDER BY sequence DESC LIMIT 1
@@ -420,12 +708,35 @@ async def get_task_snapshot(
             or 0
         )
 
+    state_rows = [
+        dict(row) for row in artifact_rows if row["artifact_kind"] == "state"
+    ]
+    parameters = []
+    parameter_state_sha256 = None
+    if state_rows:
+        state, parameter_state_sha256 = await read_verified_state_artifact(
+            state_rows
+        )
+        parameters = [
+            parameter.model_dump(mode="json")
+            for parameter in project_state_parameters(state)
+        ]
+
     attempts_by_step: dict[UUID, list[dict[str, Any]]] = {}
     for row in attempt_rows:
-        attempts_by_step.setdefault(row["step_run_id"], []).append(dict(row))
+        attempt = dict(row)
+        attempt["error"] = _decode_execution_error(
+            attempt,
+            fallback_status=str(attempt["status"]),
+        )
+        attempts_by_step.setdefault(row["step_run_id"], []).append(attempt)
     steps = []
     for row in step_rows:
         item = dict(row)
+        item["error"] = _decode_execution_error(
+            item,
+            fallback_status=str(item["status"]),
+        )
         item["attempts"] = attempts_by_step.get(row["id"], [])
         steps.append(item)
     current_step = next(
@@ -445,6 +756,11 @@ async def get_task_snapshot(
         else "planning"
     )
     agent_projection = None
+    plan_payload = (
+        plan_event_payload.get("plan")
+        if isinstance(plan_event_payload, dict)
+        else None
+    )
     if candidate is not None or str(workflow["kind"]).startswith("mcad.agent.v2"):
         validations = []
         for row in validation_rows:
@@ -488,13 +804,32 @@ async def get_task_snapshot(
             "risk_summary": (
                 dict(change_set["risk_summary"] or {}) if change_set else None
             ),
+            "bom": _project_task_bom(
+                workflow_status=str(workflow["status"]),
+                plan_payload=(
+                    dict(plan_payload) if isinstance(plan_payload, dict) else None
+                ),
+                steps=steps,
+                artifacts=[dict(row) for row in artifact_rows],
+                change_set=dict(change_set) if change_set else None,
+                validation_rows=[dict(row) for row in validation_rows],
+            ),
         }
+    task_error = _project_task_error(
+        workflow_status=str(workflow["status"]),
+        steps=steps,
+    )
     return {
         **dict(workflow),
+        "error": task_error,
         "steps": steps,
         "artifacts": [
             {
-                **dict(row),
+                **{
+                    key: value
+                    for key, value in dict(row).items()
+                    if key not in {"object_key", "workflow_run_id"}
+                },
                 "download_url": (
                     f"/api/files/{workflow_run_id}/{row['filename']}"
                 ),
@@ -503,6 +838,18 @@ async def get_task_snapshot(
         ],
         "change_set": dict(change_set) if change_set else None,
         "agent": agent_projection,
+        "confirmation": _confirmation_projection(
+            workflow_status=str(workflow["status"]),
+            workflow_run_id=workflow_run_id,
+            plan_event_payload=(
+                dict(plan_event_payload)
+                if isinstance(plan_event_payload, dict)
+                else None
+            ),
+            workflow_kind=str(workflow["kind"]),
+        ),
+        "parameters": parameters,
+        "parameter_state_sha256": parameter_state_sha256,
     }
 
 
@@ -745,6 +1092,11 @@ async def get_change_set_detail(
                     {"workflow_run_id": row["source_workflow_run_id"]},
                 )
             ).mappings().all()
+    parameter_changes = await _change_set_parameter_changes(
+        [dict(artifact) for artifact in artifact_rows],
+        base_revision_id=row["base_revision_id"],
+        candidate_revision_id=row["candidate_revision_id"],
+    )
     artifacts = []
     for artifact in artifact_rows:
         public_artifact = {
@@ -783,6 +1135,8 @@ async def get_change_set_detail(
         "rolled_back_at",
     )
     item = {field: row[field] for field in public_fields}
+    item["change_summary"] = dict(item["change_summary"] or {})
+    item["change_summary"]["parameter_changes"] = parameter_changes
     item["base_artifacts"] = [
         artifact
         for artifact in artifacts
@@ -980,6 +1334,18 @@ async def get_revision_detail(
             )
         ).mappings().all()
     result = dict(revision)
+    state_rows = [
+        dict(row) for row in artifacts if row["artifact_kind"] == "state"
+    ]
+    result["parameters"] = []
+    result["parameter_state_sha256"] = None
+    if state_rows:
+        state, state_sha256 = await read_verified_state_artifact(state_rows)
+        result["parameters"] = [
+            parameter.model_dump(mode="json")
+            for parameter in project_state_parameters(state)
+        ]
+        result["parameter_state_sha256"] = state_sha256
     result["artifacts"] = []
     for artifact in artifacts:
         public_artifact = {
@@ -989,4 +1355,128 @@ async def get_revision_detail(
         }
         public_artifact["download_url"] = presign_get(artifact["object_key"])
         result["artifacts"].append(public_artifact)
+    bom_manifest = dict(result.get("manifest") or {}).get("bom")
+    if not isinstance(bom_manifest, dict):
+        bom_projection = {
+            "status": "missing",
+            "revision_id": revision_id,
+            "evidence_id": None,
+            "json_download_url": None,
+            "csv_download_url": None,
+            "error": None,
+        }
+    else:
+        by_kind = {
+            str(item["artifact_kind"]): item for item in result["artifacts"]
+        }
+        succeeded = bom_manifest.get("status") == "succeeded"
+        bom_projection = {
+            "status": str(bom_manifest.get("status") or "missing"),
+            "revision_id": revision_id,
+            "evidence_id": bom_manifest.get("evidence_id"),
+            "json_download_url": (
+                by_kind.get("bom_json", {}).get("download_url")
+                if succeeded
+                else None
+            ),
+            "csv_download_url": (
+                by_kind.get("bom_csv", {}).get("download_url")
+                if succeeded
+                else None
+            ),
+            "error": None,
+        }
+    result["bom"] = bom_projection
     return result
+
+
+async def get_revision_bom(
+    context: PrincipalContext,
+    project_id: UUID,
+    revision_id: UUID,
+) -> dict[str, Any]:
+    async with tenant_transaction(
+        context.tenant_id,
+        context.principal_id,
+    ) as connection:
+        await _require_project_permission(
+            connection,
+            context=context,
+            project_id=project_id,
+            permission=Permission.VIEW_PROJECT,
+        )
+        revision = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT manifest FROM project_revisions
+                    WHERE tenant_id=:tenant_id AND project_id=:project_id
+                      AND id=:revision_id
+                    """
+                ),
+                {
+                    "tenant_id": context.tenant_id,
+                    "project_id": project_id,
+                    "revision_id": revision_id,
+                },
+            )
+        ).mappings().one_or_none()
+        if revision is None:
+            raise KeyError(revision_id)
+        bom = dict(revision["manifest"] or {}).get("bom")
+        if not isinstance(bom, dict):
+            raise BOMReadError(
+                "bom_not_found",
+                "revision has no persisted BOM evidence",
+                status_code=404,
+            )
+        if bom.get("status") == "not_applicable":
+            raise BOMReadError(
+                "bom_not_applicable",
+                "BOM is not applicable to this revision",
+                status_code=409,
+            )
+        rows = [
+            dict(row)
+            for row in (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT object_key, size_bytes, sha256
+                        FROM artifacts
+                        WHERE tenant_id=:tenant_id AND project_id=:project_id
+                          AND revision_id=:revision_id
+                          AND artifact_kind='bom_json'
+                        ORDER BY created_at, id
+                        """
+                    ),
+                    {
+                        "tenant_id": context.tenant_id,
+                        "project_id": project_id,
+                        "revision_id": revision_id,
+                    },
+                )
+            ).mappings().all()
+        ]
+    if len(rows) != 1:
+        raise BOMReadError(
+            "bom_artifact_ambiguous" if rows else "bom_not_found",
+            "revision BOM artifact is missing or ambiguous",
+            status_code=409 if rows else 404,
+        )
+    artifact = rows[0]
+    try:
+        payload = await get_object(str(artifact["object_key"]))
+        if (
+            len(payload) != int(artifact["size_bytes"])
+            or hashlib.sha256(payload).hexdigest() != str(artifact["sha256"])
+        ):
+            raise ValueError("integrity mismatch")
+        document = FreeCADBOMDocumentV1.model_validate(json.loads(payload))
+    except Exception as exc:
+        raise BOMReadError(
+            "bom_artifact_integrity_failed",
+            "persisted BOM artifact failed integrity verification",
+            status_code=503,
+        ) from exc
+    return document.model_dump(mode="json")
