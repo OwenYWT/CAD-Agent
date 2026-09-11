@@ -12,6 +12,21 @@ from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError, ApplicationError
 from temporalio.workflow import ActivityCancellationType
 
+from app.geometry_ir.planner import build_geometry_plan, summarize_geometry_plan
+from app.topology.step_resolver import resolve_step_topology
+from app.validation.durable_geometry import DurableGeometryReport
+from app.validation.feature_evidence import (
+    build_feature_evidence,
+    build_feature_repair_context,
+    summarize_feature_evidence,
+)
+from app.validation.verification.evaluator import (
+    build_verification_targets,
+    evaluate_verification_targets,
+    summarize_verification_evidence,
+    summarize_verification_targets,
+)
+
 
 _CONTROL_RETRY = RetryPolicy(
     initial_interval=timedelta(seconds=1),
@@ -185,11 +200,15 @@ class McadAgentWorkflowV2:
             for item in plan["design_brief"].get("critical_dimensions") or ()
             if item.get("value") is not None
         ]
+        geometry_summary = summarize_geometry_plan(plan)
+        verification_targets = build_verification_targets(plan)
         return (
             f"Design objective: {plan['objective']}. "
             f"Required dimensions: {', '.join(dimensions) or 'not specified'}."
             + " Preserve every requested feature, count, position and depth. "
             + "Acceptance criteria: " + json.dumps(plan["design_brief"].get("acceptance_criteria", []), ensure_ascii=False)
+            + f" Geometry IR: {geometry_summary}."
+            + f" Verification targets: {', '.join(target.target_id for target in verification_targets) or 'none'}."
         )
 
     async def _model_step(
@@ -459,6 +478,53 @@ class McadAgentWorkflowV2:
                 suffix=f"validate-{validation_step_key}",
                 execution=True,
             )
+            geometry_report_payload = dict(geometry["report"])
+            geometry_report_payload.pop("runtime_provenance", None)
+            geometry_report = DurableGeometryReport.model_validate(
+                geometry_report_payload
+            )
+            geometry_plan = build_geometry_plan(plan)
+            verification_targets = build_verification_targets(plan)
+            verification_evidence = evaluate_verification_targets(
+                verification_targets,
+                geometry_report,
+                evidence_ref=str(geometry["evidence_id"]),
+            )
+            topology_resolutions = tuple(
+                resolve_step_topology(
+                    target,
+                    feature_id=target.feature_id,
+                    evidence_ref=str(geometry["evidence_id"]),
+                    backend_object_id=str(executed["staging_manifest_id"]),
+                )
+                for target in verification_targets
+            )
+            feature_result = build_feature_evidence(
+                step=step,
+                generated=generated,
+                executed=executed,
+                geometry_report=geometry_report,
+                verification_evidence=verification_evidence,
+                topology_resolutions=topology_resolutions,
+                geometry_plan=geometry_plan,
+            )
+            geometry = {
+                **geometry,
+                "report": geometry_report.model_dump(mode="json"),
+                "geometry_plan": geometry_plan.model_dump(mode="json"),
+                "verification_targets": [
+                    item.model_dump(mode="json") for item in verification_targets
+                ],
+                "verification_evidence": [
+                    item.model_dump(mode="json") for item in verification_evidence
+                ],
+                "topology_resolutions": [
+                    item.model_dump(mode="json") for item in topology_resolutions
+                ],
+                "feature_evidence": feature_result.evidence.model_dump(
+                    mode="json"
+                ),
+            }
             if geometry["outcome"] == "passed":
                 return {
                     **modeled,
@@ -505,8 +571,23 @@ class McadAgentWorkflowV2:
                     )
                     + ". "
                     + self._design_repair_context(plan)
+                    + ". Verification targets: "
+                    + summarize_verification_targets(verification_targets)
+                    + ". Verification evidence: "
+                    + summarize_verification_evidence(verification_evidence)
+                    + ". Feature evidence: "
+                    + summarize_feature_evidence(feature_result.evidence)
                 ),
                 "runtime_error_type": "GeometryError",
+                "repair_context": build_feature_repair_context(
+                    geometry_plan=geometry_plan,
+                    verification_targets=verification_targets,
+                    verification_evidence=verification_evidence,
+                    topology_resolutions=topology_resolutions,
+                    feature_evidence=feature_result.evidence,
+                    geometry_report=geometry_report,
+                    expected_dimensions_mm=expected_dimensions,
+                ),
             }
             repair_step_index = 10_000 + plan_step_index * 10 + repair_index
             freecad = plan.get("modeling_backend") == "freecad" or (

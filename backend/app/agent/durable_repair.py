@@ -198,6 +198,8 @@ class DurableRepairSourceGenerator:
                 else "StaticAnalysis"
             ),
         }
+        if failure.get("repair_context") is not None:
+            error["context"] = failure["repair_context"]
         repaired = await self.code_generator.fix_error(source_code, error)
         if not repaired.strip():
             raise ValueError("repair provider returned empty source")

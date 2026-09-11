@@ -84,3 +84,34 @@ test("never mixes evidence from an unrelated snapshot", () => {
   assert.equal(resultMatchesSnapshot(liveResult, unrelated), false);
   assert.equal(hydrateGenerationResult(liveResult, unrelated), liveResult);
 });
+
+test("same code cannot override a conflicting immutable revision", () => {
+  const other = { ...snapshot, revision_id: "revision-other" };
+  assert.equal(resultMatchesSnapshot(liveResult, other), false);
+  assert.equal(hydrateGenerationResult(liveResult, other), liveResult);
+});
+
+test("request identity cannot override a conflicting revision", () => {
+  const other = {
+    ...snapshot,
+    revision_id: "revision-other",
+    result: { ...snapshot.result, request_id: liveResult.request_id },
+  };
+  assert.equal(resultMatchesSnapshot(liveResult, other), false);
+});
+
+test("same code cannot override a conflicting task identity", () => {
+  const legacyResult = { ...liveResult, revision_id: undefined };
+  const other = {
+    ...snapshot,
+    revision_id: undefined,
+    result: { ...snapshot.result, request_id: "request-other" },
+  };
+  assert.equal(resultMatchesSnapshot(legacyResult, other), false);
+});
+
+test("exact code remains a fallback for genuinely legacy evidence", () => {
+  const legacyResult = { ...liveResult, revision_id: undefined, request_id: undefined };
+  const legacySnapshot = { ...snapshot, revision_id: undefined };
+  assert.equal(resultMatchesSnapshot(legacyResult, legacySnapshot), true);
+});

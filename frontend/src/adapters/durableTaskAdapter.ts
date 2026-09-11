@@ -77,6 +77,11 @@ export function durableResultHeadRevision(
   if (result.needs_confirmation) {
     return result.expected_base_revision_id || fallback;
   }
+  if (result.change_set_id) {
+    // Candidate results do not prove a commit. Keep the head synchronized by
+    // the change-set snapshot/action, including after reconnecting post-commit.
+    return fallback || result.expected_base_revision_id || null;
+  }
   return result.revision_id || fallback;
 }
 

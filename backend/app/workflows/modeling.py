@@ -8,6 +8,7 @@ from typing import Any, Callable, Protocol
 
 from app.agent.code_gen import CodeGenerator
 from app.agent.durable_plan import AgentPlan, AgentPlanStep
+from app.geometry_ir.planner import render_geometry_plan, summarize_geometry_plan
 from app.config import settings
 from app.examples.retriever import ExampleRetriever
 from app.llm import (
@@ -227,11 +228,8 @@ class DurableModelingSourceGenerator:
     @staticmethod
     def _plan_context(plan: CADPlan) -> str:
         return (
-            f"描述: {plan.description}\n"
-            f"类型: {plan.part_type}\n"
-            f"尺寸: {plan.dimensions}\n"
-            f"特征: {plan.features}\n"
-            f"约束: {plan.constraints}"
+            f"{summarize_geometry_plan(plan)}\n\n"
+            f"{render_geometry_plan(plan)}"
         )
 
     @staticmethod

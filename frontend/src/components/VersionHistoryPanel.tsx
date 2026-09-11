@@ -17,16 +17,14 @@ import {
   engineeringSourceLabel,
   engineeringStatusLabel,
 } from "../utils/engineeringLabels";
-
 interface VersionHistoryPanelProps {
   panelId: string;
   activeSnapshotId?: string | null;
   refreshKey?: string | number | null;
-  onRestore: (snapshot: ModelSnapshotDetail) => boolean | void;
+  onRestore: (snapshot: ModelSnapshotDetail) => boolean | void | Promise<boolean | void>;
   currentParts?: AssemblyPartInfo[] | null;
   onModifyPart?: (partName: string, instruction: string) => boolean | void;
 }
-
 const STATUS_CLASS: Record<string, string> = {
   pass: "border-emerald-200 bg-emerald-50 text-emerald-700",
   warn: "border-amber-200 bg-amber-50 text-amber-700",
@@ -41,12 +39,10 @@ function formatTime(iso: string, locale: Locale) {
     return iso;
   }
 }
-
 function formatVector(position?: number[] | null) {
   if (!position?.length) return "—";
   return position.map((value) => Number.isFinite(value) ? value.toFixed(2) : String(value)).join(", ");
 }
-
 export default function VersionHistoryPanel({
   panelId,
   activeSnapshotId,
@@ -64,13 +60,11 @@ export default function VersionHistoryPanel({
   const [selectedPartName, setSelectedPartName] = useState("");
   const [modifyInstruction, setModifyInstruction] = useState("只修改该零件，其他零件代码保持完全不变。");
   const [error, setError] = useState<string | null>(null);
-
   const parts = useMemo(() => currentParts ?? [], [currentParts]);
   const selectedPart = useMemo(
     () => parts.find((part) => part.name === selectedPartName) || parts[0] || null,
     [parts, selectedPartName],
   );
-
   const loadSnapshots = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -82,17 +76,15 @@ export default function VersionHistoryPanel({
       setLoading(false);
     }
   }, [panelId]);
-
   useEffect(() => {
     const timer = window.setTimeout(() => void loadSnapshots(), 0);
     return () => window.clearTimeout(timer);
   }, [loadSnapshots, refreshKey]);
-
   const restoreSnapshot = async (snapshotId: string) => {
     setRestoringId(snapshotId);
     setError(null);
     try {
-      const accepted = onRestore(await getModelSnapshot(snapshotId));
+      const accepted = await onRestore(await getModelSnapshot(snapshotId));
       if (accepted === false) throw new Error("当前连接不可用，未提交版本恢复任务");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "版本恢复失败");
@@ -100,7 +92,6 @@ export default function VersionHistoryPanel({
       setRestoringId(null);
     }
   };
-
   const loadDiff = async (snapshotId: string) => {
     if (!activeSnapshotId || activeSnapshotId === snapshotId) return;
     const cacheKey = `${activeSnapshotId}:${snapshotId}`;
@@ -115,7 +106,6 @@ export default function VersionHistoryPanel({
       setDiffLoadingKey(null);
     }
   };
-
   const renderChanges = (label: string, changes?: SnapshotChangeList) => {
     if (!changes) return <div>{label}：缺少可比较的证据</div>;
     return (
@@ -131,7 +121,6 @@ export default function VersionHistoryPanel({
       </div>
     );
   };
-
   const handleModifyPart = () => {
     if (!onModifyPart || !selectedPart) {
       setError("请先选择一个零件");
@@ -148,7 +137,6 @@ export default function VersionHistoryPanel({
       setError("当前连接不可用，未提交零件修改任务");
     }
   };
-
   return (
     <section className="bg-[var(--surface)] p-3">
       <div className="mb-3 flex items-center justify-between gap-3">

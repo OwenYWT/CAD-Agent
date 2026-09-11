@@ -1053,6 +1053,72 @@ async def _panel_project(connection, tenant_id: UUID, panel_id: str):
     ).mappings().one_or_none()
 
 
+async def _panel_id_for_revision(
+    connection,
+    tenant_id: UUID,
+    project_id: UUID,
+    branch_id: UUID,
+) -> str | None:
+    branch_name = await connection.scalar(
+        text(
+            """
+            SELECT name
+            FROM project_branches
+            WHERE tenant_id=:tenant AND id=:branch
+            """
+        ),
+        {"tenant": tenant_id, "branch": branch_id},
+    )
+    if not branch_name:
+        return None
+    candidates = (
+        await connection.execute(
+            text(
+                """
+                SELECT p.id
+                FROM workspace_panels p
+                JOIN workspace_sessions s
+                  ON s.tenant_id=p.tenant_id AND s.id=p.session_id
+                WHERE p.tenant_id=:tenant AND s.project_id=:project
+                """
+            ),
+            {"tenant": tenant_id, "project": project_id},
+        )
+    ).mappings().all()
+    for row in candidates:
+        panel_id = str(row["id"])
+        candidate_branch_name = "panel-" + hashlib.sha256(panel_id.encode("utf-8")).hexdigest()[:16]
+        if candidate_branch_name == branch_name:
+            return panel_id
+    return None
+
+
+async def _workflow_files(connection, tenant_id: UUID, workflow_run_id: UUID | None) -> dict[str, str]:
+    if workflow_run_id is None:
+        return {}
+    rows = (
+        await connection.execute(
+            text(
+                """
+                SELECT artifact_kind, filename
+                FROM artifacts
+                WHERE tenant_id=:tenant AND workflow_run_id=:workflow
+                ORDER BY created_at, filename
+                """
+            ),
+            {"tenant": tenant_id, "workflow": workflow_run_id},
+        )
+    ).mappings().all()
+    files: dict[str, str] = {}
+    for artifact in rows:
+        kind = artifact.get("artifact_kind")
+        filename = artifact.get("filename")
+        if not kind or not filename:
+            continue
+        files[str(kind)] = f"/api/files/{workflow_run_id}/{filename}"
+    return files
+
+
 async def create_model_snapshot(
     panel_id: str,
     result: dict,
@@ -1342,11 +1408,30 @@ async def get_model_snapshot(
                 {"tenant": context.tenant_id, "revision": row["id"]},
             )
         ).mappings().all()
-    snapshot = _snapshot_from_revision(
-        row,
-        snapshot_id=snapshot_id if imported is not None else None,
-        metadata=imported,
-    )
+        snapshot = _snapshot_from_revision(
+            row,
+            snapshot_id=snapshot_id if imported is not None else None,
+            metadata=imported,
+        )
+        if not snapshot.get("panel_id"):
+            snapshot["panel_id"] = await _panel_id_for_revision(
+                connection,
+                context.tenant_id,
+                row["project_id"],
+                row["branch_id"],
+            )
+        # Revision-bound artifacts are authoritative. Older history may only
+        # carry a source workflow; preserve its download projection as fallback.
+        if not artifact_rows:
+            workflow_files = await _workflow_files(
+                connection,
+                context.tenant_id,
+                row.get("source_workflow_run_id"),
+            )
+            if workflow_files:
+                files = {**snapshot["files"], **workflow_files}
+                snapshot["files"] = files
+                snapshot["result"] = {**dict(snapshot["result"] or {}), "files": files}
     if artifact_rows:
         files, fingerprints = _revision_artifact_projection(artifact_rows)
         snapshot["files"] = files
@@ -1387,6 +1472,32 @@ async def snapshot_belongs_to_user(
     return await get_model_snapshot(snapshot_id) is not None
 
 
+def _restored_snapshot_result(snapshot: dict) -> dict:
+    restored_result = dict(snapshot["result"] or {})
+    restored_result["snapshot_id"] = snapshot["id"]
+    restored_result["version"] = snapshot["version"]
+    restored_result["panel_id"] = snapshot["panel_id"]
+    if not restored_result.get("files"):
+        restored_result["files"] = snapshot.get("files") or {}
+    for field in (
+        "params",
+        "parameters",
+        "validation",
+        "inspect_report",
+        "repair_history",
+        "assembly_parts",
+        "available_exports",
+        "inspect_verdict",
+    ):
+        if not restored_result.get(field):
+            value = snapshot.get(field)
+            if value is not None:
+                restored_result[field] = value
+    if not restored_result.get("status") and snapshot.get("status") is not None:
+        restored_result["status"] = snapshot["status"]
+    return restored_result
+
+
 async def restore_model_snapshot(
     snapshot_id: str,
     user_id: str | None = None,
@@ -1398,7 +1509,6 @@ async def restore_model_snapshot(
     snapshot = await get_model_snapshot(snapshot_id)
     if snapshot is None:
         return None
-    panel_id = snapshot["panel_id"]
     target_revision_id: UUID | None
     try:
         target_revision_id = UUID(snapshot_id)
@@ -1432,6 +1542,16 @@ async def restore_model_snapshot(
         ).mappings().one_or_none()
         if target is None:
             return None
+        panel_id = snapshot["panel_id"]
+        if panel_id is None:
+            panel_id = await _panel_id_for_revision(
+                connection,
+                context.tenant_id,
+                target["project_id"],
+                target["branch_id"],
+            )
+            if panel_id is None:
+                return None
         branch = (
             await connection.execute(
                 text(
@@ -1512,12 +1632,10 @@ async def restore_model_snapshot(
                 "panel": panel_id,
             },
         )
-        restored_result = {
-            **snapshot["result"],
-            "snapshot_id": snapshot["id"],
-            "version": snapshot["version"],
-            "panel_id": panel_id,
-        }
+        restored_result = _restored_snapshot_result(snapshot)
+        restored_result["revision_id"] = str(revision_id)
+        restored_result["project_id"] = str(target["project_id"])
+        restored_result["branch_id"] = str(target["branch_id"])
         await connection.execute(
             text(
                 """

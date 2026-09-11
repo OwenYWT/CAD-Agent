@@ -584,6 +584,10 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
     set((state) => ({
       panels: updatePanel(state.panels, panelId, (panel) => {
         const restoredResult = { ...result, code };
+        const restoredHeadRevision = durableResultHeadRevision(
+          restoredResult,
+          panel.durable?.currentRevisionId || null,
+        );
         const restoreMessage: ChatMessage = {
           role: "assistant",
           content: `\u5df2\u6062\u590d\u7248\u672c ${result.version ?? ""}`.trim(),
@@ -596,15 +600,20 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
           multiStepProgress: null,
           stepHistory: [],
           generationStartTime: null,
+          lastError: null,
           activeRun: null,
           artifactUpdates: [],
           messages: [...panel.messages, restoreMessage],
           durable: {
             ...(panel.durable || emptyDurableContext()),
-            currentRevisionId: durableResultHeadRevision(
-              result,
-              panel.durable?.currentRevisionId || null,
-            ),
+            projectId: result.project_id || panel.durable?.projectId || null,
+            branchId: result.branch_id || panel.durable?.branchId || null,
+            baseRevisionId: restoredHeadRevision || panel.durable?.baseRevisionId || null,
+            currentRevisionId: restoredHeadRevision,
+            workflowRunId: result.workflow_run_id || panel.durable?.workflowRunId || null,
+            changeSetId: result.change_set_id || panel.durable?.changeSetId || null,
+            taskStatus: result.task_status || panel.durable?.taskStatus || null,
+            preparedResult: restoredResult,
           },
         };
       }),

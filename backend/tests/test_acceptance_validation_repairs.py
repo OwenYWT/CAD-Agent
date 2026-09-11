@@ -56,7 +56,11 @@ class GateRun(McadAgentWorkflowV2):
         if name == "agent_v2.execute_freecad":
             return {"staging_manifest_id": "new-manifest"}
         if name == "agent_v2.validate_geometry":
-            return {"outcome": "passed", "evidence_id": "geometry"}
+            # This unit harness must supply the strict activity wire contract
+            # consumed by the merged Geometry IR / feature-evidence layer.
+            from tests.test_cad_intelligence_layers import _sample_report
+            return {"outcome": "passed", "evidence_id": "geometry",
+                    "report": _sample_report().model_dump(mode="json")}
         raise AssertionError(name)
 
 

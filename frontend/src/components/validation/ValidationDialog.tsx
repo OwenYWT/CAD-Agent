@@ -31,7 +31,7 @@ interface ValidationDialogProps {
   onClose: () => void;
   onAnalysis?: (analysis: DesignAnalysis) => void;
   onAskAgent: (prompt: string) => void;
-  onRestore: (snapshot: ModelSnapshotDetail) => boolean | void;
+  onRestore: (snapshot: ModelSnapshotDetail) => boolean | void | Promise<boolean | void>;
   onRetryPrompt: () => unknown;
   onRerunCode: () => unknown;
   onResumeRun: (runId: string) => unknown;

@@ -11,20 +11,22 @@ export function resultMatchesSnapshot(
   result: GenerationResult,
   snapshot: ModelSnapshotDetail,
 ): boolean {
-  if (
-    result.revision_id
-    && snapshot.revision_id
-    && result.revision_id === snapshot.revision_id
-  ) {
-    return true;
+  const snapshotRevision = snapshot.revision_id || snapshot.result.revision_id;
+  if (result.revision_id && snapshotRevision) {
+    return result.revision_id === snapshotRevision;
   }
 
   if (
     result.request_id
     && snapshot.result.request_id
-    && result.request_id === snapshot.result.request_id
   ) {
-    return true;
+    return result.request_id === snapshot.result.request_id;
+  }
+
+  // Code is not identity: native edits can produce different states from the
+  // same source. Only old records without durable identity may use this fallback.
+  if (result.revision_id || snapshotRevision || result.request_id || snapshot.result.request_id) {
+    return false;
   }
 
   return Boolean(

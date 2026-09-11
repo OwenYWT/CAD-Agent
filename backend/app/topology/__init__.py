@@ -1,4 +1,4 @@
-"""Backend-neutral topology selector contracts."""
+"""Generic topology binding helpers and native FreeCAD semantic selectors."""
 
 from app.topology.contracts import FreeCADTopologySelector, SelectorPoint3D
 

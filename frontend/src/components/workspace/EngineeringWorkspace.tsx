@@ -123,7 +123,17 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
-  const [agentPrompt, setAgentPrompt] = useState("");
+  const [agentSuggestion, setAgentSuggestion] = useState<{
+    contextKey: string;
+    prompt: string;
+    sequence: number;
+  } | null>(null);
+  const agentContextKey = `${ownerId}:${sessionId}:${panel.id}`;
+  const activeSuggestion = agentSuggestion?.contextKey === agentContextKey ? agentSuggestion : null;
+  const agentPrompt = activeSuggestion?.prompt || "";
+  // Component-local drafts and confirmations must not survive a panel switch.
+  // A new explicit suggestion remounts the mobile composer as well as the drawer.
+  const agentKey = `${agentContextKey}:${activeSuggestion?.sequence || 0}`;
   const [parametersOpen, setParametersOpen] = useState(false);
   const [checksOpen, setChecksOpen] = useState(false);
   const [changesOpen, setChangesOpen] = useState(false);
@@ -196,7 +206,13 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
     if (stage.domain) setView(stage.domain);
   };
   const askAgent = (prompt = "") => {
-    setAgentPrompt(prompt);
+    if (prompt) {
+      setAgentSuggestion((previous) => ({
+        contextKey: agentContextKey,
+        prompt,
+        sequence: (previous?.sequence || 0) + 1,
+      }));
+    }
     setAgentCollapsed(false);
     if (window.matchMedia("(max-width: 760px)").matches) {
       setMobilePreviewOpen(false);
@@ -215,7 +231,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   }, [mobilePreviewOpen]);
   const executeWithProgress = (code: string) => {
     if (!executeCode(code)) return false;
-    useSessionStore.getState().beginGeneration("正在重新计算模型");
+    useSessionStore.getState().beginGeneration("\u6b63\u5728\u91cd\u65b0\u8ba1\u7b97\u6a21\u578b");
     return true;
   };
   const modifyParametersWithProgress = (
@@ -325,7 +341,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   return (
     <div className="h-[100dvh] min-w-[320px] overflow-hidden bg-white text-[var(--ink)]">
       <WorkspaceShell
-        agent={<AgentPanel connection={connectionState} context={view} embedded onCancel={cancelGeneration} onCollapse={() => setAgentCollapsed(true)} onPreview={() => { setView("mechanical"); setMobilePreviewOpen(true); }} onSend={sendMessage} suggestedPrompt={agentPrompt} />}
+        agent={<AgentPanel key={agentKey} connection={connectionState} context={view} embedded onCancel={cancelGeneration} onCollapse={() => setAgentCollapsed(true)} onPreview={() => { setView("mechanical"); setMobilePreviewOpen(true); }} onSend={sendMessage} suggestedPrompt={agentPrompt} />}
         agentCollapsed={agentCollapsed}
         header={<WorkspaceHeader connection={connectionState} onAgent={() => askAgent()} onBack={() => setView("overview")} onChanges={() => setChangesOpen(true)} onChecks={() => setChecksOpen(true)} onExport={() => setExportOpen(true)} onMenu={() => setMobileSidebar(true)} onPreview={() => setMobilePreviewOpen((value) => !value)} onSettings={() => setSettingsOpen(true)} previewOpen={mobilePreviewOpen} project={model.project} />}
         inspector={inspector}
@@ -345,7 +361,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
       </WorkspaceShell>
 
       <ParameterDrawer isGenerating={panel.isGenerating} key={`parameters:${model.result?.request_id || "empty"}:${parametersOpen}`} onClose={() => setParametersOpen(false)} onExecute={executeWithProgress} onModifyParameters={modifyParametersWithProgress} open={parametersOpen} parameters={model.parameters} result={model.result} />
-      <AgentDrawer connection={connectionState} context={view} key={`${view}:${agentPrompt}:${agentOpen}`} onCancel={cancelGeneration} onClose={() => { setAgentOpen(false); setAgentPrompt(""); }} onSend={sendMessage} open={agentOpen} suggestedPrompt={agentPrompt} />
+      <AgentDrawer connection={connectionState} context={view} key={`${agentKey}:${view}:${agentOpen}`} onCancel={cancelGeneration} onClose={() => { setAgentOpen(false); setAgentSuggestion(null); }} onSend={sendMessage} open={agentOpen} suggestedPrompt={agentPrompt} />
       <WorkspaceDrawer description="显示当前模型的真实参数、版本、代码和文件。" onClose={() => setInspectorOpen(false)} open={inspectorOpen} title="机械设计检查器"><WorkspaceInspector cloudDocument={<CloudDocumentPanel connection={cloud} onEngineeringTasksChange={onEngineeringTasksChange} onSubmitted={onDocumentSubmitted} onReview={(id) => { setReviewDocumentChange(id); setInspectorOpen(false); setChangesOpen(true); }} />} artifacts={panel.artifactUpdates} bom={panel.durable?.agent?.bom} onExport={() => { setInspectorOpen(false); setExportOpen(true); }} onProperties={() => { setInspectorOpen(false); setParametersOpen(true); }} parameters={model.parameters} project={model.project} projectId={panel.durable?.projectId} result={model.result} revisionId={model.result?.revision_id || panel.durable?.currentRevisionId} showHeader={false} stages={model.stages} versionHistory={versionHistory} view={view} /></WorkspaceDrawer>
       <ValidationDialog
         activeSnapshotId={model.result?.snapshot_id}

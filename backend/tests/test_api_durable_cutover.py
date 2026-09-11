@@ -336,13 +336,18 @@ async def test_async_generate_returns_persisted_workflow_id(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cutover_disables_legacy_snapshot_restore_writer(monkeypatch):
-    with pytest.raises(HTTPException) as error:
-        await history_api.api_restore_model_snapshot(
-            "legacy-snapshot",
-            user=None,
-        )
-    assert error.value.status_code == 410
+async def test_cutover_restore_endpoint_rejects_direct_head_writes(monkeypatch):
+    calls = []
+
+    async def snapshot_belongs_to_user(snapshot_id, user_id):
+        calls.append(("belongs", snapshot_id, user_id))
+        return True
+
+    monkeypatch.setattr(history_api, "snapshot_belongs_to_user", snapshot_belongs_to_user)
+    with pytest.raises(HTTPException) as caught:
+        await history_api.api_restore_model_snapshot("legacy-snapshot", user=None)
+    assert caught.value.status_code == 410
+    assert calls == []
 
 
 @pytest.mark.asyncio

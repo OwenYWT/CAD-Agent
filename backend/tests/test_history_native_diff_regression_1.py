@@ -1,6 +1,8 @@
 """Q05: compare immutable native evidence, not empty legacy placeholders."""
 from copy import deepcopy
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -44,6 +46,81 @@ def test_native_history_projects_sealed_files_and_real_source():
     assert snapshot["result"]["files"] == snapshot["files"]
     assert snapshot["result"]["validation"] == row["manifest"]["validation"]
     assert snapshot["available_exports"] == ["fcstd", "step"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("revision_artifacts", [True, False])
+@pytest.mark.parametrize("fingerprints", [True, False])
+async def test_merged_history_preserves_panel_resolution_and_authoritative_files(
+    monkeypatch, revision_artifacts, fingerprints,
+):
+    row = _native_row()
+    row["source_workflow_run_id"] = uuid4()
+    workflow = uuid4()
+    artifacts = [
+        {"artifact_kind": "fcstd", "filename": "sealed.FCStd", "workflow_run_id": workflow, "sha256": "d" * 64},
+        {"artifact_kind": "state", "filename": "state.json", "workflow_run_id": workflow, "sha256": "e" * 64},
+    ] if revision_artifacts else []
+    context = SimpleNamespace(tenant_id=uuid4(), principal_id=uuid4())
+    active = False
+    calls = []
+
+    class Connection:
+        async def execute(self, statement, values):
+            assert active, "SQL escaped its tenant transaction"
+            assert values["tenant"] == context.tenant_id
+            calls.append(str(statement))
+            return SimpleNamespace(mappings=lambda: SimpleNamespace(
+                one_or_none=lambda: row, all=lambda: artifacts,
+            ))
+
+    connection = Connection()
+
+    @asynccontextmanager
+    async def transaction(tenant, principal):
+        nonlocal active
+        assert (tenant, principal) == (context.tenant_id, context.principal_id)
+        active = True
+        try:
+            yield connection
+        finally:
+            active = False
+
+    async def resolve_panel(conn, tenant, project, branch):
+        assert active and conn is connection
+        assert (tenant, project, branch) == (context.tenant_id, row["project_id"], row["branch_id"])
+        return "resolved-panel"
+
+    async def workflow_files(conn, tenant, workflow_id):
+        assert active and conn is connection and not revision_artifacts
+        assert (tenant, workflow_id) == (context.tenant_id, row["source_workflow_run_id"])
+        return {"step": "/api/files/old-workflow/legacy.step"}
+
+    async def verified_state(rows):
+        assert not active, "artifact IO should not retain a database transaction"
+        assert rows == [artifacts[1]]
+        return {}, "e" * 64
+
+    parameter = {"name": "Hole.Diameter", "value": 8, "unit": "mm"}
+    monkeypatch.setattr(postgres_history, "current_principal", lambda: context)
+    monkeypatch.setattr(postgres_history, "tenant_transaction", transaction)
+    monkeypatch.setattr(postgres_history, "_panel_id_for_revision", resolve_panel)
+    monkeypatch.setattr(postgres_history, "_workflow_files", workflow_files)
+    monkeypatch.setattr(postgres_history, "read_verified_state_artifact", verified_state)
+    monkeypatch.setattr(postgres_history, "project_state_parameters", lambda _: [
+        SimpleNamespace(model_dump=lambda **_: parameter),
+    ])
+    snapshot = await postgres_history.get_model_snapshot(str(row["id"]), include_artifact_fingerprints=fingerprints)
+    assert snapshot["panel_id"] == "resolved-panel"
+    assert len(calls) == 2
+    assert snapshot["files"] == snapshot["result"]["files"]
+    if revision_artifacts:
+        assert snapshot["files"]["fcstd"] == f"/api/files/{workflow}/sealed.FCStd"
+        assert snapshot["parameters"] == [parameter]
+        assert snapshot["result"]["parameter_state_sha256"] == "e" * 64
+    else:
+        assert snapshot["files"]["step"] == "/api/files/old-workflow/legacy.step"
+    assert ("_file_fingerprints" in snapshot) == (fingerprints and revision_artifacts)
 
 
 def test_artifact_comparison_identity_survives_another_file_of_the_same_kind():

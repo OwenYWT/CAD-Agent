@@ -1,3 +1,4 @@
+import json
 import logging
 import math
 import textwrap
@@ -54,6 +55,19 @@ class CodeGenerator:
         if brief.acceptance_criteria:
             sections.append("Acceptance criteria:\n" + "\n".join(f"- {item}" for item in brief.acceptance_criteria))
         return "\n\n".join(sections)
+
+    @staticmethod
+    def _format_repair_context(value) -> str:
+        if value is None:
+            return ""
+        model_dump = getattr(value, "model_dump", None)
+        if callable(model_dump):
+            payload = model_dump(mode="json")
+        elif isinstance(value, dict):
+            payload = value
+        else:
+            payload = {"value": str(value)}
+        return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
 
     async def generate(
         self, plan: CADPlan, examples: list[dict], conversation: list[dict],
@@ -200,6 +214,17 @@ class CodeGenerator:
             error_message=error.get("message", ""),
             traceback=error.get("traceback", ""),
         )
+        repair_context = error.get("context")
+        if repair_context is not None:
+            system += (
+                "\n\n## Repair Context\n"
+                f"```json\n{self._format_repair_context(repair_context)}\n```"
+            )
+        elif plan is not None:
+            system += (
+                "\n\n## Repair Plan\n"
+                f"```json\n{self._format_repair_context(plan)}\n```"
+            )
 
         # Classify the failure → targeted hint + minimal-change directive (A1 + A3).
         fc = classify(
