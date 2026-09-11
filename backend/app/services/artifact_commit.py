@@ -253,6 +253,63 @@ def _candidate_artifact_rows(
                     }
                 )
             continue
+        if evidence["gate"] == "bom":
+            artifacts = list(report.get("artifacts") or ())
+            if {str(item.get("role")) for item in artifacts} != {
+                "bom-json",
+                "bom-csv",
+            }:
+                raise CandidateSealVerificationError(
+                    "selected BOM evidence is incomplete"
+                )
+            for item in artifacts:
+                role = str(item["role"])
+                filename = _safe_filename(str(item["filename"]))
+                product_filename = _safe_filename(f"{step_key}-{filename}")
+                digest = str(item.get("sha256") or "")
+                size_bytes = int(item.get("size_bytes") or 0)
+                source_key = str(item.get("object_key") or "")
+                expected_prefix = (
+                    f"staging/agent/tenants/{tenant_id}/candidates/"
+                    f"{candidate_build_id}/validation/"
+                )
+                if (
+                    product_filename in filenames
+                    or not _SHA256_RE.fullmatch(digest)
+                    or size_bytes < 1
+                    or not source_key.startswith(expected_prefix)
+                    or evidence["execution_attempt_id"] is None
+                ):
+                    raise CandidateSealVerificationError(
+                        "selected BOM artifact declaration is invalid"
+                    )
+                filenames.add(product_filename)
+                rows.append({
+                    "manifest_id": evidence["staging_manifest_id"],
+                    "attempt_id": evidence["execution_attempt_id"],
+                    "step_key": step_key,
+                    "artifact_kind": (
+                        "bom_json" if role == "bom-json" else "bom_csv"
+                    ),
+                    "filename": product_filename,
+                    "content_type": str(item["content_type"]),
+                    "size_bytes": size_bytes,
+                    "sha256": digest,
+                    "staging_object_key": source_key,
+                    "object_key": _candidate_final_object_key(
+                        tenant_id=tenant_id,
+                        project_id=project_id,
+                        candidate_build_id=candidate_build_id,
+                        sha256=digest,
+                        filename=product_filename,
+                    ),
+                    "runtime_metadata": {
+                        **dict(report.get("runtime_provenance") or {}),
+                        "validation_evidence_id": str(evidence["id"]),
+                        "validation_gate": "bom",
+                    },
+                })
+            continue
         if evidence["gate"] != "dfm":
             continue
         report_artifact = dict(report.get("report_artifact") or {})
@@ -425,9 +482,23 @@ async def _load_candidate_seal_selection(
     policy = dict(plan["validation_policy"])
     evidence_rows: list[dict[str, Any]] = []
     for supplied, manifest_id in zip(selected, manifest_ids, strict=True):
-        for gate in ("geometry", "visual", "dfm"):
+        for gate in ("geometry", "visual", "dfm", "bom"):
             mode = str(policy[gate]["mode"])
             evidence_id = supplied.get(f"{gate}_evidence_id")
+            if (
+                gate == "bom"
+                and plan["model_kind"] == "assembly"
+                and supplied["step_key"] != next(
+                step["step_key"]
+                for step in plan["steps"]
+                if step["kind"] == "assembly_combine"
+                )
+            ):
+                if evidence_id is not None:
+                    raise CandidateSealVerificationError(
+                        "BOM evidence belongs only to the assembly combine manifest"
+                    )
+                continue
             if mode == "disabled":
                 if evidence_id is not None:
                     raise CandidateSealVerificationError(
@@ -664,6 +735,26 @@ async def seal_agent_candidate(
         ],
         "validation": validation_summary,
         "risks": risk_summary,
+        "bom": {
+            "status": (
+                "succeeded" if plan.get("model_kind") == "assembly"
+                else "not_applicable"
+            ),
+            "evidence_id": next(
+                (
+                    str(row["id"])
+                    for row in evidence
+                    if row["gate"] == "bom"
+                ),
+                None,
+            ),
+            "json_artifact_kind": (
+                "bom_json" if plan.get("model_kind") == "assembly" else None
+            ),
+            "csv_artifact_kind": (
+                "bom_csv" if plan.get("model_kind") == "assembly" else None
+            ),
+        },
     }
     committed: list[CommittedArtifact] = []
     async with tenant_transaction(tenant_id, principal_id) as connection:
@@ -986,6 +1077,27 @@ async def _locked_attempt_context(connection, attempt_id: UUID):
     ).mappings().one_or_none()
 
 
+async def _engineering_evidence_access(connection, attempt, revision_id, principal_id, kinds):
+    """The only cross-workflow engineering outputs belong to a frozen task."""
+    from types import SimpleNamespace
+    from app.freecad.engineering_contracts import engineering_outputs, engineering_permissions
+    from app.services.cloud_documents import authorized_document
+    task_kind=(attempt['request_payload'].get('engineering_task') or {}).get('kind')
+    if not set(kinds) <= set(engineering_outputs(task_kind)) | {"capability-result"}:
+        raise IllegalTransition("undeclared engineering artifact kind")
+    row = (await connection.execute(text('''SELECT t.document_id,t.task_kind,t.source_sha256,t.source_artifact_id,r.source_workflow_run_id
+        FROM document_engineering_tasks t JOIN project_revisions r ON r.id=t.source_revision_id
+        JOIN artifacts a ON a.id=t.source_artifact_id AND a.revision_id=t.source_revision_id AND a.sha256=t.source_sha256
+        WHERE t.workflow_run_id=:workflow AND t.source_revision_id=:revision AND t.principal_id=:principal'''),
+        {'workflow': attempt['workflow_run_id'], 'revision': revision_id, 'principal': principal_id})).mappings().one_or_none()
+    request = dict(attempt['request_payload'] or {})
+    if row is None or row['task_kind'] != task_kind or request.get('source_revision_id') != str(revision_id) or request.get('source_workflow_run_id') != str(row['source_workflow_run_id']) or request.get('source_artifact_id') != str(row['source_artifact_id']) or request.get('source_sha256') != row['source_sha256']:
+        raise IllegalTransition("engineering artifact source does not match its immutable task")
+    for permission in engineering_permissions(task_kind):
+        await authorized_document(connection, SimpleNamespace(tenant_id=attempt['tenant_id'], principal_id=principal_id),
+            row['document_id'], permission)
+
+
 async def authorize_artifact_upload(
     *,
     tenant_id: UUID,
@@ -1054,6 +1166,9 @@ async def authorize_artifact_upload(
             == str(revision_source)
             and kind == "dfm_report"
         )
+        if attempt["workflow_kind"] == "mcad.engineering":
+            await _engineering_evidence_access(connection, attempt, revision_id, principal_id, [kind])
+            is_declared_check_evidence = True
         if (
             revision_source != attempt["workflow_run_id"]
             and not is_declared_check_evidence
@@ -1228,6 +1343,9 @@ async def commit_artifacts(
                 raise ArtifactVerificationError(
                     "one or more artifact upload authorizations do not exist"
                 )
+            if attempt["workflow_kind"] == "mcad.engineering":
+                await _engineering_evidence_access(connection, attempt, revision_id, principal_id,
+                    [upload['artifact_kind'] for upload in uploads])
             for upload in uploads:
                 if (
                     upload["tenant_id"] != tenant_id

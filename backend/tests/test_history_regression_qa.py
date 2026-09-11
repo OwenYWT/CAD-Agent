@@ -12,6 +12,7 @@ import app.api.websocket as ws_api
 from app.config import settings
 from app.main import app
 from app.capabilities import registry
+from app.repositories import identity as identity_repository
 from app.storage import history
 from app.storage.file_ownership import claim_request_owner
 
@@ -65,14 +66,22 @@ def isolated_websocket_history(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "api_keys", [])
     monkeypatch.setattr(settings, "rate_limit_per_minute", 0)
     monkeypatch.setattr(ws_api.rate_limiter, "rpm", 0)
-    monkeypatch.setattr(settings, "durable_control_plane_enabled", False)
+    monkeypatch.setattr(
+        ws_api,
+        "settings",
+        SimpleNamespace(durable_control_plane_enabled=True),
+    )
     submissions = []
+
+    async def reconcile(principal):
+        return principal
 
     async def submit(_principal, **kwargs):
         submissions.append(kwargs)
         return SimpleNamespace(workflow_run_id=uuid4())
 
     monkeypatch.setattr(ws_api, "submit_durable_workflow", submit)
+    monkeypatch.setattr(identity_repository, "reconcile_principal", reconcile)
     asyncio.run(history.close_db())
     ws_api.sessions.clear()
     yield submissions

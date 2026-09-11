@@ -1,0 +1,10 @@
+{
+  "instances": 102,
+  "native_links": 100,
+  "mesh_definitions": 2,
+  "mesh_downloads": 2,
+  "real_webgl": true,
+  "load_seconds": 1.54,
+  "browser_errors": [],
+  "document_id": "b10c21cb-7b74-446f-b5e7-ff2eda360ca5"
+}

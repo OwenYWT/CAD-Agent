@@ -65,6 +65,8 @@ docker buildx imagetools inspect registry.example.com/wordswave/mcad-runtime:<ve
 
 把 Registry 返回的 digest 写入 `SANDBOX_IMAGE`，然后启动：
 
+已验证的后端依赖镜像可用于受限网络下的应用更新：从仓库根目录运行 `docker build -f backend/Dockerfile.reuse-dependencies --build-arg VERIFIED_BACKEND_IMAGE=已验证的后端镜像引用 -t 新后端镜像 .`。该入口会比较两份 `requirements.txt` 的完整内容并执行 `pip check`；依赖清单改变时拒绝复用。它只重建应用层，必须记录所用基础镜像 digest，并对新镜像执行正常回归。干净安装依赖仍使用默认 `backend/Dockerfile`。
+
 ```bash
 docker compose config --quiet
 docker compose build --pull
@@ -73,6 +75,18 @@ docker compose ps
 ```
 
 `migrate` 和 `minio-init` 应显示成功退出；`postgres`、`minio`、`temporal`、`backend`、`workflow-worker`、`frontend` 应处于运行状态，`backend` 最终应健康。API 会等数据库迁移完成，前端会等 `/ready` 通过。
+
+API/Worker 镜像从仓库根目录构建，以包含 `third_party/cadskills`；镜像内同时包含 Docker CLI 和 SDK。`SANDBOX_WORK_DIR` 默认 `/tmp/cad-agent-work`，必须在宿主机、API、Worker 中以相同绝对路径挂载，`TMPDIR` 也必须相同，内核兄弟容器才能读取输入和写回结果。macOS/Podman 使用共享路径时应采用实际绝对路径（例如 `/private/tmp/cad-agent-work`）。
+
+Podman 的 Docker-compatible socket 需要单独映射至 `/var/run/docker.sock`；使用 SELinux 的 Podman 虚拟机还需为该 socket 的控制平面容器配置适当权限。本轮本机验证对 API/Worker 使用 `--security-opt label=disable`，内核任务仍保持 network none、只读根文件系统、cap drop 和资源限制。不要仅修改 `SANDBOX_RUNTIME` 而遗漏 socket、路径共享或权限配置。
+
+云文档流位于 `/api/documents/{id}/stream`；Nginx 的 `/api/` 代理也必须允许 WebSocket Upgrade，不能只配置旧 `/ws/` 路径。
+
+前端镜像启动时使用官方 Nginx entrypoint 从 `/etc/resolv.conf` 读取容器 DNS，并将 `nginx.conf` 模板生成为实际配置。代理通过变量解析 `backend`，DNS 缓存为 5 秒，API 容器重建或地址变化后无需重启前端。不要把模板直接复制为运行配置，也不要将 Docker 的 `127.0.0.11` 写死到 Podman 环境。机制依据：[Nginx resolver](https://nginx.org/en/docs/http/ngx_http_core_module.html#resolver)、[变量 proxy_pass](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_pass) 和 [官方镜像 DNS entrypoint](https://github.com/nginx/docker-nginx/blob/master/entrypoint/15-local-resolvers.envsh)。
+
+发布和 Local Bridge 需要迁移至 `0024_local_bridge` 或更新版本，并部署对应 API/Worker、前端和原生沙箱。原生有限元使用实际 Gmsh/CalculiX，发布包使用 FreeCAD `Assembly::BomObject`；这些依赖已纳入沙箱 Dockerfile。Bridge 客户端从 API 下载，Python 3.11+、macOS/Linux，不增加服务端端口。安装与边界见 [发布与本地交付](docs/releases-and-local-bridge.md)。
+
+工程任务每个沙箱上限 1 GiB。`SANDBOX_MAX_CONCURRENT` 限制每个 API/Worker 进程的内核并发，多个进程的限制会叠加。4 GiB 的共享本地虚拟机应采用低并发（例如各进程为 1），避免同时运行多套验收部署；该配置不能替代生产节点的总容量调度。
 
 ## 3. 上线前验证
 
@@ -170,3 +184,10 @@ docker compose ps
 ## 7. Fusion 360 上线状态
 
 Fusion Connector 的 schema、HTTP、Palette controller、Dispatcher 和纯 Python facade 测试不能替代真实桌面 Fusion。完成 [Windows/macOS 验收矩阵](docs/fusion360-installation.md#8-windowsmacos-真实-fusion-验收门槛) 前，不得把该集成标记为 production-ready。
+
+## 8. 腾讯云独立部署（2026-09-11）
+
+新版入口为 https://www.wordswave.ai，原 https://wordswave.ai 保留。
+新旧数据库独立，旧账号和项目没有自动迁移。
+实际受管配置、固定镜像、证书与备份路径见 [腾讯云部署说明](deploy/tencent/README.md)；
+真实测试结果及未验证范围见 [部署验证报告](docs/qa/tencent-deployment-2026-09-11.md)。

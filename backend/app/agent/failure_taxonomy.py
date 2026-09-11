@@ -35,6 +35,13 @@ class FailureClass:
 # gate literal (e.g. "GeometryError") never collides with a substring match; then the
 # substring classes in the legacy _ERROR_HINTS order; `unknown` is the catch-all.
 FAILURE_CLASSES: list[FailureClass] = [
+    FailureClass(
+        key="dfm_violation", label="DFMError",
+        cause="真实制造规则检查发现几何问题",
+        fix_hint="根据实际规则、测量值和建议修改未被用户锁定的制造特征，随后重新执行全部校验",
+        fix_scope="保留用户硬约束、孔数量、孔位和关键尺寸；无法兼容时明确失败，不放宽规则",
+        fix_path=FixPath.CODE, retry_budget=2, gates=("DFMError",),
+    ),
     # --- model-provider failures cannot be repaired by changing CAD code ---
     FailureClass(
         key="provider_configuration",

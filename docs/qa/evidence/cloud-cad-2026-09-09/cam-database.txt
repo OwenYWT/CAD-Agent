@@ -1,0 +1,1 @@
+real dispatch, input/output lineage, sealed runtime, no CAD mutation, immutable provenance and RLS passed

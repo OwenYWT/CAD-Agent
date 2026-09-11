@@ -28,26 +28,26 @@ export default function RepairHistory({ steps, attempts }: RepairHistoryProps) {
   if (!steps || steps.length === 0) return null;
 
   return (
-    <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900">
+    <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 type-body text-amber-900">
       <div className="flex items-center justify-between gap-2">
-        <div className="font-semibold">{"\u81ea\u52a8\u4fee\u590d\u8bb0\u5f55"}</div>
+        <div className="">{"\u81ea\u52a8\u4fee\u590d\u8bb0\u5f55"}</div>
         {attempts && attempts > 1 && (
-          <div className="text-[11px] text-amber-700">{"\u5171\u5c1d\u8bd5"} {attempts} {"\u6b21"}</div>
+          <div className="type-caption text-amber-700">{"\u5171\u5c1d\u8bd5"} {attempts} {"\u6b21"}</div>
         )}
       </div>
       <div className="mt-2 space-y-2">
         {steps.map((step, index) => (
           <div key={`${step.attempt}-${step.stage}-${index}`} className="flex gap-2">
-            <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-200 text-[10px] font-semibold text-amber-800">
+            <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-200 type-caption  text-amber-800">
               {step.attempt}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="font-medium">{STAGE_LABEL[step.stage] || step.stage}</span>
-                <span className="rounded bg-white/70 px-1.5 py-0.5 text-[10px] text-amber-700">
+                <span className="">{STAGE_LABEL[step.stage] || step.stage}</span>
+                <span className="rounded bg-white/70 px-1.5 py-0.5 type-caption text-amber-700">
                   {ACTION_LABEL[step.action] || step.action}
                 </span>
-                <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
+                <span className="rounded bg-emerald-50 px-1.5 py-0.5 type-caption text-emerald-700">
                   {STATUS_LABEL[step.status] || step.status}
                 </span>
               </div>

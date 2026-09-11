@@ -12,9 +12,13 @@ export interface DurableWriteContext {
   projectId: string | null;
   branchId: string | null;
   currentRevisionId: string | null;
+  stateVersion?: number;
 }
 
-export function durableWriteIdentity(context: DurableWriteContext) {
+export function durableWriteIdentity(context: DurableWriteContext): {
+  project_id?: string; branch_id?: string; expected_base_revision_id?: string;
+  expected_state_version?: number; idempotency_key?: string;
+} {
   if (
     !context.projectId
     || !context.branchId
@@ -26,6 +30,7 @@ export function durableWriteIdentity(context: DurableWriteContext) {
     project_id: context.projectId,
     branch_id: context.branchId,
     expected_base_revision_id: context.currentRevisionId,
+    ...(context.stateVersion !== undefined ? { expected_state_version: context.stateVersion } : {}),
     idempotency_key: createId(),
   };
 }

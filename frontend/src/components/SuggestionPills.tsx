@@ -7,12 +7,12 @@ interface SuggestionPillsProps {
 }
 
 const INTENT_STYLES: Record<PromptSuggestion["intent"], string> = {
-  generate: "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100",
-  clarify: "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100",
+  generate: "border-[var(--agent-border)] bg-[var(--agent-soft)] text-[var(--agent)] hover:border-[var(--agent)]",
+  clarify: "border-[var(--agent-border)] bg-[var(--agent-soft)] text-[var(--agent)] hover:border-[var(--agent)]",
   modify: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
   repair: "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100",
-  printability: "border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100",
-  explain: "border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100",
+  printability: "border-[var(--agent-border)] bg-[var(--agent-soft)] text-[var(--agent)] hover:border-[var(--agent)]",
+  explain: "border-[var(--line)] bg-[var(--surface-soft)] text-[var(--muted)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]",
 };
 
 export default function SuggestionPills({ suggestions, disabled, onSelect }: SuggestionPillsProps) {
@@ -27,7 +27,7 @@ export default function SuggestionPills({ suggestions, disabled, onSelect }: Sug
           disabled={disabled}
           onClick={() => onSelect(suggestion)}
           title={suggestion.prompt}
-          className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${INTENT_STYLES[suggestion.intent]}`}
+          className={`shrink-0 rounded-full border px-3 py-1 type-control  transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${INTENT_STYLES[suggestion.intent]}`}
         >
           {suggestion.label}
         </button>

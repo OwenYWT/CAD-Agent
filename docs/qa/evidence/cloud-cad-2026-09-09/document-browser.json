@@ -1,0 +1,39 @@
+{
+  "restore": {
+    "state_version": 2,
+    "feature_id": "97deb5a3-9d8f-5604-836b-17b31c2d913d",
+    "diameter": 8.0,
+    "real_webgl": true
+  },
+  "local_camera": {
+    "kernel_operations_created": 0
+  },
+  "semantic_context": {
+    "annotation_version": 1,
+    "intent_persisted": true,
+    "inspection_created_kernel_jobs": 0
+  },
+  "parameter_submitted": {
+    "workflow_id": "8919ed70-61f4-4dfb-a1a4-268855095b86",
+    "diameter_target": 9.0
+  },
+  "ui_review_commit": {
+    "state_version": 3,
+    "stable_feature_id": true,
+    "changed_mesh": true
+  },
+  "reload_after_commit": {
+    "same_document": true,
+    "parameter_value": 9.0
+  },
+  "cross_account_browser": {
+    "readonly": true,
+    "both_comments_visible": true,
+    "presence_sessions_at_least": 2
+  },
+  "browser_complete": {
+    "page_errors": [],
+    "mobile_no_horizontal_overflow": true,
+    "screenshots": "/tmp/cad-native-expanded-final-browser-shots"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "merge_workflow_id": "cb94278b-74dd-402a-a0a8-3479401da3be",
+  "created_branch": {
+    "document_id": "13b92155-67fa-4ea9-9726-45267a4263db",
+    "tenant_id": "8a735cd2-ab5f-5e99-8cc5-77d32c92eadc",
+    "workflow_run_id": "6a51c6a2-4aea-40cf-abef-8fa61de666d1"
+  },
+  "geometry_adoption_reviewed": true,
+  "target_annotation_preserved": true,
+  "fork_created_and_committed_in_browser": true,
+  "page_errors": [],
+  "console_errors": []
+}

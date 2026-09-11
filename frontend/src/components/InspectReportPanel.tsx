@@ -42,12 +42,12 @@ function formatDimensions(report: InspectReport) {
 
 function CheckRow({ check }: { check: InspectCheck }) {
   return (
-    <div className="flex items-start justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2">
+    <div className="flex items-start justify-between gap-3 rounded-lg bg-[var(--surface-soft)] px-3 py-2">
       <div>
-        <div className="text-xs font-medium text-gray-700">{engineeringCheckLabel(check.name)}</div>
-        <div className="mt-0.5 text-xs text-gray-500">{check.message}</div>
+        <div className="type-body  text-[var(--ink)]">{engineeringCheckLabel(check.name)}</div>
+        <div className="mt-0.5 type-body text-[var(--muted)]">{check.message}</div>
       </div>
-      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${CHECK_META[check.status] || "bg-gray-100 text-gray-600"}`}>
+      <span className={`shrink-0 rounded-full px-2 py-0.5 type-caption  ${CHECK_META[check.status] || "bg-[var(--subtle)] text-[var(--muted)]"}`}>
         {CHECK_STATUS_LABEL[check.status] || check.status}
       </span>
     </div>
@@ -62,49 +62,49 @@ export default function InspectReportPanel({ report }: InspectReportPanelProps) 
   const exports = report.available_exports || [];
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+    <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">{"\u53ef\u6253\u5370\u6027\u68c0\u67e5"}</h3>
-          <p className="text-xs text-gray-500">{"\u57fa\u4e8e\u51e0\u4f55\u6821\u9a8c\u3001\u5bfc\u51fa\u6587\u4ef6\u548c\u4fee\u590d\u5386\u53f2\u751f\u6210"}</p>
+          <h3 className="type-section-heading  text-[var(--ink)]">{"\u53ef\u6253\u5370\u6027\u68c0\u67e5"}</h3>
+          <p className="type-body text-[var(--muted)]">{"\u57fa\u4e8e\u51e0\u4f55\u6821\u9a8c\u3001\u5bfc\u51fa\u6587\u4ef6\u548c\u4fee\u590d\u5386\u53f2\u751f\u6210"}</p>
         </div>
-        <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${verdict.className}`}>
+        <span className={`rounded-full border px-2.5 py-1 type-body  ${verdict.className}`}>
           {verdict.label}
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-lg bg-gray-50 p-2">
-          <div className="text-gray-500">{"\u5916\u5f62\u5c3a\u5bf8"}</div>
-          <div className="mt-1 font-medium text-gray-900">{formatDimensions(report)}</div>
+      <div className="grid grid-cols-2 gap-2 type-body">
+        <div className="rounded-lg bg-[var(--surface-soft)] p-2">
+          <div className="text-[var(--muted)]">{"\u5916\u5f62\u5c3a\u5bf8"}</div>
+          <div className="mt-1  text-[var(--ink)]">{formatDimensions(report)}</div>
         </div>
-        <div className="rounded-lg bg-gray-50 p-2">
-          <div className="text-gray-500">{"\u4f53\u79ef"}</div>
-          <div className="mt-1 font-medium text-gray-900">{formatMaybeNumber(report.volume, " mm³")}</div>
+        <div className="rounded-lg bg-[var(--surface-soft)] p-2">
+          <div className="text-[var(--muted)]">{"\u4f53\u79ef"}</div>
+          <div className="mt-1  text-[var(--ink)]">{formatMaybeNumber(report.volume, " mm³")}</div>
         </div>
-        <div className="rounded-lg bg-gray-50 p-2">
-          <div className="text-gray-500">{"\u6c34\u5bc6\u6027"}</div>
-          <div className="mt-1 font-medium text-gray-900">{report.is_watertight ? "\u901a\u8fc7" : "\u5931\u8d25\u6216\u672a\u8bc4\u4f30"}</div>
+        <div className="rounded-lg bg-[var(--surface-soft)] p-2">
+          <div className="text-[var(--muted)]">{"\u6c34\u5bc6\u6027"}</div>
+          <div className="mt-1  text-[var(--ink)]">{report.is_watertight ? "\u901a\u8fc7" : "\u5931\u8d25\u6216\u672a\u8bc4\u4f30"}</div>
         </div>
-        <div className="rounded-lg bg-gray-50 p-2">
-          <div className="text-gray-500">{"\u6700\u5c0f\u58c1\u539a"}</div>
-          <div className="mt-1 font-medium text-gray-900">{formatMaybeNumber(report.min_wall_thickness, " mm")}</div>
+        <div className="rounded-lg bg-[var(--surface-soft)] p-2">
+          <div className="text-[var(--muted)]">{"\u6700\u5c0f\u58c1\u539a"}</div>
+          <div className="mt-1  text-[var(--ink)]">{formatMaybeNumber(report.min_wall_thickness, " mm")}</div>
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
-        <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-700">{"\u4fee\u590d\u6b21\u6570\uff1a"}{report.repair_attempts || 0}</span>
-        <span className="rounded-full bg-slate-100 px-2 py-1">
+      <div className="mt-3 flex flex-wrap gap-2 type-body text-[var(--muted)]">
+        <span className="rounded-full bg-[var(--agent-soft)] px-2 py-1 text-[var(--agent)]">{"\u4fee\u590d\u6b21\u6570\uff1a"}{report.repair_attempts || 0}</span>
+        <span className="rounded-full bg-[var(--subtle)] px-2 py-1">
           {"\u6765\u6e90\uff1a"}{engineeringSourceLabel(report.source || "geometry_validator")}
         </span>
         {exports.length > 0 && (
-          <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">{"\u5bfc\u51fa\u6587\u4ef6\uff1a"}{exports.join(", ")}</span>
+          <span className="rounded-full bg-[var(--agent-soft)] px-2 py-1 text-[var(--agent)]">{"\u5bfc\u51fa\u6587\u4ef6\uff1a"}{exports.join(", ")}</span>
         )}
       </div>
 
       {warnings.length > 0 && (
-        <div className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
-          <div className="mb-1 font-semibold">{"\u6253\u5370\u98ce\u9669\u63d0\u793a"}</div>
+        <div className="mt-3 rounded-lg bg-amber-50 p-3 type-body text-amber-800">
+          <div className="mb-1 ">{"\u6253\u5370\u98ce\u9669\u63d0\u793a"}</div>
           <ul className="list-disc space-y-1 pl-4">
             {warnings.map((warning, index) => (
               <li key={`${warning}-${index}`}>{warning}</li>

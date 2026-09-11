@@ -5,7 +5,7 @@ import tempfile
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import docker
@@ -22,6 +22,8 @@ class SandboxResult:
     traceback: str | None
     execution_time_ms: int
     work_dir: Path
+    error_code: str | None = None
+    error_details: dict = field(default_factory=dict)
 
 
 class PodmanRuntime:
@@ -429,7 +431,10 @@ class CadQueryExecutor:
 
             # Wait for completion
             try:
-                container.wait(timeout=effective_timeout)
+                completion = container.wait(timeout=effective_timeout)
+                reload_state = getattr(container, "reload", None)
+                if callable(reload_state):
+                    reload_state()
                 state = getattr(container, "attrs", {}).get("State", {})
                 if isinstance(state, dict) and state.get("OOMKilled") is True:
                     return SandboxResult(
@@ -441,6 +446,15 @@ class CadQueryExecutor:
                         execution_time_ms=int((time.time() - start_time) * 1000),
                         work_dir=work_dir,
                     )
+                if not (output_dir / "result.json").exists():
+                    read_logs = getattr(container, "logs", None)
+                    logs = read_logs(tail=100) if callable(read_logs) else b""
+                    if isinstance(logs, bytes):
+                        logs = logs.decode("utf-8", errors="replace")
+                    exit_code = completion.get("StatusCode") if isinstance(completion, dict) else None
+                    return SandboxResult(success=False, files={}, error_type="RuntimeError",
+                        error_message=f"No result.json produced; sandbox exited ({exit_code}): {str(logs)[-2000:]}",
+                        traceback=None, execution_time_ms=int((time.time()-start_time)*1000), work_dir=work_dir)
             except Exception:
                 try:
                     container.kill()
@@ -500,12 +514,31 @@ class CadQueryExecutor:
                 work_dir=work_dir,
             )
         else:
+            structured = result_data.get("error")
+            if not isinstance(structured, dict):
+                structured = {}
+            is_structured = (
+                structured.get("schema_version") == "mcad-error.v1"
+                and isinstance(structured.get("code"), str)
+                and isinstance(structured.get("message"), str)
+                and isinstance(structured.get("details", {}), dict)
+            )
             return SandboxResult(
                 success=False,
                 files={},
-                error_type=result_data.get("error_type"),
-                error_message=result_data.get("error_message"),
+                error_type=(
+                    result_data.get("error_type")
+                    if not is_structured
+                    else "StructuredExecutionError"
+                ),
+                error_message=(
+                    structured.get("message")
+                    if is_structured
+                    else result_data.get("error_message")
+                ),
                 traceback=result_data.get("traceback"),
                 execution_time_ms=elapsed,
                 work_dir=work_dir,
+                error_code=(structured.get("code") if is_structured else None),
+                error_details=(dict(structured) if is_structured else {}),
             )

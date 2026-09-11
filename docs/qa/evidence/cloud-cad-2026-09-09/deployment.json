@@ -1,0 +1,188 @@
+{
+  "recorded_at_unix": 1788950136.523662,
+  "browser_url": "http://127.0.0.1:8087/",
+  "database": "cad_native_expansion_acceptance",
+  "object_store_bucket": "cad-native-expansion-acceptance",
+  "containers": [
+    {
+      "name": "cad-native-expanded-api-final",
+      "image": "sha256:461a7056a855260c38a45f6f09f31cecb9b3bf70a4c5de57d423652483b06e78",
+      "status": "running",
+      "restart": "unless-stopped",
+      "application_source_overlay": false,
+      "test_source_mounted_readonly": true
+    },
+    {
+      "name": "cad-native-expanded-worker-final",
+      "image": "sha256:461a7056a855260c38a45f6f09f31cecb9b3bf70a4c5de57d423652483b06e78",
+      "status": "running",
+      "restart": "unless-stopped",
+      "application_source_overlay": false,
+      "test_source_mounted_readonly": false
+    },
+    {
+      "name": "cad-native-expanded-frontend-final",
+      "image": "sha256:23e3fce8cdfe1d81912480fb906261ecd27f08db1f5c09971c91f172713fa1d9",
+      "status": "running",
+      "restart": "unless-stopped",
+      "application_source_overlay": false,
+      "test_source_mounted_readonly": false
+    }
+  ],
+  "readiness": [
+    {
+      "port": 8017,
+      "status": 200,
+      "checks": {
+        "status": "ready",
+        "problems": [],
+        "durable_control_plane": {
+          "status": "ready",
+          "dependencies": {
+            "postgresql": {
+              "status": "ready",
+              "latency_ms": 9
+            },
+            "object_store": {
+              "status": "ready",
+              "latency_ms": 8
+            },
+            "temporal": {
+              "status": "ready",
+              "latency_ms": 7
+            },
+            "temporal_worker": {
+              "status": "ready",
+              "latency_ms": 9,
+              "workflow_pollers": 1,
+              "workflow_newest_age_ms": 82,
+              "activity_pollers": 1,
+              "activity_newest_age_ms": 4039
+            },
+            "temporal_agent_v2_worker": {
+              "status": "ready",
+              "latency_ms": 9,
+              "workflow_pollers": 1,
+              "workflow_newest_age_ms": 8440,
+              "activity_pollers": 1,
+              "activity_newest_age_ms": 44
+            }
+          },
+          "problems": []
+        }
+      }
+    },
+    {
+      "port": 8018,
+      "status": 200,
+      "checks": {
+        "status": "ready",
+        "problems": [],
+        "durable_control_plane": {
+          "status": "ready",
+          "dependencies": {
+            "postgresql": {
+              "status": "ready",
+              "latency_ms": 6
+            },
+            "object_store": {
+              "status": "ready",
+              "latency_ms": 3
+            },
+            "temporal": {
+              "status": "ready",
+              "latency_ms": 4
+            },
+            "temporal_worker": {
+              "status": "ready",
+              "latency_ms": 6,
+              "workflow_pollers": 1,
+              "workflow_newest_age_ms": 105,
+              "activity_pollers": 1,
+              "activity_newest_age_ms": 4062
+            },
+            "temporal_agent_v2_worker": {
+              "status": "ready",
+              "latency_ms": 6,
+              "workflow_pollers": 1,
+              "workflow_newest_age_ms": 8463,
+              "activity_pollers": 1,
+              "activity_newest_age_ms": 67
+            }
+          },
+          "problems": []
+        }
+      }
+    },
+    {
+      "port": 8087,
+      "status": 200,
+      "checks": {
+        "status": "ready",
+        "problems": [],
+        "durable_control_plane": {
+          "status": "ready",
+          "dependencies": {
+            "postgresql": {
+              "status": "ready",
+              "latency_ms": 6
+            },
+            "object_store": {
+              "status": "ready",
+              "latency_ms": 5
+            },
+            "temporal": {
+              "status": "ready",
+              "latency_ms": 3
+            },
+            "temporal_worker": {
+              "status": "ready",
+              "latency_ms": 6,
+              "workflow_pollers": 1,
+              "workflow_newest_age_ms": 124,
+              "activity_pollers": 1,
+              "activity_newest_age_ms": 4081
+            },
+            "temporal_agent_v2_worker": {
+              "status": "ready",
+              "latency_ms": 5,
+              "workflow_pollers": 1,
+              "workflow_newest_age_ms": 8483,
+              "activity_pollers": 1,
+              "activity_newest_age_ms": 86
+            }
+          },
+          "problems": []
+        }
+      }
+    }
+  ],
+  "static_assets": [
+    {
+      "path": "/assets/Icon-DrIuPs7V.js",
+      "size_bytes": 182608,
+      "sha256": "5cff80cec63ebbef69b915515674fcee5acf2e7d9cd3836f7cb70c2b80f0a67f"
+    },
+    {
+      "path": "/assets/OrbitControls-B636ITP0.js",
+      "size_bytes": 900984,
+      "sha256": "e03b6c7ce230ca71dd5a8a451217534d3fcf859ddfead50e3985c6f0e0e86be9"
+    },
+    {
+      "path": "/assets/index-A1INGDtn.css",
+      "size_bytes": 54498,
+      "sha256": "20fb9eaf1a01ff1289179189632b1909556bdfc2775a5d0fb676ac369c85f47a"
+    },
+    {
+      "path": "/assets/index-DOjKWsMV.js",
+      "size_bytes": 344335,
+      "sha256": "00dbfb57581d91b9cbf298d4d22242a7097fe7ef9f7991e40806b2f64e9fc25e"
+    },
+    {
+      "path": "/assets/wordswave-logo-CadXiMWD.jpg",
+      "size_bytes": 140221,
+      "sha256": "69cdb95c55ca00205c8b0d25ccb6a41ef7d44bf7790fc26dc6d6a980df362b88"
+    }
+  ],
+  "anonymous_account_access_denied": true
+}

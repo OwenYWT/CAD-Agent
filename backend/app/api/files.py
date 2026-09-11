@@ -12,6 +12,7 @@ from app.storage.file_ownership import get_project_file, request_belongs_to
 router = APIRouter()
 
 MEDIA_TYPES = {
+    ".fcstd": "application/vnd.freecad.fcstd",
     ".step": "application/step",
     ".stp": "application/step",
     ".stl": "application/sla",
@@ -19,13 +20,24 @@ MEDIA_TYPES = {
     ".svg": "image/svg+xml",
     ".png": "image/png",
     ".json": "application/json",
+    ".csv": "text/csv; charset=utf-8",
     ".py": "text/x-python",
     ".bas": "text/plain",
 }
 
 # Allowed file extensions for download
 _ALLOWED_EXTENSIONS = frozenset({
-    ".step", ".stp", ".stl", ".dxf", ".svg", ".png", ".json", ".py", ".bas",
+    ".fcstd",
+    ".step",
+    ".stp",
+    ".stl",
+    ".dxf",
+    ".svg",
+    ".png",
+    ".json",
+    ".csv",
+    ".py",
+    ".bas",
 })
 
 # request_id must be a UUID-like string (hex + hyphens)

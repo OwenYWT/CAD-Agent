@@ -1,0 +1,22 @@
+# Offline/restricted-network application rebuild from an already verified
+# backend image. The default Dockerfile remains the clean dependency build.
+# Build from the repository root and explicitly select the trusted base image.
+ARG VERIFIED_BACKEND_IMAGE
+FROM ${VERIFIED_BACKEND_IMAGE}
+
+WORKDIR /app/backend
+COPY backend/requirements.txt /tmp/cad-agent-required-dependencies.txt
+RUN python -c "from pathlib import Path; a=Path('/app/backend/requirements.txt'); b=Path('/tmp/cad-agent-required-dependencies.txt'); assert a.read_bytes()==b.read_bytes(), 'Dependency declarations changed; build backend/Dockerfile with network access first'" \
+    && python -m pip check
+
+# Clear the base image's application snapshot so removed modules cannot survive
+# COPY. These paths are inside this new image layer, never the host workspace.
+RUN rm -rf /app/backend/app /app/backend/examples /app/backend/alembic /app/third_party/cadskills
+COPY backend/app ./app
+COPY backend/examples ./examples
+COPY backend/alembic.ini .
+COPY backend/alembic ./alembic
+COPY third_party/cadskills /app/third_party/cadskills
+
+EXPOSE 8000
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

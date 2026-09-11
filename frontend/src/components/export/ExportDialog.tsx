@@ -125,14 +125,14 @@ export default function ExportDialog({ open, jobs, requestId, onClose }: ExportD
     >
       <div className="space-y-5 p-5">
         <section>
-          <h3 className="mb-2 text-xs font-semibold text-[var(--muted)]">本地产物</h3>
-          {downloadError ? <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800" role="alert">{downloadError}</div> : null}
+          <h3 className="mb-2 type-section-heading  text-[var(--muted)]">本地产物</h3>
+          {downloadError ? <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 type-body text-red-800" role="alert">{downloadError}</div> : null}
           {jobs.length ? (
             <div className="divide-y divide-[var(--line)] overflow-hidden rounded-lg border border-[var(--line)]">
               {jobs.map((job) => (
                 <div className="flex min-h-[66px] items-center gap-3 px-4 py-3" key={job.id}>
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--subtle)] text-[var(--muted)]"><Icon name={job.format === "ZIP" ? "layers" : "file"} size={17} /></span>
-                  <div className="min-w-0 flex-1"><p className="text-sm font-medium text-[var(--ink)]">{job.label}</p><p className="mt-0.5 truncate text-[11px] text-[var(--faint)]">{job.artifact?.name || job.limitation}</p></div>
+                  <div className="min-w-0 flex-1"><p className="type-body  text-[var(--ink)]">{job.label}</p><p className="mt-0.5 truncate type-caption text-[var(--faint)]">{job.artifact?.name || job.limitation}</p></div>
                   <button className={`workspace-button ${job.status === "available" ? "workspace-button--primary" : ""}`} disabled={job.status !== "available" || active === job.id} onClick={() => void download(job)} type="button">{active === job.id ? "下载中" : job.status === "available" ? "下载" : "不可用"}</button>
                 </div>
               ))}
@@ -142,7 +142,7 @@ export default function ExportDialog({ open, jobs, requestId, onClose }: ExportD
 
         <section>
           <div className="mb-2 flex items-center justify-between gap-3">
-            <div><h3 className="text-xs font-semibold text-[var(--muted)]">Onshape 云端发布</h3><p className="mt-1 text-[11px] text-[var(--faint)]">将当前真实 STEP 文件提交到后端配置的 Onshape 账号。</p></div>
+            <div><h3 className="type-section-heading  text-[var(--muted)]">Onshape 云端发布</h3><p className="mt-1 type-caption text-[var(--faint)]">将当前真实 STEP 文件提交到后端配置的 Onshape 账号。</p></div>
             {onshapeStatus === "success" && canPublish ? <button className="workspace-button workspace-button--primary" disabled={onshapeAction !== null} onClick={() => void publish()} type="button">{onshapeAction === "publish" ? "发布中" : onshapeLink ? "重新发布" : "发布"}</button> : null}
           </div>
           <div className="rounded-lg border border-[var(--line)] p-4">
@@ -154,10 +154,10 @@ export default function ExportDialog({ open, jobs, requestId, onClose }: ExportD
             {onshapeStatus === "success" && canPublish && !onshapeLink ? <InlineState detail={`将发布 ${stepArtifact?.name || "STEP 文件"}；新文档默认${onshapeConfig?.default_document_public ? "按部署配置公开" : "保持私有"}。`} title="尚未发布" /> : null}
             {onshapeStatus === "success" && onshapeLink ? (
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-sky-50 text-sky-700"><Icon name="box" size={18} /></span>
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[var(--agent-soft)] text-[var(--agent)]"><Icon name="box" size={18} /></span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-[var(--ink)]">{onshapeLink.document_name || "Onshape 文档"}</p>
-                  <p className="mt-1 text-xs text-[var(--muted)]">{onshapeStatusLabel(onshapeLink.status)} · {onshapeLink.step_filename || stepArtifact?.name}</p>
+                  <p className="truncate type-body  text-[var(--ink)]">{onshapeLink.document_name || "Onshape 文档"}</p>
+                  <p className="mt-1 type-body text-[var(--muted)]">{onshapeStatusLabel(onshapeLink.status)} · {onshapeLink.step_filename || stepArtifact?.name}</p>
                 </div>
                 <div className="flex gap-2">
                   {onshapeLink.translation_id ? <button className="workspace-button" disabled={onshapeAction !== null} onClick={() => void refresh()} type="button">{onshapeAction === "refresh" ? "刷新中" : "刷新状态"}</button> : null}
@@ -165,7 +165,7 @@ export default function ExportDialog({ open, jobs, requestId, onClose }: ExportD
                 </div>
               </div>
             ) : null}
-            {onshapeError && onshapeStatus === "success" ? <p className="mt-3 text-xs text-red-700" role="alert">{onshapeError}</p> : null}
+            {onshapeError && onshapeStatus === "success" ? <p className="mt-3 type-body text-red-700" role="alert">{onshapeError}</p> : null}
           </div>
         </section>
       </div>

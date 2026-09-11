@@ -19,6 +19,12 @@ from app.services.durable_submission import (
     submit_durable_workflow,
     wait_for_compatibility_response,
 )
+from app.services.operation_resolution import (
+    OperationResolutionError,
+    load_revision_source_inventory,
+    resolve_rest_generate_submission,
+    resolve_rest_modify_submission,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -29,6 +35,10 @@ async def generate(req: GenerateRequest, request: Request, api_key: str | None =
     """从自然语言描述生成 CAD 模型 (同步, 有总超时上限)"""
     await rate_limiter.check(request, api_key)
     try:
+        resolution = resolve_rest_generate_submission(
+            base_revision_id=req.expected_base_revision_id,
+            output_formats=req.output_formats,
+        )
         submission = await submit_durable_workflow(
             current_principal(),
             project_id=req.project_id,
@@ -39,6 +49,8 @@ async def generate(req: GenerateRequest, request: Request, api_key: str | None =
             objective=req.prompt,
             output_formats=req.output_formats,
             manufacturing_profile=req.manufacturing_profile,
+            modeling_backend=resolution.modeling_backend,
+            operation_context=resolution.operation_context,
         )
         response = await wait_for_compatibility_response(
             current_principal(),
@@ -125,8 +137,20 @@ async def modify(req: ModifyRequest, request: Request, api_key: str | None = Dep
     """基于已有代码修改 CAD 模型"""
     await rate_limiter.check(request, api_key)
     try:
+        principal = current_principal()
+        inventory = await load_revision_source_inventory(
+            principal,
+            project_id=req.project_id,
+            revision_id=req.expected_base_revision_id,
+        )
+        resolution = resolve_rest_modify_submission(
+            requested_backend=req.modeling_backend,
+            base_revision_id=req.expected_base_revision_id,
+            inventory=inventory,
+            request_code=req.code,
+        )
         submission = await submit_durable_workflow(
-            current_principal(),
+            principal,
             project_id=req.project_id,
             branch_id=req.branch_id,
             expected_base_revision_id=req.expected_base_revision_id,
@@ -134,10 +158,12 @@ async def modify(req: ModifyRequest, request: Request, api_key: str | None = Dep
             operation="modify",
             objective=req.prompt,
             output_formats=req.output_formats,
-            code=req.code,
+            code=resolution.existing_code,
+            modeling_backend=resolution.modeling_backend,
+            operation_context=resolution.operation_context,
         )
         response = await wait_for_compatibility_response(
-            current_principal(),
+            principal,
             submission,
             timeout_seconds=settings.generate_deadline_s,
         )
@@ -153,6 +179,15 @@ async def modify(req: ModifyRequest, request: Request, api_key: str | None = Dep
                 content=response.model_dump(mode="json"),
             )
         return response
+    except OperationResolutionError as exc:
+        return JSONResponse(
+            status_code=422,
+            content=GenerateResponse(
+                request_id=str(uuid.uuid4()),
+                success=False,
+                error=exc.public_error(),
+            ).model_dump(mode="json"),
+        )
     except StaleBaseRevision as exc:
         return JSONResponse(
             status_code=409,

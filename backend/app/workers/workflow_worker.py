@@ -12,6 +12,7 @@ from app.agent.durable_repair import DurableRepairSourceGenerator
 from app.db import database_readiness
 from app.execution.backend import ExecutionBackend
 from app.execution.composition import get_execution_backend
+from app.freecad.operation_generator import FreeCADOperationGenerator
 from app.object_store import object_store_readiness
 from app.temporal_client import get_temporal_client
 from app.workflows.activities import McadWorkflowActivities
@@ -19,6 +20,7 @@ from app.workflows.modeling import DurableModelingSourceGenerator
 from app.workflows.agent_v2 import McadAgentWorkflowV2
 from app.validation.durable_visual import DurableVisualValidator
 from app.workflows.definitions import McadCheckWorkflow, McadDurableWorkflow
+from app.services.workflow_dispatch import run_dispatcher, dispatcher_readiness
 
 
 def build_workflow_worker(
@@ -43,6 +45,7 @@ def build_agent_v2_workflow_worker(
     durable_modeling: DurableModelingSourceGenerator | None = None,
     durable_repair: DurableRepairSourceGenerator | None = None,
     durable_visual: DurableVisualValidator | None = None,
+    freecad_operations: FreeCADOperationGenerator | None = None,
 ) -> Worker:
     """Build the version-isolated V2 worker on its dedicated task queue."""
     activities = McadWorkflowActivities(
@@ -51,6 +54,7 @@ def build_agent_v2_workflow_worker(
         durable_modeling=durable_modeling,
         durable_repair=durable_repair,
         durable_visual=durable_visual,
+        freecad_operations=freecad_operations,
     )
     return Worker(
         client,
@@ -64,13 +68,16 @@ async def run_worker() -> None:
     settings.assert_sandbox_config_safe()
     settings.assert_durable_control_plane_config_safe()
     await database_readiness()
+    await dispatcher_readiness()
     await object_store_readiness()
     backend = get_execution_backend()
     await asyncio.to_thread(backend.runtime_snapshot)
     client = await get_temporal_client()
     v1_worker = build_workflow_worker(client, backend=backend)
     v2_worker = build_agent_v2_workflow_worker(client, backend=backend)
-    await asyncio.gather(v1_worker.run(), v2_worker.run())
+    await asyncio.gather(v1_worker.run(), v2_worker.run(), run_dispatcher(
+        client, task_queues=(settings.temporal_task_queue, settings.temporal_agent_v2_task_queue),
+    ))
 
 
 def main() -> None:

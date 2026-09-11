@@ -9,6 +9,7 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.api.auth import verify_api_key
@@ -98,6 +99,11 @@ async def _run_durable_check(
         ),
     )
     response.headers["X-Workflow-Run-ID"] = str(workflow_run_id)
+    if handle is None:
+        return JSONResponse(status_code=202,
+            headers={"X-Workflow-Run-ID": str(workflow_run_id)},
+            content={"workflow_run_id": str(workflow_run_id), "task_status": "pending",
+                     "message": "检查请求已持久保存，等待工作流派发。"})
     try:
         result = await asyncio.wait_for(
             handle.result(),

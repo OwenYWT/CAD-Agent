@@ -9,7 +9,7 @@ import signal
 import socket
 import sys
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
@@ -43,6 +43,7 @@ from app.repositories.revisions import (
     create_candidate_change_set,
     create_initial_branch,
 )
+from app.services.change_sets import accept_change_set, commit_change_set
 from app.temporal_client import get_temporal_client, reset_temporal_client
 from app.workers.workflow_worker import (
     build_agent_v2_workflow_worker,
@@ -60,6 +61,9 @@ from app.workflows.temporal import (
 )
 
 
+REAL_FREECAD_AGENT = os.environ.get("CAD_AGENT_TEST_REAL_FREECAD_AGENT") == "1"
+
+
 ROOT = Path(__file__).resolve().parents[2]
 TEST_DATABASE_URL = os.environ.get("CAD_AGENT_TEST_DATABASE_URL", "")
 RUN_EXTERNAL = (
@@ -74,6 +78,46 @@ pytestmark = [
     ),
     pytest.mark.slow,
 ]
+
+
+@pytest.fixture(autouse=True)
+def legacy_cadquery_history(request, monkeypatch):
+    """Exercise the retained pre-cutover source-code history explicitly.
+
+    These fixtures inject CadQuery codegen/repair providers. New 3D generation
+    intentionally selects FreeCAD, so running them as a new policy history no
+    longer reaches their fault-injection boundary. Only the old Temporal patch
+    decision is controlled; execution, fencing, artifacts and recovery stay real.
+    New-policy FreeCAD is covered by the fused test and live HTTP/browser suite.
+    """
+    source_history_tests = {
+        "test_agent_v2_confirmed_plan_seals_reviewable_candidate",
+        "test_agent_v2_real_visual_provider_persists_provenance",
+        "test_agent_v2_visual_mismatch_repairs_and_revalidates_geometry",
+        "test_agent_v2_user_code_failure_creates_durable_repair_attempt",
+        "test_agent_v2_geometry_failure_repairs_and_revalidates_new_manifest",
+        "test_agent_v2_repeated_repair_failure_stops_without_second_llm_call",
+        "test_agent_v2_complex_steps_survive_worker_restart_without_regeneration",
+        "test_agent_v2_real_repair_provider_persists_provenance_and_attempt",
+        "test_agent_v2_real_planner_retriever_codegen_and_execution_provenance",
+    }
+    legacy_validation_tests = source_history_tests | {
+        "test_agent_v2_assembly_executes_parts_then_combine_with_source_edges",
+    }
+    if request.node.name not in legacy_validation_tests:
+        return
+    from temporalio import workflow
+
+    original = workflow.patched
+
+    def legacy_patch(change_id):
+        if change_id == "agent-v2-backend-policy-v1" and request.node.name in source_history_tests:
+            return False
+        if change_id == "agent-v2-validation-repair-v2":
+            return False
+        return original(change_id)
+
+    monkeypatch.setattr(workflow, "patched", legacy_patch)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -207,9 +251,18 @@ async def clean_control_plane():
                 )
             )
 
+    # A failed/timed-out test may leave a Temporal history retrying after its
+    # relational fixture is cleared. Never let the next test consume that work.
+    queues = (settings.temporal_task_queue, settings.temporal_agent_v2_task_queue)
+    suffix = uuid4().hex[:12]
+    settings.temporal_task_queue = f"{queues[0]}-{suffix}"
+    settings.temporal_agent_v2_task_queue = f"{queues[1]}-{suffix}"
     await clean()
-    yield
-    await clean()
+    try:
+        yield
+    finally:
+        await clean()
+        settings.temporal_task_queue, settings.temporal_agent_v2_task_queue = queues
 
 
 async def _seed_project(label: str):
@@ -249,10 +302,310 @@ async def _wait_for_status(owner, workflow_id, expected: set[str], timeout=30):
             )
         if status in expected:
             return status
+        if status in {"failed", "cancelled", "timed_out", "succeeded"}:
+            async with tenant_transaction(owner.tenant_id, owner.principal_id) as connection:
+                diagnostic = (await connection.execute(text(
+                    "SELECT status,error_code,error_message FROM workflow_runs WHERE id=:id"
+                ), {"id": workflow_id})).mappings().one()
+            raise AssertionError(f"Unexpected terminal workflow: {dict(diagnostic)}")
         await asyncio.sleep(0.1)
     raise AssertionError(
         f"workflow {workflow_id} did not reach {sorted(expected)}"
     )
+
+
+@pytest.mark.asyncio(loop_scope="module")
+@pytest.mark.skipif(
+    not REAL_FREECAD_AGENT,
+    reason="set CAD_AGENT_TEST_REAL_FREECAD_AGENT=1 for the real fused flow",
+)
+async def test_agent_v2_real_freecad_generation_validation_seal_and_commit():
+    owner, project_id, initial = await _seed_project("agent-v2-freecad-real")
+    client = await get_temporal_client()
+    objective = (
+        "Create one rectangular plate 100 mm long, 60 mm wide and 10 mm thick. "
+        "Add one centered 6 mm diameter through hole. Export STEP and STL."
+    )
+    request_payload = {
+        "branch_id": str(initial.branch_id),
+        "expected_base_revision_id": str(initial.revision_id),
+        "operation": "generate",
+        "modeling_backend": "freecad",
+        "objective": objective,
+    }
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        from app.services.run_state import create_workflow
+
+        created = await create_workflow(
+            connection,
+            tenant_id=owner.tenant_id,
+            project_id=project_id,
+            requested_by_principal_id=owner.principal_id,
+            kind="mcad.agent.v2.generate",
+            idempotency_key=f"agent-v2-freecad-real-{project_id}",
+            request_payload=request_payload,
+        )
+    request = McadAgentWorkflowV2Request(
+        workflow_run_id=created.workflow_id,
+        tenant_id=owner.tenant_id,
+        project_id=project_id,
+        principal_id=owner.principal_id,
+        branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,
+        operation="generate",
+        modeling_backend="freecad",
+        objective=objective,
+        output_formats=("step", "stl"),
+        confirmation_timeout_seconds=180,
+    )
+
+    async with build_agent_v2_workflow_worker(
+        client,
+        backend=get_execution_backend(),
+    ):
+        handle = await client.start_workflow(
+            "McadAgentWorkflowV2",
+            request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),
+            task_queue=settings.temporal_agent_v2_task_queue,
+        )
+        for _ in range(1200):
+            phase = await handle.query("phase")
+            if phase == "waiting_confirmation":
+                await confirm_mcad_workflow(
+                    created.workflow_id,
+                    accepted=True,
+                    note="确认真实 FreeCAD 计划",
+                    workflow_kind="mcad.agent.v2.generate",
+                )
+                break
+            if phase.startswith("executing:") or phase.startswith("validating:"):
+                break
+            if phase in {"failed", "cancelled", "timed_out", "reviewable"}:
+                break
+            await asyncio.sleep(0.1)
+        try:
+            result = await asyncio.wait_for(handle.result(), timeout=300)
+        except Exception as exc:
+            diagnostic = await _snapshot(owner, created.workflow_id)
+            raise AssertionError(
+                json.dumps(diagnostic, ensure_ascii=False, default=str)
+            ) from exc
+
+    assert result["status"] == "succeeded"
+    assert result["candidate_revision_id"]
+    assert result["change_set_id"]
+    artifacts = {item["artifact_kind"]: item for item in result["artifacts"]}
+    assert {"fcstd", "state", "step", "stl"}.issubset(artifacts)
+    for kind in ("fcstd", "state", "step", "stl"):
+        payload = await get_object(artifacts[kind]["object_key"])
+        assert len(payload) == artifacts[kind]["size_bytes"]
+        assert hashlib.sha256(payload).hexdigest() == artifacts[kind]["sha256"]
+
+    change_set_id = UUID(result["change_set_id"])
+    accepted = await accept_change_set(
+        tenant_id=owner.tenant_id,
+        reviewer_principal_id=owner.principal_id,
+        change_set_id=change_set_id,
+        review_note="真实 FreeCAD 回归通过",
+    )
+    assert accepted.status == "accepted"
+    committed = await commit_change_set(
+        tenant_id=owner.tenant_id,
+        reviewer_principal_id=owner.principal_id,
+        change_set_id=change_set_id,
+    )
+    assert committed.status == "committed"
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        head = await connection.scalar(
+            text("SELECT head_revision_id FROM project_branches WHERE id=:id"),
+            {"id": initial.branch_id},
+        )
+    assert str(head) == result["candidate_revision_id"]
+
+    generated_revision_id = UUID(result["candidate_revision_id"])
+    from app.services.cloud_documents import document_snapshot, document_events, DocumentConflict
+    from app.services.feature_annotations import save_annotation
+    semantic = await document_snapshot(owner, initial.branch_id)
+    hole_feature = next(f for f in semantic['features'] if f['kernel_name']=='Hole')
+    annotation = dict(revision_id=generated_revision_id, expected_version=0,
+        annotation_id=uuid4(), role='定位孔', intent='保持同心，适配定位销直径')
+    saved = await save_annotation(owner,initial.branch_id,UUID(hole_feature['id']),**annotation)
+    assert saved == {'version':1,'replayed':False}
+    assert (await save_annotation(owner,initial.branch_id,UUID(hole_feature['id']),**annotation))['replayed']
+    with pytest.raises(DocumentConflict):
+        await save_annotation(owner,initial.branch_id,UUID(hole_feature['id']),
+            **{**annotation,'annotation_id':uuid4(),'intent':'stale edit'})
+    annotated = await document_snapshot(owner,initial.branch_id)
+    assert annotated['state_version']==semantic['state_version']
+    assert next(f for f in annotated['features'] if f['kernel_name']=='Hole')['role']=='定位孔'
+    events=await document_events(owner,initial.branch_id,semantic['event_sequence'])
+    assert events[-1]['event_type']=='feature.annotated'
+    modify_objective = (
+        "Change the existing centered through hole diameter from 6 mm to 8 mm "
+        "and add a 1 mm chamfer to all outer edges. Preserve all other dimensions "
+        "and export STEP and STL."
+    )
+    modify_payload = {
+        "branch_id": str(initial.branch_id),
+        "expected_base_revision_id": str(generated_revision_id),
+        "operation": "modify",
+        "modeling_backend": "freecad",
+        "objective": modify_objective,
+    }
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        from app.services.run_state import create_workflow
+
+        modified_run = await create_workflow(
+            connection,
+            tenant_id=owner.tenant_id,
+            project_id=project_id,
+            requested_by_principal_id=owner.principal_id,
+            kind="mcad.agent.v2.modify",
+            idempotency_key=f"agent-v2-freecad-modify-real-{project_id}",
+            request_payload=modify_payload,
+        )
+    await save_annotation(owner,initial.branch_id,UUID(hole_feature['id']),
+        **{**annotation,'annotation_id':uuid4(),'expected_version':1,'intent':'后续任务需重新确认销径'})
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as connection:
+        frozen = await connection.scalar(text("SELECT arguments->'_feature_annotations' FROM cad_operations WHERE id=:id"),{'id':modified_run.workflow_id})
+        assert frozen[0]['version']==1 and frozen[0]['intent']==annotation['intent']
+    modify_request = McadAgentWorkflowV2Request(
+        workflow_run_id=modified_run.workflow_id,
+        tenant_id=owner.tenant_id,
+        project_id=project_id,
+        principal_id=owner.principal_id,
+        branch_id=initial.branch_id,
+        expected_base_revision_id=generated_revision_id,
+        operation="modify",
+        modeling_backend="freecad",
+        objective=modify_objective,
+        output_formats=("step", "stl"),
+        confirmation_timeout_seconds=180,
+    )
+
+    async with build_agent_v2_workflow_worker(
+        client,
+        backend=get_execution_backend(),
+    ):
+        modify_handle = await client.start_workflow(
+            "McadAgentWorkflowV2",
+            modify_request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(modified_run.workflow_id),
+            task_queue=settings.temporal_agent_v2_task_queue,
+        )
+        for _ in range(1200):
+            phase = await modify_handle.query("phase")
+            if phase == "waiting_confirmation":
+                await confirm_mcad_workflow(
+                    modified_run.workflow_id,
+                    accepted=True,
+                    note="确认真实 FreeCAD 参数修改",
+                    workflow_kind="mcad.agent.v2.modify",
+                )
+                break
+            if phase.startswith("executing:") or phase.startswith("validating:"):
+                break
+            if phase in {"failed", "cancelled", "timed_out", "reviewable"}:
+                break
+            await asyncio.sleep(0.1)
+        try:
+            modify_result = await asyncio.wait_for(
+                modify_handle.result(),
+                timeout=300,
+            )
+        except Exception as exc:
+            diagnostic = await _snapshot(owner, modified_run.workflow_id)
+            raise AssertionError(
+                json.dumps(diagnostic, ensure_ascii=False, default=str)
+            ) from exc
+
+    assert modify_result["status"] == "succeeded"
+    modified_artifacts = {
+        item["artifact_kind"]: item for item in modify_result["artifacts"]
+    }
+    assert {"fcstd", "state", "step", "stl"}.issubset(modified_artifacts)
+    modified_state_bytes = await get_object(modified_artifacts["state"]["object_key"])
+    modified_state = json.loads(modified_state_bytes)
+    objects = {item["name"]: item for item in modified_state["objects"]}
+    assert objects["Hole"]["properties"]["Diameter"].startswith("8.00 mm")
+    assert objects["Chamfer"]["type_id"] == "PartDesign::Chamfer"
+
+    modified_change_set_id = UUID(modify_result["change_set_id"])
+    modified_accepted = await accept_change_set(
+        tenant_id=owner.tenant_id,
+        reviewer_principal_id=owner.principal_id,
+        change_set_id=modified_change_set_id,
+        review_note="真实 FreeCAD 修改回归通过",
+    )
+    assert modified_accepted.status == "accepted"
+    modified_committed = await commit_change_set(
+        tenant_id=owner.tenant_id,
+        reviewer_principal_id=owner.principal_id,
+        change_set_id=modified_change_set_id,
+    )
+    assert modified_committed.status == "committed"
+    async with tenant_transaction(
+        owner.tenant_id,
+        owner.principal_id,
+    ) as connection:
+        modified_head = await connection.scalar(
+            text("SELECT head_revision_id FROM project_branches WHERE id=:id"),
+            {"id": initial.branch_id},
+        )
+    assert str(modified_head) == modify_result["candidate_revision_id"]
+    current = await document_snapshot(owner,initial.branch_id)
+    assert next(f for f in current['features'] if f['kernel_name']=='Hole')['annotation_version']==2
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as connection:
+        reports=(await connection.execute(text("SELECT outcome,evidence FROM agent_validation_evidence WHERE workflow_run_id IN (:generated,:modified) AND gate='dfm'"),
+            {'generated':created.workflow_id,'modified':modified_run.workflow_id})).mappings().all()
+    assert len(reports)==2
+    for row in reports:
+        report=row['evidence']
+        assert {'fdm_bridge_distance','fdm_min_feature'}.issubset(report['evaluated_rule_ids']),report
+        assert not report['unevaluated_rule_ids'],report
+        assert report['metrics']['min_feature_size_mm']>0,report
+        assert report['runtime_provenance'],report
+    print('CAD_FUSED_DFM_REPORT='+json.dumps([dict(r) for r in reports],ensure_ascii=False,default=str))
+
+    stale_objective = "Change the existing hole diameter to 9 mm."
+    stale_payload = {
+        "branch_id": str(initial.branch_id),
+        "expected_base_revision_id": str(generated_revision_id),
+        "operation": "modify",
+        "modeling_backend": "freecad",
+        "objective": stale_objective,
+    }
+    # Already-stale requests are now rejected by the atomic document enqueue,
+    # before starting Temporal. The separate persisted-stale test covers a
+    # request that becomes stale after it was queued.
+    from app.services.cloud_documents import DocumentConflict
+
+    stale_key = f"agent-v2-freecad-stale-real-{project_id}"
+    with pytest.raises(DocumentConflict):
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as connection:
+            await create_workflow(
+                connection,
+                tenant_id=owner.tenant_id,
+                project_id=project_id,
+                requested_by_principal_id=owner.principal_id,
+                kind="mcad.agent.v2.modify",
+                idempotency_key=stale_key,
+                request_payload=stale_payload,
+            )
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as connection:
+        assert await connection.scalar(text(
+            "SELECT count(*) FROM workflow_runs WHERE project_id=:project AND idempotency_key=:key"
+        ), {"project": project_id, "key": stale_key}) == 0
 
 
 class _V2PlannerStub:
@@ -313,15 +666,15 @@ class _V2AssemblyDecompositionStub:
             parts=[
                 AssemblyPart(
                     name="base",
-                    description="创建 30x20x4 mm 底座",
-                    dimensions={"length": 30, "width": 20, "height": 4},
+                    description="创建 30x20x5 mm 底座",
+                    dimensions={"length": 30, "width": 20, "height": 5},
                     position=[0, 0, 0],
                     color="lightgray",
                 ),
                 AssemblyPart(
                     name="lid",
-                    description="创建 30x20x2 mm 上盖",
-                    dimensions={"length": 30, "width": 20, "height": 2},
+                    description="创建 30x20x3 mm 上盖",
+                    dimensions={"length": 30, "width": 20, "height": 3},
                     position=[0, 0, 5],
                     color="steelblue",
                 ),
@@ -352,7 +705,7 @@ class _V2AssemblyModelingStub:
                 },
             )
         if step.kind == "assembly_part":
-            height = 4 if step.step_key == "part-01" else 2
+            height = 5 if step.step_key == "part-01" else 3
             source = (
                 "import cadquery as cq\n"
                 f"def make_{step.step_key.replace('-', '_')}():\n"
@@ -361,15 +714,22 @@ class _V2AssemblyModelingStub:
             )
         else:
             assert len(requirements["part_sources"]) == 2
-            source = (
-                "import cadquery as cq\n"
-                "def make_part_01(): return cq.Workplane('XY').box(30,20,4)\n"
-                "def make_part_02(): return cq.Workplane('XY').box(30,20,2)\n"
-                "result = cq.Assembly()\n"
-                "result.add(make_part_01(), name='base')\n"
-                "result.add(make_part_02(), name='lid', "
-                "loc=cq.Location((0,0,5)))\n"
-            )
+            # Only the provider boundary is controlled in this integration
+            # fixture.  The combine step must exercise the production
+            # deterministic combiner so the workflow and native BOM runner
+            # share the documented bottom-face-centre position contract.
+            from app.agent.code_gen import CodeGenerator
+
+            source = await CodeGenerator().generate_assembly_combiner([
+                {
+                    "name": item["function_name"],
+                    "label": item["part_name"],
+                    "code": item["source_code"],
+                    "position": item["position"],
+                    "color": item["color"],
+                }
+                for item in requirements["part_sources"]
+            ])
         return SourceGenerationResult(
             source_code=source,
             mode="3d",
@@ -895,6 +1255,7 @@ def _dxf_execution() -> McadExecutionRequest:
         source_code=(
             "import ezdxf\n"
             "doc = ezdxf.new()\n"
+            "doc.units = ezdxf.units.MM\n"
             "msp = doc.modelspace()\n"
             "msp.add_lwpolyline([(0,0),(20,0),(20,10),(0,10)], close=True)\n"
             "doc.saveas('/sandbox/output/result.dxf')\n"
@@ -1175,6 +1536,9 @@ async def test_agent_v2_confirmed_plan_seals_reviewable_candidate():
     )
     assert validation_evidence[1]["evidence"]["provider_provenance"] is None
     assert validation_evidence[2]["mode"] == "advisory"
+    assert validation_evidence[2]["outcome"] == "passed"
+    assert validation_evidence[2]["evidence"]["unevaluated_rule_ids"] == []
+    assert validation_evidence[2]["evidence"]["violations"] == []
     assert validation_evidence[2]["evidence"]["policy_hash"]
     assert validation_evidence[2]["evidence"]["policy_object"]["rules"]
     assert validation_evidence[2]["evidence"]["policy_object"][
@@ -1217,15 +1581,15 @@ async def test_agent_v2_confirmed_plan_seals_reviewable_candidate():
     assert [item["status"] for item in validation_projections] == [
         "success",
         "warn",
-        "warn",
+        "success",
     ]
     assert projected["agent.candidate.sealed"]["stage"] == "review"
-    assert projected["agent.candidate.sealed"]["risk_count"] == 2
+    assert projected["agent.candidate.sealed"]["risk_count"] == 1
     change_detail = await get_change_set_detail(
         owner,
         candidate["change_set_id"],
     )
-    assert change_detail["risk_summary"]["issue_count"] == 2
+    assert change_detail["risk_summary"]["issue_count"] == 1
     assert any(
         event["event_type"] == "agent.candidate.sealed"
         and event["projection"]["stage"] == "review"
@@ -1497,8 +1861,10 @@ async def test_agent_v2_visual_mismatch_repairs_and_revalidates_geometry():
         ("visual", "failed"),
         ("geometry", "passed"),
         ("visual", "passed"),
-        ("dfm", "failed"),
+        ("dfm", "passed"),
     ], json.dumps(diagnostic, ensure_ascii=False, default=str, sort_keys=True)
+    assert gates[-1]["evidence"]["unevaluated_rule_ids"] == []
+    assert gates[-1]["evidence"]["violations"] == []
     assert all(item["status"] == "succeeded" for item in attempts)
     assert [item["kind"] for item in attempts] == [
         "agent_model",
@@ -2153,6 +2519,39 @@ async def test_agent_v2_assembly_executes_parts_then_combine_with_source_edges()
                 )
             ).scalars()
         )
+        bom_evidence = (
+            await connection.execute(
+                text(
+                    "SELECT outcome, evidence FROM agent_validation_evidence "
+                    "WHERE workflow_run_id=:id AND gate='bom'"
+                ),
+                {"id": workflow_id},
+            )
+        ).mappings().one()
+        bom_artifacts = list(
+            (
+                await connection.execute(
+                    text(
+                        "SELECT a.artifact_kind FROM artifacts a "
+                        "JOIN agent_candidate_builds b "
+                        "ON b.candidate_revision_id=a.revision_id "
+                        "WHERE b.workflow_run_id=:id "
+                        "AND a.artifact_kind IN ('bom_json', 'bom_csv') "
+                        "ORDER BY a.artifact_kind"
+                    ),
+                    {"id": workflow_id},
+                )
+            ).scalars()
+        )
+        sealed_bom_evidence = await connection.scalar(
+            text(
+                "SELECT count(*) FROM agent_seal_evidence se "
+                "JOIN agent_candidate_seals s ON s.id=se.seal_id "
+                "JOIN agent_candidate_builds b ON b.id=s.candidate_build_id "
+                "WHERE b.workflow_run_id=:id AND se.gate='bom'"
+            ),
+            {"id": workflow_id},
+        )
     assert [row["step_key"] for row in steps] == [
         "part-01",
         "part-02",
@@ -2164,6 +2563,12 @@ async def test_agent_v2_assembly_executes_parts_then_combine_with_source_edges()
     assert manifests == 3
     assert modeling.calls.count("part-01") == 1
     assert selected_steps == ["combine"]
+    assert bom_evidence["outcome"] == "passed"
+    assert {
+        item["role"] for item in bom_evidence["evidence"]["artifacts"]
+    } == {"bom-json", "bom-csv"}
+    assert bom_artifacts == ["bom_csv", "bom_json"]
+    assert sealed_bom_evidence == 1
 
 
 @pytest.mark.asyncio(loop_scope="module")
@@ -2638,7 +3043,17 @@ async def test_real_cancellation_stops_execution_and_blocks_artifacts():
             objective="取消长时间建模",
             primary=_box_execution(delay_seconds=20),
         )
-        await _wait_for_status(owner, workflow_id, {"running"})
+        deadline = asyncio.get_running_loop().time() + 30
+        while asyncio.get_running_loop().time() < deadline:
+            active = await _snapshot(owner, workflow_id)
+            if (
+                active["attempts"]
+                and active["attempts"][-1]["status"] == "running"
+            ):
+                break
+            await asyncio.sleep(0.1)
+        else:
+            raise AssertionError("execution attempt never reached running")
         await cancel_mcad_workflow(
             tenant_id=owner.tenant_id,
             principal_id=owner.principal_id,
@@ -2693,6 +3108,15 @@ async def test_nonretryable_user_code_failure_has_no_false_success():
 @pytest.mark.asyncio(loop_scope="module")
 async def test_stale_base_fails_persisted_workflow_without_execution():
     owner, project_id, initial = await _seed_project("stale-base")
+    # Enqueue against a valid head, then advance it before any worker consumes
+    # the operation. Already-stale submissions now fail at the API/DB boundary.
+    workflow_id, handle = await start_mcad_workflow(
+        tenant_id=owner.tenant_id, project_id=project_id,
+        principal_id=owner.principal_id, branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id, kind="modify",
+        idempotency_key=f"stale-workflow-{project_id}", objective="基于过期版本修改",
+        primary=_box_execution(),
+    )
     async with tenant_transaction(
         owner.tenant_id,
         owner.principal_id,
@@ -2718,17 +3142,6 @@ async def test_stale_base_fails_persisted_workflow_without_execution():
         )
     client = await get_temporal_client()
     async with build_workflow_worker(client):
-        workflow_id, handle = await start_mcad_workflow(
-            tenant_id=owner.tenant_id,
-            project_id=project_id,
-            principal_id=owner.principal_id,
-            branch_id=initial.branch_id,
-            expected_base_revision_id=initial.revision_id,
-            kind="modify",
-            idempotency_key=f"stale-workflow-{project_id}",
-            objective="基于过期版本修改",
-            primary=_box_execution(),
-        )
         with pytest.raises(WorkflowFailureError):
             await asyncio.wait_for(handle.result(), timeout=30)
     snapshot = await _snapshot(owner, workflow_id)
@@ -2757,6 +3170,7 @@ async def test_worker_process_crash_retries_with_new_fenced_attempt():
         "DATABASE_URL": TEST_DATABASE_URL,
         "TEMPORAL_TARGET": settings.temporal_target,
         "TEMPORAL_TASK_QUEUE": settings.temporal_task_queue,
+        "TEMPORAL_AGENT_V2_TASK_QUEUE": settings.temporal_agent_v2_task_queue,
         "SANDBOX_RUNTIME": settings.sandbox_runtime,
         "SANDBOX_COMMAND": settings.sandbox_command,
         "SANDBOX_IMAGE": settings.sandbox_image,
@@ -2795,13 +3209,15 @@ async def test_worker_process_crash_retries_with_new_fenced_attempt():
             cwd=str(ROOT),
             env=env,
         )
-        restarted_api = await _start_api(env, api_port)
         await _wait_for_status(
             owner,
             workflow_id,
             {"waiting_confirmation"},
             timeout=45,
         )
+        # Keep the API down while the worker recovers. Restarting it after
+        # kernel execution also avoids an unrelated memory peak on small VMs.
+        restarted_api = await _start_api(env, api_port)
         await confirm_mcad_workflow(workflow_id, accepted=True, note="恢复后确认")
         result = await asyncio.wait_for(handle.result(), timeout=45)
         assert result["status"] == "succeeded"

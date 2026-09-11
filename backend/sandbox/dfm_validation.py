@@ -33,11 +33,17 @@ def _metrics(stl_path: Path) -> tuple[dict[str, Any], str | None]:
     import trimesh
 
     mesh_source = stl_path
+    analytic = {}
     if stl_path.suffix.lower() in {".step", ".stp"}:
         import cadquery as cq
 
         mesh_source = Path("/tmp/dfm-source.stl")
         model = cq.importers.importStep(str(stl_path))
+        try:
+            from dfm_brep import measure_brep
+        except ModuleNotFoundError:
+            from sandbox.dfm_brep import measure_brep
+        analytic = measure_brep(model.val())
         cq.exporters.export(model, str(mesh_source), exportType="STL")
     mesh = trimesh.load_mesh(mesh_source, force="mesh")
     if not isinstance(mesh, trimesh.Trimesh) or mesh.is_empty or not len(mesh.faces):
@@ -48,9 +54,11 @@ def _metrics(stl_path: Path) -> tuple[dict[str, Any], str | None]:
     overhang = 0.0
     if area > 0:
         overhang = float(
-            np.sum(mesh.area_faces[mesh.face_normals[:, 2] < -0.5]) / area
+            np.sum(mesh.area_faces[(mesh.face_normals[:, 2] < -math.cos(math.pi/4))
+                & (mesh.triangles[:,:,2].max(axis=1) > bounds[0,2]+1e-5)]) / area
         )
     metrics: dict[str, Any] = {
+        **analytic,
         "is_watertight": bool(mesh.is_watertight),
         "face_count": int(len(mesh.faces)),
         "surface_area_mm2": round(area, 6),
@@ -82,7 +90,9 @@ def _metrics(stl_path: Path) -> tuple[dict[str, Any], str | None]:
                 distances = np.linalg.norm(hits - origins[index], axis=1)
                 valid = distances[distances > 0.05]
                 if len(valid):
-                    values.append(float(np.min(valid)))
+                    # Rays start 0.01 mm outside the surface. That offset is
+                    # not material and must not let a too-thin wall pass.
+                    values.append(float(np.min(valid)) - 0.01)
         if values:
             metrics["min_wall_thickness_mm"] = round(
                 float(np.percentile(values, 5)), 6
@@ -91,13 +101,11 @@ def _metrics(stl_path: Path) -> tuple[dict[str, Any], str | None]:
             thickness_issue = "wall_thickness_unmeasurable"
     except Exception as exc:
         thickness_issue = f"wall_thickness_unavailable:{type(exc).__name__}"
-    if "min_wall_thickness_mm" not in metrics and mesh.is_watertight:
-        # The smallest oriented-box dimension is a conservative, deterministic
-        # fallback for simple solids when optional ray indexes are unavailable.
-        # Hollow/complex parts remain explicitly indeterminate below.
-        if metrics["material_ratio"] >= 0.95:
-            metrics["min_wall_thickness_mm"] = round(float(min(extents)), 6)
-            thickness_issue = None
+    # A nearly filled bounding box cannot establish local wall thickness:
+    # even a small pocket can have a thin floor. Missing measurements remain
+    # indeterminate instead of manufacturing a passing wall measurement.
+    if "min_feature_size_mm" in metrics and "min_wall_thickness_mm" in metrics:
+        metrics["min_feature_size_mm"] = min(metrics["min_feature_size_mm"], metrics["min_wall_thickness_mm"])
     return metrics, thickness_issue
 
 
@@ -106,6 +114,7 @@ def _actual(category: str, metrics: dict[str, Any]) -> float | None:
         "wall_thickness": metrics.get("min_wall_thickness_mm"),
         "overhang": metrics.get("overhang_ratio"),
         "size": metrics.get("max_size_mm"),
+        "feature": metrics.get("min_feature_size_mm"),
     }.get(category)
 
 
@@ -120,6 +129,14 @@ def _thresholds(rule: dict[str, Any], constraints: dict[str, Any]):
         elif key.startswith("max"):
             maximum = float(constraints[key])
     return minimum, maximum
+
+
+def _suggestion(rule, actual, minimum, maximum):
+    template=str(rule.get("suggestion_template") or "")
+    try:
+        return template.format(actual=actual,min=minimum,max=maximum)
+    except (KeyError,ValueError,TypeError,AttributeError):
+        return f"{rule.get('description') or rule['id']}: measured {actual:g}; min={minimum}, max={maximum}"
 
 
 def evaluate_dfm(
@@ -140,15 +157,21 @@ def evaluate_dfm(
     constraints = dict(policy.get("knowledge_constraints") or {})
     for rule in policy.get("rules") or []:
         rule_id = str(rule["id"])
-        if rule["check_type"] == "heuristic":
+        bridge_rule = rule_id == "fdm_bridge_distance"
+        if rule["check_type"] == "heuristic" and not bridge_rule:
             unevaluated.append(rule_id)
             continue
-        actual = _actual(str(rule["category"]), metrics)
+        actual = metrics.get("bridge_span_mm") if bridge_rule else _actual(str(rule["category"]), metrics)
         if actual is None or not math.isfinite(float(actual)):
             unevaluated.append(rule_id)
             continue
         evaluated.append(rule_id)
         minimum, maximum = _thresholds(rule, constraints)
+        # Older tenant policy snapshots used a heuristic bridge rule without
+        # a calibrated span. Preserve the policy: any measured bridge needs
+        # review until the user supplies a tested positive threshold.
+        if bridge_rule and maximum is None:
+            maximum = 0.0
         violated = (
             minimum is not None and actual < float(minimum)
         ) or (
@@ -165,11 +188,13 @@ def evaluate_dfm(
                         f"{rule.get('description') or rule_id}: measured {actual:g} "
                         f"{rule.get('unit') or ''}".strip()
                     ),
-                    "suggestion": str(rule.get("suggestion_template") or ""),
+                    "suggestion": _suggestion(rule, actual, minimum, maximum),
                     "source": "geometric",
                 }
             )
     issues: list[str] = []
+    if metrics.get("unanchored_roof_area_mm2",0)>1e-6:
+        issues.append("horizontal_roof_requires_support")
     if not metrics["is_watertight"]:
         issues.append("mesh_not_watertight")
     if thickness_issue and any(

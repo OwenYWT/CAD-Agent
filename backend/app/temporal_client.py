@@ -11,12 +11,17 @@ from temporalio.api.taskqueue.v1 import TaskQueue
 from temporalio.api.workflowservice.v1 import DescribeTaskQueueRequest
 from temporalio import workflow
 from temporalio.client import Client
+from temporalio.service import RPCError
 from temporalio.worker import Worker
 
 from app.config import settings
 
 
 _client: Client | None = None
+
+
+class TemporalWorkerUnavailable(RuntimeError):
+    """Submission cannot currently reach a recent worker on its exact queue."""
 
 
 async def get_temporal_client() -> Client:
@@ -77,7 +82,7 @@ async def _worker_readiness(task_queue: str) -> dict:
                 )
             )
             if not result.pollers:
-                raise RuntimeError(
+                raise TemporalWorkerUnavailable(
                     f"Temporal {name} worker has no active poller"
                 )
             ages = [
@@ -96,17 +101,20 @@ async def _worker_readiness(task_queue: str) -> dict:
             # about one minute. Ninety seconds catches a lost worker without
             # marking a healthy idle queue unavailable.
             if min(ages) > 90:
-                raise RuntimeError(
+                raise TemporalWorkerUnavailable(
                     f"Temporal {name} worker poller is stale"
                 )
             counts[f"{name}_pollers"] = len(result.pollers)
             counts[f"{name}_newest_age_ms"] = round(min(ages) * 1000)
         return counts
 
-    counts = await asyncio.wait_for(
-        _probe(),
-        timeout=settings.dependency_readiness_timeout_s,
-    )
+    try:
+        counts = await asyncio.wait_for(
+            _probe(),
+            timeout=settings.dependency_readiness_timeout_s,
+        )
+    except (TimeoutError, RPCError, OSError) as exc:
+        raise TemporalWorkerUnavailable("Temporal worker readiness probe is unavailable") from exc
     return {
         "status": "ready",
         "latency_ms": round((time.perf_counter() - started) * 1000),

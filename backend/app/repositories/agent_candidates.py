@@ -690,7 +690,7 @@ async def record_validation_evidence(
     evidence: dict[str, Any],
     attempt_id: UUID | None = None,
 ) -> ValidationEvidenceRecorded:
-    if gate not in {"artifact_integrity", "geometry", "visual", "dfm"}:
+    if gate not in {"artifact_integrity", "geometry", "visual", "dfm", "bom"}:
         raise ValueError("unsupported validation gate")
     if mode not in {"required", "advisory"}:
         raise ValueError("validation mode must be required or advisory")

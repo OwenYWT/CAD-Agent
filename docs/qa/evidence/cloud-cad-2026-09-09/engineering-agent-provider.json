@@ -1,0 +1,17 @@
+[
+  {
+    "provider": "moonshot",
+    "model": "kimi-k2.7-code",
+    "engineering_references": [
+      {
+        "artifact_id": "1603a245-c957-498b-814c-d51b04fc6e67",
+        "sha256": "660710a1bd0871eee4a5507525de4d8acf1326d72cadcc3edda6ae7ca60b2438",
+        "size_bytes": 1313,
+        "source_fcstd_sha256": "93e401715854bf0ae249e35ebbcefeae1e72d1cb7211c7d70ea7784a006bac63",
+        "source_revision_id": "a4a0bc48-b8ef-4c5d-9207-62fff8ee6816",
+        "workflow_run_id": "31b8aeca-1267-4794-a1f0-12264887bf77"
+      }
+    ],
+    "context_sha256": "dd02a4383364de0d529e85c466972ad5f7f449524570a2051490378c57fa16de"
+  }
+]

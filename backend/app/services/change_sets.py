@@ -39,12 +39,14 @@ def build_agent_change_set_evidence(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Project immutable gate evidence into review validation and risks."""
     required = [row for row in evidence_rows if row["mode"] == "required"]
-    required_failures = [
-        row for row in required if row["outcome"] != "passed"
-    ]
+    required_failures = [row for row in evidence_rows if (
+        row["mode"] == "required" and row["outcome"] != "passed"
+    ) or (row["gate"] == "visual" and row["outcome"] == "failed")]
+    incomplete = [row for row in evidence_rows if row["outcome"] != "passed"]
     validation = {
-        "status": "passed" if not required_failures else "failed",
-        "issue_count": len(required_failures),
+        "status": "failed" if required_failures else "warning" if incomplete else "passed" if required else "unknown",
+        "issue_count": len(incomplete),
+        "blocking_issue_count": len(required_failures),
         "gates": [
             {
                 "gate": row["gate"],
@@ -135,15 +137,24 @@ async def _require_permission(
         )
 
 
-async def _require_evidence(connection, row) -> None:
+async def _require_evidence(connection, row, *, review_note: str | None = None) -> None:
     validation = dict(row["validation_summary"] or {})
-    if (
-        validation.get("status") not in {"passed", "success"}
-        or int(validation.get("issue_count", 0)) != 0
+    gates = validation.get("gates") or []
+    blocking = [gate for gate in gates if (
+        gate.get("mode") == "required" and gate.get("outcome") != "passed"
+    ) or (gate.get("gate") == "visual" and gate.get("outcome") == "failed")]
+    if blocking:
+        raise ValidationRequired("设计一致性或必需检查未通过，不能接受或提交该候选。")
+    advisory = [gate for gate in gates if gate.get("mode") == "advisory" and gate.get("outcome") != "passed"]
+    valid_gates = bool(gates) and any(gate.get("mode") == "required" for gate in gates)
+    if validation.get("status") not in {"passed", "success", "warning"} or (
+        not valid_gates and (int(validation.get("issue_count", 0)) != 0 or validation.get("status") == "warning")
     ):
         raise ValidationRequired(
             "successful zero-issue validation evidence is required"
         )
+    if advisory and not (review_note or row.get("review_note") or "").strip():
+        raise ValidationRequired("仍有建议检查风险或未能判定项，请填写风险审查意见后再接受。")
     evidence = (
         await connection.execute(
             text(
@@ -308,7 +319,7 @@ async def accept_change_set(
             raise ChangeSetStateConflict(
                 f"change set in {row['status']} cannot be accepted"
             )
-        await _require_evidence(connection, row)
+        await _require_evidence(connection, row, review_note=review_note)
         await connection.execute(
             text(
                 """

@@ -26,6 +26,7 @@ from app.domain.runs import (
     WorkflowStatus,
 )
 from app.execution.canonical import canonical_sha256
+from app.execution.contracts import ExecutionError
 from app.repositories.runs import append_workflow_event
 
 
@@ -124,6 +125,12 @@ async def create_workflow(
             )
         return WorkflowCreated(workflow_id=existing["id"], replayed=True)
 
+    from app.services.cloud_documents import enqueue_operation
+    await enqueue_operation(
+        connection, workflow_id=inserted_id, tenant_id=tenant_id,
+        principal_id=requested_by_principal_id, payload=request_payload,
+        idempotency_key=idempotency_key, request_hash=payload_hash,
+    )
     await append_workflow_event(
         connection,
         tenant_id=tenant_id,
@@ -131,6 +138,11 @@ async def create_workflow(
         event_type="workflow.created",
         payload={"kind": kind, "status": WorkflowStatus.PENDING.value},
     )
+    rebase = request_payload.get("operation_context") or {}
+    if rebase.get("rebased_from_revision_id"):
+        await append_workflow_event(connection, tenant_id=tenant_id, workflow_id=workflow_id,
+            event_type="document.operation_rebased", payload={k:rebase[k] for k in (
+                "rebased_from_revision_id","rebased_from_state_version","rebase_evidence_hash","base_revision_id")})
     return WorkflowCreated(workflow_id=inserted_id)
 
 
@@ -303,6 +315,7 @@ async def transition_step(
     target: StepStatus,
     error_code: str | None = None,
     error_message: str | None = None,
+    error: ExecutionError | dict[str, Any] | None = None,
     now: datetime | None = None,
 ) -> None:
     if target not in STEP_TRANSITIONS[expected]:
@@ -310,6 +323,19 @@ async def transition_step(
             f"step transition {expected.value} -> {target.value} is not allowed"
         )
     current_time = now or _utcnow()
+    structured_error = (
+        ExecutionError.model_validate(error) if error is not None else None
+    )
+    if structured_error is not None:
+        if error_code is not None and error_code != structured_error.code:
+            raise ValueError("scalar and structured step error codes differ")
+        if error_message is not None and error_message != structured_error.message:
+            raise ValueError("scalar and structured step error messages differ")
+        error_code = structured_error.code
+        error_message = structured_error.message
+    error_details = (
+        structured_error.model_dump(mode="json") if structured_error else {}
+    )
     row = (
         await connection.execute(
             text(
@@ -343,6 +369,7 @@ async def transition_step(
                 END,
                 error_code=:error_code,
                 error_message=:error_message,
+                error_details=CAST(:error_details AS jsonb),
                 updated_at=:now
             WHERE id=:id
             """
@@ -353,6 +380,7 @@ async def transition_step(
             "now": current_time,
             "error_code": error_code,
             "error_message": error_message,
+            "error_details": _json(error_details),
         },
     )
     await append_workflow_event(
@@ -366,6 +394,7 @@ async def transition_step(
             "status": target.value,
             "error_code": error_code,
             "error_message": error_message,
+            "error": error_details or None,
         },
     )
 
@@ -490,6 +519,7 @@ async def transition_attempt(
     target: AttemptStatus,
     error_code: str | None = None,
     error_message: str | None = None,
+    error: ExecutionError | dict[str, Any] | None = None,
     now: datetime | None = None,
 ) -> None:
     if target not in ATTEMPT_TRANSITIONS[expected]:
@@ -497,6 +527,19 @@ async def transition_attempt(
             f"attempt transition {expected.value} -> {target.value} is not allowed"
         )
     current_time = now or _utcnow()
+    structured_error = (
+        ExecutionError.model_validate(error) if error is not None else None
+    )
+    if structured_error is not None:
+        if error_code is not None and error_code != structured_error.code:
+            raise ValueError("scalar and structured attempt error codes differ")
+        if error_message is not None and error_message != structured_error.message:
+            raise ValueError("scalar and structured attempt error messages differ")
+        error_code = structured_error.code
+        error_message = structured_error.message
+    error_details = (
+        structured_error.model_dump(mode="json") if structured_error else {}
+    )
     row = (
         await connection.execute(
             text(
@@ -523,6 +566,7 @@ async def transition_attempt(
                 END,
                 error_code=:error_code,
                 error_message=:error_message,
+                error_details=CAST(:error_details AS jsonb),
                 updated_at=:now
             WHERE id=:id
             """
@@ -533,6 +577,7 @@ async def transition_attempt(
             "now": current_time,
             "error_code": error_code,
             "error_message": error_message,
+            "error_details": _json(error_details),
         },
     )
     await append_workflow_event(
@@ -546,6 +591,7 @@ async def transition_attempt(
             "status": target.value,
             "error_code": error_code,
             "error_message": error_message,
+            "error": error_details or None,
         },
     )
 

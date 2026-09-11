@@ -82,6 +82,8 @@ def decide_repair(
         if category == "cad_kernel"
         else "StaticAnalysis"
         if category == "validation" and error_code == "static_analysis_failed"
+        else "vision_mismatch"
+        if category == "validation" and error_code == "visual_validation_failed"
         else runtime_error_type
     )
     failure = (
@@ -98,7 +100,17 @@ def decide_repair(
     allowed_category = category in {"user_code", "cad_kernel"} or (
         category == "validation"
         and error_code
-        in {"static_analysis_failed", "geometry_validation_failed"}
+        in {
+            "static_analysis_failed",
+            "geometry_validation_failed",
+            "visual_validation_failed",
+            "dfm_validation_failed",
+        }
+    )
+    expected_fix_path = (
+        FixPath.VISUAL
+        if category == "validation" and error_code == "visual_validation_failed"
+        else FixPath.CODE
     )
     default_budget = 1 if category == "validation" else 2
     budget = min(
@@ -107,7 +119,7 @@ def decide_repair(
         else default_budget,
         2,
     )
-    if not allowed_category or failure.fix_path is not FixPath.CODE:
+    if not allowed_category or failure.fix_path is not expected_fix_path:
         return RepairDecision(
             repairable=False,
             failure_class=failure.key,

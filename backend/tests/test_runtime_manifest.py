@@ -40,6 +40,7 @@ def test_runtime_lock_covers_every_local_mcad_dependency() -> None:
         "cadquery-ocp-proxy": "7.9.3.1.1",
         "cadpy": "0.3.9",
         "ezdxf": "1.4.2",
+        "networkx": "3.4.2",
         "numpy": "2.4.6",
         "pillow": "11.2.1",
         "playwright": "1.60.0",
@@ -52,17 +53,41 @@ def test_runtime_lock_covers_every_local_mcad_dependency() -> None:
         "three": "0.160.0",
     }
     assert required_node.items() <= lock["node"]["packages"].items()
-    assert set(lock["verified_operations"]) == {
+    assert set(lock["verified_operations"]) >= {
         "cadquery_generate",
         "build123d_generate",
         "implicit_cad_export",
         "step_export",
         "stl_export",
+        "stl_multibody_split",
         "dxf_export",
         "svg_export",
         "png_snapshot",
         "cad_inspect",
+        "freecad.create_save_reopen_modify",
+        "freecad.transaction_abort",
+        "freecad.sketch_solve",
+        "freecad.shape_check",
+        "freecad.export_step_stl",
+        "freecad.assembly_bom",
     }
+
+
+def test_runtime_uses_only_official_freecad_113_appimage() -> None:
+    lock = _runtime_lock()
+    dockerfile = (SANDBOX / "Dockerfile").read_text(encoding="utf-8")
+    freecad = lock["freecad"]
+
+    assert freecad["version"] == "1.1.3"
+    assert freecad["distribution"] == "official-appimage"
+    assert freecad["command"] == "/opt/freecad/bin/FreeCADCmd"
+    for platform in ("linux/amd64", "linux/arm64"):
+        asset = freecad["asset_by_platform"][platform]
+        assert asset["filename"] in dockerfile
+        assert re.fullmatch(r"[0-9a-f]{64}", asset["sha256"])
+        assert asset["sha256"] in dockerfile
+    assert "freecad-python3" not in dockerfile
+    assert "0.20.2" not in dockerfile
 
 
 def test_runtime_requirements_are_exactly_pinned_and_locked() -> None:
@@ -105,13 +130,30 @@ def test_runtime_base_images_are_immutable_multi_arch_references() -> None:
 
 def test_runtime_probe_and_skill_sources_are_bundled() -> None:
     dockerfile = (SANDBOX / "Dockerfile").read_text(encoding="utf-8")
+    capability_entry = (SANDBOX / "capability_entry.py").read_text(
+        encoding="utf-8"
+    )
+    runtime_probe = (SANDBOX / "runtime_probe.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "runtime_probe.py" in dockerfile
+    assert "freecad_runtime_probe.py" in dockerfile
+    assert "freecad_bom.py" in dockerfile
     assert "runtime-lock.json" in dockerfile
     assert "patch_build123d.py" in dockerfile
     assert "third_party/cadskills/skills" in dockerfile
     assert "npm ci" in dockerfile
     assert "playwright install" in dockerfile
+    # FreeCAD 1.1 treats a bare .py argument as a document to open. Every
+    # script boundary must enter console mode and explicitly evaluate source.
+    assert 'FreeCADCmd -c' in dockerfile
+    assert '"-c"' in capability_entry
+    assert '"-P"' in capability_entry
+    assert '"/opt/cad-agent"' in capability_entry
+    assert "freecad_entry.py', 'exec'" in capability_entry
+    assert '"-c"' in runtime_probe
+    assert "freecad_runtime_probe.py', 'exec'" in runtime_probe
 
 
 def test_executor_allows_both_supported_python_cad_apis() -> None:

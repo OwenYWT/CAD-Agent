@@ -6,6 +6,10 @@
 
 ## 当前能力
 
+- 云文档特征树、参数编辑、已提交版本同步，以及带权限控制的共享审阅、评论与在线状态。实现范围与调用链见 [云文档](docs/cloud-documents.md)。
+- 特征意图与按需内核查询、编辑租约和独立参数重放、实例化/LOD 网格缓存、文档分支与审查合并、草图尺寸预览及原生约束提交。
+- 原生有限元静力分析与 2.5D 外轮廓加工、结果可视化及修订绑定的 Agent 工程上下文，见 [工程计算](docs/engineering-compute.md)。
+- 命名发布、真实原生 BOM 与 CAD/工程证据打包，以及可配对、撤销、恢复的本地文件 Bridge，见 [发布与本地交付](docs/releases-and-local-bridge.md)。
 - 自然语言生成、修改和执行 CadQuery / ezdxf 设计。
 - Three.js 3D 预览、2D 预览、参数调整、DFM/几何检查和文件下载。
 - 装配零件清单、零件级修改、模型快照与版本差异；恢复旧版本会重新进入 Durable 审查流程。
@@ -17,6 +21,8 @@
 
 未配置的外部运行时不会被伪装成可用：缺少容器、切片器、Gazebo/MoveIt、Implicit CAD 依赖、隔离执行器或打印机授权时，对应能力返回明确的 `blocked` 状态。
 
+本轮融合内容、完整回归、真实调用链证据及本机运行版本见 [2026-09-09 融合验收与交接](docs/qa/cloud-cad-fusion-2026-09-09.md)。
+
 ## 架构
 
 ```text
@@ -25,13 +31,13 @@ React / TypeScript / Three.js
         ▼
 FastAPI 控制平面
    │
-   ├── PostgreSQL：项目、版本、任务、事件、审计与产物元数据
+   ├── PostgreSQL：项目、文档、版本、任务、协作、持久派发与产物元数据
    ├── Temporal V1：执行、检查与既有 Workflow 历史
    ├── Temporal V2 Agent：规划 → 建模 → 隔离执行 → 修复 → 几何/视觉/DFM → 候选版本封存
    ├── S3 兼容对象存储：不可变 CAD 产物、日志与检查报告
    ├── Agent Tools：basic / capability / business 插件、权限与确认策略
    └── ExecutionBackend
-          └── Docker / Podman 隔离 MCAD Worker
+          └── Docker / Podman 隔离 FreeCAD / CadQuery / Gmsh / CalculiX Worker
 ```
 
 所有生成、修改、执行和 WebSocket 写请求都进入 Durable 主链路，不存在进程内回退。WebSocket 负责提交请求、订阅和回放持久任务事件，不承担任务生命周期。浏览器断线、API 重启或 Worker 重试不会覆盖已有运行记录；修改通过 `expected_base_revision_id` 防止并发覆盖。配置的 LLM provider、CAD Skills adapter 和可选 Fusion 360 / APS Connector 位于上述控制平面边界之外。

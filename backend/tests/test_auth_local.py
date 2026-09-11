@@ -20,6 +20,7 @@ Coverage:
 """
 import asyncio
 import importlib
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -27,6 +28,7 @@ from fastapi.testclient import TestClient
 import app.main as appmain
 from app.config import settings
 from app.api import login as login_mod
+from app.repositories import identity as identity_repository
 from app.services.sms import SmsDeliveryResult
 from app.storage import auth as auth_store
 from app.storage import history as history_store
@@ -78,6 +80,23 @@ def client(auth_env):
     # Do NOT run lifespan (it would hit the startup self-check / docker). The routes
     # we test don't need it; DB is lazily opened on first query.
     return TestClient(appmain.app)
+
+
+@pytest.fixture
+def durable_ws(monkeypatch):
+    """Exercise local WS ownership behind the production durable-only gate."""
+    import app.api.websocket as ws_mod
+
+    monkeypatch.setattr(
+        ws_mod,
+        "settings",
+        SimpleNamespace(durable_control_plane_enabled=True),
+    )
+
+    async def reconcile(principal, **_kwargs):
+        return principal
+
+    monkeypatch.setattr(identity_repository, "reconcile_principal", reconcile)
 
 
 # --------------------------------------------------------------------------- #
@@ -547,7 +566,7 @@ def test_legacy_users_migration_preserves_rows(auth_env):
 # session_id already owned by another user.
 # --------------------------------------------------------------------------- #
 
-def test_ws_rejects_session_owned_by_other_user(client):
+def test_ws_rejects_session_owned_by_other_user(client, durable_ws):
     import app.api.websocket as ws_mod
     ws_mod.sessions.clear()
     a = _register(client, "13800000031")
@@ -561,7 +580,7 @@ def test_ws_rejects_session_owned_by_other_user(client):
             wsk.receive_json()
 
 
-def test_ws_allows_owner_and_new_session(client):
+def test_ws_allows_owner_and_new_session(client, durable_ws):
     import app.api.websocket as ws_mod
     ws_mod.sessions.clear()
     a = _register(client, "13800000033")
@@ -585,7 +604,10 @@ def test_panel_id_cannot_be_reused_by_another_session(auth_env):
     assert asyncio.run(_run()) == []
 
 
-def test_ws_rejects_panel_owned_by_another_session_for_same_user(client):
+def test_ws_rejects_panel_owned_by_another_session_for_same_user(
+    client,
+    durable_ws,
+):
     import app.api.websocket as ws_mod
     from starlette.websockets import WebSocketDisconnect
 

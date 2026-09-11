@@ -1,0 +1,21 @@
+{
+  "api_container": "cad-native-expanded-api-final",
+  "frontend_container": "cad-native-expanded-frontend-final",
+  "changed_addresses": {
+    "cad-agent_default": {
+      "before": "10.89.0.74",
+      "after": "10.89.0.75"
+    },
+    "cad-native-p0-http": {
+      "before": "10.89.2.8",
+      "after": "10.89.2.10"
+    }
+  },
+  "proxy_recovered_seconds": 14.66,
+  "frontend_not_restarted": true,
+  "authenticated_rest_and_query_preserved": true,
+  "session_websocket_reconnected": true,
+  "open_browser_document_reconnected": true,
+  "document_head_unchanged": true,
+  "page_errors": []
+}

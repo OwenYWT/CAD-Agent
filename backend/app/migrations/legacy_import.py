@@ -21,6 +21,7 @@ from uuid import UUID, uuid5
 
 from botocore.exceptions import ClientError
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
 from app.db import auth_transaction, get_database_engine, tenant_transaction
@@ -3021,6 +3022,12 @@ async def rollback_legacy_import(source_fingerprint: str) -> dict[str, Any]:
             if row["target_table"] == "workflow_runs"
         }
         if project_ids:
+            # Cloud documents are created by the branch-head trigger even for
+            # imported projects. Lock before checking for post-import activity.
+            await connection.execute(
+                text('SELECT id FROM projects WHERE id = ANY(:projects) FOR UPDATE'),
+                {'projects':list(project_ids)},
+            )
             unsafe_revision = await connection.scalar(
                 text(
                     """
@@ -3199,6 +3206,18 @@ async def rollback_legacy_import(source_fingerprint: str) -> dict[str, Any]:
                     f"rollback has no deletion rule for {table}"
                 )
         if project_ids:
+            try:
+                # Only untouched trigger-created projections may be removed.
+                # Child foreign keys deliberately prevent deleting collaboration,
+                # annotations, engineering/release or Bridge evidence.
+                await connection.execute(
+                    text('DELETE FROM cloud_documents WHERE project_id = ANY(:ids) AND state_version=0 AND event_sequence=0'),
+                    {'ids':list(project_ids)},
+                )
+            except IntegrityError as exc:
+                raise LegacyRollbackUnsafe('imported documents contain post-import collaboration or engineering data') from exc
+            if await connection.scalar(text('SELECT count(*) FROM cloud_documents WHERE project_id = ANY(:ids)'),{'ids':list(project_ids)}):
+                raise LegacyRollbackUnsafe('imported documents contain post-import state changes')
             await connection.execute(
                 text(
                     "DELETE FROM legacy_snapshot_mappings "

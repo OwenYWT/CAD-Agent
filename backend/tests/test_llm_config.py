@@ -32,7 +32,8 @@ def test_moonshot_is_default_provider():
 
     assert settings.normalized_llm_provider == "moonshot"
     assert settings.llm_model == "kimi-k2.7-code"
-    assert settings.effective_vision_model == "moonshot-v1-32k-vision-preview"
+    assert settings.vision_model == ""
+    assert settings.effective_vision_model == settings.llm_model
     assert settings.llm_base_url == "https://api.moonshot.cn/v1"
     assert settings.llm_api_key == "moonshot-key"
     assert settings.has_llm_credentials is True

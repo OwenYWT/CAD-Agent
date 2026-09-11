@@ -1,0 +1,9 @@
+{
+  "native_bom": true,
+  "instances": 3,
+  "definitions": 2,
+  "step_solids": 3,
+  "every_packaged_hash_verified": true,
+  "source_fcstd_unchanged": true,
+  "csv_formula_label_escaped": true
+}

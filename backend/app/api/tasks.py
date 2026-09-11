@@ -25,6 +25,7 @@ from app.models.schemas import (
     TaskConfirmationRequest,
 )
 from app.services.event_relay import (
+    ConfirmationProjectionInvalid,
     CursorExpired,
     get_task_snapshot,
     read_task_events,
@@ -36,6 +37,41 @@ from app.workflows.temporal import cancel_mcad_workflow, confirm_mcad_workflow
 router = APIRouter(prefix="/api/tasks", tags=["durable-tasks"])
 logger = logging.getLogger(__name__)
 _TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "timed_out"}
+
+
+def _task_snapshot_marker(
+    snapshot: dict,
+) -> tuple[str, str | None, str | None, str | None, str | None]:
+    confirmation = snapshot.get("confirmation")
+    change_set = snapshot.get("change_set")
+    return (
+        str(snapshot.get("status") or ""),
+        str(confirmation.get("workflow_run_id"))
+        if isinstance(confirmation, dict)
+        else None,
+        str(confirmation.get("plan_hash"))
+        if isinstance(confirmation, dict)
+        else None,
+        str(change_set.get("id")) if isinstance(change_set, dict) else None,
+        str(change_set.get("status")) if isinstance(change_set, dict) else None,
+    )
+
+
+def _confirmation_http_error(
+    status_code: int,
+    code: str,
+    message: str,
+    *,
+    retryable: bool = False,
+) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail={
+            "code": code,
+            "message": message,
+            "retryable": retryable,
+        },
+    )
 
 
 def _read_error(exc: Exception) -> HTTPException:
@@ -101,9 +137,10 @@ async def confirm_task(
         )
         snapshot = await get_task_snapshot(principal, workflow_run_id)
         if snapshot["status"] != "waiting_confirmation":
-            raise HTTPException(
-                status_code=409,
-                detail="任务当前不在等待确认状态",
+            raise _confirmation_http_error(
+                409,
+                "confirmation_not_waiting",
+                "任务当前不在等待确认状态",
             )
         await confirm_mcad_workflow(
             workflow_run_id,
@@ -118,17 +155,32 @@ async def confirm_task(
         }
     except HTTPException:
         raise
+    except KeyError as exc:
+        raise _confirmation_http_error(
+            404,
+            "task_not_found",
+            "未找到任务",
+        ) from exc
+    except PermissionError as exc:
+        raise _confirmation_http_error(
+            403,
+            "task_forbidden",
+            "无权确认该任务",
+        ) from exc
+    except ConfirmationProjectionInvalid as exc:
+        raise _confirmation_http_error(
+            500,
+            "confirmation_projection_invalid",
+            "任务确认信息无效，请联系管理员",
+        ) from exc
     except Exception as exc:
-        try:
-            raise _read_error(exc) from exc
-        except HTTPException:
-            raise
-        except Exception:
-            logger.exception("Durable task confirmation failed")
-            raise HTTPException(
-                status_code=503,
-                detail="工作流确认服务暂不可用",
-            ) from exc
+        logger.exception("Durable task confirmation failed")
+        raise _confirmation_http_error(
+            503,
+            "confirmation_signal_unavailable",
+            "工作流确认服务暂不可用",
+            retryable=True,
+        ) from exc
 
 
 @router.post("/{workflow_run_id}/cancel")
@@ -199,6 +251,7 @@ async def durable_task_websocket(
         "type": "task_snapshot",
         "data": jsonable_encoder(snapshot),
     })
+    published_snapshot_marker = _task_snapshot_marker(snapshot)
     try:
         while True:
             try:
@@ -229,17 +282,17 @@ async def durable_task_websocket(
             if page["has_more"]:
                 continue
             snapshot = await get_task_snapshot(principal, workflow_run_id)
-            if (
-                snapshot["status"] in _TERMINAL_STATUSES
-                and cursor >= int(snapshot["last_event_sequence"])
-            ):
-                # The Change Set may have advanced the branch after the opening
-                # snapshot. Publish the final persisted projection before
-                # closing so the next modifying request uses the real head.
+            snapshot_marker = _task_snapshot_marker(snapshot)
+            if snapshot_marker != published_snapshot_marker:
                 await websocket.send_json({
                     "type": "task_snapshot",
                     "data": jsonable_encoder(snapshot),
                 })
+                published_snapshot_marker = snapshot_marker
+            if (
+                snapshot["status"] in _TERMINAL_STATUSES
+                and cursor >= int(snapshot["last_event_sequence"])
+            ):
                 await websocket.send_json({
                     "type": "task_stream_complete",
                     "data": {

@@ -146,6 +146,14 @@ async def get_durable_principal(
             status_code=503,
             detail="Durable principal context is unavailable",
         )
+    workspace = request.headers.get("X-Workspace-Tenant")
+    if workspace:
+        from uuid import UUID
+        from app.services.document_sharing import workspace_principal
+        try:
+            context = await workspace_principal(context, UUID(workspace))
+        except (ValueError, PermissionError) as exc:
+            raise HTTPException(status_code=403, detail="无权进入此工作区") from exc
     return context
 
 

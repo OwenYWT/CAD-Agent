@@ -1,0 +1,147 @@
+# Separate deployment: never attach this release to an existing application's DB.
+# Run from this directory with a private .env and backend.env (both mode 0600).
+name: cad-native
+
+x-app: &app
+  image: ${BACKEND_IMAGE:?set verified backend image digest}
+  env_file: ./backend.env
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    - cad_data:/app/data
+    - /tmp/cad-native-work:/tmp/cad-native-work
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16.14-alpine3.24
+    environment:
+      POSTGRES_DB: cad_native
+      POSTGRES_USER: cad_native
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set database password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    mem_limit: 256m
+    memswap_limit: 512m
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set object store user}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set object store password}
+    volumes:
+      - minio_data:/data
+    ports:
+      - 127.0.0.1:59100:9000
+    mem_limit: 256m
+    memswap_limit: 512m
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:9000/minio/health/live]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set object store user}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set object store password}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null
+        mc mb --ignore-existing local/cad-native-artifacts
+        mc version enable local/cad-native-artifacts
+    restart: "no"
+
+  temporal:
+    # Existing, versioned single-host distribution. No HA claim is made.
+    image: temporalio/auto-setup:1.29.7
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_SEEDS: postgres
+      POSTGRES_USER: cad_native
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:?set database password}
+      DEFAULT_NAMESPACE: cad-native
+    mem_limit: 640m
+    memswap_limit: 1280m
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD-SHELL, 'temporal operator cluster health --address temporal:7233']
+      interval: 10s
+      timeout: 5s
+      retries: 60
+
+  migrate:
+    <<: *app
+    command: [alembic, upgrade, head]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 256m
+    memswap_limit: 512m
+    restart: "no"
+
+  backend:
+    <<: *app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_healthy
+    ports:
+      - 127.0.0.1:8010:8000
+    mem_limit: 384m
+    memswap_limit: 768m
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=10)"]
+      interval: 30s
+      timeout: 15s
+      start_period: 90s
+      retries: 5
+
+  workflow-worker:
+    <<: *app
+    command: [python, -m, app.workers.workflow_worker]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_healthy
+    mem_limit: 512m
+    memswap_limit: 1536m
+
+  frontend:
+    image: ${FRONTEND_IMAGE:?set verified frontend image digest}
+    ports:
+      - 127.0.0.1:8091:80
+    depends_on:
+      backend:
+        condition: service_healthy
+    mem_limit: 64m
+    memswap_limit: 128m
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  minio_data:
+  cad_data:

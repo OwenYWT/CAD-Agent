@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
@@ -168,17 +169,41 @@ class DurableModelingSourceGenerator:
             for key in step.depends_on
         ]
         source = await self.code_generator.generate_assembly_combiner(part_codes)
-        return self._result(source, step, "generate_assembly_combiner")
+        provenance = self.provenance_reader()
+        if provenance is None:
+            request_bytes = json.dumps(
+                part_codes,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+            provenance = {
+                "provider": "internal",
+                "model": "assembly-combiner.v1",
+                "provider_response_id": None,
+                "request_hash": hashlib.sha256(request_bytes).hexdigest(),
+                "response_hash": hashlib.sha256(source.encode("utf-8")).hexdigest(),
+                "finish_reason": "deterministic",
+                "usage": {},
+            }
+        return self._result(
+            source,
+            step,
+            "generate_assembly_combiner",
+            provenance=provenance,
+        )
 
     def _result(
         self,
         source: str,
         step: AgentPlanStep,
         generator_kind: str,
+        *,
+        provenance: dict[str, Any] | None = None,
     ) -> SourceGenerationResult:
         if not source.strip():
             raise ValueError("code generator returned empty source")
-        provenance = self.provenance_reader()
+        provenance = provenance or self.provenance_reader()
         if provenance is None:
             raise RuntimeError(
                 "code generation completed without provider provenance"

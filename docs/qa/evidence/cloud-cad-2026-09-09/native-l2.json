@@ -1,0 +1,273 @@
+{
+  "calls": [
+    {
+      "request": {
+        "objects": [
+          "Pad",
+          "BaseSketch"
+        ],
+        "fields": [
+          "properties",
+          "constraints",
+          "geometry"
+        ],
+        "offset": 0,
+        "limit": 16
+      },
+      "result": {
+        "schema_version": "cad-inspection.v1",
+        "state_hash": "a8a4ec11c4b58c0b6ddb6ecabaeca646ef3e2ab8ee4e831b7375a3f299601ace",
+        "source": "verified_kernel_checkpoint",
+        "objects": [
+          {
+            "name": "Pad",
+            "type_id": "PartDesign::Pad",
+            "is_valid": true,
+            "properties": {
+              "status": "measured",
+              "items": [
+                {
+                  "name": "AddSubShape",
+                  "value": "<Solid object at 0xaaaad58019f0>"
+                },
+                {
+                  "name": "AllowMultiFace",
+                  "value": true
+                },
+                {
+                  "name": "AlongSketchNormal",
+                  "value": true
+                },
+                {
+                  "name": "BaseFeature",
+                  "value": null
+                },
+                {
+                  "name": "Direction",
+                  "value": "Vector (0.0, 0.0, 1.0)"
+                },
+                {
+                  "name": "FuzzyTolerance",
+                  "value": -1.0
+                },
+                {
+                  "name": "Label",
+                  "value": "Pad"
+                },
+                {
+                  "name": "Length",
+                  "value": "10.00 mm"
+                },
+                {
+                  "name": "Length2",
+                  "value": "10.00 mm"
+                },
+                {
+                  "name": "Midplane",
+                  "value": false
+                },
+                {
+                  "name": "Offset",
+                  "value": "0.00 mm"
+                },
+                {
+                  "name": "Offset2",
+                  "value": "0.00 mm"
+                },
+                {
+                  "name": "Placement",
+                  "value": "Placement [Pos=(0,0,0), Yaw-Pitch-Roll=(0,0,0)]"
+                },
+                {
+                  "name": "PreviewShape",
+                  "value": "<Shape object at 0xaaaad58019f0>"
+                },
+                {
+                  "name": "Profile",
+                  "value": "(<Sketcher::SketchObject>, [])"
+                },
+                {
+                  "name": "ReferenceAxis",
+                  "value": null
+                }
+              ],
+              "total": 34,
+              "offset": 0,
+              "returned": 16,
+              "omitted": 18,
+              "recorded": 34
+            },
+            "constraints": {
+              "status": "unavailable",
+              "reason": "not_recorded_in_kernel_checkpoint"
+            },
+            "geometry": {
+              "status": "unavailable",
+              "reason": "not_recorded_in_kernel_checkpoint"
+            }
+          },
+          {
+            "name": "BaseSketch",
+            "type_id": "Sketcher::SketchObject",
+            "is_valid": true,
+            "properties": {
+              "status": "measured",
+              "items": [
+                {
+                  "name": "ArcFitTolerance",
+                  "value": 1e-06
+                },
+                {
+                  "name": "AttacherEngine",
+                  "value": "Engine Plane"
+                },
+                {
+                  "name": "AttacherType",
+                  "value": "Attacher::AttachEnginePlane"
+                },
+                {
+                  "name": "AttachmentOffset",
+                  "value": "Placement [Pos=(0,0,0), Yaw-Pitch-Roll=(0,0,0)]"
+                },
+                {
+                  "name": "AttachmentSupport",
+                  "value": "[(<GeoFeature object>, ('',))]"
+                },
+                {
+                  "name": "Exports",
+                  "value": "[]"
+                },
+                {
+                  "name": "ExternalGeo",
+                  "value": "[<Line segment (0,0,0) (1,0,0) >, <Line segment (0,0,0) (0,1,0) >]"
+                },
+                {
+                  "name": "ExternalGeometry",
+                  "value": "[]"
+                },
+                {
+                  "name": "ExternalTypes",
+                  "value": "[0]"
+                },
+                {
+                  "name": "FullyConstrained",
+                  "value": true
+                },
+                {
+                  "name": "InternalShape",
+                  "value": "<Shape object at 0xaaaad576b4b0>"
+                },
+                {
+                  "name": "Label",
+                  "value": "BaseSketch"
+                },
+                {
+                  "name": "MakeInternals",
+                  "value": false
+                },
+                {
+                  "name": "MapMode",
+                  "value": "FlatFace"
+                },
+                {
+                  "name": "MapPathParameter",
+                  "value": 0.0
+                },
+                {
+                  "name": "MapReversed",
+                  "value": false
+                }
+              ],
+              "total": 21,
+              "offset": 0,
+              "returned": 16,
+              "omitted": 5,
+              "recorded": 21
+            },
+            "constraints": {
+              "status": "measured",
+              "items": [
+                {
+                  "driving": true,
+                  "first": 0,
+                  "first_position": 3,
+                  "index": 0,
+                  "name": "",
+                  "second": -2000,
+                  "second_position": 0,
+                  "type": "DistanceX",
+                  "value": 5.0
+                },
+                {
+                  "driving": true,
+                  "first": 0,
+                  "first_position": 3,
+                  "index": 1,
+                  "name": "",
+                  "second": -2000,
+                  "second_position": 0,
+                  "type": "DistanceY",
+                  "value": 5.0
+                },
+                {
+                  "driving": true,
+                  "first": 0,
+                  "first_position": 0,
+                  "index": 2,
+                  "name": "",
+                  "second": -2000,
+                  "second_position": 0,
+                  "type": "Radius",
+                  "value": 5.0
+                }
+              ],
+              "total": 3,
+              "offset": 0,
+              "returned": 3,
+              "omitted": 0,
+              "recorded": 3
+            },
+            "geometry": {
+              "status": "measured",
+              "items": [
+                {
+                  "center": [
+                    5.0,
+                    5.0,
+                    0.0
+                  ],
+                  "construction": false,
+                  "index": 0,
+                  "radius_mm": 5.0,
+                  "type": "Part::GeomCircle"
+                }
+              ],
+              "total": 1,
+              "offset": 0,
+              "returned": 1,
+              "omitted": 0,
+              "recorded": 1
+            }
+          }
+        ]
+      },
+      "provider": {
+        "provider": "moonshot",
+        "model": "kimi-k2.7-code",
+        "provider_response_id": "chatcmpl-6aa12f2b55c20084e2264f13",
+        "request_hash": "46caa8afc108bcc1f736978f6f1bf8c343e97ccebacc3e01c127bad8d7f8ffc9",
+        "response_hash": "7ec557ed99cb5530a61a6b453f184eab47afb4d3ee056aa3e851aa9e417dd81e",
+        "finish_reason": "stop",
+        "usage": {
+          "completion_tokens": 221,
+          "prompt_tokens": 1942,
+          "total_tokens": 2163,
+          "completion_tokens_details": {
+            "reasoning_tokens": 193
+          }
+        }
+      }
+    }
+  ],
+  "final_length_mm": 12.0
+}

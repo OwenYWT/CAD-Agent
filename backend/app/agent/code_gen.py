@@ -1,4 +1,6 @@
 import logging
+import math
+import textwrap
 import time
 
 
@@ -311,49 +313,73 @@ class CodeGenerator:
         self,
         part_codes: list[dict],
     ) -> str:
-        """Generate the final assembly code that combines all parts."""
-        parts_section = "\n\n".join(
-            (
-                f"# === {p.get('label', p['name'])} ===\n"
-                f"# Position: {p.get('position', [0, 0, 0])} mm\n"
-                f"# Color: {p.get('color', 'lightgray')}\n"
-                f"{p['code']}"
+        """Compose persisted part sources without rewriting them through an LLM.
+
+        Every source runs in its own lexical scope.  This is required because
+        independently generated parts routinely use the same parameter names
+        (for example ``height``); concatenating them changes earlier functions'
+        globals and therefore changes the already-validated component geometry.
+        """
+        if not part_codes:
+            raise ValueError("assembly combine requires at least one part")
+
+        component_blocks: list[str] = []
+        add_lines: list[str] = []
+        for index, part in enumerate(part_codes, 1):
+            raw_source = str(part.get("code") or "").strip()
+            if not raw_source:
+                raise ValueError("assembly part source cannot be empty")
+            clean_lines = [
+                line
+                for line in raw_source.splitlines()
+                if not line.strip().startswith("show_object(")
+                and not line.strip().startswith("from __future__ import ")
+            ]
+            clean_source = "\n".join(clean_lines).strip()
+            if not clean_source:
+                raise ValueError("assembly part source has no executable content")
+
+            raw_position = part.get("position", [0, 0, 0])
+            if not isinstance(raw_position, (list, tuple)) or len(raw_position) != 3:
+                raise ValueError("assembly part position must contain three values")
+            position = tuple(float(value) for value in raw_position)
+            if any(not math.isfinite(value) for value in position):
+                raise ValueError("assembly part position must be finite")
+
+            component_name = f"_assembly_component_{index:02d}"
+            component_blocks.append(
+                f"def {component_name}():\n"
+                f"{textwrap.indent(clean_source, '    ')}\n"
+                "    return result"
             )
-            for p in part_codes
-        )
+            child_name = str(part.get("name") or f"part_{index:02d}")
+            color = str(part.get("color") or "lightgray")
+            add_lines.append(
+                "result.add("
+                f"_assembly_anchor_to_origin({component_name}()), "
+                f"name={child_name!r}, "
+                f"loc=cq.Location({position!r}), color=cq.Color({color!r})"
+                ")"
+            )
 
-        system = (
-            "你是 CadQuery 装配体专家。以下是各个独立零件的代码，请将它们组合为一个装配体。\n\n"
-            f"已有零件代码:\n```python\n{parts_section}\n```\n\n"
-            "规则:\n"
-            "1. 保留所有零件的 make_xxx() 函数定义和参数\n"
-            "2. import 只写一次\n"
-            "3. 创建 cq.Assembly()，用 assy.add() 添加各零件\n"
-            "4. 必须严格使用每个零件注释中的 Position 创建 cq.Location((x, y, z))，不得自行改位\n"
-            "5. 必须严格使用每个零件注释中的 Color 创建 cq.Color()，不得自行换色\n"
-            "6. result = assy\n"
-            "7. show_object(result)\n"
-            "8. 只输出完整的 Python 代码\n"
+        return (
+            "import cadquery as cq\n\n"
+            "def _assembly_anchor_to_origin(component):\n"
+            "    bounds = component.val().BoundingBox()\n"
+            "    # part_position targets the centre of the bottom bounding-box\n"
+            "    # face.  Generated part sources may use different local origins,\n"
+            "    # so normalise that documented anchor before assembly placement.\n"
+            "    anchor = (\n"
+            "        (bounds.xmin + bounds.xmax) / 2.0,\n"
+            "        (bounds.ymin + bounds.ymax) / 2.0,\n"
+            "        bounds.zmin,\n"
+            "    )\n"
+            "    return component.translate(tuple(-value for value in anchor))\n\n"
+            + "\n\n".join(component_blocks)
+            + "\n\nresult = cq.Assembly()\n"
+            + "\n".join(add_lines)
+            + "\n\nshow_object(result)\n"
         )
-
-        t0 = time.time()
-        logger.info("CodeGen.generate_assembly_combiner start")
-        response = await self.client.chat.completions.create(
-            model=settings.llm_model,
-            max_tokens=8192,
-            temperature=0.2,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": "请组合以上零件为装配体。"},
-            ],
-        )
-        logger.info(f"CodeGen.generate_assembly_combiner done in {time.time()-t0:.1f}s")
-
-        code = self._extract_code(response.choices[0].message.content)
-        if response.choices[0].finish_reason == "length":
-            logger.warning("Assembly combiner truncated, attempting to close")
-            code = self._close_truncated_code(code)
-        return code
 
     async def fix_visual_issues(
         self, code: str, issues: list[str], suggestions: list[str],

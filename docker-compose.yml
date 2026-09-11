@@ -85,7 +85,9 @@ services:
       retries: 30
 
   migrate:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     env_file: ./backend/.env
     environment:
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL with a URL-encoded password}
@@ -96,7 +98,9 @@ services:
     restart: "no"
 
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     env_file: ./backend/.env
     environment:
       APP_ENVIRONMENT: ${APP_ENVIRONMENT:-development}
@@ -115,6 +119,8 @@ services:
       TEMPORAL_AGENT_V2_TASK_QUEUE: ${TEMPORAL_AGENT_V2_TASK_QUEUE:-cad-agent-mcad-v2}
       FILE_STORAGE_DIR: /app/data/files
       HISTORY_DB_PATH: /app/data/history.db
+      # Sibling kernel containers must see the same absolute input/output paths.
+      TMPDIR: ${SANDBOX_WORK_DIR:-/tmp/cad-agent-work}
     depends_on:
       postgres:
         condition: service_healthy
@@ -127,6 +133,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - cad_data:/app/data
+      - ${SANDBOX_WORK_DIR:-/tmp/cad-agent-work}:${SANDBOX_WORK_DIR:-/tmp/cad-agent-work}
     expose:
       - "8000"
     restart: unless-stopped
@@ -137,7 +144,9 @@ services:
       retries: 3
 
   workflow-worker:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     env_file: ./backend/.env
     environment:
       APP_ENVIRONMENT: ${APP_ENVIRONMENT:-development}
@@ -154,6 +163,7 @@ services:
       TEMPORAL_AGENT_V2_TASK_QUEUE: ${TEMPORAL_AGENT_V2_TASK_QUEUE:-cad-agent-mcad-v2}
       FILE_STORAGE_DIR: /app/data/files
       HISTORY_DB_PATH: /app/data/history.db
+      TMPDIR: ${SANDBOX_WORK_DIR:-/tmp/cad-agent-work}
     command: ["python", "-m", "app.workers.workflow_worker"]
     depends_on:
       minio-init:
@@ -165,6 +175,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - cad_data:/app/data
+      - ${SANDBOX_WORK_DIR:-/tmp/cad-agent-work}:${SANDBOX_WORK_DIR:-/tmp/cad-agent-work}
     restart: unless-stopped
 
   frontend:

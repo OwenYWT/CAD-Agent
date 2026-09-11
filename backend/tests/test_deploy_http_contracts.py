@@ -24,6 +24,7 @@ from app.config import settings
 from app.main import app
 from app.models.schemas import GenerateResponse, ValidationResult
 from app.sandbox.code_filter import validate_code
+from app.services.operation_resolution import RevisionSourceInventory
 from app.storage import history
 
 
@@ -103,9 +104,17 @@ def inject_orch(monkeypatch):
     async def wait(_principal, _submission, *, timeout_seconds):
         return current["boundary"]._result()
 
+    async def inventory(_principal, **_kwargs):
+        return RevisionSourceInventory()
+
     for module in (generate_api, execute_api):
         monkeypatch.setattr(module, "submit_durable_workflow", submit)
         monkeypatch.setattr(module, "wait_for_compatibility_response", wait)
+    monkeypatch.setattr(
+        generate_api,
+        "load_revision_source_inventory",
+        inventory,
+    )
 
     def _set(orch):
         current["boundary"] = orch

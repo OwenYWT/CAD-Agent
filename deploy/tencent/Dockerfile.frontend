@@ -1,0 +1,7 @@
+# Build platform-independent assets with frontend/package-lock.json first.
+# Context: frontend/ (must contain the freshly verified dist/ directory).
+FROM nginx:alpine
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
+COPY dist/ /usr/share/nginx/html/
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+EXPOSE 80

@@ -1,0 +1,13 @@
+{
+  "document_id": "4036e467-3c83-4597-9014-e524d10ddb6f",
+  "source_revision_id": "a4a0bc48-b8ef-4c5d-9207-62fff8ee6816",
+  "analysis_workflow_id": "31b8aeca-1267-4794-a1f0-12264887bf77",
+  "agent_workflow_id": "739ca166-8995-42b9-bc1e-a4603e56e589",
+  "report_sha256": "660710a1bd0871eee4a5507525de4d8acf1326d72cadcc3edda6ae7ca60b2438",
+  "native_parameter": "Pad.Length",
+  "before_mm": 8.0,
+  "after_mm": 9.0,
+  "new_revision_id": "5d7cbf0d-47c6-48ca-807b-eff3dda4d30a",
+  "old_solver_evidence_remains_bound_to_source": true,
+  "no_fabricated_analysis_for_new_revision": true
+}

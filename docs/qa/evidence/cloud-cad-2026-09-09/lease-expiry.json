@@ -1,0 +1,7 @@
+{
+  "real_server_expiration": true,
+  "expired_renewal_rejected": true,
+  "expired_submission_rejected": true,
+  "new_fencing_token": true,
+  "elapsed_s": 90.7
+}

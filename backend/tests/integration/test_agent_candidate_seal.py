@@ -383,6 +383,28 @@ async def _seal(context, *, fault_hook=None):
 
 
 @pytest.mark.asyncio(loop_scope="module")
+async def test_late_workflow_failure_during_cancellation_reaches_a_terminal_state():
+    from app.services.run_state import request_workflow_cancellation
+    from app.workflows.activities import McadWorkflowActivities
+
+    context = await _seed_selection(two_outputs=False)
+    owner = context["owner"]
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as connection:
+        await request_workflow_cancellation(connection, context["workflow_id"])
+    payload = {"tenant_id": str(owner.tenant_id), "principal_id": str(owner.principal_id),
+        "workflow_run_id": str(context["workflow_id"]), "error_code": "provider_timeout",
+        "error_message": "Provider failed while cancellation was in progress"}
+    result = await McadWorkflowActivities().record_failure(payload)
+    assert result["status"] == "failed"
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as connection:
+        row = (await connection.execute(text(
+            "SELECT status, completed_at, error_code, cancellation_requested_at FROM workflow_runs WHERE id=:id"
+        ), {"id": context["workflow_id"]})).mappings().one()
+    assert row["status"] == "failed" and row["completed_at"] and row["cancellation_requested_at"]
+    assert row["error_code"] == "provider_timeout"
+
+
+@pytest.mark.asyncio(loop_scope="module")
 async def test_candidate_seal_commits_once_and_preserves_advisory_risks():
     context = await _seed_selection()
     sealed = await _seal(context)
@@ -421,7 +443,9 @@ async def test_candidate_seal_commits_once_and_preserves_advisory_risks():
     assert state["artifacts"] == 2
     assert state["manifests"] == 1
     assert state["evidence"] == 3
-    assert state["validation_summary"]["status"] == "passed"
+    assert state["validation_summary"]["status"] == "warning"
+    assert state["validation_summary"]["issue_count"] == 2
+    assert state["validation_summary"]["blocking_issue_count"] == 0
     assert state["risk_summary"]["status"] == "attention_required"
     assert {item["gate"] for item in state["risk_summary"]["items"]} == {
         "visual",

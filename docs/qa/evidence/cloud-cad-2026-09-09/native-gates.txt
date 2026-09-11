@@ -1,0 +1,6 @@
+Initial real native/isolation gates:
+1 failed, 16 passed in 250.11s (0:04:10)
+Inspection retry contract regression:
+15 passed in 0.64s
+Repaired real provider/native case:
+1 passed in 21.72s

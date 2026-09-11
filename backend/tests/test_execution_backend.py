@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.execution.backend import MaterializedExecutionOutcome
+from app.execution.capability_adapter import CapabilityExecutionAdapter
 from app.execution.compat_executor import (
     CompatibilityExecutor,
     _normalized_error_type,
@@ -95,6 +96,28 @@ def _spec(code: str = "result = cq.Workplane('XY').box(1, 1, 1)", **updates):
     }
     values.update(updates)
     return ExecutionSpec(**values)
+
+
+def _freecad_spec():
+    task = {
+        "schema_version": "mcad-capability-task.v1",
+        "capability": "freecad",
+        "operation": "execute",
+        "params": {},
+        "inputs": {},
+    }
+    code = json.dumps(task, sort_keys=True)
+    return _spec(
+        code,
+        capability="mcad.freecad",
+        operation="execute",
+        source=ExecutionSource(
+            language="json",
+            code=code,
+            sha256=hashlib.sha256(code.encode()).hexdigest(),
+        ),
+        outputs=(),
+    )
 
 
 class RecordingSandboxExecutor:
@@ -199,6 +222,72 @@ async def test_backend_rejects_success_with_missing_required_artifact(tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("error_code,category", [
+    ("sketch_conflicting_constraints", ExecutionErrorCategory.VALIDATION),
+    ("shape_check_failed", ExecutionErrorCategory.CAD_KERNEL),
+    ("invalid_document_object", ExecutionErrorCategory.CAD_KERNEL),
+    ("freecad_internal_error", ExecutionErrorCategory.INTERNAL),
+])
+async def test_backend_preserves_structured_freecad_error(tmp_path, error_code, category):
+    sandbox = RecordingSandboxExecutor(SandboxResult(
+        success=False,
+        files={},
+        error_type="StructuredExecutionError",
+        error_message="Sketch solver reported conflicting constraints",
+        traceback="internal traceback must not be projected",
+        execution_time_ms=9,
+        work_dir=tmp_path,
+        error_code=error_code,
+        error_details={
+            "schema_version": "mcad-error.v1",
+            "code": error_code,
+            "message": "Sketch solver reported conflicting constraints",
+            "operation_id": "constraint-04",
+            "action": "sketch.add_constraint",
+            "details": {"object": "Sketch", "solver_status": -3},
+        },
+    ))
+    backend = PodmanExecutionBackend(
+        image_ref="cad-agent-sandbox:test",
+        sandbox_executor=sandbox,
+        runtime_inspector=lambda: _runtime_snapshot(),
+    )
+
+    outcome = await backend.execute(_freecad_spec())
+
+    assert outcome.result.error.code == error_code
+    assert outcome.result.error.category is category
+    assert outcome.result.error.operation_id == "constraint-04"
+    assert outcome.result.error.action == "sketch.add_constraint"
+    assert outcome.result.error.details["solver_status"] == -3
+    assert outcome.result.error.retryable is False
+    assert "traceback" not in outcome.result.error.model_dump(mode="json")
+
+
+@pytest.mark.asyncio
+async def test_freecad_failure_without_structured_envelope_is_protocol_error(tmp_path):
+    sandbox = RecordingSandboxExecutor(SandboxResult(
+        success=False,
+        files={},
+        error_type="RuntimeError",
+        error_message="unstructured failure",
+        traceback=None,
+        execution_time_ms=2,
+        work_dir=tmp_path,
+    ))
+    backend = PodmanExecutionBackend(
+        image_ref="cad-agent-sandbox:test",
+        sandbox_executor=sandbox,
+        runtime_inspector=lambda: _runtime_snapshot(),
+    )
+
+    outcome = await backend.execute(_freecad_spec())
+
+    assert outcome.result.error.code == "sandbox_protocol_error"
+    assert outcome.result.error.category is ExecutionErrorCategory.INFRASTRUCTURE
+
+
+@pytest.mark.asyncio
 async def test_backend_forwards_only_typed_json_capability_task(tmp_path):
     work = tmp_path / "work"
     work.mkdir()
@@ -249,6 +338,58 @@ async def test_backend_forwards_only_typed_json_capability_task(tmp_path):
 
     assert outcome.result.status is ExecutionStatus.SUCCEEDED
     assert sandbox.calls[0][4] == task
+
+
+@pytest.mark.asyncio
+async def test_capability_adapter_forwards_revision_fence_and_typed_multi_outputs(
+    tmp_path,
+):
+    class RecordingBackend:
+        def __init__(self):
+            self.spec = None
+
+        def runtime_snapshot(self):
+            return _runtime_snapshot()
+
+        async def execute(self, spec, **_kwargs):
+            self.spec = spec
+            return MaterializedExecutionOutcome(
+                result=ExecutionResult(
+                    execution_attempt_id=spec.execution_attempt_id,
+                    status=ExecutionStatus.SUCCEEDED,
+                ),
+                files={},
+                work_dir=tmp_path,
+            )
+
+    backend = RecordingBackend()
+    adapter = CapabilityExecutionAdapter(backend)
+
+    await adapter.execute(
+        capability="freecad",
+        operation="execute",
+        request_id="freecad-adapter",
+        params={"plan": {"schema_version": "freecad-operation-plan.v1"}},
+        inputs={},
+        artifact_media_type="application/octet-stream",
+        mode="3d",
+        timeout_seconds=120,
+        output_bytes=64 * 1024 * 1024,
+        expected_base_revision_id="revision-base-1",
+        declared_outputs={
+            "fcstd": "application/vnd.freecad.fcstd",
+            "state": "application/json",
+            "step": "model/step",
+        },
+    )
+
+    assert backend.spec.expected_base_revision_id == "revision-base-1"
+    assert {output.name for output in backend.spec.outputs} == {
+        "fcstd",
+        "state",
+        "step",
+        "capability-result",
+    }
 
 
 @pytest.mark.asyncio

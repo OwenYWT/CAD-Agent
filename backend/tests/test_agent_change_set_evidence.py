@@ -14,7 +14,7 @@ def _row(gate, mode, outcome, *, evidence=None):
     }
 
 
-def test_advisory_failure_becomes_review_risk_not_validation_failure():
+def test_advisory_failure_is_visible_in_overall_validation_and_review_risk():
     validation, risks = build_agent_change_set_evidence(
         [
             _row("geometry", "required", "passed"),
@@ -26,8 +26,9 @@ def test_advisory_failure_becomes_review_risk_not_validation_failure():
             ),
         ]
     )
-    assert validation["status"] == "passed"
-    assert validation["issue_count"] == 0
+    assert validation["status"] == "warning"
+    assert validation["issue_count"] == 1
+    assert validation["blocking_issue_count"] == 0
     assert risks["status"] == "attention_required"
     assert risks["items"][0]["gate"] == "dfm"
     assert risks["items"][0]["issues"] == ["overhang"]

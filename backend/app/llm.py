@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from openai import AsyncAzureOpenAI, AsyncOpenAI, OpenAIError, RateLimitError
+from openai.types.chat import ChatCompletion
 
 from app.config import Settings, settings
 
@@ -169,6 +170,8 @@ class ChatCompletionAdapter:
         for attempt in range(self._settings.llm_max_retries + 1):
             try:
                 response = await self._raw_completions.create(**params)
+                if params.get("stream"):
+                    response = await _complete_stream(response)
                 _last_chat_completion_provenance.set(
                     _completion_provenance(
                         params=params,
@@ -183,6 +186,49 @@ class ChatCompletionAdapter:
                     or attempt >= self._settings.llm_max_retries
                 ):
                     raise
+
+
+async def _complete_stream(stream) -> ChatCompletion:
+    """Accumulate actual provider chunks; a disconnected stream is never success.
+
+    Streaming keeps the SDK's read deadline tied to network inactivity while a
+    reasoning model is working. Temporal still bounds the entire activity.
+    """
+    identity = None
+    content, refusal = [], []
+    finish = None
+    usage = None
+    size = 0
+    try:
+        async for chunk in stream:
+            current = (chunk.id, chunk.model, chunk.created)
+            if identity is None:
+                identity = current
+            if not chunk.id or current != identity:
+                raise ValueError("model stream mixed completion identities")
+            if chunk.usage is not None:
+                usage = chunk.usage
+            for choice in chunk.choices:
+                if choice.index != 0 or choice.delta.tool_calls or choice.delta.function_call:
+                    raise ValueError("model stream contains unsupported choices or tool calls")
+                if finish is not None:
+                    raise ValueError("model stream continued after its terminal choice")
+                delta = choice.delta.content or ""
+                size += len(delta)
+                if size > 1_000_000:
+                    raise ValueError("model stream exceeded response size budget")
+                content.append(delta)
+                if choice.delta.refusal:
+                    refusal.append(choice.delta.refusal)
+                finish = choice.finish_reason
+    finally:
+        await stream.close()
+    if identity is None or finish is None:
+        raise ValueError("model stream ended without a terminal provider response")
+    return ChatCompletion(id=identity[0], model=identity[1], created=identity[2], object="chat.completion",
+        choices=[{"index": 0, "finish_reason": finish,
+                  "message": {"role": "assistant", "content": "".join(content), "refusal": "".join(refusal) or None}}],
+        usage=usage)
 
 
 class ChatAdapter:

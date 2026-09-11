@@ -1,0 +1,15 @@
+{
+  "workflow_run_id": "474d634a-5f85-4c70-8a22-6b2780d72ecb",
+  "normal_committed_operation": true,
+  "immutable_provider_sources": [
+    {
+      "generator_kind": "freecad_operations",
+      "provider": "moonshot",
+      "model": "kimi-k2.7-code",
+      "provider_response_id": "chatcmpl-6aa13320f07ea5db2f37cee2",
+      "request_hash": "432bc11eca2edba86e66fce4c2cf381db175b123f177662466c8efe6efbde262",
+      "response_hash": "554e44e5f0392d3c65e5f81fd0509bfc22bf3b4dcdfa23e4a0e76c9f6b2ee3f7",
+      "source_hash": "8a23c85b7124afa9660bf28d8bc0f1f29e690dc331b5683a24285cb26d0d6f03"
+    }
+  ]
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -28,7 +29,45 @@ SUPPORTED = {
     ("dxf", "generate"),
     ("implicit-cad", "export"),
     ("implicit-cad", "snapshot"),
+    ("freecad", "execute"),
+    ("freecad", "bom"),
+    ("freecad", "scene"),
+    ("freecad", "engineering"),
 }
+
+
+class StructuredCapabilityError(RuntimeError):
+    def __init__(self, error: dict[str, Any]) -> None:
+        super().__init__(str(error["message"]))
+        self.error = error
+
+
+def _freecad_error_envelope(raw: object) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        raise ValueError("FreeCAD runner returned no structured error")
+    code = raw.get("code")
+    message = raw.get("message")
+    op_id = raw.get("op_id")
+    action = raw.get("action")
+    details = raw.get("details", {})
+    if (
+        not isinstance(code, str)
+        or not 1 <= len(code) <= 200
+        or not isinstance(message, str)
+        or not 1 <= len(message) <= 4000
+        or (op_id is not None and not isinstance(op_id, str))
+        or (action is not None and not isinstance(action, str))
+        or not isinstance(details, dict)
+    ):
+        raise ValueError("FreeCAD runner returned a malformed structured error")
+    return {
+        "schema_version": "mcad-error.v1",
+        "code": code,
+        "message": message,
+        "operation_id": op_id,
+        "action": action,
+        "details": details,
+    }
 
 
 def _safe_name(value: object, label: str) -> str:
@@ -66,10 +105,12 @@ def _run(
     *,
     cwd: Path,
     timeout: int = 300,
+    env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     completed = subprocess.run(
         [str(part) for part in command],
         cwd=cwd,
+        env=env,
         shell=False,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
@@ -88,6 +129,73 @@ def _run(
     except json.JSONDecodeError:
         parsed = stdout
     return {
+        "exit_code": completed.returncode,
+        "result": parsed,
+        "stderr": stderr or None,
+        "stdout_truncated": len(completed.stdout) > len(stdout),
+        "stderr_truncated": len(completed.stderr) > len(stderr),
+    }
+
+
+def _freecad(task: dict[str, Any]) -> tuple[dict[str, Path], dict[str, Any]]:
+    env = {
+        **os.environ,
+        "HOME": "/tmp",
+        "TMPDIR": "/tmp",
+        "LANG": "C.UTF-8",
+        "PYTHONPATH": "/opt/cad-agent",
+    }
+    completed = subprocess.run(
+        [
+            "/opt/freecad/bin/FreeCADCmd",
+            "-P",
+            "/opt/cad-agent",
+            "-c",
+            (
+                "exec(compile(open('/opt/cad-agent/freecad_entry.py', "
+                "encoding='utf-8').read(), "
+                "'/opt/cad-agent/freecad_entry.py', 'exec'))"
+            ),
+        ],
+        cwd=OUTPUT_ROOT,
+        env=env,
+        shell=False,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+    stdout = completed.stdout[:512 * 1024]
+    stderr = completed.stderr[:256 * 1024]
+    parsed: dict[str, Any] | None = None
+    for line in reversed(stdout.splitlines()):
+        try:
+            candidate = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict):
+            parsed = candidate
+            break
+    if parsed is None:
+        detail = (stderr or stdout or "FreeCAD runner returned no structured result").strip()
+        raise RuntimeError(detail[-4000:])
+    if completed.returncode != 0 or parsed.get("status") != "succeeded":
+        raise StructuredCapabilityError(
+            _freecad_error_envelope(parsed.get("error"))
+        )
+    files = parsed.get("files")
+    if not isinstance(files, dict) or not files:
+        raise RuntimeError("FreeCAD runner returned no artifact files")
+    artifacts: dict[str, Path] = {}
+    for role, raw_path in files.items():
+        _safe_name(role, "FreeCAD artifact role")
+        path = Path(str(raw_path))
+        if path.parent != OUTPUT_ROOT:
+            raise RuntimeError(f"FreeCAD artifact escaped output root: {role}")
+        artifacts[role] = path
+    return artifacts, {
         "exit_code": completed.returncode,
         "result": parsed,
         "stderr": stderr or None,
@@ -446,6 +554,8 @@ def run_task(task: dict[str, Any]) -> None:
         artifact, metadata = _dfm_validate(task)
     elif capability == "dxf":
         artifact, metadata = _dxf_generate(task)
+    elif capability == "freecad":
+        artifact, metadata = _freecad(task)
     else:
         artifact, metadata = _implicit(task)
 
@@ -488,15 +598,20 @@ def main() -> int:
         run_task(task)
         return 0
     except Exception as exc:
+        if isinstance(exc, StructuredCapabilityError):
+            payload = {
+                "status": "error",
+                "error": exc.error,
+            }
+        else:
+            payload = {
+                "status": "error",
+                "error_type": type(exc).__name__,
+                "error_message": str(exc)[:4000],
+                "traceback": traceback.format_exc(limit=20),
+            }
         RESULT_PATH.write_text(
-            json.dumps(
-                {
-                    "status": "error",
-                    "error_type": type(exc).__name__,
-                    "error_message": str(exc),
-                    "traceback": traceback.format_exc(),
-                }
-            ),
+            json.dumps(payload),
             encoding="utf-8",
         )
         return 1

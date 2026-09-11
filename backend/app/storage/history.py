@@ -585,11 +585,18 @@ async def list_model_snapshots(panel_id: str) -> list[dict]:
     return [_snapshot_from_row(row) for row in rows]
 
 
-async def get_model_snapshot(snapshot_id: str) -> dict | None:
+async def get_model_snapshot(
+    snapshot_id: str,
+    *,
+    include_artifact_fingerprints: bool = False,
+) -> dict | None:
     if settings.durable_control_plane_enabled:
         from app.storage import postgres_history
 
-        return await postgres_history.get_model_snapshot(snapshot_id)
+        return await postgres_history.get_model_snapshot(
+            snapshot_id,
+            include_artifact_fingerprints=include_artifact_fingerprints,
+        )
     db = await get_db()
     cursor = await db.execute(
         "SELECT * FROM model_snapshots WHERE id = ?",
@@ -676,15 +683,43 @@ async def diff_model_snapshots(from_snapshot_id: str, to_snapshot_id: str, user_
         return None
     if not await snapshot_belongs_to_user(to_snapshot_id, user_id):
         return None
-    before = await get_model_snapshot(from_snapshot_id)
-    after = await get_model_snapshot(to_snapshot_id)
+    before = await get_model_snapshot(from_snapshot_id, include_artifact_fingerprints=True)
+    after = await get_model_snapshot(to_snapshot_id, include_artifact_fingerprints=True)
     if before is None or after is None:
         return None
 
-    before_files = before.get("files") or {}
-    after_files = after.get("files") or {}
-    before_params = before.get("params") or {}
-    after_params = after.get("params") or {}
+    has_fingerprints = "_file_fingerprints" in before or "_file_fingerprints" in after
+    before_files = before.get("_file_fingerprints") if has_fingerprints else before.get("files") or None
+    after_files = after.get("_file_fingerprints") if has_fingerprints else after.get("files") or None
+
+    def _parameters(snapshot: dict) -> dict | None:
+        parameters = snapshot.get("parameters")
+        if isinstance(parameters, list):
+            values = {}
+            for item in parameters:
+                if not isinstance(item, dict) or not item.get("name") or "value" not in item:
+                    return None
+                name = item["name"]
+                if name in values:
+                    return None
+                values[name] = {"value": item["value"], "unit": item.get("unit")}
+            return values
+        return snapshot.get("params")
+
+    def _verdict(snapshot: dict) -> str | None:
+        report = snapshot.get("inspect_report") or {}
+        if report.get("verdict"):
+            return report["verdict"]
+        gates = (snapshot.get("validation") or {}).get("gates") or []
+        active = [gate for gate in gates if gate.get("mode") in {"required", "advisory"}]
+        if not active:
+            return None
+        if any(gate.get("mode") == "required" and gate.get("outcome") == "failed" for gate in active):
+            return "fail"
+        return "pass" if all(gate.get("outcome") == "passed" for gate in active) else "warn"
+
+    before_params = _parameters(before)
+    after_params = _parameters(after)
     before_parts = before.get("assembly_parts") or []
     after_parts = after.get("assembly_parts") or []
     part_changes = changed_part_ids(before_parts, after_parts)
@@ -711,16 +746,15 @@ async def diff_model_snapshots(from_snapshot_id: str, to_snapshot_id: str, user_
             "unchanged": unchanged,
         }
 
-    return {
+    result = {
         "from_snapshot_id": from_snapshot_id,
         "to_snapshot_id": to_snapshot_id,
         "model_changes": {
-            "code_changed": before.get("code") != after.get("code"),
             "prompt_changed": before.get("prompt") != after.get("prompt"),
             "source_changed": before.get("source") != after.get("source"),
             "inspect_verdict": {
-                "from": before_report.get("verdict"),
-                "to": after_report.get("verdict"),
+                "from": _verdict(before),
+                "to": _verdict(after),
             },
             "bounding_box": {
                 "from": before_report.get("bounding_box"),
@@ -731,10 +765,20 @@ async def diff_model_snapshots(from_snapshot_id: str, to_snapshot_id: str, user_
                 "to": after_report.get("volume"),
             },
         },
-        "file_changes": _diff_keys(before_files, after_files),
-        "parameter_changes": _diff_keys(before_params, after_params),
-        "part_changes": part_changes,
     }
+    if before.get("code") or after.get("code"):
+        result["model_changes"]["code_changed"] = before.get("code") != after.get("code")
+    if isinstance(before_files, dict) and isinstance(after_files, dict):
+        result["file_changes"] = _diff_keys(before_files, after_files)
+    if isinstance(before_params, dict) and isinstance(after_params, dict):
+        result["parameter_changes"] = _diff_keys(before_params, after_params)
+    if (
+        isinstance(before.get("assembly_parts"), list)
+        and isinstance(after.get("assembly_parts"), list)
+        and (before_parts or after_parts)
+    ):
+        result["part_changes"] = part_changes
+    return result
 
 
 # ---- Feedback (tester ground-truth signal) ----

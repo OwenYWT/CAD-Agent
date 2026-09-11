@@ -1,0 +1,38 @@
+{
+  "status": "ready",
+  "problems": [],
+  "durable_control_plane": {
+    "status": "ready",
+    "dependencies": {
+      "postgresql": {
+        "status": "ready",
+        "latency_ms": 3
+      },
+      "object_store": {
+        "status": "ready",
+        "latency_ms": 3
+      },
+      "temporal": {
+        "status": "ready",
+        "latency_ms": 3
+      },
+      "temporal_worker": {
+        "status": "ready",
+        "latency_ms": 4,
+        "workflow_pollers": 1,
+        "workflow_newest_age_ms": 19827,
+        "activity_pollers": 1,
+        "activity_newest_age_ms": 19828
+      },
+      "temporal_agent_v2_worker": {
+        "status": "ready",
+        "latency_ms": 4,
+        "workflow_pollers": 1,
+        "workflow_newest_age_ms": 38493,
+        "activity_pollers": 1,
+        "activity_newest_age_ms": 17838
+      }
+    },
+    "problems": []
+  }
+}

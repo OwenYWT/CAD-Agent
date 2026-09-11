@@ -10,6 +10,8 @@ from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError, ApplicationError
 from temporalio.workflow import ActivityCancellationType
 
+from app.workflows.document_queue import wait_for_document, release_document
+
 
 _CONTROL_RETRY = RetryPolicy(
     initial_interval=timedelta(seconds=1),
@@ -128,6 +130,8 @@ class McadDurableWorkflow:
     @workflow.run
     async def run(self, request: dict[str, Any]) -> dict[str, Any]:
         try:
+            if request.get("document_queue"):
+                await wait_for_document(self, request)
             preparation_result: dict[str, Any] | None = None
             step_offset = 0
             if request.get("preparation"):
@@ -401,6 +405,9 @@ class McadDurableWorkflow:
                 result_type=dict,
             )
             raise
+        finally:
+            if request.get("document_queue"):
+                await release_document(request)
 
 
 @workflow.defn(name="McadCheckWorkflow")
@@ -426,7 +433,7 @@ class McadCheckWorkflow:
             self._phase = "engineering_check"
             activity_task = asyncio.create_task(
                 workflow.execute_activity(
-                    "mcad.check",
+                    "engineering.compute" if request.get("engineering_task") else "mcad.check",
                     request,
                     activity_id=(
                         f"{request['workflow_run_id']}:engineering-check"

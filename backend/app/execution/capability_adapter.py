@@ -50,6 +50,8 @@ class CapabilityExecutionAdapter:
         mode: str,
         timeout_seconds: int,
         output_bytes: int,
+        expected_base_revision_id: str | None = None,
+        declared_outputs: Mapping[str, str] | None = None,
     ) -> CapabilityExecutionOutcome:
         snapshot = self.backend.runtime_snapshot()
         materialized: dict[str, Path] = {}
@@ -85,30 +87,43 @@ class CapabilityExecutionAdapter:
             sha256=hashlib.sha256(code.encode("utf-8")).hexdigest(),
         )
         attempt_id = f"capability-{uuid.uuid4()}"
+        output_declarations = [
+            OutputDeclaration(
+                name=name,
+                media_type=media_type,
+                max_size_bytes=output_bytes,
+            )
+            for name, media_type in sorted((declared_outputs or {}).items())
+        ]
+        if not output_declarations:
+            output_declarations.append(
+                OutputDeclaration(
+                    name="artifact",
+                    media_type=artifact_media_type,
+                    max_size_bytes=output_bytes,
+                )
+            )
+        output_declarations.append(
+            OutputDeclaration(
+                name="capability-result",
+                media_type="application/json",
+                max_size_bytes=512 * 1024,
+            )
+        )
         spec = ExecutionSpec(
             execution_attempt_id=attempt_id,
             workflow_run_id=f"workflow-{request_id}",
             step_run_id=f"step-{uuid.uuid4()}",
             tenant_id=self.tenant_id,
             project_id=self.project_id,
+            expected_base_revision_id=expected_base_revision_id,
             idempotency_key=f"capability:{source.sha256}",
             capability=f"mcad.{capability}",
             operation=operation,
             mode=mode,
             source=source,
             inputs=tuple(declarations),
-            outputs=(
-                OutputDeclaration(
-                    name="artifact",
-                    media_type=artifact_media_type,
-                    max_size_bytes=output_bytes,
-                ),
-                OutputDeclaration(
-                    name="capability-result",
-                    media_type="application/json",
-                    max_size_bytes=512 * 1024,
-                ),
-            ),
+            outputs=tuple(output_declarations),
             runtime=RuntimeRequirement(
                 image_digest=snapshot.image_digest,
                 platform=snapshot.platform,

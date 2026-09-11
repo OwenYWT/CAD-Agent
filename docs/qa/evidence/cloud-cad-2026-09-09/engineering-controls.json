@@ -1,0 +1,12 @@
+{
+  "cancelled_workflow": "3f90323b-4105-4b91-b57c-071b2b46e510",
+  "recovered_workflow": "20b8cec7-11b3-4c0a-bfd9-c360b395d867",
+  "revoked_workflow": "9634773f-e592-4846-a2a7-8b54f41f9b44",
+  "viewer_can_inspect_results": true,
+  "viewer_cannot_compute_or_export": true,
+  "tenant_boundary_enforced": true,
+  "queued_cancellation_persisted": true,
+  "actual_worker_outage_recovered": true,
+  "revocation_rechecked_before_execution": true,
+  "CAD_head_unchanged": true
+}

@@ -1,0 +1,188 @@
+{
+  "bed_contact": {
+    "schema_version": "durable-dfm-report.v1",
+    "outcome": "passed",
+    "process": "FDM",
+    "material": "PLA",
+    "policy_hash": "78281c07985bceb22f0c47ff97557a8c20cbd8aae79428dd03b827daf23e5812",
+    "metrics": {
+      "horizontal_roof_count": 0,
+      "bridge_span_mm": 0.0,
+      "unanchored_roof_area_mm2": 0.0,
+      "min_feature_size_mm": 4.0,
+      "is_watertight": true,
+      "face_count": 12,
+      "surface_area_mm2": 640.0,
+      "volume_mm3": 800.0,
+      "max_size_mm": 20.0,
+      "overhang_ratio": 0.0,
+      "material_ratio": 1.0,
+      "min_wall_thickness_mm": 4.01
+    },
+    "evaluated_rule_ids": [
+      "fdm_overhang",
+      "fdm_min_feature",
+      "fdm_bridge_distance"
+    ],
+    "unevaluated_rule_ids": [],
+    "violations": [],
+    "issues": []
+  },
+  "bridge_10_0": {
+    "schema_version": "durable-dfm-report.v1",
+    "outcome": "passed",
+    "process": "FDM",
+    "material": "PLA",
+    "policy_hash": "25577abfd53a9cf3c52b8439350c23233343bdf013a8ee3a7951f1e52599fed4",
+    "metrics": {
+      "horizontal_roof_count": 1,
+      "bridge_span_mm": 10.0,
+      "unanchored_roof_area_mm2": 0.0,
+      "min_feature_size_mm": 2.01,
+      "is_watertight": true,
+      "face_count": 28,
+      "surface_area_mm2": 1032.0,
+      "volume_mm3": 1160.0,
+      "max_size_mm": 18.0,
+      "overhang_ratio": 0.096899,
+      "material_ratio": 0.537037,
+      "min_wall_thickness_mm": 2.01
+    },
+    "evaluated_rule_ids": [
+      "fdm_bridge_distance"
+    ],
+    "unevaluated_rule_ids": [],
+    "violations": [],
+    "issues": []
+  },
+  "bridge_20_0": {
+    "schema_version": "durable-dfm-report.v1",
+    "outcome": "failed",
+    "process": "FDM",
+    "material": "PLA",
+    "policy_hash": "25577abfd53a9cf3c52b8439350c23233343bdf013a8ee3a7951f1e52599fed4",
+    "metrics": {
+      "horizontal_roof_count": 1,
+      "bridge_span_mm": 20.0,
+      "unanchored_roof_area_mm2": 0.0,
+      "min_feature_size_mm": 2.01,
+      "is_watertight": true,
+      "face_count": 28,
+      "surface_area_mm2": 1272.0,
+      "volume_mm3": 1360.0,
+      "max_size_mm": 28.0,
+      "overhang_ratio": 0.157233,
+      "material_ratio": 0.404762,
+      "min_wall_thickness_mm": 2.01
+    },
+    "evaluated_rule_ids": [
+      "fdm_bridge_distance"
+    ],
+    "unevaluated_rule_ids": [],
+    "violations": [
+      {
+        "rule_id": "fdm_bridge_distance",
+        "category": "feature",
+        "severity": "warning",
+        "actual_value": 20.0,
+        "message": "fdm_bridge_distance: measured 20",
+        "suggestion": "",
+        "source": "geometric"
+      }
+    ],
+    "issues": []
+  },
+  "bridge_10_37": {
+    "schema_version": "durable-dfm-report.v1",
+    "outcome": "passed",
+    "process": "FDM",
+    "material": "PLA",
+    "policy_hash": "25577abfd53a9cf3c52b8439350c23233343bdf013a8ee3a7951f1e52599fed4",
+    "metrics": {
+      "horizontal_roof_count": 1,
+      "bridge_span_mm": 9.999999980653172,
+      "unanchored_roof_area_mm2": 0.0,
+      "min_feature_size_mm": 2.01,
+      "is_watertight": true,
+      "face_count": 28,
+      "surface_area_mm2": 1032.0,
+      "volume_mm3": 1159.999989,
+      "max_size_mm": 20.39359,
+      "overhang_ratio": 0.096899,
+      "material_ratio": 0.251876,
+      "min_wall_thickness_mm": 2.01
+    },
+    "evaluated_rule_ids": [
+      "fdm_bridge_distance"
+    ],
+    "unevaluated_rule_ids": [],
+    "violations": [],
+    "issues": []
+  },
+  "small_rib": {
+    "schema_version": "durable-dfm-report.v1",
+    "outcome": "failed",
+    "process": "FDM",
+    "material": "PLA",
+    "policy_hash": "28624f7a379afc7fc2808cff53bb30d4638edc5a840bc3116f424e11abc30d99",
+    "metrics": {
+      "horizontal_roof_count": 0,
+      "bridge_span_mm": 0.0,
+      "unanchored_roof_area_mm2": 0.0,
+      "min_feature_size_mm": 0.2999999999999998,
+      "is_watertight": true,
+      "face_count": 28,
+      "surface_area_mm2": 657.200001,
+      "volume_mm3": 802.400002,
+      "max_size_mm": 20.0,
+      "overhang_ratio": 0.0,
+      "material_ratio": 0.668667,
+      "min_wall_thickness_mm": 0.31
+    },
+    "evaluated_rule_ids": [
+      "fdm_min_feature"
+    ],
+    "unevaluated_rule_ids": [],
+    "violations": [
+      {
+        "rule_id": "fdm_min_feature",
+        "category": "feature",
+        "severity": "warning",
+        "actual_value": 0.2999999999999998,
+        "message": "fdm_min_feature: measured 0.3",
+        "suggestion": "",
+        "source": "geometric"
+      }
+    ],
+    "issues": []
+  },
+  "cantilever": {
+    "schema_version": "durable-dfm-report.v1",
+    "outcome": "indeterminate",
+    "process": "FDM",
+    "material": "PLA",
+    "policy_hash": "25577abfd53a9cf3c52b8439350c23233343bdf013a8ee3a7951f1e52599fed4",
+    "metrics": {
+      "horizontal_roof_count": 1,
+      "bridge_span_mm": 0.0,
+      "unanchored_roof_area_mm2": 160.0,
+      "min_feature_size_mm": 2.0,
+      "is_watertight": true,
+      "face_count": 20,
+      "surface_area_mm2": 800.0,
+      "volume_mm3": 800.0,
+      "max_size_mm": 20.0,
+      "overhang_ratio": 0.2,
+      "material_ratio": 0.333333,
+      "min_wall_thickness_mm": 2.01
+    },
+    "evaluated_rule_ids": [
+      "fdm_bridge_distance"
+    ],
+    "unevaluated_rule_ids": [],
+    "violations": [],
+    "issues": [
+      "horizontal_roof_requires_support"
+    ]
+  }
+}

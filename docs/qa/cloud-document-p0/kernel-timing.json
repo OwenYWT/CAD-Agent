@@ -1,0 +1,68 @@
+{
+  "schema_version": "cad-kernel-timing.v1",
+  "freecad_version": [
+    "1",
+    "1",
+    "3",
+    "20260725 (Git shallow)",
+    "Unknown",
+    "2026/07/25 04:52:02",
+    "grafted,grafted",
+    "145529fe741292ff0b3977a01195bf0247425794"
+  ],
+  "input_sha256": "d6159a2544faa6f8e92b41412dc3a4558bdde87fe7dd7c7d0f561ee6ecfb3800",
+  "operation": "Hole.Diameter + 1 mm; recompute; verify shape; abort transaction",
+  "timed_scope": "property assignment and recompute only",
+  "samples": [
+    {
+      "reopen_ms": 135.613817,
+      "property_set_recompute_ms": 6.035336
+    },
+    {
+      "reopen_ms": 3.606168,
+      "property_set_recompute_ms": 4.406919
+    },
+    {
+      "reopen_ms": 4.003835,
+      "property_set_recompute_ms": 4.225418
+    },
+    {
+      "reopen_ms": 3.573293,
+      "property_set_recompute_ms": 4.185627
+    },
+    {
+      "reopen_ms": 3.356877,
+      "property_set_recompute_ms": 4.257835
+    },
+    {
+      "reopen_ms": 3.509918,
+      "property_set_recompute_ms": 4.030169
+    },
+    {
+      "reopen_ms": 3.34046,
+      "property_set_recompute_ms": 4.320877
+    },
+    {
+      "reopen_ms": 4.469711,
+      "property_set_recompute_ms": 4.402086
+    },
+    {
+      "reopen_ms": 3.648127,
+      "property_set_recompute_ms": 4.390961
+    },
+    {
+      "reopen_ms": 3.504461,
+      "property_set_recompute_ms": 4.241502
+    }
+  ],
+  "median_ms": 4.289356,
+  "p95_ms": 6.035336,
+  "input_unchanged": true,
+  "environment": {
+    "container_cpus": 2,
+    "container_memory_limit": "1 GiB",
+    "network": "none",
+    "input_mount": "read-only",
+    "model": "60 x 40 x 8 mm plate; 8 mm through hole"
+  }
+}

@@ -1,0 +1,139 @@
+SKIPPED [1] tests/integration/test_agent_candidate_seal.py:385: real PostgreSQL and MinIO are required
+SKIPPED [1] tests/integration/test_agent_candidate_seal.py:436: real PostgreSQL and MinIO are required
+SKIPPED [1] tests/integration/test_agent_candidate_seal.py:462: real PostgreSQL and MinIO are required
+SKIPPED [1] tests/integration/test_agent_candidate_seal.py:487: real PostgreSQL and MinIO are required
+SKIPPED [1] tests/integration/test_agent_candidate_seal.py:496: real PostgreSQL and MinIO are required
+SKIPPED [1] tests/integration/test_agent_candidate_seal.py:610: real PostgreSQL and MinIO are required
+SKIPPED [2] tests/integration/test_agent_candidate_seal.py:655: real PostgreSQL and MinIO are required
+SKIPPED [1] tests/integration/test_agent_candidate_seal.py:685: real PostgreSQL and MinIO are required
+SKIPPED [1] tests/integration/test_api_compatibility_matrix.py:278: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_api_compatibility_matrix.py:432: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_api_compatibility_matrix.py:563: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_api_compatibility_matrix.py:649: set CAD_AGENT_TEST_LLM=1 for the real planner/codegen provider
+SKIPPED [1] tests/integration/test_change_set_api.py:208: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_change_set_api.py:382: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_change_set_api.py:488: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_legacy_import.py:197: real PostgreSQL and S3-compatible storage are required
+SKIPPED [1] tests/integration/test_legacy_import.py:300: real PostgreSQL and S3-compatible storage are required
+SKIPPED [1] tests/integration/test_legacy_import.py:321: real PostgreSQL and S3-compatible storage are required
+SKIPPED [1] tests/integration/test_minio_artifacts.py:28: CAD_AGENT_TEST_OBJECT_STORE=1 is required for real MinIO tests
+SKIPPED [1] tests/integration/test_postgres_auth.py:59: CAD_AGENT_TEST_DATABASE_URL is required
+SKIPPED [1] tests/integration/test_postgres_capability_artifacts.py:56: real PostgreSQL and S3-compatible storage are required
+SKIPPED [1] tests/integration/test_postgres_compat_workflows.py:56: CAD_AGENT_TEST_DATABASE_URL is required
+SKIPPED [1] tests/integration/test_postgres_engineering_knowledge.py:60: CAD_AGENT_TEST_DATABASE_URL is required
+SKIPPED [1] tests/integration/test_postgres_fusion_connectors.py:73: real PostgreSQL and S3-compatible storage are required
+SKIPPED [1] tests/integration/test_postgres_fusion_connectors.py:118: real PostgreSQL and S3-compatible storage are required
+SKIPPED [1] tests/integration/test_postgres_history.py:58: CAD_AGENT_TEST_DATABASE_URL is required
+SKIPPED [1] tests/integration/test_postgres_project_files.py:67: real PostgreSQL and S3-compatible storage are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:312: set CAD_AGENT_TEST_REAL_FREECAD_AGENT=1 for the real fused flow
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:1161: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:1262: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:1364: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:1595: CAD_AGENT_TEST_REAL_VISION=1 is required for vision integration
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:1707: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:1875: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:2019: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:2181: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:2273: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:2463: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:2569: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:2604: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:2678: CAD_AGENT_TEST_REAL_LLM=1 is required for provider integration
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:2795: CAD_AGENT_TEST_REAL_LLM=1 is required for provider integration
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:2913: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:3000: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:3025: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:3067: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:3103: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_temporal_mcadd_workflow.py:3149: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/integration/test_websocket_replay.py:274: real PostgreSQL, MinIO, Temporal, and Podman are required
+SKIPPED [1] tests/postgres/test_agent_candidate_builds.py:214: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_agent_candidate_builds.py:267: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_agent_candidate_builds.py:342: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_agent_candidate_builds.py:428: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_agent_candidate_builds.py:512: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_agent_candidate_builds.py:555: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_artifact_commit.py:235: real PostgreSQL and MinIO test configuration is required
+SKIPPED [1] tests/postgres/test_artifact_commit.py:343: real PostgreSQL and MinIO test configuration is required
+SKIPPED [1] tests/postgres/test_artifact_commit.py:428: real PostgreSQL and MinIO test configuration is required
+SKIPPED [1] tests/postgres/test_artifact_commit.py:502: real PostgreSQL and MinIO test configuration is required
+SKIPPED [1] tests/postgres/test_artifact_commit.py:580: real PostgreSQL and MinIO test configuration is required
+SKIPPED [1] tests/postgres/test_change_sets.py:250: real PostgreSQL and MinIO test configuration is required
+SKIPPED [1] tests/postgres/test_change_sets.py:328: real PostgreSQL and MinIO test configuration is required
+SKIPPED [1] tests/postgres/test_change_sets.py:399: real PostgreSQL and MinIO test configuration is required
+SKIPPED [1] tests/postgres/test_change_sets.py:444: real PostgreSQL and MinIO test configuration is required
+SKIPPED [1] tests/postgres/test_change_sets.py:487: real PostgreSQL and MinIO test configuration is required
+SKIPPED [1] tests/postgres/test_cloud_documents.py:67: requires isolated CAD_AGENT_TEST_DATABASE_URL
+SKIPPED [1] tests/postgres/test_cloud_documents.py:83: requires isolated CAD_AGENT_TEST_DATABASE_URL
+SKIPPED [1] tests/postgres/test_cloud_documents.py:105: requires isolated CAD_AGENT_TEST_DATABASE_URL
+SKIPPED [1] tests/postgres/test_cloud_documents.py:129: requires isolated CAD_AGENT_TEST_DATABASE_URL
+SKIPPED [1] tests/postgres/test_cloud_documents.py:160: requires isolated CAD_AGENT_TEST_DATABASE_URL
+SKIPPED [1] tests/postgres/test_cloud_documents.py:170: requires isolated CAD_AGENT_TEST_DATABASE_URL
+SKIPPED [1] tests/postgres/test_cloud_documents.py:196: requires isolated CAD_AGENT_TEST_DATABASE_URL
+SKIPPED [1] tests/postgres/test_dfm_policy_snapshot.py:65: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_dfm_policy_snapshot.py:129: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_durable_agent_planning.py:156: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_durable_agent_planning.py:243: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_event_outbox.py:95: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_event_outbox.py:135: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_event_outbox.py:160: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_event_outbox.py:211: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_event_outbox.py:252: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_legacy_store_rls.py:143: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_legacy_store_rls.py:170: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_legacy_store_rls.py:473: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_legacy_store_rls.py:509: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_revision_cas.py:98: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_revision_cas.py:195: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_revision_cas.py:260: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_revision_cas.py:364: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_revision_cas.py:387: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_run_state_machine.py:110: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_run_state_machine.py:130: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_run_state_machine.py:176: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_run_state_machine.py:273: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_run_state_machine.py:334: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_run_state_machine.py:472: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_run_state_machine.py:569: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_run_state_machine.py:642: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_tenant_rls.py:101: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_tenant_rls.py:124: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [6] tests/postgres/test_tenant_rls.py:144: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_tenant_rls.py:159: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_tenant_rls.py:262: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_tenant_rls.py:286: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_tenant_rls.py:329: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_tenant_rls.py:407: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_tenant_rls.py:439: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_tenant_rls.py:467: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_tenant_rls.py:511: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_tenant_rls.py:576: CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests
+SKIPPED [1] tests/postgres/test_workflow_dispatch.py:72: requires isolated PostgreSQL
+SKIPPED [1] tests/postgres/test_workflow_dispatch.py:79: requires isolated PostgreSQL
+SKIPPED [1] tests/postgres/test_workflow_dispatch.py:94: requires isolated PostgreSQL
+SKIPPED [1] tests/postgres/test_workflow_dispatch.py:107: requires real Temporal and sandbox
+SKIPPED [1] tests/test_assembly_combiner_regression_1.py:152: set RUN_REAL_PODMAN=1 to exercise the actual assembly STL exporter
+SKIPPED [1] tests/test_capability_runtime.py:217: set RUN_REAL_PODMAN=1 to exercise the actual unified MCAD runtime
+SKIPPED [1] tests/test_execution_backend.py:479: set RUN_REAL_PODMAN=1 to exercise the actual sandbox image
+SKIPPED [1] tests/test_freecad_agent_real.py:16: set RUN_REAL_FREECAD_AGENT=1 for real LLM-to-FreeCAD integration
+SKIPPED [1] tests/test_freecad_agent_real.py:82: requires real LLM and FreeCAD
+SKIPPED [1] tests/test_freecad_bom_real_regression_1.py:31: set RUN_REAL_FREECAD=1 to exercise native FreeCAD Assembly BOM
+SKIPPED [1] tests/test_freecad_runtime.py:138: set RUN_REAL_FREECAD=1 to exercise the real FreeCAD sandbox
+SKIPPED [1] tests/test_freecad_runtime.py:244: requires real FreeCAD sandbox
+SKIPPED [1] tests/test_freecad_runtime.py:280: set RUN_REAL_FREECAD=1 to exercise the real FreeCAD sandbox
+SKIPPED [1] tests/test_freecad_runtime.py:499: set RUN_REAL_FREECAD=1 to exercise the real FreeCAD sandbox
+SKIPPED [1] tests/test_freecad_subtractive_semantics_regression_1.py:198: set RUN_REAL_FREECAD=1 to exercise the real FreeCAD sandbox
+SKIPPED [1] tests/test_freecad_subtractive_semantics_regression_1.py:254: requires real FreeCAD
+SKIPPED [1] tests/test_integration.py:16: ANTHROPIC_API_KEY not set
+SKIPPED [1] tests/test_integration.py:36: ANTHROPIC_API_KEY not set
+SKIPPED [1] tests/test_integration_p2.py:133: ANTHROPIC_API_KEY not set
+SKIPPED [1] tests/test_integration_p2.py:152: ANTHROPIC_API_KEY not set
+SKIPPED [1] tests/test_integration_p4.py:134: ANTHROPIC_API_KEY not set
+SKIPPED [2] tests/test_phase2.py:99: chromadb unavailable (e.g. numpy>=2); production falls back to TF-IDF
+SKIPPED [1] tests/test_runtime_manifest.py:200: set RUN_REAL_PODMAN=1 to exercise the actual sandbox image
+SKIPPED [3] tests/test_runtime_manifest.py:222: set RUN_REAL_PODMAN=1 to exercise the actual sandbox image
+SKIPPED [1] tests/test_runtime_manifest.py:251: set RUN_REAL_PODMAN=1 to exercise normalized real failures
+
+tests/fusion360/test_fusion_e2e.py::test_live_context_preview_parameter_verify_restore_and_step_export
+
+1/1475 tests collected (1474 deselected) in 5.52s

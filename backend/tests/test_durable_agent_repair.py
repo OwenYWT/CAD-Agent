@@ -110,6 +110,21 @@ def test_geometry_failure_uses_targeted_bounded_source_repair():
     assert decision.budget == 2
 
 
+def test_visual_failure_uses_bounded_visual_repair_path():
+    decision = decide_repair(
+        category="validation",
+        error_code="visual_validation_failed",
+        error_message="Visual validation issues: centered hole appears offset",
+        runtime_error_type="VisualError",
+        repair_count=0,
+        seen_signatures=(),
+    )
+    assert decision.repairable is True
+    assert decision.failure_class == "vision_mismatch"
+    assert decision.strategy == "minimal_targeted_fix"
+    assert decision.budget == 2
+
+
 class CodeGeneratorStub:
     calls = 0
 

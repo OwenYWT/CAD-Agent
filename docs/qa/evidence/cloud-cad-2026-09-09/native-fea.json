@@ -1,0 +1,9 @@
+{
+  "actual_gmsh_calculix": true,
+  "quadratic_tetrahedra": true,
+  "axial_solution_within_3_percent": true,
+  "force_scaling_verified": true,
+  "bending_solution_within_10_percent": true,
+  "reaction_balance_verified": true,
+  "input_fcstd_unchanged": true
+}

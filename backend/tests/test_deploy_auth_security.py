@@ -25,7 +25,9 @@ from app.config import settings
 from app.api import auth as auth_mod
 from app.api import execute as execute_api
 from app.models.schemas import GenerateResponse
+from app.repositories import identity as identity_repository
 from app.sandbox.code_filter import validate_code
+from app.storage import history
 
 
 # --------------------------------------------------------------------------- #
@@ -49,6 +51,24 @@ def _isolate(tmp_path, monkeypatch):
     yield
     auth_mod.rate_limiter.rpm = orig_rpm
     auth_mod.rate_limiter._windows.clear()
+
+
+@pytest.fixture
+def durable_ws(monkeypatch):
+    """Isolate WS auth while preserving production's durable-only contract."""
+    monkeypatch.setattr(settings, "durable_control_plane_enabled", True)
+
+    async def reconcile(principal):
+        return principal
+
+    async def writable(
+        _session_id: str,
+        _user_id: str | None,
+    ) -> bool:
+        return True
+
+    monkeypatch.setattr(identity_repository, "reconcile_principal", reconcile)
+    monkeypatch.setattr(history, "session_writable_by_user", writable)
 
 
 def _identity():
@@ -230,6 +250,13 @@ def test_files_valid_but_missing_is_404(client):
     assert r.status_code == 404
 
 
+def test_files_allow_real_freecad_document_downloads():
+    from app.api.files import MEDIA_TYPES, _ALLOWED_EXTENSIONS
+
+    assert ".fcstd" in _ALLOWED_EXTENSIONS
+    assert MEDIA_TYPES[".fcstd"] == "application/vnd.freecad.fcstd"
+
+
 def test_files_handler_rejects_dotdot_request_id():
     """Call the handler directly with a '..' request_id (URL normalization would
     otherwise strip it before it reaches the route) -> 400, never escapes storage."""
@@ -366,7 +393,12 @@ def test_ws_bad_session_id_closes_4001(client, fake_orch):
     assert ei.value.code == 4001
 
 
-def test_ws_missing_token_closes_4003(client, monkeypatch, fake_orch):
+def test_ws_missing_token_closes_4003(
+    client,
+    monkeypatch,
+    fake_orch,
+    durable_ws,
+):
     monkeypatch.setattr(settings, "api_keys", ["k1"])
     with pytest.raises(WebSocketDisconnect) as ei:
         with client.websocket_connect("/ws/goodsession") as wsx:
@@ -374,7 +406,12 @@ def test_ws_missing_token_closes_4003(client, monkeypatch, fake_orch):
     assert ei.value.code == 4003
 
 
-def test_ws_bad_token_closes_4003(client, monkeypatch, fake_orch):
+def test_ws_bad_token_closes_4003(
+    client,
+    monkeypatch,
+    fake_orch,
+    durable_ws,
+):
     monkeypatch.setattr(settings, "api_keys", ["k1"])
     with pytest.raises(WebSocketDisconnect) as ei:
         with client.websocket_connect("/ws/goodsession?token=wrong") as wsx:
@@ -382,14 +419,14 @@ def test_ws_bad_token_closes_4003(client, monkeypatch, fake_orch):
     assert ei.value.code == 4003
 
 
-def test_ws_good_token_connects(client, monkeypatch, fake_orch):
+def test_ws_good_token_connects(client, monkeypatch, fake_orch, durable_ws):
     monkeypatch.setattr(settings, "api_keys", ["k1"])
     # Connecting with a valid token should NOT raise on entry.
     with client.websocket_connect("/ws/goodsession?token=k1") as wsx:
         assert wsx is not None
 
 
-def test_ws_auth_off_connects_without_token(client, fake_orch):
+def test_ws_auth_off_connects_without_token(client, fake_orch, durable_ws):
     # api_keys=[] -> verify_ws_token returns True; connect succeeds.
     with client.websocket_connect("/ws/goodsession") as wsx:
         assert wsx is not None

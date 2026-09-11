@@ -1,0 +1,25 @@
+{
+  "partial_update": {
+    "three_instances_two_definitions": true,
+    "initial_mesh_downloads": 2,
+    "changed_mesh_downloads": 1,
+    "same_canvas": true,
+    "camera_created_kernel_operations": 0,
+    "workflow_id": "564081a0-83c0-4725-a898-755f6f26c5fd"
+  },
+  "lod": {
+    "all_precisions_loaded": true,
+    "return_to_cached_medium_downloaded_nothing": true,
+    "operation_count_unchanged": true,
+    "page_errors": []
+  },
+  "native_instances": {
+    "created_in_browser": true,
+    "moved_in_browser": true,
+    "geometry_downloads_added": 0,
+    "source_geometry_unchanged": true,
+    "final_instance_x_mm": 100,
+    "page_errors": [],
+    "console_errors": []
+  }
+}

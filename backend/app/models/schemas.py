@@ -1,9 +1,10 @@
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
+from app.execution.contracts import ExecutionError
 from app.parameters import CADParameter, extract_parameters
 from app.config import settings
 
@@ -250,13 +251,16 @@ class DurableRequestIdentity(BaseModel):
     before execution in every environment.
     """
 
-    project_id: UUID | None = None
-    branch_id: UUID | None = None
-    expected_base_revision_id: UUID | None = None
-    idempotency_key: str | None = Field(default=None, min_length=1, max_length=500)
+    project_id: UUID
+    branch_id: UUID
+    expected_base_revision_id: UUID
+    idempotency_key: str = Field(min_length=1, max_length=500)
 
-    @model_validator(mode="after")
-    def require_durable_identity_after_cutover(self):
+    @model_validator(mode="before")
+    @classmethod
+    def require_durable_identity_after_cutover(cls, value):
+        if not isinstance(value, dict):
+            return value
         missing = [
             name
             for name in (
@@ -265,17 +269,22 @@ class DurableRequestIdentity(BaseModel):
                 "expected_base_revision_id",
                 "idempotency_key",
             )
-            if getattr(self, name) is None
+            if value.get(name) is None
         ]
         if missing:
             raise ValueError(
                 "durable MCAD writes require " + ", ".join(missing)
             )
-        return self
+        return value
+
+
+DurablePrompt = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)
+]
 
 
 class GenerateRequest(DurableRequestIdentity):
-    prompt: str = Field(..., min_length=1, max_length=10000)
+    prompt: DurablePrompt
     manufacturing_profile: ManufacturingProfile | None = None
     output_formats: list[str] = ["step", "stl"]
 
@@ -283,8 +292,9 @@ class GenerateRequest(DurableRequestIdentity):
 
 
 class ModifyRequest(DurableRequestIdentity):
-    code: str = Field(..., min_length=1, max_length=50000)
-    prompt: str = Field(..., min_length=1, max_length=10000)
+    code: str | None = Field(default=None, min_length=1, max_length=50000)
+    modeling_backend: Literal["auto", "freecad", "cadquery"] = "auto"
+    prompt: DurablePrompt
     output_formats: list[str] = ["step", "stl"]
 
     _check_formats = field_validator("output_formats")(_validate_output_formats)
@@ -330,6 +340,24 @@ class DurableAgentValidationProjection(BaseModel):
     violations: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class DurableBOMProjection(BaseModel):
+    status: Literal[
+        "pending",
+        "running",
+        "succeeded",
+        "not_applicable",
+        "missing",
+        "failed",
+        "unsupported",
+        "cancelled",
+    ]
+    revision_id: UUID | None = None
+    evidence_id: UUID | None = None
+    json_download_url: str | None = None
+    csv_download_url: str | None = None
+    error: ExecutionError | None = None
+
+
 class DurableAgentSnapshotProjection(BaseModel):
     current_stage: str
     current_step_key: str | None = None
@@ -341,6 +369,22 @@ class DurableAgentSnapshotProjection(BaseModel):
     plan: dict[str, Any] | None = None
     validations: list[DurableAgentValidationProjection] = Field(default_factory=list)
     risk_summary: dict[str, Any] | None = None
+    bom: DurableBOMProjection | None = None
+
+
+class DurableAffectedObject(BaseModel):
+    object_id: str
+    object_type: Literal["part", "assembly", "feature", "profile", "file"]
+    label: str
+    change: Literal["create", "modify", "remove", "inspect"]
+
+
+class DurableConfirmationProjection(BaseModel):
+    status: Literal["waiting"] = "waiting"
+    workflow_run_id: UUID
+    reason: str
+    plan_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    affected_objects: list[DurableAffectedObject]
 
 
 class DurableTaskEvent(BaseModel):
@@ -371,6 +415,7 @@ class DurableAttemptSnapshot(BaseModel):
     worker_id: str | None = None
     error_code: str | None = None
     error_message: str | None = None
+    error: ExecutionError | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
 
@@ -384,6 +429,7 @@ class DurableStepSnapshot(BaseModel):
     attempt_count: int
     error_code: str | None = None
     error_message: str | None = None
+    error: ExecutionError | None = None
     attempts: list[DurableAttemptSnapshot] = Field(default_factory=list)
 
 
@@ -419,6 +465,7 @@ class DurableTaskSnapshot(BaseModel):
     cancellation_requested_at: datetime | None = None
     error_code: str | None = None
     error_message: str | None = None
+    error: ExecutionError | None = None
     created_at: datetime
     started_at: datetime | None = None
     updated_at: datetime
@@ -427,6 +474,9 @@ class DurableTaskSnapshot(BaseModel):
     artifacts: list[DurableArtifactSnapshot] = Field(default_factory=list)
     change_set: DurableChangeSetSummary | None = None
     agent: DurableAgentSnapshotProjection | None = None
+    confirmation: DurableConfirmationProjection | None = None
+    parameters: list[CADParameter] = Field(default_factory=list)
+    parameter_state_sha256: str | None = None
 
 
 class TaskConfirmationRequest(BaseModel):
@@ -528,6 +578,7 @@ class GenerateResponse(BaseModel):
     code: str | None = None
     params: dict[str, ParamConfig] | None = None
     parameters: list[CADParameter] | None = None
+    parameter_state_sha256: str | None = None
     execution_time_ms: int = 0
     attempts: int = 0
     repair_history: list[RepairStep] = Field(default_factory=list)

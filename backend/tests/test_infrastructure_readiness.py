@@ -58,12 +58,14 @@ def test_enabled_durable_control_plane_requires_every_dependency(override, expec
     assert any(expected in problem for problem in problems)
 
 
-def test_development_may_keep_durable_control_plane_disabled_during_cutover():
+def test_development_requires_the_only_supported_durable_write_path():
     settings = _settings(
         durable_control_plane_enabled=False,
     )
 
-    assert settings.durable_control_plane_config_problems() == []
+    problems = settings.durable_control_plane_config_problems()
+
+    assert any("DURABLE_CONTROL_PLANE_ENABLED" in problem for problem in problems)
 
 
 def test_production_fails_closed_when_durable_control_plane_is_disabled():

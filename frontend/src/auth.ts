@@ -80,6 +80,8 @@ export function authHeaders(): HeadersInit {
 
 export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
+  const workspace = new URLSearchParams(window.location.search).get("workspace");
+  if (workspace && /^[0-9a-f-]{36}$/i.test(workspace)) headers.set("X-Workspace-Tenant", workspace);
   const token = getAuthToken();
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);

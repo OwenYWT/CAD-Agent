@@ -1,0 +1,16 @@
+{
+  "document_id": "02f6030a-e618-4a9b-804c-1a03b2dde244",
+  "bridge_id": "4c61533d-fb79-49de-819e-75970c115801",
+  "delivery_id": "4576a455-25a7-4ddf-80d6-143db1b0bcf1",
+  "recovery_delivery_id": "b94314e8-a1f9-489d-ace5-c72d05826846",
+  "real_cli_and_filesystem": true,
+  "file_count": 14,
+  "receipt_hashes_verified": true,
+  "live_lease_expiry_and_restart": true,
+  "actual_api_restart_verified": true,
+  "recovery_attempts": 2,
+  "existing_files_not_rewritten": true,
+  "replayed_pairing_and_stale_ack_denied": true,
+  "viewer_and_revocation_denied": true,
+  "output_directory": "/tmp/cad-bridge-acceptance-ae9ba6989d/delivered"
+}

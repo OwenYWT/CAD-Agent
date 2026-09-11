@@ -5,10 +5,42 @@
 # with runtime-lock.json.
 FROM docker.io/library/node@sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0 AS node_runtime
 
+FROM docker.io/library/python@sha256:fd95fa221297a88e1cf49c55ec1828edd7c5a428187e67b5d1805692d11588db AS freecad_runtime
+ARG TARGETARCH
+COPY backend/sandbox/freecad_build_verify.py /tmp/freecad_build_verify.py
+RUN --mount=type=cache,target=/var/cache/freecad \
+    printf 'Acquire::Check-Date "false";\n' \
+      > /etc/apt/apt.conf.d/99-cad-agent-build-clock && \
+    apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl && \
+    rm -rf /var/lib/apt/lists/* && \
+    case "$TARGETARCH" in \
+      amd64) asset="FreeCAD_1.1.3-Linux-x86_64-py311.AppImage"; checksum="3a853eb69ee595f779f2255dbf80a765926981d8ff68903cefee4dfb03a8f5ef" ;; \
+      arm64) asset="FreeCAD_1.1.3-Linux-aarch64-py311.AppImage"; checksum="9a8f9f7f2802bb856f2bb70f53d536e2ae06569f4e6d718407803076104ff55e" ;; \
+      *) echo "unsupported FreeCAD architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac && \
+    download="/var/cache/freecad/$asset" && \
+    touch "$download" && \
+    if ! echo "$checksum  $download" | sha256sum --check --status; then \
+      curl --http1.1 --fail --location --retry 30 --retry-all-errors \
+        --retry-delay 2 --continue-at - --output "$download" \
+        "https://github.com/FreeCAD/FreeCAD/releases/download/1.1.3/$asset"; \
+    fi && \
+    echo "$checksum  $download" | sha256sum --check --strict && \
+    chmod +x "$download" && \
+    cd /tmp && "$download" --appimage-extract >/dev/null && \
+    mv /tmp/squashfs-root /opt/freecad && \
+    mkdir -p /opt/freecad/bin && \
+    freecad_cmd="$(find /opt/freecad -type f -iname 'freecadcmd' -print -quit)" && \
+    test -n "$freecad_cmd" && \
+    ln -s "$freecad_cmd" /opt/freecad/bin/FreeCADCmd && \
+    /opt/freecad/bin/FreeCADCmd -c \
+      "exec(compile(open('/tmp/freecad_build_verify.py', encoding='utf-8').read(), '/tmp/freecad_build_verify.py', 'exec'))"
+
 FROM docker.io/library/python@sha256:fd95fa221297a88e1cf49c55ec1828edd7c5a428187e67b5d1805692d11588db
 
 LABEL org.opencontainers.image.title="CAD Agent unified MCAD runtime" \
-      org.opencontainers.image.description="Pinned CadQuery, build123d, OCP, DXF, implicit-CAD and headless snapshot worker" \
+      org.opencontainers.image.description="Pinned FreeCAD, CadQuery, build123d, OCP, DXF, implicit-CAD and headless snapshot worker" \
       io.wordswave.mcad.runtime.schema="mcad-runtime-lock.v1"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -33,9 +65,13 @@ COPY backend/sandbox/runtime-requirements.txt /opt/cad-agent/runtime-requirement
 # OCP/OpenCascade runtime libraries plus the complete, exact Python dependency
 # closure. The cache mount is not committed to the image; it only lets a
 # transient download failure resume without weakening pip's index hash checks.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN printf 'Acquire::Check-Date "false";\n' \
+      > /etc/apt/apt.conf.d/99-cad-agent-build-clock && \
+    apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates libgl1 libglib2.0-0 libxrender1 && \
     rm -rf /var/lib/apt/lists/*
+
+COPY --from=freecad_runtime /opt/freecad /opt/freecad
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install --only-binary=:all: \
@@ -71,18 +107,30 @@ RUN python -m pip install --no-cache-dir --no-deps \
 
 COPY backend/sandbox/executor_entry.py /opt/cad-agent/executor_entry.py
 COPY backend/sandbox/capability_entry.py /opt/cad-agent/capability_entry.py
+COPY backend/sandbox/freecad_entry.py /opt/cad-agent/freecad_entry.py
+COPY backend/sandbox/freecad_bom.py /opt/cad-agent/freecad_bom.py
+COPY backend/sandbox/freecad_scene.py /opt/cad-agent/freecad_scene.py
+COPY backend/sandbox/freecad_engineering.py /opt/cad-agent/freecad_engineering.py
+COPY backend/sandbox/freecad_cam.py /opt/cad-agent/freecad_cam.py
+COPY backend/sandbox/freecad_release.py /opt/cad-agent/freecad_release.py
+COPY backend/app/freecad/state_projector.py /opt/cad-agent/freecad_state_projector.py
+COPY backend/app/freecad/topology.py /opt/cad-agent/freecad_topology.py
 COPY backend/sandbox/geometry_validation.py /opt/cad-agent/geometry_validation.py
 COPY backend/sandbox/visual_render.py /opt/cad-agent/visual_render.py
+COPY backend/sandbox/dfm_brep.py /opt/cad-agent/dfm_brep.py
 COPY backend/sandbox/dfm_validation.py /opt/cad-agent/dfm_validation.py
 COPY backend/sandbox/runtime_probe.py /opt/cad-agent/runtime_probe.py
+COPY backend/sandbox/freecad_runtime_probe.py /opt/cad-agent/freecad_runtime_probe.py
 
 RUN groupadd --gid 1000 sandbox && \
     useradd --uid 1000 --gid 1000 --no-create-home \
       --home-dir /tmp --shell /usr/sbin/nologin sandbox && \
     chown 1000:1000 /opt/cad-agent/executor_entry.py \
       /opt/cad-agent/capability_entry.py /opt/cad-agent/geometry_validation.py \
+      /opt/cad-agent/freecad_entry.py /opt/cad-agent/freecad_state_projector.py \
+      /opt/cad-agent/freecad_topology.py /opt/cad-agent/freecad_bom.py \
       /opt/cad-agent/visual_render.py /opt/cad-agent/dfm_validation.py \
-      /opt/cad-agent/runtime_probe.py
+      /opt/cad-agent/runtime_probe.py /opt/cad-agent/freecad_runtime_probe.py
 
 USER 1000:1000
 

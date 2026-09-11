@@ -1,0 +1,12 @@
+{
+  "workflow_run_id": "43785892-e8a5-4166-a4f6-278591cc8c36",
+  "browser_submit_and_actual_solver": true,
+  "stress": "0.73140 MPa",
+  "displacement": "0.000022334 mm",
+  "actual_field_rendered": true,
+  "display_scale_preserves_raw_values": true,
+  "evidence_downloaded": true,
+  "source_revision_unchanged": true,
+  "page_errors": [],
+  "console_errors": []
+}

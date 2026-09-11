@@ -2,6 +2,8 @@
 
 本文是当前开发环境的唯一入口。生产部署见 [`DEPLOY.md`](../DEPLOY.md)，Fusion 360 工作站安装见 [`fusion360-installation.md`](fusion360-installation.md)。
 
+2026-09-09 已部署的本机融合版本入口为 `http://127.0.0.1:8087/`，详细镜像、服务名称、配置保存位置、验收证据及未验证范围见 [融合验收与交接](qa/cloud-cad-fusion-2026-09-09.md)。通用首次安装仍按下方 Compose/热更新步骤执行。
+
 ## 环境要求
 
 - Python 3.11+
@@ -18,22 +20,34 @@ Docker 与 Podman 二选一。当前 MCAD 产品链路依赖独立 API、Workflo
 backend/                    FastAPI 控制平面、工作流、执行契约、检查和任务接口
 backend/alembic/            PostgreSQL schema migrations
 backend/app/execution/      ExecutionBackend、ExecutionSpec 与 ExecutionResult
+backend/app/freecad/        原生 typed operation、语义状态、检查与工程任务契约
+backend/app/services/       云文档、协作、分支、工程证据、发布及持久派发
 backend/app/workflows/      Temporal Workflow 定义
 backend/app/workers/        独立 Workflow/Activity Worker
 backend/app/capabilities/   CAD Skills 产品 adapter 与依赖检查
 backend/app/tools/          三层 Agent 工具插件、会话工具池、权限、确认与审计执行边界
 backend/app/fusion360/      Fusion typed contract、Runtime、Agent 与 APS adapter
 backend/benchmark/          需要真实模型与沙箱的手动评测工具
-backend/sandbox/            CadQuery/ezdxf 隔离执行镜像
+backend/sandbox/            FreeCAD/CadQuery/ezdxf、Gmsh/CalculiX 与 CAM 隔离执行镜像
 frontend/                   React/Vite/Three.js 工程工作区
 fusion_addin/               Fusion 360 用户级 Add-in
 schemas/fusion360/          由代码生成并校验的 Fusion JSON Schema
 scripts/fusion360/          Fusion 安装、升级、Runtime 和 schema 脚本
+scripts/local_bridge.py     本地发布交付客户端入口（与 API 下载的客户端复用实现）
 third_party/cadskills/      固定版本的上游运行资料，不放产品逻辑
 docs/                       当前开发、Fusion 专题和历史归档
 ```
 
 核心运行数据保存在 PostgreSQL 和 S3 兼容对象存储：数据库保存项目、Revision、任务、事件、审计与 Artifact 元数据，对象存储保存不可变 CAD 字节和检查报告。`backend/data/` 仍可能包含未迁入核心工作流的可选 Connector/辅助能力状态，不得把这些本地文件当作核心任务事实来源。
+
+### 验收修复后的接口约束
+
+- 同步生成、异步生成和修改接口的 `prompt` 去除首尾空白后必须为 1–4000 字符；非法请求在 API 边界返回 422。批量请求仍逐项返回失败，不因单项无效而丢弃其他合法项。
+- DXF 建模以毫米为契约，必须显式设置 `doc.units = ezdxf.units.MM`（`$INSUNITS=4`）；错误或未声明单位不会通过生成/几何门禁。修改 `backend/sandbox` 后必须重新构建执行镜像，重启 API 本身不会更新沙箱源码。
+- 能力目录的 `dependencies[].available` 为 `true`（已满足）、`false`（已知缺失）或 `null`（执行时检查）。目录 GET 不访问外部服务，未探测网络不会永久禁用 action；设备配置、授权和执行时检查仍然生效。
+- 原生模型的 `validation.gates` 与旧网格测量是不同证据。缺失 `is_watertight` 不代表不闭合，必需门禁通过也不代表视觉/DFM 参考检查通过。
+- 历史版本差异优先比较不可变 Artifact 的 SHA-256 与结构化参数的稳定名称、值和单位，不以下载 URL 变化代表文件内容变化。原生产物差异以 `类型:文件名` 为稳定标识，新增同类型报告不会改变旧文件的比较标识。没有源码或缺少文件/参数/零件证据时，对应差异字段省略，前端显示无法比较，不能将缺失数据当作“无变化”；检查摘要使用实际门禁，不用任务成功代替检查通过。
+- 原生历史恢复通过会话 WebSocket 的 `restore_revision` 提交 `source_revision_id` 和完整 Durable identity（含当前 `expected_base_revision_id`、幂等键）。后端只接受当前工程/面板内的历史版本，自己解析不可变 FCStd 及 SHA-256；历史来源与当前分支头分别保存。恢复沿用 V2 计划确认、沙箱打开/重算/导出、必需几何检查、候选审查及提交流程，不自动修复或重写历史模型，不覆盖历史文件，不直接移动分支头。无 FCStd 的源码历史仍沿用代码执行；无文件也无源码的空版本明确拒绝。旧的直接恢复 REST 接口继续返回 410。
 
 ## 首次配置
 
@@ -73,7 +87,7 @@ SANDBOX_COMMAND=podman
 SANDBOX_IMAGE=cad-agent-sandbox:dev
 ```
 
-Runtime 的 Python、CadQuery、build123d、OCP、Node 和上游 CAD Skills 版本由 `backend/sandbox/runtime-lock.json` 及固定依赖锁定。生产镜像必须使用 OCI digest；本地 tag 只允许开发环境。
+Runtime 的 Python、FreeCAD、CadQuery、build123d、OCP、Gmsh、CalculiX、Node 和上游 CAD Skills 版本由 `backend/sandbox/runtime-lock.json`、Dockerfile 及固定依赖锁定。生产镜像必须使用 OCI digest；本地 tag 只允许开发环境。
 
 ## 启动开发服务
 
@@ -135,7 +149,7 @@ npm ci
 npm run dev
 ```
 
-访问 `http://localhost:5173`。Vite 将 `/api` 代理到 `http://localhost:8000`，将 `/ws` 代理到 `ws://localhost:8000`。
+访问 `http://localhost:5173`。Vite 将 `/api` 代理到 `http://localhost:8000`，将 `/ws` 代理到 `ws://localhost:8000`；`/api` 同时支持云文档 WebSocket。独立验收环境可使用 `CAD_API_TARGET=http://127.0.0.1:8017 npm run dev -- --port 5179` 指向隔离 API。
 
 检查：
 
@@ -156,8 +170,11 @@ curl http://localhost:8000/ready
 
 ```bash
 cd backend
-python -m pytest
+APP_ENVIRONMENT=test DURABLE_CONTROL_PLANE_ENABLED=false \
+python -m pytest -m "not docker and not llm and not fusion_e2e" -q
 ```
+
+这组命令与 CI 的隔离回归环境一致，只在测试进程中关闭外部控制平面依赖。实际启动和下方真实服务验收必须启用 Durable 控制平面；不能用这一测试配置启动产品。
 
 前端静态检查和构建：
 
@@ -196,7 +213,11 @@ python -m pytest -q \
 
 V1 和 V2 测试队列必须彼此不同，也必须与持续运行的开发 Worker 队列不同；否则已有 Worker 的长轮询可能抢占测试 Workflow/Activity，造成无法复现的超时。并行运行多组真实集成测试时，每组还应使用不同的队列名。
 
-API 真实生成门槛需显式设置 `CAD_AGENT_TEST_LLM=1`；V2 provider 专项分别使用 `CAD_AGENT_TEST_REAL_LLM=1` 和 `CAD_AGENT_TEST_REAL_VISION=1`。三者都要求有效 provider 凭据；不设置时会明确跳过，不用固定返回替代。最近一次完整 M1/V2 验收见 [`qa/mcad-m1-report.md`](qa/mcad-m1-report.md)。
+API 真实生成门槛需显式设置 `CAD_AGENT_TEST_LLM=1`；V2 provider 专项分别使用 `CAD_AGENT_TEST_REAL_LLM=1` 和 `CAD_AGENT_TEST_REAL_VISION=1`。三者都要求有效 provider 凭据；不设置时会明确跳过，不用固定返回替代。完整数据库与服务回归应执行 `tests/postgres tests/integration`，并使用独立测试数据库、bucket 和队列。测试 fixture 会清理测试数据，不得指向日常项目数据库。
+
+端到端脚本位于 `backend/tests/e2e`。`cloud_document_acceptance.py` 创建真实测试账号和原生文档，后续浏览器脚本读取它保存的权限为 `0600` 的私有会话文件。通过 `CAD_NATIVE_E2E_URL`、`CAD_NATIVE_E2E_WEB`、`CAD_NATIVE_E2E_ENV`、`CAD_NATIVE_E2E_PRIVATE` 和报告路径指定隔离环境。私有会话包含随机测试凭据，不能提交或贴入日志。
+
+`cloud_engineering_controls.py` 通过 `CAD_NATIVE_E2E_WORKER` 指定要停启的测试 Worker。`cloud_proxy_restart.py` 及 Bridge 重启验收需要显式指定 `CAD_NATIVE_E2E_API` 和 `CAD_NATIVE_E2E_FRONTEND`；它们会重启该 API，并验证 Nginx 未重启时的 HTTP、原会话与文档 WebSocket 恢复。`CAD_NATIVE_E2E_REQUIRE_ADDRESS_CHANGE=1` 要求实际发生容器 IP 变化，防止没有覆盖地址缓存问题却判为通过。只有隔离验收容器可用于这些故障测试。
 
 Fusion 专项：
 

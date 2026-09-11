@@ -1,0 +1,20 @@
+{
+  "workflow_id": "cc47f645-b83b-44ec-866e-3699bd15e7d6",
+  "pointer_moves": 50,
+  "drag_kernel_operations": 0,
+  "drag_inspections": 0,
+  "native_radius_mm": 7,
+  "native_center_mm": [
+    0,
+    -3
+  ],
+  "native_volume_mm3": 1539.3804002589989,
+  "stale_constraint_rejected": true,
+  "replayed_without_duplicate": true,
+  "page_errors": [],
+  "console_errors": [],
+  "independent_feature_lease_did_not_block_sketch": true,
+  "impossible_constraint_failed_workflow": "5386edc1-5635-4881-b58d-e3b4b8771a93",
+  "failed_edit_preserved_head": true,
+  "no_automatic_rewrite": true
+}

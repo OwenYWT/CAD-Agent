@@ -1,0 +1,23 @@
+{
+  "generation": {
+    "workflow_id": "78b86448-0738-4bb7-bf4e-69967b0c72bf",
+    "revision_id": "8a0abf3a-655d-4b04-b4c5-10cdd414375e",
+    "feature_count": 14,
+    "change_set_id": "2b52c18a-bf08-4dc7-9ff8-8c69129bd868"
+  },
+  "local_parameter_edit": {
+    "workflow_id": "5b134466-3fbe-49de-b28c-5542dc4a64b9",
+    "state_version": 2,
+    "diameter_before_mm": 6,
+    "diameter_after_mm": 8,
+    "delta_feature_count": 3,
+    "stable_feature_ids": true,
+    "stale_rejected": true,
+    "idempotency_verified": true
+  },
+  "collaboration": {
+    "cross_account_view": true,
+    "viewer_write_denied": true,
+    "comment_visible_to_owner": true
+  }
+}

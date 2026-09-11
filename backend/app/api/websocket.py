@@ -4,23 +4,34 @@ import re
 from uuid import UUID
 
 from fastapi import WebSocket, WebSocketDisconnect
+from sqlalchemy import text as sql_text
 
 from app.agent import run_store
 from app.agent.conversation import ConversationContext
-from app.api.auth import verify_ws_token, get_ws_user_id, rate_limiter
+from app.api.auth import verify_ws_token, get_ws_user_id, rate_limiter, websocket_auth_token
 from app.api.error_messages import public_generation_error
 from app.models.schemas import DurableRequestIdentity
 from app.config import settings
+from app.db import tenant_transaction
+from app.freecad.state_contract import (
+    ParameterStateError,
+    compile_parameter_operation_plan,
+    read_verified_state_artifact,
+)
 from app.storage import history
 from app.services.durable_submission import (
     ensure_workspace_identity,
+    resolve_native_revision_restore,
     submit_durable_workflow,
 )
-from app.services.event_relay import get_task_snapshot, workflow_project_id
-from app.domain.projects import Permission
+from app.services.operation_resolution import (
+    OperationResolutionError,
+    load_revision_source_inventory,
+    resolve_browser_submission,
+)
 from app.workflows.temporal import (
+    FreeCADStructuredModificationV1,
     cancel_mcad_workflow,
-    confirm_mcad_workflow,
 )
 
 logger = logging.getLogger(__name__)
@@ -103,9 +114,15 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     if not _SESSION_ID_RE.match(session_id):
         await websocket.close(code=4001, reason="Invalid session_id format")
         return
+    if not settings.durable_control_plane_enabled:
+        await websocket.close(
+            code=1013,
+            reason="Durable control plane is required",
+        )
+        return
 
     # Auth check
-    token = websocket.query_params.get("token")
+    token, auth_protocol = websocket_auth_token(websocket)
     if not await verify_ws_token(token):
         await websocket.close(code=4003, reason="Invalid or missing token")
         return
@@ -124,9 +141,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         principal_context = api_key_principal(token)
     else:
         principal_context = local_anonymous_principal()
-    if settings.durable_control_plane_enabled:
-        principal_context = await reconcile_principal(principal_context)
-        bind_principal(principal_context)
+    principal_context = await reconcile_principal(principal_context)
+    bind_principal(principal_context)
 
     # Ownership check: a logged-in user must not attach to a session_id that another
     # user already owns (otherwise they could write panels/messages into it). A brand
@@ -136,7 +152,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         await websocket.close(code=4003, reason="Session belongs to another user")
         return
 
-    await websocket.accept()
+    await websocket.accept(subprotocol=auth_protocol)
 
     send_lock = asyncio.Lock()
 
@@ -153,9 +169,13 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     ) -> None:
         if principal_context is None:
             raise RuntimeError("durable principal context is unavailable")
+        structured_modification = None
+        revision_restore = None
+        restore_context = None
         if msg_type == "user_message":
             text = str(data.get("text") or "")
             capability = data.get("capability", "auto")
+            operation_intent = data.get("operation_intent")
             if not text or len(text) > 10000:
                 raise ValueError("提示词为空或超过长度限制")
             if capability not in {"auto", "cad", "dxf"}:
@@ -163,25 +183,70 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     "该能力需要结构化输入或已有产物，请使用 "
                     "/api/capability-actions"
                 )
+            if operation_intent not in {None, "generate", "modify"}:
+                raise ValueError("operation_intent must be generate or modify")
         elif msg_type == "modify_part":
             part_name = str(data.get("part_name") or "")
             instruction = str(data.get("instruction") or "")
-            existing_code = str(data.get("code") or "")
+            existing_code = (
+                str(data["code"])
+                if data.get("code") is not None
+                else None
+            )
             if (
                 not part_name
                 or not instruction
                 or len(instruction) > 10000
-                or not existing_code
-                or len(existing_code) > 50000
+                or (existing_code is not None and len(existing_code) > 50000)
             ):
                 raise ValueError(
-                    "零件名、修改指令或当前 MCAD 代码无效"
+                    "零件名、修改指令或当前 MCAD 代码长度无效"
                 )
         elif msg_type == "execute_code":
             submitted_code = str(data.get("code") or "")
             if not submitted_code or len(submitted_code) > 50000:
                 raise ValueError("代码为空或超过长度限制")
-
+        elif msg_type == "restore_revision":
+            try:
+                source_revision_id = UUID(str(data.get("source_revision_id") or ""))
+            except ValueError as exc:
+                raise ValueError("历史版本 ID 无效") from exc
+            if any(key in data for key in ("code", "inputs", "source_artifact_id", "source_sha256")):
+                raise ValueError("版本恢复只接受历史版本 ID，不接受客户端文件或源码")
+        elif msg_type == "modify_parameters":
+            raw_updates = data.get("updates")
+            if not isinstance(raw_updates, list):
+                raise ParameterStateError(
+                    "parameter_value_type_invalid",
+                    "parameter updates must be a list",
+                )
+            identifiers = [
+                str(item.get("parameter_id") or "")
+                for item in raw_updates
+                if isinstance(item, dict)
+            ]
+            if len(identifiers) != len(raw_updates):
+                raise ParameterStateError(
+                    "parameter_value_type_invalid",
+                    "parameter update must be an object",
+                )
+            if len(identifiers) != len(set(identifiers)):
+                raise ParameterStateError(
+                    "parameter_duplicate_update",
+                    "parameter update batch contains a duplicate ID",
+                )
+            try:
+                structured_modification = FreeCADStructuredModificationV1(
+                    expected_state_sha256=str(
+                        data.get("expected_state_sha256") or ""
+                    ),
+                    parameter_updates=tuple(raw_updates),
+                )
+            except Exception as exc:
+                raise ParameterStateError(
+                    "parameter_value_type_invalid",
+                    "parameter update batch is invalid",
+                ) from exc
         if not durable_identity.get("project_id"):
             if msg_type != "user_message":
                 raise ValueError(
@@ -205,61 +270,98 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 str(durable_identity["expected_base_revision_id"])
             )
 
-        if msg_type == "user_message":
-            current_workflow_id = data.get("workflow_run_id")
-            if current_workflow_id:
-                workflow_run_id = UUID(str(current_workflow_id))
-                snapshot = await get_task_snapshot(
-                    principal_context,
-                    workflow_run_id,
-                )
-                if (
-                    snapshot["status"] == "waiting_confirmation"
-                    and snapshot.get("change_set") is None
-                ):
-                    await workflow_project_id(
-                        principal_context,
-                        workflow_run_id,
-                        permission=Permission.REVIEW_CHANGE,
+        operation_resolution = None
+        if msg_type == "restore_revision":
+            revision_restore, restore_context = await resolve_native_revision_restore(
+                principal_context, project_id=project_id, branch_id=branch_id,
+                expected_base_revision_id=expected_base_revision_id,
+                source_revision_id=source_revision_id, panel_id=panel_id,
+            )
+        if msg_type in {"user_message", "modify_part", "modify_parameters"}:
+            inventory = await load_revision_source_inventory(
+                principal_context,
+                project_id=project_id,
+                revision_id=expected_base_revision_id,
+            )
+            if msg_type == "modify_parameters":
+                requested_operation = "modify"
+                rule = "explicit_parameter_edit"
+                browser_code = None
+            elif msg_type == "modify_part":
+                requested_operation = "modify"
+                rule = "explicit_modify_part"
+                browser_code = existing_code
+            else:
+                requested_operation = data.get("operation_intent")
+                if requested_operation is not None:
+                    rule = "explicit_ui_intent"
+                elif inventory.fcstd or inventory.cadquery:
+                    rule = "legacy_editable_base_present"
+                else:
+                    rule = "legacy_empty_panel"
+                browser_code = None
+            operation_resolution = resolve_browser_submission(
+                requested_operation=requested_operation,
+                rule=rule,
+                panel_id=panel_id,
+                base_revision_id=expected_base_revision_id,
+                inventory=inventory,
+                browser_code=browser_code,
+                generation_backend=(
+                    "cadquery"
+                    if data.get("capability", "auto") == "dxf"
+                    else "auto"
+                ),
+            )
+            if msg_type == "modify_parameters":
+                if operation_resolution.modeling_backend != "freecad":
+                    raise ParameterStateError(
+                        "parameter_state_missing",
+                        "structured parameter editing requires an FCStd base",
                     )
-                    request_payload = snapshot["request_payload"]
-                    if (
-                        UUID(str(snapshot["project_id"])) != project_id
-                        or UUID(str(request_payload["branch_id"]))
-                        != branch_id
-                        or UUID(
-                            str(
-                                request_payload[
-                                    "expected_base_revision_id"
-                                ]
+                async with tenant_transaction(
+                    principal_context.tenant_id,
+                    principal_context.principal_id,
+                ) as connection:
+                    state_rows = [
+                        dict(row)
+                        for row in (
+                            await connection.execute(
+                                sql_text(
+                                    """
+                                    SELECT id, artifact_kind, object_key,
+                                           size_bytes, sha256
+                                    FROM artifacts
+                                    WHERE tenant_id=:tenant_id
+                                      AND project_id=:project_id
+                                      AND revision_id=:revision_id
+                                      AND lower(artifact_kind)='state'
+                                    ORDER BY created_at, id
+                                    """
+                                ),
+                                {
+                                    "tenant_id": principal_context.tenant_id,
+                                    "project_id": project_id,
+                                    "revision_id": expected_base_revision_id,
+                                },
                             )
-                        )
-                        != expected_base_revision_id
-                    ):
-                        raise PermissionError(
-                            "任务身份与当前项目上下文不一致"
-                        )
-                    await confirm_mcad_workflow(
-                        workflow_run_id,
-                        accepted=True,
-                        note=text,
-                        workflow_kind=snapshot["kind"],
-                    )
-                    await send_json({
-                        "type": "task_submitted",
-                        "data": {
-                            "workflow_run_id": str(workflow_run_id),
-                            "project_id": str(project_id),
-                            "branch_id": str(branch_id),
-                            "expected_base_revision_id": str(
-                                expected_base_revision_id
-                            ),
-                            "panel_id": panel_id,
-                            "status": "running",
-                        },
-                    })
-                    return
-            operation = "generate"
+                        ).mappings().all()
+                    ]
+                state, _ = await read_verified_state_artifact(
+                    state_rows,
+                    require_v2=True,
+                    expected_sha256=(
+                        structured_modification.expected_state_sha256
+                    ),
+                )
+                compile_parameter_operation_plan(
+                    state,
+                    structured_modification.model_dump(mode="json"),
+                    output_formats=("step", "stl"),
+                )
+
+        if msg_type == "user_message":
+            operation = operation_resolution.operation
             objective = text
             if data.get("capability", "auto") == "dxf":
                 objective = (
@@ -267,7 +369,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     "请将下述需求规划为 profile_2d，并输出 DXF：\n"
                     + text
                 )
-            code = None
+            code = operation_resolution.existing_code
             output_formats = (
                 ["dxf"]
                 if data.get("capability", "auto") == "dxf"
@@ -275,12 +377,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             )
             profile = data.get("manufacturing_profile")
         elif msg_type == "modify_part":
-            operation = "modify"
+            operation = operation_resolution.operation
             objective = (
                 f"修改零件 {data.get('part_name', '')}: "
                 f"{data.get('instruction', '')}"
             )
-            code = existing_code
+            code = operation_resolution.existing_code
             output_formats = ["step", "stl"]
             profile = None
         elif msg_type == "execute_code":
@@ -289,11 +391,27 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             code = str(data.get("code") or "")
             output_formats = ["step", "stl"]
             profile = None
+        elif msg_type == "modify_parameters":
+            operation = "modify"
+            objective = "更新已验证的 FreeCAD 参数：" + "、".join(
+                update.parameter_id
+                for update in structured_modification.parameter_updates
+            )
+            code = None
+            output_formats = ["step", "stl"]
+            profile = None
+        elif msg_type == "restore_revision":
+            operation = "modify"
+            objective = f"恢复历史原生版本 {source_revision_id}，保留原始特征和参数"
+            code = None
+            output_formats = ["step", "stl"]
+            profile = None
         else:
             raise ValueError(f"unsupported cutover message: {msg_type}")
 
         submission = await submit_durable_workflow(
             principal_context,
+            **({"expected_state_version": data["expected_state_version"]} if "expected_state_version" in data else {}),
             project_id=project_id,
             branch_id=branch_id,
             expected_base_revision_id=expected_base_revision_id,
@@ -303,6 +421,20 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             output_formats=output_formats,
             code=code,
             manufacturing_profile=profile,
+            modeling_backend=(
+                "freecad" if revision_restore is not None else (
+                    operation_resolution.modeling_backend
+                    if operation_resolution is not None else None
+                )
+            ),
+            operation_context=(
+                restore_context if revision_restore is not None else (
+                    operation_resolution.operation_context
+                    if operation_resolution is not None else None
+                )
+            ),
+            structured_modification=structured_modification,
+            **({"revision_restore": revision_restore} if revision_restore else {}),
         )
         await send_json({
             "type": "task_submitted",
@@ -374,7 +506,9 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 "user_message",
                 "modify_part",
                 "execute_code",
+                "modify_parameters",
                 "restore_task",
+                "restore_revision",
                 "cancel",
                 "resume_run",
             }:
@@ -386,7 +520,9 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 "user_message",
                 "modify_part",
                 "execute_code",
+                "modify_parameters",
                 "resume_run",
+                "restore_revision",
             }:
                 try:
                     if (
@@ -436,7 +572,13 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 })
                 continue
 
-            if msg_type in {"user_message", "modify_part", "execute_code"}:
+            if msg_type in {
+                "user_message",
+                "modify_part",
+                "modify_parameters",
+                "execute_code",
+                "restore_revision",
+            }:
                 try:
                     await submit_cutover_message(
                         data,
@@ -451,7 +593,18 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         panel_id,
                         type(exc).__name__,
                     )
-                    error = public_generation_error(exc)
+                    error = (
+                        exc.public_error()
+                        if isinstance(exc, OperationResolutionError)
+                        else {
+                            "type": exc.code,
+                            "message": str(exc),
+                            "details": {},
+                            "retryable": False,
+                        }
+                        if isinstance(exc, ParameterStateError)
+                        else public_generation_error(exc)
+                    )
                     if error["type"] == "ValueError":
                         error["type"] = "ValidationError"
                     await send_json({

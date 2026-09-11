@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.api.auth import get_durable_principal
 from app.domain.identity import PrincipalContext
 from app.services.event_relay import (
+    BOMReadError,
+    get_revision_bom,
     get_revision_detail,
     list_branch_revisions,
     list_project_branches,
@@ -56,5 +58,26 @@ async def revision_detail(
 ):
     try:
         return await get_revision_detail(principal, project_id, revision_id)
+    except Exception as exc:
+        raise _read_error(exc) from exc
+
+
+@router.get("/{project_id}/revisions/{revision_id}/bom")
+async def revision_bom(
+    project_id: UUID,
+    revision_id: UUID,
+    principal: PrincipalContext = Depends(get_durable_principal),
+):
+    try:
+        return await get_revision_bom(principal, project_id, revision_id)
+    except BOMReadError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={
+                "code": exc.code,
+                "message": str(exc),
+                "retryable": False,
+            },
+        ) from exc
     except Exception as exc:
         raise _read_error(exc) from exc

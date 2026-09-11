@@ -1,0 +1,19 @@
+{
+  "independent_leases": true,
+  "dependency_lease_conflict": true,
+  "foreign_release_denied": true,
+  "editor_has_no_commit_or_share": true,
+  "rebase_reexecuted_and_validated": true,
+  "rebase_idempotent_after_commit": true,
+  "same_parameter_conflict_rejected": true,
+  "final_parameters": {
+    "PadA.Length": 12.0,
+    "PadB.Length": 13.0
+  },
+  "state_version": 3,
+  "document_id": "eab262e2-52b7-4ca0-948d-dcbf81ae1293",
+  "workflow_ids": [
+    "a840268c-7d87-4897-b5df-cac928017078",
+    "909bddc2-ded3-4609-8e0f-ddac32cd0f14"
+  ]
+}

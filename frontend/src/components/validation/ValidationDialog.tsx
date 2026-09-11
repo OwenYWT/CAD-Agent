@@ -16,6 +16,7 @@ const GROUPS: ValidationResult["domain"][] = ["几何", "装配", "DFM", "ERC / 
 interface ValidationDialogProps {
   open: boolean;
   result: GenerationResult | null;
+  analysis?: DesignAnalysis | null;
   description: string;
   panelId: string;
   steps: StepHistoryEntry[];
@@ -28,6 +29,7 @@ interface ValidationDialogProps {
   onModifyPart?: (partName: string, instruction: string) => boolean | void;
   refreshKey?: string | number | null;
   onClose: () => void;
+  onAnalysis?: (analysis: DesignAnalysis) => void;
   onAskAgent: (prompt: string) => void;
   onRestore: (snapshot: ModelSnapshotDetail) => boolean | void;
   onRetryPrompt: () => unknown;
@@ -44,6 +46,7 @@ function checkIconClass(status: ValidationResult["status"]) {
 export default function ValidationDialog({
   open,
   result,
+  analysis: providedAnalysis = null,
   description,
   panelId,
   steps,
@@ -56,22 +59,23 @@ export default function ValidationDialog({
   onModifyPart,
   refreshKey,
   onClose,
+  onAnalysis,
   onAskAgent,
   onRestore,
   onRetryPrompt,
   onRerunCode,
   onResumeRun,
 }: ValidationDialogProps) {
-  const [analysis, setAnalysis] = useState<DesignAnalysis | null>(null);
+  const [localAnalysis, setLocalAnalysis] = useState<DesignAnalysis | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "error" | "success">("idle");
   const [error, setError] = useState("");
+  const analysis = providedAnalysis || localAnalysis;
 
   const checks = adaptValidation(result, analysis);
   const brief = result?.design_brief || result?.plan?.design_brief || null;
   const canAnalyzeDesign = Boolean(
     result?.success &&
       result.request_id &&
-      result.code &&
       result.files?.stl &&
       !result.needs_confirmation,
   );
@@ -85,7 +89,13 @@ export default function ValidationDialog({
     setStatus("loading");
     setError("");
     try {
-      setAnalysis(await analyzeEngineeringResult(result.request_id, result.code || "", description));
+      const nextAnalysis = await analyzeEngineeringResult(
+        result.request_id,
+        result.code || "",
+        description,
+      );
+      setLocalAnalysis(nextAnalysis);
+      onAnalysis?.(nextAnalysis);
       setStatus("success");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "工程检查失败");
@@ -186,33 +196,33 @@ export default function ValidationDialog({
           if (!items.length) return null;
           return (
             <section key={group}>
-              <h3 className="mb-2 text-xs font-semibold text-[var(--ink)]">{group}</h3>
+              <h3 className="mb-2 type-section-heading  text-[var(--ink)]">{group}</h3>
               <div className="space-y-2">
                 {items.map((check) => (
                   <article
                     className="grid gap-3 rounded-lg border border-[var(--line)] p-3 sm:grid-cols-[24px_minmax(0,1fr)_auto]"
                     key={check.id}
                   >
-                    <span className={`mt-0.5 grid h-6 w-6 place-items-center rounded-full text-xs ${checkIconClass(check.status)}`}>
+                    <span className={`mt-0.5 grid h-6 w-6 place-items-center rounded-full type-body ${checkIconClass(check.status)}`}>
                       {check.status === "pass" ? "✓" : "!"}
                     </span>
                     <div>
-                      <h4 className="text-xs font-semibold text-[var(--ink)]">{check.title}</h4>
-                      <p className="mt-1 text-xs leading-5 text-[var(--muted)]">{check.description}</p>
-                      <dl className="mt-2 grid gap-1 text-[11px] text-[var(--faint)] sm:grid-cols-2">
+                      <h4 className="type-section-heading  text-[var(--ink)]">{check.title}</h4>
+                      <p className="mt-1 type-body  text-[var(--muted)]">{check.description}</p>
+                      <dl className="mt-2 grid gap-1 type-caption text-[var(--faint)] sm:grid-cols-2">
                         {check.impact ? (
                           <div>
-                            <dt className="inline font-medium">影响：</dt>
+                            <dt className="inline ">影响：</dt>
                             <dd className="inline">{check.impact}</dd>
                           </div>
                         ) : null}
                         <div>
-                          <dt className="inline font-medium">对象：</dt>
+                          <dt className="inline ">对象：</dt>
                           <dd className="inline">{check.object}</dd>
                         </div>
                         {check.suggestion ? (
                           <div className="sm:col-span-2">
-                            <dt className="inline font-medium">建议：</dt>
+                            <dt className="inline ">建议：</dt>
                             <dd className="inline">{check.suggestion}</dd>
                           </div>
                         ) : null}
@@ -235,7 +245,7 @@ export default function ValidationDialog({
         })}
 
         {GROUPS.filter((group) => !checks.some((check) => check.domain === group)).length ? (
-          <p className="text-[11px] text-[var(--faint)]">
+          <p className="type-caption text-[var(--faint)]">
             当前没有这些领域的真实检查结果，界面仅展示已验证证据，不用推测数据代替结果。
           </p>
         ) : null}

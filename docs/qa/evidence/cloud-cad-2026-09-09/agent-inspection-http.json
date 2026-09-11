@@ -1,0 +1,632 @@
+{
+  "document_id": "0c75549f-e33a-41c7-a341-daea5bb06c04",
+  "workflow_run_id": "474d634a-5f85-4c70-8a22-6b2780d72ecb",
+  "source_revision_id": "146ab901-1248-4a2a-b215-7bb073286165",
+  "committed_revision_id": "75db5715-8a27-49fb-8ff5-80692404ee58",
+  "fillet_radius_mm": 0.5,
+  "previous_parameters_preserved": true,
+  "previous_feature_ids_preserved": true,
+  "real_provider_inspection_events": [
+    {
+      "result": {
+        "source": "verified_kernel_checkpoint",
+        "objects": [
+          {
+            "name": "Body",
+            "type_id": "PartDesign::Body",
+            "is_valid": true,
+            "topology": {
+              "items": [
+                {
+                  "kind": "face",
+                  "center": [
+                    40.0,
+                    10.0,
+                    4.0
+                  ],
+                  "normal": [
+                    0.0,
+                    -1.0,
+                    0.0
+                  ],
+                  "area_mm2": 480.0,
+                  "geometry": "Plane"
+                },
+                {
+                  "kind": "face",
+                  "center": [
+                    10.0,
+                    30.0,
+                    4.0
+                  ],
+                  "normal": [
+                    -1.0,
+                    0.0,
+                    0.0
+                  ],
+                  "area_mm2": 319.99999999999994,
+                  "geometry": "Plane"
+                },
+                {
+                  "kind": "face",
+                  "center": [
+                    70.0,
+                    30.0,
+                    4.0
+                  ],
+                  "normal": [
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  "area_mm2": 319.99999999999994,
+                  "geometry": "Plane"
+                },
+                {
+                  "kind": "face",
+                  "center": [
+                    40.0,
+                    30.0,
+                    0.0
+                  ],
+                  "normal": [
+                    0.0,
+                    0.0,
+                    -1.0
+                  ],
+                  "area_mm2": 2336.382748764807,
+                  "geometry": "Plane"
+                },
+                {
+                  "kind": "face",
+                  "center": [
+                    40.0,
+                    30.0,
+                    8.0
+                  ],
+                  "normal": [
+                    0.0,
+                    0.0,
+                    1.0
+                  ],
+                  "area_mm2": 2336.382748764807,
+                  "geometry": "Plane"
+                },
+                {
+                  "kind": "face",
+                  "center": [
+                    40.0,
+                    50.0,
+                    4.0
+                  ],
+                  "normal": [
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  "area_mm2": 480.0,
+                  "geometry": "Plane"
+                },
+                {
+                  "kind": "face",
+                  "center": [
+                    40.0,
+                    30.0,
+                    4.0
+                  ],
+                  "normal": [
+                    -1.0,
+                    0.0,
+                    0.0
+                  ],
+                  "area_mm2": 226.19467105846508,
+                  "geometry": "Cylinder"
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    10.0,
+                    10.0,
+                    4.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 8.0
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    70.0,
+                    10.0,
+                    4.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 8.0
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    40.0,
+                    10.0,
+                    0.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 60.0
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    40.0,
+                    10.0,
+                    8.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 60.0
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    10.0,
+                    50.0,
+                    4.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 8.0
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    10.0,
+                    30.0,
+                    0.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 40.0
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    10.0,
+                    30.0,
+                    8.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 40.0
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    70.0,
+                    50.0,
+                    4.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 8.0
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    70.0,
+                    30.0,
+                    0.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 40.0
+                }
+              ],
+              "total": 22,
+              "offset": 0,
+              "status": "measured",
+              "omitted": 6,
+              "recorded": 22,
+              "returned": 16
+            },
+            "properties": {
+              "items": [
+                {
+                  "name": "AllowCompound",
+                  "value": true
+                },
+                {
+                  "name": "BaseFeature",
+                  "value": null
+                },
+                {
+                  "name": "Group",
+                  "value": "[<Sketcher::SketchObject>, <PartDesign::Pad>, <Sketcher::SketchObject>, <PartDesign::Hole>]"
+                },
+                {
+                  "name": "Label",
+                  "value": "Body"
+                },
+                {
+                  "name": "Origin",
+                  "value": "Origin"
+                },
+                {
+                  "name": "Placement",
+                  "value": "Placement [Pos=(0,0,0), Yaw-Pitch-Roll=(0,0,0)]"
+                },
+                {
+                  "name": "ShapeMaterial",
+                  "value": "Default"
+                },
+                {
+                  "name": "Tip",
+                  "value": "Hole"
+                },
+                {
+                  "name": "Visibility",
+                  "value": true
+                },
+                {
+                  "name": "_ElementMapVersion",
+                  "value": ""
+                },
+                {
+                  "name": "_GroupTouched",
+                  "value": false
+                }
+              ],
+              "total": 11,
+              "offset": 0,
+              "status": "measured",
+              "omitted": 0,
+              "recorded": 11,
+              "returned": 11
+            },
+            "dependencies": {
+              "items": [
+                "BaseSketch",
+                "Hole",
+                "Hole",
+                "HoleSketch",
+                "Origin",
+                "Pad"
+              ],
+              "total": 6,
+              "offset": 0,
+              "status": "measured",
+              "omitted": 0,
+              "recorded": 6,
+              "returned": 6
+            }
+          },
+          {
+            "name": "Hole",
+            "type_id": "PartDesign::Hole",
+            "is_valid": true,
+            "topology": {
+              "items": [
+                {
+                  "kind": "face",
+                  "center": [
+                    40.0,
+                    10.0,
+                    4.0
+                  ],
+                  "normal": [
+                    0.0,
+                    -1.0,
+                    0.0
+                  ],
+                  "area_mm2": 480.0,
+                  "geometry": "Plane"
+                },
+                {
+                  "kind": "face",
+                  "center": [
+                    10.0,
+                    30.0,
+                    4.0
+                  ],
+                  "normal": [
+                    -1.0,
+                    0.0,
+                    0.0
+                  ],
+                  "area_mm2": 319.99999999999994,
+                  "geometry": "Plane"
+                },
+                {
+                  "kind": "face",
+                  "center": [
+                    70.0,
+                    30.0,
+                    4.0
+                  ],
+                  "normal": [
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  "area_mm2": 319.99999999999994,
+                  "geometry": "Plane"
+                },
+                {
+                  "kind": "face",
+                  "center": [
+                    40.0,
+                    30.0,
+                    0.0
+                  ],
+                  "normal": [
+                    0.0,
+                    0.0,
+                    -1.0
+                  ],
+                  "area_mm2": 2336.382748764807,
+                  "geometry": "Plane"
+                },
+                {
+                  "kind": "face",
+                  "center": [
+                    40.0,
+                    30.0,
+                    8.0
+                  ],
+                  "normal": [
+                    0.0,
+                    0.0,
+                    1.0
+                  ],
+                  "area_mm2": 2336.382748764807,
+                  "geometry": "Plane"
+                },
+                {
+                  "kind": "face",
+                  "center": [
+                    40.0,
+                    50.0,
+                    4.0
+                  ],
+                  "normal": [
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  "area_mm2": 480.0,
+                  "geometry": "Plane"
+                },
+                {
+                  "kind": "face",
+                  "center": [
+                    40.0,
+                    30.0,
+                    4.0
+                  ],
+                  "normal": [
+                    -1.0,
+                    0.0,
+                    0.0
+                  ],
+                  "area_mm2": 226.19467105846508,
+                  "geometry": "Cylinder"
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    10.0,
+                    10.0,
+                    4.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 8.0
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    70.0,
+                    10.0,
+                    4.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 8.0
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    40.0,
+                    10.0,
+                    0.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 60.0
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    40.0,
+                    10.0,
+                    8.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 60.0
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    10.0,
+                    50.0,
+                    4.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 8.0
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    10.0,
+                    30.0,
+                    0.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 40.0
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    10.0,
+                    30.0,
+                    8.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 40.0
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    70.0,
+                    50.0,
+                    4.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 8.0
+                },
+                {
+                  "kind": "edge",
+                  "center": [
+                    70.0,
+                    30.0,
+                    0.0
+                  ],
+                  "geometry": "Line",
+                  "length_mm": 40.0
+                }
+              ],
+              "total": 22,
+              "offset": 0,
+              "status": "measured",
+              "omitted": 6,
+              "recorded": 22,
+              "returned": 16
+            },
+            "properties": {
+              "items": [
+                {
+                  "name": "AddSubShape",
+                  "value": "<Compound object at 0xaaaadb3e8d10>"
+                },
+                {
+                  "name": "AllowMultiFace",
+                  "value": true
+                },
+                {
+                  "name": "BaseFeature",
+                  "value": "Pad"
+                },
+                {
+                  "name": "BaseProfileType",
+                  "value": 7
+                },
+                {
+                  "name": "CustomThreadClearance",
+                  "value": "0.00 mm"
+                },
+                {
+                  "name": "Depth",
+                  "value": "146.56 mm"
+                },
+                {
+                  "name": "DepthType",
+                  "value": "ThroughAll"
+                },
+                {
+                  "name": "Diameter",
+                  "value": "9.00 mm"
+                },
+                {
+                  "name": "DrillForDepth",
+                  "value": false
+                },
+                {
+                  "name": "DrillPoint",
+                  "value": "Flat"
+                },
+                {
+                  "name": "DrillPointAngle",
+                  "value": "118.00°"
+                },
+                {
+                  "name": "FuzzyTolerance",
+                  "value": -1.0
+                },
+                {
+                  "name": "HoleCutCountersinkAngle",
+                  "value": "90.00°"
+                },
+                {
+                  "name": "HoleCutCustomValues",
+                  "value": false
+                },
+                {
+                  "name": "HoleCutDepth",
+                  "value": "0.00 mm"
+                },
+                {
+                  "name": "HoleCutDiameter",
+                  "value": "0.00 mm"
+                }
+              ],
+              "total": 47,
+              "offset": 0,
+              "status": "measured",
+              "omitted": 31,
+              "recorded": 47,
+              "returned": 16
+            },
+            "dependencies": {
+              "items": [
+                "HoleSketch",
+                "Pad"
+              ],
+              "total": 2,
+              "offset": 0,
+              "status": "measured",
+              "omitted": 0,
+              "recorded": 2,
+              "returned": 2
+            }
+          }
+        ],
+        "state_hash": "29820b5345ffdadf9b79e56cccb1950f3f56a83d106a5607365225e3ad5286f9",
+        "schema_version": "cad-inspection.v1"
+      },
+      "request": {
+        "limit": 16,
+        "fields": [
+          "properties",
+          "topology",
+          "dependencies"
+        ],
+        "offset": 0,
+        "objects": [
+          "Body",
+          "Hole"
+        ]
+      },
+      "provider": {
+        "model": "kimi-k2.7-code",
+        "usage": {
+          "total_tokens": 2522,
+          "prompt_tokens": 2301,
+          "completion_tokens": 221,
+          "completion_tokens_details": {
+            "reasoning_tokens": 194
+          }
+        },
+        "provider": "moonshot",
+        "request_hash": "be759ca6f487f85052a0a58bc2269ef153069fb071f80343c2c088fee809f56d",
+        "finish_reason": "stop",
+        "response_hash": "08dafba8491bd44c2568349a204255433eb6fb42ead616c886a1dc999494b25a",
+        "provider_response_id": "chatcmpl-6aa1330c08334c40c78a9223"
+      },
+      "step_key": "modify-main",
+      "inspection_index": 0
+    }
+  ],
+  "native_artifact_hashes_verified": true,
+  "normal_review_and_commit": true,
+  "committed_feature_rendered_in_browser": true,
+  "page_errors": [],
+  "rendered_scene_revision": "75db5715-8a27-49fb-8ff5-80692404ee58"
+}

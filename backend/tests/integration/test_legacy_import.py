@@ -20,6 +20,7 @@ from app.db import close_database, get_database_engine
 from app.db import auth_transaction
 from app.migrations.legacy_import import (
     LegacyImportCollision,
+    LegacyRollbackUnsafe,
     LegacySourcePaths,
     import_legacy_data,
     rollback_legacy_import,
@@ -136,8 +137,8 @@ def _create_sources(root: Path) -> tuple[LegacySourcePaths, dict[str, str]]:
         (panel_id, session_id, "机械设计", "result = box()", now.isoformat()),
     )
     history.execute(
-        "INSERT INTO messages VALUES (1, ?, 'user', ?, NULL, ?)",
-        (panel_id, "创建一个测试零件", now.isoformat()),
+        "INSERT INTO messages VALUES (?, ?, 'user', ?, NULL, ?)",
+        (int(suffix[:12],16), panel_id, "创建一个测试零件", now.isoformat()),
     )
     snapshot_columns = (
         "id, panel_id, parent_snapshot_id, version, source, prompt, code, "
@@ -294,6 +295,27 @@ async def test_import_replay_collision_quarantine_and_rollback(tmp_path):
         )
     with pytest.raises(ClientError):
         await head_object(object_key)
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_import_rollback_preserves_post_import_document_evidence(tmp_path):
+    paths,_=_create_sources(tmp_path)
+    imported=await import_legacy_data(paths)
+    async with get_database_engine().begin() as connection:
+        doc=(await connection.execute(text('''SELECT d.* FROM cloud_documents d JOIN legacy_import_mappings m ON m.target_id=d.project_id::text
+            JOIN legacy_import_runs r ON r.id=m.import_run_id WHERE m.target_table='projects' AND r.source_fingerprint=:fingerprint LIMIT 1'''),
+            {'fingerprint':imported.source_fingerprint})).mappings().one()
+        await connection.execute(text('''INSERT INTO document_checkpoints(tenant_id,document_id,revision_id,projection)
+            VALUES(:tenant,:doc,:revision,CAST(:projection AS jsonb))'''),{'tenant':doc['tenant_id'],'doc':doc['id'],
+            'revision':doc['head_revision_id'],'projection':json.dumps({'document_id':str(doc['id']),
+                'revision_id':str(doc['head_revision_id']),'state_version':doc['state_version']})})
+    with pytest.raises(LegacyRollbackUnsafe,match='post-import'):
+        await rollback_legacy_import(imported.source_fingerprint)
+    async with get_database_engine().connect() as connection:
+        assert await connection.scalar(text('SELECT count(*) FROM document_checkpoints WHERE document_id=:doc'),{'doc':doc['id']})==1
+        assert await connection.scalar(text('SELECT count(*) FROM projects WHERE id=:id'),{'id':doc['project_id']})==1
+        assert await connection.scalar(text('SELECT count(*) FROM legacy_import_mappings m JOIN legacy_import_runs r ON r.id=m.import_run_id WHERE r.source_fingerprint=:fingerprint'),
+            {'fingerprint':imported.source_fingerprint})>0
 
 
 @pytest.mark.asyncio(loop_scope="module")

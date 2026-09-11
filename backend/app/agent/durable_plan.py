@@ -12,7 +12,7 @@ from app.models.schemas import DesignBrief
 
 
 Identifier = str
-OutputFormat = Literal["step", "stl", "dxf", "svg", "png", "json"]
+OutputFormat = Literal["fcstd", "step", "stl", "dxf", "svg", "png", "json"]
 
 
 class FrozenContract(BaseModel):
@@ -66,6 +66,12 @@ class AgentValidationPolicy(FrozenContract):
             repair_budget=0,
         )
     )
+    bom: ValidationGatePolicy = Field(
+        default_factory=lambda: ValidationGatePolicy(
+            mode=GateMode.DISABLED,
+            repair_budget=0,
+        )
+    )
 
     @model_validator(mode="after")
     def integrity_is_always_required(self) -> "AgentValidationPolicy":
@@ -104,7 +110,13 @@ class AgentPlanStep(FrozenContract):
     output_formats: tuple[OutputFormat, ...] = ()
     part_name: str | None = Field(default=None, max_length=120)
     part_dimensions: dict[str, float] = Field(default_factory=dict)
-    part_position: tuple[float, float, float] | None = None
+    part_position: tuple[float, float, float] | None = Field(
+        default=None,
+        description=(
+            "Target position in millimetres for the centre of the part's "
+            "axis-aligned bottom bounding-box face (x/y centre, z minimum)."
+        ),
+    )
     part_color: Literal[
         "lightgray", "steelblue", "orange", "green", "red", "gold", "silver"
     ] | None = None
@@ -155,6 +167,7 @@ class AgentPlan(FrozenContract):
     operation: Literal["generate", "modify"]
     model_kind: Literal["simple", "complex", "assembly", "profile_2d"]
     modeling_strategy: str = Field(min_length=1, max_length=120)
+    modeling_backend: Literal["freecad", "cadquery"] | None = None
     design_brief: DesignBrief
     expected_base_revision_id: UUID | None = None
     affected_objects: tuple[AffectedObject, ...]
@@ -216,3 +229,54 @@ class AgentPlan(FrozenContract):
     def temporal_payload(self) -> dict:
         """Return the complete deterministic payload stored in Temporal history."""
         return self.model_dump(mode="json", exclude_none=False)
+
+
+def enforce_design_validation(plan: AgentPlan, *, autonomous: bool) -> AgentPlan:
+    """Enable visual checks and repairs without overstating image certainty.
+
+    Confirmed visual contradictions always block in the workflow, even for an
+    advisory gate. Inconclusive advisory images require explicit risk review;
+    an explicitly required visual gate still blocks inconclusive results.
+    Exact user edits and history restores never authorize autonomous redesign.
+    Their existing checks remain visible, with all repair budgets disabled.
+    """
+    payload = plan.temporal_payload()
+    policies = payload["validation_policy"]
+    if autonomous and plan.model_kind != "profile_2d":
+        if policies["visual"]["mode"] == "disabled":
+            policies["visual"]["mode"] = "advisory"
+        policies["visual"]["repair_budget"] = max(1, policies["visual"]["repair_budget"])
+        if policies["dfm"]["mode"] != "disabled":
+            policies["dfm"]["repair_budget"] = max(1, policies["dfm"]["repair_budget"])
+    elif not autonomous:
+        for policy in policies.values():
+            policy["repair_budget"] = 0
+    return AgentPlan.model_validate(payload)
+
+
+def normalize_agent_plan_backend(
+    *,
+    operation: Literal["generate", "modify"],
+    request_modeling_backend: Literal["auto", "freecad", "cadquery"],
+    plan_candidate: AgentPlan,
+) -> AgentPlan:
+    """Return the only plan copy allowed to be hashed or persisted."""
+    if operation != plan_candidate.operation:
+        raise ValueError("agent_plan_operation_mismatch")
+    if operation == "generate":
+        backend: Literal["freecad", "cadquery"] = (
+            "cadquery"
+            if plan_candidate.model_kind in {"assembly", "profile_2d"}
+            else "freecad"
+        )
+        return plan_candidate.model_copy(update={"modeling_backend": backend})
+    if request_modeling_backend not in {"freecad", "cadquery"}:
+        raise ValueError("agent_modify_backend_unresolved")
+    if (
+        plan_candidate.modeling_backend is not None
+        and plan_candidate.modeling_backend != request_modeling_backend
+    ):
+        raise ValueError("agent_plan_backend_mismatch")
+    return plan_candidate.model_copy(
+        update={"modeling_backend": request_modeling_backend}
+    )

@@ -1,0 +1,4 @@
+# Deployment-owned credentials; templates and Compose definitions remain tracked.
+backend.env
+*.pem
+*.key

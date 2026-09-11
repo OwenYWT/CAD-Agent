@@ -1,0 +1,21 @@
+{
+  "document_id": "02f6030a-e618-4a9b-804c-1a03b2dde244",
+  "workflow_run_id": "3a8df70c-9d59-46c1-b58c-8199854c3d0f",
+  "failed_workflow_run_id": "35e0765d-9441-4453-96e1-41267d06bc95",
+  "source_revision_id": "06dd85b8-b396-40df-9389-ebe8c968265c",
+  "actual_solver": {
+    "name": "CalculiX",
+    "version": "2.23"
+  },
+  "nodes": 3663,
+  "maximum": {
+    "displacement_mm": 2.2333851966933513e-05,
+    "von_mises_mpa": 0.7314010977888056
+  },
+  "force_balance_relative_error": 1.0711211230736219e-08,
+  "idempotency_verified": true,
+  "invalid_requests_rejected": true,
+  "actual_missing_component_failed": true,
+  "revision_unchanged": true,
+  "all_artifact_hashes_verified": true
+}

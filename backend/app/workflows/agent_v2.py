@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import timedelta
 from typing import Any
 
 from temporalio import workflow
+from app.workflows.document_queue import wait_for_document, release_document
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError, ApplicationError
 from temporalio.workflow import ActivityCancellationType
@@ -38,6 +40,8 @@ class McadAgentWorkflowV2:
         self._phase = "pending"
         self._plan: dict[str, Any] | None = None
         self._candidate_build_id: str | None = None
+        self._validation_repair_v2 = False
+        self._provider_streaming_v1 = False
 
     @workflow.signal(name="confirmation")
     async def confirmation(self, decision: dict[str, Any]) -> None:
@@ -69,6 +73,9 @@ class McadAgentWorkflowV2:
         execution: bool = False,
     ) -> dict[str, Any]:
         timeout_seconds = int(payload.get("timeout_seconds") or 120)
+        provider_operation = self._provider_streaming_v1 and name in {
+            "agent_v2.generate_operations", "agent_v2.repair_operations"
+        }
         activity_task = asyncio.create_task(
             workflow.execute_activity(
                 name,
@@ -77,17 +84,18 @@ class McadAgentWorkflowV2:
                 start_to_close_timeout=(
                     timedelta(seconds=timeout_seconds + 120)
                     if execution
-                    else timedelta(minutes=5)
+                    else timedelta(minutes=20) if provider_operation else timedelta(minutes=5)
                 ),
-                heartbeat_timeout=(timedelta(seconds=15) if execution else None),
+                heartbeat_timeout=(timedelta(seconds=15) if execution or provider_operation else None),
                 retry_policy=_CONTROL_RETRY,
                 cancellation_type=(
-                    ActivityCancellationType.WAIT_CANCELLATION_COMPLETED
+                    ActivityCancellationType.TRY_CANCEL if provider_operation
+                    else ActivityCancellationType.WAIT_CANCELLATION_COMPLETED
                 ),
                 result_type=dict,
             )
         )
-        if not execution:
+        if not execution and not provider_operation:
             return await activity_task
         cancel_wait = asyncio.create_task(
             workflow.wait_condition(lambda: self._cancel_reason is not None)
@@ -180,6 +188,8 @@ class McadAgentWorkflowV2:
         return (
             f"Design objective: {plan['objective']}. "
             f"Required dimensions: {', '.join(dimensions) or 'not specified'}."
+            + " Preserve every requested feature, count, position and depth. "
+            + "Acceptance criteria: " + json.dumps(plan["design_brief"].get("acceptance_criteria", []), ensure_ascii=False)
         )
 
     async def _model_step(
@@ -289,6 +299,111 @@ class McadAgentWorkflowV2:
             "mode": generated["mode"],
         }
 
+    async def _freecad_model_step(
+        self,
+        *,
+        request: dict[str, Any],
+        plan: dict[str, Any],
+        candidate_build_id: str,
+        step: dict[str, Any],
+        step_index: int,
+        requirements: dict[str, Any],
+        base_state: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        generated = await self._activity(
+            "agent_v2.generate_operations",
+            {
+                **request,
+                "candidate_build_id": candidate_build_id,
+                "plan": plan,
+                "step": step,
+                "step_index": step_index,
+                "requirements": requirements,
+                "base_state": base_state,
+            },
+            suffix=f"generate-operations-{step['step_key']}",
+        )
+        repair_count = 0
+        seen_signatures: list[str] = []
+        run_step_key = str(step["step_key"])
+        run_step_kind = "agent_freecad_operations"
+        run_step_index = step_index
+        while True:
+            try:
+                executed = await self._activity(
+                    "agent_v2.execute_freecad",
+                    {
+                        **request,
+                        "candidate_build_id": candidate_build_id,
+                        "plan": plan,
+                        "step": step,
+                        "step_index": run_step_index,
+                        "run_step_key": run_step_key,
+                        "run_step_kind": run_step_kind,
+                        "source_id": generated["source_id"],
+                        "source_hash": generated["source_hash"],
+                        "source_code": generated["source_code"],
+                        "mode": "3d",
+                        "timeout_seconds": 180,
+                    },
+                    suffix=(
+                        f"execute-freecad-{step['step_key']}"
+                        if repair_count == 0
+                        else f"execute-freecad-repair-{step['step_key']}-{repair_count:02d}"
+                    ),
+                    execution=True,
+                )
+                break
+            except Exception as exc:
+                if request.get("revision_restore") is not None:
+                    raise
+                failure = self._execution_failure(exc)
+                if failure is None or failure["category"] not in {
+                    "user_code",
+                    "cad_kernel",
+                    "validation",
+                }:
+                    raise
+                if repair_count >= 2:
+                    raise
+                failure["error_message"] = (
+                    f"{failure['error_message']}\n"
+                    f"{self._design_repair_context(plan)}"
+                )
+                repair_index = repair_count + 1
+                repair_step_index = 10_000 + repair_index
+                repaired = await self._activity(
+                    "agent_v2.repair_operations",
+                    {
+                        **request,
+                        "candidate_build_id": candidate_build_id,
+                        "source_id": generated["source_id"],
+                        "source_hash": generated["source_hash"],
+                        "failure": failure,
+                        "repair_index": repair_index,
+                        "original_step_key": step["step_key"],
+                        "step_index": repair_step_index,
+                        "seen_signatures": seen_signatures,
+                        "base_state": base_state,
+                    },
+                    suffix=f"repair-operations-{step['step_key']}-{repair_index:02d}",
+                )
+                seen_signatures.append(str(repaired["signature"]))
+                generated = {**generated, **repaired}
+                run_step_key = str(repaired["repair_step_key"])
+                run_step_kind = "agent_freecad_repair"
+                run_step_index = repair_step_index
+                repair_count = repair_index
+        return {
+            "step": step,
+            "generated": generated,
+            "executed": executed,
+            "repair_count": repair_count,
+            "seen_signatures": seen_signatures,
+            "mode": "3d",
+            "base_state": base_state,
+        }
+
     async def _geometry_gate(
         self,
         *,
@@ -394,8 +509,16 @@ class McadAgentWorkflowV2:
                 "runtime_error_type": "GeometryError",
             }
             repair_step_index = 10_000 + plan_step_index * 10 + repair_index
+            freecad = plan.get("modeling_backend") == "freecad" or (
+                plan.get("modeling_backend") is None
+                and request.get("modeling_backend") == "freecad"
+            )
             repaired = await self._activity(
-                "agent_v2.repair_source",
+                (
+                    "agent_v2.repair_operations"
+                    if freecad
+                    else "agent_v2.repair_source"
+                ),
                 {
                     **request,
                     "candidate_build_id": candidate_build_id,
@@ -406,6 +529,7 @@ class McadAgentWorkflowV2:
                     "original_step_key": step["step_key"],
                     "step_index": repair_step_index,
                     "seen_signatures": seen_signatures,
+                    "base_state": modeled.get("base_state"),
                 },
                 suffix=f"repair-geometry-{step['step_key']}-{repair_index:02d}",
             )
@@ -413,7 +537,11 @@ class McadAgentWorkflowV2:
             generated = {**generated, **repaired}
             repair_count = repair_index
             executed = await self._activity(
-                "agent_v2.execute_model",
+                (
+                    "agent_v2.execute_freecad"
+                    if freecad
+                    else "agent_v2.execute_model"
+                ),
                 {
                     **request,
                     "candidate_build_id": candidate_build_id,
@@ -421,7 +549,9 @@ class McadAgentWorkflowV2:
                     "step": step,
                     "step_index": repair_step_index,
                     "run_step_key": repaired["repair_step_key"],
-                    "run_step_kind": "agent_repair",
+                    "run_step_kind": (
+                        "agent_freecad_repair" if freecad else "agent_repair"
+                    ),
                     "source_id": generated["source_id"],
                     "source_hash": generated["source_hash"],
                     "source_code": generated["source_code"],
@@ -450,12 +580,14 @@ class McadAgentWorkflowV2:
         modeled: dict[str, Any],
         plan_step_index: int,
         expected_dimensions: dict[str, float],
+        validation_cycle: int = 0,
     ) -> dict[str, Any]:
         policy = plan["validation_policy"]["visual"]
         if policy["mode"] == "disabled":
             return {**modeled, "visual": None}
         current = modeled
         visual_repairs = 0
+        cycle_key = f"-c{validation_cycle:02d}" if validation_cycle else ""
         while True:
             render_index = visual_repairs + 1
             rendered = await self._activity(
@@ -465,14 +597,14 @@ class McadAgentWorkflowV2:
                     "candidate_build_id": candidate_build_id,
                     "staging_manifest_id": current["executed"]["staging_manifest_id"],
                     "validation_step_key": (
-                        f"visual-{current['step']['step_key']}-{render_index:02d}"
+                        f"visual-{current['step']['step_key']}{cycle_key}-{render_index:02d}"
                     ),
-                    "step_index": 30_000 + plan_step_index * 10 + render_index,
+                    "step_index": 30_000 + plan_step_index * 10 + validation_cycle * 100 + render_index,
                     "gate_mode": policy["mode"],
                     "timeout_seconds": 120,
                 },
                 suffix=(
-                    f"render-visual-{current['step']['step_key']}-{render_index:02d}"
+                    f"render-visual-{current['step']['step_key']}{cycle_key}-{render_index:02d}"
                 ),
                 execution=True,
             )
@@ -496,7 +628,7 @@ class McadAgentWorkflowV2:
                         "gate_mode": policy["mode"],
                     },
                     suffix=(
-                        f"judge-visual-{current['step']['step_key']}-{render_index:02d}"
+                        f"judge-visual-{current['step']['step_key']}{cycle_key}-{render_index:02d}"
                     ),
                 )
             if visual["outcome"] == "passed":
@@ -514,47 +646,99 @@ class McadAgentWorkflowV2:
                     )
                 return {**current, "visual": visual}
             if visual_repairs >= int(policy["repair_budget"]):
-                if required_gate_blocks(policy["mode"], visual["outcome"]):
+                if required_gate_blocks(policy["mode"], visual["outcome"]) or self._validation_repair_v2:
                     raise ApplicationError(
                         "Required visual validation failed.",
                         {
                             "outcome": "failed",
                             "evidence_id": visual["evidence_id"],
+                            "repair_count": visual_repairs,
+                            "repair_budget": policy["repair_budget"],
                         },
                         type="agent_visual_validation_failed",
                         non_retryable=True,
                     )
                 return {**current, "visual": visual}
+            freecad = plan.get("modeling_backend") == "freecad" or (
+                plan.get("modeling_backend") is None
+                and request.get("modeling_backend") == "freecad"
+            )
+            if freecad and policy["mode"] == "advisory" and not self._validation_repair_v2:
+                # The required geometry gate has already passed. Persist the real
+                # visual mismatch as advisory evidence, but do not risk replacing
+                # a valid typed FreeCAD plan merely to satisfy a non-blocking gate.
+                return {**current, "visual": visual}
             visual_repairs += 1
             repair_step_key = (
-                f"visual-repair-{current['step']['step_key']}-{visual_repairs:02d}"
+                f"visual-repair-{current['step']['step_key']}{cycle_key}-{visual_repairs:02d}"
             )
             judgment = dict(visual["report"].get("judgment") or {})
-            repaired = await self._activity(
-                "agent_v2.repair_visual",
-                {
-                    **request,
-                    "candidate_build_id": candidate_build_id,
-                    "source_id": current["generated"]["source_id"],
-                    "source_hash": current["generated"]["source_hash"],
-                    "repair_step_key": repair_step_key,
-                    "step_index": 40_000 + plan_step_index * 10 + visual_repairs,
-                    "issues": judgment.get("issues") or (),
-                    "suggestions": judgment.get("suggestions") or (),
-                },
-                suffix=repair_step_key,
-            )
+            repair_index = int(current.get("repair_count") or 0) + 1
+            if freecad:
+                repaired = await self._activity(
+                    "agent_v2.repair_operations",
+                    {
+                        **request,
+                        "candidate_build_id": candidate_build_id,
+                        "source_id": current["generated"]["source_id"],
+                        "source_hash": current["generated"]["source_hash"],
+                        "repair_step_key": repair_step_key,
+                        "step_index": 40_000 + plan_step_index * 10 + validation_cycle * 100 + visual_repairs,
+                        "repair_index": repair_index,
+                        "gate_repair_index": visual_repairs,
+                        "original_step_key": current["step"]["step_key"],
+                        "seen_signatures": current.get("seen_signatures") or (),
+                        "base_state": current.get("base_state"),
+                        "failure": {
+                            "execution_attempt_id": rendered.get("attempt_id"),
+                            "category": "validation",
+                            "error_code": "visual_validation_failed",
+                            "error_message": (
+                                "Visual validation issues: "
+                                + "; ".join(judgment.get("issues") or ())
+                                + ". Suggestions: "
+                                + "; ".join(judgment.get("suggestions") or ())
+                                + ". " + self._design_repair_context(plan)
+                            ),
+                            "runtime_error_type": "VisualError",
+                        },
+                    },
+                    suffix=repair_step_key,
+                )
+            else:
+                repaired = await self._activity(
+                    "agent_v2.repair_visual",
+                    {
+                        **request,
+                        "candidate_build_id": candidate_build_id,
+                        "source_id": current["generated"]["source_id"],
+                        "source_hash": current["generated"]["source_hash"],
+                        "repair_step_key": repair_step_key,
+                        "step_index": 40_000 + plan_step_index * 10 + visual_repairs,
+                        "issues": judgment.get("issues") or (),
+                        "suggestions": judgment.get("suggestions") or (),
+                    },
+                    suffix=repair_step_key,
+                )
             generated = {**current["generated"], **repaired}
             executed = await self._activity(
-                "agent_v2.execute_model",
+                (
+                    "agent_v2.execute_freecad"
+                    if freecad
+                    else "agent_v2.execute_model"
+                ),
                 {
                     **request,
                     "candidate_build_id": candidate_build_id,
                     "plan": plan,
                     "step": current["step"],
-                    "step_index": 40_000 + plan_step_index * 10 + visual_repairs,
+                    "step_index": 40_000 + plan_step_index * 10 + validation_cycle * 100 + visual_repairs,
                     "run_step_key": repair_step_key,
-                    "run_step_kind": "agent_visual_repair",
+                    "run_step_kind": (
+                        "agent_freecad_repair"
+                        if freecad
+                        else "agent_visual_repair"
+                    ),
                     "source_id": generated["source_id"],
                     "source_hash": generated["source_hash"],
                     "source_code": generated["source_code"],
@@ -575,10 +759,12 @@ class McadAgentWorkflowV2:
                     **current,
                     "generated": generated,
                     "executed": executed,
+                    "repair_count": repair_index,
+                    "seen_signatures": [*current.get("seen_signatures", []), *([repaired["signature"]] if repaired.get("signature") else [])],
                 },
                 plan_step_index=plan_step_index,
                 expected_dimensions=expected_dimensions,
-                validation_cycle=visual_repairs,
+                validation_cycle=validation_cycle * 10 + visual_repairs,
             )
 
     async def _dfm_gate(
@@ -589,7 +775,12 @@ class McadAgentWorkflowV2:
         candidate_build_id: str,
         modeled: dict[str, Any],
         plan_step_index: int,
+        expected_dimensions: dict[str, float] | None = None,
     ) -> dict[str, Any]:
+        if self._validation_repair_v2:
+            return await self._dfm_gate_with_repairs(request=request, plan=plan,
+                candidate_build_id=candidate_build_id, modeled=modeled,
+                plan_step_index=plan_step_index, expected_dimensions=expected_dimensions or {})
         policy = plan["validation_policy"]["dfm"]
         if policy["mode"] == "disabled":
             return {**modeled, "dfm": None}
@@ -619,9 +810,82 @@ class McadAgentWorkflowV2:
             )
         return {**modeled, "dfm": dfm}
 
+    async def _dfm_gate_with_repairs(self, *, request, plan, candidate_build_id,
+                                   modeled, plan_step_index, expected_dimensions):
+        policy = plan["validation_policy"]["dfm"]
+        if policy["mode"] == "disabled":
+            return {**modeled, "dfm": None}
+        current = modeled
+        repair_count = 0
+        freecad = plan.get("modeling_backend") == "freecad" or (
+            plan.get("modeling_backend") is None and request.get("modeling_backend") == "freecad")
+        while True:
+            key = f"dfm-{current['step']['step_key']}-{repair_count:02d}"
+            dfm = await self._activity("agent_v2.validate_dfm", {
+                **request, "candidate_build_id": candidate_build_id,
+                "staging_manifest_id": current["executed"]["staging_manifest_id"],
+                "validation_step_key": key, "step_index": 50_000 + plan_step_index * 100 + repair_count,
+                "gate_mode": policy["mode"], "timeout_seconds": 120,
+            }, suffix=f"validate-{key}", execution=True)
+            if dfm["outcome"] == "passed":
+                return {**current, "dfm": dfm}
+            if dfm["outcome"] != "failed" or repair_count >= int(policy["repair_budget"]):
+                if required_gate_blocks(policy["mode"], dfm["outcome"]):
+                    raise ApplicationError("DFM validation did not pass within its repair budget.",
+                        {"outcome": dfm["outcome"], "evidence_id": dfm["evidence_id"],
+                         "repair_count": repair_count, "repair_budget": policy["repair_budget"]},
+                        type="agent_dfm_validation_failed", non_retryable=True)
+                return {**current, "dfm": dfm}
+            repair_count += 1
+            repair_index = int(current.get("repair_count", 0)) + 1
+            repair_key = f"dfm-repair-{current['step']['step_key']}-{repair_count:02d}"
+            step_index = 60_000 + plan_step_index * 100 + repair_count
+            report = dfm["report"]
+            failure = {"execution_attempt_id": dfm.get("attempt_id"), "category": "validation",
+                "error_code": "dfm_validation_failed", "runtime_error_type": "DFMError",
+                "error_message": "Measured DFM findings: " + json.dumps({
+                    "metrics": report.get("metrics", {}), "violations": report.get("violations", [])[:32],
+                    "issues": report.get("issues", [])[:32]}, ensure_ascii=False)[:16000]
+                    + ". " + self._design_repair_context(plan)}
+            repaired = await self._activity("agent_v2.repair_operations" if freecad else "agent_v2.repair_source", {
+                **request, "candidate_build_id": candidate_build_id,
+                "source_id": current["generated"]["source_id"], "source_hash": current["generated"]["source_hash"],
+                "repair_step_key": repair_key, "step_index": step_index, "repair_index": repair_index,
+                "gate_repair_index": repair_count, "original_step_key": current["step"]["step_key"],
+                "seen_signatures": current.get("seen_signatures", []), "base_state": current.get("base_state"),
+                "failure": failure,
+            }, suffix=repair_key)
+            generated = {**current["generated"], **repaired}
+            executed = await self._activity("agent_v2.execute_freecad" if freecad else "agent_v2.execute_model", {
+                **request, "candidate_build_id": candidate_build_id, "plan": plan, "step": current["step"],
+                "step_index": step_index, "run_step_key": repair_key,
+                "run_step_kind": "agent_freecad_repair" if freecad else "agent_repair",
+                "source_id": generated["source_id"], "source_hash": generated["source_hash"],
+                "source_code": generated["source_code"], "mode": current["mode"], "timeout_seconds": 180,
+                "supersedes_staging_manifest_id": current["executed"]["staging_manifest_id"],
+            }, suffix=f"execute-{repair_key}", execution=True)
+            # Evidence for the superseded artifact must never validate new bytes.
+            current = {k: v for k, v in current.items() if k not in {"geometry", "visual", "dfm"}}
+            current.update(generated=generated, executed=executed, repair_count=repair_index,
+                seen_signatures=[*current.get("seen_signatures", []), repaired["signature"]])
+            current = await self._geometry_gate(request=request, plan=plan, candidate_build_id=candidate_build_id,
+                modeled=current, plan_step_index=plan_step_index, expected_dimensions=expected_dimensions,
+                validation_cycle=10 + repair_count)
+            current = await self._visual_gate(request=request, plan=plan, candidate_build_id=candidate_build_id,
+                modeled=current, plan_step_index=plan_step_index, expected_dimensions=expected_dimensions,
+                validation_cycle=10 + repair_count)
+
     @workflow.run
     async def run(self, request: dict[str, Any]) -> dict[str, Any]:
         try:
+            if request.get("document_queue"):
+                await wait_for_document(self, request)
+            backend_policy_v1 = workflow.patched(
+                "agent-v2-backend-policy-v1"
+            )
+            native_bom_v1 = workflow.patched("agent-v2-native-bom-v1")
+            self._validation_repair_v2 = workflow.patched("agent-v2-validation-repair-v2")
+            self._provider_streaming_v1 = workflow.patched("agent-v2-provider-streaming-v1")
             self._phase = "requirements"
             requirements = await self._activity(
                 "agent_v2.requirements",
@@ -639,6 +903,7 @@ class McadAgentWorkflowV2:
                     {
                         **request,
                         "requirements": requirements["requirements"],
+                        "backend_policy_v1": backend_policy_v1,
                     },
                     suffix="decompose",
                 )
@@ -656,6 +921,8 @@ class McadAgentWorkflowV2:
                         if decomposition is not None
                         else None
                     ),
+                    "backend_policy_v1": backend_policy_v1,
+                    "validation_repair_v2": self._validation_repair_v2,
                 },
                 suffix="plan",
             )
@@ -720,17 +987,56 @@ class McadAgentWorkflowV2:
             previous_source: str | None = None
             predecessor_source_id: str | None = None
             manifests: list[dict[str, Any]] = []
-            requirements_payload = (
-                requirements["requirements"]
-                if request["operation"] == "generate"
-                else {
+            use_freecad = (
+                self._plan.get("modeling_backend") == "freecad"
+                if backend_policy_v1
+                else (
+                    request.get("modeling_backend") == "freecad"
+                    and self._plan["model_kind"]
+                    not in {"assembly", "profile_2d"}
+                )
+            )
+            if (
+                not backend_policy_v1
+                and request.get("modeling_backend") == "freecad"
+                and not use_freecad
+            ):
+                # The approved MVP excludes Assembly and 2D-profile authoring.
+                # Preserve their already-working source-code path.
+                request = {**request, "modeling_backend": "cadquery"}
+            requirements_payload = requirements["requirements"]
+            if request["operation"] == "modify" and not use_freecad:
+                requirements_payload = {
                     "existing_code": request.get("existing_code") or "",
                     "modification_plan": requirements["requirements"],
                 }
-            )
             modeling_offset = 3 if request["operation"] == "generate" else 2
             modeled: list[dict[str, Any]] = []
-            if self._plan["model_kind"] == "assembly":
+            if use_freecad:
+                plan_step_index, step = next(
+                    (index, item)
+                    for index, item in reversed(
+                        tuple(enumerate(self._plan["steps"]))
+                    )
+                    if item.get("output_formats")
+                )
+                self._phase = f"executing:freecad:{step['step_key']}"
+                modeled.append(
+                    await self._freecad_model_step(
+                        request=request,
+                        plan=self._plan,
+                        candidate_build_id=self._candidate_build_id,
+                        step=step,
+                        step_index=modeling_offset + plan_step_index,
+                        requirements=dict(requirements_payload),
+                        base_state=(
+                            dict(requirements["base_state"])
+                            if requirements.get("base_state") is not None
+                            else None
+                        ),
+                    )
+                )
+            elif self._plan["model_kind"] == "assembly":
                 part_entries = [
                     (index, step)
                     for index, step in enumerate(self._plan["steps"])
@@ -880,7 +1186,27 @@ class McadAgentWorkflowV2:
                         candidate_build_id=self._candidate_build_id,
                         modeled=item,
                         plan_step_index=plan_step_index,
+                        expected_dimensions=expected_dimensions,
                     )
+                )
+            bom_result: dict[str, Any] | None = None
+            if native_bom_v1 and self._plan["model_kind"] == "assembly":
+                combine_manifest_id = next(
+                    item["executed"]["staging_manifest_id"]
+                    for item in fully_validated
+                    if item["step"]["kind"] == "assembly_combine"
+                )
+                self._phase = "validating:bom"
+                bom_result = await self._activity(
+                    "agent_v2.generate_bom",
+                    {
+                        **request,
+                        "candidate_build_id": self._candidate_build_id,
+                        "staging_manifest_id": combine_manifest_id,
+                        "plan": self._plan,
+                    },
+                    suffix="native-bom",
+                    execution=True,
                 )
             manifests = [
                 {
@@ -897,6 +1223,14 @@ class McadAgentWorkflowV2:
                     ),
                     "dfm_evidence_id": (
                         item["dfm"]["evidence_id"] if item["dfm"] else None
+                    ),
+                    "bom_evidence_id": (
+                        bom_result["evidence_id"]
+                        if (
+                            bom_result is not None
+                            and item["step"]["kind"] == "assembly_combine"
+                        )
+                        else None
                     ),
                 }
                 for item in fully_validated
@@ -917,6 +1251,8 @@ class McadAgentWorkflowV2:
         except asyncio.CancelledError:
             return await self._record_cancel(request)
         except Exception as exc:
+            if self._provider_streaming_v1 and self._cancel_reason is not None:
+                return await self._record_cancel(request)
             self._phase = "failed"
             error_code = "agent_v2_workflow_failed"
             error_message = str(exc)[:4000]
@@ -950,3 +1286,6 @@ class McadAgentWorkflowV2:
                 suffix="record-failure",
             )
             raise
+        finally:
+            if request.get("document_queue"):
+                await release_document(request)

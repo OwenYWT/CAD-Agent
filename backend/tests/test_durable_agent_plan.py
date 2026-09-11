@@ -14,6 +14,8 @@ from app.agent.durable_plan import (
     ConfirmationPolicy,
     GateMode,
     ValidationGatePolicy,
+    enforce_design_validation,
+    normalize_agent_plan_backend,
 )
 from app.config import Settings
 
@@ -49,6 +51,24 @@ def _plan(**overrides) -> AgentPlan:
     }
     values.update(overrides)
     return AgentPlan(**values)
+
+
+@pytest.mark.parametrize("mode,expected", [
+    (GateMode.ADVISORY, GateMode.ADVISORY),
+    (GateMode.DISABLED, GateMode.ADVISORY),
+    (GateMode.REQUIRED, GateMode.REQUIRED),
+])
+def test_autonomous_visual_checks_preserve_explicit_required_policy(mode, expected):
+    policy = AgentValidationPolicy(visual=ValidationGatePolicy(mode=mode, repair_budget=0))
+    enforced = enforce_design_validation(_plan(validation_policy=policy), autonomous=True)
+    assert enforced.validation_policy.visual.mode is expected
+    assert enforced.validation_policy.visual.repair_budget >= 1
+    assert enforced.validation_policy.dfm.repair_budget >= 1
+
+
+def test_exact_edit_validation_never_authorizes_autonomous_repairs():
+    enforced = enforce_design_validation(_plan(), autonomous=False)
+    assert all(p["repair_budget"] == 0 for p in enforced.temporal_payload()["validation_policy"].values())
 
 
 def test_simple_plan_has_deterministic_strict_temporal_payload():
@@ -184,6 +204,46 @@ def test_modification_requires_pre_execution_confirmation():
         expected_base_revision_id=uuid4(),
     )
     assert plan.confirmation_policy is ConfirmationPolicy.REQUIRED
+
+
+def test_backend_policy_normalizes_generate_and_modify_before_persistence():
+    simple = normalize_agent_plan_backend(
+        operation="generate",
+        request_modeling_backend="auto",
+        plan_candidate=_plan(),
+    )
+    assembly = normalize_agent_plan_backend(
+        operation="generate",
+        request_modeling_backend="auto",
+        plan_candidate=_plan(model_kind="assembly"),
+    )
+    modification = normalize_agent_plan_backend(
+        operation="modify",
+        request_modeling_backend="freecad",
+        plan_candidate=_plan(
+            operation="modify",
+            confirmation_policy=ConfirmationPolicy.REQUIRED,
+            expected_base_revision_id=uuid4(),
+        ),
+    )
+
+    assert simple.modeling_backend == "freecad"
+    assert assembly.modeling_backend == "cadquery"
+    assert modification.modeling_backend == "freecad"
+
+
+def test_modify_backend_policy_rejects_planner_mismatch():
+    with pytest.raises(ValueError, match="agent_plan_backend_mismatch"):
+        normalize_agent_plan_backend(
+            operation="modify",
+            request_modeling_backend="freecad",
+            plan_candidate=_plan(
+                operation="modify",
+                modeling_backend="cadquery",
+                confirmation_policy=ConfirmationPolicy.REQUIRED,
+                expected_base_revision_id=uuid4(),
+            ),
+        )
 
 
 def test_validation_policy_distinguishes_required_advisory_and_disabled():

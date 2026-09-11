@@ -90,10 +90,12 @@
     "id": "fdm_bridge_distance",
     "process": "FDM",
     "category": "feature",
-    "check_type": "heuristic",
+    "check_type": "geometric",
+    "threshold_max": 0,
+    "unit": "mm",
     "severity": "warning",
-    "description": "FDM 桥接距离评估 — 水平跨越是否需要支撑",
-    "suggestion_template": "存在较长桥接区域，建议缩短跨距或添加支撑"
+    "description": "FDM 水平桥接跨度（默认未校准，任何桥接均需确认）",
+    "suggestion_template": "实测桥接 {actual:.2f}mm，超过配置上限 {max}mm；请添加支撑或填写设备实测可用跨度"
   },
   {
     "id": "fdm_min_feature",

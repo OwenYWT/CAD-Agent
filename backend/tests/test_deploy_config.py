@@ -51,7 +51,8 @@ def test_settings_defaults_are_safe(monkeypatch):
     assert s.moonshot_api_key is None
     assert s.llm_provider == "moonshot"
     assert s.llm_model == "kimi-k2.7-code"
-    assert s.effective_vision_model == "moonshot-v1-32k-vision-preview"
+    assert s.vision_model == ""
+    assert s.effective_vision_model == s.llm_model
     assert s.api_keys == []
     assert s.default_invite_codes == []  # access codes must be deployment-owned secrets
     assert s.has_llm_credentials is False
@@ -335,7 +336,8 @@ def test_nginx_proxies_api_and_ws_to_backend():
     text = NGINX_CONF.read_text()
     assert "location /api/" in text
     assert "location /ws/" in text
-    assert "proxy_pass http://backend:8000" in text
+    assert "set $cad_backend http://backend:8000;" in text
+    assert "proxy_pass $cad_backend;" in text
 
 
 def test_nginx_ws_has_upgrade_headers():

@@ -1,0 +1,17 @@
+{
+  "workflow_run_id": "1f9df8ca-cf19-43c3-b491-b1c2788d17e3",
+  "failed_short_tool_workflow": "45d06ccf-b3a4-4bdc-b7f4-df49e58bb9e2",
+  "source_revision_id": "06dd85b8-b396-40df-9389-ebe8c968265c",
+  "actual_native_offsets_and_clearance": true,
+  "path_playback_verified": true,
+  "downloaded_nc_sha256": "2f6eeb76dce26c740eebee92e3cab76da87715211bda7df408be4f4929f1fc67",
+  "passes": 3,
+  "segments": 192,
+  "minimum_target_clearance_mm": 0.012144116309685593,
+  "internal_loops_explicitly_excluded": 1,
+  "idempotency_verified": true,
+  "native_short_tool_rejected": true,
+  "source_revision_unchanged": true,
+  "page_errors": [],
+  "console_errors": []
+}

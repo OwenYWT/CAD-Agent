@@ -38,6 +38,31 @@ class BuildPlan:
     complexity: str  # "simple"|"moderate"|"complex"
 
 
+def parse_build_plan(content: str | None, finish_reason: str | None) -> BuildPlan:
+    """Fail explicitly on incomplete output; never manufacture a valid plan."""
+    if finish_reason == "length":
+        raise ValueError("decomposition output was truncated at the completion limit")
+    text = (content or "").strip()
+    if not text:
+        raise ValueError(f"decomposition output was empty (finish_reason={finish_reason})")
+    if text.startswith("```") and "\n" in text:
+        text = text.split("\n", 1)[1]
+        if text.rstrip().endswith("```"):
+            text = text.rstrip()[:-3].strip()
+    parsed = json.loads(text)
+    if not isinstance(parsed, dict) or parsed.get("complexity") not in {"simple", "moderate", "complex"}:
+        raise ValueError("decomposition complexity is invalid")
+    raw_steps = parsed.get("steps")
+    if not isinstance(raw_steps, list) or not 1 <= len(raw_steps) <= 10:
+        raise ValueError("decomposition requires 1 to 10 complete steps")
+    steps = []
+    for item in raw_steps:
+        if not isinstance(item, dict) or not isinstance(item.get("description"), str) or not item["description"].strip():
+            raise ValueError("decomposition step description is missing")
+        steps.append(BuildStep(phase=BuildPhase(item.get("phase")), description=item["description"].strip()))
+    return BuildPlan(steps=steps, complexity=parsed["complexity"])
+
+
 DECOMPOSE_PROMPT = """你是 CAD 构建规划专家。将零件描述分解为有序构建步骤。
 
 ## 规则
@@ -118,40 +143,25 @@ class PlanDecomposer:
         try:
             t0 = time.time()
             logger.info("PlanDecomposer LLM call start")
-            response = await self.client.chat.completions.create(
-                model=settings.llm_model,
-                max_tokens=1024,
-                temperature=0.1,
-                messages=[
-                    {"role": "system", "content": DECOMPOSE_PROMPT},
-                    {"role": "user", "content": user_content},
-                ],
-            )
-            elapsed = time.time() - t0
-            logger.info(f"PlanDecomposer LLM call done in {elapsed:.1f}s")
-            text = response.choices[0].message.content.strip()
-            # Strip markdown code fences
-            if text.startswith("```"):
-                text = text.split("\n", 1)[1]
-                if text.endswith("```"):
-                    text = text[:-3]
-                text = text.strip()
-
-            parsed = json.loads(text)
-            steps = []
-            for s in parsed.get("steps", []):
-                phase_str = s.get("phase", "base")
+            for attempt in range(2):
+                response = await self.client.chat.completions.create(
+                    model=settings.llm_model,
+                    max_tokens=settings.planner_max_tokens,
+                    temperature=0.1,
+                    messages=[
+                        {"role": "system", "content": DECOMPOSE_PROMPT},
+                        {"role": "user", "content": user_content},
+                    ],
+                )
+                choice = response.choices[0]
+                finish_reason = getattr(choice, "finish_reason", None)
+                logger.info("PlanDecomposer response in %.1fs (stop=%s)", time.time()-t0, finish_reason)
                 try:
-                    phase = BuildPhase(phase_str)
+                    return parse_build_plan(choice.message.content, finish_reason)
                 except ValueError:
-                    phase = BuildPhase.BASE
-                steps.append(BuildStep(phase=phase, description=s.get("description", "")))
-
-            complexity = parsed.get("complexity", "moderate")
-            if not steps:
-                raise ValueError("No steps returned")
-
-            return BuildPlan(steps=steps[:6], complexity=complexity)
+                    if attempt == 1:
+                        raise
+                    logger.warning("Invalid decomposition response; requesting one complete replacement")
 
         except Exception as e:
             if find_provider_exception(e) is not None:

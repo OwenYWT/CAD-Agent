@@ -129,6 +129,7 @@ function snapshot(
     cancellation_requested_at: null,
     error_code: null,
     error_message: null,
+    error: null,
     created_at: "2026-07-30T12:00:00Z",
     started_at: "2026-07-30T12:00:01Z",
     updated_at: "2026-07-30T12:00:02Z",

@@ -16,6 +16,11 @@
 
 | 文档 | 作用 |
 | --- | --- |
+| [`qa/acceptance-remediation-2026-09-10.md`](qa/acceptance-remediation-2026-09-10.md) | 独立验收发现的问题、当前整改进展、真实复验证据与尚未通过的范围 |
+| [`qa/cloud-cad-fusion-2026-09-09.md`](qa/cloud-cad-fusion-2026-09-09.md) | 历史融合测试及交接记录；整体完成结论已被独立验收推翻 |
+| [`cloud-documents.md`](cloud-documents.md) | 云文档版本权威、自动派发、特征协作、组件场景、分支与草图的真实调用链及边界 |
+| [`engineering-compute.md`](engineering-compute.md) | 真实有限元、外轮廓 CAM、不可变修订证据、Agent 上下文与运行边界 |
+| [`qa/cloud-document-p0.md`](qa/cloud-document-p0.md) | 2026-09-08 早期 P0 融合的真实服务、浏览器、内核和回归证据 |
 | [`qa/mcad-m0-report.md`](qa/mcad-m0-report.md) | 固定 Runtime、统一 ExecutionBackend 与隔离执行的 M0 证据 |
 | [`qa/mcad-m1-report.md`](qa/mcad-m1-report.md) | PostgreSQL、Temporal、不可变 Artifact、Revision、WebSocket 和真实 Podman 的 M1 验收结果 |
 
@@ -43,6 +48,11 @@ Fusion 自动化测试与真实桌面验收必须分开表述。没有完成 Win
 
 ## 当前架构改造
 
+- [`releases-and-local-bridge.md`](releases-and-local-bridge.md)：命名发布、原生 BOM、同修订工程证据和本地文件交付；安装方式、权限、恢复行为与外部环境边界。
+
+- [`superpowers/plans/2026-09-08-cloud-cad-expansion.md`](superpowers/plans/2026-09-08-cloud-cad-expansion.md)
+  2026-09-08 继续融合的模块顺序与验证进度；未勾选项尚未完成验收。
+
 - [`superpowers/specs/2026-07-25-commercial-mcad-execution-design.md`](superpowers/specs/2026-07-25-commercial-mcad-execution-design.md)
   定义 M0 本地 MCAD、M1 持久控制平面和 M2 隔离计算扩展的已批准目标、边界与真实验收要求。
 - [`superpowers/specs/2026-08-12-durable-agent-fusion-design.md`](superpowers/specs/2026-08-12-durable-agent-fusion-design.md)
@@ -57,6 +67,9 @@ Fusion 自动化测试与真实桌面验收必须分开表述。没有完成 Win
 未从本索引列出的 `superpowers/plans/` 文件只保留实施追溯价值，不是当前事实来源。旧 Sprint、重复使用说明和旧交接副本不再保留；更早内容使用 Git 历史追溯。
 
 ## 维护规则
+
+最新腾讯云上线记录见 [`qa/tencent-deployment-2026-09-11.md`](qa/tencent-deployment-2026-09-11.md)，
+运行配置见 [`../deploy/tencent/README.md`](../deploy/tencent/README.md)。该报告区分部署验证与完整产品验收。
 
 1. `README.md` 只保留项目概览和最短路径；开发细节进入 `development.md`，生产运维进入 `DEPLOY.md`。
 2. 新文档必须从本索引或 `README.md` 可发现，并明确受众与事实来源。

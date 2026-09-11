@@ -3,6 +3,7 @@ import type { AuthSession } from "../auth";
 import { saveAuthSession } from "../auth";
 import { BrandMark } from "./common/BrandMark";
 import { Icon } from "./ui/Icon";
+import { LanguageSwitch } from "../i18n/LanguageSwitch";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 type Screen = "login" | "register";
@@ -89,64 +90,64 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   return (
-    <main className="flex min-h-[100dvh] items-center justify-center bg-slate-950 p-4 sm:p-6">
-      <div className="w-full max-w-[420px]">
+    <main className="ww-auth-shell">
+      <LanguageSwitch className="workspace-button ww-auth-language" />
+      <div className="ww-login-wrap">
         <BrandMark
-          className="mb-6 w-full justify-center text-white"
+          className="ww-login-brand"
           description="参数化建模工作台"
-          descriptionClassName="text-sm text-slate-400"
+          descriptionClassName="type-body text-[var(--muted)]"
           nameAs="h1"
-          nameClassName="text-[22px]"
+          nameClassName="type-display-heading"
           size="login"
-          tone="inverse"
         />
 
-        <form className="space-y-5 rounded-lg border border-slate-200 bg-white p-5 shadow-2xl sm:p-7" onSubmit={submit}>
+        <form className="ww-login-card" onSubmit={submit}>
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">进入工作台</h2>
-            <p className="mt-1 text-sm text-slate-500">登录后生成、检查并导出 CAD 模型。</p>
+            <h2 className="type-page-heading text-[var(--ink)]">进入工作台</h2>
+            <p className="mt-1 type-body text-[var(--muted)]">登录后生成、检查并导出 CAD 模型。</p>
           </div>
 
-          <div aria-label="账号操作" className="grid grid-cols-2 rounded-md bg-slate-100 p-1" role="tablist">
-            <button aria-selected={screen === "login"} className={`min-h-10 rounded-[4px] text-sm font-medium ${screen === "login" ? "bg-white text-sky-700 shadow-sm" : "text-slate-600 hover:text-slate-900"}`} onClick={() => switchScreen("login")} role="tab" type="button">登录</button>
-            <button aria-selected={screen === "register"} className={`min-h-10 rounded-[4px] text-sm font-medium ${screen === "register" ? "bg-white text-sky-700 shadow-sm" : "text-slate-600 hover:text-slate-900"}`} onClick={() => switchScreen("register")} role="tab" type="button">邀请码注册</button>
+          <div aria-label="账号操作" className="ww-login-tabs" role="tablist">
+            <button aria-selected={screen === "login"} className={screen === "login" ? "is-active" : ""} onClick={() => switchScreen("login")} role="tab" type="button">登录</button>
+            <button aria-selected={screen === "register"} className={screen === "register" ? "is-active" : ""} onClick={() => switchScreen("register")} role="tab" type="button">邀请码注册</button>
           </div>
 
           <div className="space-y-4">
             <label className="block" htmlFor="account">
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">手机号或管理员账号</span>
-              <input autoComplete="username" className="min-h-11 w-full rounded-md border border-slate-300 px-3 text-base outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100" id="account" inputMode={isAdminAccount(phone) ? "text" : "tel"} name="username" onChange={(event) => setPhone(event.target.value)} placeholder="手机号" required type="text" value={phone} />
+              <span className="ww-field-label">手机号或管理员账号</span>
+              <input autoComplete="username" className="ww-field" id="account" inputMode={isAdminAccount(phone) ? "text" : "tel"} name="username" onChange={(event) => setPhone(event.target.value)} placeholder="手机号" required type="text" value={phone} />
             </label>
 
             <label className="block" htmlFor="password">
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">{screen === "register" ? "设置密码" : "密码"}</span>
+              <span className="ww-field-label">{screen === "register" ? "设置密码" : "密码"}</span>
               <span className="relative block">
-                <input autoComplete={screen === "register" ? "new-password" : "current-password"} className="min-h-11 w-full rounded-md border border-slate-300 px-3 pr-12 text-base outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100" id="password" minLength={screen === "register" ? 8 : undefined} name="password" onChange={(event) => setPassword(event.target.value)} placeholder={screen === "register" ? "至少 8 位" : "输入密码"} required type={showPassword ? "text" : "password"} value={password} />
-                <button aria-label={showPassword ? "隐藏密码" : "显示密码"} className="icon-button absolute right-0.5 top-0.5 text-slate-500 hover:text-slate-900" onClick={() => setShowPassword((value) => !value)} title={showPassword ? "隐藏密码" : "显示密码"} type="button"><Icon name={showPassword ? "eye-off" : "eye"} size={18} /></button>
+                <input autoComplete={screen === "register" ? "new-password" : "current-password"} className="ww-field pr-12" id="password" minLength={screen === "register" ? 8 : undefined} name="password" onChange={(event) => setPassword(event.target.value)} placeholder={screen === "register" ? "至少 8 位" : "输入密码"} required type={showPassword ? "text" : "password"} value={password} />
+                <button aria-label={showPassword ? "隐藏密码" : "显示密码"} className="icon-button absolute right-0.5 top-0.5 text-[var(--muted)] hover:text-[var(--ink)]" onClick={() => setShowPassword((value) => !value)} title={showPassword ? "隐藏密码" : "显示密码"} type="button"><Icon name={showPassword ? "eye-off" : "eye"} size={18} /></button>
               </span>
-              {screen === "register" && <span className="mt-1 block text-xs text-slate-500">至少 8 位字符。</span>}
+              {screen === "register" && <span className="mt-1 block type-body text-[var(--muted)]">至少 8 位字符。</span>}
             </label>
 
             {screen === "register" && (
               <>
                 <label className="block" htmlFor="confirm-password">
-                  <span className="mb-1.5 block text-sm font-medium text-slate-700">确认密码</span>
-                  <input aria-invalid={passwordMismatch} autoComplete="new-password" className={`min-h-11 w-full rounded-md border px-3 text-base outline-none focus:ring-2 ${passwordMismatch ? "border-red-400 focus:ring-red-100" : "border-slate-300 focus:border-sky-600 focus:ring-sky-100"}`} id="confirm-password" name="confirm-password" onChange={(event) => setConfirmPassword(event.target.value)} required type={showPassword ? "text" : "password"} value={confirmPassword} />
-                  {passwordMismatch && <span className="mt-1 block text-xs text-red-600">两次输入的密码不一致。</span>}
+                  <span className="ww-field-label">确认密码</span>
+                  <input aria-invalid={passwordMismatch} autoComplete="new-password" className={`ww-field ${passwordMismatch ? "border-red-400 focus:ring-red-100" : ""}`} id="confirm-password" name="confirm-password" onChange={(event) => setConfirmPassword(event.target.value)} required type={showPassword ? "text" : "password"} value={confirmPassword} />
+                  {passwordMismatch && <span className="mt-1 block type-body text-red-600">两次输入的密码不一致。</span>}
                 </label>
                 <label className="block" htmlFor="invite-code">
-                  <span className="mb-1.5 block text-sm font-medium text-slate-700">邀请码</span>
-                  <input autoComplete="off" className="min-h-11 w-full rounded-md border border-slate-300 px-3 text-base uppercase outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100" id="invite-code" name="invite-code" onChange={(event) => setInviteCode(event.target.value)} placeholder="输入已发放的邀请码" required value={inviteCode} />
+                  <span className="ww-field-label">邀请码</span>
+                  <input autoComplete="off" className="ww-field uppercase" id="invite-code" name="invite-code" onChange={(event) => setInviteCode(event.target.value)} placeholder="输入已发放的邀请码" required value={inviteCode} />
                 </label>
               </>
             )}
           </div>
 
           <div aria-live="polite">
-            {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</div>}
+            {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 type-body text-red-700" role="alert">{error}</div>}
           </div>
 
-          <button className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-sky-700 px-4 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-45" disabled={!canSubmit} type="submit">
+          <button className="workspace-button workspace-button--primary min-h-11 w-full" disabled={!canSubmit} type="submit">
             {loading && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />}
             {loading ? "正在处理" : screen === "register" ? "注册并登录" : "登录"}
           </button>

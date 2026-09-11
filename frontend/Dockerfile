@@ -8,6 +8,7 @@ COPY . .
 RUN npm run build
 
 FROM nginx:alpine
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 EXPOSE 80

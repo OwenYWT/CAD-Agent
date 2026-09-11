@@ -122,6 +122,13 @@ class _FailedVisualValidator(DurableVisualValidator):
         )
 
 
+class _UncertainVisualValidator(_PassingVisualValidator):
+    async def judge(self, **kwargs):
+        _, provenance = await super().judge(**kwargs)
+        return VisualJudgment(is_match=None, confidence=0.4,
+            issues=("Requested rear cavity is occluded in every render",)), provenance
+
+
 @pytest.mark.parametrize(
     ("validator", "issue"),
     [
@@ -152,6 +159,7 @@ async def test_visual_provider_failures_are_indeterminate(validator, issue):
     [
         (_PassingVisualValidator(), "passed"),
         (_FailedVisualValidator(), "failed"),
+        (_UncertainVisualValidator(), "indeterminate"),
     ],
 )
 @pytest.mark.asyncio

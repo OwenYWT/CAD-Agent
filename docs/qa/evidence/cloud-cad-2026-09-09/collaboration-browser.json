@@ -1,0 +1,16 @@
+{
+  "standalone_edit": {
+    "task_id": "2005b7c3-5fda-49cf-875c-11441b60a138",
+    "restored_pending_task": true,
+    "actual_kernel": true,
+    "editor_cannot_commit": true,
+    "owner_committed": true,
+    "final_length_mm": 14.0
+  },
+  "membership": {
+    "downgraded_without_reload": true,
+    "lease_cleared": true,
+    "revoked_socket_and_ui": true,
+    "page_errors": []
+  }
+}

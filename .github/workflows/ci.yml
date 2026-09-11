@@ -9,6 +9,9 @@ jobs:
   backend:
     name: Backend tests (no Docker, no LLM)
     runs-on: ubuntu-latest
+    env:
+      APP_ENVIRONMENT: test
+      DURABLE_CONTROL_PLANE_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
 

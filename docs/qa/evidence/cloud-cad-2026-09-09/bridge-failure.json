@@ -1,0 +1,9 @@
+{
+  "bridge_id": "8b391be0-9443-493c-ac9a-0eed92ecb71c",
+  "failed_delivery": "a1b855f6-dad1-422f-8fcc-59df57c6d67d",
+  "recovered_delivery": "14b7c56e-951f-4f09-83b9-7b90155c8a4f",
+  "unsafe_target_rejected_without_writes": true,
+  "failure_visible_without_false_success": true,
+  "repair_retries_as_new_delivery": true,
+  "failed_record_unchanged": true
+}

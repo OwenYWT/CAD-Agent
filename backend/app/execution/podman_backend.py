@@ -61,17 +61,6 @@ def inspect_container_runtime(command: str, image_ref: str) -> RuntimeSnapshot:
             f"unsupported runtime platform: {operating_system}/{architecture}"
         )
 
-    probe_code = (
-        "import json,sys\n"
-        "versions={'python':sys.version.split()[0]}\n"
-        "for module_name in ('cadquery','build123d','OCP','ezdxf'):\n"
-        "  try:\n"
-        "    module=__import__(module_name)\n"
-        "    version=getattr(module,'__version__',None) or getattr(module,'VERSION',None)\n"
-        "    if version is not None: versions[module_name.lower()]=str(version)\n"
-        "  except Exception: pass\n"
-        "print(json.dumps(versions,sort_keys=True))\n"
-    )
     probe = subprocess.run(
         [
             command,
@@ -80,28 +69,64 @@ def inspect_container_runtime(command: str, image_ref: str) -> RuntimeSnapshot:
             "--network",
             "none",
             "--read-only",
+            "--tmpfs",
+            "/tmp:rw,size=64m,noexec,nosuid",
             "--cap-drop",
             "ALL",
             "--security-opt",
             "no-new-privileges",
             "--entrypoint",
-            "python",
+            "/opt/freecad/bin/FreeCADCmd",
             image_ref,
             "-c",
-            probe_code,
+            (
+                "exec(compile(open('/opt/cad-agent/freecad_runtime_probe.py', "
+                "encoding='utf-8').read(), "
+                "'/opt/cad-agent/freecad_runtime_probe.py', 'exec'))"
+            ),
         ],
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=300,
     )
     if probe.returncode != 0:
         raise RuntimeError(
             (probe.stderr or probe.stdout).strip() or "runtime version probe failed"
         )
+    report = None
+    for line in reversed(probe.stdout.splitlines()):
+        try:
+            candidate = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict):
+            report = candidate
+            break
+    required_checks = {
+        "freecad.create_save_reopen_modify",
+        "freecad.transaction_abort",
+        "freecad.sketch_solve",
+        "freecad.shape_check",
+        "freecad.export_step_stl",
+        "freecad.assembly_bom",
+    }
+    if (
+        report is None
+        or report.get("schema_version") != "mcad-runtime-probe.v2"
+        or set(report.get("verified_operations") or ()) != required_checks
+        or any(
+            check.get("status") != "passed"
+            for check in report.get("checks") or ()
+        )
+    ):
+        raise RuntimeError("runtime operation probe returned incomplete evidence")
+    versions = report.get("versions")
+    if not isinstance(versions, dict) or versions.get("freecad") != "1.1.3":
+        raise RuntimeError("runtime operation probe returned wrong FreeCAD version")
     return RuntimeSnapshot(
         image_digest=_image_digest(inspected),
         platform=f"linux/{architecture}",
-        versions=json.loads(probe.stdout),
+        versions={str(key): str(value) for key, value in versions.items()},
     )
 
 
@@ -133,6 +158,42 @@ def _failure_mapping(result: SandboxResult) -> tuple[ExecutionStatus, ExecutionE
     if error_type in {"SyntaxError", "ImportError", "NameError", "TypeError", "ValueError"}:
         return ExecutionStatus.FAILED, ExecutionErrorCategory.USER_CODE, "user_code_failed"
     return ExecutionStatus.FAILED, ExecutionErrorCategory.CAD_KERNEL, "cad_execution_failed"
+
+
+_STRUCTURED_ERROR_POLICY: dict[str, tuple[ExecutionErrorCategory, bool]] = {
+    "agent_plan_backend_mismatch": (ExecutionErrorCategory.VALIDATION, False),
+    "invalid_edge_selection_mode": (ExecutionErrorCategory.USER_INPUT, False),
+    "topology_resolution_failed": (ExecutionErrorCategory.VALIDATION, False),
+    "topology_target_mismatch": (ExecutionErrorCategory.VALIDATION, False),
+    "sketch_malformed_constraint": (ExecutionErrorCategory.USER_INPUT, False),
+    "sketch_redundant_constraints": (ExecutionErrorCategory.VALIDATION, False),
+    "sketch_conflicting_constraints": (ExecutionErrorCategory.VALIDATION, False),
+    "sketch_under_constrained": (ExecutionErrorCategory.VALIDATION, False),
+    "sketch_solver_failed": (ExecutionErrorCategory.CAD_KERNEL, False),
+    "shape_check_failed": (ExecutionErrorCategory.CAD_KERNEL, False),
+    "invalid_document_object": (ExecutionErrorCategory.CAD_KERNEL, False),
+    "parameter_state_stale": (ExecutionErrorCategory.VALIDATION, False),
+    "parameter_state_missing": (ExecutionErrorCategory.VALIDATION, False),
+    "parameter_duplicate_update": (ExecutionErrorCategory.USER_INPUT, False),
+    "parameter_not_editable": (ExecutionErrorCategory.USER_INPUT, False),
+    "parameter_value_type_invalid": (ExecutionErrorCategory.USER_INPUT, False),
+    "parameter_property_type_changed": (ExecutionErrorCategory.VALIDATION, False),
+    "parameter_value_out_of_range": (ExecutionErrorCategory.USER_INPUT, False),
+    "subtractive_feature_no_effect": (ExecutionErrorCategory.VALIDATION, False),
+    "bom_input_missing": (ExecutionErrorCategory.ARTIFACT, False),
+    "bom_input_ambiguous": (ExecutionErrorCategory.ARTIFACT, False),
+    "bom_input_integrity_failed": (ExecutionErrorCategory.ARTIFACT, False),
+    "bom_runtime_unsupported": (ExecutionErrorCategory.INFRASTRUCTURE, False),
+    "bom_source_not_assembly": (ExecutionErrorCategory.VALIDATION, False),
+    "bom_source_hierarchy_lost": (ExecutionErrorCategory.VALIDATION, False),
+    "bom_source_geometry_mismatch": (ExecutionErrorCategory.VALIDATION, False),
+    "bom_generation_failed": (ExecutionErrorCategory.CAD_KERNEL, False),
+    "bom_empty": (ExecutionErrorCategory.VALIDATION, False),
+    "bom_seal_failed": (ExecutionErrorCategory.ARTIFACT, False),
+    "bom_seal_timed_out": (ExecutionErrorCategory.TIMEOUT, False),
+    "sandbox_protocol_error": (ExecutionErrorCategory.INFRASTRUCTURE, False),
+    "freecad_internal_error": (ExecutionErrorCategory.INTERNAL, False),
+}
 
 
 class PodmanExecutionBackend:
@@ -253,7 +314,24 @@ class PodmanExecutionBackend:
             **execute_kwargs,
         )
         if not sandbox_result.success:
-            status, category, code = _failure_mapping(sandbox_result)
+            if sandbox_result.error_code:
+                status = ExecutionStatus.FAILED
+                code = sandbox_result.error_code
+                category, retryable = _STRUCTURED_ERROR_POLICY.get(
+                    code,
+                    (ExecutionErrorCategory.INTERNAL, False),
+                )
+                structured = sandbox_result.error_details
+            elif spec.capability == "mcad.freecad":
+                status = ExecutionStatus.FAILED
+                category = ExecutionErrorCategory.INFRASTRUCTURE
+                code = "sandbox_protocol_error"
+                retryable = False
+                structured = {}
+            else:
+                status, category, code = _failure_mapping(sandbox_result)
+                retryable = False
+                structured = {}
             result = ExecutionResult(
                 execution_attempt_id=spec.execution_attempt_id,
                 status=status,
@@ -261,6 +339,18 @@ class PodmanExecutionBackend:
                     category=category,
                     code=code,
                     message=_redact(sandbox_result.error_message, redacted_values),
+                    operation_id=(
+                        str(structured.get("operation_id"))[:200]
+                        if structured.get("operation_id") is not None
+                        else None
+                    ),
+                    action=(
+                        str(structured.get("action"))[:200]
+                        if structured.get("action") is not None
+                        else None
+                    ),
+                    details=dict(structured.get("details") or {}),
+                    retryable=retryable,
                     evidence={"runtime_error_type": sandbox_result.error_type},
                 ),
                 provenance=self._provenance(spec, snapshot),

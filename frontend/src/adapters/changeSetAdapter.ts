@@ -170,6 +170,18 @@ function fileEvidence(
 function validationEvidence(
   result: GenerationResult,
 ): ChangeSet["validation"] {
+  if (result.validation?.gates?.length) {
+    const gates = result.validation.gates.filter((gate) => gate.mode !== "disabled");
+    if (!gates.length) return { status: "unknown", summary: "所有门禁均未启用，没有已执行的验证证据。" };
+    const blocked = gates.some((gate) => (gate.mode === "required" && gate.outcome !== "passed")
+      || (gate.gate === "visual" && gate.outcome === "failed"))
+      || result.inspect_report?.verdict === "fail" || result.validation.is_watertight === false;
+    const incomplete = gates.some((gate) => gate.outcome !== "passed") || result.inspect_report?.verdict === "warn";
+    return {
+      status: blocked ? "fail" : incomplete ? "warning" : "pass",
+      summary: blocked ? "设计一致性或必需检查未通过。" : incomplete ? "仍有风险或未能判定的检查，请查看证据。" : "已执行的检查通过。",
+    };
+  }
   const verdict = result.inspect_report?.verdict;
   if (verdict) {
     const verdictLabel = {
@@ -187,7 +199,7 @@ function validationEvidence(
       summary: `检查报告：${verdictLabel}，来源 ${sourceLabel}`,
     };
   }
-  if (result.validation) {
+  if (typeof result.validation?.is_watertight === "boolean") {
     return {
       status: result.validation.is_watertight ? "pass" : "fail",
       summary: result.validation.is_watertight
@@ -481,7 +493,14 @@ function durableValidation(
       }];
     },
   );
-  return { status, summary: summaryText, gates };
+  const active = gates.filter(gate => gate.mode !== "disabled");
+  const blocked = active.some(gate => (gate.mode === "required" && gate.outcome !== "passed")
+    || (gate.gate === "visual" && gate.outcome === "failed"));
+  const incomplete = active.filter(gate => gate.outcome !== "passed");
+  const resolved = blocked || status === "fail" ? "fail" : incomplete.length ? "warning" : status;
+  return { status: resolved, summary: active.length
+    ? `${blocked ? "设计一致性或必需检查未通过" : incomplete.length ? "仍有风险或未能判定项" : "已执行的检查通过"}，问题 ${Math.max(issueCount || 0, incomplete.length)} 项`
+    : summaryText, gates };
 }
 
 function durableRisk(
@@ -531,6 +550,8 @@ export function adaptDurableChangeSet(
   panelId: string,
 ): ChangeSet {
   const operationCount = finiteNumber(detail.change_summary.modified_object_count);
+  const validation = durableValidation(detail.validation_summary);
+  const risk = durableRisk(detail.risk_summary);
   return {
     id: detail.id,
     panelId,
@@ -546,8 +567,8 @@ export function adaptDurableChangeSet(
     code: durableCodeEvidence(detail),
     geometry: durableGeometryEvidence(detail.change_summary),
     files: durableFileChanges(detail),
-    validation: durableValidation(detail.validation_summary),
-    risk: durableRisk(detail.risk_summary),
+    validation,
+    risk: validation.status === "fail" ? { level: "high", reasons: [validation.summary, ...risk.reasons] } : risk,
     agentLogs: [
       ...(detail.agent_events || []).flatMap((entry) => (
         entry.event_type.startsWith("agent.") && entry.projection?.message

@@ -1,0 +1,259 @@
+{
+  "target_document_id": "eab262e2-52b7-4ca0-948d-dcbf81ae1293",
+  "source_document_id": "f5d74766-ce99-4720-a03f-0edc4b817b4a",
+  "tenant_id": "8a735cd2-ab5f-5e99-8cc5-77d32c92eadc",
+  "merged_workflow_id": "d7eea4ad-5fe5-445c-ad3d-c3805911ce9f",
+  "merged_revision_id": "8ce615ed-acd9-487c-8313-9a600021bc09",
+  "conflict_comparison": {
+    "document_id": "eab262e2-52b7-4ca0-948d-dcbf81ae1293",
+    "source_document_id": "f5d74766-ce99-4720-a03f-0edc4b817b4a",
+    "target_revision_id": "8ce615ed-acd9-487c-8313-9a600021bc09",
+    "target_state_version": 6,
+    "source_revision_id": "e699d39d-9256-4f51-b7ce-f6525e128a09",
+    "source_state_version": 3,
+    "common_revision_id": "c02d7a55-2a47-475c-b37d-794d44a94fb6",
+    "source_changes": [
+      {
+        "feature_id": "1afae659-a66c-51b9-8c01-2db0be376778",
+        "kernel_name": "BodyA",
+        "label": "BodyA",
+        "kind": "changed",
+        "fields": [
+          {
+            "name": "geometry_sha256",
+            "before": "e2cc231459b03c8408175bce29b3312623b2c6af11bfe1f3ace0e897a72df77f",
+            "after": "bfb494a803a1c0f5c7ea8efb3b00983613569855c649db21389fa4a1389f20d3"
+          }
+        ]
+      },
+      {
+        "feature_id": "e95d47a7-4765-5b06-a0ee-0f6df0c9f6ff",
+        "kernel_name": "PadA",
+        "label": "PadA",
+        "kind": "changed",
+        "fields": [
+          {
+            "name": "parameters",
+            "before": [
+              {
+                "id": "PadA.Length",
+                "step": null,
+                "unit": "mm",
+                "group": "Side1",
+                "label": "PadA · Length",
+                "value": 12.0,
+                "maximum": null,
+                "minimum": null,
+                "editable": true,
+                "object_name": "PadA",
+                "property_name": "Length",
+                "property_type": "App::PropertyLength"
+              }
+            ],
+            "after": [
+              {
+                "id": "PadA.Length",
+                "step": null,
+                "unit": "mm",
+                "group": "Side1",
+                "label": "PadA · Length",
+                "value": 17.0,
+                "maximum": null,
+                "minimum": null,
+                "editable": true,
+                "object_name": "PadA",
+                "property_name": "Length",
+                "property_type": "App::PropertyLength"
+              }
+            ]
+          },
+          {
+            "name": "geometry_sha256",
+            "before": "210d8048d42e6bb0917333b009d5c1e96061b2e7269861448223377cd54bebba",
+            "after": "a93b014099fa343ca50c074cc8c000205649c4321fbad29b7e0e748f9dfadc0b"
+          }
+        ]
+      },
+      {
+        "feature_id": "f2102b5f-6230-5819-bad8-ef381aad9646",
+        "kernel_name": "SketchA",
+        "label": "SketchA",
+        "kind": "changed",
+        "fields": [
+          {
+            "name": "geometry_sha256",
+            "before": "1fe534e50eea91e2d5eb2d08f99d22069213fc22825e0b92db2b6dd1fcccf4ef",
+            "after": "d0af40d7386d9d6f987aefd71c6b0ec27ff041831abe4ae24e37248e4a272a1d"
+          }
+        ]
+      }
+    ],
+    "target_changes": [
+      {
+        "feature_id": "1afae659-a66c-51b9-8c01-2db0be376778",
+        "kernel_name": "BodyA",
+        "label": "BodyA",
+        "kind": "changed",
+        "fields": [
+          {
+            "name": "geometry_sha256",
+            "before": "e2cc231459b03c8408175bce29b3312623b2c6af11bfe1f3ace0e897a72df77f",
+            "after": "80c127d19bece27110813424241772e09f9423e6c60c46f339288d539621cc2e"
+          }
+        ]
+      },
+      {
+        "feature_id": "e95d47a7-4765-5b06-a0ee-0f6df0c9f6ff",
+        "kernel_name": "PadA",
+        "label": "PadA",
+        "kind": "changed",
+        "fields": [
+          {
+            "name": "parameters",
+            "before": [
+              {
+                "id": "PadA.Length",
+                "step": null,
+                "unit": "mm",
+                "group": "Side1",
+                "label": "PadA · Length",
+                "value": 12.0,
+                "maximum": null,
+                "minimum": null,
+                "editable": true,
+                "object_name": "PadA",
+                "property_name": "Length",
+                "property_type": "App::PropertyLength"
+              }
+            ],
+            "after": [
+              {
+                "id": "PadA.Length",
+                "step": null,
+                "unit": "mm",
+                "group": "Side1",
+                "label": "PadA · Length",
+                "value": 13.0,
+                "maximum": null,
+                "minimum": null,
+                "editable": true,
+                "object_name": "PadA",
+                "property_name": "Length",
+                "property_type": "App::PropertyLength"
+              }
+            ]
+          },
+          {
+            "name": "geometry_sha256",
+            "before": "210d8048d42e6bb0917333b009d5c1e96061b2e7269861448223377cd54bebba",
+            "after": "e362b458b27cf184b052f74eb268d60035ab2c7553eab005e91f1db46a765e35"
+          }
+        ]
+      },
+      {
+        "feature_id": "f2102b5f-6230-5819-bad8-ef381aad9646",
+        "kernel_name": "SketchA",
+        "label": "SketchA",
+        "kind": "changed",
+        "fields": [
+          {
+            "name": "geometry_sha256",
+            "before": "1fe534e50eea91e2d5eb2d08f99d22069213fc22825e0b92db2b6dd1fcccf4ef",
+            "after": "4f87e432ac355af66b9531bed16b79b30bacf0a7afc5ef64abe9d180170e854f"
+          }
+        ]
+      }
+    ],
+    "differences": [
+      {
+        "feature_id": "1afae659-a66c-51b9-8c01-2db0be376778",
+        "kernel_name": "BodyA",
+        "label": "BodyA",
+        "kind": "changed",
+        "fields": [
+          {
+            "name": "geometry_sha256",
+            "before": "80c127d19bece27110813424241772e09f9423e6c60c46f339288d539621cc2e",
+            "after": "bfb494a803a1c0f5c7ea8efb3b00983613569855c649db21389fa4a1389f20d3"
+          }
+        ]
+      },
+      {
+        "feature_id": "e95d47a7-4765-5b06-a0ee-0f6df0c9f6ff",
+        "kernel_name": "PadA",
+        "label": "PadA",
+        "kind": "changed",
+        "fields": [
+          {
+            "name": "parameters",
+            "before": [
+              {
+                "id": "PadA.Length",
+                "step": null,
+                "unit": "mm",
+                "group": "Side1",
+                "label": "PadA · Length",
+                "value": 13.0,
+                "maximum": null,
+                "minimum": null,
+                "editable": true,
+                "object_name": "PadA",
+                "property_name": "Length",
+                "property_type": "App::PropertyLength"
+              }
+            ],
+            "after": [
+              {
+                "id": "PadA.Length",
+                "step": null,
+                "unit": "mm",
+                "group": "Side1",
+                "label": "PadA · Length",
+                "value": 17.0,
+                "maximum": null,
+                "minimum": null,
+                "editable": true,
+                "object_name": "PadA",
+                "property_name": "Length",
+                "property_type": "App::PropertyLength"
+              }
+            ]
+          },
+          {
+            "name": "geometry_sha256",
+            "before": "e362b458b27cf184b052f74eb268d60035ab2c7553eab005e91f1db46a765e35",
+            "after": "a93b014099fa343ca50c074cc8c000205649c4321fbad29b7e0e748f9dfadc0b"
+          }
+        ]
+      },
+      {
+        "feature_id": "f2102b5f-6230-5819-bad8-ef381aad9646",
+        "kernel_name": "SketchA",
+        "label": "SketchA",
+        "kind": "changed",
+        "fields": [
+          {
+            "name": "geometry_sha256",
+            "before": "4f87e432ac355af66b9531bed16b79b30bacf0a7afc5ef64abe9d180170e854f",
+            "after": "d0af40d7386d9d6f987aefd71c6b0ec27ff041831abe4ae24e37248e4a272a1d"
+          }
+        ]
+      }
+    ],
+    "parameters": {
+      "updates": [],
+      "proof": null,
+      "reason": "特征 PadA 或其依赖已改变，请基于当前版本重新编辑"
+    },
+    "conflicts": [
+      {
+        "code": "parameter_rebase_conflict",
+        "message": "特征 PadA 或其依赖已改变，请基于当前版本重新编辑"
+      }
+    ],
+    "can_merge_parameters": false,
+    "annotation_policy": "保留目标分支的用途与意图；来源标注差异仅供审阅，不自动覆盖。",
+    "source_geometry_policy": "采用来源分支的完整几何，替换目标几何；重新校验并审核提交。",
+    "comparison_hash": "87032cdd8e5c0bba9d75dc21d7b5945c833516befe52300e1eed13bdfcd97504"
+  }
+}

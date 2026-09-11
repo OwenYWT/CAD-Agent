@@ -1,0 +1,12 @@
+{
+  "bridge_id": "42fbf130-707e-4b90-9c57-b2197be8ef72",
+  "delivery_id": "bf455f0e-177c-435e-a586-f5ffbe55c65f",
+  "downloaded_standalone_client_verified": true,
+  "browser_pair_and_deliver": true,
+  "real_local_files": true,
+  "one_use_code_cleared_after_pairing": true,
+  "browser_revocation": true,
+  "page_errors": [],
+  "console_errors": [],
+  "output_directory": "/tmp/cad-bridge-browser-07e00eea71/released"
+}

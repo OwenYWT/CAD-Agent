@@ -1,0 +1,33 @@
+{
+  "cases": [
+    {
+      "shape": 0,
+      "passes": 3,
+      "segments": 192,
+      "clearance_mm": 0.012144116309685593
+    },
+    {
+      "shape": 1,
+      "passes": 3,
+      "segments": 369,
+      "clearance_mm": 0.01545436628728325
+    },
+    {
+      "shape": 2,
+      "passes": 3,
+      "segments": 192,
+      "clearance_mm": 0.012144116309685593
+    },
+    {
+      "shape": 3,
+      "passes": 3,
+      "segments": 240,
+      "clearance_mm": 0.012144116309685593
+    }
+  ],
+  "actual_swept_cutter_clearance": true,
+  "nc_coordinates_and_origin_verified": true,
+  "rapid_moves_verified": true,
+  "stepped_shape_and_short_tool_rejected": true,
+  "fcstd_unchanged": true
+}

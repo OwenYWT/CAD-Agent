@@ -1,0 +1,193 @@
+{
+  "78b86448-0738-4bb7-bf4e-69967b0c72bf": {
+    "source": "service",
+    "status": "succeeded",
+    "validations": [
+      {
+        "evidence_id": "54a65a8a-819b-47d0-b392-723c900e4018",
+        "evidence_hash": "d3376752f3f18409b360bcf6c727540e425cd92cd96d26c0696edc2d5d1ce07d",
+        "gate": "geometry",
+        "mode": "required",
+        "outcome": "passed",
+        "issues": [],
+        "violations": []
+      },
+      {
+        "evidence_id": "3fde3cbf-42c0-47cf-b302-05b50d814691",
+        "evidence_hash": "1000f6ac047759462665208d19449d83502481ccf8eb61c947680b21e35627d4",
+        "gate": "visual",
+        "mode": "advisory",
+        "outcome": "passed",
+        "issues": [
+          "Unable to verify exact 60 mm x 40 mm x 8 mm dimensions or 6 mm hole diameter without a scale reference or dimensions in the renders",
+          "Third render shows the hole as a white circle on a face, which is consistent with a through hole but depth cannot be directly confirmed from that view alone"
+        ],
+        "violations": []
+      },
+      {
+        "evidence_id": "9e10f3f7-573c-4799-bf24-5f0fafa72486",
+        "evidence_hash": "6e18462375007c8ee4365c5e01a9bf95b163ca3fbc4b800ba14bd788acac42a8",
+        "gate": "dfm",
+        "mode": "advisory",
+        "outcome": "failed",
+        "issues": [
+          "unevaluated_rules:fdm_bridge_distance,fdm_min_feature"
+        ],
+        "violations": [
+          {
+            "source": "geometric",
+            "message": "FDM 悬臂面积占比 (>45° 需支撑): measured 0.365204 ratio",
+            "rule_id": "fdm_overhang",
+            "category": "overhang",
+            "severity": "warning",
+            "suggestion": "悬臂面积占比 {actual:.0%}，超过阈值 {max:.0%}，需要大量支撑材料",
+            "actual_value": 0.365204
+          }
+        ]
+      }
+    ]
+  },
+  "5b134466-3fbe-49de-b28c-5542dc4a64b9": {
+    "source": "service",
+    "status": "succeeded",
+    "validations": [
+      {
+        "evidence_id": "097e0c8e-ffb6-408b-bffe-ad9ecf6e1ead",
+        "evidence_hash": "f2f8e0e53e8848d480e541c833b1245c15d64728a310a99b9dbe76bedc3c4ae3",
+        "gate": "geometry",
+        "mode": "required",
+        "outcome": "passed",
+        "issues": [],
+        "violations": []
+      },
+      {
+        "evidence_id": "19026adc-a2fa-49b4-bc29-c5bdc5eada19",
+        "evidence_hash": "1c773eb725a8d8a5fd93542833d2c9ad63b5c3e7ead178d17fe73c7635f235f6",
+        "gate": "visual",
+        "mode": "advisory",
+        "outcome": "passed",
+        "issues": [
+          "Cannot verify exact Hole.Diameter=8 mm from orthographic/isometric renders without a scale reference or dimension annotation",
+          "No section view provided to confirm hole is through-all"
+        ],
+        "violations": []
+      },
+      {
+        "evidence_id": "b98afc99-1729-4f80-819b-9c952c99648d",
+        "evidence_hash": "1adbbd7b53ed9b927994fef0d15e790b3ac1aa1384b848c1acbbcd4032ac9f45",
+        "gate": "dfm",
+        "mode": "advisory",
+        "outcome": "failed",
+        "issues": [
+          "unevaluated_rules:fdm_bridge_distance,fdm_min_feature"
+        ],
+        "violations": [
+          {
+            "source": "geometric",
+            "message": "FDM 悬臂面积占比 (>45° 需支撑): measured 0.361469 ratio",
+            "rule_id": "fdm_overhang",
+            "category": "overhang",
+            "severity": "warning",
+            "suggestion": "悬臂面积占比 {actual:.0%}，超过阈值 {max:.0%}，需要大量支撑材料",
+            "actual_value": 0.361469
+          }
+        ]
+      }
+    ]
+  },
+  "e21ab2a4-7e98-47e2-b49b-e7621d9595d0": {
+    "source": "browser",
+    "status": "succeeded",
+    "validations": [
+      {
+        "evidence_id": "4f0769e1-59ab-4212-990f-fd57e8d12405",
+        "evidence_hash": "670ffffd4eb65abdc747b5df98378da70d25ae6023b66b00d55af61b0d0fbfab",
+        "gate": "geometry",
+        "mode": "required",
+        "outcome": "passed",
+        "issues": [],
+        "violations": []
+      },
+      {
+        "evidence_id": "17b775a3-32cf-4255-8069-142ac2bd4369",
+        "evidence_hash": "c758463313d5a0e1c2db7fd7772d165ed3ece31ccb05aeb6c96d7d43897e4533",
+        "gate": "visual",
+        "mode": "advisory",
+        "outcome": "passed",
+        "issues": [
+          "Cannot visually confirm the hole diameter is exactly 11 mm from the renders alone; no scale or dimension overlay is provided."
+        ],
+        "violations": []
+      },
+      {
+        "evidence_id": "8391e24c-702d-4747-8660-008d8d833ff5",
+        "evidence_hash": "408a60ef29bdb4662e5f1a8cd100de1f7fda8e6c943d5a0f2f97f4db3b90a3b9",
+        "gate": "dfm",
+        "mode": "advisory",
+        "outcome": "failed",
+        "issues": [
+          "unevaluated_rules:fdm_bridge_distance,fdm_min_feature"
+        ],
+        "violations": [
+          {
+            "source": "geometric",
+            "message": "FDM 悬臂面积占比 (>45° 需支撑): measured 0.355355 ratio",
+            "rule_id": "fdm_overhang",
+            "category": "overhang",
+            "severity": "warning",
+            "suggestion": "悬臂面积占比 {actual:.0%}，超过阈值 {max:.0%}，需要大量支撑材料",
+            "actual_value": 0.355355
+          }
+        ]
+      }
+    ]
+  },
+  "d5f0741e-e830-4bc4-9f4b-0387c6753a48": {
+    "source": "final_packaged_browser",
+    "status": "succeeded",
+    "validations": [
+      {
+        "evidence_id": "da937e17-dc96-4098-a302-4a3f4fd955ec",
+        "evidence_hash": "cbc293acf9791b506fdc19856f0665a07d845632d79c3a2ae20af893d3be3854",
+        "gate": "geometry",
+        "mode": "required",
+        "outcome": "passed",
+        "issues": [],
+        "violations": []
+      },
+      {
+        "evidence_id": "bd175309-7aa1-4770-84c6-3ea6ccebd351",
+        "evidence_hash": "07d619e384073e52b979113f80a447ccd2205148448a1955ad572485c235124d",
+        "gate": "visual",
+        "mode": "advisory",
+        "outcome": "passed",
+        "issues": [
+          "Cannot verify the hole diameter is exactly 12 mm from the provided renders because no scale, dimensions, or reference annotations are included",
+          "Proportions of the base plate relative to the hole cannot be validated against critical dimensions because none were specified"
+        ],
+        "violations": []
+      },
+      {
+        "evidence_id": "a63b6461-0504-4f17-8bfa-57c202e2cb47",
+        "evidence_hash": "7bfee28c997333f6bc9a2f773fb340acff3b24bd93501eb983313eeefaa5ee6a",
+        "gate": "dfm",
+        "mode": "advisory",
+        "outcome": "failed",
+        "issues": [
+          "unevaluated_rules:fdm_bridge_distance,fdm_min_feature"
+        ],
+        "violations": [
+          {
+            "source": "geometric",
+            "message": "FDM 悬臂面积占比 (>45° 需支撑): measured 0.353169 ratio",
+            "rule_id": "fdm_overhang",
+            "category": "overhang",
+            "severity": "warning",
+            "suggestion": "悬臂面积占比 {actual:.0%}，超过阈值 {max:.0%}，需要大量支撑材料",
+            "actual_value": 0.353169
+          }
+        ]
+      }
+    ]
+  }
+}

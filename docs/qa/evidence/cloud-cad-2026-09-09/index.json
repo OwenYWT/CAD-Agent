@@ -1,0 +1,214 @@
+{
+  "agent-inspection-database.json": {
+    "size_bytes": 598,
+    "sha256": "5b3d34909f851484bde835f51de6c29b6e2aaa90d0e7afb036eaf6d2f278d66b"
+  },
+  "agent-inspection-http.json": {
+    "size_bytes": 17621,
+    "sha256": "374c4d060135a285aabf7275685f2b624079640c57d9b0af7ab9fc9553a6ceb5"
+  },
+  "agent-inspection.png": {
+    "size_bytes": 217172,
+    "sha256": "93a76780ff3d3717bf733e676aff5650cde6c3fd75a9fa1a8b8cf1df2806ff3d"
+  },
+  "artifact-runtime.json": {
+    "size_bytes": 910,
+    "sha256": "b880c056b75eca6bb6d3b955f968eca289e6f9ac801d8ab9da6cc3734f9bb50f"
+  },
+  "backend-app-manifest.json": {
+    "size_bytes": 21669,
+    "sha256": "aedc4a2a62edc8a1a011b9e0db2cb8a20b6a37a9689f7e9303e298a163552764"
+  },
+  "backend-regression.txt": {
+    "size_bytes": 49,
+    "sha256": "9f4ecae94cf85975691c9c8311183bf6cb7c4c54c9a96fc7ebdd0dc1c870c967"
+  },
+  "backend-skips.txt": {
+    "size_bytes": 15599,
+    "sha256": "51fa826b05ca15483a8d0153b80bf757ebc741d91834b19ac342b21f7a12aebc"
+  },
+  "branch-browser.json": {
+    "size_bytes": 442,
+    "sha256": "30c91738bbc71000b0f01385470a14cf7124fada846dc666364e9e7368a4bff2"
+  },
+  "branch-database.txt": {
+    "size_bytes": 98,
+    "sha256": "c4c92ded4053f6788494fb5a44cf6481fd888dae0e8545df58d8f64c3c91bc24"
+  },
+  "branch-source.json": {
+    "size_bytes": 354,
+    "sha256": "a5bb8662336b7362496766efca3fe68030dfe3cf5224fb14e2e5a24e632a51d7"
+  },
+  "bridge-browser.json": {
+    "size_bytes": 418,
+    "sha256": "dc133d8bb9b01203b975fd2654c6bef3d960112c78c25eeef3a1af6fee84d46f"
+  },
+  "bridge-failure.json": {
+    "size_bytes": 358,
+    "sha256": "ae9b796d5ca039f95f55c35c76702d4d4ec860c52362abcc4d062bb2822764e1"
+  },
+  "bridge-http.json": {
+    "size_bytes": 636,
+    "sha256": "e5b05bc79b72b53b890ac1b685f83aa88c784bfdc7497a762001f44a84a7d122"
+  },
+  "bridge.png": {
+    "size_bytes": 265603,
+    "sha256": "0d3a12e798901f85eda4d2a28621679fd82f8d873e1aaac0588fe7758cfccf30"
+  },
+  "cam-browser.json": {
+    "size_bytes": 659,
+    "sha256": "6cfb56ae9781b9e7dbd6cf506bbbc8a738a72ade43e291ff322159578c30cf99"
+  },
+  "cam-database.txt": {
+    "size_bytes": 106,
+    "sha256": "061ad1a2a36456913447810d8e78f462a7abbbbf10710295d8986ed24b13d9fa"
+  },
+  "cam.png": {
+    "size_bytes": 226957,
+    "sha256": "f040e7d0cd3005c1c1a6d916c9a9cb93b928c10c37327bece7b3ef751896fbb3"
+  },
+  "collaboration-browser.json": {
+    "size_bytes": 385,
+    "sha256": "450b46c740e68cd92095d29321fe553bc30cc0a67c330e568547373c0cb02763"
+  },
+  "collaboration-http.json": {
+    "size_bytes": 543,
+    "sha256": "70e8592111ae0f0e4a21946fdfed87156942b3601b30d12162cf3493b1480d5d"
+  },
+  "deployment.json": {
+    "size_bytes": 5506,
+    "sha256": "da68e517edf4c492419e9b3e4843d6ab790f60653544a86f78ec0f50555aa1b1"
+  },
+  "document-browser.json": {
+    "size_bytes": 938,
+    "sha256": "38b3cb66ae66e90782af2d409555c7d45f0402e1f8817028f54855faeeb5aee3"
+  },
+  "document-http.json": {
+    "size_bytes": 653,
+    "sha256": "823422f7e22aa55ec9cc63eef45cc7cfb8fc0bd34bf10f28651c2056bca84a98"
+  },
+  "engineering-agent-provider.json": {
+    "size_bytes": 627,
+    "sha256": "b088280e98ae025e594085324ce620f8a51b30a117926eb31f11e6b872a97f73"
+  },
+  "engineering-agent.json": {
+    "size_bytes": 582,
+    "sha256": "35c623e59c39e2b176354aa4429deb759c76ef5cdb42af99640cb69ffc2ffbeb"
+  },
+  "engineering-browser.json": {
+    "size_bytes": 363,
+    "sha256": "cac78ddf2d74615ad9a52aa43557cd83ba78949f325cbb40ea53f42e0197233b"
+  },
+  "engineering-controls.json": {
+    "size_bytes": 472,
+    "sha256": "7ac99b834d7ddd0498d245d7a0d87437502b1cceda3dc62f27bbe0c326429c6e"
+  },
+  "engineering-http.json": {
+    "size_bytes": 689,
+    "sha256": "b50c8773cf6273061506c66c5accd70cd3597d21398843a69ef27f7ad0dc4702"
+  },
+  "fea-database.txt": {
+    "size_bytes": 106,
+    "sha256": "061ad1a2a36456913447810d8e78f462a7abbbbf10710295d8986ed24b13d9fa"
+  },
+  "fea.png": {
+    "size_bytes": 218933,
+    "sha256": "20bdc7d2d42eea7efa9f5998f3e98bc9e6700e09b7f12f899d7dd67cb94319bc"
+  },
+  "frontend-tests.txt": {
+    "size_bytes": 117,
+    "sha256": "53d3e8a275b3f90c88c540357659b394c1a39c989cd6b4755eaec98e97872517"
+  },
+  "large-scene-browser.json": {
+    "size_bytes": 221,
+    "sha256": "56a3a4a25a82a7dfff8bcfbd7e32cb506b1272fde263be456e3522d146530940"
+  },
+  "lease-expiry.json": {
+    "size_bytes": 162,
+    "sha256": "43315b9c00f79868bcccd24188debcbe9f8867ee85f5af3ed4c8335a46c0058a"
+  },
+  "merge-http.json": {
+    "size_bytes": 8688,
+    "sha256": "1f557c36aafae0e9719b37807f4aebb1dd793bfa23cdda29e59882723bbb349d"
+  },
+  "mobile.png": {
+    "size_bytes": 58019,
+    "sha256": "286c518ebd2f31ec67f99cb13ac0d696642224adadc489621966094d3690db4a"
+  },
+  "native-cam.json": {
+    "size_bytes": 678,
+    "sha256": "f00fb30e7bfc445baf8290575a5487e0343cf80d9f6173751480cfdf6e02b4a4"
+  },
+  "native-dfm.json": {
+    "size_bytes": 5273,
+    "sha256": "f59a32be4260d9a3056ef2304da86cfe4db52ddf835fa83281116337311facec"
+  },
+  "native-existing-regression.txt": {
+    "size_bytes": 19,
+    "sha256": "9f861bdf14b6368503ec23e133838e9f5c82add51d2e835af7b9eb5cff8b1079"
+  },
+  "native-fea.json": {
+    "size_bytes": 260,
+    "sha256": "f67f167f8cc1c481f2b905baf058cf00562ac260cad83e4d4cad4e08ad8d8ca9"
+  },
+  "native-gates.txt": {
+    "size_bytes": 190,
+    "sha256": "d0f7a11410f0fd45a42aab333ae168a1c389f42b1047f8d6ce7ac6997c55d61d"
+  },
+  "native-l2.json": {
+    "size_bytes": 7997,
+    "sha256": "20583c1b77052ca9f17ab8f7a53efad87e40cf60b97a110358c78575a1fa8096"
+  },
+  "native-release.json": {
+    "size_bytes": 194,
+    "sha256": "3559a02330f290eea0c934caebfb271ffe0ef38feb919dbd380958e7468b7318"
+  },
+  "proxy-config-tests.txt": {
+    "size_bytes": 19,
+    "sha256": "f790872d038e2707432070fadce79b2e8594df99e12c932abd2c10440396601e"
+  },
+  "proxy-restart.json": {
+    "size_bytes": 592,
+    "sha256": "86afe30690db8641c1280d316dc89c7e3b6e7424efa02836f19db4027419641d"
+  },
+  "real-providers.txt": {
+    "size_bytes": 56,
+    "sha256": "d71be11046c090a228d30b79377c4bb95a7604dd0740f7de24e5967889f2f504"
+  },
+  "real-services.txt": {
+    "size_bytes": 54,
+    "sha256": "0d70924ef42fbac77f5085fc0ae4072f613429a3d2fa2c6e23253d91eda1bc46"
+  },
+  "release-browser.json": {
+    "size_bytes": 330,
+    "sha256": "b2f68d1a134d550cc305c6c27551896f249eb20b1894d9b4a1490513fcf2fe1c"
+  },
+  "release-database.txt": {
+    "size_bytes": 128,
+    "sha256": "cbf9c3efb472744a89302b63c7f31cdeb4283466df811250f5762ba7464325eb"
+  },
+  "release-http.json": {
+    "size_bytes": 677,
+    "sha256": "def0f37aead719fd5ff909faa070a6de1b75e926403317b1d570906d3de8fcfd"
+  },
+  "release.png": {
+    "size_bytes": 219802,
+    "sha256": "30689ce5fc0c59ed258d575172a6834aa1618b146599351e9ccb8b731edcb52d"
+  },
+  "scene-browser.json": {
+    "size_bytes": 680,
+    "sha256": "7f0539343d5e6d3f7cb2d287414a2e0108d08efd0a433346a57ff6e263fa3705"
+  },
+  "scene.png": {
+    "size_bytes": 235871,
+    "sha256": "a88864a78ca575f5811751c4dac8476a1d85e0fd2b781bf3acb1a706a3187993"
+  },
+  "sketch-browser.json": {
+    "size_bytes": 581,
+    "sha256": "f668988f8bab13a9384bb5d547599cef1b380a81aa76cd686637cfd0905c1b6f"
+  },
+  "sketch.png": {
+    "size_bytes": 181616,
+    "sha256": "d3b4b9cba3ce92fb02a3a7f2e41bc54eeeaa11c4c336fdf13f7c30a4282949d2"
+  }
+}

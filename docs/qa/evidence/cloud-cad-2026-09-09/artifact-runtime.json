@@ -1,0 +1,28 @@
+{
+  "schema": "0024_local_bridge",
+  "verified_artifact_runtimes": [
+    {
+      "workflow_id": "31b8aeca-1267-4794-a1f0-12264887bf77",
+      "artifacts": 4,
+      "runtime_digest": "sha256:c3aca6c2e9f3669e60baafac2260b069f81a58ad3ea63115002e73c5b4f6099e"
+    },
+    {
+      "workflow_id": "1f9df8ca-cf19-43c3-b491-b1c2788d17e3",
+      "artifacts": 5,
+      "runtime_digest": "sha256:c3aca6c2e9f3669e60baafac2260b069f81a58ad3ea63115002e73c5b4f6099e"
+    },
+    {
+      "workflow_id": "ea5c0974-0e35-4c80-9c2d-2559a53bab8a",
+      "artifacts": 8,
+      "runtime_digest": "sha256:c3aca6c2e9f3669e60baafac2260b069f81a58ad3ea63115002e73c5b4f6099e"
+    }
+  ],
+  "acceptance_tenant_remaining_work": {
+    "queued_or_running_cad_operations": 0,
+    "unfinished_workflows": 0,
+    "queued_or_leased_deliveries": 0,
+    "active_local_bridges": 0
+  },
+  "durable_auth": true,
+  "onshape_credentials_configured": false
+}

@@ -1,0 +1,21 @@
+{
+  "document_id": "02f6030a-e618-4a9b-804c-1a03b2dde244",
+  "release_id": "cba78e10-b995-47d8-b0fc-78cfe1e992e1",
+  "release_name": "Acceptance 901afd10a7",
+  "source_revision_id": "06dd85b8-b396-40df-9389-ebe8c968265c",
+  "native_bom": {
+    "native_type": "Assembly::BomObject",
+    "freecad_version": "1.1.3"
+  },
+  "instances": 1,
+  "engineering_workflow_ids": [
+    "20b8cec7-11b3-4c0a-bfd9-c360b395d867",
+    "1f9df8ca-cf19-43c3-b491-b1c2788d17e3"
+  ],
+  "package_files": 14,
+  "all_hashes_verified": true,
+  "revision_unchanged": true,
+  "replay_and_conflicts_verified": true,
+  "viewer_export_and_publish_denied": true,
+  "previous_revision_analysis_rejected": true
+}

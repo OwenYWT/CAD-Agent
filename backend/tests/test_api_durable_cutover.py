@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import hashlib
 from uuid import uuid4
 
 import pytest
@@ -11,6 +12,7 @@ from app.api import history as history_api
 from app.api import websocket as websocket_api
 from app.config import settings
 from app.models.schemas import ExecuteRequest, GenerateRequest, GenerateResponse
+from app.workflows.temporal import OperationContextV1
 from fastapi import HTTPException
 
 
@@ -21,6 +23,20 @@ def _identity():
         "expected_base_revision_id": uuid4(),
         "idempotency_key": f"cutover-{uuid4()}",
     }
+
+
+@pytest.mark.parametrize("request_type", [GenerateRequest, batch_api.AsyncGenerateRequest])
+@pytest.mark.parametrize("prompt", ["", "   ", "x" * 4001], ids=["empty", "whitespace", "over-limit"])
+def test_prompt_contract_rejects_invalid_objectives_at_the_api_boundary(request_type, prompt):
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        request_type(prompt=prompt, **_identity())
+
+
+@pytest.mark.parametrize("request_type", [GenerateRequest, batch_api.AsyncGenerateRequest])
+def test_prompt_contract_accepts_and_normalizes_boundary_length(request_type):
+    assert request_type(prompt=" x ", **_identity()).prompt == "x"
+    assert len(request_type(prompt="x" * 4000, **_identity()).prompt) == 4000
 
 
 async def _no_rate_limit(*args, **kwargs):
@@ -78,15 +94,24 @@ async def test_generate_cutover_uses_only_durable_submission(monkeypatch):
     )
 
     assert response.workflow_run_id == workflow_run_id
-    assert calls == [
-        {
-            **identity,
-            "operation": "generate",
-            "objective": "创建支架",
-            "output_formats": ["step", "stl"],
-            "manufacturing_profile": None,
-        }
-    ]
+    assert len(calls) == 1
+    assert calls[0] == {
+        **identity,
+        "operation": "generate",
+        "objective": "创建支架",
+        "output_formats": ["step", "stl"],
+        "manufacturing_profile": None,
+        "modeling_backend": "auto",
+        "operation_context": OperationContextV1(
+            rule="explicit_rest_operation",
+            source_channel="rest",
+            requested_operation="generate",
+            resolved_operation="generate",
+            submission_modeling_backend="auto",
+            base_revision_id=identity["expected_base_revision_id"],
+            base_source_kind="none",
+        ),
+    }
 
 
 @pytest.mark.asyncio
@@ -182,13 +207,31 @@ async def test_durable_submission_uses_v2_only_for_new_agent_writes(
     )
     monkeypatch.setattr(submission_api, "start_mcad_workflow", start_v1)
 
+    code = "result = box(2, 2, 2)" if operation != "generate" else None
+    modify_context = (
+        OperationContextV1(
+            rule="explicit_rest_operation",
+            source_channel="rest",
+            requested_operation="modify",
+            resolved_operation="modify",
+            requested_modeling_backend="cadquery",
+            submission_modeling_backend="cadquery",
+            base_revision_id=identity["expected_base_revision_id"],
+            base_source_kind="request_code",
+            base_source_sha256=hashlib.sha256(code.encode()).hexdigest(),
+        )
+        if operation == "modify"
+        else None
+    )
     await submission_api.submit_durable_workflow(
         principal,
         **identity,
         operation=operation,
         objective="创建支架",
         output_formats=["step", "stl"],
-        code=("result = box(2, 2, 2)" if operation != "generate" else None),
+        code=code,
+        modeling_backend="cadquery" if operation == "modify" else None,
+        operation_context=modify_context,
     )
 
     assert calls[0][0] == expected_workflow_id
@@ -230,9 +273,10 @@ async def test_v2_idempotent_replay_repairs_start_without_readiness_gate(
                         objective="创建支架",
                         existing_code=None,
                         manufacturing_profile=None,
-                        output_formats=("step", "stl"),
-                        confirmation_timeout_seconds=3600,
-                    )
+                            output_formats=("step", "stl"),
+                            confirmation_timeout_seconds=3600,
+                            modeling_backend="freecad",
+                        )
                 ),
             }
             return SimpleNamespace(
