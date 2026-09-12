@@ -422,7 +422,7 @@ export function useWebSocket() {
     }
   }, []);
 
-  const modifyPart = useCallback((partName: string, instruction: string) => {
+  const modifyPart = useCallback((partName: string, instruction: string, partId?: string | null) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return false;
     const panelId = useSessionStore.getState().activePanelId;
     const panel = useSessionStore.getState().panels.find(
@@ -432,9 +432,14 @@ export function useWebSocket() {
     const sent = sendSubmission({
       type: "modify_part",
       part_name: partName,
+      part_id: partId || undefined,
       instruction,
       panel_id: panelId,
       code: panel?.result?.code || undefined,
+      assembly_parts: panel?.result?.assembly_parts || [],
+      base_revision_id: panel?.result?.revision_id
+        || panel?.result?.expected_base_revision_id
+        || undefined,
       ...identity,
       idempotency_key: identity.idempotency_key || createId(),
     });

@@ -174,6 +174,7 @@ def test_dxf_prompt_keeps_durable_generate_path(client, durable_ws):
             "part_name": "支架",
             "instruction": "宽度增加 2 mm",
             "code": "result = box(10, 10, 10)",
+            "base_revision_id": str(uuid4()),
         }, "modify"),
         ({
             "type": "execute_code",
@@ -212,6 +213,7 @@ def test_existing_project_writes_submit_durable(
             "part_name": "盒子",
             "instruction": "加宽",
             "code": "result = box(1, 1, 1)",
+            "base_revision_id": str(uuid4()),
         },
     ],
 )
@@ -240,6 +242,64 @@ def test_invalid_modify_body_is_rejected(client, durable_ws):
         message = socket.receive_json()
 
     assert message["data"]["error"]["type"] == "ValidationError"
+    assert durable_ws.calls["submit"] == []
+
+
+def test_modify_part_rejects_unknown_part_id(client, durable_ws):
+    with client.websocket_connect("/ws/session-part-id") as socket:
+        socket.send_json({
+            "type": "modify_part",
+            "panel_id": "panel-part-id",
+            "part_name": "base",
+            "part_id": "missing-part",
+            "instruction": "make it wider",
+            "code": "result = box(1, 1, 1)",
+            "base_revision_id": str(uuid4()),
+            "assembly_parts": [{"part_id": "base", "name": "base"}],
+            **_identity(),
+        })
+        message = socket.receive_json()
+
+    assert message["data"]["error"]["type"] == "PartContextMismatchError"
+    assert "当前装配上下文" in message["data"]["error"]["message"]
+    assert durable_ws.calls["submit"] == []
+
+
+def test_modify_part_rejects_missing_existing_code(client, durable_ws):
+    with client.websocket_connect("/ws/session-missing-code") as socket:
+        socket.send_json({
+            "type": "modify_part",
+            "panel_id": "panel-missing-code",
+            "part_name": "base",
+            "part_id": "base",
+            "instruction": "make it wider",
+            "base_revision_id": str(uuid4()),
+            "assembly_parts": [{"part_id": "base", "name": "base"}],
+            **_identity(),
+        })
+        message = socket.receive_json()
+
+    assert message["data"]["error"]["type"] == "MissingExistingCodeError"
+    assert "当前版本没有可执行代码" in message["data"]["error"]["message"]
+    assert durable_ws.calls["submit"] == []
+
+
+def test_modify_part_rejects_missing_base_revision(client, durable_ws):
+    with client.websocket_connect("/ws/session-missing-base") as socket:
+        socket.send_json({
+            "type": "modify_part",
+            "panel_id": "panel-missing-base",
+            "part_name": "base",
+            "part_id": "base",
+            "instruction": "make it wider",
+            "code": "result = box(1, 1, 1)",
+            "assembly_parts": [{"part_id": "base", "name": "base"}],
+            **_identity(),
+        })
+        message = socket.receive_json()
+
+    assert message["data"]["error"]["type"] == "MissingBaseRevisionError"
+    assert "当前版本缺少基线版本" in message["data"]["error"]["message"]
     assert durable_ws.calls["submit"] == []
 
 

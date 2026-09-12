@@ -2,7 +2,7 @@ import { useState } from "react";
 import { adaptValidation } from "../../adapters/projectAdapter";
 import { analyzeEngineeringResult } from "../../services/engineeringService";
 import type { ArtifactHistoryEntry, StepHistoryEntry } from "../../stores/sessionStore";
-import type { DesignAnalysis, GenerationResult, ModelSnapshotDetail, RunCreatedEvent } from "../../types";
+import type { DesignAnalysis, GenerationResult, RunCreatedEvent } from "../../types";
 import type { ValidationResult } from "../../types/engineering";
 import AgentRunTimeline from "../AgentRunTimeline";
 import DesignBriefPanel from "../DesignBriefPanel";
@@ -26,8 +26,11 @@ interface ValidationDialogProps {
   isGenerating: boolean;
   activeSnapshotId?: string | null;
   currentParts?: GenerationResult["assembly_parts"];
-  onModifyPart?: (partName: string, instruction: string) => boolean | void;
+  currentCode?: string | null;
+  baseRevisionId?: string | null;
+  onModifyPart?: (partName: string, instruction: string, partId?: string | null) => boolean | void;
   refreshKey?: string | number | null;
+  panelError?: string | null;
   onClose: () => void;
   onAnalysis?: (analysis: DesignAnalysis) => void;
   onAskAgent: (prompt: string) => void;
@@ -57,8 +60,11 @@ export default function ValidationDialog({
   isGenerating,
   activeSnapshotId,
   currentParts,
+  currentCode,
+  baseRevisionId,
   onModifyPart,
   refreshKey,
+  panelError,
   onClose,
   onAnalysis,
   onAskAgent,
@@ -81,6 +87,12 @@ export default function ValidationDialog({
       result.files?.stl &&
       !result.needs_confirmation,
   );
+
+  const currentVersionSummary = result ? {
+    version: result.version ?? null,
+    snapshotId: result.snapshot_id || activeSnapshotId || null,
+    revisionId: result.revision_id || result.expected_base_revision_id || null,
+  } : null;
 
   const run = async () => {
     if (!canAnalyzeDesign || !result?.request_id) {
@@ -133,6 +145,17 @@ export default function ValidationDialog({
     >
       <div className="space-y-5 p-5">
         <DesignBriefPanel brief={brief} />
+
+        {currentVersionSummary ? (
+          <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-900">
+            <div className="font-medium">当前版本概览</div>
+            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+              <span>版本：v{currentVersionSummary.version ?? "未知"}</span>
+              <span>快照：{currentVersionSummary.snapshotId || "未生成"}</span>
+              <span>基线：{currentVersionSummary.revisionId || "未知"}</span>
+            </div>
+          </div>
+        ) : null}
 
         {result?.needs_confirmation ? (
           <InlineState
@@ -254,7 +277,10 @@ export default function ValidationDialog({
 
         <VersionHistoryPanel
           activeSnapshotId={activeSnapshotId}
+          baseRevisionId={baseRevisionId || result?.expected_base_revision_id || result?.revision_id || null}
+          currentCode={currentCode || result?.code || null}
           currentParts={currentParts || result?.assembly_parts || []}
+          externalError={panelError}
           onModifyPart={onModifyPart}
           onRestore={onRestore}
           panelId={panelId}

@@ -41,6 +41,22 @@ from app.workflows.temporal import (
 
 logger = logging.getLogger(__name__)
 
+
+class ModifyPartValidationError(ValueError):
+    pass
+
+
+class MissingExistingCodeError(ModifyPartValidationError):
+    pass
+
+
+class MissingBaseRevisionError(ModifyPartValidationError):
+    pass
+
+
+class PartContextMismatchError(ModifyPartValidationError):
+    pass
+
 from collections import OrderedDict
 
 _MAX_SESSIONS = 500
@@ -199,12 +215,15 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 raise ValueError("operation_intent must be generate or modify")
         elif msg_type == "modify_part":
             part_name = str(data.get("part_name") or "")
+            part_id = str(data.get("part_id") or "")
             instruction = str(data.get("instruction") or "")
             existing_code = (
                 str(data["code"])
                 if data.get("code") is not None
                 else None
             )
+            base_revision_id = str(data.get("base_revision_id") or "")
+            assembly_parts = data.get("assembly_parts") or []
             if (
                 not part_name
                 or not instruction
@@ -214,6 +233,18 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 raise ValueError(
                     "零件名、修改指令或当前 MCAD 代码长度无效"
                 )
+            if not existing_code:
+                raise MissingExistingCodeError("当前版本没有可执行代码，无法发起零件修改")
+            if not base_revision_id:
+                raise MissingBaseRevisionError("当前版本缺少基线版本，请先切换到可恢复的历史版本")
+            if part_id:
+                known_part_ids = {
+                    str(part.get("part_id") or "")
+                    for part in assembly_parts
+                    if isinstance(part, dict)
+                }
+                if part_id not in known_part_ids:
+                    raise PartContextMismatchError("选中的零件不在当前装配上下文中")
         elif msg_type == "execute_code":
             submitted_code = str(data.get("code") or "")
             if not submitted_code or len(submitted_code) > 50000:
@@ -639,7 +670,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         if isinstance(exc, ParameterStateError)
                         else public_generation_error(exc)
                     )
-                    if error["type"] == "ValueError":
+                    if type(exc) is ValueError and error["type"] == "ValueError":
                         error["type"] = "ValidationError"
                     await send_json({
                         "type": "generation_result",

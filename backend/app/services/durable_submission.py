@@ -20,6 +20,7 @@ from app.repositories.revisions import (
     StaleBaseRevision,
     create_initial_branch,
 )
+from app.config import settings
 from app.workflows.temporal import (
     FreeCADStructuredModificationV1,
     FreeCADRevisionRestoreV1,
@@ -150,6 +151,7 @@ async def ensure_workspace_identity(
 ) -> WorkspaceIdentity:
     """Create the authenticated project/branch boundary for a first prompt."""
     from app.storage import history
+    from app.storage import postgres_history
 
     await history.create_session(session_id, title=title, user_id=user_id)
     await history.create_panel(
@@ -157,6 +159,18 @@ async def ensure_workspace_identity(
         panel_id,
         user_id=user_id,
     )
+    if not settings.durable_control_plane_enabled:
+        await postgres_history.create_session(
+            session_id,
+            title=title,
+            user_id=user_id,
+        )
+        await postgres_history.create_panel(
+            session_id,
+            panel_id,
+            title=title,
+            user_id=user_id,
+        )
     branch_name = (
         "panel-" + hashlib.sha256(panel_id.encode("utf-8")).hexdigest()[:16]
     )
