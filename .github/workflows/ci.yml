@@ -211,4 +211,5 @@ jobs:
             tests/integration/test_websocket_replay.py \
             tests/integration/test_change_set_api.py \
             tests/integration/test_postgres_project_files.py \
+            tests/integration/test_postgres_history.py \
             tests/integration/test_api_compatibility_matrix.py

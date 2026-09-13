@@ -16,6 +16,7 @@
 
 | 文档 | 作用 |
 | --- | --- |
+| [`qa/task-state-2026-09-13.md`](qa/task-state-2026-09-13.md) | 手机壳反馈的五状态整改、原需求重试、候选/草稿边界、真实浏览器与独立量测证据及剩余限制 |
 | [`qa/native-coediting-2026-09-13.md`](qa/native-coediting-2026-09-13.md) | 最新方案差异、共同编辑实现、端云与 Agent 架构、T01–T19 真实验证及开发阶段额度 / CI 状态；后续上线见部署报告 |
 | [`qa/acceptance-remediation-2026-09-10.md`](qa/acceptance-remediation-2026-09-10.md) | 独立验收发现的问题、当前整改进展、真实复验证据与尚未通过的范围 |
 | [`qa/cloud-cad-fusion-2026-09-09.md`](qa/cloud-cad-fusion-2026-09-09.md) | 历史融合测试及交接记录；整体完成结论已被独立验收推翻 |

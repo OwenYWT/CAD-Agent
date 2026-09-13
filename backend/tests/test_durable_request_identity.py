@@ -5,15 +5,10 @@ from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import text
 
 from app.api.batch import AsyncGenerateRequest, BatchItem
 from app.api.websocket import _durable_identity_payload
-from app.db import tenant_transaction
-from app.domain.identity import local_anonymous_principal
 from app.models.schemas import ExecuteRequest, GenerateRequest, ModifyRequest
-from app.services.durable_submission import ensure_workspace_identity
-from app.storage import history
 
 
 def _identity():
@@ -157,39 +152,3 @@ def test_current_and_stale_identities_remain_distinct_across_all_parsers():
     assert _durable_identity_payload(stale)[
         "expected_base_revision_id"
     ] == str(stale_revision_id)
-
-
-@pytest.mark.asyncio
-async def test_ensure_workspace_identity_creates_session_and_branch(tmp_path, monkeypatch):
-    monkeypatch.setattr("app.config.settings.history_db_path", str(tmp_path / "history.db"))
-    monkeypatch.setattr("app.config.settings.durable_control_plane_enabled", False)
-    await history.close_db()
-
-    principal = local_anonymous_principal()
-    session_id = f"session-{uuid4()}"
-    panel_id = f"panel-{uuid4()}"
-    workspace = await ensure_workspace_identity(
-        principal,
-        session_id=session_id,
-        panel_id=panel_id,
-        title="Test Session",
-        user_id=None,
-    )
-
-    assert workspace.project_id
-    assert workspace.branch_id
-    assert workspace.head_revision_id
-
-    async with tenant_transaction(principal.tenant_id, principal.principal_id) as connection:
-        project_id = await connection.scalar(
-            text(
-                """
-                SELECT project_id
-                FROM workspace_sessions
-                WHERE tenant_id=:tenant_id AND id=:session_id
-                """
-            ),
-            {"tenant_id": principal.tenant_id, "session_id": session_id},
-        )
-
-    assert str(project_id) == str(workspace.project_id)

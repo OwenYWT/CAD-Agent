@@ -49,10 +49,11 @@ test("Q16 active generation exposes cancellation connected to the durable hook",
   const workspace = source("components/workspace/EngineeringWorkspace.tsx");
   const agent = source("components/agent/AgentPanel.tsx");
   assert.equal(/onCancel=\{cancelGeneration\}/.test(workspace), true);
-  assert.equal(/onClick=\{onCancel\}/.test(agent), true);
-  assert.equal(agent.includes("取消生成"), true);
-  assert.equal(agent.includes('panel.durable?.taskStatus === "cancelled"'), true);
-  assert.equal(agent.includes("任务已取消"), true);
+  const card = source("components/agent/TaskCard.tsx");
+  assert.match(agent, /onCancel=\{onCancel\}/);
+  assert.match(card, /task.running && onCancel/);
+  assert.match(card, /onClick=\{onCancel\}/);
+  assert.match(card, /取消任务/);
 });
 
 test("Q07 a change set with only disabled gates is unknown, never passed", () => {

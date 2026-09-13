@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box3, BufferGeometry, Color, InstancedMesh, Matrix4, PerspectiveCamera, Vector3 } from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { authFetch } from "../../auth";
+import { canvasEvents } from "./canvasEvents";
 import { readDocumentScene, SceneJobError } from "../../services/sceneService";
 import type { DocumentScene, SceneInstance, SceneLOD, SceneMesh } from "../../types/scene";
 
@@ -135,7 +136,7 @@ export default function DocumentSceneViewer({ documentId, revisionId, selectedId
     {error ? <p role="alert" className="absolute bottom-3 left-3 z-10 rounded bg-white/95 p-2 type-caption text-red-700">{error}</p> : null}
     {failedJob ? <button type="button" className="workspace-button absolute bottom-14 left-3 z-10 bg-white"
       onClick={() => setRetry(previous => ({workflowId:failedJob,documentId,revisionId,number:(previous?.number || 0) + 1}))}>重新计算场景</button> : null}
-    <Canvas camera={{ fov: 50, position: [100, 100, 100] }} fallback={<p role="status">当前浏览器无法创建 3D 画布，请启用硬件加速后重试。</p>}>
+    <Canvas events={canvasEvents} camera={{ fov: 50, position: [100, 100, 100] }} fallback={<p role="status">当前浏览器无法创建 3D 画布，请启用硬件加速后重试。</p>}>
       <color args={["#f4f4f1"]} attach="background" />
       <ambientLight intensity={1.1} /><directionalLight intensity={1.4} position={[10, 10, 5]} />
       <directionalLight intensity={0.5} position={[-10, -10, -5]} />

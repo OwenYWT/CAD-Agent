@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket
 from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel, Field
 from starlette.websockets import WebSocketDisconnect
 
 from app.api.auth import (
@@ -41,11 +42,12 @@ _TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "timed_out"}
 
 def _task_snapshot_marker(
     snapshot: dict,
-) -> tuple[str, str | None, str | None, str | None, str | None]:
+) -> tuple:
     confirmation = snapshot.get("confirmation")
     change_set = snapshot.get("change_set")
     return (
         str(snapshot.get("status") or ""),
+        snapshot.get("last_event_sequence", 0),
         str(confirmation.get("workflow_run_id"))
         if isinstance(confirmation, dict)
         else None,
@@ -120,6 +122,49 @@ async def task_events(
             limit=limit,
         )
     except Exception as exc:
+        raise _read_error(exc) from exc
+
+
+@router.get("/{workflow_run_id}/validations/{evidence_id}")
+async def validation_evidence(
+    workflow_run_id: UUID, evidence_id: UUID,
+    principal: PrincipalContext = Depends(get_durable_principal),
+):
+    from app.services.task_evidence import get_validation_evidence
+    try:
+        return await get_validation_evidence(principal, workflow_run_id, evidence_id)
+    except (ValueError, KeyError, PermissionError) as exc:
+        raise _read_error(exc) from exc
+
+
+class TaskRetryRequest(BaseModel):
+    idempotency_key: str = Field(min_length=1, max_length=500)
+
+
+@router.post("/{workflow_run_id}/retry", status_code=202)
+async def retry_failed_task(
+    workflow_run_id: UUID,
+    body: TaskRetryRequest,
+    principal: PrincipalContext = Depends(get_durable_principal),
+):
+    from app.services.task_retry import retry_task
+    from app.repositories.revisions import StaleBaseRevision
+    from app.services.run_state import IdempotencyConflict
+    from app.temporal_client import TemporalWorkerUnavailable
+    try:
+        submission = await retry_task(principal, workflow_run_id, body.idempotency_key)
+        current = await get_task_snapshot(principal, submission.workflow_run_id)
+        return {"workflow_run_id": str(submission.workflow_run_id),
+            "project_id": str(submission.project_id), "branch_id": str(submission.branch_id),
+            "expected_base_revision_id": str(submission.expected_base_revision_id),
+            "retry_of_workflow_run_id": str(workflow_run_id), "status": current["status"]}
+    except (StaleBaseRevision, IdempotencyConflict) as exc:
+        raise HTTPException(status_code=409, detail={"code":"retry_base_conflict",
+            "message":"原任务的版本或重试标识已变化，请查看当前版本并重新确认修改范围。"}) from exc
+    except TemporalWorkerUnavailable as exc:
+        raise HTTPException(status_code=503, detail={"code": "worker_unavailable",
+            "message": "建模服务暂未就绪，原需求已保留，请稍后重试。"}) from exc
+    except (ValueError, KeyError, PermissionError) as exc:
         raise _read_error(exc) from exc
 
 

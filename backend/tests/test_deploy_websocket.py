@@ -196,7 +196,9 @@ def test_existing_project_writes_submit_durable(
             ),
         ))
     with client.websocket_connect(f"/ws/session-{operation}") as socket:
-        socket.send_json({"panel_id": f"panel-{operation}", **payload, **_identity()})
+        identity = _identity()
+        payload = {**payload, **({"base_revision_id": identity["expected_base_revision_id"]} if operation == "modify" else {})}
+        socket.send_json({"panel_id": f"panel-{operation}", **payload, **identity})
         message = socket.receive_json()
 
     assert message["type"] == "task_submitted"
@@ -213,6 +215,7 @@ def test_freecad_part_edit_uses_verified_revision_artifact_without_browser_code(
             sha256="f" * 64,
         ),
     ))
+    identity = _identity()
     with client.websocket_connect("/ws/session-freecad-part") as socket:
         socket.send_json({
             "type": "modify_part",
@@ -220,9 +223,9 @@ def test_freecad_part_edit_uses_verified_revision_artifact_without_browser_code(
             "part_name": "base",
             "part_id": "base",
             "instruction": "make it wider",
-            "base_revision_id": str(uuid4()),
+            "base_revision_id": identity["expected_base_revision_id"],
             "assembly_parts": [{"part_id": "base", "name": "base"}],
-            **_identity(),
+            **identity,
         })
         message = socket.receive_json()
 
@@ -296,6 +299,7 @@ def test_modify_part_rejects_unknown_part_id(client, durable_ws):
 
 
 def test_modify_part_rejects_missing_editable_source(client, durable_ws):
+    identity = _identity()
     with client.websocket_connect("/ws/session-missing-code") as socket:
         socket.send_json({
             "type": "modify_part",
@@ -303,9 +307,9 @@ def test_modify_part_rejects_missing_editable_source(client, durable_ws):
             "part_name": "base",
             "part_id": "base",
             "instruction": "make it wider",
-            "base_revision_id": str(uuid4()),
+            "base_revision_id": identity["expected_base_revision_id"],
             "assembly_parts": [{"part_id": "base", "name": "base"}],
-            **_identity(),
+            **identity,
         })
         message = socket.receive_json()
 
@@ -485,3 +489,13 @@ def test_invalid_session_id_closes_4001(client, durable_ws):
         with client.websocket_connect("/ws/bad session!") as socket:
             socket.receive_json()
     assert error.value.code == 4001
+
+
+def test_modify_part_rejects_mismatched_revision_identity(client, durable_ws):
+    with client.websocket_connect("/ws/session-cross-revision") as socket:
+        socket.send_json({"type": "modify_part", "panel_id": "panel-cross-revision",
+            "part_name": "base", "instruction": "increase width",
+            "base_revision_id": str(uuid4()), **_identity()})
+        message = socket.receive_json()
+    assert message["data"]["error"]["type"] == "PartContextMismatchError"
+    assert durable_ws.calls["submit"] == []

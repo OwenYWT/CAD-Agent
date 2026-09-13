@@ -141,9 +141,9 @@ export default function ValidationDialog({
         <DesignBriefPanel brief={brief} />
 
         {currentVersionSummary ? (
-          <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-900">
-            <div className="font-medium">当前版本概览</div>
-            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 type-caption text-[var(--text)]">
+            <div className="type-control">当前版本概览</div>
+            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 type-caption">
               <span>版本：v{currentVersionSummary.version ?? "未知"}</span>
               <span>快照：{currentVersionSummary.snapshotId || "未生成"}</span>
               <span>基线：{currentVersionSummary.revisionId || "未知"}</span>

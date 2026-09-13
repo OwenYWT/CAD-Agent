@@ -46,7 +46,7 @@ export function WorkspaceDialog({ open, title, description, onClose, children, f
   useEscape(open, onClose);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[75] flex items-center justify-center p-4 sm:p-8">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8">
       <button aria-label={`关闭${title}`} className="absolute inset-0 bg-[rgba(23,23,20,0.25)] backdrop-blur-[1px]" onClick={onClose} type="button" />
       <section aria-label={title} aria-modal="true" className="relative flex max-h-[88dvh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-[var(--line)] bg-white shadow-2xl" role="dialog">
         <header className="flex min-h-[64px] items-start gap-3 border-b border-[var(--line)] px-5 py-4">

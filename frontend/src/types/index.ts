@@ -512,6 +512,9 @@ export interface DurableTaskSnapshot {
     [key: string]: unknown;
   };
   last_event_sequence: number;
+  steps?: { id:string; step_key:string; kind:string; status:string; attempt_count:number;
+    error_code?:string | null; error_message?:string | null;
+    attempts?:{id:string;attempt_number:number;status:string;error_message?:string | null}[] }[];
   error_code?: string | null;
   error_message?: string | null;
   error?: StructuredExecutionError | null;

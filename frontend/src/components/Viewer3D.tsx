@@ -1,4 +1,5 @@
 import { Grid, OrbitControls } from "@react-three/drei";
+import { canvasEvents } from "./viewer/canvasEvents";
 import { Canvas } from "@react-three/fiber";
 import { useState } from "react";
 import type { BufferGeometry } from "three";
@@ -129,7 +130,7 @@ function LoadedViewer({
               {String.fromCharCode(0x5de5, 0x7a0b, 0x6807, 0x6ce8)} {annotations.length}
             </button>
           ) : null}
-          <Canvas className="absolute inset-0" camera={{ fov: 50, position: [150, 150, 150] }}>
+          <Canvas events={canvasEvents} className="absolute inset-0" camera={{ fov: 50, position: [150, 150, 150] }}>
             <color args={["#f4f4f1"]} attach="background" />
             <ambientLight intensity={1.1} />
             <directionalLight intensity={1.4} position={[10, 10, 5]} />

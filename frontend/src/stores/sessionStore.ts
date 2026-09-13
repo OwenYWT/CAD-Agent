@@ -12,7 +12,9 @@ import type {
   RunCreatedEvent,
   StepUpdate,
 } from "../types";
-import { createId } from "../lib/createId";
+import { createId } from "../lib/createId.ts";
+import type { RequirementBasis } from "../types/requirements";
+import { isActiveTask } from "../adapters/taskState.ts";
 import {
   durableResultHeadRevision,
   durableResultTaskStatus,
@@ -21,7 +23,7 @@ import {
   durableSnapshotHeadRevision,
   durableSnapshotReplayCursor,
   shouldApplyDurableEvent,
-} from "../adapters/durableTaskAdapter";
+} from "../adapters/durableTaskAdapter.ts";
 import type { DurableChangeSetDetail } from "../types/engineering";
 
 export interface StepHistoryEntry extends StepUpdate {
@@ -40,6 +42,8 @@ export interface DurablePanelContext {
   preparedResult: GenerationResult | null;
   agent: DurableTaskSnapshot["agent"];
   confirmation: DurableTaskSnapshot["confirmation"];
+  snapshot?: DurableTaskSnapshot | null;
+  changeSetStatus?: string | null;
 }
 
 export function emptyDurableContext(): DurablePanelContext {
@@ -116,6 +120,9 @@ export interface PanelState {
   currentStep: StepUpdate | null;
   result: GenerationResult | null;
   isGenerating: boolean;
+  submissionPending?: boolean;
+  submissionFailure?: GenerationResult | null;
+  requirementBasis?: RequirementBasis | null;
   stepHistory: StepHistoryEntry[];
   generationStartTime: number | null;
   baselineVersion: number;
@@ -181,7 +188,7 @@ interface SessionState {
 
   // Actions (operate on active panel)
   addMessage: (msg: ChatMessage) => void;
-  beginGeneration: (message?: string) => void;
+  beginGeneration: (message?: string, basis?: RequirementBasis) => void;
   setRunCreated: (run: RunCreatedEvent, panelId?: string) => void;
   setDurableWorkflowStarted: (
     task: DurableTaskSubmittedEvent,
@@ -281,15 +288,7 @@ function restoreLastError(messages: ChatMessage[]): string | null {
   return latest.result.error?.message || "任务执行失败";
 }
 
-function isDurableTaskActive(status?: string | null): boolean {
-  return [
-    "pending",
-    "planning",
-    "running",
-    "waiting_confirmation",
-    "cancelling",
-  ].includes(status || "");
-}
+const isDurableTaskActive = isActiveTask;
 
 const defaultPanel = createPanel("对话 1");
 
@@ -358,10 +357,13 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
       })),
     })),
 
-  beginGeneration: (message = "正在理解建模需求") =>
+  beginGeneration: (message = "正在理解建模需求", basis) =>
     set((state) => ({
       panels: updatePanel(state.panels, state.activePanelId, (panel) => ({
         isGenerating: true,
+        submissionPending: true,
+        submissionFailure: null,
+        requirementBasis: basis || panel.requirementBasis || null,
         currentStep: { step: "planning", message },
         stepHistory: [],
         generationStartTime: Date.now(),
@@ -377,6 +379,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
       const targetId = panelId || run.panel_id || state.activePanelId;
       return {
         panels: updatePanel(state.panels, targetId, (panel) => {
+          if (panel.durable?.workflowRunId) return {};
           const generating = isRunGenerating(run.status);
           return {
             activeRun: run,
@@ -393,7 +396,15 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
       return {
         panels: updatePanel(state.panels, targetId, (p) => {
           const now = Date.now();
-          const generating = isStepGenerating(step);
+          const stepWorkflow = step?.detail?.workflow_run_id;
+          if (p.durable?.workflowRunId && (
+            p.submissionPending
+            || (stepWorkflow && stepWorkflow !== p.durable.workflowRunId)
+            || !isDurableTaskActive(p.durable.taskStatus)
+            || (step && step.detail?.source !== "durable_task_event")
+          )) return {};
+          const generating = p.durable?.workflowRunId
+            ? isDurableTaskActive(p.durable.taskStatus) : isStepGenerating(step);
           const base: Partial<PanelState> = {
             currentStep: step,
             isGenerating: generating,
@@ -476,8 +487,10 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
           );
           const terminal = ["succeeded", "failed", "cancelled", "timed_out"].includes(task.status);
           return {
-            isGenerating: !terminal,
-            generationStartTime: Date.now(),
+            isGenerating: isDurableTaskActive(task.status),
+            submissionPending: false,
+            submissionFailure: null,
+            generationStartTime: terminal ? null : Date.now(),
             currentStep: {
               step: "workflow.created",
               message: terminal ? "正在恢复已结束任务的结果" : "持久任务已提交",
@@ -504,6 +517,8 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
               confirmation: sameWorkflow
                 ? panel.durable?.confirmation || null
                 : null,
+              snapshot: sameWorkflow ? panel.durable?.snapshot || null : null,
+              changeSetStatus: sameWorkflow ? panel.durable?.changeSetStatus || null : null,
             },
           };
         }),
@@ -526,6 +541,20 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
       const targetId = panelId || state.activePanelId;
       return {
         panels: updatePanel(state.panels, targetId, (p) => {
+          if (result.submission_outcome === "rejected" && !result.workflow_run_id) {
+            return {
+              submissionPending: false,
+              submissionFailure: result,
+              isGenerating: false,
+              currentStep: null,
+              generationStartTime: null,
+              lastError: result.error?.message || "请求未被受理",
+              messages: [...p.messages, {role: "assistant", content: `请求未被受理：${result.error?.message || "请重新确认需求"}`, result}],
+            };
+          }
+          if (result.workflow_run_id && p.durable?.workflowRunId && (
+            result.workflow_run_id !== p.durable.workflowRunId || p.submissionPending
+          )) return {};
           const previousWorkflowRunId = p.durable?.workflowRunId || null;
           const cancelled = result.task_status === "cancelled";
           const nextWorkflowRunId = result.workflow_run_id
@@ -642,6 +671,11 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
             currentStep: null,
             stepHistory: nextStepHistory,
             generationStartTime: null,
+            submissionPending: false,
+            submissionFailure: p.submissionPending ? {
+              success: false, submission_outcome: "unknown",
+              error: {type: "SubmissionUnconfirmed", message: error},
+            } : p.submissionFailure,
             lastError: error,
             messages: [...p.messages, errorMsg],
           };
@@ -654,6 +688,13 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
       const targetId = panelId || state.activePanelId;
       return {
         panels: updatePanel(state.panels, targetId, (panel) => {
+          if (panel.submissionPending || (panel.durable?.workflowRunId && panel.durable.workflowRunId !== snapshot.id)) return {};
+          const previous = panel.durable?.snapshot;
+          if (previous?.id === snapshot.id && (
+            snapshot.last_event_sequence < previous.last_event_sequence
+            || (["succeeded", "failed", "cancelled", "timed_out"].includes(previous.status)
+              && !["succeeded", "failed", "cancelled", "timed_out"].includes(snapshot.status))
+          )) return {};
           const cancelled = snapshot.status === "cancelled";
           const terminal = [
             "succeeded",
@@ -687,6 +728,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
                 ...(prepared || sourceFallback || { success: false }),
                 request_id: snapshot.id,
                 success: snapshot.status === "succeeded",
+                needs_confirmation: false,
                 files,
                 project_id: snapshot.project_id,
                 branch_id: snapshot.request_payload.branch_id,
@@ -757,6 +799,8 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
               snapshot,
             ),
             taskStatus: snapshot.status,
+            snapshot,
+            changeSetStatus: snapshot.change_set?.status || null,
             agent: snapshot.agent || null,
             confirmation: snapshot.confirmation || null,
             preparedResult: terminal
@@ -764,7 +808,10 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
               : panel.durable?.preparedResult || null,
           },
           result: terminalResult,
-          isGenerating: !terminal,
+          isGenerating: isDurableTaskActive(snapshot.status),
+          currentStep: isDurableTaskActive(snapshot.status) ? panel.currentStep : null,
+          generationStartTime: isDurableTaskActive(snapshot.status) ? panel.generationStartTime : null,
+          activeRun: panel.activeRun ? { ...panel.activeRun, status: snapshot.status } : null,
           lastError: terminal
             ? (
                 snapshot.status === "succeeded" || cancelled
@@ -785,6 +832,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
       return {
         panels: updatePanel(state.panels, targetId, (panel) => {
           const durable = panel.durable || emptyDurableContext();
+          if (panel.submissionPending || (durable.workflowRunId && durable.workflowRunId !== event.workflow_run_id)) return {};
           if (!shouldApplyDurableEvent(durable.lastEventSequence, event)) {
             return {};
           }
@@ -818,6 +866,12 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
             event,
             durable.currentRevisionId,
           );
+          if (changeSetEvent && durable.snapshot?.id === event.workflow_run_id
+            && event.sequence <= durable.snapshot.last_event_sequence) {
+            // The snapshot already includes this review. Consume replay without
+            // turning a saved/rejected candidate back into pending review.
+            return { durable: { ...durable, lastEventSequence: event.sequence } };
+          }
           const sameChangeSet = Boolean(
             changeSetEvent
             && (
@@ -844,22 +898,25 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
             const candidateRevisionId = changeSetEvent.candidateRevisionId
               || panel.result?.revision_id
               || null;
+            const resultBelongsToCandidate = Boolean(panel.result && (
+              panel.result.change_set_id === changeSetEvent.changeSetId
+              || panel.result.workflow_run_id === event.workflow_run_id
+                && (!panel.result.revision_id || panel.result.revision_id === candidateRevisionId)
+            ));
             const currentRevisionId = changeSetEvent.status === "committed"
               ? candidateRevisionId || changeSetEvent.currentRevisionId
               : abandonedChangeSet
                 ? baseRevisionId || changeSetEvent.currentRevisionId
                 : changeSetEvent.currentRevisionId;
-            const synchronizedResult = panel.result
+            const synchronizedResult = resultBelongsToCandidate && panel.result
               ? {
                   ...panel.result,
                   expected_base_revision_id: baseRevisionId
                     || panel.result.expected_base_revision_id,
-                  revision_id: abandonedChangeSet
-                    ? baseRevisionId || panel.result.revision_id
-                    : candidateRevisionId || panel.result.revision_id,
-                  change_set_id: abandonedChangeSet
-                    ? undefined
-                    : changeSetEvent.changeSetId,
+                  // Review changes the lifecycle, never the identity of the
+                  // files and parameters produced by this candidate.
+                  revision_id: candidateRevisionId || panel.result.revision_id,
+                  change_set_id: changeSetEvent.changeSetId,
                 }
               : panel.result;
             return {
@@ -867,9 +924,8 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
                 ...durable,
                 lastEventSequence: event.sequence,
                 currentRevisionId,
-                changeSetId: abandonedChangeSet
-                  ? null
-                  : changeSetEvent.changeSetId,
+                changeSetId: changeSetEvent.changeSetId,
+                changeSetStatus: changeSetEvent.status,
                 agent: durable.agent
                   ? {
                       ...durable.agent,
@@ -878,7 +934,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
                       candidate_status: changeSetEvent.candidateStatus,
                     }
                   : durable.agent,
-                preparedResult: abandonedChangeSet || synchronizedResult
+                preparedResult: resultBelongsToCandidate
                   ? synchronizedResult
                   : durable.preparedResult,
               },
@@ -895,7 +951,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
                 preparedPayload || durable.preparedResult,
               agent: durable.agent,
             },
-            result: preparedPayload?.needs_confirmation
+            result: preparedPayload?.needs_confirmation && isDurableTaskActive(durable.taskStatus)
               ? preparedPayload
               : panel.result,
             isGenerating: preparedPayload?.needs_confirmation
@@ -911,20 +967,19 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
       const targetId = panelId || state.activePanelId;
       return {
         panels: updatePanel(state.panels, targetId, (panel) => {
+          // Reviewing an older candidate cannot replace the active task or its
+          // progress. The document stream owns updates to the live Head.
+          if (panel.submissionPending || (panel.durable?.workflowRunId
+            && detail.source_workflow_run_id !== panel.durable.workflowRunId)) return {};
           const durable = panel.durable || emptyDurableContext();
-          const abandonedChangeSet = ["rejected", "changes_requested", "rolled_back"]
-            .includes(detail.status);
           const sameChangeSet = panel.result?.change_set_id === detail.id
             || durable.changeSetId === detail.id;
-          const synchronizedResult = abandonedChangeSet && sameChangeSet && panel.result
-            ? {
-                ...panel.result,
-                expected_base_revision_id: detail.base_revision_id,
-                revision_id: detail.base_revision_id,
-                change_set_id: undefined,
-                task_status: detail.workflow_status || panel.result.task_status,
-              }
-            : sameChangeSet && panel.result
+          const resultBelongsToCandidate = Boolean(panel.result && (
+            panel.result.change_set_id === detail.id
+            || panel.result.workflow_run_id === detail.source_workflow_run_id
+              && (!panel.result.revision_id || panel.result.revision_id === detail.candidate_revision_id)
+          ));
+          const synchronizedResult = sameChangeSet && resultBelongsToCandidate && panel.result
             ? {
                 ...panel.result,
                 project_id: panel.result.project_id || detail.project_id,
@@ -937,9 +992,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
                 task_status: detail.workflow_status || panel.result.task_status,
               }
             : panel.result;
-          const currentRevisionId = abandonedChangeSet
-            ? detail.base_revision_id
-            : durableChangeSetHeadRevision(detail);
+          const currentRevisionId = durableChangeSetHeadRevision(detail);
           return {
             result: synchronizedResult,
             durable: {
@@ -951,11 +1004,12 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
               workflowRunId: detail.source_workflow_run_id
                 || durable.workflowRunId
                 || null,
-              changeSetId: abandonedChangeSet ? null : detail.id,
+              changeSetId: detail.id,
+              changeSetStatus: detail.status,
               taskStatus: detail.workflow_status
                 || durable.taskStatus
                 || null,
-              preparedResult: abandonedChangeSet || sameChangeSet
+              preparedResult: resultBelongsToCandidate && sameChangeSet
                 ? synchronizedResult
                 : durable.preparedResult,
             },
@@ -977,12 +1031,9 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
             ),
             taskStatus: status,
           },
-          isGenerating: ![
-            "succeeded",
-            "failed",
-            "cancelled",
-            "timed_out",
-          ].includes(status),
+          isGenerating: isDurableTaskActive(status),
+          currentStep: isDurableTaskActive(status) ? panel.currentStep : null,
+          generationStartTime: isDurableTaskActive(status) ? panel.generationStartTime : null,
         })),
       };
     }),

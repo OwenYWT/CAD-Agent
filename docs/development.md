@@ -220,6 +220,10 @@ API 真实生成门槛需显式设置 `CAD_AGENT_TEST_LLM=1`；V2 provider 专�
 
 端到端脚本位于 `backend/tests/e2e`。`cloud_document_acceptance.py` 创建真实测试账号和原生文档，后续浏览器脚本读取它保存的权限为 `0600` 的私有会话文件。通过 `CAD_NATIVE_E2E_URL`、`CAD_NATIVE_E2E_WEB`、`CAD_NATIVE_E2E_ENV`、`CAD_NATIVE_E2E_PRIVATE` 和报告路径指定隔离环境。私有会话包含随机测试凭据，不能提交或贴入日志。
 
+五状态验收使用 `task_state_browser.py`（`CAD_TASK_STATE_MODE=candidate` 或 `generation`）、`task_state_controls.py`、`task_state_coedit.py`、`task_state_boundaries.py`，另指定新的私有 `CAD_TASK_STATE_REPORT_DIR`。Controls 需要真实 `CAD_QUOTA_WORKFLOW` 和已封存的 `CAD_EVIDENCE_WORKFLOW`；共同编辑需要 `CAD_EVIDENCE_WORKFLOW`；边界测试需要空文档失败的 `CAD_PHONE_WORKFLOW` 与已保存的 `CAD_SAVED_WORKFLOW`。实际 Provider 生成默认等待 900 秒，可用 `CAD_TASK_STATE_TIMEOUT` 配置；失败后默认记录真实结果，只有显式 `CAD_TASK_STATE_RETRY_FAILED_GENERATION=1` 才再次调用服务。不能通过伪造额度错误或候选来满足前置条件。当前实测与限制见 [五状态整改报告](qa/task-state-2026-09-13.md)。
+
+`POST /api/tasks/{workflow_run_id}/retry` 接受 `idempotency_key`，保留原任务输入并重新检查权限、原始版本及选择。只支持终态 Agent 生成/自然语言修改；参数租约和版本恢复须返回对应入口。基线冲突为 409，重复幂等请求返回同一任务的实际状态。`GET /api/tasks/{workflow_run_id}/validations/{evidence_id}` 返回经权限和哈希核验的检查报告；仅当对象清单与证据被修订封存才提供版本绑定，否则明确为中间产物。生成请求的可选 `requirement_basis` 存于服务端 `operation_context`，尺寸来源是用户提供的依据，不表示独立验证。
+
 `cloud_engineering_controls.py` 通过 `CAD_NATIVE_E2E_WORKER` 指定要停启的测试 Worker。`cloud_proxy_restart.py` 及 Bridge 重启验收需要显式指定 `CAD_NATIVE_E2E_API` 和 `CAD_NATIVE_E2E_FRONTEND`；它们会重启该 API，并验证 Nginx 未重启时的 HTTP、原会话与文档 WebSocket 恢复。`CAD_NATIVE_E2E_REQUIRE_ADDRESS_CHANGE=1` 要求实际发生容器 IP 变化，防止没有覆盖地址缓存问题却判为通过。只有隔离验收容器可用于这些故障测试。
 
 Fusion 专项：

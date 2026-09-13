@@ -12,6 +12,7 @@ from sqlalchemy import text
 from app.db import tenant_transaction
 from app.domain.identity import PrincipalContext
 from app.domain.projects import Permission
+from app.domain.requirement_basis import RequirementBasisV1
 from app.models.schemas import GenerateResponse, ManufacturingProfile
 from app.execution.canonical import canonical_sha256
 from app.repositories.projects import principal_has_permission
@@ -325,8 +326,14 @@ async def submit_durable_workflow(
     revision_restore: FreeCADRevisionRestoreV1 | None = None,
     expected_state_version: int | None = None,
     selection_context: SelectionContextV1 | None = None,
+    requirement_basis: RequirementBasisV1 | None = None,
 ) -> DurableSubmission:
     normalized_objective = objective.strip()
+    if requirement_basis is not None:
+        if operation_context is None or operation not in {"generate", "modify"}:
+            raise ValueError("工程依据必须绑定到已解析的建模请求")
+        operation_context = OperationContextV1.model_validate({
+            **operation_context.model_dump(), "requirement_basis": requirement_basis})
     if selection_context is not None:
         if (operation != "modify" or modeling_backend != "freecad" or operation_context is None
                 or structured_modification is not None or revision_restore is not None):

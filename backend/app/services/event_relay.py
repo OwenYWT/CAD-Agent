@@ -853,7 +853,9 @@ async def get_task_snapshot(
             "current_step_key": current_step["step_key"] if current_step else None,
             "current_step_kind": current_step["kind"] if current_step else None,
             "current_status": (
-                candidate_projection["current_status"]
+                workflow["status"]
+                if workflow["status"] in {"failed", "cancelled", "timed_out", "waiting_confirmation"}
+                else candidate_projection["current_status"]
                 if candidate or change_set
                 else current_step["status"]
                 if current_step

@@ -1,37 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ConnectionState } from "../../hooks/useWebSocket";
 import { useSessionStore } from "../../stores/sessionStore";
 import type { EngineeringDomain } from "../../types/engineering";
-import { engineeringTaskEventLabel } from "../../utils/engineeringLabels";
+import type { CloudDocument } from "../../types/document";
+import type { ManufacturingProfile } from "../../types";
+import type { RequirementBasis } from "../../types/requirements";
+import { taskState } from "../../adapters/taskState";
 import { buildPromptSuggestions } from "../../utils/suggestions";
-import { useI18n } from "../../i18n/I18nContext";
-import {
-  confirmDurableTask,
-  EngineeringApiError,
-} from "../../services/engineeringService";
+import { confirmDurableTask, EngineeringApiError } from "../../services/engineeringService";
 import SuggestionPills from "../SuggestionPills";
 import { Icon } from "../ui/Icon";
 import { AGENT_CONTEXT_LABELS } from "./agentContext";
-
-const RUN_STATUS_LABELS: Record<string, string> = {
-  running: "运行中",
-  succeeded: "已成功",
-  failed: "已失败",
-  blocked: "待处理",
-  cancelled: "已取消",
-  observed: "已观测",
-};
-
-const STEP_LABELS: Record<string, string> = {
-  plan_design: "需求规划",
-  generate_cad_code: "生成 CAD 代码",
-  executing_code: "执行建模",
-  execute_code: "执行代码",
-  execute_cad_code: "执行 CAD 代码",
-  repair_code: "自动修复代码",
-  resume_available: "可继续任务",
-  finalize_result: "整理结果",
-};
+import RequirementCard, { RequirementSummary } from "./RequirementCard";
+import TaskCard from "./TaskCard";
 
 const ERROR_CODE_LABELS: Record<string, string> = {
   agent_plan_backend_mismatch: "建模计划与执行后端不匹配",
@@ -69,217 +50,80 @@ const ERROR_CODE_LABELS: Record<string, string> = {
 
 function structuredErrorLabel(code?: string | null) {
   if (!code) return "任务执行失败";
-  return ERROR_CODE_LABELS[code] || code;
-}
-
-function shortId(value?: string | null) {
-  return value ? value.slice(0, 8) : "-";
-}
-
-function runStatusLabel(status?: string | null) {
-  if (!status) return RUN_STATUS_LABELS.observed;
-  return RUN_STATUS_LABELS[status] || status;
-}
-
-function stepLabel(step: string) {
-  return STEP_LABELS[step] || engineeringTaskEventLabel(step);
-}
-
-function taskText(value?: string | null) {
-  return engineeringTaskEventLabel(value);
+  return ERROR_CODE_LABELS[code] || "本次任务失败";
 }
 
 interface AgentPanelProps {
-  context: EngineeringDomain;
-  connection: ConnectionState;
-  suggestedPrompt?: string;
-  onSend: (text: string) => boolean;
-  onCancel?: () => void;
-  onPreview?: () => void;
-  onCollapse?: () => void;
-  embedded?: boolean;
-  selectionLabel?: string;
-  onClearSelection?: () => void;
-  blockedReason?: string;
+  context: EngineeringDomain; connection: ConnectionState; suggestedPrompt?: string;
+  onSend: (text:string,basis?:RequirementBasis)=>boolean;
+  onCancel?:()=>void;onPreview?:()=>void;onCollapse?:()=>void;embedded?:boolean;
+  selectionLabel?:string;onClearSelection?:()=>void;blockedReason?:string;
+  onRetry?:()=>Promise<void>;onRecover?:(target:string)=>void;onReview?:()=>void;isAdmin?:boolean;canModify?:boolean;
+  document?:CloudDocument | null;
 }
 
-export default function AgentPanel({ context, connection, suggestedPrompt = "", onSend, onCancel, onPreview, onCollapse, embedded = false, selectionLabel, onClearSelection, blockedReason }: AgentPanelProps) {
-  const { translate } = useI18n();
-  const panel = useSessionStore((state) => state.getActivePanel());
-  const [input, setInput] = useState(suggestedPrompt);
-  const [pendingRequest, setPendingRequest] = useState<string | null>(null);
-  const reviewedTarget = useRef<string | undefined>(undefined);
-  const [error, setError] = useState<string | null>(null);
-  const [confirmationPending, setConfirmationPending] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
-  const messages = useMemo(() => panel.messages.slice(-12), [panel.messages]);
-  const suggestions = useMemo(() => buildPromptSuggestions({
-    isEmpty: panel.messages.length === 0,
-    isGenerating: panel.isGenerating,
-    result: panel.result,
-  }), [panel.isGenerating, panel.messages.length, panel.result]);
-  const resultFormats = useMemo(() => Object.keys(panel.result?.files || {}).map((format) => format.toUpperCase()), [panel.result?.files]);
-  const wasCancelled = panel.durable?.taskStatus === "cancelled";
-  const structuredError = !wasCancelled && panel.result?.success === false ? panel.result.error : null;
-  const errorDetails = structuredError?.details || {};
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "nearest" });
-  }, [messages, panel.stepHistory.length]);
-
-  const reviewRequest = () => {
-    if (blockedReason) { setError(blockedReason); return; }
-    const value = input.trim();
-    if (!value) return;
-    reviewedTarget.current = selectionLabel;
-    setPendingRequest(value);
-    setError(null);
+export default function AgentPanel({context,connection,suggestedPrompt='',onSend,onCancel,onPreview,onCollapse,embedded=false,selectionLabel,onClearSelection,blockedReason,onRetry,onRecover,onReview,isAdmin=false,canModify=true,document}:AgentPanelProps) {
+  const panel=useSessionStore(state=>state.getActivePanel());
+  const task=taskState(panel,document);
+  const [input,setInput]=useState(suggestedPrompt);const [pendingRequest,setPendingRequest]=useState<string|null>(null);
+  const [error,setError]=useState<string|null>(null);const [confirmationPending,setConfirmationPending]=useState(false);
+  const reviewedTarget=useRef<string|undefined>(undefined);
+  const suggestions=useMemo(()=>buildPromptSuggestions({isEmpty:panel.messages.length===0,isGenerating:task.running,result:panel.result}),[panel.messages.length,panel.result,task.running]);
+  const history=useMemo(()=>{
+    const seen=new Set<string>();return panel.messages.filter(message=>{
+      const id=message.result?.workflow_run_id;if(id){if(seen.has(id))return false;seen.add(id);}return true;
+    });
+  },[panel.messages]);
+  const contextValue=task.snapshot?.request_payload.operation_context as {requirement_basis?:RequirementBasis}|undefined;
+  const profile=task.snapshot?.request_payload.manufacturing_profile as ManufacturingProfile|null|undefined;
+  const recover = () => {
+    if (task.recovery === 'properties' || task.recovery === 'versions') onRecover?.(task.recovery);
+    else {setInput(task.objective);setPendingRequest(null);setError(null);}
   };
-
-  const execute = () => {
-    if (!pendingRequest) return;
-    if (reviewedTarget.current !== selectionLabel) {
-      setPendingRequest(null); setError("AI 目标或版本已改变，请重新预览修改范围。"); return;
+  const reviewRequest=()=>{
+    if(blockedReason){setError(blockedReason);return;}if(!input.trim())return;
+    // A continuation after failure is a retry action, never a new objective consisting of “继续”.
+    if(task.phase==='failed' && task.recovery!=='retry' && /^(继续|重试|再试一次|continue|retry)[。.!！\s]*$/i.test(input.trim())){recover();return;}
+    if(task.phase==='failed' && task.recovery==='retry' && /^(继续|重试|再试一次|continue|retry)[。.!！\s]*$/i.test(input.trim()) && onRetry){
+      void onRetry().then(()=>setInput('')).catch(e=>setError(e instanceof Error?e.message:'重试失败'));return;
     }
-    if (blockedReason) { setError(blockedReason); return; }
-    const request = `当前上下文：${AGENT_CONTEXT_LABELS[context]}。请先限定修改范围，再执行以下请求并验证结果：${pendingRequest}`;
-    if (!onSend(request)) {
-      setError("实时连接尚未就绪，计划已保留。");
-      return;
-    }
-    useSessionStore.getState().beginGeneration();
-    useSessionStore.getState().addMessage({ role: "user", content: pendingRequest });
-    setInput("");
-    setPendingRequest(null);
-    setError(null);
+    reviewedTarget.current=selectionLabel;setPendingRequest(input.trim());setError(null);
   };
-
-  const submitServerConfirmation = async (accepted: boolean) => {
-    const confirmation = panel.durable?.confirmation;
-    if (!confirmation || confirmationPending) return;
-    setConfirmationPending(true);
-    setError(null);
-    try {
-      await confirmDurableTask(
-        confirmation.workflow_run_id,
-        accepted,
-        accepted ? "" : "用户拒绝当前执行计划",
-      );
-      // The persisted snapshot/event stream owns removal of this card.
-    } catch (cause) {
-      const apiError = cause instanceof EngineeringApiError ? cause : null;
-      setError(
-        apiError?.code === "confirmation_not_waiting"
-          ? "任务状态已变化，正在等待最新状态。"
-          : cause instanceof Error
-            ? cause.message
-            : "任务确认失败",
-      );
-    } finally {
-      setConfirmationPending(false);
-    }
+  const execute=(basis?:RequirementBasis)=>{
+    if(!pendingRequest)return;
+    if(reviewedTarget.current!==selectionLabel){setPendingRequest(null);setError('AI 目标或版本已改变，请重新预览修改范围。');return;}
+    if(blockedReason){setError(blockedReason);return;}
+    if(!onSend(pendingRequest,basis)){setError('实时连接尚未就绪，需求已保留。');return;}
+    useSessionStore.getState().beginGeneration(undefined,basis);useSessionStore.getState().addMessage({role:'user',content:pendingRequest});
+    setInput('');setPendingRequest(null);setError(null);
   };
-
-  return (
-    <section className={`ww-agent-panel ${embedded ? "ww-agent-panel--embedded" : ""}`}>
-      {embedded ? (
-        <header className="ww-pane-header">
-          <div className="ww-agent-title"><span className="ww-agent-avatar">A</span><div><p className="ww-pane-eyebrow">工程协作</p><h2>Agent</h2></div></div>
-          <div className="flex items-center gap-1"><span className={`ww-connection-dot ${connection === "connected" ? "ww-connection-dot--online" : ""}`} title={connection === "connected" ? "已连接" : "正在连接"} />{onCollapse ? <button aria-label="折叠 Agent" className="workspace-icon-button" onClick={onCollapse} type="button"><Icon name="minus" size={15} /></button> : null}</div>
-        </header>
-      ) : null}
-
-      <div className="ww-agent-thread">
-        <div className="ww-agent-context"><span>当前上下文</span><strong>{AGENT_CONTEXT_LABELS[context]}</strong><span className="ml-auto">{connection === "connected" ? "实时连接" : "连接中"}</span></div>
-
-        {messages.length === 0 ? (
-          <div className="ww-agent-empty"><span className="ww-agent-avatar">A</span><p>描述希望分析或修改的内容。请求会先进入确认，再通过现有实时链路提交。</p></div>
-        ) : messages.map((message, index) => (
-          <article className={`ww-agent-message ww-agent-message--${message.role === "user" ? "user" : "assistant"}`} key={`${message.role}-${index}`}>
-            <div className="ww-agent-message__meta">{message.role === "user" ? translate("你") : "CAD Agent"}</div>
-            <div className="ww-agent-message__body">{message.content}</div>
-          </article>
-        ))}
-
-        {panel.result?.success && resultFormats.length ? (
-          <article className="ww-agent-artifact-card">
-            <div className="ww-agent-artifact-card__main">
-              <span className="ww-agent-artifact-card__icon"><Icon name="box" size={16} /></span>
-              <span className="min-w-0 flex-1"><strong>{panel.title || "当前 CAD 模型"}</strong><small>参数化 CAD · {panel.result.parameters?.length || Object.keys(panel.result.params || {}).length} 个参数 · {resultFormats.join(" / ")}</small></span>
-              {panel.result.version ? <span className="ww-agent-version">v{panel.result.version}</span> : null}
-            </div>
-            {onPreview ? <button className="workspace-button" onClick={onPreview} type="button"><Icon name="box" size={14} />查看模型</button> : null}
-          </article>
-        ) : null}
-
-        {panel.activeRun || panel.artifactUpdates.length ? (
-          <div className="ww-agent-run">
-            <div className="flex flex-wrap items-center gap-1.5"><strong>Agent 运行</strong><span>{shortId(panel.activeRun?.run_id)}</span><span>{runStatusLabel(panel.activeRun?.status)}</span>{panel.artifactUpdates.slice(-4).map((artifact, index) => <span className="ww-agent-artifact" key={`${artifact.path}:summary:${index}`}>产物 {artifact.artifact_type.toUpperCase()}</span>)}</div>
-            {panel.stepHistory.length ? <ol>{panel.stepHistory.slice(-4).map((step, index) => <li key={`${step.timestamp}-${index}`}><span>{stepLabel(step.step)}</span> · {taskText(step.message)}</li>)}</ol> : null}
-          </div>
-        ) : null}
-
-        {panel.isGenerating ? (
-          <div className="ww-agent-progress" role="status"><span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-[var(--agent)] border-t-transparent" /><div><strong>{taskText(panel.currentStep?.message || "正在执行计划")}</strong><span>运行 {shortId(panel.activeRun?.run_id)} · 实时接收步骤与产物事件</span></div>{onCancel ? <button className="workspace-button" disabled={connection !== "connected" || !panel.durable?.workflowRunId} onClick={onCancel} type="button">取消生成</button> : null}</div>
-        ) : null}
-
-        {panel.durable?.confirmation ? (
-          <div className="ww-agent-confirmation ww-agent-confirmation--server" role="group" aria-label="服务端执行计划确认">
-            <p>执行计划等待确认</p>
-            <dl>
-              <div><dt>原因</dt><dd>{panel.durable.confirmation.reason}</dd></div>
-              <div>
-                <dt>影响对象</dt>
-                <dd>{panel.durable.confirmation.affected_objects.map((item) => `${item.label}（${item.change}）`).join("、")}</dd>
-              </div>
-              <div><dt>计划校验</dt><dd><code>{panel.durable.confirmation.plan_hash.slice(0, 12)}</code></dd></div>
-            </dl>
-            <span>确认结果将直接发送到当前持久工作流。</span>
-            <div className="mt-3 flex justify-end gap-2">
-              <button className="workspace-button" disabled={confirmationPending} onClick={() => void submitServerConfirmation(false)} type="button">拒绝</button>
-              <button className="workspace-button workspace-button--primary" disabled={confirmationPending} onClick={() => void submitServerConfirmation(true)} type="button">{confirmationPending ? "提交中…" : "确认并继续"}</button>
-            </div>
-          </div>
-        ) : null}
-
-        {wasCancelled ? <div className="ww-agent-confirmation" role="status"><p>任务已取消</p><span>后端已确认取消，已有模型和版本保持不变。</span></div> : null}
-
-        {structuredError ? (
-          <div className="ww-agent-confirmation ww-agent-confirmation--error" role="alert">
-            <p>{translate(structuredErrorLabel(structuredError.type))}</p>
-            <dl>
-              <div><dt>错误码</dt><dd><code>{structuredError.type}</code></dd></div>
-              {typeof errorDetails.operation_id === "string" ? <div><dt>失败操作</dt><dd><code>{errorDetails.operation_id}</code></dd></div> : null}
-              {typeof errorDetails.action === "string" ? <div><dt>建议动作</dt><dd>{errorDetails.action}</dd></div> : null}
-              {typeof errorDetails.constraint_status === "string" ? <div><dt>约束状态</dt><dd>{errorDetails.constraint_status}</dd></div> : null}
-            </dl>
-            <span>{structuredError.message}</span>
-          </div>
-        ) : null}
-
-        {pendingRequest ? (
-          <div className="ww-agent-confirmation">
-            <p>待确认请求</p>
-            <dl><div><dt>当前模块</dt><dd>{AGENT_CONTEXT_LABELS[context]}</dd></div><div><dt>提交内容</dt><dd>{pendingRequest}</dd></div></dl>
-            <span>确认后才会调用后端，具体操作计划以服务端实时返回为准。</span>
-            <div className="mt-3 flex justify-end gap-2"><button className="workspace-button" onClick={() => setPendingRequest(null)} type="button">返回修改</button><button className="workspace-button workspace-button--primary" onClick={execute} type="button">确认并执行</button></div>
-          </div>
-        ) : null}
-
-        {error ? <div className="ww-agent-error" role="alert">{error}</div> : null}
-        <div ref={endRef} />
-      </div>
-
-      <div className="ww-agent-composer-wrap">
-        {selectionLabel ? <div className="mb-2 rounded border border-[var(--agent-border)] bg-[var(--agent-soft)] p-2 type-caption" data-testid="agent-selection">修改目标：{selectionLabel}
-          {onClearSelection ? <button className="ml-2 underline" onClick={onClearSelection} type="button">清除本次 AI 选择</button> : null}</div> : null}
-        {blockedReason ? <p role="status" className="mb-2 type-caption text-amber-800">{blockedReason}</p> : null}
-        <SuggestionPills disabled={panel.isGenerating} onSelect={(suggestion) => setInput(suggestion.prompt)} suggestions={suggestions} />
-        <div className="ww-agent-composer">
-          <textarea aria-label="询问 Agent" disabled={panel.isGenerating} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") reviewRequest(); }} placeholder="继续迭代当前设计…" rows={3} value={input} />
-          <div className="ww-agent-composer__toolbar"><div className="ww-agent-composer__modes"><span><Icon name="box" size={12} />参数化</span><span>{panel.durable?.workflowRunId ? "Agent V2" : "Agent"}</span></div><span className="ww-agent-composer__shortcut">⌘ Enter 审查</span><button aria-label="审查请求" className="ww-agent-send" disabled={!input.trim() || panel.isGenerating || !!blockedReason} onClick={reviewRequest} type="button"><Icon name="send" size={15} /></button></div>
-        </div>
-      </div>
-    </section>
-  );
+  const submitServerConfirmation=async(accepted:boolean)=>{
+    const confirmation=panel.durable?.confirmation;if(!confirmation || confirmationPending || task.status!=='waiting_confirmation')return;
+    setConfirmationPending(true);setError(null);
+    try{await confirmDurableTask(confirmation.workflow_run_id,accepted,accepted?'':'用户拒绝当前执行计划');}
+    catch(cause){setError(cause instanceof EngineeringApiError && cause.code==='confirmation_not_waiting'?'任务状态已变化，正在等待最新状态。':cause instanceof Error?cause.message:'任务确认失败');}
+    finally{setConfirmationPending(false);}
+  };
+  return <section className={`ww-agent-panel ${embedded?'ww-agent-panel--embedded':''}`}>
+    {embedded?<header className="ww-pane-header"><div className="ww-agent-title"><span className="ww-agent-avatar">A</span><div><p className="ww-pane-eyebrow">工程协作</p><h2>Agent</h2></div></div>
+      <div className="flex items-center gap-1"><span className={`ww-connection-dot ${connection==='connected'?'ww-connection-dot--online':''}`} title={connection==='connected'?'文档连接正常':'正在连接'}/>{onCollapse?<button aria-label="折叠 Agent" className="workspace-icon-button" onClick={onCollapse} type="button"><Icon name="minus" size={15}/></button>:null}</div></header>:null}
+    <div className="ww-agent-thread">
+      <div className="ww-agent-context"><span>当前上下文</span><strong>{AGENT_CONTEXT_LABELS[context]}</strong><span className="ml-auto">{connection==='connected'?'文档连接正常':'连接中'}</span></div>
+      {task.objective && !pendingRequest?<RequirementSummary objective={task.objective} basis={contextValue?.requirement_basis || panel.requirementBasis} profile={profile}/>:null}
+      {!pendingRequest?<TaskCard key={task.taskId || 'submitting'} task={task} onRetry={onRetry} onRecover={recover} onCancel={onCancel} onReview={onReview} isAdmin={isAdmin} canModify={canModify} failureLabel={structuredErrorLabel(task.errorCode)}/>:null}
+      {pendingRequest && !task.hasSaved ? <RequirementCard key={pendingRequest} objective={pendingRequest} profile={profile} onBack={()=>setPendingRequest(null)} onConfirm={basis=>execute(basis)} disabled={task.running || !canModify}/>:null}
+      {pendingRequest && task.hasSaved ? <div className="ww-agent-confirmation" data-task-phase="needs_input"><p>确认本次修改</p><p data-i18n-skip>{pendingRequest}</p><p>目标：{selectionLabel || '当前已保存版本'}。明确尺寸保持原值，遇到冲突需重新确认。</p><div className="mt-3 flex gap-2"><button className="workspace-button" onClick={()=>setPendingRequest(null)} type="button">返回修改</button><button className="workspace-button workspace-button--primary" onClick={()=>execute()} type="button">确认并执行</button></div></div>:null}
+      {task.status==='waiting_confirmation' && panel.durable?.confirmation?<div className="ww-agent-confirmation ww-agent-confirmation--server" role="group" aria-label="服务端执行计划确认"><p>执行计划等待确认</p><dl><div><dt>需要确认</dt><dd>{panel.durable.confirmation.reason}</dd></div><div><dt>影响对象</dt><dd>{panel.durable.confirmation.affected_objects.map(item=>`${item.label}（${item.change}）`).join('、')}</dd></div></dl><details><summary>计划身份</summary><code>{panel.durable.confirmation.plan_hash}</code></details><div className="mt-3 flex gap-2"><button className="workspace-button" disabled={confirmationPending || !canModify} onClick={()=>void submitServerConfirmation(false)} type="button">拒绝</button><button className="workspace-button workspace-button--primary" disabled={confirmationPending || !canModify} onClick={()=>void submitServerConfirmation(true)} type="button">{confirmationPending?'提交中…':'确认并继续'}</button></div></div>:null}
+      {(task.phase==='candidate' || task.phase==='saved') && panel.result?.success && onPreview?<button className="workspace-button my-2" onClick={onPreview} type="button"><Icon name="box" size={14}/>查看{task.phase==='candidate'?'候选模型':'已保存模型'}</button>:null}
+      {history.length?<details className="ww-task-history"><summary>历史对话与尝试（{history.length}）</summary>{history.map((message,index)=><article className={`ww-agent-message ww-agent-message--${message.role==='user'?'user':'assistant'}`} key={`${message.role}:${index}`}><div className="ww-agent-message__meta">{message.role==='user'?'你':message.result?.needs_confirmation?'此前待确认':message.result?.success===false?'上次失败':'CAD Agent'}</div><div className="ww-agent-message__body">{message.content}</div>{message.result?.workflow_run_id?<small>任务 {message.result.workflow_run_id}</small>:null}</article>)}</details>:null}
+      {error?<p className="ww-agent-error" role="alert">{error}</p>:null}
+    </div>
+    <div className="ww-agent-composer-wrap">
+      {selectionLabel?<div className="mb-2 rounded border border-[var(--agent-border)] bg-[var(--agent-soft)] p-2 type-caption" data-testid="agent-selection">修改目标：{selectionLabel}{onClearSelection?<button className="ml-2 underline" onClick={onClearSelection} type="button">清除本次 AI 选择</button>:null}</div>:null}
+      {blockedReason?<p role="status" className="mb-2 type-caption text-amber-800">{blockedReason}</p>:null}
+      <SuggestionPills disabled={task.running} onSelect={suggestion=>setInput(suggestion.prompt)} suggestions={suggestions}/>
+      <div className="ww-agent-composer"><textarea aria-label="询问 Agent" disabled={task.running || !canModify} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if((e.metaKey || e.ctrlKey) && e.key==='Enter')reviewRequest();}} placeholder="说明需求或对所选对象的修改…" rows={3} value={input}/>
+        <div className="ww-agent-composer__toolbar"><span className="ww-agent-composer__shortcut">⌘ Enter 审查</span><button aria-label="审查请求" className="ww-agent-send" disabled={!input.trim() || task.running || !!blockedReason || !canModify} onClick={reviewRequest} type="button"><Icon name="send" size={15}/></button></div></div>
+    </div>
+  </section>;
 }

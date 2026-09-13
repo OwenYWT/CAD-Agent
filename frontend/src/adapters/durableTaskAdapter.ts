@@ -15,10 +15,13 @@ export interface DurableWriteContext {
   stateVersion?: number;
 }
 
-export function durableWriteIdentity(context: DurableWriteContext): {
+export function durableWriteIdentity(context: DurableWriteContext, document?: {
+  head_revision_id: string; state_version: number;
+} | null): {
   project_id?: string; branch_id?: string; expected_base_revision_id?: string;
   expected_state_version?: number; idempotency_key?: string;
 } {
+  if (document) context = { ...context, currentRevisionId: document.head_revision_id, stateVersion: document.state_version };
   if (
     !context.projectId
     || !context.branchId
@@ -98,7 +101,9 @@ export function durableResultHeadRevision(
 export function durableResultNeedsCommit(
   result: GenerationResult | null | undefined,
   currentRevisionId: string | null | undefined,
+  reviewStatus?: string | null,
 ): boolean {
+  if (["committed", "rejected", "changes_requested", "rolled_back"].includes(reviewStatus || "")) return false;
   return Boolean(
     result?.change_set_id
     && result.revision_id
@@ -166,8 +171,7 @@ export function durableChangeSetEventState(
 export function durableChangeSetHeadRevision(
   detail: DurableChangeSetDetail,
 ): string {
-  if (["committed", "rolled_back"].includes(detail.status)
-    && detail.head_revision_id) {
+  if (detail.head_revision_id) {
     return detail.head_revision_id;
   }
   return detail.status === "committed"
@@ -206,6 +210,7 @@ export function durableEventStep(event: DurableTaskEvent): StepUpdate {
       ...(projected || {}),
       source: "durable_task_event",
       sequence: event.sequence,
+      workflow_run_id: event.workflow_run_id,
     },
   };
 }

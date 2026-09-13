@@ -214,7 +214,7 @@ export default function ChangeSetDialog({
         }
         if (generation.current !== actionGeneration) return;
         await load();
-        if (generation.current === actionGeneration && changeSet.reviewStatus === "committed") await onApplied?.();
+        if (generation.current === actionGeneration) await onApplied?.();
         return;
       }
       const restored = await getModelSnapshot(changeSet.baseRevisionId);
@@ -250,7 +250,10 @@ export default function ChangeSetDialog({
         return;
       }
       if (generation.current !== actionGeneration) return;
-      if (!onAskAgent) { await load(); return; }
+      await load();
+      if (generation.current !== actionGeneration) return;
+      await onApplied?.();
+      if (!onAskAgent) return;
     }
     const parameterSummary = changeSet.parameterChanges.length
       ? changeSet.parameterChanges
@@ -259,6 +262,7 @@ export default function ChangeSetDialog({
       : "没有可证实的参数差异";
     onAskAgent?.(
       `请基于当前变更继续修改。目标：${changeSet.objective || "未记录"}。`
+      + `审查意见：${reviewNote.trim() || "未填写"}。`
       + `已证实参数变化：${parameterSummary}。`
       + `风险：${changeSet.risk.reasons.join("；")}。`,
     );
@@ -329,6 +333,11 @@ export default function ChangeSetDialog({
       }
       if (generation.current !== actionGeneration) return;
       if (current.status === "accepted") {
+        if (!durableChangeSetCanCommit(adaptDurableChangeSet(current, panelId), canCommit)) {
+          // Acceptance is persisted. Polling resumes the same candidate after
+          // the workflow finishes; never claim that it was committed early.
+          return;
+        }
         try { await commitDurableChangeSet(id); }
         catch (reason) {
           current = await present();
@@ -429,6 +438,7 @@ export default function ChangeSetDialog({
           </button>
           {detail?.can_commit && canCommit ? <button className="workspace-button workspace-button--primary" type="button"
             disabled={restoring || !["pending_review", "accepted", "committed"].includes(detail.status)
+              || (detail.status === "accepted" && !commitReady)
               || (detail.status !== "committed" && (!detail.base_is_current || changeSet?.validation.status === "fail" || changeSet?.validation.status === "unknown"))
               || (detail.status === "pending_review" && (!detail.can_review || (changeSet?.validation.status === "warning" && !reviewNote.trim())))}
             onClick={() => void apply()}>{restoring ? "正在核对并应用" : detail.status === "committed" ? "同步已提交版本" : detail.status === "accepted" ? "继续提交此候选" : "应用修改"}</button> : null}

@@ -1,3 +1,4 @@
+import type { RequirementBasis } from "../types/requirements";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getAuthToken } from "../auth";
 import { observedDocument } from "../stores/documentHeads";
@@ -17,6 +18,7 @@ import type {
   AssemblyPartInfo,
   CapabilitySelection,
   DurableWSMessage,
+  GenerationResult,
   ManufacturingProfile,
   WSMessage,
 } from "../types";
@@ -26,24 +28,16 @@ import { pendingSubmission, rememberSubmission, acknowledgeSubmission } from "..
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const BASE_RECONNECT_DELAY_MS = 1000;
-const PENDING_CHANGE_SET_MESSAGE = "当前生成结果仍有待审阅候选，请先接受并提交当前版本，再继续修改。";
+const PENDING_CHANGE_SET_MESSAGE = "当前有待审阅候选，请先应用或拒绝此候选，再基于已保存版本修改。";
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "disconnected";
 
 export function durableIdentityPayload(panel: PanelState) {
   const durable = panel.durable || emptyDurableContext();
   const doc = durable.branchId ? observedDocument(durable.branchId) : undefined;
-  const context = doc && (
-    !durable.currentRevisionId
-    || doc.head_revision_id === durable.currentRevisionId
-  )
-    ? {
-        ...durable,
-        currentRevisionId: doc.head_revision_id,
-        stateVersion: doc.state_version,
-      }
-    : durable;
-  return durableWriteIdentity(context);
+  // New requests use the document stream's observed Head and generation.
+  // Submitted requests retain their frozen identity in pendingSubmissions.
+  return durableWriteIdentity(durable, doc);
 }
 
 export function operationIntentForPanel(
@@ -59,6 +53,8 @@ function hasPendingChangeSet(panel: PanelState | undefined): boolean {
   return durableResultNeedsCommit(
     panel?.result,
     panel?.durable?.currentRevisionId,
+    panel?.result?.change_set_id === panel?.durable?.changeSetId
+      ? panel?.durable?.changeSetStatus : null,
   );
 }
 
@@ -276,6 +272,7 @@ export function useWebSocket() {
             return;
           }
           if (message.type === "task_stream_complete") {
+            if (message.data.workflow_run_id !== durableWorkflowRunId) return;
             setDurableTaskStatus(
               message.data.status,
               message.data.last_event_sequence,
@@ -354,6 +351,7 @@ export function useWebSocket() {
     capability: CapabilitySelection = "auto",
     manufacturingProfile: ManufacturingProfile | null = null,
     selectionContext?: SelectionContext | null,
+    requirementBasis?: RequirementBasis,
   ) => {
     const ws = wsRef.current;
     if (ws?.readyState !== WebSocket.OPEN) return false;
@@ -376,6 +374,7 @@ export function useWebSocket() {
       ...identity,
       idempotency_key: identity.idempotency_key || createId(),
       ...(selectionContext ? { selection_context: selectionContext } : {}),
+      ...(requirementBasis ? { requirement_basis: requirementBasis } : {}),
     };
     return sendSubmission(message);
   }, [sendSubmission, setError]);
@@ -449,7 +448,8 @@ export function useWebSocket() {
     }
   }, []);
 
-  const modifyPart = useCallback((partName: string, instruction: string, partId?: string | null) => {
+  const modifyPart = useCallback((partName: string, instruction: string, partId?: string | null,
+    viewedResult?: Pick<GenerationResult, "revision_id" | "code" | "assembly_parts"> | null) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return false;
     const panelId = useSessionStore.getState().activePanelId;
     const panel = useSessionStore.getState().panels.find(
@@ -460,17 +460,19 @@ export function useWebSocket() {
       return false;
     }
     const identity = panel ? durableIdentityPayload(panel) : {};
+    if (!viewedResult?.revision_id || viewedResult.revision_id !== identity.expected_base_revision_id) {
+      setError("当前版本已更新，请等待模型同步后重新选择零件。", panelId);
+      return false;
+    }
     const sent = sendSubmission({
       type: "modify_part",
       part_name: partName,
       part_id: partId || undefined,
       instruction,
       panel_id: panelId,
-      code: panel?.result?.code || undefined,
-      assembly_parts: panel?.result?.assembly_parts || [],
-      base_revision_id: panel?.result?.revision_id
-        || panel?.result?.expected_base_revision_id
-        || undefined,
+      code: viewedResult.code || undefined,
+      assembly_parts: viewedResult.assembly_parts || [],
+      base_revision_id: viewedResult.revision_id,
       ...identity,
       idempotency_key: identity.idempotency_key || createId(),
     });

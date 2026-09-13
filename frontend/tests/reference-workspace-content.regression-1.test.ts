@@ -20,8 +20,11 @@ test("reference workspace content is backed by real task and artifact evidence",
   const inspector = read("src/components/workspace/WorkspaceInspector.tsx");
   const viewer = read("src/components/viewer/MechanicalWorkspace.tsx");
 
-  assert.match(agent, /engineeringTaskEventLabel/);
-  assert.match(agent, /ww-agent-artifact-card/);
+  const task = read("src/components/agent/TaskCard.tsx");
+  assert.match(task, /engineeringTaskEventLabel/);
+  assert.match(task, /snapshot\?\.steps/);
+  assert.match(task, /snapshot\?\.agent\?\.validations/);
+  assert.match(agent, /panel.result\?\.success && onPreview/);
   assert.match(inspector, /ww-inspector-export/);
   assert.match(viewer, /ww-viewer-statusbar/);
 });
