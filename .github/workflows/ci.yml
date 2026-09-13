@@ -143,7 +143,7 @@ jobs:
             -e MINIO_ROOT_USER="$MINIO_ROOT_USER" \
             -e MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD" \
             -p 127.0.0.1:59000:9000 \
-            minio/minio:RELEASE.2025-09-07T16-13-09Z \
+            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z \
             server /data
           for attempt in {1..60}; do
             if curl --fail --silent \
@@ -157,7 +157,7 @@ jobs:
             --entrypoint /bin/sh \
             -e MINIO_ROOT_USER="$MINIO_ROOT_USER" \
             -e MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD" \
-            minio/mc:RELEASE.2025-08-13T08-35-41Z \
+            quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z \
             -ec '
               mc alias set local http://cad-agent-minio:9000 \
                 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
