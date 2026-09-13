@@ -11,6 +11,7 @@ from app.agent.conversation import ConversationContext
 from app.api.auth import verify_ws_token, get_ws_user_id, rate_limiter, websocket_auth_token
 from app.api.error_messages import public_generation_error
 from app.models.schemas import DurableRequestIdentity
+from app.domain.requirement_basis import RequirementBasisV1
 from app.config import settings
 from app.db import tenant_transaction
 from app.freecad.state_contract import (
@@ -446,6 +447,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 )
             ),
             structured_modification=structured_modification,
+            **({"requirement_basis": RequirementBasisV1.model_validate(data["requirement_basis"])}
+               if data.get("requirement_basis") is not None else {}),
             **({"selection_context": SelectionContextV1.model_validate(data["selection_context"])}
                if data.get("selection_context") is not None else {}),
             **({"revision_restore": revision_restore} if revision_restore else {}),

@@ -33,3 +33,9 @@ def test_identical_confirmation_snapshot_is_not_republished() -> None:
     }
 
     assert _task_snapshot_marker(snapshot) == _task_snapshot_marker(dict(snapshot))
+
+
+def test_step_and_plan_updates_are_republished_without_a_workflow_status_change():
+    before={"status":"running","last_event_sequence":4}
+    after={"status":"running","last_event_sequence":5}
+    assert _task_snapshot_marker(before) != _task_snapshot_marker(after)

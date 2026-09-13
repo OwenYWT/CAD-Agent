@@ -1559,7 +1559,10 @@ class McadWorkflowActivities:
                 )
             elif request.operation == "generate":
                 requirements = await self.durable_planner.requirements_generation(
-                    request.objective
+                    request.objective + (
+                        "\n\n" + request.operation_context.requirement_basis.planning_context()
+                        if request.operation_context and request.operation_context.requirement_basis else ""
+                    )
                 )
             else:
                 if request.modeling_backend == "freecad":
