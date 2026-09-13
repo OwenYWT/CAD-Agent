@@ -7,6 +7,7 @@ from app.services.event_relay import (
     _confirmation_projection,
     _project_task_bom,
     _project_task_error,
+    _project_candidate_lifecycle,
     project_task_events,
 )
 
@@ -299,3 +300,57 @@ def test_bom_projection_is_not_applicable_to_part_plan():
     )
     assert projection is not None
     assert projection["status"] == "not_applicable"
+
+
+def test_candidate_projection_follows_change_set_lifecycle():
+    assert _project_candidate_lifecycle(
+        candidate_status="reviewable",
+        change_set_status="pending_review",
+        workflow_status="succeeded",
+    ) == {
+        "current_stage": "review",
+        "current_status": "reviewable",
+        "candidate_status": "reviewable",
+    }
+    assert _project_candidate_lifecycle(
+        candidate_status="reviewable",
+        change_set_status="accepted",
+        workflow_status="succeeded",
+    ) == {
+        "current_stage": "review",
+        "current_status": "accepted",
+        "candidate_status": "accepted",
+    }
+    assert _project_candidate_lifecycle(
+        candidate_status="reviewable",
+        change_set_status="committed",
+        workflow_status="succeeded",
+    ) == {
+        "current_stage": "complete",
+        "current_status": "succeeded",
+        "candidate_status": None,
+    }
+
+
+def test_change_set_events_project_terminal_review_feedback():
+    events = project_task_events(
+        [
+            _event(1, "change_set.accepted", {
+                "change_set_id": str(uuid4()),
+                "status": "accepted",
+            }),
+            _event(2, "change_set.committed", {
+                "change_set_id": str(uuid4()),
+                "status": "committed",
+            }),
+        ],
+        step_rows=[],
+        attempt_rows=[],
+    )
+    assert events[0]["projection"]["stage"] == "review"
+    assert events[0]["projection"]["status"] == "success"
+    projection = events[1]["projection"]
+    assert projection["stage"] == "complete"
+    assert projection["label"] == "任务完成"
+    assert projection["status"] == "success"
+    assert projection["message"] == "版本已提交"

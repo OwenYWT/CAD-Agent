@@ -203,6 +203,36 @@ def test_existing_project_writes_submit_durable(
     assert durable_ws.calls["submit"][0][1]["operation"] == operation
 
 
+def test_freecad_part_edit_uses_verified_revision_artifact_without_browser_code(
+    client, durable_ws
+):
+    durable_ws.inventory["value"] = RevisionSourceInventory(fcstd=(
+        TrustedBaseSource(
+            kind="fcstd_artifact",
+            source_id=uuid4(),
+            sha256="f" * 64,
+        ),
+    ))
+    with client.websocket_connect("/ws/session-freecad-part") as socket:
+        socket.send_json({
+            "type": "modify_part",
+            "panel_id": "panel-freecad-part",
+            "part_name": "base",
+            "part_id": "base",
+            "instruction": "make it wider",
+            "base_revision_id": str(uuid4()),
+            "assembly_parts": [{"part_id": "base", "name": "base"}],
+            **_identity(),
+        })
+        message = socket.receive_json()
+
+    assert message["type"] == "task_submitted"
+    submitted = durable_ws.calls["submit"][0][1]
+    assert submitted["operation"] == "modify"
+    assert submitted["modeling_backend"] == "freecad"
+    assert submitted["code"] is None
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -265,7 +295,7 @@ def test_modify_part_rejects_unknown_part_id(client, durable_ws):
     assert durable_ws.calls["submit"] == []
 
 
-def test_modify_part_rejects_missing_existing_code(client, durable_ws):
+def test_modify_part_rejects_missing_editable_source(client, durable_ws):
     with client.websocket_connect("/ws/session-missing-code") as socket:
         socket.send_json({
             "type": "modify_part",
@@ -279,8 +309,8 @@ def test_modify_part_rejects_missing_existing_code(client, durable_ws):
         })
         message = socket.receive_json()
 
-    assert message["data"]["error"]["type"] == "MissingExistingCodeError"
-    assert "当前版本没有可执行代码" in message["data"]["error"]["message"]
+    assert message["data"]["error"]["type"] == "modify_base_source_missing"
+    assert "The base revision has no editable model source." in message["data"]["error"]["message"]
     assert durable_ws.calls["submit"] == []
 
 

@@ -17,6 +17,7 @@ import {
   durableResultHeadRevision,
   durableResultTaskStatus,
   durableChangeSetHeadRevision,
+  durableChangeSetEventState,
   durableSnapshotHeadRevision,
   durableSnapshotReplayCursor,
   shouldApplyDurableEvent,
@@ -577,6 +578,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
                 result,
                 p.durable?.taskStatus || null,
               ),
+              preparedResult: result.success || result.needs_confirmation ? result : p.durable?.preparedResult || null,
             },
           };
         }),
@@ -659,17 +661,20 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
             "cancelled",
             "timed_out",
           ].includes(snapshot.status);
-          const prepared = (
-            panel.durable?.preparedResult
-            || (
-              typeof snapshot.request_payload.primary?.source_code
-                === "string"
-                ? {
-                    success: false,
-                    code: snapshot.request_payload.primary.source_code,
-                  } as GenerationResult
-                : null
-            )
+          const existingResult = panel.result?.workflow_run_id === snapshot.id
+            ? panel.result
+            : null;
+          const prepared = panel.durable?.workflowRunId === snapshot.id
+            ? panel.durable.preparedResult || existingResult
+            : existingResult;
+          const sourceFallback = (
+            typeof snapshot.request_payload.primary?.source_code
+              === "string"
+              ? {
+                  success: false,
+                  code: snapshot.request_payload.primary.source_code,
+                } as GenerationResult
+              : null
           );
           const files = Object.fromEntries(
             (snapshot.artifacts || []).map((artifact) => [
@@ -679,7 +684,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
           );
           const snapshotResult = terminal
             ? {
-                ...(prepared || { success: false }),
+                ...(prepared || sourceFallback || { success: false }),
                 request_id: snapshot.id,
                 success: snapshot.status === "succeeded",
                 files,
@@ -754,6 +759,9 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
             taskStatus: snapshot.status,
             agent: snapshot.agent || null,
             confirmation: snapshot.confirmation || null,
+            preparedResult: terminal
+              ? terminalResult
+              : panel.durable?.preparedResult || null,
           },
           result: terminalResult,
           isGenerating: !terminal,
@@ -805,7 +813,79 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
                 expected_base_revision_id:
                   durable.baseRevisionId || undefined,
               } as GenerationResult
-            : null;
+              : null;
+          const changeSetEvent = durableChangeSetEventState(
+            event,
+            durable.currentRevisionId,
+          );
+          const sameChangeSet = Boolean(
+            changeSetEvent
+            && (
+              panel.result?.change_set_id === changeSetEvent.changeSetId
+              || durable.changeSetId === changeSetEvent.changeSetId
+            )
+          );
+          const unboundChangeSet = Boolean(
+            changeSetEvent
+            && event.workflow_run_id === durable.workflowRunId
+            && !durable.changeSetId
+            && !panel.result?.change_set_id
+          );
+          if (changeSetEvent && (sameChangeSet || unboundChangeSet)) {
+            const abandonedChangeSet = [
+              "changes_requested",
+              "rejected",
+              "rolled_back",
+            ].includes(changeSetEvent.status);
+            const baseRevisionId = changeSetEvent.baseRevisionId
+              || durable.baseRevisionId
+              || panel.result?.expected_base_revision_id
+              || null;
+            const candidateRevisionId = changeSetEvent.candidateRevisionId
+              || panel.result?.revision_id
+              || null;
+            const currentRevisionId = changeSetEvent.status === "committed"
+              ? candidateRevisionId || changeSetEvent.currentRevisionId
+              : abandonedChangeSet
+                ? baseRevisionId || changeSetEvent.currentRevisionId
+                : changeSetEvent.currentRevisionId;
+            const synchronizedResult = panel.result
+              ? {
+                  ...panel.result,
+                  expected_base_revision_id: baseRevisionId
+                    || panel.result.expected_base_revision_id,
+                  revision_id: abandonedChangeSet
+                    ? baseRevisionId || panel.result.revision_id
+                    : candidateRevisionId || panel.result.revision_id,
+                  change_set_id: abandonedChangeSet
+                    ? undefined
+                    : changeSetEvent.changeSetId,
+                }
+              : panel.result;
+            return {
+              durable: {
+                ...durable,
+                lastEventSequence: event.sequence,
+                currentRevisionId,
+                changeSetId: abandonedChangeSet
+                  ? null
+                  : changeSetEvent.changeSetId,
+                agent: durable.agent
+                  ? {
+                      ...durable.agent,
+                      current_stage: changeSetEvent.currentStage,
+                      current_status: changeSetEvent.status,
+                      candidate_status: changeSetEvent.candidateStatus,
+                    }
+                  : durable.agent,
+                preparedResult: abandonedChangeSet || synchronizedResult
+                  ? synchronizedResult
+                  : durable.preparedResult,
+              },
+              result: synchronizedResult,
+              isGenerating: panel.isGenerating,
+            };
+          }
           return {
             durable: {
               ...durable,
@@ -830,22 +910,57 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
     set((state) => {
       const targetId = panelId || state.activePanelId;
       return {
-        panels: updatePanel(state.panels, targetId, (panel) => ({
-          durable: {
-            ...(panel.durable || emptyDurableContext()),
-            projectId: detail.project_id,
-            branchId: detail.branch_id,
-            baseRevisionId: detail.base_revision_id,
-            currentRevisionId: durableChangeSetHeadRevision(detail),
-            workflowRunId: detail.source_workflow_run_id
-              || panel.durable?.workflowRunId
-              || null,
-            changeSetId: detail.id,
-            taskStatus: detail.workflow_status
-              || panel.durable?.taskStatus
-              || null,
-          },
-        })),
+        panels: updatePanel(state.panels, targetId, (panel) => {
+          const durable = panel.durable || emptyDurableContext();
+          const abandonedChangeSet = ["rejected", "changes_requested", "rolled_back"]
+            .includes(detail.status);
+          const sameChangeSet = panel.result?.change_set_id === detail.id
+            || durable.changeSetId === detail.id;
+          const synchronizedResult = abandonedChangeSet && sameChangeSet && panel.result
+            ? {
+                ...panel.result,
+                expected_base_revision_id: detail.base_revision_id,
+                revision_id: detail.base_revision_id,
+                change_set_id: undefined,
+                task_status: detail.workflow_status || panel.result.task_status,
+              }
+            : sameChangeSet && panel.result
+            ? {
+                ...panel.result,
+                project_id: panel.result.project_id || detail.project_id,
+                branch_id: panel.result.branch_id || detail.branch_id,
+                expected_base_revision_id: detail.base_revision_id,
+                revision_id: detail.candidate_revision_id,
+                workflow_run_id: detail.source_workflow_run_id
+                  || panel.result.workflow_run_id,
+                change_set_id: detail.id,
+                task_status: detail.workflow_status || panel.result.task_status,
+              }
+            : panel.result;
+          const currentRevisionId = abandonedChangeSet
+            ? detail.base_revision_id
+            : durableChangeSetHeadRevision(detail);
+          return {
+            result: synchronizedResult,
+            durable: {
+              ...durable,
+              projectId: detail.project_id,
+              branchId: detail.branch_id,
+              baseRevisionId: detail.base_revision_id,
+              currentRevisionId,
+              workflowRunId: detail.source_workflow_run_id
+                || durable.workflowRunId
+                || null,
+              changeSetId: abandonedChangeSet ? null : detail.id,
+              taskStatus: detail.workflow_status
+                || durable.taskStatus
+                || null,
+              preparedResult: abandonedChangeSet || sameChangeSet
+                ? synchronizedResult
+                : durable.preparedResult,
+            },
+          };
+        }),
       };
     }),
 

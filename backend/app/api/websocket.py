@@ -46,10 +46,6 @@ class ModifyPartValidationError(ValueError):
     pass
 
 
-class MissingExistingCodeError(ModifyPartValidationError):
-    pass
-
-
 class MissingBaseRevisionError(ModifyPartValidationError):
     pass
 
@@ -233,8 +229,6 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 raise ValueError(
                     "零件名、修改指令或当前 MCAD 代码长度无效"
                 )
-            if not existing_code:
-                raise MissingExistingCodeError("当前版本没有可执行代码，无法发起零件修改")
             if not base_revision_id:
                 raise MissingBaseRevisionError("当前版本缺少基线版本，请先切换到可恢复的历史版本")
             if part_id:

@@ -131,6 +131,8 @@ export interface ChangeSet {
   createdAt: string;
   source?: "snapshot" | "durable";
   reviewStatus?: string;
+  workflowStatus?: string | null;
+  reviewNote?: string | null;
 }
 
 export interface ExportJob {
@@ -186,9 +188,9 @@ export interface DurableChangeSetDetail {
   project_id: string;
   branch_id: string;
   branch_name: string;
+  head_revision_id?: string | null;
   base_revision_id: string;
   base_state_version?: number | null;
-  head_revision_id?: string;
   head_state_version?: number;
   base_is_current?: boolean;
   can_review?: boolean; can_commit?: boolean; can_rollback?: boolean; can_export?: boolean;

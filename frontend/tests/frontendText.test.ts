@@ -58,7 +58,6 @@ test("design brief section titles use readable Chinese", () => {
   assert.match(text, /\\u53ef\\u6253\\u5370\\u6027\\u76ee\\u6807/);
   assert.match(text, /\\u5f85\\u786e\\u8ba4\\u95ee\\u9898/);
 });
-
 test("history dialogs keep readable Chinese copy", () => {
   const changeSet = readFileSync(join(FRONTEND_SRC, "components/changes/ChangeSetDialog.tsx"), "utf8");
   const validation = readFileSync(join(FRONTEND_SRC, "components/validation/ValidationDialog.tsx"), "utf8");

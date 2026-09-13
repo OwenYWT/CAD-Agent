@@ -2,7 +2,7 @@ import { useState } from "react";
 import { adaptValidation } from "../../adapters/projectAdapter";
 import { analyzeEngineeringResult } from "../../services/engineeringService";
 import type { ArtifactHistoryEntry, StepHistoryEntry } from "../../stores/sessionStore";
-import type { DesignAnalysis, GenerationResult, RunCreatedEvent } from "../../types";
+import type { DesignAnalysis, GenerationResult, ModelSnapshotDetail, RunCreatedEvent } from "../../types";
 import type { ValidationResult } from "../../types/engineering";
 import AgentRunTimeline from "../AgentRunTimeline";
 import DesignBriefPanel from "../DesignBriefPanel";
@@ -26,11 +26,8 @@ interface ValidationDialogProps {
   isGenerating: boolean;
   activeSnapshotId?: string | null;
   currentParts?: GenerationResult["assembly_parts"];
-  currentCode?: string | null;
-  baseRevisionId?: string | null;
   onModifyPart?: (partName: string, instruction: string, partId?: string | null) => boolean | void;
   refreshKey?: string | number | null;
-  panelError?: string | null;
   onClose: () => void;
   onAnalysis?: (analysis: DesignAnalysis) => void;
   onAskAgent: (prompt: string) => void;
@@ -60,11 +57,8 @@ export default function ValidationDialog({
   isGenerating,
   activeSnapshotId,
   currentParts,
-  currentCode,
-  baseRevisionId,
   onModifyPart,
   refreshKey,
-  panelError,
   onClose,
   onAnalysis,
   onAskAgent,
@@ -277,10 +271,7 @@ export default function ValidationDialog({
 
         <VersionHistoryPanel
           activeSnapshotId={activeSnapshotId}
-          baseRevisionId={baseRevisionId || result?.expected_base_revision_id || result?.revision_id || null}
-          currentCode={currentCode || result?.code || null}
           currentParts={currentParts || result?.assembly_parts || []}
-          externalError={panelError}
           onModifyPart={onModifyPart}
           onRestore={onRestore}
           panelId={panelId}

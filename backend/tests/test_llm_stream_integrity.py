@@ -31,6 +31,19 @@ def chunk(content=None, finish=None, *, identity="completion-1", usage=False):
         usage={"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18} if usage else None)
 
 
+def metadata_chunk(*, usage=False):
+    return ChatCompletionChunk(
+        id="",
+        object="chat.completion.chunk",
+        created=0,
+        model="",
+        choices=[],
+        usage={"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18}
+        if usage
+        else None,
+    )
+
+
 async def adapter_response(parts):
     stream = Stream(parts)
     async def create(**_kwargs):
@@ -49,6 +62,23 @@ async def test_stream_preserves_provider_identity_finish_usage_and_exact_content
     provenance = get_last_chat_completion_provenance()
     assert provenance["provider_response_id"] == "completion-1"
     assert provenance["model"] == "actual-model" and provenance["usage"]["total_tokens"] == 18
+
+
+@pytest.mark.asyncio
+async def test_stream_ignores_provider_metadata_chunks_before_and_after_completion():
+    result = await adapter_response(
+        [
+            metadata_chunk(),
+            chunk('{"ok":'),
+            chunk('true}'),
+            chunk(finish="stop"),
+            metadata_chunk(usage=True),
+        ]
+    )
+    assert result.choices[0].message.content == '{"ok":true}'
+    provenance = get_last_chat_completion_provenance()
+    assert provenance["provider_response_id"] == "completion-1"
+    assert provenance["usage"]["total_tokens"] == 18
 
 
 @pytest.mark.asyncio

@@ -4,10 +4,10 @@ import test from "node:test";
 
 const source = (path: string) => readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8");
 
-test("Q04 history restore submits the immutable revision ID, not empty Python", () => {
+test("Q04 history restore submits the immutable revision ID, not the snapshot ID", () => {
   const workspace = source("components/workspace/EngineeringWorkspace.tsx");
   const restore = workspace.match(/const restoreSnapshot = \(snapshot: ModelSnapshotDetail\) => \{([\s\S]*?)\n {2}\};/)?.[1] || "";
-  assert.match(restore, /restoreRevision\(snapshot\.id\)/);
+  assert.match(restore, /restoreRevision\(snapshot\.revision_id \|\| snapshot\.id\)/);
   assert.match(restore, /snapshot\.files\?\.fcstd|snapshot\.files\.fcstd/);
   assert.match(restore, /executeWithProgress\(snapshot\.code\)/);
   assert.match(restore, /activePanelId !== panel\.id/);
