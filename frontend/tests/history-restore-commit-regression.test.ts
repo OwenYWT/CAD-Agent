@@ -92,6 +92,17 @@ test("a committed historical result does not block modifying a later head", () =
   assert.equal(durableResultNeedsCommit(store.getActivePanel().result, "later-head", "pending_review"), true);
 });
 
+test("a rejected local action cannot turn a successfully generated candidate or saved version into a failed task", () => {
+  for (const status of ["pending_review", "committed"]) {
+    const {store, panel} = setup(status);
+    store.setError("请先审阅当前候选，尚未提交新的修改请求。", panel.id);
+    const current = taskState(store.getActivePanel());
+    assert.equal(current.phase, status === "committed" ? "saved" : "candidate");
+    assert.equal(current.errorMessage, "");
+    assert.equal(current.taskId, "workflow");
+  }
+});
+
 
 test("review metadata never relabels the last valid model while a new candidate is still running", () => {
   for (const source of ["detail", "event"]) {

@@ -106,6 +106,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const viewedAgent = currentResultVisible ? panel.durable?.agent : null;
   const draftCount = useDraftGuardStore(state => Object.keys(state.drafts).length);
   const agentBlockedReason = !viewIsCommitted ? "请先返回已提交版本，再请求 AI 继续修改。"
+    : task.phase === "candidate" ? "请先应用或拒绝待确认候选，再基于已保存版本修改。"
     : pendingRequest ? "正在确认原请求是否受理，请先查询原请求状态。"
     : draftCount ? "请先提交或放弃手动编辑草稿，再让 AI 修改。"
       : panel.durable?.branchId && !cloud.connected ? "正在同步已提交文档，连接恢复后可继续修改。" : undefined;

@@ -23,7 +23,8 @@ export function taskState(panel: PanelState, document?: CloudDocument | null) {
   ));
   const error=panel.submissionPending || isActiveTask(status) ? null : snapshot?.error || result?.error || null;
   const errorCode=panel.submissionPending || isActiveTask(status) ? "" : error && ('code' in error ? error.code : error.type) || snapshot?.error_code || "";
-  const errorMessage=panel.submissionPending || isActiveTask(status) ? "" : error?.message || snapshot?.error_message || panel.lastError || "";
+  const errorMessage=panel.submissionPending || isActiveTask(status) ? "" : error?.message || snapshot?.error_message
+    || (!taskId || ['failed','timed_out'].includes(status || '') ? panel.lastError : '') || "";
   const quota=/ProviderQuotaError|insufficient_quota|额度不足/i.test(errorCode+errorMessage);
   const changeStatus=durable?.changeSetStatus || snapshot?.change_set?.status;
   const operation=String(snapshot?.request_payload.operation || (snapshot?.kind.endsWith('.modify') ? 'modify' : 'generate'));
