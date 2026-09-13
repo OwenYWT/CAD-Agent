@@ -10,7 +10,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket
 from fastapi.encoders import jsonable_encoder
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 from sqlalchemy import text
 from starlette.websockets import WebSocketDisconnect
 
@@ -19,7 +19,8 @@ from app.services.document_sharing import create_review_invite, accept_review_in
 from app.services.feature_annotations import save_annotation
 from app.services.feature_leases import FeatureLeaseConflict, acquire_feature_lease, release_feature_lease, assert_operation_lease_access
 from app.services.document_rebase import resolve_parameter_rebase
-from app.services.document_geometry import document_scene, scene_mesh
+from app.services.document_geometry import scene_mesh
+from app.services.scene_jobs import request_scene
 from app.services.document_branches import list_document_branches, fork_document, compare_branches, merge_document
 from app.services.document_engineering import submit_engineering, engineering_tasks, engineering_result
 from app.freecad.engineering_contracts import EngineeringSubmission
@@ -32,9 +33,10 @@ from app.domain.identity import PrincipalContext
 from app.domain.projects import Permission
 from app.freecad.state_contract import ParameterStateError, compile_parameter_operation_plan, read_verified_state_artifact
 from app.freecad.inspection import InspectionRequest, inspect_state
+from app.freecad.selection import SelectionContextV1
 from app.object_store import get_object
 from app.repositories.revisions import StaleBaseRevision
-from app.services.cloud_documents import (DocumentConflict, authorized_document, checkpoint, document_snapshot,
+from app.services.cloud_documents import (DocumentConflict, authorized_document, checkpoint, document_snapshot, document_revision_view,
     document_events, collaboration_snapshot, touch_presence, add_comment)
 from app.services.durable_submission import submit_durable_workflow
 from app.services.operation_resolution import (OperationResolutionError, load_revision_source_inventory,
@@ -111,6 +113,14 @@ class OperationRequest(BaseModel):
     allow_rebase: bool = False
     objective: str = Field(default="", max_length=4000)
     modification: FreeCADStructuredModificationV1 | None = None
+    selection_context: SelectionContextV1 | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_request_hash(self, handler):
+        payload = handler(self)
+        if self.selection_context is None:
+            payload.pop("selection_context", None)
+        return payload
 
 
 class PresenceRequest(BaseModel):
@@ -208,6 +218,14 @@ async def get_document(document_id: UUID, principal: PrincipalContext = Depends(
 async def get_events(document_id: UUID, after: int = Query(default=0, ge=0), principal: PrincipalContext = Depends(get_durable_principal)):
     try:
         return {"events": await document_events(principal, document_id, after)}
+    except Exception as exc:
+        raise public_error(exc) from exc
+
+
+@router.get("/{document_id}/revisions/{revision_id}")
+async def view_revision(document_id: UUID, revision_id: UUID, principal: PrincipalContext = Depends(get_durable_principal)):
+    try:
+        return await document_revision_view(principal, document_id, revision_id)
     except Exception as exc:
         raise public_error(exc) from exc
 
@@ -389,7 +407,8 @@ async def operation(document_id: UUID, body: OperationRequest, request: Request,
             expected_base_revision_id=body.expected_base_revision_id, expected_state_version=body.expected_state_version,
             idempotency_key=body.idempotency_key, operation=resolution.operation, objective=objective,
             output_formats=["step", "stl"], code=resolution.existing_code, modeling_backend=resolution.modeling_backend,
-            operation_context=operation_context, structured_modification=body.modification)
+            operation_context=operation_context, structured_modification=body.modification,
+            selection_context=body.selection_context)
         return {"operation_id": str(submission.workflow_run_id), "workflow_run_id": str(submission.workflow_run_id),
                 "document_id": str(document_id), "task_url": f"/api/tasks/{submission.workflow_run_id}/snapshot",
                 "rebased_from_revision_id":str(rebase["rebased_from_revision_id"]) if rebase else None}
@@ -469,9 +488,28 @@ async def artifact(document_id: UUID, artifact_id: UUID, principal: PrincipalCon
 
 
 @router.get('/{document_id}/scenes/{revision_id}')
-async def get_scene(document_id: UUID, revision_id: UUID, principal: PrincipalContext = Depends(get_durable_principal)):
+async def get_scene(document_id: UUID, revision_id: UUID, response: Response, principal: PrincipalContext = Depends(get_durable_principal)):
     try:
-        return await document_scene(principal, document_id, revision_id)
+        scene = await request_scene(principal, document_id, revision_id)
+        response.status_code = 200 if scene.get('schema_version') == 'cad-scene.v1' else 202
+        return scene
+    except Exception as exc:
+        raise public_error(exc) from exc
+
+
+class SceneRetryRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    workflow_run_id: UUID
+
+
+@router.post('/{document_id}/scenes/{revision_id}/retry')
+async def retry_scene(document_id: UUID, revision_id: UUID, body: SceneRetryRequest, response: Response,
+                      request: Request, principal: PrincipalContext = Depends(get_durable_principal)):
+    await rate_limiter.check(request)
+    try:
+        scene = await request_scene(principal, document_id, revision_id, retry_workflow_id=body.workflow_run_id)
+        response.status_code = 200 if scene.get('schema_version') == 'cad-scene.v1' else 202
+        return scene
     except Exception as exc:
         raise public_error(exc) from exc
 

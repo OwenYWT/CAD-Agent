@@ -433,7 +433,7 @@ class McadCheckWorkflow:
             self._phase = "engineering_check"
             activity_task = asyncio.create_task(
                 workflow.execute_activity(
-                    "engineering.compute" if request.get("engineering_task") else "mcad.check",
+                    "scene.compute" if request.get("scene_task") else "engineering.compute" if request.get("engineering_task") else "mcad.check",
                     request,
                     activity_id=(
                         f"{request['workflow_run_id']}:engineering-check"

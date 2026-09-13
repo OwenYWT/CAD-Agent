@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+from acceptance_paths import evidence_path
 
 import httpx
 from playwright.sync_api import expect, sync_playwright
@@ -54,9 +55,9 @@ def main():
         expect(result.get_by_test_id('engineering-field-maximum')).to_have_text(displacement)
         with page.expect_download() as downloaded:
             result.get_by_role('button',name='下载求解证据').click()
-        destination='/tmp/cad-expansion-engineering-browser-evidence.zip';downloaded.value.save_as(destination)
+        destination=str(evidence_path('cad-expansion-engineering-browser-evidence.zip'));downloaded.value.save_as(destination)
         assert Path(destination).stat().st_size>10000
-        result.scroll_into_view_if_needed();page.screenshot(path='/tmp/cad-expansion-engineering-browser.png')
+        result.scroll_into_view_if_needed();page.screenshot(path=str(evidence_path('cad-expansion-engineering-browser.png')))
         assert not errors,errors
         assert not console_errors,console_errors
         after=call(client,'GET',path)
@@ -66,12 +67,12 @@ def main():
             stage=page.get_by_role('heading',name='仿真验证',exact=True).locator('xpath=../../..')
             expect(stage).to_contain_text('已完成',timeout=15000)
             expect(stage).not_to_contain_text('暂未接入')
-            page.screenshot(path='/tmp/cad-expansion-simulation-workspace.png')
+            page.screenshot(path=str(evidence_path('cad-expansion-simulation-workspace.png')))
         evidence={'workflow_run_id':task_id,'browser_submit_and_actual_solver':True,'stress':stress,'displacement':displacement,
             'actual_field_rendered':True,'display_scale_preserves_raw_values':True,'evidence_downloaded':True,
             'source_revision_unchanged':True,'main_workflow_simulation_entry_verified':workspace_flow,
             'page_errors':errors,'console_errors':console_errors}
-        Path('/tmp/cad-expansion-engineering-browser.json').write_text(json.dumps(evidence,indent=2))
+        Path(str(evidence_path('cad-expansion-engineering-browser.json'))).write_text(json.dumps(evidence,indent=2))
         print('CAD_ENGINEERING_BROWSER='+json.dumps(evidence),flush=True)
         browser.close()
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   adaptDurableChangeSet,
   buildChangeSet,
@@ -31,6 +31,7 @@ interface ChangeSetDialogProps {
   onAskAgent?: (prompt: string) => void;
   onDurableChangeSet?: (detail: DurableChangeSetDetail) => void;
   canCommit?: boolean;
+  onApplied?: () => void | Promise<void>;
 }
 
 function statusLabel(status: ChangeSet["geometry"]["status"]) {
@@ -71,20 +72,32 @@ export default function ChangeSetDialog({
   onAskAgent,
   onDurableChangeSet,
   canCommit = true,
+  onApplied,
 }: ChangeSetDialogProps) {
   const [changeSet, setChangeSet] = useState<ChangeSet | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [error, setError] = useState("");
   const [restoring, setRestoring] = useState(false);
   const [reviewNote, setReviewNote] = useState("");
+  const [detail, setDetail] = useState<DurableChangeSetDetail | null>(null);
+  const generation = useRef(0);
+  const active = useRef(false);
+  useEffect(() => {
+    active.current = open;
+    generation.current += 1;
+    return () => { active.current = false; generation.current += 1; };
+  }, [open, panelId, changeSetId]);
 
   const load = useCallback(async () => {
-    if (!open) return;
+    if (!open || !active.current) return;
+    const requestGeneration = generation.current;
     setStatus("loading");
     setError("");
     try {
       if (changeSetId) {
         const detail = await getDurableChangeSet(changeSetId);
+        if (generation.current !== requestGeneration) return;
+        setDetail(detail);
         onDurableChangeSet?.(detail);
         setChangeSet(adaptDurableChangeSet(detail, panelId));
         setStatus("success");
@@ -103,9 +116,12 @@ export default function ChangeSetDialog({
       const base = current.parent_snapshot_id
         ? await getModelSnapshot(current.parent_snapshot_id)
         : null;
+      if (generation.current !== requestGeneration) return;
+      setDetail(null);
       setChangeSet(buildChangeSet(current, base));
       setStatus("success");
     } catch (reason) {
+      if (generation.current !== requestGeneration) return;
       setError(reason instanceof Error ? reason.message : "变更证据加载失败");
       setStatus("error");
     }
@@ -125,6 +141,7 @@ export default function ChangeSetDialog({
 
   const rollback = async () => {
     if (!changeSet?.baseRevisionId) return;
+    const actionGeneration = generation.current;
     setRestoring(true);
     setError("");
     try {
@@ -137,25 +154,29 @@ export default function ChangeSetDialog({
           }
           await rejectDurableChangeSet(changeSet.id, reviewNote.trim());
         }
+        if (generation.current !== actionGeneration) return;
         await load();
+        if (generation.current === actionGeneration && changeSet.reviewStatus === "committed") await onApplied?.();
         return;
       }
       const restored = await getModelSnapshot(changeSet.baseRevisionId);
+      if (generation.current !== actionGeneration) return;
       if (!onRestore) throw new Error("请从原始历史面板恢复此快照");
       const accepted = await onRestore(restored);
       if (accepted === false) {
         throw new Error("当前连接不可用，未提交回滚任务");
       }
-      onClose();
+      if (generation.current === actionGeneration) onClose();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "回滚失败");
+      if (generation.current === actionGeneration) setError(reason instanceof Error ? reason.message : "回滚失败");
     } finally {
-      setRestoring(false);
+      if (generation.current === actionGeneration) setRestoring(false);
     }
   };
 
   const requestModification = async () => {
     if (!changeSet) return;
+    const actionGeneration = generation.current;
     if (changeSet.source === "durable") {
       if (!reviewNote.trim()) {
         setError("请求修改前请填写审查意见");
@@ -167,9 +188,10 @@ export default function ChangeSetDialog({
           reviewNote.trim(),
         );
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : "请求修改失败");
+        if (generation.current === actionGeneration) setError(reason instanceof Error ? reason.message : "请求修改失败");
         return;
       }
+      if (generation.current !== actionGeneration) return;
       if (!onAskAgent) { await load(); return; }
     }
     const parameterSummary = changeSet.parameterChanges.length
@@ -186,30 +208,78 @@ export default function ChangeSetDialog({
 
   const accept = async () => {
     if (!changeSet || changeSet.source !== "durable") return;
+    const actionGeneration = generation.current;
     setRestoring(true);
     setError("");
     try {
       await acceptDurableChangeSet(changeSet.id, reviewNote.trim());
+      if (generation.current !== actionGeneration) return;
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "接受变更失败");
+      if (generation.current === actionGeneration) setError(reason instanceof Error ? reason.message : "接受变更失败");
     } finally {
-      setRestoring(false);
+      if (generation.current === actionGeneration) setRestoring(false);
     }
   };
 
   const commit = async () => {
     if (!changeSet || changeSet.source !== "durable") return;
+    const actionGeneration = generation.current;
     setRestoring(true);
     setError("");
     try {
       await commitDurableChangeSet(changeSet.id);
+      if (generation.current !== actionGeneration) return;
       await load();
+      if (generation.current === actionGeneration) await onApplied?.();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "提交版本失败");
+      if (generation.current === actionGeneration) setError(reason instanceof Error ? reason.message : "提交版本失败");
     } finally {
-      setRestoring(false);
+      if (generation.current === actionGeneration) setRestoring(false);
     }
+  };
+
+  const apply = async () => {
+    if (!changeSet || changeSet.source !== "durable") return;
+    const id = changeSet.id, actionGeneration = generation.current;
+    const present = async () => {
+      const current = await getDurableChangeSet(id);
+      if (generation.current === actionGeneration) {
+        setDetail(current); setChangeSet(adaptDurableChangeSet(current, panelId)); onDurableChangeSet?.(current);
+      }
+      return current;
+    };
+    setRestoring(true); setError("");
+    try {
+      let current = await present();
+      if (generation.current !== actionGeneration) return;
+      if (current.status === "pending_review") {
+        try { await acceptDurableChangeSet(id, reviewNote.trim()); }
+        catch (reason) {
+          current = await present();
+          if (!["accepted", "committed"].includes(current.status)) throw reason;
+        }
+        current = await present();
+      }
+      if (generation.current !== actionGeneration) return;
+      if (current.status === "accepted") {
+        try { await commitDurableChangeSet(id); }
+        catch (reason) {
+          current = await present();
+          if (current.status !== "committed") throw reason;
+        }
+        current = await present();
+      }
+      if (generation.current !== actionGeneration) return;
+      if (current.status !== "committed") throw new Error("此候选当前不能应用，请检查审查状态和版本基线。");
+      await onApplied?.();
+    } catch (reason) {
+      if (generation.current !== actionGeneration) return;
+      // A successful accept is never undone locally when commit or its response
+      // fails. Query the same candidate; the next click resumes its actual state.
+      try { await present(); } catch { /* keep the last server-confirmed state */ }
+      if (generation.current === actionGeneration) setError(reason instanceof Error ? reason.message : "应用结果尚待核对，请重试同一候选");
+    } finally { if (generation.current === actionGeneration) setRestoring(false); }
   };
 
   return (
@@ -229,6 +299,7 @@ export default function ChangeSetDialog({
               !changeSet
               || (changeSet?.source !== "durable" && !onAskAgent)
               || restoring
+              || (changeSet?.source === "durable" && detail?.can_review !== true)
               || (
                 changeSet.source === "durable"
                 && changeSet.reviewStatus !== "pending_review"
@@ -243,7 +314,7 @@ export default function ChangeSetDialog({
             className="workspace-button"
             disabled={
               !changeSet?.baseRevisionId
-              || (changeSet?.reviewStatus === "committed" && !canCommit)
+              || (changeSet?.source === "durable" && (changeSet.reviewStatus === "committed" ? detail?.can_rollback !== true : detail?.can_review !== true))
               || (changeSet?.source !== "durable" && !onRestore)
               || restoring
               || (
@@ -268,6 +339,7 @@ export default function ChangeSetDialog({
             disabled={
               changeSet?.source !== "durable"
               || changeSet.reviewStatus !== "pending_review"
+              || detail?.can_review !== true || detail?.base_is_current !== true
               || changeSet.validation.status === "fail" || changeSet.validation.status === "unknown"
               || (changeSet.validation.status === "warning" && !reviewNote.trim())
               || restoring
@@ -282,6 +354,7 @@ export default function ChangeSetDialog({
             disabled={
               changeSet?.source !== "durable"
               || changeSet.reviewStatus !== "accepted"
+              || detail?.can_commit !== true || detail?.base_is_current !== true
               || changeSet.validation.status === "fail" || changeSet.validation.status === "unknown"
               || !canCommit
               || restoring
@@ -291,6 +364,11 @@ export default function ChangeSetDialog({
           >
             提交版本
           </button>
+          {detail?.can_commit && canCommit ? <button className="workspace-button workspace-button--primary" type="button"
+            disabled={restoring || !["pending_review", "accepted", "committed"].includes(detail.status)
+              || (detail.status !== "committed" && (!detail.base_is_current || changeSet?.validation.status === "fail" || changeSet?.validation.status === "unknown"))
+              || (detail.status === "pending_review" && (!detail.can_review || (changeSet?.validation.status === "warning" && !reviewNote.trim())))}
+            onClick={() => void apply()}>{restoring ? "正在核对并应用" : detail.status === "committed" ? "同步已提交版本" : detail.status === "accepted" ? "继续提交此候选" : "应用修改"}</button> : null}
         </div>
       )}
       onClose={onClose}
@@ -298,6 +376,14 @@ export default function ChangeSetDialog({
       title="变更审查"
     >
       <div className="space-y-5 p-5">
+        {detail ? <div className="rounded border border-[var(--line)] p-3 type-caption" data-testid="candidate-base">
+          <p>候选 {detail.candidate_revision_id.slice(0,8)} · 基线 {detail.base_revision_id.slice(0,8)} / {detail.base_state_version === null ? "代次未知" : `v${detail.base_state_version}`}</p>
+          <p>当前 Head {detail.head_revision_id?.slice(0,8)} / v{detail.head_state_version}</p>
+          {detail.status === "accepted" ? <p role="status">已接受，尚未提交。重试将继续提交同一候选。</p> : null}
+          {detail.status === "committed" ? <p role="status">服务器已提交；工作区以同步后的文档 Head 为准。</p> : null}
+          {!detail.base_is_current && ["pending_review", "accepted"].includes(detail.status) ? <p role="alert">候选基线或合并来源已过期，请基于当前版本重新确认。</p> : null}
+          {detail.merge_source ? <p>合并来源 {detail.merge_source.source_revision_id.slice(0,8)} / v{detail.merge_source.source_state_version}；来源当前 {detail.merge_source.source_head_revision_id.slice(0,8)} / v{detail.merge_source.source_head_state_version}</p> : null}
+        </div> : null}
         {status === "loading" ? (
           <InlineState detail="正在读取当前版本及其明确记录的父版本。" title="正在加载变更证据" tone="info" />
         ) : null}
@@ -328,7 +414,7 @@ export default function ChangeSetDialog({
             <section className="border-b border-[var(--line)] pb-4">
               <div className="grid gap-3 type-body sm:grid-cols-3">
                 <div><p className="text-[var(--faint)]">修改目标</p><p className="mt-1 text-[var(--ink)]">{changeSet.objective || "未记录"}</p></div>
-                <div><p className="text-[var(--faint)]">版本关系</p><p className="mt-1 text-[var(--ink)]">{changeSet.baseVersion ? `v${changeSet.baseVersion} → v${changeSet.targetVersion}` : `父版本未知 → v${changeSet.targetVersion}`}</p></div>
+                <div><p className="text-[var(--faint)]">修订序号</p><p className="mt-1 text-[var(--ink)]">{changeSet.baseVersion ? `#${changeSet.baseVersion} → #${changeSet.targetVersion}` : `父修订未知 → #${changeSet.targetVersion}`}</p></div>
                 <div><p className="text-[var(--faint)]">修改对象数</p><p className="mt-1 text-[var(--ink)]">{changeSet.modifiedObjectCount ?? "未知"}</p></div>
               </div>
               <p className="mt-3 break-all type-caption text-[var(--faint)]">

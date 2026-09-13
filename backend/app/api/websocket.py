@@ -18,9 +18,11 @@ from app.freecad.state_contract import (
     compile_parameter_operation_plan,
     read_verified_state_artifact,
 )
+from app.freecad.selection import SelectionContextV1
 from app.storage import history
 from app.services.durable_submission import (
     ensure_workspace_identity,
+    recover_session_submission,
     resolve_native_revision_restore,
     submit_durable_workflow,
 )
@@ -29,6 +31,9 @@ from app.services.operation_resolution import (
     load_revision_source_inventory,
     resolve_browser_submission,
 )
+from app.repositories.revisions import StaleBaseRevision
+from app.services.run_state import IdempotencyConflict
+from app.temporal_client import TemporalWorkerUnavailable
 from app.workflows.temporal import (
     FreeCADStructuredModificationV1,
     cancel_mcad_workflow,
@@ -42,6 +47,13 @@ _MAX_SESSIONS = 500
 sessions: "OrderedDict[str, dict[str, ConversationContext]]" = OrderedDict()
 
 _SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9\-]{1,128}$")
+
+
+def _submission_outcome(exc):
+    return "rejected" if isinstance(exc, (
+        ValueError, PermissionError, KeyError, StaleBaseRevision,
+        IdempotencyConflict, TemporalWorkerUnavailable,
+    )) else "unknown"
 
 
 def _get_context(session_id: str, panel_id: str) -> ConversationContext:
@@ -434,12 +446,15 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 )
             ),
             structured_modification=structured_modification,
+            **({"selection_context": SelectionContextV1.model_validate(data["selection_context"])}
+               if data.get("selection_context") is not None else {}),
             **({"revision_restore": revision_restore} if revision_restore else {}),
         )
         await send_json({
             "type": "task_submitted",
             "data": {
                 "workflow_run_id": str(submission.workflow_run_id),
+                "submission_id": str(durable_identity["idempotency_key"]),
                 "project_id": str(project_id),
                 "branch_id": str(branch_id),
                 "expected_base_revision_id": str(
@@ -487,6 +502,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             "data": {
                 "workflow_run_id": str(submission.workflow_run_id),
                 "project_id": str(project_id),
+                "submission_id": str(durable_identity["idempotency_key"]),
                 "branch_id": str(branch_id),
                 "expected_base_revision_id": str(
                     expected_base_revision_id
@@ -511,10 +527,24 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 "restore_revision",
                 "cancel",
                 "resume_run",
+                "recover_submission",
             }:
                 if not await history.panel_writable_by_session(panel_id, session_id, user_id):
                     await websocket.close(code=4003, reason="Panel belongs to another session")
                     return
+
+            if msg_type == "recover_submission":
+                try:
+                    receipt = await recover_session_submission(principal_context, session_id=session_id,
+                        panel_id=panel_id, idempotency_key=data.get("idempotency_key"))
+                    await send_json({"type":"task_submitted" if receipt else "submission_not_found",
+                        "data":receipt or {"panel_id":panel_id,"submission_id":data["idempotency_key"]}})
+                except Exception as exc:
+                    await send_json({"type":"generation_result","data":{"success":False,
+                        "panel_id":panel_id,"submission_id":data.get("idempotency_key"),
+                        "submission_outcome":"rejected" if isinstance(exc,(ValueError,PermissionError,KeyError)) else "unknown",
+                        "error":{"type":type(exc).__name__,"message":"原请求状态读取失败，请恢复连接后继续查询。"}}})
+                continue
 
             if msg_type in {
                 "user_message",
@@ -547,6 +577,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         "type": "generation_result",
                         "data": {
                             "success": False,
+                            "submission_id": data.get("idempotency_key"),
+                            "submission_outcome": "rejected",
                             "error": {
                                 "type": "ValidationError",
                                 "message": str(exc),
@@ -566,6 +598,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     "type": "generation_result",
                     "data": {
                         "success": False,
+                        "submission_id": data.get("idempotency_key"),
+                        "submission_outcome": "rejected",
                         "error": {"type": "RateLimitError", "message": "请求过于频繁，请稍后再试"},
                         "panel_id": panel_id,
                     },
@@ -612,6 +646,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         "data": {
                             "success": False,
                             "error": error,
+                            "submission_id": str(durable_identity.get("idempotency_key") or ""),
+                            "submission_outcome": _submission_outcome(exc),
                             "panel_id": panel_id,
                         },
                     })
@@ -635,6 +671,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         "type": "generation_result",
                         "data": {
                             "success": False,
+                            "submission_id": str(durable_identity.get("idempotency_key") or ""),
+                            "submission_outcome": _submission_outcome(exc),
                             "error": public_generation_error(exc),
                             "panel_id": panel_id,
                         },

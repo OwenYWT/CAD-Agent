@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+from acceptance_paths import evidence_path
 import subprocess
 from uuid import uuid4
 import httpx
@@ -11,7 +12,7 @@ from cloud_document_acceptance import BASE,PRIVATE,call
 
 def main():
     private=json.loads(PRIVATE.read_text());owner=httpx.Client(headers={'Authorization':'Bearer '+private['owner']['token']})
-    evidence=json.loads(Path('/tmp/cad-expansion-release-http.json').read_text());path='/api/documents/'+private['document_id']
+    evidence=json.loads(evidence_path('cad-expansion-release-http.json').read_text());path='/api/documents/'+private['document_id']
     root=Path('/tmp')/('cad-bridge-failure-'+uuid4().hex[:10]);root.mkdir(mode=0o700)
     target=root/'target';target.mkdir();outside=root/'outside';outside.mkdir()
     script=Path(__file__).resolve().parents[2]/'app/integrations/local_bridge_client.py';config=root/'private.json'

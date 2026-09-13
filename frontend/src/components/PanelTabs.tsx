@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n/I18nContext";
 import { useSessionStore } from "../stores/sessionStore";
 import { Icon } from "./ui/Icon";
+import { guardDraft } from "../stores/draftGuard";
 
 /** Engineering conversations rendered in the existing project sidebar. */
 export default function PanelTabs() {
@@ -44,7 +45,7 @@ export default function PanelTabs() {
       <button
         aria-label={translate("新建对话")}
         className="ww-conversation-create type-control"
-        onClick={() => addPanel()}
+        onClick={() => guardDraft(() => { addPanel(); })}
         title={translate("新建对话")}
         type="button"
       >
@@ -83,7 +84,7 @@ export default function PanelTabs() {
                 <button
                   aria-current={isActive ? "page" : undefined}
                   className="ww-conversation-switch type-control"
-                  onClick={() => switchPanel(panel.id)}
+                  onClick={() => guardDraft(() => switchPanel(panel.id))}
                   onDoubleClick={() => startRename(panel.id, panel.title)}
                   type="button"
                 >
@@ -97,7 +98,7 @@ export default function PanelTabs() {
                   className="ww-conversation-close"
                   onClick={(event) => {
                     event.stopPropagation();
-                    removePanel(panel.id);
+                    guardDraft(() => removePanel(panel.id));
                   }}
                   title={translate("关闭")}
                   type="button"

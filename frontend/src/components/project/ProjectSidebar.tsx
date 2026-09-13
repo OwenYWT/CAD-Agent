@@ -9,6 +9,7 @@ import { AccountPanel } from "../AccountPanel";
 import { BrandMark } from "../common/BrandMark";
 import PanelTabs from "../PanelTabs";
 import { useI18n } from "../../i18n/I18nContext";
+import { guardDraft } from "../../stores/draftGuard";
 
 interface ProjectSidebarProps {
   collapsed: boolean;
@@ -59,7 +60,8 @@ export default function ProjectSidebar({ collapsed, mobileOpen, onCollapse, onMo
     return () => { cancelled = true; };
   }, []);
 
-  const restore = async (id: string) => {
+  const restore = (id: string) => guardDraft(() => { void restoreSelectedProject(id); });
+  const restoreSelectedProject = async (id: string) => {
     setStatus("loading");
     try {
       const project = await restoreHistoryProject(id);

@@ -161,6 +161,8 @@ async def modify(req: ModifyRequest, request: Request, api_key: str | None = Dep
             code=resolution.existing_code,
             modeling_backend=resolution.modeling_backend,
             operation_context=resolution.operation_context,
+            **({"expected_state_version": req.expected_state_version} if req.expected_state_version is not None else {}),
+            **({"selection_context": req.selection_context} if req.selection_context is not None else {}),
         )
         response = await wait_for_compatibility_response(
             principal,

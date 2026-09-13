@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import os
 import signal
 import socket
@@ -433,7 +434,23 @@ async def test_agent_v2_real_freecad_generation_validation_seal_and_commit():
     from app.services.cloud_documents import document_snapshot, document_events, DocumentConflict
     from app.services.feature_annotations import save_annotation
     semantic = await document_snapshot(owner, initial.branch_id)
-    hole_feature = next(f for f in semantic['features'] if f['kernel_name']=='Hole')
+    # Both a native Hole and a circular through-all Pocket represent the user's
+    # requested geometry. Names and that modeling choice are not requirements.
+    holes = [f for f in semantic['features'] if f['type'] in {'PartDesign::Hole', 'PartDesign::Pocket'}]
+    assert len(holes) == 1, [(f['type'], f['kernel_name']) for f in semantic['features']]
+    hole_feature = holes[0]
+    def assert_centered_cut(feature, radius):
+        shape = feature['shape']
+        low, high = shape['bounds_mm']['min'], shape['bounds_mm']['max']
+        assert [b-a for a,b in zip(low, high)] == pytest.approx([100,60,10])
+        assert shape['volume'] == pytest.approx(100*60*10 - math.pi*radius**2*10)
+        circular = [b for b in feature['topology_bindings'] if b['geometry'] == 'circular']
+        assert len(circular) == 2
+        for binding in circular:
+            assert binding['radius_mm'] == pytest.approx(radius)
+            assert [binding['center']['x']-low[0], binding['center']['y']-low[1]] == pytest.approx([50,30])
+        assert sorted(b['center']['z'] for b in circular) == pytest.approx([low[2], high[2]])
+    assert_centered_cut(hole_feature, 3)
     annotation = dict(revision_id=generated_revision_id, expected_version=0,
         annotation_id=uuid4(), role='定位孔', intent='保持同心，适配定位销直径')
     saved = await save_annotation(owner,initial.branch_id,UUID(hole_feature['id']),**annotation)
@@ -444,7 +461,7 @@ async def test_agent_v2_real_freecad_generation_validation_seal_and_commit():
             **{**annotation,'annotation_id':uuid4(),'intent':'stale edit'})
     annotated = await document_snapshot(owner,initial.branch_id)
     assert annotated['state_version']==semantic['state_version']
-    assert next(f for f in annotated['features'] if f['kernel_name']=='Hole')['role']=='定位孔'
+    assert next(f for f in annotated['features'] if f['id']==hole_feature['id'])['role']=='定位孔'
     events=await document_events(owner,initial.branch_id,semantic['event_sequence'])
     assert events[-1]['event_type']=='feature.annotated'
     modify_objective = (
@@ -537,8 +554,9 @@ async def test_agent_v2_real_freecad_generation_validation_seal_and_commit():
     modified_state_bytes = await get_object(modified_artifacts["state"]["object_key"])
     modified_state = json.loads(modified_state_bytes)
     objects = {item["name"]: item for item in modified_state["objects"]}
-    assert objects["Hole"]["properties"]["Diameter"].startswith("8.00 mm")
-    assert objects["Chamfer"]["type_id"] == "PartDesign::Chamfer"
+    assert hole_feature['kernel_name'] in objects
+    chamfers = [obj for obj in objects.values() if obj['type_id'] == 'PartDesign::Chamfer']
+    assert len(chamfers) == 1 and chamfers[0]['properties']['Size'].startswith('1.00 mm')
 
     modified_change_set_id = UUID(modify_result["change_set_id"])
     modified_accepted = await accept_change_set(
@@ -564,7 +582,9 @@ async def test_agent_v2_real_freecad_generation_validation_seal_and_commit():
         )
     assert str(modified_head) == modify_result["candidate_revision_id"]
     current = await document_snapshot(owner,initial.branch_id)
-    assert next(f for f in current['features'] if f['kernel_name']=='Hole')['annotation_version']==2
+    current_hole = next(f for f in current['features'] if f['id']==hole_feature['id'])
+    assert current_hole['annotation_version']==2
+    assert_centered_cut(current_hole, 4)
     async with tenant_transaction(owner.tenant_id,owner.principal_id) as connection:
         reports=(await connection.execute(text("SELECT outcome,evidence FROM agent_validation_evidence WHERE workflow_run_id IN (:generated,:modified) AND gate='dfm'"),
             {'generated':created.workflow_id,'modified':modified_run.workflow_id})).mappings().all()
@@ -996,6 +1016,126 @@ class _V2PassingVisualStub:
             runtime_provenance=runtime_provenance,
             provider_provenance=provenance,
         )
+
+
+class _NativeBudgetRequirements:
+    async def plan_new(self, messages):
+        from app.models.schemas import CADPlan, DesignBrief
+        return CADPlan(description=messages[-1]['content'], part_type='plate',
+            dimensions={'length':60,'width':40,'thickness':8},
+            features=['through_hole:diameter=6,position=centered'], constraints=[],
+            modeling_hint='extrude_cut', design_brief=DesignBrief(intent_summary=messages[-1]['content'],
+                artifact_type='plate',open_questions=['必须先确认此受控负例计划']))
+
+
+class _NativeBudgetPlanner(DurableAgentPlanner):
+    def __init__(self, mode):
+        super().__init__(planner=_NativeBudgetRequirements())
+        self.mode = mode
+
+    def compose_freecad_generation(self, *args, **kwargs):
+        from app.agent.durable_plan import ValidationGatePolicy, GateMode
+        plan = super().compose_freecad_generation(*args, **kwargs)
+        return plan.model_copy(update={'validation_policy':plan.validation_policy.model_copy(update={
+            'visual':ValidationGatePolicy(mode=GateMode(self.mode),repair_budget=1)})})
+
+
+class _InsufficientNativeRepair:
+    """Only provider output is controlled; both native executions remain real."""
+    def __init__(self):
+        from app.freecad.operation_generator import FreeCADOperationGenerator
+        self.compiler = FreeCADOperationGenerator()
+        self.repairs = 0
+
+    async def generate(self, **kwargs):
+        return await self.compiler.generate(**kwargs)
+
+    async def repair(self, *, source_code, **kwargs):
+        from app.freecad.contracts import FreeCADOperationPlan
+        from app.freecad.operation_generator import FreeCADOperationGenerationResult
+        self.repairs += 1
+        plan = FreeCADOperationPlan.model_validate_json(source_code).model_copy(update={'document_name':'InsufficientVisualRepair'})
+        source = plan.model_dump_json()
+        return FreeCADOperationGenerationResult(operation_plan=plan,source_code=source,
+            generator_kind='controlled_negative_repair',provenance={
+                **_controlled_provenance(),'provider':'controlled-negative-provider',
+                'response_hash':hashlib.sha256(source.encode()).hexdigest()})
+
+
+class _NativeNegativeVisual:
+    """Deterministic negative vision judgments on actual rendered model images."""
+    def __init__(self, outcome):
+        self.outcome = outcome
+        self.judgments = 0
+
+    async def report(self, *, renders, runtime_provenance, **kwargs):
+        assert renders and runtime_provenance, 'the renderer and kernel must execute'
+        self.judgments += 1
+        return DurableVisualReport(schema_version='durable-visual-report.v1',outcome=self.outcome,
+            renders=renders,runtime_provenance=runtime_provenance,
+            judgment=VisualJudgment(is_match=False,confidence=0.99) if self.outcome=='failed' else None,
+            issues=('controlled negative vision: design remains unverified',),
+            provider_provenance={**_controlled_provenance(),'provider':'controlled-negative-vision',
+                'provider_response_id':f'negative-judgment-{self.judgments}'})
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('mode,outcome,expected_repairs',[
+    ('advisory','failed',1),('required','failed',1),('required','indeterminate',0),
+])
+async def test_native_visual_negative_budget_with_real_kernel(mode, outcome, expected_repairs):
+    """T10: real PG/Temporal/FreeCAD/render/S3; controlled provider negatives."""
+    from app.services.run_state import create_workflow
+    owner, project_id, initial = await _seed_project('native-budget-'+mode+'-'+outcome)
+    objective = 'Create a 60x40x8 mm plate with one centered 6 mm through hole.'
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+        created = await create_workflow(conn,tenant_id=owner.tenant_id,project_id=project_id,
+            requested_by_principal_id=owner.principal_id,kind='mcad.agent.v2.generate',
+            idempotency_key=f'native-budget-{project_id}',request_payload={'objective':objective})
+    request = McadAgentWorkflowV2Request(workflow_run_id=created.workflow_id,tenant_id=owner.tenant_id,
+        project_id=project_id,principal_id=owner.principal_id,branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,operation='generate',modeling_backend='freecad',
+        objective=objective,confirmation_timeout_seconds=90)
+    client = await get_temporal_client()
+    native,visual = _InsufficientNativeRepair(),_NativeNegativeVisual(outcome)
+    async with build_agent_v2_workflow_worker(client,backend=get_execution_backend(),
+            durable_planner=_NativeBudgetPlanner(mode),freecad_operations=native,durable_visual=visual):
+        handle = await client.start_workflow('McadAgentWorkflowV2',request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),task_queue=settings.temporal_agent_v2_task_queue)
+        await _wait_for_status(owner,created.workflow_id,{'waiting_confirmation'})
+        await confirm_mcad_workflow(created.workflow_id,accepted=True,note='Controlled negative with real native execution',
+            workflow_kind='mcad.agent.v2.generate')
+        with pytest.raises(WorkflowFailureError) as failure:
+            await asyncio.wait_for(handle.result(),timeout=240)
+        expected_error = 'agent_visual_validation_indeterminate' if outcome == 'indeterminate' else 'agent_visual_validation_failed'
+        assert getattr(failure.value.cause, 'type', None) == expected_error
+    assert native.repairs==expected_repairs and visual.judgments==expected_repairs+1
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+        assert await conn.scalar(text('SELECT status FROM workflow_runs WHERE id=:id'),{'id':created.workflow_id})=='failed'
+        assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'),{'id':initial.branch_id})==initial.revision_id
+        for table,column in (('change_sets','source_workflow_run_id'),('artifacts','workflow_run_id')):
+            assert await conn.scalar(text(f'SELECT count(*) FROM {table} WHERE {column}=:id'),{'id':created.workflow_id})==0
+        gates = (await conn.execute(text('SELECT gate,mode,outcome,staging_manifest_id FROM agent_validation_evidence WHERE workflow_run_id=:id ORDER BY created_at,id'),{'id':created.workflow_id})).mappings().all()
+        attempts = (await conn.execute(text('SELECT s.kind,s.step_key,a.status,a.attempt_number FROM step_runs s JOIN execution_attempts a ON a.step_run_id=s.id WHERE s.workflow_run_id=:id'),{'id':created.workflow_id})).mappings().all()
+    geometry = [g for g in gates if g['gate']=='geometry']
+    visions = [g for g in gates if g['gate']=='visual']
+    assert len(geometry)==expected_repairs+1 and all(g['outcome']=='passed' for g in geometry)
+    assert len({g['staging_manifest_id'] for g in geometry})==len(geometry)
+    assert len(visions)==len(geometry) and all(g['outcome']==outcome and g['mode']==mode for g in visions)
+    # Temporal can retry a timed-out infrastructure attempt without spending a
+    # provider repair. The live regression witnessed a heartbeat timeout here.
+    # Require exactly one successful, latest fenced attempt per logical step,
+    # with all earlier attempts terminal; never equate retries to model repairs.
+    for key in {a['step_key'] for a in attempts}:
+        step_attempts = [a for a in attempts if a['step_key'] == key]
+        winners = [a for a in step_attempts if a['status'] == 'succeeded']
+        assert len(winners) == 1 and winners[0]['attempt_number'] == max(a['attempt_number'] for a in step_attempts), step_attempts
+        assert all(a['status'] in {'succeeded','failed','cancelled','timed_out'} for a in step_attempts), step_attempts
+    print('CAD_GATE_BUDGET='+json.dumps({'workflow_id':str(created.workflow_id),'mode':mode,'outcome':outcome,
+        'repairs':native.repairs,'real_native_and_validation_attempts':len(attempts),
+        'geometry_checks':len(geometry),'visual_checks':len(visions),
+        'retired_infrastructure_attempts':sum(a['status'] != 'succeeded' for a in attempts),
+        'head_unchanged':True,'no_submittable_candidate':True}))
 
 
 class _V2MismatchThenPassingVisualStub(_V2PassingVisualStub):

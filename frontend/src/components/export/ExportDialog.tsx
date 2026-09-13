@@ -33,9 +33,11 @@ interface ExportDialogProps {
   jobs: ExportJob[];
   requestId?: string | null;
   onClose: () => void;
+  viewLabel?: string;
+  canExport?: boolean;
 }
 
-export default function ExportDialog({ open, jobs, requestId, onClose }: ExportDialogProps) {
+export default function ExportDialog({ open, jobs, requestId, onClose, viewLabel, canExport = true }: ExportDialogProps) {
   const [active, setActive] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [onshapeStatus, setOnshapeStatus] = useState<AsyncStatus>("idle");
@@ -74,7 +76,7 @@ export default function ExportDialog({ open, jobs, requestId, onClose }: ExportD
   }, [loadOnshape, open]);
 
   const download = async (job: ExportJob) => {
-    if (!job.artifact) return;
+    if (!canExport || !job.artifact) return;
     setActive(job.id);
     setDownloadError(null);
     try {
@@ -87,7 +89,7 @@ export default function ExportDialog({ open, jobs, requestId, onClose }: ExportD
   };
 
   const publish = async () => {
-    if (!requestId || !stepArtifact) return;
+    if (!canExport || !requestId || !stepArtifact) return;
     setOnshapeAction("publish");
     setOnshapeError(null);
     try {
@@ -113,11 +115,11 @@ export default function ExportDialog({ open, jobs, requestId, onClose }: ExportD
     }
   };
 
-  const canPublish = Boolean(onshapeConfig?.configured && requestId && stepArtifact);
+  const canPublish = Boolean(canExport && onshapeConfig?.configured && requestId && stepArtifact);
 
   return (
     <WorkspaceDialog
-      description="只显示本次生成结果实际提供的格式；不可用格式不会创建假下载。"
+      description={viewLabel || "只显示当前查看版本实际提供的文件。"}
       footer={<div className="flex justify-end"><button className="workspace-button" onClick={onClose} type="button">完成</button></div>}
       onClose={onClose}
       open={open}
@@ -127,7 +129,7 @@ export default function ExportDialog({ open, jobs, requestId, onClose }: ExportD
         <section>
           <h3 className="mb-2 type-section-heading  text-[var(--muted)]">本地产物</h3>
           {downloadError ? <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 type-body text-red-800" role="alert">{downloadError}</div> : null}
-          {jobs.length ? (
+          {!canExport ? <InlineState detail="当前账号可查看模型，没有导出权限。" title="无法导出" /> : jobs.length ? (
             <div className="divide-y divide-[var(--line)] overflow-hidden rounded-lg border border-[var(--line)]">
               {jobs.map((job) => (
                 <div className="flex min-h-[66px] items-center gap-3 px-4 py-3" key={job.id}>

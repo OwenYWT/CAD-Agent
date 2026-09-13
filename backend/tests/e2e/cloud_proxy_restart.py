@@ -7,6 +7,7 @@ import base64
 import json
 import os
 from pathlib import Path
+from acceptance_paths import evidence_path
 import subprocess
 import time
 from uuid import uuid4
@@ -109,7 +110,7 @@ def main():
                 'proxy_recovered_seconds': round(ready_seconds, 3), 'frontend_not_restarted': True,
                 'authenticated_rest_and_query_preserved': True, 'session_websocket_reconnected': True,
                 'open_browser_document_reconnected': True, 'document_head_unchanged': True, 'page_errors': errors}
-    Path('/tmp/cad-expansion-proxy-restart.json').write_text(json.dumps(evidence, indent=2))
+    evidence_path('cad-expansion-proxy-restart.json').write_text(json.dumps(evidence, indent=2))
     print('CAD_PROXY_RESTART='+json.dumps(evidence), flush=True)
 
 

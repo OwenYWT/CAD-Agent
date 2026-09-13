@@ -1,0 +1,19 @@
+{
+  "source_sha256": "f5f9f79398b947a038d576ecf5145b62f9206a2cf96f4f0c9fd3c237283e1c2d",
+  "redactions": [],
+  "evidence": {
+    "status": "passed",
+    "held_revision": "c72698ca-2912-47da-adf7-a20790f6a7d5",
+    "chosen_historical_revision": "e767ae0a-f7af-4ef7-a7ff-c96fc132830c",
+    "current_revision": "dad82305-424f-4316-8a2b-41adbbebdf62",
+    "late_history_response_ignored": true,
+    "historical_parameter_value": 18.0,
+    "history_edit_and_agent_disabled": true,
+    "history_step_sha256": "5093b5599a3a00e9943a6124e5848f6b589a960a668502f96cc14df9814955c5",
+    "current_step_sha256": "8ade9790f2be836932b7582feaeeab8e503e214dc79d546aec38d54a88a32e0e",
+    "viewer_parameters_and_downloads_same_revision": true,
+    "noncurrent_rollback_status": 409,
+    "head_unchanged": true,
+    "page_errors": []
+  }
+}

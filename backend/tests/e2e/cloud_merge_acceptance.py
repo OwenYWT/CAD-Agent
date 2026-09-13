@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+from acceptance_paths import evidence_path
 from uuid import uuid4
 
 import httpx
@@ -34,7 +35,7 @@ def merge_body(comparison, mode='parameters'):
 
 def main():
     private=json.loads(Path(os.environ['CAD_NATIVE_E2E_PRIVATE']).read_text())
-    fixture=json.loads(Path('/tmp/cad-expansion-branch-document.json').read_text())
+    fixture=json.loads(Path(str(evidence_path('cad-expansion-branch-document.json'))).read_text())
     client=httpx.Client(headers={'Authorization':'Bearer '+private['owner']['token']})
     target,source=fixture['source_document_id'],fixture['document_id']
     target_path='/api/documents/'+target
@@ -67,7 +68,7 @@ def main():
     assert not conflict['can_merge_parameters'] and conflict['conflicts'],conflict
     call(client,'POST',target_path+'/merges',expected=409,json=merge_body(conflict))
     assert call(client,'GET',target_path)['head_revision_id']==merged['head_revision_id']
-    Path('/tmp/cad-expansion-merge-evidence.json').write_text(json.dumps({'target_document_id':target,
+    Path(str(evidence_path('cad-expansion-merge-evidence.json'))).write_text(json.dumps({'target_document_id':target,
         'source_document_id':source,'tenant_id':fixture['tenant_id'],'merged_workflow_id':submitted['workflow_run_id'],
         'merged_revision_id':merged['head_revision_id'],'conflict_comparison':conflict},ensure_ascii=False,indent=2))
     print('same-parameter conflict rejected; target checkpoint preserved',flush=True)

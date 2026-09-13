@@ -3,8 +3,10 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import type { CloudDocument, SemanticFeature } from "../../types/document";
 import type { SketchConstraint, SketchDetails, SketchDimensionType } from "../../types/sketch";
 import { dimensionLabels, editableDimension, previewSketch, sketchBounds, validDimension } from "../../adapters/sketchPreview";
-import { readDocumentSketch, updateSketchDimensions } from "../../services/engineeringService";
+import { readDocumentSketch, updateSketchDimensions, EngineeringApiError } from "../../services/engineeringService";
 import { useFeatureLease } from "../../hooks/useFeatureLease";
+import { useDraftGuard } from "../../hooks/useDraftGuard";
+import { guardDraft } from "../../stores/draftGuard";
 
 export default function SketchEditor({document,feature,onSubmitted}: {
   document: CloudDocument; feature: SemanticFeature; onSubmitted?: (taskId:string,document:CloudDocument)=>void;
@@ -15,12 +17,15 @@ export default function SketchEditor({document,feature,onSubmitted}: {
   const [key,setKey]=useState(()=>crypto.randomUUID());
   const [pending,setPending]=useState(false);
   const [error,setError]=useState("");
+  const [submittedId,setSubmittedId]=useState<string | null>(null);
+  const [attemptToken,setAttemptToken]=useState<string | null>(null);
+  const [uncertain,setUncertain]=useState(false);
   const [fitted,setFitted]=useState<[number,number,number,number] | null>(null);
   const drag=useRef<{geometry:number;kind:"radius"|"center";pointer:number} | null>(null);
   const lease=useFeatureLease(document,feature.id);
   useEffect(()=>{
     const controller=new AbortController();
-    void readDocumentSketch(base,feature,controller.signal).then(result=>{setDetails(result);setError("");}).catch((e: unknown)=>{
+    void readDocumentSketch(base,feature,controller.signal).then(result=>{if (!controller.signal.aborted) {setDetails(result);setError("");}}).catch((e: unknown)=>{
       if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "草图加载失败");
     });
     return ()=>controller.abort();
@@ -28,7 +33,7 @@ export default function SketchEditor({document,feature,onSubmitted}: {
   const geometry=useMemo(()=>previewSketch(details?.geometry || [],details?.constraints || [],values),[details,values]);
   const bounds=fitted || sketchBounds(details?.geometry || []), handleSize=bounds[2]*0.022;
   const stale=base.head_revision_id!==document.head_revision_id || base.state_version!==document.state_version;
-  const canEdit=document.can_edit && !!onSubmitted && !pending && !stale;
+  const canEdit=document.can_edit && !!onSubmitted && !pending && !stale && !submittedId && !uncertain;
   const constraints=details?.constraints || [];
   const updates=constraints.filter(c=>editableDimension(c) && values[c.index]!==undefined && Number(values[c.index])!==c.value)
     .map(c=>({constraint_index:c.index,expected_type:c.type as SketchDimensionType,value_mm:Number(values[c.index])}));
@@ -63,16 +68,24 @@ export default function SketchEditor({document,feature,onSubmitted}: {
     drag.current=null;
   };
   const submit=async()=>{
+    if (!valid || submittedId || (stale && !uncertain) || !document.can_edit) return;
     setPending(true);setError("");
     try {
-      const token=await lease.ensure();
+      const token=attemptToken || await lease.ensure();
+      setAttemptToken(token);
       const result=await updateSketchDimensions(base,feature,updates,key,token);
-      onSubmitted?.(result.workflow_run_id,document);
-      await lease.release();
-    } catch(e) {setError(e instanceof Error ? e.message : "草图修改失败");}
+      setSubmittedId(result.workflow_run_id);setUncertain(false);
+      onSubmitted?.(result.workflow_run_id,base);
+      void lease.release().catch(()=>{});
+    } catch(e) {
+      const definitive=e instanceof EngineeringApiError && e.httpStatus !== undefined && e.httpStatus < 500;
+      if (definitive) setAttemptToken(null);
+      setUncertain(!definitive);setError(e instanceof Error ? e.message : "草图修改失败");
+    }
     finally {setPending(false);}
   };
-  const refresh=()=>{setValues({});setDetails(null);setFitted(null);setKey(crypto.randomUUID());setBase(document);};
+  const refresh=()=>{setValues({});setDetails(null);setFitted(null);setKey(crypto.randomUUID());setBase(document);setSubmittedId(null);setAttemptToken(null);setUncertain(false);void lease.release().catch(()=>{});};
+  useDraftGuard((Object.keys(values).length > 0 && !submittedId) || pending, `${feature.label} 草图约束`, refresh);
   const dimensionStep=(c:SketchConstraint,delta:number)=>{
     const value=Number(values[c.index] ?? c.value)+delta;
     if (canEdit && validDimension(c,value)) change({[c.index]:String(Number(value.toFixed(3)))});
@@ -112,11 +125,12 @@ export default function SketchEditor({document,feature,onSubmitted}: {
           value={values[c.index] ?? c.value} disabled={!canEdit} onFocus={()=>{void lease.ensure().catch(()=>{});}} onChange={e=>change({[c.index]:e.target.value})} /><span>mm</span></>
           : <span>{c.value}</span>}
       </label>)}
-      {document.can_edit && onSubmitted ? <button className="workspace-button" type="button" disabled={!canEdit || !valid} onClick={()=>void submit()}>提交草图约束</button> : null}
-      {updates.length ? <p role="status" className="mt-2 type-caption">{updates.length} 项草稿尺寸尚未更新已提交模型。</p> : null}
+      {document.can_edit && onSubmitted ? <button className="workspace-button" type="button" disabled={(!canEdit && !uncertain) || pending || !valid || !!submittedId} onClick={()=>void submit()}>{uncertain ? "核对并重试同一草图请求" : submittedId ? "已提交候选计算" : "提交草图约束"}</button> : null}
+      {updates.length ? <p role="status" className="mt-2 type-caption">{submittedId ? `请求 ${submittedId.slice(0,8)} 已受理；保留本次提交值，等待候选审核。` : `${updates.length} 项草稿尺寸尚未更新已提交模型。`} 基线 v{base.state_version} · {base.head_revision_id.slice(0,8)}</p> : null}
+      {submittedId ? <button className="workspace-button mt-2" type="button" onClick={refresh}>结束本次草图查看</button> : null}
     </>}
     {stale ? <p role="status" className="mt-2 type-caption">文档已有新版本，请读取最新草图；当前草稿不会自动覆盖新约束。
-      <button className="workspace-button mt-2" type="button" onClick={refresh}>读取最新草图并清除草稿</button></p> : null}
+      <button className="workspace-button mt-2" type="button" onClick={()=>guardDraft(refresh)}>读取最新草图并清除草稿</button></p> : null}
     {lease.error ? <p role="alert" className="mt-2 type-caption text-red-700">{lease.error}</p> : null}
     {error ? <p role="alert" className="mt-2 type-caption text-red-700">{error}</p> : null}
   </section>;

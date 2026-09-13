@@ -18,7 +18,7 @@ def main():
     client = httpx.Client(headers={"Authorization": "Bearer " + private["owner"]["token"]})
     path = "/api/documents/" + old["document_id"]
     current = call(client, "GET", path)
-    assert old["projector_version"] == 2 and current["projector_version"] == 3
+    assert old["projector_version"] == 2 and current["projector_version"] == 4
     for key in ("head_revision_id", "state_version", "parameter_state_sha256", "fcstd"):
         assert current[key] == old[key], key
     previous = {f["id"]: f for f in old["features"]}

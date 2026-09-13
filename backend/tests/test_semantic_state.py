@@ -31,3 +31,25 @@ def test_agent_context_bounded_without_silently_claiming_completeness():
     assert result["features"][0]["name"] == "Feature299"
     assert len(result["features"]) == 1
     assert "huge" not in str(result)
+
+
+def test_native_hierarchy_never_invents_containment_from_dependencies_or_rewrites_history():
+    doc, revision = uuid4(), uuid4()
+    state = {"objects": [{"name": "Body", "type_id": "PartDesign::Body", "out": ["Pad", "Sketch"]},
+                         {"name": "Pad", "type_id": "PartDesign::Pad", "out": ["Sketch"]},
+                         {"name": "Sketch", "type_id": "Sketcher::SketchObject", "out": []}]}
+    before = project_semantic_state(doc, state, revision_id=revision, previous={"features": []})
+    assert before["hierarchy_status"] == "unavailable"
+    assert all(f["structure"] is None for f in before["features"])
+    measured = deepcopy(state)
+    for obj in measured["objects"]:
+        obj["structure"] = {"status": "measured", "category": "feature", "members": [], "body_tip": None}
+    measured["objects"][0]["structure"].update(category="body", members=["Sketch", "Pad"], body_tip="Pad")
+    after = project_semantic_state(doc, measured, revision_id=uuid4(), previous=before)
+    assert after["hierarchy_status"] == "measured"
+    body, pad, sketch = after["features"]
+    assert body["structure"]["member_ids"] == [sketch["id"], pad["id"]]
+    assert body["structure"]["body_tip_id"] == pad["id"]
+    assert pad["structure"]["container_ids"] == [body["id"]]
+    assert pad["dependencies"] == [sketch["id"]]
+    assert [f["last_modified"] for f in before["features"]] == [f["last_modified"] for f in after["features"]]

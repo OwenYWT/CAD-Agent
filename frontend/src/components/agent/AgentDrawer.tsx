@@ -12,9 +12,12 @@ interface AgentDrawerProps {
   onClose: () => void;
   onSend: (text: string) => boolean;
   onCancel?: () => void;
+  selectionLabel?: string;
+  onClearSelection?: () => void;
+  blockedReason?: string;
 }
 
-export default function AgentDrawer({ open, context, connection, suggestedPrompt, onClose, onSend, onCancel }: AgentDrawerProps) {
+export default function AgentDrawer({ open, context, connection, suggestedPrompt, onClose, onSend, onCancel, selectionLabel, onClearSelection, blockedReason }: AgentDrawerProps) {
   return (
     <WorkspaceDrawer
       description={`当前上下文：${AGENT_CONTEXT_LABELS[context]}。请求确认后通过现有 WebSocket 提交。`}
@@ -22,7 +25,8 @@ export default function AgentDrawer({ open, context, connection, suggestedPrompt
       open={open}
       title="询问 Agent"
     >
-      <AgentPanel connection={connection} context={context} onCancel={onCancel} onSend={onSend} suggestedPrompt={suggestedPrompt} />
+      <AgentPanel connection={connection} context={context} onCancel={onCancel} onSend={onSend} suggestedPrompt={suggestedPrompt}
+        selectionLabel={selectionLabel} onClearSelection={onClearSelection} blockedReason={blockedReason} />
     </WorkspaceDrawer>
   );
 }

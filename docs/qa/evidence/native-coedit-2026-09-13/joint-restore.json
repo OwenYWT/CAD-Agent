@@ -1,0 +1,32 @@
+{
+  "source_sha256": "18331806996a7adea108efe43b3064557d2a2c013196cd663785c042cc193e5c",
+  "redactions": [],
+  "evidence": {
+    "status": "passed",
+    "source_database": "cad_coedit_live_20260913",
+    "restored_database": "cad_coedit_restore_b41cf9c6f178",
+    "restored_bucket": "cad-coedit-restore-b41cf9c6f178",
+    "restored_api": "cad-coedit-restore-b41cf9c6f178-api",
+    "table_count": 69,
+    "row_count": 10437,
+    "all_rows_schema_sequences_rls_equal": true,
+    "auth_rows": {
+      "auth_users": 4,
+      "auth_sessions": 34,
+      "auth_invite_codes": 3
+    },
+    "original_session_and_fresh_password_login_verified": true,
+    "postgres_backup_sha256": "3319649d0a58ae1e75884a6a2b9758a9055e81a2e04c0dbf478539cc2b2ed51d",
+    "objects": {
+      "count": 609,
+      "all_bytes_and_metadata_verified": true,
+      "bucket_versioning": "Enabled"
+    },
+    "historical_revisions_downloaded": 16,
+    "head_revision_id": "dad82305-424f-4316-8a2b-41adbbebdf62",
+    "state_version": 15,
+    "all_historical_download_hashes_equal": true,
+    "source_preserved": true,
+    "scope": "quiesced MCAD PostgreSQL including auth + current S3 versions including immutable history; Temporal history replay is separate; no claim of in-flight Temporal DB restore or Fusion local runtime recovery"
+  }
+}

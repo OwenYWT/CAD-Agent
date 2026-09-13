@@ -65,20 +65,36 @@ async def main():
         operations.append(_operation('pad-triangle','feature.pad',{'name':'PadA','profile':'SketchA','length_mm':10}))
     if '--instance' in sys.argv[3:]:
         operations.append(_operation('instance-a','assembly.instance',{'object':'InstanceA','source':'BodyA','translation_mm':[45,0,0]}))
+    if '--four-holes' in sys.argv[3:]:
+        from app.freecad.operation_compiler import compile_common_generation
+        plate=compile_common_generation({'part_type':'plate','dimensions':{'length':60,'width':40,'thickness':8},
+            'features':['through_hole:diameter=6,position=centered'],'constraints':[]},output_formats=('step','stl'))
+        assert plate is not None
+        operations=[op.model_dump(mode='json') for op in plate.operations[:-1]]
+        hole_index=next(i for i,op in enumerate(operations) if op['action']=='feature.hole')
+        additions=[]
+        for index,(x,y) in enumerate([(25,20),(55,20),(25,40)],start=1):
+            additions.append(_operation(f'multi-circle-{index}','sketch.add_geometry',{'sketch':'HoleSketch',
+                'geometry':{'kind':'circle','center':{'x':x,'y':y},'radius_mm':3}}))
+            for kind,value in [('distance_x',x),('distance_y',y),('radius',3)]:
+                additions.append(_operation(f'multi-{index}-{kind}','sketch.add_constraint',{'sketch':'HoleSketch',
+                    'kind':kind,'first':{'geometry_index':index,**({'point_position':3} if kind!='radius' else {})},'value_mm':value}))
+        operations[hole_index:hole_index]=additions
     if '--many-instances' in sys.argv[3:]:
         for index in range(100):
             operations.append(_operation(f'instance-{index}','assembly.instance',{'object':f'Instance{index:03}',
                 'source':'BodyA','translation_mm':[45+(index%10)*20,(index//10)*20,0]}))
     triangle='--triangle' in sys.argv[3:]
     operations.append(_operation('export','document.export',{'formats':['fcstd','step','stl'],'basename':'triangle' if triangle else 'two_bodies'}))
+    name='MultiHolePlate' if '--four-holes' in sys.argv[3:] else 'ConstraintTriangle' if triangle else 'TwoBodies'
     task={'schema_version':'mcad-capability-task.v1','capability':'freecad','operation':'execute',
-          'params':{'plan':_plan('ConstraintTriangle' if triangle else 'TwoBodies',operations)},'inputs':{}}
+          'params':{'plan':_plan(name,operations)},'inputs':{}}
     primary=McadExecutionRequest(step_key='two-bodies',kind='mcad_model',capability='mcad.freecad',operation='execute',
         source_language='json',source_code=json.dumps(task),timeout_seconds=180,
         outputs=tuple(McadOutputRequest(name=k,media_type=v) for k,v in OUTPUTS.items()))
     workflow_id,handle=await start_mcad_workflow(tenant_id=owner.tenant_id,project_id=project_id,principal_id=owner.principal_id,
         branch_id=initial.branch_id,expected_base_revision_id=initial.revision_id,kind='mcad.execute',idempotency_key='two-bodies-'+str(initial.branch_id),
-        primary=primary,objective='Fully constrained 3/4/5 mm triangular prism for solver failure acceptance' if triangle else 'Two independent native cylinders for real collaboration acceptance',require_confirmation=False,commit_after_confirmation=False)
+        primary=primary,objective='One native Hole feature with four measured profiles' if '--four-holes' in sys.argv[3:] else 'Fully constrained 3/4/5 mm triangular prism for solver failure acceptance' if triangle else 'Two independent native cylinders for real collaboration acceptance',require_confirmation=False,commit_after_confirmation=False)
     assert handle is not None
     result=await asyncio.wait_for(handle.result(),timeout=180)
     assert result['status']=='succeeded',result

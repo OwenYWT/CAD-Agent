@@ -32,9 +32,10 @@ interface ValidationDialogProps {
   onAnalysis?: (analysis: DesignAnalysis) => void;
   onAskAgent: (prompt: string) => void;
   onRestore: (snapshot: ModelSnapshotDetail) => boolean | void | Promise<boolean | void>;
-  onRetryPrompt: () => unknown;
-  onRerunCode: () => unknown;
-  onResumeRun: (runId: string) => unknown;
+  onRetryPrompt?: () => unknown;
+  onRerunCode?: () => unknown;
+  onResumeRun?: (runId: string) => unknown;
+  viewLabel?: string;
 }
 
 function checkIconClass(status: ValidationResult["status"]) {
@@ -65,6 +66,7 @@ export default function ValidationDialog({
   onRetryPrompt,
   onRerunCode,
   onResumeRun,
+  viewLabel,
 }: ValidationDialogProps) {
   const [localAnalysis, setLocalAnalysis] = useState<DesignAnalysis | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "error" | "success">("idle");
@@ -109,7 +111,7 @@ export default function ValidationDialog({
 
   return (
     <WorkspaceDialog
-      description="汇总当前任务的设计简报、执行过程、几何检查、修复记录和历史版本。"
+      description={viewLabel || "汇总当前任务的设计简报、执行过程、几何检查、修复记录和历史版本。"}
       footer={
         <div className="flex justify-end gap-2">
           <button className="workspace-button" onClick={onClose} type="button">

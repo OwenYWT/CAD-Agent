@@ -13,9 +13,11 @@ from app.db import tenant_transaction
 from app.domain.projects import Permission, role_allows
 from app.domain.runs import WorkflowStatus
 from app.repositories.audit import append_audit_record
-from app.repositories.revisions import compare_and_swap_branch_head
+from app.repositories.revisions import compare_and_swap_branch_head, lock_candidate_generations
 from app.repositories.runs import append_workflow_event
 from app.services.run_state import transition_workflow
+from app.validation.gate_policy import gate_blocks
+from app.object_store import sha256_object
 
 
 class ChangeSetError(RuntimeError):
@@ -39,9 +41,8 @@ def build_agent_change_set_evidence(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Project immutable gate evidence into review validation and risks."""
     required = [row for row in evidence_rows if row["mode"] == "required"]
-    required_failures = [row for row in evidence_rows if (
-        row["mode"] == "required" and row["outcome"] != "passed"
-    ) or (row["gate"] == "visual" and row["outcome"] == "failed")]
+    required_failures = [row for row in evidence_rows
+                         if gate_blocks(row["gate"], row["mode"], row["outcome"])]
     incomplete = [row for row in evidence_rows if row["outcome"] != "passed"]
     validation = {
         "status": "failed" if required_failures else "warning" if incomplete else "passed" if required else "unknown",
@@ -91,7 +92,15 @@ def _utcnow() -> datetime:
 
 
 async def _locked_change_set(connection, change_set_id: UUID):
-    return (
+    identity = (await connection.execute(text("""
+        SELECT tenant_id, project_id, branch_id, source_workflow_run_id FROM change_sets WHERE id=:id
+    """), {"id": change_set_id})).mappings().one_or_none()
+    if identity is None:
+        return None
+    document, source_current = await lock_candidate_generations(connection, **dict(identity))
+    await connection.execute(text("SELECT id FROM project_branches WHERE id=:id FOR UPDATE"),
+                             {"id": identity["branch_id"]})
+    row = (
         await connection.execute(
             text(
                 """
@@ -102,12 +111,23 @@ async def _locked_change_set(connection, change_set_id: UUID):
                  AND b.project_id=c.project_id
                  AND b.id=c.branch_id
                 WHERE c.id=:change_set_id
-                FOR UPDATE OF c, b
+                FOR UPDATE OF c
                 """
             ),
             {"change_set_id": change_set_id},
         )
     ).mappings().one_or_none()
+    return {**dict(row), "current_state_version": document["state_version"] if document else None,
+            "merge_source_current": source_current} if row else None
+
+
+def _require_current_base(row) -> None:
+    if not row.get("merge_source_current", True):
+        raise ChangeSetStateConflict("stale merge source: 合并来源分支已更新，请重新比较两个分支")
+    if row.get("base_state_version") is None:
+        raise ChangeSetStateConflict("旧候选缺少可核验的原始版本代次，请基于当前版本重新生成候选")
+    if row["base_revision_id"] != row["head_revision_id"] or row["base_state_version"] != row["current_state_version"]:
+        raise ChangeSetStateConflict("stale branch head/state version: 候选基线已过期，文档已提交或回退，请基于当前版本重新确认")
 
 
 async def _require_permission(
@@ -116,6 +136,9 @@ async def _require_permission(
     principal_id: UUID,
     permission: Permission,
 ) -> None:
+    from app.services.cloud_documents import _active_workspace_member
+    if not await _active_workspace_member(connection, row["tenant_id"], principal_id):
+        raise PermissionError("工作区授权已失效")
     role = await connection.scalar(
         text(
             """
@@ -140,9 +163,11 @@ async def _require_permission(
 async def _require_evidence(connection, row, *, review_note: str | None = None) -> None:
     validation = dict(row["validation_summary"] or {})
     gates = validation.get("gates") or []
-    blocking = [gate for gate in gates if (
-        gate.get("mode") == "required" and gate.get("outcome") != "passed"
-    ) or (gate.get("gate") == "visual" and gate.get("outcome") == "failed")]
+    try:
+        blocking = [gate for gate in gates if gate_blocks(
+            gate.get("gate"), gate.get("mode"), gate.get("outcome"))]
+    except ValueError as exc:
+        raise ValidationRequired("候选检查策略或结果无法核验，请重新检查。") from exc
     if blocking:
         raise ValidationRequired("设计一致性或必需检查未通过，不能接受或提交该候选。")
     advisory = [gate for gate in gates if gate.get("mode") == "advisory" and gate.get("outcome") != "passed"]
@@ -168,6 +193,7 @@ async def _require_evidence(connection, row, *, review_note: str | None = None) 
                 WHERE f.tenant_id=:tenant_id
                   AND f.project_id=:project_id
                   AND f.revision_id=:candidate_revision_id
+                  AND NOT EXISTS(SELECT 1 FROM workflow_runs w WHERE w.id=f.workflow_run_id AND w.kind='mcad.scene')
                 """
             ),
             {
@@ -185,6 +211,19 @@ async def _require_evidence(connection, row, *, review_note: str | None = None) 
         raise ArtifactEvidenceRequired(
             "at least one committed artifact from a succeeded attempt is required"
         )
+    artifacts = (await connection.execute(text("""
+        SELECT object_key, sha256, size_bytes FROM artifacts a
+        WHERE tenant_id=:tenant AND project_id=:project AND revision_id=:revision
+          AND NOT EXISTS(SELECT 1 FROM workflow_runs w WHERE w.id=a.workflow_run_id AND w.kind='mcad.scene')
+    """), {"tenant": row["tenant_id"], "project": row["project_id"],
+           "revision": row["candidate_revision_id"]})).mappings().all()
+    for artifact in artifacts:
+        try:
+            measured = await sha256_object(artifact["object_key"])
+        except Exception as exc:
+            raise ArtifactEvidenceRequired("候选文件无法读取，请恢复文件后重试；当前版本未变更。") from exc
+        if measured["sha256"] != artifact["sha256"] or measured["size_bytes"] != artifact["size_bytes"]:
+            raise ArtifactEvidenceRequired("候选文件完整性校验失败，不能接受或提交。")
 
 
 async def _record_operation(
@@ -319,6 +358,7 @@ async def accept_change_set(
             raise ChangeSetStateConflict(
                 f"change set in {row['status']} cannot be accepted"
             )
+        _require_current_base(row)
         await _require_evidence(connection, row, review_note=review_note)
         await connection.execute(
             text(
@@ -376,6 +416,7 @@ async def commit_change_set(
             raise ChangeSetStateConflict(
                 f"change set in {row['status']} cannot be committed"
             )
+        _require_current_base(row)
         await _require_evidence(connection, row)
         advanced = await compare_and_swap_branch_head(
             connection,

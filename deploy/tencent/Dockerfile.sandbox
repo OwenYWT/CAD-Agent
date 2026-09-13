@@ -1,0 +1,6 @@
+# Incremental Tencent release from the previously verified AMD64 runtime.
+# Only projector code changed in this release. verify-images.py MUST check all
+# runtime and vendored source bytes against the release manifest before use.
+ARG VERIFIED_SANDBOX_IMAGE
+FROM ${VERIFIED_SANDBOX_IMAGE}
+COPY --chown=1000:1000 backend/app/freecad/state_projector.py /opt/cad-agent/freecad_state_projector.py

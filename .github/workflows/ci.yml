@@ -90,6 +90,16 @@ jobs:
       - name: Build pinned MCAD worker image
         run: docker build -f backend/sandbox/Dockerfile -t cad-agent-sandbox:ci .
 
+      - name: Reclaim intermediate build cache before starting integration services
+        # The disposable hosted runner must retain the final image, but not
+        # duplicate FreeCAD extraction layers from its multi-stage build.
+        # Previous runs exhausted the disk while unpacking Temporal.
+        run: |
+          docker builder prune --all --force
+          docker image inspect cad-agent-sandbox:ci --format '{{.Id}}'
+          docker system df
+          df -h /
+
       - name: Probe real CAD, inspect, render, and export operations
         run: |
           docker run --rm \

@@ -35,7 +35,7 @@ test("legacy durable zero-issue summary is checked against its actual gates", ()
 });
 
 test("native document enables simulation and only its current revision results complete the stage", () => {
-  const document = {document_id:"d",head_revision_id:"r2",fcstd:{sha256:"source"}} as CloudDocument;
+  const document = {document_id:"d",head_revision_id:"r2",revision_id:"r2",fcstd:{sha256:"source"}} as CloudDocument;
   const tasks = [{task_kind:"linear_static",source_revision_id:"r1",status:"succeeded"}] as EngineeringTaskSummary[];
   let model = adaptEngineeringProject("session", panel, null, document, tasks);
   assert.equal(model.stages.find(s=>s.id==="simulation")?.available, true);
@@ -44,4 +44,6 @@ test("native document enables simulation and only its current revision results c
   assert.equal(model.stages.find(s=>s.id==="simulation")?.status, "completed");
   model = adaptEngineeringProject("session", panel, null, document, [{...tasks[0],source_revision_id:"r2",status:"failed"}]);
   assert.equal(model.stages.find(s=>s.id==="simulation")?.status, "issue");
+  model = adaptEngineeringProject("session", panel, null, {...document,revision_id:"r1",view_mode:"history"}, tasks);
+  assert.equal(model.stages.find(s=>s.id==="simulation")?.status, "completed");
 });

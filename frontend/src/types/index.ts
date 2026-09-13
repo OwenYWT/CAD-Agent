@@ -189,6 +189,8 @@ export interface CADPlanBrief {
 }
 
 export interface GenerationResult {
+  submission_id?: string;
+  submission_outcome?: "rejected" | "unknown";
   request_id?: string;
   task_id?: string;
   needs_confirmation?: boolean;
@@ -360,6 +362,7 @@ export interface Annotation3D {
 }
 
 export interface DurableTaskSubmittedEvent {
+  submission_id?: string;
   workflow_run_id: string;
   project_id: string;
   branch_id: string;
@@ -369,6 +372,7 @@ export interface DurableTaskSubmittedEvent {
 }
 
 export type WSMessage =
+  | { type: "submission_not_found"; data: { panel_id: string; submission_id: string } }
   | { type: "step_update"; data: StepUpdate & { panel_id?: string } }
   | { type: "run_created"; data: RunCreatedEvent }
   | { type: "agent_step"; data: AgentStepEvent }

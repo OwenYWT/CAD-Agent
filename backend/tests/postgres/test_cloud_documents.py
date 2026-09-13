@@ -102,7 +102,108 @@ async def test_head_commit_rollback_delta_and_aba_stale_state():
     assert events[-1]["payload"]["upserted"] == []
 
 
-async def test_projection_upgrade_preserves_immutable_v1_and_v2_caches():
+async def test_candidate_cas_rejects_old_generation_after_head_returns_to_same_revision():
+    """Real database ABA regression at the final shared commit boundary."""
+    owner, project, branch = await seed()
+
+    async def candidate(label):
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+            return await create_candidate_change_set(
+                conn, tenant_id=owner.tenant_id, project_id=project,
+                branch_id=branch.branch_id, expected_base_revision_id=branch.revision_id,
+                created_by_principal_id=owner.principal_id, objective=label,
+                idempotency_key=str(uuid4()), candidate_manifest={"change": label})
+
+    old = await candidate("waiting for review at generation zero")
+    other = await candidate("concurrent candidate")
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        assert await compare_and_swap_branch_head(
+            conn, tenant_id=owner.tenant_id, project_id=project, branch_id=branch.branch_id,
+            expected_head_revision_id=branch.revision_id, candidate_revision_id=other.candidate_revision_id)
+        await conn.execute(text("UPDATE project_branches SET head_revision_id=:head WHERE id=:id"),
+                           {"head": branch.revision_id, "id": branch.branch_id})
+    snapshot = await document_snapshot(owner, branch.branch_id)
+    assert snapshot["head_revision_id"] == str(branch.revision_id) and snapshot["state_version"] == 2
+    from app.services.change_sets import accept_change_set, commit_change_set, ChangeSetStateConflict
+    # Staleness must stop review before missing artifact evidence could mask it.
+    with pytest.raises(ChangeSetStateConflict, match="stale"):
+        await accept_change_set(tenant_id=owner.tenant_id, reviewer_principal_id=owner.principal_id,
+                                change_set_id=old.change_set_id)
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        # Persist an already-accepted review to test the commit boundary alone.
+        await conn.execute(text("UPDATE change_sets SET status='accepted' WHERE id=:id"), {"id": old.change_set_id})
+    with pytest.raises(ChangeSetStateConflict, match="stale"):
+        await commit_change_set(tenant_id=owner.tenant_id, reviewer_principal_id=owner.principal_id,
+                                change_set_id=old.change_set_id)
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        assert not await compare_and_swap_branch_head(
+            conn, tenant_id=owner.tenant_id, project_id=project, branch_id=branch.branch_id,
+            expected_head_revision_id=branch.revision_id, candidate_revision_id=old.candidate_revision_id)
+    assert (await document_snapshot(owner, branch.branch_id))["state_version"] == 2
+
+    fresh = await candidate("explicit new candidate at generation two")
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        assert await compare_and_swap_branch_head(
+            conn, tenant_id=owner.tenant_id, project_id=project, branch_id=branch.branch_id,
+            expected_head_revision_id=branch.revision_id, candidate_revision_id=fresh.candidate_revision_id)
+    assert (await document_snapshot(owner, branch.branch_id))["state_version"] == 3
+
+
+async def test_merge_candidate_rejects_source_aba_at_review_and_commit():
+    from app.services.change_sets import accept_change_set, ChangeSetStateConflict
+    owner, project, target = await seed()
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        source = await create_initial_branch(conn, tenant_id=owner.tenant_id, project_id=project,
+            created_by_principal_id=owner.principal_id, branch_name="source", initial_manifest={})
+        workflow = await create_workflow(conn, tenant_id=owner.tenant_id, project_id=project,
+            requested_by_principal_id=owner.principal_id, kind="merge",
+            idempotency_key=str(uuid4()), request_payload={"objective": "database merge boundary"})
+        await conn.execute(text("""INSERT INTO document_merges(id,tenant_id,project_id,document_id,
+            source_document_id,source_revision_id,source_state_version,target_revision_id,target_state_version,
+            common_revision_id,mode,principal_id,idempotency_key,request_hash,proposal,workflow_run_id)
+            VALUES(:id,:tenant,:project,:target,:source,:source_rev,0,:target_rev,0,:target_rev,
+            'source_geometry',:principal,:key,:hash,'{}',:workflow)"""), {
+                "id": uuid4(), "tenant": owner.tenant_id, "project": project,
+                "target": target.branch_id, "source": source.branch_id, "source_rev": source.revision_id,
+                "target_rev": target.revision_id, "principal": owner.principal_id,
+                "key": str(uuid4()), "hash": "a" * 64, "workflow": workflow.workflow_id})
+        merged = await create_candidate_change_set(conn, tenant_id=owner.tenant_id, project_id=project,
+            branch_id=target.branch_id, expected_base_revision_id=target.revision_id,
+            created_by_principal_id=owner.principal_id, objective="merge", idempotency_key=str(uuid4()),
+            source_workflow_run_id=workflow.workflow_id, candidate_manifest={"merged": True})
+        changed = await create_candidate_change_set(conn, tenant_id=owner.tenant_id, project_id=project,
+            branch_id=source.branch_id, expected_base_revision_id=source.revision_id,
+            created_by_principal_id=owner.principal_id, objective="source change", idempotency_key=str(uuid4()),
+            candidate_manifest={"source": "changed"})
+        assert await compare_and_swap_branch_head(conn, tenant_id=owner.tenant_id, project_id=project,
+            branch_id=source.branch_id, expected_head_revision_id=source.revision_id,
+            candidate_revision_id=changed.candidate_revision_id)
+        await conn.execute(text("UPDATE project_branches SET head_revision_id=:revision WHERE id=:id"),
+                           {"revision": source.revision_id, "id": source.branch_id})
+    with pytest.raises(ChangeSetStateConflict, match="stale merge source"):
+        await accept_change_set(tenant_id=owner.tenant_id, reviewer_principal_id=owner.principal_id,
+                                change_set_id=merged.change_set_id)
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        assert not await compare_and_swap_branch_head(conn, tenant_id=owner.tenant_id, project_id=project,
+            branch_id=target.branch_id, expected_head_revision_id=target.revision_id,
+            candidate_revision_id=merged.candidate_revision_id)
+    assert (await document_snapshot(owner, target.branch_id))["state_version"] == 0
+
+
+async def test_candidate_generation_cannot_be_rewritten():
+    owner, project, branch = await seed()
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        candidate = await create_candidate_change_set(conn, tenant_id=owner.tenant_id, project_id=project,
+            branch_id=branch.branch_id, expected_base_revision_id=branch.revision_id,
+            created_by_principal_id=owner.principal_id, objective="immutable generation",
+            idempotency_key=str(uuid4()), candidate_manifest={})
+    with pytest.raises(Exception, match="generation is immutable"):
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+            await conn.execute(text("UPDATE change_sets SET base_state_version=99 WHERE id=:id"),
+                               {"id": candidate.change_set_id})
+
+
+async def test_projection_upgrade_preserves_immutable_v1_v2_and_v3_caches():
     owner, project, branch = await seed()
     import json
     legacy = {"schema_version": "cad-semantic-state.v1", "features": [], "legacy_evidence": "retained"}
@@ -113,13 +214,16 @@ async def test_projection_upgrade_preserves_immutable_v1_and_v2_caches():
         await conn.execute(text("""INSERT INTO document_checkpoints(tenant_id,document_id,revision_id,projector_version,projection)
             VALUES(:tenant,:doc,:rev,2,CAST(:projection AS jsonb))"""),
             {"tenant": owner.tenant_id, "doc": branch.branch_id, "rev": branch.revision_id, "projection": json.dumps(legacy)})
+        await conn.execute(text("""INSERT INTO document_checkpoints(tenant_id,document_id,revision_id,projector_version,projection)
+            VALUES(:tenant,:doc,:rev,3,CAST(:projection AS jsonb))"""),
+            {"tenant": owner.tenant_id, "doc": branch.branch_id, "rev": branch.revision_id, "projection": json.dumps(legacy)})
     snapshot = await document_snapshot(owner, branch.branch_id)
-    assert snapshot["projector_version"] == 3 and snapshot["features"] == []
+    assert snapshot["projector_version"] == 4 and snapshot["features"] == []
     async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
         rows = (await conn.execute(text("SELECT projector_version,projection FROM document_checkpoints WHERE document_id=:doc ORDER BY projector_version"),
                                   {"doc": branch.branch_id})).mappings().all()
-        assert [r["projector_version"] for r in rows] == [1, 2, 3]
-        assert rows[0]["projection"] == rows[1]["projection"] == legacy
+        assert [r["projector_version"] for r in rows] == [1, 2, 3, 4]
+        assert rows[0]["projection"] == rows[1]["projection"] == rows[2]["projection"] == legacy
     with pytest.raises(Exception, match="document evidence is immutable"):
         async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
             await conn.execute(text("UPDATE document_checkpoints SET projection='{}'::jsonb WHERE document_id=:doc"), {"doc": branch.branch_id})

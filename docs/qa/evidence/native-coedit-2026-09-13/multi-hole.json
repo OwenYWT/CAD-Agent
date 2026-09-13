@@ -1,0 +1,91 @@
+{
+  "source_sha256": "86efa7399b0bc35af2cdecd2e2cbf543a1f0444b39ac288f1a5ed4512a8c7ebb",
+  "redactions": [],
+  "evidence": {
+    "document_id": "b8a7ebb1-7ea0-40b3-9e1b-462b2c49815e",
+    "source_revision": "d56107f0-a599-4c13-9d30-97f7eaf7acae",
+    "revision": "69dc8763-7686-43ad-a631-a4f39dbd6105",
+    "workflow_id": "249d549c-f69a-4ad4-9d97-2b46c97a61a2",
+    "change_set_id": "91f9d1f4-36a5-4214-abc1-e7f8c92231f7",
+    "rejected_cases": [
+      {
+        "case": "multi_hole_parent",
+        "status_code": 422,
+        "detail": {
+          "detail": {
+            "code": "selection_invalid",
+            "message": "该特征的单孔身份无法确认；请明确修改整个孔特征，或选择可唯一定位的子元素",
+            "retryable": false
+          }
+        }
+      },
+      {
+        "case": "missing_target",
+        "status_code": 422,
+        "detail": {
+          "detail": {
+            "code": "selection_invalid",
+            "message": "请先选择目标特征；这条指令的指代无法唯一确认",
+            "retryable": false
+          }
+        }
+      },
+      {
+        "case": "stale_selection",
+        "status_code": 422,
+        "detail": {
+          "detail": {
+            "code": "selection_invalid",
+            "message": "选择版本与请求基线不一致，请重新选择目标",
+            "retryable": false
+          }
+        }
+      },
+      {
+        "case": "incomplete_symmetric_selector",
+        "status_code": 422,
+        "detail": {
+          "detail": {
+            "code": "selection_invalid",
+            "message": "子元素没有完整且唯一的测量依据，不能猜测 Face/Edge 或邻近位置",
+            "retryable": false
+          }
+        }
+      },
+      {
+        "case": "invented_neighbor",
+        "status_code": 422,
+        "detail": {
+          "detail": {
+            "code": "selection_invalid",
+            "message": "子元素没有完整且唯一的测量依据，不能猜测 Face/Edge 或邻近位置",
+            "retryable": false
+          }
+        }
+      },
+      {
+        "case": "edge_cannot_resize_entire_feature",
+        "status_code": 422,
+        "detail": {
+          "detail": {
+            "code": "selection_invalid",
+            "message": "当前子元素选择只支持已测量的圆角或倒角；修改孔径等整特征参数时，请清除子元素选择并明确修改整个特征",
+            "retryable": false
+          }
+        }
+      }
+    ],
+    "invalid_requests_created_no_operations": true,
+    "whole_feature_modification_explicit": true,
+    "files": {
+      "fcstd": {
+        "path": "/private/tmp/cad-coedit-20260912/live/t18-multi-hole/four-hole.fcstd",
+        "sha256": "816d47471e7c0e6f2aad7a585f59ffbf0f5bcc4b65abb4184648c9c0d67a8785"
+      },
+      "step": {
+        "path": "/private/tmp/cad-coedit-20260912/live/t18-multi-hole/four-hole.step",
+        "sha256": "9b2f32d42f80efbd197d5b8ad8c3216fb82c78af68a57d6a3c96263159aff223"
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "source_sha256": "898c887081ebde84f9a5bbb3d05c1037ae5c7f43fb2e877d3716240c8448e1fb",
+  "redactions": [],
+  "evidence": [
+    {
+      "workflow_id": "mcad-agent-v2-workflow-4ad91878-82fd-4c16-866f-07a1a251faab",
+      "events": 69,
+      "history_sha256": "1d7aaa5e9e406d59dc8ca2587d3e23ead6677e6e418d09bbebcca6fa443fe04d",
+      "status": "passed"
+    },
+    {
+      "workflow_id": "mcad-workflow-447db8da-a581-46f5-8be4-9ca3104f5435",
+      "events": 41,
+      "history_sha256": "a4fbf770f353d9ebba8a090d73502d188497020386fd4215a59e893e0a5ecb5d",
+      "status": "passed"
+    },
+    {
+      "workflow_id": "mcad-agent-v2-workflow-5f459b36-3721-4d1c-af8d-0a4e5d8e10f2",
+      "events": 103,
+      "history_sha256": "4cbbf7df15b1529b1c6b33c5bc21254414b6f99fb11bba977a77531d61f2f587",
+      "status": "passed"
+    },
+    {
+      "workflow_id": "mcad-check-workflow-47a07f6b-ad12-4760-936b-948b6d0abc3a",
+      "events": 11,
+      "history_sha256": "e62341a7d91915be89bb0a1e99c3b4882b04e77a3b45181d921ef11d5d503375",
+      "status": "passed"
+    }
+  ]
+}

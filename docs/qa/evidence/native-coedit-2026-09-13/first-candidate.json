@@ -1,0 +1,23 @@
+{
+  "source_sha256": "353643e2425af87d48b1ced3c989a4e08e140bfb69a8b8443535390dbde1e120",
+  "redactions": [],
+  "evidence": {
+    "status": "passed",
+    "document_id": "ba031c68-2771-4ab1-911c-c04038c84386",
+    "project_id": "cad2a8a2-00ed-52dd-b757-4d9395cd5723",
+    "tenant_id": "f8c84571-f830-53d2-897b-87b4919a3e29",
+    "base_revision_id": "ebb7533c-51eb-4e97-96ea-3840da6a84e8",
+    "workflow_id": "b56e0a89-1fc6-4fbd-8902-d49c61c354d4",
+    "change_set_id": "2461b53a-6d72-49af-aca5-3e0aed10530e",
+    "candidate_revision": "29b83387-5f89-4afe-bef6-24c9bce22e2b",
+    "before_generation": 0,
+    "after_generation": 1,
+    "candidate_edit_and_agent_disabled": true,
+    "held_first_model_request_intent": "generate",
+    "held_prompt_delivered_to_server": false,
+    "candidate_committed_in_browser": true,
+    "reload_committed_model_editable": true,
+    "fcstd_sha256": "2f93d5292fd3b827964b0047d6f22c2dca13ded0f10795f18e9e0404ea2d6300",
+    "page_errors": []
+  }
+}

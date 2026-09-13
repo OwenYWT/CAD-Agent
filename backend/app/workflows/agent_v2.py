@@ -15,6 +15,7 @@ from temporalio.workflow import ActivityCancellationType
 from app.geometry_ir.planner import build_geometry_plan, summarize_geometry_plan
 from app.topology.step_resolver import resolve_step_topology
 from app.validation.durable_geometry import DurableGeometryReport
+from app.validation.gate_policy import gate_blocks
 from app.validation.feature_evidence import (
     build_feature_evidence,
     build_feature_repair_context,
@@ -40,9 +41,7 @@ def required_gate_blocks(mode: str, outcome: str) -> bool:
     """One policy rule shared by visual and DFM workflow gates."""
     if mode not in {"required", "advisory"}:
         raise ValueError(f"unsupported active gate mode: {mode}")
-    if outcome not in {"passed", "failed", "indeterminate"}:
-        raise ValueError(f"unsupported gate outcome: {outcome}")
-    return mode == "required" and outcome != "passed"
+    return gate_blocks("dfm", mode, outcome, stage="workflow")
 
 
 @workflow.defn(name="McadAgentWorkflowV2")
@@ -715,7 +714,8 @@ class McadAgentWorkflowV2:
             if visual["outcome"] == "passed":
                 return {**current, "visual": visual}
             if visual["outcome"] == "indeterminate":
-                if required_gate_blocks(policy["mode"], visual["outcome"]):
+                if gate_blocks("visual", policy["mode"], visual["outcome"], stage="workflow",
+                               legacy_visual_workflow=not self._validation_repair_v2):
                     raise ApplicationError(
                         "Required visual validation is indeterminate.",
                         {
@@ -727,7 +727,8 @@ class McadAgentWorkflowV2:
                     )
                 return {**current, "visual": visual}
             if visual_repairs >= int(policy["repair_budget"]):
-                if required_gate_blocks(policy["mode"], visual["outcome"]) or self._validation_repair_v2:
+                if gate_blocks("visual", policy["mode"], visual["outcome"], stage="workflow",
+                               legacy_visual_workflow=not self._validation_repair_v2):
                     raise ApplicationError(
                         "Required visual validation failed.",
                         {

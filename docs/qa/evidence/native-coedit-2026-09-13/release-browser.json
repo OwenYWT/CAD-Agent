@@ -1,0 +1,16 @@
+{
+  "source_sha256": "0b9742b30557fe34f83a7a6091a54a71dc67cc0f8f392c0aa1fbb1820fa25d6e",
+  "redactions": [],
+  "evidence": {
+    "release_id": "6dc75996-1ed0-460b-863c-27bbcb5dd52e",
+    "actual_native_bom_rendered": true,
+    "selected_engineering_tasks": [
+      "31f6ed35-5224-46d2-89b8-a77b0874728c",
+      "ff20719b-4c6f-4e20-87d8-e76074e58186"
+    ],
+    "bundle_hash_verified": true,
+    "revision_unchanged": true,
+    "page_errors": [],
+    "console_errors": []
+  }
+}

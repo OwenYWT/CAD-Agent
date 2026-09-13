@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n, type Locale } from "../i18n/I18nContext";
 import {
   diffModelSnapshots,
@@ -17,6 +17,7 @@ import {
   engineeringSourceLabel,
   engineeringStatusLabel,
 } from "../utils/engineeringLabels";
+import { guardDraft } from "../stores/draftGuard";
 interface VersionHistoryPanelProps {
   panelId: string;
   activeSnapshotId?: string | null;
@@ -24,6 +25,8 @@ interface VersionHistoryPanelProps {
   onRestore: (snapshot: ModelSnapshotDetail) => boolean | void | Promise<boolean | void>;
   currentParts?: AssemblyPartInfo[] | null;
   onModifyPart?: (partName: string, instruction: string) => boolean | void;
+  currentRevisionId?: string | null;
+  onView?: (snapshot: ModelSnapshotDetail) => void;
 }
 const STATUS_CLASS: Record<string, string> = {
   pass: "border-emerald-200 bg-emerald-50 text-emerald-700",
@@ -50,6 +53,8 @@ export default function VersionHistoryPanel({
   onRestore,
   currentParts = [],
   onModifyPart,
+  currentRevisionId,
+  onView,
 }: VersionHistoryPanelProps) {
   const { locale, translate } = useI18n();
   const [snapshots, setSnapshots] = useState<ModelSnapshotSummary[]>([]);
@@ -60,20 +65,28 @@ export default function VersionHistoryPanel({
   const [selectedPartName, setSelectedPartName] = useState("");
   const [modifyInstruction, setModifyInstruction] = useState("只修改该零件，其他零件代码保持完全不变。");
   const [error, setError] = useState<string | null>(null);
+  const contextGeneration = useRef(0);
+  const viewRequest = useRef(0);
+  useEffect(() => {
+    contextGeneration.current += 1;
+    return () => { contextGeneration.current += 1; };
+  },[panelId]);
   const parts = useMemo(() => currentParts ?? [], [currentParts]);
   const selectedPart = useMemo(
     () => parts.find((part) => part.name === selectedPartName) || parts[0] || null,
     [parts, selectedPartName],
   );
   const loadSnapshots = useCallback(async () => {
+    const generation = contextGeneration.current;
     setLoading(true);
     setError(null);
     try {
-      setSnapshots(await listModelSnapshots(panelId));
+      const snapshots = await listModelSnapshots(panelId);
+      if (contextGeneration.current === generation) setSnapshots(snapshots);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "版本列表加载失败");
+      if (contextGeneration.current === generation) setError(reason instanceof Error ? reason.message : "版本列表加载失败");
     } finally {
-      setLoading(false);
+      if (contextGeneration.current === generation) setLoading(false);
     }
   }, [panelId]);
   useEffect(() => {
@@ -81,29 +94,44 @@ export default function VersionHistoryPanel({
     return () => window.clearTimeout(timer);
   }, [loadSnapshots, refreshKey]);
   const restoreSnapshot = async (snapshotId: string) => {
+    const generation = contextGeneration.current;
     setRestoringId(snapshotId);
     setError(null);
     try {
-      const accepted = await onRestore(await getModelSnapshot(snapshotId));
+      const snapshot = await getModelSnapshot(snapshotId);
+      if (contextGeneration.current !== generation) return;
+      const accepted = await onRestore(snapshot);
       if (accepted === false) throw new Error("当前连接不可用，未提交版本恢复任务");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "版本恢复失败");
+      if (contextGeneration.current === generation) setError(reason instanceof Error ? reason.message : "版本恢复失败");
     } finally {
-      setRestoringId(null);
+      if (contextGeneration.current === generation) setRestoringId(null);
+    }
+  };
+  const viewSnapshot = async (snapshotId: string) => {
+    const generation = contextGeneration.current, request = ++viewRequest.current;
+    setError(null);
+    try {
+      const snapshot = await getModelSnapshot(snapshotId);
+      if (contextGeneration.current === generation && viewRequest.current === request) onView?.(snapshot);
+    } catch (reason) {
+      if (contextGeneration.current === generation && viewRequest.current === request) setError(reason instanceof Error ? reason.message : "历史版本加载失败");
     }
   };
   const loadDiff = async (snapshotId: string) => {
     if (!activeSnapshotId || activeSnapshotId === snapshotId) return;
+    const generation = contextGeneration.current;
     const cacheKey = `${activeSnapshotId}:${snapshotId}`;
     setDiffLoadingKey(cacheKey);
     setError(null);
     try {
       const diff = await diffModelSnapshots(activeSnapshotId, snapshotId);
+      if (contextGeneration.current !== generation) return;
       setDiffBySnapshotKey((previous) => ({ ...previous, [cacheKey]: diff }));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "版本对比加载失败");
+      if (contextGeneration.current === generation) setError(reason instanceof Error ? reason.message : "版本对比加载失败");
     } finally {
-      setDiffLoadingKey(null);
+      if (contextGeneration.current === generation) setDiffLoadingKey(null);
     }
   };
   const renderChanges = (label: string, changes?: SnapshotChangeList) => {
@@ -209,21 +237,23 @@ export default function VersionHistoryPanel({
                 <div key={snapshot.id} className={`rounded-lg border p-3 ${isActive ? "border-[var(--agent-border)] bg-[var(--agent-soft)]" : "border-[var(--line)] bg-[var(--surface-soft)]"}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="type-body  text-[var(--ink)]">v{snapshot.version} · {translate(engineeringSourceLabel(snapshot.source))}</div>
+                      <div className="type-body  text-[var(--ink)]">修订 #{snapshot.version} · {translate(engineeringSourceLabel(snapshot.source))}{snapshot.id === currentRevisionId ? " · 已提交当前版本" : ""}</div>
                       <div className="truncate type-caption text-[var(--muted)]">{engineeringPromptLabel(snapshot.prompt)}</div>
                     </div>
                     <span className={`rounded-full border px-2 py-0.5 type-caption  ${STATUS_CLASS[snapshot.status] || STATUS_CLASS.unknown}`}>{translate(engineeringStatusLabel(snapshot.status))}</span>
                   </div>
-                  <div className="mt-2 flex items-center justify-between gap-2 type-caption text-[var(--muted)]">
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 type-caption text-[var(--muted)]">
                     <span>{formatTime(snapshot.created_at, locale)}</span>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       {activeSnapshotId && !isActive ? <button className="workspace-button !min-h-7 !px-2" disabled={diffLoadingKey === cacheKey} onClick={() => void loadDiff(snapshot.id)} type="button">{diffLoadingKey === cacheKey ? "对比中..." : "对比当前"}</button> : null}
-                      <button className="workspace-button !min-h-7 !px-2 text-[var(--focus)]" disabled={restoringId !== null || isActive} onClick={() => void restoreSnapshot(snapshot.id)} type="button">{isActive ? "当前版本" : restoringId === snapshot.id ? "提交中..." : "恢复"}</button>
+                      {onView ? <button className="workspace-button !min-h-7 !px-2" type="button" onClick={() => guardDraft(() => { void viewSnapshot(snapshot.id); })}>查看此版本</button> : null}
+                      <button className="workspace-button !min-h-7 !px-2 text-[var(--focus)]" disabled={restoringId !== null || snapshot.id === (currentRevisionId || activeSnapshotId)} onClick={() => guardDraft(() => { void restoreSnapshot(snapshot.id); })} type="button">{snapshot.id === (currentRevisionId || activeSnapshotId) ? "当前提交" : restoringId === snapshot.id ? "提交中..." : "从此版本生成恢复候选"}</button>
                     </div>
                   </div>
+                  {currentRevisionId && snapshot.id !== currentRevisionId ? <p className="mt-2 type-caption text-[var(--muted)]">恢复来源 {snapshot.id.slice(0,8)} → 当前基线 {currentRevisionId.slice(0,8)}；求解后仍需审核并提交。</p> : null}
                   {diff ? (
                     <div className="mt-2 rounded-md border border-[var(--line)] bg-[var(--surface)] p-2 type-caption text-[var(--muted)]">
-                      <div className=" text-[var(--ink)]">对比结果：当前版本 → v{snapshot.version}</div>
+                      <div className=" text-[var(--ink)]">对比结果：正在查看的版本 → 修订 #{snapshot.version}</div>
                       <div className="mt-1">模型代码：{typeof diff.model_changes?.code_changed === "boolean" ? diff.model_changes.code_changed ? "已变化" : "无变化" : "无可比较的源码（原生模型以文件与参数为准）"}</div>
                       <div className="mt-1 space-y-1">{renderChanges("文件", diff.file_changes)}{renderChanges("零件", diff.part_changes)}{renderChanges("参数", diff.parameter_changes)}</div>
                       <div className="mt-1">检查结果：{diff.model_changes?.inspect_verdict?.from || "unknown"} → {diff.model_changes?.inspect_verdict?.to || "unknown"}</div>

@@ -1,0 +1,26 @@
+{
+  "checks": [
+    {
+      "url": "http://127.0.0.1:8040/ready",
+      "http_status": 200,
+      "status": "ready"
+    },
+    {
+      "url": "http://127.0.0.1:8100/ready",
+      "http_status": 200,
+      "status": "ready"
+    },
+    {
+      "url": "http://127.0.0.1:8041/ready",
+      "http_status": 200,
+      "status": "ready"
+    },
+    {
+      "url": "http://127.0.0.1:8101/ready",
+      "http_status": 200,
+      "status": "ready"
+    }
+  ],
+  "provider_quota_confirmed": false,
+  "note": "Both isolated deployments restored after packaged dependency regression; readiness does not verify Provider account quota."
+}

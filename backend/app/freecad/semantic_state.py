@@ -69,6 +69,15 @@ def project_semantic_state(document_id: UUID, state: dict[str, Any], *,
                            revision_id: UUID | str | None = None, previous: dict | None = None) -> dict[str, Any]:
     objects = state.get("objects", [])
     names = {obj["name"] for obj in objects}
+    hierarchy_known = bool(objects) and all(obj.get("structure", {}).get("status") == "measured" for obj in objects)
+    parents = {name: [] for name in names}
+    if hierarchy_known:
+        for obj in objects:
+            for member in obj["structure"].get("members", []):
+                if member in parents:
+                    parents[member].append(obj["name"])
+                else:
+                    hierarchy_known = False
     parameters: dict[str, list] = {}
     for parameter in state.get("parameters", []):
         parameters.setdefault(parameter["object_name"], []).append(parameter)
@@ -101,8 +110,16 @@ def project_semantic_state(document_id: UUID, state: dict[str, Any], *,
             revision_created=old.get("revision_created") if old else str(revision_id) if revision_id and previous is not None else None,
             last_modified=old.get("last_modified") if old and old.get("content_sha256") == digest else str(revision_id) if revision_id else None,
             topology_bindings=measured_topology_bindings(obj, revision_id))
+        # Presentation metadata is outside the established feature fingerprint:
+        # a projector upgrade cannot manufacture edits to historical geometry.
+        structure = obj.get("structure", {})
+        feature["structure"] = {"category": structure.get("category"),
+            "container_ids": [feature_id(document_id, n) for n in parents[name]],
+            "member_ids": [feature_id(document_id, n) for n in structure.get("members", []) if n in names],
+            "body_tip_id": feature_id(document_id, structure["body_tip"]) if structure.get("body_tip") in names else None} if hierarchy_known else None
         features.append(feature)
     return {"schema_version": "cad-semantic-state.v1", "features": features,
+            "hierarchy_status": "measured" if hierarchy_known else "unavailable",
             "roots": [feature_id(document_id, n) for n in state.get("root_objects", []) if n in names]}
 
 
@@ -121,7 +138,9 @@ def bounded_agent_context(state: dict, *, target_names: list[str] | None = None)
     """
     objects = state.get("objects", [])
     by_name = {obj["name"]: obj for obj in objects}
-    requested = list(dict.fromkeys(target_names or []))
+    selection = state.get("selection_context")
+    requested = list(dict.fromkeys(target_names or
+        [f["kernel_name"] for f in (selection or {}).get("features", [])]))
     selected = list(requested)
     for name in requested:
         selected.extend(by_name.get(name, {}).get("out", []))
@@ -158,5 +177,6 @@ def bounded_agent_context(state: dict, *, target_names: list[str] | None = None)
                       "is_valid": by_name[name].get("is_valid")}
                      for name in selected if name in by_name],
         "omitted_detail_count": max(0, len(objects)-len(set(selected) & by_name.keys())),
+        **({"selection_context": selection} if selection else {}),
         **({'engineering_evidence':state['engineering_evidence'][:4]} if state.get('engineering_evidence') else {}),
     }

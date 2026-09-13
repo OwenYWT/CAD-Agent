@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from acceptance_paths import evidence_path
 from uuid import uuid4
 
 import httpx
@@ -29,7 +30,7 @@ def verify_browser(private, document, fillet):
         expect(viewer.get_by_text('1 个部件 · 1 份几何',exact=False)).to_be_visible()
         assert viewer.locator('canvas').evaluate("c => !!c.getContext('webgl2')")
         page.wait_for_timeout(500)
-        page.screenshot(path='/tmp/cad-expansion-agent-inspection-browser.png')
+        page.screenshot(path=str(evidence_path('cad-expansion-agent-inspection-browser.png')))
         assert not errors,errors
         browser.close()
     return errors
@@ -44,6 +45,11 @@ def main():
         'expected_state_version':source['state_version'],'idempotency_key':str(uuid4())})
     commit(client,wait_task(client,fork['workflow_run_id']))
     path='/api/documents/'+fork['document_id'];before=call(client,'GET',path)
+    if os.getenv('CAD_INSPECTION_FIXTURE_THICKNESS'):
+        from cloud_merge_acceptance import modify
+        pad=next(f for f in before['features'] if f['type']=='PartDesign::Pad')
+        length=next(p for p in pad['parameters'] if p['property_name']=='Length')
+        before=modify(client,fork['document_id'],length['id'],float(os.environ['CAD_INSPECTION_FIXTURE_THICKNESS']))
     body=next(f for f in before['features'] if f['type']=='PartDesign::Body')
     operation=call(client,'POST',path+'/operations',expected=202,json={
         'action':'modify','expected_base_revision_id':before['head_revision_id'],
@@ -79,7 +85,7 @@ def main():
               'real_provider_inspection_events':inspections,'native_artifact_hashes_verified':True,
               'normal_review_and_commit':True,'committed_feature_rendered_in_browser':True,
               'rendered_scene_revision':after['head_revision_id'],'page_errors':errors}
-    Path('/tmp/cad-expansion-agent-inspection-http.json').write_text(json.dumps(evidence,indent=2))
+    Path(str(evidence_path('cad-expansion-agent-inspection-http.json'))).write_text(json.dumps(evidence,indent=2))
     print('CAD_AGENT_INSPECTION_HTTP='+json.dumps({key:value for key,value in evidence.items()
           if key!='real_provider_inspection_events'}),flush=True)
 

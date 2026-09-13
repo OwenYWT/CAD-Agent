@@ -119,11 +119,12 @@ export function adaptArtifacts(result: GenerationResult | null): Artifact[] {
   return Object.entries(result?.files || {})
     .filter(([, url]) => (
       /^\/api\/files\/[A-Za-z0-9_-]+\/[A-Za-z0-9._-]+(?:\?.*)?$/.test(url)
+      || /^\/api\/documents\/[a-f0-9-]{36}\/artifacts\/[a-f0-9-]{36}$/.test(url)
     ))
     .map(([format, url]) => ({
     id: `${result?.request_id || "result"}-${format}`,
-    name: url.split("/").pop() || `model.${format}`,
-    format: format.toUpperCase(),
+    name: url.startsWith("/api/documents/") ? format.split(":")[1] || `model.${format}` : url.split("/").pop() || `model.${format}`,
+    format: format.split(":")[0].toUpperCase(),
     url,
     status: "ready",
     }));
@@ -158,6 +159,7 @@ export function adaptEngineeringProject(
   const needsConfirmation = Boolean(result?.needs_confirmation);
   const artifacts = adaptArtifacts(result);
   const hasSuccessfulResult = Boolean(result?.success && artifacts.length > 0);
+  const resultStatus = document?.view_mode === "committed" || document?.view_mode === "history" ? "completed" : "awaiting_confirmation";
   const missingArtifacts = Boolean(result?.success && artifacts.length === 0);
   const parameters = adaptParameters(result);
   const validation = adaptValidation(result, analysis);
@@ -165,7 +167,7 @@ export function adaptEngineeringProject(
     || result?.inspect_report?.verdict === "fail" || validation.some(check => check.status === "fail");
   const hasWarning = validation.some(check => check.status === "warning" || check.status === "unknown");
   const nativeDocument = Boolean(document?.fcstd && document.head_revision_id);
-  const currentAnalysis = engineeringTasks.find(task => task.task_kind === "linear_static" && task.source_revision_id === document?.head_revision_id);
+  const currentAnalysis = engineeringTasks.find(task => task.task_kind === "linear_static" && task.source_revision_id === document?.revision_id);
   const simulationStatus: EngineeringStage["status"] = engineeringLoad?.error ? "issue" : !currentAnalysis ? "not_started"
     : currentAnalysis.status === "succeeded" ? "completed"
       : ["failed", "timed_out", "cancelled"].includes(currentAnalysis.status) ? "issue" : "in_progress";
@@ -175,11 +177,11 @@ export function adaptEngineeringProject(
     name: deriveName(panel),
     description: hasPrompt ? "由当前工程会话和生成结果构建。" : "描述需求后开始创建工程。",
     branch: `会话 ${panel.id.slice(0, 8)}`,
-    status: hasIssue ? "issue" : panel.isGenerating ? "in_progress" : needsConfirmation ? "awaiting_confirmation" : hasSuccessfulResult ? "awaiting_confirmation" : hasPrompt ? "in_progress" : "not_started",
+    status: hasIssue ? "issue" : panel.isGenerating ? "in_progress" : needsConfirmation ? "awaiting_confirmation" : hasSuccessfulResult ? resultStatus : hasPrompt ? "in_progress" : "not_started",
   };
   const stages: EngineeringStage[] = [
     { id: "requirements", index: 1, title: "需求与方案", summary: needsConfirmation ? "设计简报包含必须确认的问题，补充信息后再继续建模。" : hasPrompt ? "需求已进入当前工程会话。" : "等待输入工程需求。", status: needsConfirmation ? "awaiting_confirmation" : hasPrompt ? "completed" : "not_started", actionLabel: needsConfirmation ? "确认设计简报" : "查看需求", domain: "overview", available: true },
-    { id: "mechanical", index: 2, title: "机械设计", summary: panel.isGenerating ? currentTaskLabel : needsConfirmation ? "等待设计简报确认，尚未生成 CAD 模型。" : missingArtifacts ? "后端未返回可下载工程产物，本次结果不能视为完成。" : hasIssue ? panel.lastError || "生成存在问题，需要修改需求。" : hasSuccessfulResult ? "CAD 结果已生成，可查看模型和参数。" : "等待机械生成结果。", status: hasIssue ? "issue" : panel.isGenerating ? "in_progress" : needsConfirmation ? "not_started" : hasSuccessfulResult ? "awaiting_confirmation" : "not_started", actionLabel: hasSuccessfulResult ? "查看机械设计" : "打开机械设计", domain: "mechanical", available: !needsConfirmation && hasSuccessfulResult },
+    { id: "mechanical", index: 2, title: "机械设计", summary: panel.isGenerating ? currentTaskLabel : needsConfirmation ? "等待设计简报确认，尚未生成 CAD 模型。" : missingArtifacts ? "后端未返回可下载工程产物，本次结果不能视为完成。" : hasIssue ? panel.lastError || "生成存在问题，需要修改需求。" : hasSuccessfulResult ? "CAD 结果已生成，可查看模型和参数。" : "等待机械生成结果。", status: hasIssue ? "issue" : panel.isGenerating ? "in_progress" : needsConfirmation ? "not_started" : hasSuccessfulResult ? resultStatus : "not_started", actionLabel: hasSuccessfulResult ? "查看机械设计" : "打开机械设计", domain: "mechanical", available: !needsConfirmation && hasSuccessfulResult },
     { id: "electronics", index: 3, title: "电子设计", summary: "当前后端未提供 ECAD 数据或 ERC / DRC 接口。", status: "not_started", actionLabel: "不可用", domain: "electronics", available: false, limitation: "当前后端尚无 ECAD 数据接口。" },
     { id: "simulation", index: 4, title: "仿真验证", summary: !nativeDocument ? "提交原生 CAD 模型后可运行结构静力分析。"
       : engineeringLoad?.error ? `无法读取计算状态：${engineeringLoad.error}`
@@ -191,9 +193,9 @@ export function adaptEngineeringProject(
       status: simulationStatus, actionLabel: "结构仿真", domain: "simulation", available: nativeDocument },
     { id: "firmware", index: 5, title: "固件", summary: "当前后端未提供固件仓库、构建任务或日志接口。", status: "not_started", actionLabel: "不可用", domain: "firmware", available: false, limitation: "当前后端没有固件仓库和构建日志接口。" },
     { id: "manufacturing", index: 6, title: "制造检查", summary: validation.length ? `已有 ${validation.length} 项真实检查结果。${hasIssue ? "存在未通过项。" : hasWarning ? "仍有风险或未能判定项。" : ""}` : "等待模型结果后运行工程检查。", status: hasIssue ? "issue" : hasWarning ? "awaiting_confirmation" : validation.length ? "completed" : "not_started", actionLabel: "工程检查", available: hasSuccessfulResult || validation.length > 0 },
-    { id: "release", index: 7, title: "发布", summary: artifacts.length ? `已有 ${artifacts.length} 个可下载产物。` : "生成工程产物后可导出。", status: artifacts.length ? "awaiting_confirmation" : "not_started", actionLabel: "导出", available: artifacts.length > 0 },
+    { id: "release", index: 7, title: "发布", summary: document?.can_export === false ? "当前账号可查看模型，没有导出权限。" : artifacts.length ? `已有 ${artifacts.length} 个可下载产物。` : "生成工程产物后可导出。", status: artifacts.length ? "awaiting_confirmation" : "not_started", actionLabel: "导出", available: document?.can_export !== false && artifacts.length > 0 },
   ];
-  return { project, stages, task: panel.isGenerating ? { id: `task-${panel.id}`, title: currentTaskLabel, detail: engineeringTaskEventLabel(panel.currentStep?.step || "planning"), status: "in_progress", startedAt: panel.generationStartTime } : null, artifacts, parameters, validation, exports: exportJobs(artifacts), result };
+  return { project, stages, task: panel.isGenerating ? { id: `task-${panel.id}`, title: currentTaskLabel, detail: engineeringTaskEventLabel(panel.currentStep?.step || "planning"), status: "in_progress", startedAt: panel.generationStartTime } : null, artifacts, parameters, validation, exports: document?.can_export === false ? [] : exportJobs(artifacts), result };
 }
 
 export function patchCodeParameters(code: string, changes: Record<string, number>): string {

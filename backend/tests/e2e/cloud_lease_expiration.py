@@ -2,13 +2,14 @@
 import json
 import os
 from pathlib import Path
+from acceptance_paths import evidence_path
 import time
 from uuid import uuid4
 
 import httpx
 
 p = json.loads(Path(os.environ['CAD_NATIVE_E2E_PRIVATE']).read_text())
-m = json.loads(Path('/tmp/cad-expansion-collaboration-document.json').read_text())
+m = json.loads(Path(str(evidence_path('cad-expansion-collaboration-document.json'))).read_text())
 c = httpx.Client(base_url=os.environ['CAD_NATIVE_E2E_URL'], timeout=30,
     headers={'Authorization': 'Bearer ' + p['owner']['token']})
 doc = '/api/documents/' + m['document_id']
@@ -39,6 +40,6 @@ finally:
     c.delete(doc + '/leases/' + new.json()['token']).raise_for_status()
 report = {'real_server_expiration': True, 'expired_renewal_rejected': True,
     'expired_submission_rejected': True, 'new_fencing_token': True, 'elapsed_s': round(time.monotonic() - started, 1)}
-Path('/tmp/cad-expansion-lease-expiry.json').write_text(json.dumps(report, indent=2))
+Path(str(evidence_path('cad-expansion-lease-expiry.json'))).write_text(json.dumps(report, indent=2))
 print(json.dumps(report), flush=True)
 c.close()

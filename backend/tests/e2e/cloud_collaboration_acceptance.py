@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+from acceptance_paths import evidence_path
 import secrets
 import threading
 import time
@@ -12,8 +13,8 @@ from dotenv import dotenv_values
 from cloud_document_acceptance import call,wait_task,commit
 
 PRIVATE=Path(os.environ['CAD_NATIVE_E2E_PRIVATE'])
-MODEL=Path('/tmp/cad-expansion-collaboration-document.json')
-REPORT=Path('/tmp/cad-expansion-collaboration-http.json')
+MODEL=Path(str(evidence_path('cad-expansion-collaboration-document.json')))
+REPORT=Path(str(evidence_path('cad-expansion-collaboration-http.json')))
 
 
 def main():

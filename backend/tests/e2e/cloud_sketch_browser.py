@@ -3,6 +3,7 @@ import json
 import math
 import os
 from pathlib import Path
+from acceptance_paths import evidence_path
 from uuid import uuid4
 
 import httpx
@@ -13,7 +14,7 @@ from cloud_branch_browser import review_in_browser
 
 def main():
     private=json.loads(Path(os.environ['CAD_NATIVE_E2E_PRIVATE']).read_text())
-    model=json.loads(Path('/tmp/cad-expansion-sketch-document.json').read_text())
+    model=json.loads(Path(str(evidence_path('cad-expansion-sketch-document.json'))).read_text())
     web=os.environ['CAD_NATIVE_E2E_WEB'];path='/api/documents/'+model['document_id']
     client=httpx.Client(headers={'Authorization':'Bearer '+private['owner']['token']})
     before=call(client,'GET',path)
@@ -65,20 +66,23 @@ def main():
         review_in_browser(page,client,task_id)
         after=call(client,'GET',path)
         expect(editor.get_by_role('button',name='读取最新草图并清除草稿',exact=True)).to_be_visible(timeout=15000)
-        expect(editor.get_by_role('button',name='提交草图约束',exact=True)).to_be_disabled()
+        expect(editor.get_by_role('button',name='已提交候选计算',exact=True)).to_be_disabled()
         assert editor.get_by_role('spinbutton',name='草图约束 2 Radius').input_value()=='7'
         editor.get_by_role('button',name='读取最新草图并清除草稿',exact=True).click()
         expect(editor.get_by_test_id('sketch-preview')).to_have_attribute('data-revision',after['head_revision_id'],timeout=20000)
         expect(editor.get_by_test_id('sketch-circle-0')).to_have_attribute('r','7')
         expect(editor.get_by_test_id('sketch-circle-0')).to_have_attribute('cx','0')
-        expect(page.get_by_test_id('document-scene')).to_have_attribute('data-revision',after['head_revision_id'],timeout=40000)
+        scene = page.get_by_test_id('document-scene')
+        expect(scene).to_have_attribute('data-requested-revision',after['head_revision_id'])
+        expect(scene).not_to_have_attribute('data-revision',before['head_revision_id'])
+        expect(scene).to_have_attribute('data-revision',after['head_revision_id'],timeout=90000)
         pad=next(f for f in after['features'] if f['kernel_name']=='PadA')
         assert abs(pad['shape']['volume']-math.pi*49*10)<1e-7
         stale={**body,'idempotency_key':str(uuid4()),'lease_token':None}
         call(client,'POST',path+'/operations',expected=409,json=stale)
         replay=call(client,'POST',path+'/operations',expected=202,json=body)
         assert replay['replayed'] and replay['workflow_run_id']==task_id
-        page.screenshot(path='/tmp/cad-expansion-sketch-browser.png')
+        page.screenshot(path=str(evidence_path('cad-expansion-sketch-browser.png')))
         assert not errors,errors
         assert not console_errors,console_errors
         report.update(workflow_id=task_id,pointer_moves=50,drag_kernel_operations=0,drag_inspections=0,
@@ -88,7 +92,7 @@ def main():
         browser.close()
     # An impossible typed dimension must fail the real worker without rewriting
     # the user's explicit edit, producing a candidate or changing the head.
-    triangle=json.loads(Path('/tmp/cad-expansion-triangle-document.json').read_text())
+    triangle=json.loads(Path(str(evidence_path('cad-expansion-triangle-document.json'))).read_text())
     path='/api/documents/'+triangle['document_id'];base=call(client,'GET',path)
     failed=call(client,'POST',path+'/operations',expected=202,json={'action':'native.update',
         'expected_base_revision_id':base['head_revision_id'],'expected_state_version':base['state_version'],
@@ -107,7 +111,7 @@ def main():
     assert call(client,'GET',path)['head_revision_id']==base['head_revision_id']
     assert call(client,'GET',path)['fcstd']['sha256']==base['fcstd']['sha256']
     report.update(impossible_constraint_failed_workflow=failed['workflow_run_id'],failed_edit_preserved_head=True,no_automatic_rewrite=True)
-    Path('/tmp/cad-expansion-sketch-browser.json').write_text(json.dumps(report,indent=2))
+    Path(str(evidence_path('cad-expansion-sketch-browser.json'))).write_text(json.dumps(report,indent=2))
     print('local drag, native constraints, reviewed commit, stale/replay and actual solver failure passed',report,flush=True)
     client.close()
 

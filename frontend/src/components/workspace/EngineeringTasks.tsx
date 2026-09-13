@@ -5,6 +5,7 @@ import { listEngineeringTasks, submitEngineeringTask, readEngineeringResult, rea
 import EngineeringFieldViewer from '../viewer/EngineeringFieldViewer';
 import CamToolpathViewer from '../viewer/CamToolpathViewer';
 import ContourMillingForm from './ContourMillingForm';
+import { engineeringSourceLabel } from '../../adapters/documentView';
 
 const active = (status: string) => ['pending','planning','running','cancelling'].includes(status);
 const statuses: Record<string,string> = {pending:'排队中',planning:'准备计算',running:'正在计算',cancelling:'正在取消',cancelled:'已取消',failed:'计算失败',timed_out:'计算超时',succeeded:'计算完成'};
@@ -17,7 +18,7 @@ function Plane({label,value,onChange}: {label:string; value:BoundaryPlane; onCha
   </select></label>;
 }
 
-function Result({documentId,taskId,currentRevision,canExport}: {documentId:string;taskId:string;currentRevision:string;canExport:boolean}) {
+function Result({documentId,taskId,viewedRevision,headRevision,canExport}: {documentId:string;taskId:string;viewedRevision:string;headRevision:string;canExport:boolean}) {
   const [loaded,setLoaded]=useState<{result:EngineeringResult;field:EngineeringField | CamToolpath} | null>(null);
   const [error,setError]=useState('');
   useEffect(()=>{
@@ -30,13 +31,14 @@ function Result({documentId,taskId,currentRevision,canExport}: {documentId:strin
   },[documentId,taskId]);
   if (!loaded) return <p role={error ? 'alert' : 'status'} className="my-2 type-caption">{error || '正在校验并读取计算结果…'}</p>;
   const {result,field}=loaded,report=result.report;
+  const sourceLabel = `来源：v${result.source_state_version} · ${result.source_revision_id.slice(0,8)} · ${report.component_name}（${engineeringSourceLabel(result.source_revision_id,viewedRevision,headRevision)}）`;
   const download=(kind:'engineering_bundle' | 'cam_program')=>{
     const ref=result.artifacts[kind];
     if (!ref) {setError('计算结果缺少该文件');return;}
     void downloadEngineeringArtifact(ref.url,ref.filename).catch((e:unknown)=>setError(e instanceof Error ? e.message : '文件下载失败'));
   };
   if (report.kind==='contour_milling' && field.schema_version==='cad-cam-toolpath.v1') return <div className="mt-3" data-testid="cam-result" data-workflow={taskId} data-revision={result.source_revision_id}>
-    <p className="type-caption">来源：版本 {result.source_state_version} · {report.component_name}{result.source_revision_id!==currentRevision ? '（历史修订）' : '（当前修订）'}</p>
+    <p className="type-caption" data-testid="engineering-source-version">{sourceLabel}</p>
     <CamToolpathViewer field={field} cuttingLength={report.tool.cutting_length_mm}/>
     <dl className="my-3 grid grid-cols-2 gap-1 type-caption"><dt>轴向层数</dt><dd>{report.passes}</dd><dt>路径段数</dt><dd>{report.segments}</dd>
       <dt>目标最小径向间隙</dt><dd>{report.minimum_target_clearance_mm.toPrecision(5)} mm</dd><dt>进给路径长度</dt><dd>{report.feed_path_length_mm.toFixed(2)} mm</dd>
@@ -51,7 +53,7 @@ function Result({documentId,taskId,currentRevision,canExport}: {documentId:strin
   </div>;
   if (report.kind!=='linear_static' || field.schema_version!=='cad-fea-field.v1') return <p role="alert" className="type-caption">工程报告与场数据类型不一致</p>;
   return <div className="mt-3" data-testid="engineering-result" data-workflow={taskId} data-revision={result.source_revision_id}>
-    <p className="type-caption">来源：版本 {result.source_state_version} · {report.component_name}{result.source_revision_id!==currentRevision ? '（历史修订）' : '（当前修订）'}</p>
+    <p className="type-caption" data-testid="engineering-source-version">{sourceLabel}</p>
     <p className="my-2 type-caption">{report.nodes.toLocaleString()} 节点 · {report.elements.toLocaleString()} 二次四面体 · {report.solver.name} {report.solver.version}</p>
     <EngineeringFieldViewer field={field} />
     <dl className="my-3 grid grid-cols-2 gap-1 type-caption"><dt>最大位移</dt><dd>{report.maximum.displacement_mm.toPrecision(6)} mm</dd>
@@ -129,13 +131,14 @@ export default function EngineeringTasks({document, initiallyOpen = false, onTas
       {error ? <p role="alert" className="mt-2 type-caption text-red-700">{error}</p> : null}
       <div className="mt-3 space-y-2" aria-label="工程任务列表">
         {!tasks.length ? <p className="type-caption">暂无工程任务</p> : tasks.map(t=><div key={t.workflow_run_id} className="rounded border border-[var(--line)] p-2 type-caption" data-engineering-task={t.workflow_run_id}>
-          <p>版本 {t.source_state_version} · {t.task_kind==='contour_milling' ? '外轮廓' : '有限元'} · {t.task.component_name} · {statuses[t.status] || t.status}</p>
+          <p>v{t.source_state_version} · {t.source_revision_id.slice(0,8)} · {t.task_kind==='contour_milling' ? '外轮廓' : '有限元'} · {t.task.component_name} · {statuses[t.status] || t.status}</p>
+          <p className="mt-1">{engineeringSourceLabel(t.source_revision_id,document.revision_id,document.head_revision_id)}</p>
           {t.error_message ? <p role="alert" className="mt-1 break-words text-red-700">{t.error_message.replace(/^[a-z_]+:\s*/,'')}</p> : null}
           {t.status==='succeeded' ? <button type="button" className="underline" onClick={()=>setSelected(t.workflow_run_id)}>查看计算结果</button> : null}
           {active(t.status) && document.can_edit ? <button type="button" className="underline" disabled={t.status==='cancelling'} onClick={()=>void cancelEngineeringTask(t.workflow_run_id).then(()=>setReload(v=>v+1)).catch((e:unknown)=>setError(e instanceof Error ? e.message : '取消失败'))}>取消计算</button> : null}
         </div>)}
       </div>
-      {tasks.some(t=>t.workflow_run_id===selected && t.status==='succeeded') ? <Result key={selected} documentId={document.document_id} taskId={selected} currentRevision={document.head_revision_id} canExport={document.can_edit}/> : null}
+      {tasks.some(t=>t.workflow_run_id===selected && t.status==='succeeded') ? <Result key={`${document.document_id}:${selected}`} documentId={document.document_id} taskId={selected} viewedRevision={document.revision_id} headRevision={document.head_revision_id} canExport={document.can_export ?? document.can_edit}/> : null}
     </details>
   </section>;
 }

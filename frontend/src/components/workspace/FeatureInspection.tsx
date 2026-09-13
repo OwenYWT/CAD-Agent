@@ -15,7 +15,7 @@ export default function FeatureInspection({ document, feature }: { document: Clo
     setPending(true); setError(""); setField(requested);
     try {
       const result = await inspectDocumentFeature(document, feature, requested, offset);
-      if (result.revision_id !== document.head_revision_id) throw new Error("内核细节版本不匹配");
+      if (result.revision_id !== document.revision_id) throw new Error("内核细节版本不匹配");
       const object = result.objects.find((o) => o.name === feature.kernel_name);
       if (!object || object.error || !object[requested]) throw new Error("检查点没有返回所选对象");
       setPage(object[requested] || null);

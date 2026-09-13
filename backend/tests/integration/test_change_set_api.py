@@ -275,11 +275,28 @@ async def test_real_change_set_api_accepts_signals_commits_and_reads_revision():
                 "生成 24×16×6 mm 实体"
             )
             assert detail_body["artifacts"]
-            assert detail_body["artifacts"][0]["download_url"].startswith("http")
+            artifact_url = detail_body["artifacts"][0]["download_url"]
+            assert artifact_url.startswith(f"/api/documents/{initial.branch_id}/artifacts/")
+            artifact_download = await client.get(artifact_url, headers=headers)
+            assert artifact_download.status_code == 200, artifact_download.text
+            assert len(artifact_download.content) == detail_body["artifacts"][0]["size_bytes"]
+            assert (await client.get(artifact_url)).status_code in {401, 403}
             assert "object_key" not in detail_body["artifacts"][0]
             assert "tenant_id" not in detail_body
             assert "idempotency_key" not in detail_body
             assert "idempotency_payload_hash" not in detail_body
+            view_url = f"/api/documents/{initial.branch_id}/revisions/{detail_body['candidate_revision_id']}"
+            viewed = await client.get(view_url, headers=headers)
+            assert viewed.status_code == 200, viewed.text
+            view = viewed.json()
+            assert view["revision_id"] == detail_body["candidate_revision_id"]
+            assert view["head_revision_id"] == str(initial.revision_id)
+            assert view["base_state_version"] == view["head_state_version"] == 0
+            assert view["review_status"] == "pending_review"
+            assert view["snapshot"]["result"]["request_id"] == str(workflow_id)
+            assert all(url.startswith(f"/api/documents/{initial.branch_id}/artifacts/") for url in view["snapshot"]["files"].values())
+            assert (await client.get(view_url, headers=other_headers)).status_code == 404
+            assert (await client.get(f"/api/documents/{initial.branch_id}/revisions/{uuid4()}", headers=headers)).status_code == 404
 
             # The candidate can become visible just before the persisted
             # WorkflowRun reaches waiting_confirmation. Temporal accepts an

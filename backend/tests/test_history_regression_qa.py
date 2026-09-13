@@ -167,9 +167,14 @@ def test_generated_files_are_isolated_between_authenticated_users(tmp_path, monk
     assert other.status_code == 404
 
 
-def test_capability_actions_report_runtime_blockers(monkeypatch):
+@pytest.mark.parametrize("node_available", [True, False])
+def test_capability_actions_report_runtime_blockers(monkeypatch, node_available):
     monkeypatch.setattr(settings, "cadskills_isolated_executor", [])
     monkeypatch.setattr(registry, "_module_available", lambda name: name == "ezdxf")
+    # This tests catalog policy, not the host's installed executable set. The
+    # backend image may correctly omit the optional standalone Node viewer.
+    monkeypatch.setattr(registry, "_command_path", lambda *names:
+        "/test-runtime/node" if node_available and "node" in names else None)
 
     dxf = registry.get_capability("dxf")
     viewer = registry.get_capability("cad-viewer")
@@ -179,4 +184,8 @@ def test_capability_actions_report_runtime_blockers(monkeypatch):
     assert all(action.blocked_reason for action in dxf.actions)
     assert dxf.blocked_reasons
     assert viewer is not None
-    assert all(action.available is True for action in viewer.actions)
+    assert viewer.available is node_available
+    assert all(action.available is node_available for action in viewer.actions)
+    if not node_available:
+        assert all(action.blocked_reason for action in viewer.actions)
+        assert any("node executable was not found" in reason for reason in viewer.blocked_reasons)

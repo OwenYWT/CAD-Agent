@@ -187,6 +187,13 @@ export interface DurableChangeSetDetail {
   branch_id: string;
   branch_name: string;
   base_revision_id: string;
+  base_state_version?: number | null;
+  head_revision_id?: string;
+  head_state_version?: number;
+  base_is_current?: boolean;
+  can_review?: boolean; can_commit?: boolean; can_rollback?: boolean; can_export?: boolean;
+  merge_source?: { source_document_id: string; source_revision_id: string; source_state_version: number;
+    source_head_revision_id: string; source_head_state_version: number } | null;
   base_revision_number: number;
   base_content_hash: string;
   base_manifest: Record<string, unknown>;
