@@ -1,3 +1,4 @@
+import type { RequirementBasis } from "../types/requirements";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getAuthToken } from "../auth";
 import { observedDocument } from "../stores/documentHeads";
@@ -257,6 +258,7 @@ export function useWebSocket() {
             return;
           }
           if (message.type === "task_stream_complete") {
+            if (message.data.workflow_run_id !== durableWorkflowRunId) return;
             setDurableTaskStatus(
               message.data.status,
               message.data.last_event_sequence,
@@ -335,6 +337,7 @@ export function useWebSocket() {
     capability: CapabilitySelection = "auto",
     manufacturingProfile: ManufacturingProfile | null = null,
     selectionContext?: SelectionContext | null,
+    requirementBasis?: RequirementBasis,
   ) => {
     const ws = wsRef.current;
     if (ws?.readyState !== WebSocket.OPEN) return false;
@@ -353,6 +356,7 @@ export function useWebSocket() {
       ...identity,
       idempotency_key: identity.idempotency_key || createId(),
       ...(selectionContext ? { selection_context: selectionContext } : {}),
+      ...(requirementBasis ? { requirement_basis: requirementBasis } : {}),
     };
     return sendSubmission(message);
   }, [sendSubmission]);

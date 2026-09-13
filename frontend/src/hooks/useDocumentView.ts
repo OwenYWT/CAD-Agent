@@ -5,11 +5,12 @@ import { getDocumentRevisionView } from "../services/engineeringService";
 import { projectViewedDocument, viewIdentity } from "../adapters/documentView";
 import { guardDraft } from "../stores/draftGuard";
 
-export function useDocumentView(head: CloudDocument | null, connected: boolean, latest: GenerationResult | null) {
+export function useDocumentView(head: CloudDocument | null, connected: boolean, latest: GenerationResult | null, reviewStatus?: string | null) {
   const [choice, setChoice] = useState<{ documentId: string; mode: DocumentViewMode; revisionId: string; changeSetId?: string | null } | null>(null);
   const [loaded, setLoaded] = useState<{ key: string; evidence?: DocumentRevisionView; error?: string } | null>(null);
-  const chosen = choice?.documentId === head?.document_id ? choice : null;
-  const firstCandidate = !head?.modeling_backend && latest?.success && latest.revision_id && latest.branch_id === head?.document_id
+  const rejected = reviewStatus === "rejected" || reviewStatus === "rolled_back";
+  const chosen = choice && choice.documentId === head?.document_id && !(rejected && choice.mode === "candidate" && choice.revisionId === latest?.revision_id) ? choice : null;
+  const firstCandidate = !rejected && !head?.modeling_backend && latest?.success && latest.revision_id && latest.branch_id === head?.document_id
     ? { mode: "candidate" as const, revisionId: latest.revision_id, changeSetId: latest.change_set_id } : undefined;
   const requestedIdentity = head ? viewIdentity(head, chosen || firstCandidate) : null;
   const documentId = requestedIdentity?.documentId, revisionId = requestedIdentity?.viewedRevisionId;
@@ -27,7 +28,7 @@ export function useDocumentView(head: CloudDocument | null, connected: boolean, 
   }, [documentId, revisionId, key]);
   const evidence = loaded?.key === key ? loaded.evidence || null : null;
   const identity = requestedIdentity && evidence && requestedIdentity.mode !== "committed" && evidence.review_status
-    ? {...requestedIdentity, mode: (["committed", "rolled_back"].includes(evidence.review_status) ? "history" : "candidate") as DocumentViewMode}
+    ? {...requestedIdentity, mode: (["committed", "rolled_back", "rejected"].includes(evidence.review_status) ? "history" : "candidate") as DocumentViewMode}
     : requestedIdentity;
   const document = head && identity ? projectViewedDocument(head, identity, evidence, connected) : null;
   const snapshot = evidence?.snapshot && Object.keys(evidence.snapshot.files || {}).length ? evidence.snapshot : null;

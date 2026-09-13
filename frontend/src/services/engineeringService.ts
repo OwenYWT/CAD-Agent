@@ -595,3 +595,22 @@ export async function refreshOnshapeLink(requestId: string): Promise<OnshapeLink
   });
   return readJson<OnshapeLink>(response, "Onshape 导入状态刷新失败");
 }
+
+export async function retryDurableTask(workflowRunId:string,idempotencyKey:string) {
+  const response=await authFetch(`${API_BASE}/api/tasks/${encodeURIComponent(workflowRunId)}/retry`,{
+    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({idempotency_key:idempotencyKey}),
+  });
+  return readJson<{workflow_run_id:string;project_id:string;branch_id:string;expected_base_revision_id:string;status:string}>(response,"重试提交失败");
+}
+
+export interface TaskValidationEvidence {
+  evidence_id:string; evidence_hash:string; workflow_run_id:string;
+  staging_manifest_id:string; revision_id:string | null; selected_for_revision:boolean;
+  gate:string; mode:string; outcome:string; report:Record<string,unknown>;
+}
+
+export async function getTaskValidationEvidence(taskId:string,evidenceId:string) {
+  return readJson<TaskValidationEvidence>(await authFetch(
+    `${API_BASE}/api/tasks/${encodeURIComponent(taskId)}/validations/${encodeURIComponent(evidenceId)}`,
+  ),'检查证据读取失败');
+}

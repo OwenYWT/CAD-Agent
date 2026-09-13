@@ -34,9 +34,10 @@ test("Agent failures render stable service codes and diagnostic fields", () => {
   const agent = read("src/components/agent/AgentPanel.tsx");
 
   assert.match(agent, /ERROR_CODE_LABELS/);
-  assert.match(agent, /structuredError\.type/);
-  assert.match(agent, /errorDetails\.operation_id/);
-  assert.match(agent, /errorDetails\.constraint_status/);
+  const card = read("src/components/agent/TaskCard.tsx");
+  assert.match(agent, /structuredErrorLabel\(task.errorCode\)/);
+  assert.match(card, /errorDetails\.operation_id/);
+  assert.match(card, /errorDetails\.constraint_status/);
   assert.doesNotMatch(agent, /includes\([^)]*(?:constraint|edge|parameter)/i);
 });
 

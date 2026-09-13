@@ -124,6 +124,7 @@ export function durableEventStep(event: DurableTaskEvent): StepUpdate {
       ...(projected || {}),
       source: "durable_task_event",
       sequence: event.sequence,
+      workflow_run_id: event.workflow_run_id,
     },
   };
 }

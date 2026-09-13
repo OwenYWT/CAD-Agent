@@ -1890,3 +1890,48 @@ button,
     gap: 2px;
   }
 }
+
+.ww-requirement-card, .ww-task-card {
+  border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 12px 0; background: white;
+  font-size: var(--type-caption-size); line-height: var(--type-caption-line); overflow-wrap: anywhere;
+}
+.ww-requirement-card h3, .ww-task-card h3, .ww-task-card h4 { font-weight: var(--type-section-weight); margin-bottom: 8px; }
+.ww-requirement-card label { display: block; margin: 10px 0; color: var(--muted); }
+.ww-requirement-card input:not([type="checkbox"]), .ww-requirement-card select, .ww-requirement-card textarea {
+  display: block; width: 100%; padding: 7px 8px; margin-top: 4px; border: 1px solid var(--line); border-radius: 5px; color: var(--ink); background: white;
+}
+.ww-requirement-card .ww-requirement-consent { display: flex; align-items: flex-start; gap: 8px; }
+.ww-requirement-card .ww-requirement-consent input { margin-top: 5px; }
+.ww-requirement-card dl > div, .ww-task-card dl > div { margin: 6px 0; }
+.ww-requirement-card dt, .ww-task-card dt { color: var(--muted); }
+.ww-task-card header { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:8px; }
+.ww-task-card--failed { border-color:#e6b8ae; background:#fffaf8; }
+.ww-task-card--running { border-color:var(--agent-border); }
+.ww-task-card--candidate { border-color:#d2c08a; }
+.ww-task-card--saved { border-color:#b1ccb9; }
+.ww-task-card details, .ww-task-history { margin:8px 0; font-size:var(--type-caption-size); }
+.ww-task-card summary, .ww-requirement-card summary, .ww-task-history summary { cursor:pointer; color:var(--muted); }
+.ww-task-card ol { padding-left:16px; list-style:decimal; }
+.ww-task-card li { margin:8px 0; }
+.ww-pane-host { display:flex; height:100%; min-width:0; min-height:0; flex-direction:column; }
+.ww-pane-host[hidden] { display:none; }
+.ww-inspector-overlay-backdrop {
+  position: fixed; inset: 0; z-index: 88; border: 0;
+  background: rgba(23, 23, 20, 0.2); backdrop-filter: blur(1px);
+}
+.ww-inspector-overlay-header {
+  display: flex; min-height: 48px; flex-shrink: 0; align-items: center;
+  justify-content: space-between; gap: 12px; padding: 8px 12px 8px 16px;
+  border-bottom: 1px solid var(--line); font-size: var(--type-body-size);
+  background: var(--surface);
+}
+@media (max-width: 1180px) {
+  .ww-inspector-pane.ww-inspector-pane--overlay {
+    position: fixed; inset: 0 0 0 auto; z-index: 90; display: flex;
+    width: min(100%, 440px); height: 100dvh; flex-direction: column;
+    box-shadow: -8px 0 30px rgba(35, 35, 31, 0.16);
+  }
+  .ww-inspector-pane--overlay > .ww-pane-host { height: auto; flex: 1; }
+}
+.ww-feature-tree { max-height: 260px; overflow: auto; }
+@media (min-width: 900px) { .workspace-header__agent-action { display:none; } }

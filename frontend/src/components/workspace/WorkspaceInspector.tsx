@@ -2,12 +2,15 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ArtifactUpdateEvent, DurableBOMProjection, FreeCADBOMDocument, GenerationResult } from "../../types";
 import type { EngineeringDomain, EngineeringStage, Parameter, Project } from "../../types/engineering";
 import { downloadEngineeringArtifact, getRevisionBOM } from "../../services/engineeringService";
+import { guardDraft } from "../../stores/draftGuard";
 import { Icon } from "../ui/Icon";
 
-type InspectorTab = "document" | "parameters" | "versions" | "code" | "files" | "bom";
+export type InspectorTab = "requirements" | "document" | "sharing" | "engineering" | "parameters" | "versions" | "code" | "files" | "bom";
 
 interface WorkspaceInspectorProps {
   cloudDocument?: ReactNode;
+  requirementContent?:ReactNode;sharingContent?:ReactNode;branchContent?:ReactNode;engineeringContent?:ReactNode;
+  activeTab?:InspectorTab;onTabChange?:(tab:InspectorTab)=>void;
   view: EngineeringDomain;
   project: Project;
   stages: EngineeringStage[];
@@ -27,7 +30,10 @@ interface WorkspaceInspectorProps {
 }
 
 const TABS: Array<[InspectorTab, string]> = [
-  ["document", "文档"],
+  ["requirements", "需求与任务"],
+  ["document", "特征与属性"],
+  ["sharing", "共享"],
+  ["engineering", "工程"],
   ["parameters", "属性"],
   ["versions", "版本"],
   ["code", "代码"],
@@ -40,7 +46,7 @@ function fileLabel(format: string) {
 }
 
 export default function WorkspaceInspector({
-  cloudDocument,
+  cloudDocument, requirementContent, sharingContent, branchContent, engineeringContent, activeTab, onTabChange,
   view,
   project,
   stages,
@@ -58,7 +64,8 @@ export default function WorkspaceInspector({
   revisionId = null,
   bom = null,
 }: WorkspaceInspectorProps) {
-  const [tab, setTab] = useState<InspectorTab>(cloudDocument ? "document" : "parameters");
+  const [selectedTab, setTab] = useState<InspectorTab | null>(null);
+  const tab=activeTab || selectedTab || (cloudDocument ? result?.files?.fcstd ? "document" : "requirements" : "parameters");
   const [downloadError, setDownloadError] = useState("");
   const [downloading, setDownloading] = useState<string | null>(null);
   const downloadFile = async (url: string, fallbackName: string) => {
@@ -152,9 +159,15 @@ export default function WorkspaceInspector({
     <div className="ww-pane-content ww-inspector-content">
       {showHeader ? <div className="ww-pane-header"><div><p className="ww-pane-eyebrow">机械设计</p><h2>检查器 {!cloudDocument && result?.version ? <span className="ww-inspector-version">v{result.version}</span> : null}</h2></div>{onCollapse ? <button aria-label="折叠检查器" className="workspace-icon-button" onClick={onCollapse} type="button"><Icon name="minus" size={15} /></button> : null}</div> : null}
       <div className="ww-inspector-tabs" role="tablist" aria-label="机械设计检查器">
-        {TABS.filter(([id]) => id !== "document" || cloudDocument).map(([id, label]) => <button aria-selected={tab === id} className={tab === id ? "is-active" : ""} key={id} onClick={() => setTab(id)} role="tab" type="button">{label}</button>)}
+        {TABS.filter(([id]) => (
+          id === "requirements" ? !!requirementContent : id === "sharing" ? !!sharingContent : id === "engineering" ? !!engineeringContent
+          : id === "document" ? !!cloudDocument : id === "parameters" || id === "code" ? !result?.files?.fcstd && !!result?.success : id === "bom" ? !!bom : true
+        )).map(([id, label]) => <button aria-selected={tab === id} className={tab === id ? "is-active" : ""} key={id} onClick={() => guardDraft(()=>onTabChange ? onTabChange(id) : setTab(id))} role="tab" type="button">{label}</button>)}
       </div>
       <div className="ww-pane-scroll">
+        {tab === "requirements" ? requirementContent : null}
+        {tab === "sharing" ? sharingContent : null}
+        {tab === "engineering" ? engineeringContent : null}
         {tab === "document" ? cloudDocument : null}
         {tab === "parameters" ? (
           <div className="ww-inspector-section">
@@ -163,7 +176,7 @@ export default function WorkspaceInspector({
           </div>
         ) : null}
 
-        {tab === "versions" ? <div className="ww-version-history-host">{versionHistory}</div> : null}
+        {tab === "versions" ? <div className="ww-version-history-host">{versionHistory}{branchContent}</div> : null}
 
         {tab === "code" ? (
           <div className="ww-inspector-section">

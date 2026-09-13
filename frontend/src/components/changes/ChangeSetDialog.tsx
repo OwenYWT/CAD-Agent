@@ -156,7 +156,7 @@ export default function ChangeSetDialog({
         }
         if (generation.current !== actionGeneration) return;
         await load();
-        if (generation.current === actionGeneration && changeSet.reviewStatus === "committed") await onApplied?.();
+        if (generation.current === actionGeneration) await onApplied?.();
         return;
       }
       const restored = await getModelSnapshot(changeSet.baseRevisionId);
