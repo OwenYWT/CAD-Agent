@@ -898,12 +898,17 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
             const candidateRevisionId = changeSetEvent.candidateRevisionId
               || panel.result?.revision_id
               || null;
+            const resultBelongsToCandidate = Boolean(panel.result && (
+              panel.result.change_set_id === changeSetEvent.changeSetId
+              || panel.result.workflow_run_id === event.workflow_run_id
+                && (!panel.result.revision_id || panel.result.revision_id === candidateRevisionId)
+            ));
             const currentRevisionId = changeSetEvent.status === "committed"
               ? candidateRevisionId || changeSetEvent.currentRevisionId
               : abandonedChangeSet
                 ? baseRevisionId || changeSetEvent.currentRevisionId
                 : changeSetEvent.currentRevisionId;
-            const synchronizedResult = panel.result
+            const synchronizedResult = resultBelongsToCandidate && panel.result
               ? {
                   ...panel.result,
                   expected_base_revision_id: baseRevisionId
@@ -929,7 +934,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
                       candidate_status: changeSetEvent.candidateStatus,
                     }
                   : durable.agent,
-                preparedResult: abandonedChangeSet || synchronizedResult
+                preparedResult: resultBelongsToCandidate
                   ? synchronizedResult
                   : durable.preparedResult,
               },
@@ -967,11 +972,14 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
           if (panel.submissionPending || (panel.durable?.workflowRunId
             && detail.source_workflow_run_id !== panel.durable.workflowRunId)) return {};
           const durable = panel.durable || emptyDurableContext();
-          const abandonedChangeSet = ["rejected", "changes_requested", "rolled_back"]
-            .includes(detail.status);
           const sameChangeSet = panel.result?.change_set_id === detail.id
             || durable.changeSetId === detail.id;
-          const synchronizedResult = sameChangeSet && panel.result
+          const resultBelongsToCandidate = Boolean(panel.result && (
+            panel.result.change_set_id === detail.id
+            || panel.result.workflow_run_id === detail.source_workflow_run_id
+              && (!panel.result.revision_id || panel.result.revision_id === detail.candidate_revision_id)
+          ));
+          const synchronizedResult = sameChangeSet && resultBelongsToCandidate && panel.result
             ? {
                 ...panel.result,
                 project_id: panel.result.project_id || detail.project_id,
@@ -1001,7 +1009,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
               taskStatus: detail.workflow_status
                 || durable.taskStatus
                 || null,
-              preparedResult: abandonedChangeSet || sameChangeSet
+              preparedResult: resultBelongsToCandidate && sameChangeSet
                 ? synchronizedResult
                 : durable.preparedResult,
             },

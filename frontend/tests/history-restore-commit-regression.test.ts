@@ -91,3 +91,24 @@ test("a committed historical result does not block modifying a later head", () =
   assert.equal(durableResultNeedsCommit(store.getActivePanel().result, "later-head", "committed"), false);
   assert.equal(durableResultNeedsCommit(store.getActivePanel().result, "later-head", "pending_review"), true);
 });
+
+
+test("review metadata never relabels the last valid model while a new candidate is still running", () => {
+  for (const source of ["detail", "event"]) {
+    const {store, panel} = setup("committed");
+    const previous = store.getActivePanel().result;
+    store.beginGeneration();
+    store.setDurableWorkflowStarted({workflow_run_id: "new-workflow", project_id: "project", branch_id: "branch",
+      expected_base_revision_id: "candidate", panel_id: panel.id, status: "running"});
+    store.applyDurableSnapshot({id: "new-workflow", project_id: "project", kind: "mcad.modify", status: "waiting_confirmation",
+      request_payload: {branch_id: "branch"}, last_event_sequence: 0,
+      change_set: {id: "new-change", status: "pending_review", base_revision_id: "candidate", candidate_revision_id: "new-candidate"}} as DurableTaskSnapshot, panel.id);
+    if (source === "detail") store.applyDurableChangeSet({...review("accepted"), id: "new-change",
+      source_workflow_run_id: "new-workflow", candidate_revision_id: "new-candidate", workflow_status: "waiting_confirmation"}, panel.id);
+    else store.applyDurableEvent({...event("accepted", 1), workflow_run_id: "new-workflow",
+      payload: {change_set_id: "new-change", candidate_revision_id: "new-candidate", base_revision_id: "candidate"}}, panel.id);
+    assert.deepEqual(store.getActivePanel().result, previous);
+    assert.equal(store.getActivePanel().durable?.preparedResult, null);
+    assert.equal(store.getActivePanel().durable?.changeSetStatus, "accepted");
+  }
+});
