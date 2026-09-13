@@ -316,7 +316,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
     if (useSessionStore.getState().activePanelId !== panel.id) throw new Error("面板已切换，请在当前面板重新选择历史版本");
     if (panel.isGenerating) throw new Error("请先完成或取消当前任务，再恢复历史版本");
     if (snapshot.files?.fcstd || snapshot.result?.files?.fcstd) {
-      if (!restoreRevision(snapshot.id)) return false;
+      if (!restoreRevision(snapshot.revision_id || snapshot.id)) return false;
       useSessionStore.getState().beginGeneration("正在准备历史原生版本恢复");
       return true;
     }
@@ -394,7 +394,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
       onView={(snapshot) => { if (snapshot.panel_id !== panel.id) return; documentView.show("history", snapshot.revision_id || snapshot.id); }}
       activeSnapshotId={model.result?.snapshot_id}
       currentParts={model.result?.assembly_parts || []}
-      onModifyPart={viewIsCommitted ? modifyPart : undefined}
+      onModifyPart={viewIsCommitted ? (name, instruction, partId) => modifyPart(name, instruction, partId, model.result) : undefined}
       onRestore={restoreSnapshot}
       panelId={panel.id}
       refreshKey={model.result?.snapshot_id}
@@ -484,7 +484,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
         }}
         onAskAgent={(prompt) => { setChecksOpen(false); askAgent(prompt); }}
         onClose={() => setChecksOpen(false)}
-        onModifyPart={viewIsCommitted ? modifyPart : undefined}
+        onModifyPart={viewIsCommitted ? (name, instruction, partId) => modifyPart(name, instruction, partId, model.result) : undefined}
         onRerunCode={viewIsCommitted ? () => model.result?.code ? executeWithProgress(model.result.code) : undefined : undefined}
         onRestore={restoreSnapshot}
         onResumeRun={viewIsCommitted ? resumeWithProgress : undefined}

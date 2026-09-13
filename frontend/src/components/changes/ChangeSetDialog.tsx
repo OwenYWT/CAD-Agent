@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   adaptDurableChangeSet,
   buildChangeSet,
+  durableChangeSetAcceptanceState,
+  durableChangeSetCanCommit,
 } from "../../adapters/changeSetAdapter";
+import type { DurableChangeSetAcceptanceBlockReason } from "../../adapters/changeSetAdapter";
 import {
   acceptDurableChangeSet,
   commitDurableChangeSet,
@@ -62,6 +65,18 @@ function validationLabel(status: ChangeSet["validation"]["status"]) {
   }[status];
 }
 
+function acceptanceBlockLabel(
+  reason: DurableChangeSetAcceptanceBlockReason,
+) {
+  return {
+    not_durable: "当前查看的是历史快照，只能恢复或继续修改，不能直接接受变更。",
+    not_pending_review: "当前变更已不在待审阅状态，请刷新后再操作。",
+    validation_failed: "存在未通过的必需验证，修复验证问题后才能接受变更。",
+    validation_unknown: "缺少可判定的验证证据，验证完成后才能接受变更。",
+    review_note_required: "存在审阅风险，请先填写审阅意见后再接受变更。",
+  }[reason];
+}
+
 export default function ChangeSetDialog({
   open,
   panelId,
@@ -100,6 +115,7 @@ export default function ChangeSetDialog({
         setDetail(detail);
         onDurableChangeSet?.(detail);
         setChangeSet(adaptDurableChangeSet(detail, panelId));
+        setReviewNote(detail.review_note || "");
         setStatus("success");
         return;
       }
@@ -109,6 +125,7 @@ export default function ChangeSetDialog({
         : snapshots[0];
       if (!target) {
         setChangeSet(null);
+        setReviewNote("");
         setStatus("success");
         return;
       }
@@ -119,6 +136,7 @@ export default function ChangeSetDialog({
       if (generation.current !== requestGeneration) return;
       setDetail(null);
       setChangeSet(buildChangeSet(current, base));
+      setReviewNote("");
       setStatus("success");
     } catch (reason) {
       if (generation.current !== requestGeneration) return;
@@ -138,6 +156,46 @@ export default function ChangeSetDialog({
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [load, open]);
+
+  useEffect(() => {
+    if (
+      !open
+      || changeSet?.source !== "durable"
+      || changeSet.reviewStatus !== "accepted"
+      || !changeSet.taskId
+      || ["succeeded", "failed", "cancelled", "timed_out"].includes(
+        changeSet.workflowStatus || "",
+      )
+    ) return;
+    const timer = window.setInterval(() => void load(), 2000);
+    return () => window.clearInterval(timer);
+  }, [changeSet?.reviewStatus, changeSet?.source, changeSet?.taskId, changeSet?.workflowStatus, load, open]);
+
+  const acceptanceState = durableChangeSetAcceptanceState(changeSet, reviewNote);
+  const acceptanceHint = !changeSet
+    ? null
+    : acceptanceState.reason
+      ? acceptanceBlockLabel(acceptanceState.reason)
+      : detail?.can_review !== true
+        ? "服务器尚未确认当前用户可以审阅此变更。"
+        : detail?.base_is_current !== true
+          ? "候选基线已不是当前版本，请刷新后重新生成变更。"
+          : null;
+  const acceptanceReady = acceptanceState.canAccept
+    && detail?.can_review === true
+    && detail.base_is_current === true;
+  const commitReady = changeSet
+    ? durableChangeSetCanCommit(changeSet, canCommit)
+      && detail?.can_commit === true
+      && detail.base_is_current === true
+    : false;
+  const workflowStillRunning = Boolean(
+    changeSet?.source === "durable"
+    && changeSet.reviewStatus === "accepted"
+    && changeSet.taskId
+    && changeSet.workflowStatus !== "succeeded"
+    && !["failed", "cancelled", "timed_out"].includes(changeSet.workflowStatus || ""),
+  );
 
   const rollback = async () => {
     if (!changeSet?.baseRevisionId) return;
@@ -192,7 +250,10 @@ export default function ChangeSetDialog({
         return;
       }
       if (generation.current !== actionGeneration) return;
-      if (!onAskAgent) { await load(); return; }
+      await load();
+      if (generation.current !== actionGeneration) return;
+      await onApplied?.();
+      if (!onAskAgent) return;
     }
     const parameterSummary = changeSet.parameterChanges.length
       ? changeSet.parameterChanges
@@ -201,6 +262,7 @@ export default function ChangeSetDialog({
       : "没有可证实的参数差异";
     onAskAgent?.(
       `请基于当前变更继续修改。目标：${changeSet.objective || "未记录"}。`
+      + `审查意见：${reviewNote.trim() || "未填写"}。`
       + `已证实参数变化：${parameterSummary}。`
       + `风险：${changeSet.risk.reasons.join("；")}。`,
     );
@@ -208,6 +270,10 @@ export default function ChangeSetDialog({
 
   const accept = async () => {
     if (!changeSet || changeSet.source !== "durable") return;
+    if (!acceptanceReady) {
+      setError(acceptanceHint || "当前变更尚未满足接受条件，请刷新后重试。");
+      return;
+    }
     const actionGeneration = generation.current;
     setRestoring(true);
     setError("");
@@ -224,6 +290,10 @@ export default function ChangeSetDialog({
 
   const commit = async () => {
     if (!changeSet || changeSet.source !== "durable") return;
+    if (!commitReady) {
+      setError("当前候选尚未满足提交条件，请完成审阅、验证和工作流后重试。");
+      return;
+    }
     const actionGeneration = generation.current;
     setRestoring(true);
     setError("");
@@ -263,6 +333,11 @@ export default function ChangeSetDialog({
       }
       if (generation.current !== actionGeneration) return;
       if (current.status === "accepted") {
+        if (!durableChangeSetCanCommit(adaptDurableChangeSet(current, panelId), canCommit)) {
+          // Acceptance is persisted. Polling resumes the same candidate after
+          // the workflow finishes; never claim that it was committed early.
+          return;
+        }
         try { await commitDurableChangeSet(id); }
         catch (reason) {
           current = await present();
@@ -292,6 +367,16 @@ export default function ChangeSetDialog({
               ? `审查状态：${changeSet.reviewStatus || "未知"}`
               : "当前为兼容快照审查；持久 Change Set 建立后可执行接受与提交。"}
           </span>
+          {changeSet && acceptanceHint ? (
+            <span className="mr-auto type-caption text-amber-700" id="change-set-acceptance-hint" role="status">
+              {acceptanceHint}
+            </span>
+          ) : null}
+          {workflowStillRunning ? (
+            <span className="mr-auto type-caption text-amber-700" role="status">
+              工作流仍在完成验证，完成后可提交版本。
+            </span>
+          ) : null}
           <button className="workspace-button" onClick={onClose} type="button">关闭</button>
           <button
             className="workspace-button"
@@ -335,15 +420,9 @@ export default function ChangeSetDialog({
                 : "回滚"}
           </button>
           <button
+            aria-describedby={acceptanceHint ? "change-set-acceptance-hint" : undefined}
             className="workspace-button"
-            disabled={
-              changeSet?.source !== "durable"
-              || changeSet.reviewStatus !== "pending_review"
-              || detail?.can_review !== true || detail?.base_is_current !== true
-              || changeSet.validation.status === "fail" || changeSet.validation.status === "unknown"
-              || (changeSet.validation.status === "warning" && !reviewNote.trim())
-              || restoring
-            }
+            disabled={!acceptanceReady || restoring}
             onClick={() => void accept()}
             type="button"
           >
@@ -351,14 +430,7 @@ export default function ChangeSetDialog({
           </button>
           <button
             className="workspace-button workspace-button--primary"
-            disabled={
-              changeSet?.source !== "durable"
-              || changeSet.reviewStatus !== "accepted"
-              || detail?.can_commit !== true || detail?.base_is_current !== true
-              || changeSet.validation.status === "fail" || changeSet.validation.status === "unknown"
-              || !canCommit
-              || restoring
-            }
+            disabled={!commitReady || restoring}
             onClick={() => void commit()}
             type="button"
           >
@@ -366,6 +438,7 @@ export default function ChangeSetDialog({
           </button>
           {detail?.can_commit && canCommit ? <button className="workspace-button workspace-button--primary" type="button"
             disabled={restoring || !["pending_review", "accepted", "committed"].includes(detail.status)
+              || (detail.status === "accepted" && !commitReady)
               || (detail.status !== "committed" && (!detail.base_is_current || changeSet?.validation.status === "fail" || changeSet?.validation.status === "unknown"))
               || (detail.status === "pending_review" && (!detail.can_review || (changeSet?.validation.status === "warning" && !reviewNote.trim())))}
             onClick={() => void apply()}>{restoring ? "正在核对并应用" : detail.status === "committed" ? "同步已提交版本" : detail.status === "accepted" ? "继续提交此候选" : "应用修改"}</button> : null}

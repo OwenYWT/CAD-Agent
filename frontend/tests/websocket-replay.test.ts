@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   durableEventStep,
   durableChangeSetHeadRevision,
+  durableResultNeedsCommit,
   durableResultHeadRevision,
   durableResultTaskStatus,
   durableSnapshotHeadRevision,
@@ -43,6 +44,20 @@ test("reconnect cursor applies each persisted event at most once", () => {
   assert.equal(shouldApplyDurableEvent(11, event), true);
   assert.equal(shouldApplyDurableEvent(12, event), false);
   assert.equal(shouldApplyDurableEvent(13, event), false);
+});
+
+test('candidate requires commit', () => {
+  assert.equal(durableResultNeedsCommit({
+    change_set_id: 'change-1',
+    revision_id: 'candidate-1',
+  }, 'base-1'), true);
+  assert.equal(durableResultNeedsCommit({
+    change_set_id: 'change-1',
+    revision_id: 'candidate-1',
+  }, 'candidate-1'), false);
+  assert.equal(durableResultNeedsCommit({
+    revision_id: 'candidate-1',
+  }, 'base-1'), false);
 });
 
 

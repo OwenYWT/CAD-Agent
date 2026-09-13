@@ -595,5 +595,63 @@ export function adaptDurableChangeSet(
     createdAt: detail.created_at,
     source: "durable",
     reviewStatus: detail.status,
+    workflowStatus: detail.workflow_status || null,
+    reviewNote: detail.review_note || null,
   };
+}
+
+export type DurableChangeSetAcceptanceBlockReason =
+  | "not_durable"
+  | "not_pending_review"
+  | "validation_failed"
+  | "validation_unknown"
+  | "review_note_required";
+
+export interface DurableChangeSetAcceptanceState {
+  canAccept: boolean;
+  reason: DurableChangeSetAcceptanceBlockReason | null;
+}
+
+export function durableChangeSetAcceptanceState(
+  changeSet: Pick<ChangeSet, "source" | "reviewStatus" | "validation"> | null,
+  reviewNote = "",
+): DurableChangeSetAcceptanceState {
+  if (!changeSet || changeSet.source !== "durable") {
+    return { canAccept: false, reason: "not_durable" };
+  }
+  if (changeSet.reviewStatus !== "pending_review") {
+    return { canAccept: false, reason: "not_pending_review" };
+  }
+  if (changeSet.validation.status === "fail") {
+    return { canAccept: false, reason: "validation_failed" };
+  }
+  if (changeSet.validation.status === "unknown") {
+    return { canAccept: false, reason: "validation_unknown" };
+  }
+  if (changeSet.validation.status === "warning" && !reviewNote.trim()) {
+    return { canAccept: false, reason: "review_note_required" };
+  }
+  return { canAccept: true, reason: null };
+}
+
+export function durableChangeSetCanCommit(
+  changeSet: Pick<
+    ChangeSet,
+    "source" | "reviewStatus" | "workflowStatus" | "reviewNote" | "taskId" | "validation"
+  >,
+  canCommit = true,
+): boolean {
+  if (
+    !canCommit
+    || changeSet.source !== "durable"
+    || changeSet.reviewStatus !== "accepted"
+    || changeSet.validation.status === "fail"
+    || changeSet.validation.status === "unknown"
+  ) {
+    return false;
+  }
+  if (changeSet.validation.status === "warning" && !changeSet.reviewNote?.trim()) {
+    return false;
+  }
+  return !changeSet.taskId || changeSet.workflowStatus === "succeeded";
 }

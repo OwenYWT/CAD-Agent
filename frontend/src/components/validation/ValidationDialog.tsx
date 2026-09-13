@@ -26,7 +26,7 @@ interface ValidationDialogProps {
   isGenerating: boolean;
   activeSnapshotId?: string | null;
   currentParts?: GenerationResult["assembly_parts"];
-  onModifyPart?: (partName: string, instruction: string) => boolean | void;
+  onModifyPart?: (partName: string, instruction: string, partId?: string | null) => boolean | void;
   refreshKey?: string | number | null;
   onClose: () => void;
   onAnalysis?: (analysis: DesignAnalysis) => void;
@@ -82,6 +82,12 @@ export default function ValidationDialog({
       !result.needs_confirmation,
   );
 
+  const currentVersionSummary = result ? {
+    version: result.version ?? null,
+    snapshotId: result.snapshot_id || activeSnapshotId || null,
+    revisionId: result.revision_id || result.expected_base_revision_id || null,
+  } : null;
+
   const run = async () => {
     if (!canAnalyzeDesign || !result?.request_id) {
       setStatus("error");
@@ -133,6 +139,17 @@ export default function ValidationDialog({
     >
       <div className="space-y-5 p-5">
         <DesignBriefPanel brief={brief} />
+
+        {currentVersionSummary ? (
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 type-caption text-[var(--text)]">
+            <div className="type-control">当前版本概览</div>
+            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 type-caption">
+              <span>版本：v{currentVersionSummary.version ?? "未知"}</span>
+              <span>快照：{currentVersionSummary.snapshotId || "未生成"}</span>
+              <span>基线：{currentVersionSummary.revisionId || "未知"}</span>
+            </div>
+          </div>
+        ) : null}
 
         {result?.needs_confirmation ? (
           <InlineState

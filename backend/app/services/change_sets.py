@@ -260,6 +260,8 @@ async def _record_operation(
             payload={
                 "change_set_id": str(row["id"]),
                 "status": status,
+                "base_revision_id": str(row["base_revision_id"]),
+                "candidate_revision_id": str(row["candidate_revision_id"]),
                 "note": note,
             },
         )

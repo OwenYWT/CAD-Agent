@@ -4,6 +4,7 @@ import { getAuthToken } from "../auth";
 import { observedDocument } from "../stores/documentHeads";
 import {
   durableEventStep,
+  durableResultNeedsCommit,
   durableWriteIdentity,
   shouldApplyDurableEvent,
   webSocketAuthProtocol,
@@ -17,6 +18,7 @@ import type {
   AssemblyPartInfo,
   CapabilitySelection,
   DurableWSMessage,
+  GenerationResult,
   ManufacturingProfile,
   WSMessage,
 } from "../types";
@@ -26,13 +28,16 @@ import { pendingSubmission, rememberSubmission, acknowledgeSubmission } from "..
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const BASE_RECONNECT_DELAY_MS = 1000;
+const PENDING_CHANGE_SET_MESSAGE = "当前有待审阅候选，请先应用或拒绝此候选，再基于已保存版本修改。";
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "disconnected";
 
 export function durableIdentityPayload(panel: PanelState) {
   const durable = panel.durable || emptyDurableContext();
   const doc = durable.branchId ? observedDocument(durable.branchId) : undefined;
-  return durableWriteIdentity(doc ? { ...durable, currentRevisionId: doc.head_revision_id, stateVersion: doc.state_version } : durable);
+  // New requests use the document stream's observed Head and generation.
+  // Submitted requests retain their frozen identity in pendingSubmissions.
+  return durableWriteIdentity(durable, doc);
 }
 
 export function operationIntentForPanel(
@@ -42,6 +47,15 @@ export function operationIntentForPanel(
   if (document) return document.modeling_backend ? "modify" : "generate";
   if (panel?.durable?.branchId) return panel.result?.success && panel.result.revision_id === panel.durable.currentRevisionId ? "modify" : "generate";
   return panel?.result?.success ? "modify" : "generate";
+}
+
+function hasPendingChangeSet(panel: PanelState | undefined): boolean {
+  return durableResultNeedsCommit(
+    panel?.result,
+    panel?.durable?.currentRevisionId,
+    panel?.result?.change_set_id === panel?.durable?.changeSetId
+      ? panel?.durable?.changeSetStatus : null,
+  );
 }
 
 function requestPanelReplay(ws: WebSocket) {
@@ -344,6 +358,10 @@ export function useWebSocket() {
     const state = useSessionStore.getState();
     const panelId = state.activePanelId;
     const panel = state.panels.find((candidate) => candidate.id === panelId);
+    if (operationIntentForPanel(panel) === "modify" && hasPendingChangeSet(panel)) {
+      setError(PENDING_CHANGE_SET_MESSAGE, panelId);
+      return false;
+    }
     const identity = panel ? durableIdentityPayload(panel) : {};
     const message = {
       type: "user_message",
@@ -359,7 +377,7 @@ export function useWebSocket() {
       ...(requirementBasis ? { requirement_basis: requirementBasis } : {}),
     };
     return sendSubmission(message);
-  }, [sendSubmission]);
+  }, [sendSubmission, setError]);
 
   const executeCode = useCallback((code: string) => {
     const ws = wsRef.current;
@@ -367,6 +385,10 @@ export function useWebSocket() {
     const state = useSessionStore.getState();
     const panelId = state.activePanelId;
     const panel = state.panels.find((candidate) => candidate.id === panelId);
+    if (hasPendingChangeSet(panel)) {
+      setError(PENDING_CHANGE_SET_MESSAGE, panelId);
+      return false;
+    }
     const identity = panel ? durableIdentityPayload(panel) : {};
     return sendSubmission({
       type: "execute_code",
@@ -375,7 +397,7 @@ export function useWebSocket() {
       ...identity,
       idempotency_key: identity.idempotency_key || createId(),
     });
-  }, [sendSubmission]);
+  }, [sendSubmission, setError]);
 
   const restoreRevision = useCallback((revisionId: string) => {
     const ws = wsRef.current;
@@ -426,25 +448,37 @@ export function useWebSocket() {
     }
   }, []);
 
-  const modifyPart = useCallback((partName: string, instruction: string) => {
+  const modifyPart = useCallback((partName: string, instruction: string, partId?: string | null,
+    viewedResult?: Pick<GenerationResult, "revision_id" | "code" | "assembly_parts"> | null) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return false;
     const panelId = useSessionStore.getState().activePanelId;
     const panel = useSessionStore.getState().panels.find(
       (candidate) => candidate.id === panelId,
     );
+    if (hasPendingChangeSet(panel)) {
+      setError(PENDING_CHANGE_SET_MESSAGE, panelId);
+      return false;
+    }
     const identity = panel ? durableIdentityPayload(panel) : {};
+    if (!viewedResult?.revision_id || viewedResult.revision_id !== identity.expected_base_revision_id) {
+      setError("当前版本已更新，请等待模型同步后重新选择零件。", panelId);
+      return false;
+    }
     const sent = sendSubmission({
       type: "modify_part",
       part_name: partName,
+      part_id: partId || undefined,
       instruction,
       panel_id: panelId,
-      code: panel?.result?.code || undefined,
+      code: viewedResult.code || undefined,
+      assembly_parts: viewedResult.assembly_parts || [],
+      base_revision_id: viewedResult.revision_id,
       ...identity,
       idempotency_key: identity.idempotency_key || createId(),
     });
     if (sent) useSessionStore.getState().addMessage({role:"user",content:`修改零件 ${partName}: ${instruction}`});
     return sent;
-  }, [sendSubmission]);
+  }, [sendSubmission, setError]);
 
   const modifyParameters = useCallback((
     updates: { parameter_id: string; value: number }[],
@@ -454,6 +488,10 @@ export function useWebSocket() {
     const state = useSessionStore.getState();
     const panelId = state.activePanelId;
     const panel = state.panels.find((candidate) => candidate.id === panelId);
+    if (hasPendingChangeSet(panel)) {
+      setError(PENDING_CHANGE_SET_MESSAGE, panelId);
+      return false;
+    }
     const stateSha256 = expectedStateSha256
       || panel?.result?.parameter_state_sha256;
     if (!panel || !stateSha256 || updates.length === 0) return false;
@@ -467,7 +505,7 @@ export function useWebSocket() {
       ...identity,
       idempotency_key: identity.idempotency_key || createId(),
     });
-  }, [sendSubmission]);
+  }, [sendSubmission, setError]);
 
   const restoreContext = useCallback((panelId: string, code = "", assemblyParts: AssemblyPartInfo[] = []) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {

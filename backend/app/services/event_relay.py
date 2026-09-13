@@ -350,6 +350,51 @@ def _project_status(value: Any, fallback: str = "running") -> str:
     return _STATUS_PROJECTION.get(str(value or "").lower(), fallback)
 
 
+def _project_candidate_lifecycle(
+    *,
+    candidate_status: str | None,
+    change_set_status: str | None,
+    workflow_status: str,
+) -> dict[str, str | None]:
+    """Project the user-visible lifecycle from its durable source records."""
+    review_status = str(change_set_status or "")
+    if review_status == "committed":
+        return {
+            "current_stage": "complete",
+            "current_status": workflow_status,
+            "candidate_status": None,
+        }
+    if review_status in {"rejected", "changes_requested", "rolled_back"}:
+        return {
+            "current_stage": "complete",
+            "current_status": review_status,
+            "candidate_status": None,
+        }
+    if review_status == "accepted":
+        return {
+            "current_stage": "review",
+            "current_status": "accepted",
+            "candidate_status": "accepted",
+        }
+    if review_status == "pending_review":
+        return {
+            "current_stage": "review",
+            "current_status": candidate_status or "reviewable",
+            "candidate_status": candidate_status or "reviewable",
+        }
+    if candidate_status == "reviewable":
+        return {
+            "current_stage": "review",
+            "current_status": "reviewable",
+            "candidate_status": "reviewable",
+        }
+    return {
+        "current_stage": "complete" if workflow_status == "succeeded" else "planning",
+        "current_status": candidate_status or workflow_status,
+        "candidate_status": candidate_status,
+    }
+
+
 def _event_projection(
     event: dict[str, Any],
     *,
@@ -463,6 +508,16 @@ def _event_projection(
         label = _STAGE_LABEL[stage]
         status = _project_status(value)
         message = "候选版本可以审查" if value == "reviewable" else f"候选模型状态：{value}"
+    elif event_type == "change_set.accepted":
+        stage, label, status, message = "review", "变更审查", "success", "变更已接受"
+    elif event_type == "change_set.committed":
+        stage, label, status, message = "complete", "任务完成", "success", "版本已提交"
+    elif event_type == "change_set.changes_requested":
+        stage, label, status, message = "review", "变更审查", "warn", "已请求修改变更"
+    elif event_type == "change_set.rejected":
+        stage, label, status, message = "review", "变更审查", "failed", "变更已拒绝"
+    elif event_type == "change_set.rolled_back":
+        stage, label, status, message = "complete", "任务完成", "warn", "版本已回滚"
 
     return {
         "stage": stage,
@@ -652,11 +707,15 @@ async def get_task_snapshot(
             await connection.execute(
                 text(
                     """
-                    SELECT id, status, base_revision_id,
-                           candidate_revision_id, objective, risk_summary,
-                           updated_at
-                    FROM change_sets
-                    WHERE source_workflow_run_id=:workflow_run_id
+                    SELECT c.id, c.status, c.base_revision_id,
+                           c.candidate_revision_id, c.objective, c.risk_summary,
+                           c.updated_at, b.head_revision_id
+                    FROM change_sets c
+                    JOIN project_branches b
+                      ON b.tenant_id=c.tenant_id
+                     AND b.project_id=c.project_id
+                     AND b.id=c.branch_id
+                    WHERE c.source_workflow_run_id=:workflow_run_id
                     """
                 ),
                 {"workflow_run_id": workflow_run_id},
@@ -749,9 +808,14 @@ async def get_task_snapshot(
         ),
         steps[-1] if steps else None,
     )
+    candidate_projection = _project_candidate_lifecycle(
+        candidate_status=(candidate["status"] if candidate else None),
+        change_set_status=(change_set["status"] if change_set else None),
+        workflow_status=str(workflow["status"]),
+    )
     current_stage = (
-        "review"
-        if candidate and candidate["status"] == "reviewable"
+        candidate_projection["current_stage"]
+        if candidate or change_set
         else "complete"
         if workflow["status"] == "succeeded"
         else _STEP_STAGE.get(str(current_step["kind"]), "planning")
@@ -791,14 +855,14 @@ async def get_task_snapshot(
             "current_status": (
                 workflow["status"]
                 if workflow["status"] in {"failed", "cancelled", "timed_out", "waiting_confirmation"}
-                else candidate["status"]
-                if candidate and candidate["status"] == "reviewable"
+                else candidate_projection["current_status"]
+                if candidate or change_set
                 else current_step["status"]
                 if current_step
                 else workflow["status"]
             ),
             "candidate_build_id": candidate["id"] if candidate else None,
-            "candidate_status": candidate["status"] if candidate else None,
+            "candidate_status": candidate_projection["candidate_status"],
             "repair_count": repair_count,
             "plan": (
                 dict(plan_payload)
@@ -1082,7 +1146,13 @@ async def get_change_set_detail(
                             OR event_type IN (
                               'step.created', 'step.state_changed',
                               'attempt.created', 'attempt.started',
-                              'attempt.completed', 'attempt.state_changed'
+                              'attempt.completed', 'attempt.state_changed',
+                              'change_set.evidence_updated',
+                              'change_set.accepted',
+                              'change_set.committed',
+                              'change_set.changes_requested',
+                              'change_set.rejected',
+                              'change_set.rolled_back'
                             )
                           )
                         ORDER BY sequence
@@ -1129,6 +1199,7 @@ async def get_change_set_detail(
         "project_id",
         "branch_id",
         "branch_name",
+        "head_revision_id",
         "base_revision_id",
         "base_state_version",
         "head_revision_id",

@@ -15,10 +15,13 @@ export interface DurableWriteContext {
   stateVersion?: number;
 }
 
-export function durableWriteIdentity(context: DurableWriteContext): {
+export function durableWriteIdentity(context: DurableWriteContext, document?: {
+  head_revision_id: string; state_version: number;
+} | null): {
   project_id?: string; branch_id?: string; expected_base_revision_id?: string;
   expected_state_version?: number; idempotency_key?: string;
 } {
+  if (document) context = { ...context, currentRevisionId: document.head_revision_id, stateVersion: document.state_version };
   if (
     !context.projectId
     || !context.branchId
@@ -56,8 +59,18 @@ export function durableSnapshotHeadRevision(
   fallback: string | null,
 ): string | null {
   if (!snapshot.change_set) return fallback;
-  return snapshot.change_set.status === "committed"
-    ? snapshot.change_set.candidate_revision_id
+  if (snapshot.change_set.status === "committed") {
+    return snapshot.change_set.head_revision_id
+      || snapshot.change_set.candidate_revision_id;
+  }
+  if (["rejected", "changes_requested", "rolled_back"].includes(
+    snapshot.change_set.status,
+  )) {
+    return snapshot.change_set.head_revision_id
+      || snapshot.change_set.base_revision_id;
+  }
+  return fallback && fallback !== snapshot.change_set.base_revision_id
+    ? fallback
     : snapshot.change_set.base_revision_id;
 }
 
@@ -85,9 +98,82 @@ export function durableResultHeadRevision(
   return result.revision_id || fallback;
 }
 
+export function durableResultNeedsCommit(
+  result: GenerationResult | null | undefined,
+  currentRevisionId: string | null | undefined,
+  reviewStatus?: string | null,
+): boolean {
+  if (["committed", "rejected", "changes_requested", "rolled_back"].includes(reviewStatus || "")) return false;
+  return Boolean(
+    result?.change_set_id
+    && result.revision_id
+    && result.revision_id !== currentRevisionId
+  );
+}
+
+export interface DurableChangeSetEventState {
+  changeSetId: string;
+  status: string;
+  baseRevisionId: string | null;
+  candidateRevisionId: string | null;
+  currentRevisionId: string | null;
+  candidateStatus: string | null;
+  currentStage: "review" | "complete";
+}
+
+export function durableChangeSetEventState(
+  event: Pick<DurableTaskEvent, "event_type" | "payload">,
+  fallbackCurrentRevisionId: string | null,
+): DurableChangeSetEventState | null {
+  const statusByEvent: Record<string, string> = {
+    "change_set.evidence_updated": "pending_review",
+    "change_set.accepted": "accepted",
+    "change_set.committed": "committed",
+    "change_set.changes_requested": "changes_requested",
+    "change_set.rejected": "rejected",
+    "change_set.rolled_back": "rolled_back",
+  };
+  const changeSetId = typeof event.payload.change_set_id === "string"
+    ? event.payload.change_set_id
+    : "";
+  const status = statusByEvent[event.event_type]
+    || (typeof event.payload.status === "string" ? event.payload.status : "");
+  if (!changeSetId || !status) return null;
+
+  const baseRevisionId = typeof event.payload.base_revision_id === "string"
+    ? event.payload.base_revision_id
+    : null;
+  const candidateRevisionId = typeof event.payload.candidate_revision_id === "string"
+    ? event.payload.candidate_revision_id
+    : null;
+  const terminal = ["changes_requested", "rejected", "rolled_back"]
+    .includes(status);
+  const currentRevisionId = status === "committed"
+    ? candidateRevisionId || fallbackCurrentRevisionId
+    : terminal
+      ? baseRevisionId || fallbackCurrentRevisionId
+      : baseRevisionId || fallbackCurrentRevisionId;
+  return {
+    changeSetId,
+    status,
+    baseRevisionId,
+    candidateRevisionId,
+    currentRevisionId,
+    candidateStatus: status === "accepted"
+      ? "accepted"
+      : status === "pending_review"
+        ? "reviewable"
+        : null,
+    currentStage: status === "committed" || terminal ? "complete" : "review",
+  };
+}
+
 export function durableChangeSetHeadRevision(
   detail: DurableChangeSetDetail,
 ): string {
+  if (detail.head_revision_id) {
+    return detail.head_revision_id;
+  }
   return detail.status === "committed"
     ? detail.candidate_revision_id
     : detail.base_revision_id;

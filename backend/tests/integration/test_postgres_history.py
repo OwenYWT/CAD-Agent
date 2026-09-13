@@ -16,6 +16,7 @@ from app.db import close_database, tenant_transaction
 from app.domain.identity import user_principal
 from app.principal_context import bind_principal
 from app.repositories.identity import reconcile_principal
+from app.services.durable_submission import ensure_workspace_identity
 from app.storage import history
 
 
@@ -216,3 +217,25 @@ async def test_workspace_revisions_restore_feedback_and_tenant_isolation():
     bind_principal(context)
     await history.delete_session(session_id, user_id)
     assert await history.list_sessions(user_id) == []
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_ensure_workspace_identity_creates_session_and_branch(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "history_db_path", str(tmp_path / "history.db"))
+    monkeypatch.setattr(settings, "durable_control_plane_enabled", False)
+    await history.close_db()
+    user_id = "compat-history-" + uuid4().hex
+    principal = await reconcile_principal(user_principal(user_id))
+    bind_principal(principal)
+    session_id, panel_id = str(uuid4()), str(uuid4())
+    try:
+        workspace = await ensure_workspace_identity(principal, session_id=session_id,
+            panel_id=panel_id, title="Compatibility history", user_id=user_id)
+        assert workspace.project_id and workspace.branch_id and workspace.head_revision_id
+        async with tenant_transaction(principal.tenant_id, principal.principal_id) as connection:
+            project_id = await connection.scalar(text(
+                "SELECT project_id FROM workspace_sessions WHERE tenant_id=:tenant AND id=:session"),
+                {"tenant": principal.tenant_id, "session": session_id})
+        assert project_id == workspace.project_id
+    finally:
+        await history.close_db()

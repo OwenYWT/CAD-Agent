@@ -36,7 +36,7 @@ export function taskState(panel: PanelState, document?: CloudDocument | null) {
   else if (unconfirmed) phase='needs_input';
   else if (['failed','timed_out','cancelled'].includes(status || '') || errorMessage) phase='failed';
   else if (status==='waiting_confirmation' || status!=='succeeded' && result?.needs_confirmation) phase='needs_input';
-  else if (status==='succeeded' && durable?.changeSetId && !['committed','rejected','rolled_back'].includes(changeStatus || '')) phase='candidate';
+  else if (status==='succeeded' && durable?.changeSetId && !['committed','rejected','changes_requested','rolled_back'].includes(changeStatus || '')) phase='candidate';
   else if (hasSaved || changeStatus==='committed') phase='saved';
   else phase='needs_input';
   const title=phase==='failed' ? status==='cancelled' ? '任务已取消' : quota ? '模型服务额度不足，本次未生成模型' : '本次任务失败'

@@ -453,6 +453,7 @@ class DurableChangeSetSummary(BaseModel):
     status: str
     base_revision_id: UUID
     candidate_revision_id: UUID
+    head_revision_id: UUID | None = None
     objective: str
     updated_at: datetime
 

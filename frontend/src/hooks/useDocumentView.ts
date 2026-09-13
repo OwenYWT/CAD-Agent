@@ -8,7 +8,7 @@ import { guardDraft } from "../stores/draftGuard";
 export function useDocumentView(head: CloudDocument | null, connected: boolean, latest: GenerationResult | null, reviewStatus?: string | null) {
   const [choice, setChoice] = useState<{ documentId: string; mode: DocumentViewMode; revisionId: string; changeSetId?: string | null } | null>(null);
   const [loaded, setLoaded] = useState<{ key: string; evidence?: DocumentRevisionView; error?: string } | null>(null);
-  const rejected = reviewStatus === "rejected" || reviewStatus === "rolled_back";
+  const rejected = ["rejected", "changes_requested", "rolled_back"].includes(reviewStatus || "");
   const chosen = choice && choice.documentId === head?.document_id && !(rejected && choice.mode === "candidate" && choice.revisionId === latest?.revision_id) ? choice : null;
   const firstCandidate = !rejected && !head?.modeling_backend && latest?.success && latest.revision_id && latest.branch_id === head?.document_id
     ? { mode: "candidate" as const, revisionId: latest.revision_id, changeSetId: latest.change_set_id } : undefined;
@@ -28,7 +28,7 @@ export function useDocumentView(head: CloudDocument | null, connected: boolean, 
   }, [documentId, revisionId, key]);
   const evidence = loaded?.key === key ? loaded.evidence || null : null;
   const identity = requestedIdentity && evidence && requestedIdentity.mode !== "committed" && evidence.review_status
-    ? {...requestedIdentity, mode: (["committed", "rolled_back", "rejected"].includes(evidence.review_status) ? "history" : "candidate") as DocumentViewMode}
+    ? {...requestedIdentity, mode: (["committed", "rolled_back", "rejected", "changes_requested"].includes(evidence.review_status) ? "history" : "candidate") as DocumentViewMode}
     : requestedIdentity;
   const document = head && identity ? projectViewedDocument(head, identity, evidence, connected) : null;
   const snapshot = evidence?.snapshot && Object.keys(evidence.snapshot.files || {}).length ? evidence.snapshot : null;

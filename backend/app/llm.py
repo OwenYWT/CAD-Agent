@@ -201,6 +201,15 @@ async def _complete_stream(stream) -> ChatCompletion:
     size = 0
     try:
         async for chunk in stream:
+            if (
+                not chunk.id
+                and not chunk.model
+                and not chunk.created
+                and not chunk.choices
+            ):
+                if chunk.usage is not None:
+                    usage = chunk.usage
+                continue
             current = (chunk.id, chunk.model, chunk.created)
             if identity is None:
                 identity = current

@@ -535,6 +535,7 @@ export interface DurableTaskSnapshot {
     status: string;
     base_revision_id: string;
     candidate_revision_id: string;
+    head_revision_id?: string | null;
     objective: string;
   } | null;
   agent?: DurableAgentSnapshotProjection | null;

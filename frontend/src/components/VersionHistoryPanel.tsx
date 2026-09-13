@@ -24,7 +24,7 @@ interface VersionHistoryPanelProps {
   refreshKey?: string | number | null;
   onRestore: (snapshot: ModelSnapshotDetail) => boolean | void | Promise<boolean | void>;
   currentParts?: AssemblyPartInfo[] | null;
-  onModifyPart?: (partName: string, instruction: string) => boolean | void;
+  onModifyPart?: (partName: string, instruction: string, partId?: string | null) => boolean | void;
   currentRevisionId?: string | null;
   onView?: (snapshot: ModelSnapshotDetail) => void;
 }
@@ -160,7 +160,7 @@ export default function VersionHistoryPanel({
       return;
     }
     setError(null);
-    const accepted = onModifyPart(selectedPart.name, instruction);
+    const accepted = onModifyPart(selectedPart.name, instruction, selectedPart.part_id || null);
     if (accepted === false) {
       setError("当前连接不可用，未提交零件修改任务");
     }
