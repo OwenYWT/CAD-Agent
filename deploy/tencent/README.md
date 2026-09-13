@@ -53,6 +53,11 @@ MinIO，并保留原始 URI 和含端口的 Host，以便校验 S3 SigV4。
 
 ## 构建与验证
 
+2026-09-13：Docker Hub 的 MinIO 拉取返回 access denied；当前配置使用已验证可读取的
+官方 `quay.io/minio/minio` / `quay.io/minio/mc` 同版本镜像。既有部署的数据卷保持不变。
+前端预构建打包使用 `Dockerfile.frontend.dockerignore`，显式包含 `dist/`；
+完整 Node 构建仍使用 `frontend/.dockerignore`。
+
 后端、FreeCAD 沙箱必须构建为服务器的 `linux/amd64`。本地 ARM 镜像不能直接使用。
 标准构建文件为 `backend/Dockerfile` 和 `backend/sandbox/Dockerfile`。
 沙箱从官方 FreeCAD 1.1.3 AppImage 构建，并校验仓库中记录的架构对应 SHA-256。

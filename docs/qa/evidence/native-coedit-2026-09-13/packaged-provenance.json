@@ -1,0 +1,43 @@
+{
+  "images": [
+    {
+      "image": "localhost/cad-agent-backend:coedit-20260913-built",
+      "id": "5b39aa8ffeeb6aa08aad26be5f6159dcd30b2046167e16b1a2f7cec936b9c8e9",
+      "digest": "sha256:cf192e1fd189a0f2ca0e9e5328d9cc1d7ab1a6fbd3ddb3bc3ff54ffaf6da0b43",
+      "architecture": "arm64"
+    },
+    {
+      "image": "localhost/cad-agent-frontend:coedit-20260913-built",
+      "id": "feb5e4f5c211762bfb8cf11e49f093f08d149b881a4c3f990be226bf8ecbe2a2",
+      "digest": "sha256:c16c89094ad0bb66d4f10f62ee9e444e128db5b221ae6148007db0de76ba037c",
+      "architecture": "arm64"
+    },
+    {
+      "image": "localhost/cad-agent-sandbox:coedit-20260913-built",
+      "id": "5d2ef7562f629251a609c569ee5848a64d5f7ad07d8b25bf3b7c4f6657b8a443",
+      "digest": "sha256:c1788f5d2377208093bcafbdb653060b56f464b8a90b92db0384bd3ad9b28e76",
+      "architecture": "arm64"
+    }
+  ],
+  "packaged_containers": [
+    {
+      "name": "cad-coedit-packaged-20260913-api",
+      "image_id": "5b39aa8ffeeb6aa08aad26be5f6159dcd30b2046167e16b1a2f7cec936b9c8e9",
+      "running": true,
+      "application_source_mount": false
+    },
+    {
+      "name": "cad-coedit-packaged-20260913-worker",
+      "image_id": "5b39aa8ffeeb6aa08aad26be5f6159dcd30b2046167e16b1a2f7cec936b9c8e9",
+      "running": true,
+      "application_source_mount": false
+    },
+    {
+      "name": "cad-coedit-packaged-20260913-frontend",
+      "image_id": "feb5e4f5c211762bfb8cf11e49f093f08d149b881a4c3f990be226bf8ecbe2a2",
+      "running": true,
+      "application_source_mount": false
+    }
+  ],
+  "migration": "0027_document_scene_tasks"
+}

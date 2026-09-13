@@ -171,13 +171,14 @@ async def _start_api(port: int):
         cwd=str(ROOT),
         env=env,
         stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
     )
     deadline = asyncio.get_running_loop().time() + 20
     async with httpx.AsyncClient() as client:
         while asyncio.get_running_loop().time() < deadline:
             if process.returncode is not None:
-                raise AssertionError("FastAPI exited during startup")
+                _, stderr = await process.communicate()
+                raise AssertionError("FastAPI exited during startup: " + stderr.decode(errors="replace")[-8000:])
             try:
                 response = await client.get(
                     f"http://127.0.0.1:{port}/health",

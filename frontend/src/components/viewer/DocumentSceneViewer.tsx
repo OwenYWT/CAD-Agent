@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box3, BufferGeometry, Color, InstancedMesh, Matrix4, PerspectiveCamera, Vector3 } from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { authFetch } from "../../auth";
+import { readDocumentScene, SceneJobError } from "../../services/sceneService";
 import type { DocumentScene, SceneInstance, SceneLOD, SceneMesh } from "../../types/scene";
 
 const API = import.meta.env.VITE_API_BASE || "";
@@ -42,7 +43,7 @@ function InstanceGroup({ geometry, instances, selectedId, onSelect }: {
     ref.current.computeBoundingSphere();
   }, [instances, selectedId]);
   return <instancedMesh ref={ref} args={[geometry, undefined, instances.length]}
-    onClick={(e) => { if (e.instanceId !== undefined) { e.stopPropagation(); onSelect?.(instances[e.instanceId].feature_id); } }}>
+    onClick={(e) => { if (e.delta <= 3 && e.instanceId !== undefined) { e.stopPropagation(); onSelect?.(instances[e.instanceId].feature_id); } }}>
     <meshStandardMaterial color="white" metalness={0.08} roughness={0.72} />
   </instancedMesh>;
 }
@@ -54,6 +55,9 @@ export default function DocumentSceneViewer({ documentId, revisionId, selectedId
   const [loaded, setLoaded] = useState<{ scene: DocumentScene; lod: SceneLOD; geometries: Map<string, GeometryEntry> } | null>(null);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [progress,setProgress] = useState("正在同步部件…");
+  const [failedJob,setFailedJob] = useState<string | null>(null);
+  const [retry,setRetry] = useState<{workflowId:string; documentId:string; revisionId:string; number:number} | null>(null);
   const [anchor, setAnchor] = useState<{ center: Vector3; size: Vector3 } | null>(null);
   const cache = useRef(new Map<string, GeometryEntry>());
   useEffect(() => {
@@ -81,12 +85,10 @@ export default function DocumentSceneViewer({ documentId, revisionId, selectedId
       return entry;
     }
     async function load() {
-      setPending(true); setError("");
+      setPending(true); setError(""); setFailedJob(null); setProgress("正在同步部件…");
       try {
-        const response = await authFetch(`${API}/api/documents/${documentId}/scenes/${revisionId}`, { signal: controller.signal });
-        if (!response.ok) throw new Error(`部件场景读取失败 (${response.status})`);
-        const scene = await response.json() as DocumentScene;
-        if (scene.schema_version !== "cad-scene.v1" || scene.document_id !== documentId || scene.revision_id !== revisionId) throw new Error("部件场景版本不匹配");
+        const scene = await readDocumentScene(documentId,revisionId,controller.signal,
+          message => { if (active) setProgress(message); },retry?.documentId === documentId && retry.revisionId === revisionId ? retry.workflowId : undefined);
         const geometries = new Map<string, GeometryEntry>();
         const definitions = Object.entries(scene.definitions);
         for (let offset = 0; offset < definitions.length; offset += 4) {
@@ -105,37 +107,42 @@ export default function DocumentSceneViewer({ documentId, revisionId, selectedId
           if (!used.has(key)) { entry.geometry.dispose(); cache.current.delete(key); bytes -= entry.bytes; }
         }
       } catch (e) {
-        if (active) setError(e instanceof Error ? e.message : "部件场景读取失败");
+        if (active) {setError(e instanceof Error ? e.message : "部件场景读取失败"); if (e instanceof SceneJobError) setFailedJob(e.workflowId);}
       } finally { if (active) setPending(false); }
     }
     void load();
     return () => { active = false; controller.abort(); };
-  }, [documentId, revisionId, lod]);
+  }, [documentId, revisionId, lod, retry]);
+  const current = loaded?.scene.document_id === documentId && loaded.scene.revision_id === revisionId ? loaded : null;
   const composition = useMemo(() => {
     const groups = new Map<string, SceneInstance[]>();
-    if (loaded) for (const instance of loaded.scene.instances) {
+    if (current) for (const instance of current.scene.instances) {
       groups.set(instance.geometry_sha256, [...(groups.get(instance.geometry_sha256) || []), instance]);
     }
     return groups;
-  }, [loaded]);
-  const triangles = loaded ? loaded.scene.instances.reduce((sum, i) => sum + loaded.scene.definitions[i.geometry_sha256].lods[loaded.lod].triangles, 0) : 0;
-  return <div className="relative h-full w-full bg-[#f4f4f1]" data-testid="document-scene" data-revision={loaded?.scene.revision_id} data-lod={loaded?.lod}>
+  }, [current]);
+  const triangles = current ? current.scene.instances.reduce((sum, i) => sum + current.scene.definitions[i.geometry_sha256].lods[current.lod].triangles, 0) : 0;
+  return <div className="relative h-full w-full bg-[#f4f4f1]" data-testid="document-scene" data-requested-revision={revisionId} data-revision={current?.scene.revision_id} data-lod={current?.lod}>
     <div className="absolute right-3 top-3 z-10 rounded border border-[var(--line)] bg-white/95 p-2 type-caption">
       <label>显示精度 <select aria-label="网格精度" value={lod} onChange={(e) => setLOD(e.target.value as SceneLOD)}>
         <option value="coarse">快速</option><option value="medium">标准</option><option value="fine">精细</option>
       </select></label>
-      {loaded ? <p>{loaded.scene.instances.length} 个部件 · {loaded.geometries.size} 份几何 · {triangles.toLocaleString()} 个三角形</p> : null}
+      {current ? <p>{current.scene.instances.length} 个部件 · {current.geometries.size} 份几何 · {triangles.toLocaleString()} 个三角形</p> : null}
+      {selectedId && current && !current.scene.instances.some(instance => instance.feature_id === selectedId)
+        ? <p role="status">已选中特征；此特征没有独立部件网格，无法单独高亮。</p> : null}
     </div>
-    {pending ? <p role="status" className="absolute bottom-3 left-3 z-10 rounded bg-white/95 p-2 type-caption">正在同步部件…</p> : null}
-    {error ? <p role="alert" className="absolute bottom-3 left-3 z-10 rounded bg-white/95 p-2 type-caption text-red-700">{loaded && loaded.scene.revision_id !== revisionId ? "仍显示上一版本。" : ""}{error}</p> : null}
+    {pending ? <p role="status" className="absolute bottom-3 left-3 z-10 rounded bg-white/95 p-2 type-caption">{progress}</p> : null}
+    {error ? <p role="alert" className="absolute bottom-3 left-3 z-10 rounded bg-white/95 p-2 type-caption text-red-700">{error}</p> : null}
+    {failedJob ? <button type="button" className="workspace-button absolute bottom-14 left-3 z-10 bg-white"
+      onClick={() => setRetry(previous => ({workflowId:failedJob,documentId,revisionId,number:(previous?.number || 0) + 1}))}>重新计算场景</button> : null}
     <Canvas camera={{ fov: 50, position: [100, 100, 100] }} fallback={<p role="status">当前浏览器无法创建 3D 画布，请启用硬件加速后重试。</p>}>
       <color args={["#f4f4f1"]} attach="background" />
       <ambientLight intensity={1.1} /><directionalLight intensity={1.4} position={[10, 10, 5]} />
       <directionalLight intensity={0.5} position={[-10, -10, -5]} />
       <InitialCameraFit size={anchor?.size || null} />
       <group position={anchor?.center}>
-        {loaded && Array.from(composition, ([digest, instances]) => <InstanceGroup key={`${digest}:${loaded.lod}`}
-          geometry={loaded.geometries.get(digest)!.geometry} instances={instances} selectedId={selectedId} onSelect={onSelect} />)}
+        {current && Array.from(composition, ([digest, instances]) => <InstanceGroup key={`${digest}:${current.lod}`}
+          geometry={current.geometries.get(digest)!.geometry} instances={instances} selectedId={selectedId} onSelect={onSelect} />)}
       </group>
       <OrbitControls enableDamping makeDefault />
       <Grid rotation={[Math.PI / 2, 0, 0]} position={[0, 0, anchor?.center.z || 0]} cellColor="#d8dad5" cellSize={10} fadeDistance={400} infiniteGrid sectionColor="#b7bab3" sectionSize={50} />

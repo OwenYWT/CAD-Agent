@@ -77,6 +77,7 @@ def main():
         owner.mouse.move(rect["x"] + rect["width"] / 2 + 70, rect["y"] + rect["height"] / 2 + 30, steps=8)
         owner.mouse.up()
         assert len(read(doc_url + "/collaboration")["operations"]) == operations_before
+        expect(panel.get_by_role("treeitem", name="Hole", exact=True)).to_have_attribute("aria-selected", "true")
         record("local_camera", kernel_operations_created=0)
 
         intent = f"浏览器实测：保持同心，当前目标孔径 {target} mm"

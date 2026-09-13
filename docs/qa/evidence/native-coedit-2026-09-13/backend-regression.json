@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "python": "3.11",
+  "image_id": "5b39aa8ffeeb6aa08aad26be5f6159dcd30b2046167e16b1a2f7cec936b9c8e9",
+  "passed": 1416,
+  "skipped": 155,
+  "deselected": 1,
+  "failed": 0,
+  "seconds": 79.75,
+  "scope": "hermetic regression on packaged backend dependencies; excludes live Docker/Provider/Fusion conditions",
+  "application_source_manifest_sha256": "64642e23dcba952e3c96863bb214bcc352d35729532729c405a18850f01fbf1c",
+  "updated_test": "backend/tests/test_history_regression_qa.py",
+  "updated_test_sha256": "2e5dfce4315ee8d4dfdcb9975dbfe9d92ba9bc47826f50556b210d88190ab11f",
+  "failed_runs_preserved": [
+    "backend-packaged-regression.log",
+    "backend-packaged-regression-v2.log",
+    "backend-packaged-regression-v3.log"
+  ],
+  "successful_log": "backend-packaged-regression-v4.log"
+}

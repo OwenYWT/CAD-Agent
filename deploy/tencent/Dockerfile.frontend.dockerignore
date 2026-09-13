@@ -1,0 +1,6 @@
+# This Dockerfile packages assets already built and tested on the release host.
+# Override frontend/.dockerignore, which excludes dist for the full Node build.
+**
+!dist/
+!dist/**
+!nginx.conf

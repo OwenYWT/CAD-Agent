@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+from acceptance_paths import evidence_path
 from uuid import uuid4
 import zipfile
 
@@ -61,7 +62,7 @@ def main():
         'maximum': report['maximum'], 'force_balance_relative_error': report['force_balance_relative_error'],
         'idempotency_verified': True, 'invalid_requests_rejected': True, 'actual_missing_component_failed': True,
         'revision_unchanged': True, 'all_artifact_hashes_verified': True}
-    Path('/tmp/cad-expansion-engineering-http.json').write_text(json.dumps(evidence, indent=2))
+    Path(str(evidence_path('cad-expansion-engineering-http.json'))).write_text(json.dumps(evidence, indent=2))
     print('CAD_ENGINEERING_HTTP='+json.dumps(evidence), flush=True)
 
 

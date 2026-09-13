@@ -1,0 +1,16 @@
+{
+  "source_sha256": "ac5afec3e6167ad99cf2e79c068d7172ce22ab50374a88ed951d4bcfbb90fc96",
+  "redactions": [],
+  "evidence": {
+    "bridge_id": "bb308e62-03ee-460b-9007-e777913dc2e3",
+    "delivery_id": "6621cec9-0426-4075-8726-c3f71fd830cd",
+    "downloaded_standalone_client_verified": true,
+    "browser_pair_and_deliver": true,
+    "real_local_files": true,
+    "one_use_code_cleared_after_pairing": true,
+    "browser_revocation": true,
+    "page_errors": [],
+    "console_errors": [],
+    "output_directory": "/tmp/cad-bridge-browser-8cfdc7cabd/released"
+  }
+}

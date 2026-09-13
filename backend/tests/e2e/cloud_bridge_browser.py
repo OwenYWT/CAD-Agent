@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from acceptance_paths import evidence_path
 import subprocess
 from uuid import uuid4
 
@@ -12,7 +13,7 @@ from cloud_document_acceptance import PRIVATE
 
 def main():
     private=json.loads(PRIVATE.read_text());web=os.environ['CAD_NATIVE_E2E_WEB']
-    release=json.loads(Path('/tmp/cad-expansion-release-browser.json').read_text())['release_id']
+    release=json.loads(evidence_path('cad-expansion-release-browser.json').read_text())['release_id']
     root=Path('/tmp')/('cad-bridge-browser-'+uuid4().hex[:10]);root.mkdir(mode=0o700)
     output=root/'released';output.mkdir(mode=0o700);config=root/'private.json';client=root/'cad_local_bridge.py'
     errors=[];console_errors=[]
@@ -52,13 +53,13 @@ def main():
         row=panel.locator(f'[data-delivery="{delivery_id}"]');expect(row).to_contain_text('文件已送达',timeout=20000)
         expect(row).to_contain_text('已校验 14 个文件')
         assert len(list(output.rglob('design.FCStd')))==1
-        row.scroll_into_view_if_needed();page.screenshot(path='/tmp/cad-expansion-bridge-browser.png')
+        row.scroll_into_view_if_needed();page.screenshot(path=str(evidence_path('cad-expansion-bridge-browser.png')))
         bridge.get_by_role('button',name='撤销连接').click();expect(bridge).to_contain_text('已撤销',timeout=10000)
         assert not errors and not console_errors,(errors,console_errors)
         evidence={'bridge_id':bridge_id,'delivery_id':delivery_id,'downloaded_standalone_client_verified':True,
             'browser_pair_and_deliver':True,'real_local_files':True,'one_use_code_cleared_after_pairing':True,
             'browser_revocation':True,'page_errors':errors,'console_errors':console_errors,'output_directory':str(output)}
-        Path('/tmp/cad-expansion-bridge-browser.json').write_text(json.dumps(evidence,indent=2))
+        evidence_path('cad-expansion-bridge-browser.json').write_text(json.dumps(evidence,indent=2))
         print('CAD_BRIDGE_BROWSER='+json.dumps(evidence),flush=True);browser.close()
 
 

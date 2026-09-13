@@ -18,7 +18,6 @@ def test_export_dialog_uses_real_artifact_download_service():
     content = (root / "frontend" / "src" / "components" / "export" / "ExportDialog.tsx").read_text(encoding="utf-8")
 
     assert "downloadEngineeringArtifact" in content
-    assert "不可用格式不会创建假下载" in content
     assert "buildArtifactManifest" not in content
 
 

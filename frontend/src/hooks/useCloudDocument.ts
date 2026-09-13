@@ -1,25 +1,39 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getAuthToken } from "../auth";
 import { webSocketAuthProtocol } from "../adapters/durableTaskAdapter";
 import { applyDocumentEvent } from "../adapters/documentAdapter";
 import { observeDocument, forgetDocument } from "../stores/documentHeads";
-import { updateDocumentPresence } from "../services/engineeringService";
-import type { CloudDocument, DocumentCollaboration, DocumentEvent } from "../types/document";
+import { getCloudDocument, updateDocumentPresence } from "../services/engineeringService";
+import { guardDraft } from "../stores/draftGuard";
+import type { CloudDocument, DocumentCollaboration, DocumentEvent, SelectionContext } from "../types/document";
 
 export interface CloudDocumentConnection {
   document: CloudDocument | null; collaboration: DocumentCollaboration | null;
   selectedId: string | null; select: (id: string | null) => void;
   connected: boolean; error: string | null;
+  selectionContext?: SelectionContext | null;
+  clearSelection?: () => void;
+  refresh?: () => Promise<CloudDocument | null>;
 }
 
 export function useCloudDocument(documentId: string | null): CloudDocumentConnection {
   const [snapshot, setSnapshot] = useState<CloudDocument | null>(null);
   const [collaboration, setCollaboration] = useState<DocumentCollaboration | null>(null);
-  const [selectedId, select] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedContext, setSelectedContext] = useState<(SelectionContext & { documentId: string }) | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const current = useRef<CloudDocument | null>(null);
   const selection = useRef<string | null>(null);
+  const refresh = useCallback(async () => {
+    if (!documentId) return null;
+    const doc = await getCloudDocument(documentId);
+    if (current.current?.document_id !== documentId) return null;
+    if (doc.event_sequence >= current.current.event_sequence) {
+      current.current = doc; observeDocument(doc); setSnapshot(doc);
+    }
+    return current.current;
+  }, [documentId]);
   useEffect(() => { selection.current = selectedId; }, [selectedId]);
 
   useEffect(() => {
@@ -72,7 +86,7 @@ export function useCloudDocument(documentId: string | null): CloudDocumentConnec
         if (closed) return;
         setConnected(false);
         if (event.code === 4003) {
-          current.current = null; setSnapshot(null); setCollaboration(null);
+          current.current = null; setSnapshot(null); setCollaboration(null); setSelectedId(null); setSelectedContext(null);
           forgetDocument(documentId); setError("文档访问权限已失效"); return;
         }
         timer = setTimeout(open, 2000);
@@ -84,7 +98,17 @@ export function useCloudDocument(documentId: string | null): CloudDocumentConnec
   }, [documentId]);
 
   const document = snapshot?.document_id === documentId ? snapshot : null;
+  const select = (id: string | null) => {
+    guardDraft(() => {
+      setSelectedId(id);
+      setSelectedContext(document && id ? { documentId: document.document_id, revision_id: document.head_revision_id,
+        state_version: document.state_version, feature_ids: [id] } : null);
+    });
+  };
+  const selectionContext = document && selectedContext?.documentId === document.document_id
+    && selectedContext.revision_id === document.head_revision_id && selectedContext.state_version === document.state_version
+    ? { revision_id: selectedContext.revision_id, state_version: selectedContext.state_version, feature_ids: selectedContext.feature_ids } : null;
   return { document, collaboration: document ? collaboration : null,
     selectedId: document?.features.some((f) => f.id === selectedId) ? selectedId : null,
-    select, connected: Boolean(document && connected), error };
+    select, selectionContext, clearSelection: () => setSelectedContext(null), refresh, connected: Boolean(document && connected), error };
 }

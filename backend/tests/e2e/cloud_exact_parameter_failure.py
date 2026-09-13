@@ -41,6 +41,7 @@ def submit_and_verify_browser(private, source, fillet, radius, client, out):
         assert task["status"] == "failed", (task["status"], task.get("error_message"))
         task_panel = page.get_by_role("region", name="文档任务", exact=True)
         expect(task_panel.get_by_role("alert")).to_contain_text("原始检查：", timeout=15000)
+        expect(field).to_have_value("4.5")
         page.screenshot(path=str(out / "failure-visible.png"))
         page.reload()
         panel.get_by_role("treeitem", name=fillet["label"], exact=True).click()
@@ -82,6 +83,7 @@ def main():
                   "error_message": task["error_message"], "requested_radius_mm": 4.5,
                   "preserved_radius_mm": radius["value"], "repair_count": 0,
                   "browser_submission_and_failure_visible": True,
+                  "failed_exact_input_retained_until_reload": True,
                   "browser_reload_preserves_committed_radius": True,
                   "head_unchanged": True, "no_candidate_or_partial_artifact": True,
                   "committed_artifact_hashes": hashes}

@@ -14,6 +14,7 @@ from temporalio.service import RPCError
 
 from app.db import tenant_transaction
 from app.freecad.contracts import FreeCADOperation
+from app.freecad.selection import SelectionContextV1
 from app.services.workflow_dispatch import persist_dispatch, start_dispatch, acknowledge_dispatch
 from app.config import settings
 from app.services.run_state import (
@@ -98,19 +99,24 @@ class OperationContextV1(BaseModel):
     rebased_from_revision_id: UUID | None = None
     rebased_from_state_version: int | None = Field(default=None, ge=0)
     rebase_evidence_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    selection_context: SelectionContextV1 | None = None
 
     @model_serializer(mode="wrap")
     def preserve_historical_wire_identity(self, handler):
         payload = handler(self)
         # New optional context must not change hashes of existing durable inputs.
         for key in ('feature_lease_token','client_request_hash','rebased_from_revision_id',
-                    'rebased_from_state_version','rebase_evidence_hash'):
+                    'rebased_from_state_version','rebase_evidence_hash','selection_context'):
             if payload.get(key) is None:
                 payload.pop(key, None)
         return payload
 
     @model_validator(mode="after")
     def validate_source_and_channel(self) -> "OperationContextV1":
+        if self.selection_context and (self.resolved_operation != "modify"
+                or self.submission_modeling_backend != "freecad"
+                or self.selection_context.revision_id != self.base_revision_id):
+            raise ValueError("选择上下文只适用于同一基线的原生修改")
         rebase_fields=(self.rebased_from_revision_id,self.rebased_from_state_version,self.rebase_evidence_hash)
         if any(v is not None for v in rebase_fields) and not all(v is not None for v in rebase_fields):
             raise ValueError("rebase context requires original revision, version and evidence hash")

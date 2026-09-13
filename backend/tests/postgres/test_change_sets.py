@@ -248,6 +248,47 @@ async def _scenario(*, with_artifact: bool, validation_status: str):
 
 
 @pytest.mark.asyncio(loop_scope="module")
+async def test_generation_migration_uses_original_operation_and_keeps_unknown_history_null():
+    """Exercise the real 0026 DDL on old-format rows, without guessing from Head."""
+    import importlib.util
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from app.services.cloud_documents import enqueue_operation
+
+    proven = await _scenario(with_artifact=False, validation_status="passed")
+    unknown = await _scenario(with_artifact=False, validation_status="passed")
+    owner = proven['owner']
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+        await enqueue_operation(conn,workflow_id=proven['workflow_id'],tenant_id=owner.tenant_id,
+            principal_id=owner.principal_id,idempotency_key='migration-original-operation',request_hash='a'*64,
+            payload={'branch_id':str(proven['branch_id']),'expected_base_revision_id':str(proven['base_revision_id']),
+                     'operation':'modify','objective':'Migration fixture: preserve original input generation'})
+        # Real branch-head triggers advance the document generation twice.
+        for revision in (proven['candidate_revision_id'],proven['base_revision_id']):
+            await conn.execute(text('UPDATE project_branches SET head_revision_id=:revision WHERE id=:id'),
+                {'revision':revision,'id':proven['branch_id']})
+        assert await conn.scalar(text('SELECT state_version FROM cloud_documents WHERE id=:id'),{'id':proven['branch_id']}) == 2
+
+    spec = importlib.util.spec_from_file_location('tested_generation_migration',ROOT/'alembic/versions/0026_change_set_base_generation.py')
+    migration = importlib.util.module_from_spec(spec);spec.loader.exec_module(migration)
+    def replay_ddl(connection):
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.downgrade()
+            migration.upgrade()
+    # Test-only DB, same transaction; the schema remains at head after the test.
+    async with get_database_engine().begin() as conn:
+        await conn.run_sync(replay_ddl)
+        assert await conn.scalar(text('SELECT base_state_version FROM change_sets WHERE id=:id'),{'id':proven['change_set_id']}) == 0
+        assert await conn.scalar(text('SELECT base_state_version FROM change_sets WHERE id=:id'),{'id':unknown['change_set_id']}) is None
+    with pytest.raises(ChangeSetStateConflict,match='原始版本代次'):
+        await accept_change_set(tenant_id=unknown['owner'].tenant_id,reviewer_principal_id=unknown['owner'].principal_id,
+            change_set_id=unknown['change_set_id'],review_note='Unknown old generation must not be accepted')
+    with pytest.raises(Exception,match='base generation is immutable'):
+        async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+            await conn.execute(text('UPDATE change_sets SET base_state_version=2 WHERE id=:id'),{'id':proven['change_set_id']})
+
+
+@pytest.mark.asyncio(loop_scope="module")
 async def test_accept_commit_and_rollback_are_distinct_audited_operations():
     item = await _scenario(with_artifact=True, validation_status="passed")
     accepted = await accept_change_set(
@@ -323,6 +364,37 @@ async def test_accept_commit_and_rollback_are_distinct_audited_operations():
         "change_set.committed",
         "change_set.rolled_back",
     }.issubset(actions)
+
+
+@pytest.mark.asyncio(loop_scope="module")
+@pytest.mark.parametrize("damage", ["missing", "truncated", "replaced"])
+async def test_file_damage_after_accept_does_not_commit_or_lose_accepted_state(damage):
+    from app.object_store import delete_object, put_object, get_object
+    item = await _scenario(with_artifact=True, validation_status="passed")
+    owner = item["owner"]
+    args = {"tenant_id": owner.tenant_id, "reviewer_principal_id": owner.principal_id,
+            "change_set_id": item["change_set_id"]}
+    await accept_change_set(**args)
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        key = await conn.scalar(text("SELECT object_key FROM artifacts WHERE revision_id=:id"),
+                                {"id": item["candidate_revision_id"]})
+    original = await get_object(key)
+    try:
+        if damage == "missing":
+            await delete_object(key)
+        else:
+            data = original[:5] if damage == "truncated" else b"X" * len(original)
+            await put_object(key, data, content_type="application/step")
+        with pytest.raises(ArtifactEvidenceRequired):
+            await commit_change_set(**args)
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+            assert await conn.scalar(text("SELECT status FROM change_sets WHERE id=:id"),
+                                     {"id": item["change_set_id"]}) == "accepted"
+            assert await conn.scalar(text("SELECT head_revision_id FROM project_branches WHERE id=:id"),
+                                     {"id": item["branch_id"]}) == item["base_revision_id"]
+    finally:
+        await put_object(key, original, content_type="application/step")
+    assert (await commit_change_set(**args)).status == "committed"
 
 
 @pytest.mark.asyncio(loop_scope="module")

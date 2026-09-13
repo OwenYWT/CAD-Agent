@@ -7,6 +7,7 @@
 ## 当前能力
 
 - 云文档特征树、参数编辑、已提交版本同步，以及带权限控制的共享审阅、评论与在线状态。实现范围与调用链见 [云文档](docs/cloud-documents.md)。
+- 原生模型的已提交、候选与历史视图，草稿离开保护、固定版本的 AI 目标、同面板历史恢复，以及可取消和重试的异步场景读取。
 - 特征意图与按需内核查询、编辑租约和独立参数重放、实例化/LOD 网格缓存、文档分支与审查合并、草图尺寸预览及原生约束提交。
 - 原生有限元静力分析与 2.5D 外轮廓加工、结果可视化及修订绑定的 Agent 工程上下文，见 [工程计算](docs/engineering-compute.md)。
 - 命名发布、真实原生 BOM 与 CAD/工程证据打包，以及可配对、撤销、恢复的本地文件 Bridge，见 [发布与本地交付](docs/releases-and-local-bridge.md)。
@@ -21,7 +22,7 @@
 
 未配置的外部运行时不会被伪装成可用：缺少容器、切片器、Gazebo/MoveIt、Implicit CAD 依赖、隔离执行器或打印机授权时，对应能力返回明确的 `blocked` 状态。
 
-本轮融合内容、完整回归、真实调用链证据及本机运行版本见 [2026-09-09 融合验收与交接](docs/qa/cloud-cad-fusion-2026-09-09.md)。
+新版方案实施、回归证据和未关闭的验收项见 [2026-09-13 实施报告](docs/qa/native-coediting-2026-09-13.md)。真实 Provider 剩余用例受额度不足阻塞，尚未取得最终提交的完整 CI 与验收结论；2026-09-09 报告只保留历史追溯价值。
 
 ## 架构
 
@@ -40,7 +41,7 @@ FastAPI 控制平面
           └── Docker / Podman 隔离 FreeCAD / CadQuery / Gmsh / CalculiX Worker
 ```
 
-所有生成、修改、执行和 WebSocket 写请求都进入 Durable 主链路，不存在进程内回退。WebSocket 负责提交请求、订阅和回放持久任务事件，不承担任务生命周期。浏览器断线、API 重启或 Worker 重试不会覆盖已有运行记录；修改通过 `expected_base_revision_id` 防止并发覆盖。配置的 LLM provider、CAD Skills adapter 和可选 Fusion 360 / APS Connector 位于上述控制平面边界之外。
+所有生成、修改、执行和 WebSocket 写请求都进入 Durable 主链路，不存在进程内回退。WebSocket 负责提交请求、订阅和回放持久任务事件，不承担任务生命周期；响应丢失时按原请求标识查询任务。原生修改和最终提交同时校验 `expected_base_revision_id` 与原始 `state_version`，防止并发覆盖和回退后的旧候选生效。配置的 LLM provider、CAD Skills adapter 和可选 Fusion 360 / APS Connector 位于上述控制平面边界之外。
 
 主要技术栈：Python 3.11+、FastAPI、React 19、TypeScript、Vite、Tailwind CSS、Three.js、Zustand、PostgreSQL、Temporal、S3/MinIO、Docker/Podman。
 

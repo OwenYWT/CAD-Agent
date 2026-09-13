@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+from acceptance_paths import evidence_path
 import subprocess
 import time
 from uuid import uuid4
@@ -19,8 +20,8 @@ daemon=importlib.util.module_from_spec(spec);spec.loader.exec_module(daemon)
 def main():
     private=json.loads(PRIVATE.read_text());client=httpx.Client(headers={'Authorization':'Bearer '+private['owner']['token']})
     document_id=private['document_id'];path='/api/documents/'+document_id
-    release=json.loads(Path('/tmp/cad-expansion-release-http.json').read_text())['release_id']
-    second=json.loads(Path('/tmp/cad-expansion-release-browser.json').read_text())['release_id']
+    release=json.loads(evidence_path('cad-expansion-release-http.json').read_text())['release_id']
+    second=json.loads(evidence_path('cad-expansion-release-browser.json').read_text())['release_id']
     root=Path('/tmp')/('cad-bridge-acceptance-'+uuid4().hex[:10]);root.mkdir(mode=0o700)
     config_path=root/'private-config.json';target=root/'delivered';target.mkdir(mode=0o700)
     pair=call(client,'POST',path+'/bridges/pair',json={'label':'Actual local directory acceptance'},expected=201)
@@ -76,7 +77,7 @@ def main():
         'receipt_hashes_verified':True,'live_lease_expiry_and_restart':True,'actual_api_restart_verified':restarted,'recovery_attempts':finished['attempts'],
         'existing_files_not_rewritten':True,'replayed_pairing_and_stale_ack_denied':True,'viewer_and_revocation_denied':True,
         'output_directory':str(target)}
-    Path('/tmp/cad-expansion-bridge-http.json').write_text(json.dumps(evidence,indent=2))
+    evidence_path('cad-expansion-bridge-http.json').write_text(json.dumps(evidence,indent=2))
     print('CAD_BRIDGE_HTTP='+json.dumps(evidence),flush=True)
 
 

@@ -1,0 +1,491 @@
+{
+  "schema_version": "native-coedit-evidence-index.v1",
+  "date": "2026-09-13",
+  "evidence_root": "/private/tmp/cad-coedit-20260912",
+  "note": "Contains successful and failed runs; status and coverage are recorded in the report. Raw files, credentials, traces and backups remain private. Paths and hashes do not substitute for final-commit CI.",
+  "application_manifest_sha256": "64642e23dcba952e3c96863bb214bcc352d35729532729c405a18850f01fbf1c",
+  "files": [
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/a02-generation-migration.log",
+      "bytes": 671,
+      "sha256": "07e5405615a0c2f8412085a6a431ed41da17a4018853dd5afadbf72ccb7d6ae1"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/a06-ws-container-regression.log",
+      "bytes": 621,
+      "sha256": "4d2e192b5c608879b6e7140414b3026d9f04ccb10fcd6a832da23af57a63f8cc"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/backend-clean-build.log",
+      "bytes": 44284,
+      "sha256": "bbb0a3b246087b528b01e3693b09ce630895cdbc4b57c9a2c69e2550a16037ef"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/backend-packaged-regression-v2.log",
+      "bytes": 3067,
+      "sha256": "ed612d7ed048e582e005d2fa74955ddff63021b269f07273efbf4959e5896176"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/backend-packaged-regression-v3.log",
+      "bytes": 7109,
+      "sha256": "43806ad5821277938ccd6a8f387b804a7768b71bca39541392920292bd341b11"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/backend-packaged-regression-v4.log",
+      "bytes": 22547,
+      "sha256": "77e9b4252cdfa16ed71d16fb02dd6df44d6607b8238c286702b933c3fe596ccd"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/backend-packaged-regression.log",
+      "bytes": 1306671,
+      "sha256": "b109799fc63811bc2e53cf9ffb86def62d65b50e618673df98fa88ec0477d25b"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/backend-regression-final.log",
+      "bytes": 18292,
+      "sha256": "c4f2ca2aa4ac988511d38a7fa020068edb5c65c56f85ff321e518553f06cb4e3"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/build-source-manifest.json",
+      "bytes": 196900,
+      "sha256": "7ec2959bdefa6b32a8b51d92da4f6970041daf8cb38d4ce9394580a956f99387"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/final-file-checks.json",
+      "bytes": 184,
+      "sha256": "a6193b9066702dcd21b8b52f68115906520f341fdbf32bc8061231a165d17189"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/final-readiness.json",
+      "bytes": 621,
+      "sha256": "432a318339a859e6037995a1b30c4acb1671524ea7ec1090bf925e11e1e37410"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/frontend-clean-build.log",
+      "bytes": 2586,
+      "sha256": "d5a8c847925a969cb2852cee5f9d0fc978f72e4116e887e705ffe11a62005098"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/frontend-final-build.log",
+      "bytes": 1455,
+      "sha256": "169f1110bec55bdbf0590153e80ea581bc5400ce92ff28255c005ef5ec4de167"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/frontend-final-lint.log",
+      "bytes": 43,
+      "sha256": "961db50e56d4e05b6f9a22354c797b82c37bb48b1e7b63c5e37a503d2b0f6ea1"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/frontend-final-tests.log",
+      "bytes": 9705,
+      "sha256": "66861effe5ec3e0ce0465b049749bf1d21f55353db4ea3af990896d9da493e98"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/history-runtime-contract.log",
+      "bytes": 98,
+      "sha256": "c928e2b325450f4fe53ea38feef281d6c7aed611956284bd9706a12f60e5c96a"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/isolated-postgres.json",
+      "bytes": 323,
+      "sha256": "7a695ccd9557202faed3d456ea35c8fa6ae616d333e481c8286c5574e316e214"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/b03-sketch-browser-v3.log",
+      "bytes": 713,
+      "sha256": "10e77d70581c7dc2bc1eeadaa7c925cec56f05e14f7f274acf830f74aa4c49b3"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/b07-branch-browser-v2.log",
+      "bytes": 615,
+      "sha256": "60a91123050e664eec41217eebf9cc6c44e74f6a94ecf3ed7dddf77a14977f28"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/b07-merge-http.log",
+      "bytes": 654,
+      "sha256": "f1d3145b36cdac9dbb164cc12f9cf252a74d1cb3f47be879681581b90ef96209"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/b09-cam-browser-v2.log",
+      "bytes": 770,
+      "sha256": "85f2c7cef7f4397240594c72ee73ebb0b94b7b8fc84949f565a0bd5e7adc06ff"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/b09-engineering-browser.log",
+      "bytes": 481,
+      "sha256": "b4258f07907a57524588e57a34260a1bfe5e2956dc26278fe5bb9216dc51b035"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/b09-engineering-http.log",
+      "bytes": 797,
+      "sha256": "33dd915855bf8fab559c7fd41932085a4d4b3723cd5d885c30d8b7bac8493d0b"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/b09-historical-fea.log",
+      "bytes": 477,
+      "sha256": "c42b795e26ee12eb4f97ba63fdf92f47d169b9e6837838794e7c5957cf2a5af0"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/browser-v2.log",
+      "bytes": 884,
+      "sha256": "7258585c5bb37dd7976b0d97da74eda7a66d6487cab3fdcf0f80744a995f0ce6"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/cad-expansion-bridge-browser.json",
+      "bytes": 417,
+      "sha256": "ac5afec3e6167ad99cf2e79c068d7172ce22ab50374a88ed951d4bcfbb90fc96"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/cad-expansion-release-browser.json",
+      "bytes": 329,
+      "sha256": "0b9742b30557fe34f83a7a6091a54a71dc67cc0f8f392c0aa1fbb1820fa25d6e"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/coedit-selection-final-v2.log",
+      "bytes": 1619,
+      "sha256": "ab8e419123d5ec0e19443d0870fd9a8aab29e84bda109c7ccca7cb1a7646aecb"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/coedit-selection-final-v2/independent-geometry-v2.log",
+      "bytes": 1168,
+      "sha256": "5fcd18e28023ea17a1a2bf07f4731941d10ed8e8fd20d31bf430812547ce6cdc"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/coedit-selection-final-v2/provider-provenance.log",
+      "bytes": 3494,
+      "sha256": "3e869fee2500a93b7520e660895a532282403f19ab31ea38641aac7c8b7bef45"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/coedit-selection-final-v2/report.json",
+      "bytes": 1814,
+      "sha256": "961869c034c534e32e43930bbd2dbf46473d1eb060b95e2b12db1e57d20d25ff"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/http-v2.log",
+      "bytes": 882,
+      "sha256": "341cb79748b910048bc43ecc20d7740ad4899309d8a564d21b19f0b0d29c246c"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/joint-restore-v3/report.json",
+      "bytes": 1124,
+      "sha256": "18331806996a7adea108efe43b3064557d2a2c013196cd663785c042cc193e5c"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/native-revocation-controls.json",
+      "bytes": 508,
+      "sha256": "0d2a294d9577a3609f92869ddf302d778d159396b32541e7f87acfb7a8d29da3"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/provider-quota-browser.log",
+      "bytes": 365,
+      "sha256": "c263d836dc5b2e8dcdd44329ff35cea290324fe729227cacfe74175212b5f8be"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/recovery-browser-v5.log",
+      "bytes": 2041,
+      "sha256": "24d10dcff9f0d19a6754f0d54bc9887017a8d8e782ef23ff07367b68dc92528b"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/recovery-browser-v5/report.json",
+      "bytes": 2023,
+      "sha256": "ab2ca8d1b4f4aee9fb8e2be39be4f250ccfb47217d109b14a7a8727f4d5f6372"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/regression-bridge-browser-v2.log",
+      "bytes": 575,
+      "sha256": "69077f167d562ab8e0c62849b0f05be78b0efea2681860973a90451c0bd615fb"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/regression-bridge-browser-v3.log",
+      "bytes": 415,
+      "sha256": "f1e651e84deba56b76a70c6f675b66009318b7b1addc7850e7fce65d96518df1"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/regression-bridge-browser.log",
+      "bytes": 669,
+      "sha256": "1ab11033bfe756aac4349fcc61a3dadd6c21bea5351b075d086d8718ef8e2da3"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/regression-bridge-failure.log",
+      "bytes": 361,
+      "sha256": "e07559f8da584af6638d1c99a638517ead51e67d86da418672a37aca5c589175"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/regression-bridge-http.log",
+      "bytes": 1385,
+      "sha256": "43ffbcff355d5fbdbc4c90d547fefea47dfa86e06ab61702ff2f22a80f5d40aa"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/regression-release-browser.log",
+      "bytes": 322,
+      "sha256": "b115ee5df6a108d071c0bd732b4fda74b84874e8fa2f6a247a5cf6178d03a879"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/regression-release-http.log",
+      "bytes": 714,
+      "sha256": "770ae1418106c6e1415ef4a742c63a20af9c639152fd81a80334139ef2dab6b0"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/scene-async-v4.log",
+      "bytes": 1611,
+      "sha256": "172e9f5dfc46518de69e98bbd9a730ff70c1f9288ecea5eeda59e05fe8be9faa"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/scene-async-v4/report.json",
+      "bytes": 2013,
+      "sha256": "c400530a3032082a70b615a1aca3ee987e8bbd5060de4efcb6fe30dae713c98f"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/scene-controls.log",
+      "bytes": 438,
+      "sha256": "2122bdf20d9e88e534061fd7a80ca3573523e56efb7ba75eb1239f48b412dae3"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/scene-controls/report.json",
+      "bytes": 471,
+      "sha256": "cce54197bb488378719f89b8d43b995a88c67f6fd953dce73401d6551afc1378"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/t04-exact-radius.log",
+      "bytes": 1997,
+      "sha256": "9839151a882f8f4e8b7fba3bf72c5866dbe759635474307fbcf3753371b9345d"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/t08-provider-cancel.log",
+      "bytes": 246,
+      "sha256": "b105f19b25e94f6d1565fed99c2209915a06cc34ee50361e7de2bc82720a7d29"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/t10-dfm-budget.log",
+      "bytes": 1658,
+      "sha256": "31b275c4f03e0a14f91ff860a19997721e0804615c1025e25b05f162ec5555e0"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/t12-collaboration-browser.log",
+      "bytes": 322,
+      "sha256": "f7ffc0a0704d9ebe0f2f2c316cc8a2e8f945707e108cb1440e78cfc57b5287f9"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/t12-collaboration-http-v2.log",
+      "bytes": 760,
+      "sha256": "d22daa88e4e7dc4c75a086b2ab1d51fc9111e500ffbc16c1518eccebaac6e79a"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/t12-engineering-controls.log",
+      "bytes": 669,
+      "sha256": "e3da6a8ceeebcc4edd900fcb6b02fca253b78363e7176b2b7e42d114596a08c2"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/t12-lease-expiration.log",
+      "bytes": 203,
+      "sha256": "ca592f8abfa4d6420fcc3e22c5a6cf63c7bb6e13ff7efbee01303e1f51b127da"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/t12-native-revocation.log",
+      "bytes": 659,
+      "sha256": "51d78cf0b6f17b3e753809cb5bdc3f697ac1cb14273cc81c3c47cdbb2e8e8d1b"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/t15-joint-restore-v3.log",
+      "bytes": 1272,
+      "sha256": "b003c638d929977f6c3ecbe80f5e36aaf110c2ea827921abd2b5116c8f8aef21"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/t17-view-identity-v2.log",
+      "bytes": 657,
+      "sha256": "166b9fb282fab1dd8cf8b95ea7954bda9721779f715a17755c5efab47eb37fee"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/t17-view-identity-v2/report.json",
+      "bytes": 666,
+      "sha256": "f5f9f79398b947a038d576ecf5145b62f9206a2cf96f4f0c9fd3c237283e1c2d"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/t18-multi-hole-measurements-v2.log",
+      "bytes": 1651,
+      "sha256": "44bbb43a9237bd0b0070358bc54c9491a63faa9acbc91ff70ab94b80374f734d"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/t18-multi-hole.log",
+      "bytes": 2305,
+      "sha256": "cb983db1f97c5d8f69fb282dd240ade3801ba74c3a41f75265e4d3121d989a25"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/t18-multi-hole/report.json",
+      "bytes": 2724,
+      "sha256": "86efa7399b0bc35af2cdecd2e2cbf543a1f0444b39ac288f1a5ed4512a8c7ebb"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/temporal-replay.log",
+      "bytes": 1412,
+      "sha256": "01537d36546ae2afa108cd706c5e9762fbce69a4fdc0345664880e949b0aef67"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/live/temporal-replay/report.json",
+      "bytes": 879,
+      "sha256": "898c887081ebde84f9a5bbb3d05c1037ae5c7f43fb2e877d3716240c8448e1fb"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/native-runtime-final.log",
+      "bytes": 109,
+      "sha256": "d94247cb5bb9f11a8bfe06a57ed751c9d4e0133398681aa1d39fe32420405792"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/packaged-regression-summary.json",
+      "bytes": 813,
+      "sha256": "be4d50b34ae095e4dfee5cd3f381a29642622f60325b699bcc4104cf6053f83d"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/packaged/browser.log",
+      "bytes": 732,
+      "sha256": "b24c84ce3090cfed1874a1ecd55f8f09d15950940afdeb9f5851640f31032228"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/packaged/browser/report.json",
+      "bytes": 756,
+      "sha256": "f2373fefff2265bdfb1f44100d848c22c2efc193eefa53f19089e7d18a96a6ac"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/packaged/first-candidate.log",
+      "bytes": 800,
+      "sha256": "0132b979e5fe048278ee54840e3b3473fad642dce0ee347d34e483bf811e73b2"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/packaged/first-candidate/report.json",
+      "bytes": 815,
+      "sha256": "353643e2425af87d48b1ced3c989a4e08e140bfb69a8b8443535390dbde1e120"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/packaged/provenance.json",
+      "bytes": 1586,
+      "sha256": "4b2621636039846230e5b9f6533b0a4d47d9e0e86a321766323617c394fd1677"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/packaged/start.log",
+      "bytes": 420,
+      "sha256": "6e90f4b769de7c9b5e2f368a88dbb0800ec1c12d5f5b1650859f3fd4ebbe62ca"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/postgres-integration-final.log",
+      "bytes": 935,
+      "sha256": "870f71017e2e58428e5a03a41855f50af51f6769d8b834194078a4c4c619c00c"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/runtime-built-probe.log",
+      "bytes": 2941,
+      "sha256": "933b3c2a0fd7de8f008c416b594e3051650d9ff61ab2611242f84bffaffcfa8f"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/sandbox-clean-build.log",
+      "bytes": 9500,
+      "sha256": "bb7ef0a44d298f7f88dad692842631765db8a02039d8f5b8c221b7093fa7bf5f"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/t10-native-visual-budget-v5.log",
+      "bytes": 1512,
+      "sha256": "39d0e4c439eb34229ff5c6c0893ac26e9fa788914567cf9ef650ec5bb4f6ac44"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/temporal-controls-final-v1.log",
+      "bytes": 2788,
+      "sha256": "5679116b6469e4cd9dc2498509d070509bb106d2129e21f86d272fefdee65080"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/temporal-full-final-v1.log",
+      "bytes": 9748,
+      "sha256": "d12522b50929232520e87e321033f9ace0a4a919c1b547e83bc58ac766c7be15"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/temporal-full-final-v2.log",
+      "bytes": 6929,
+      "sha256": "7f5b2687c1128c50530072581c5bfc743368a021981b84d9deb4c9cd4d386ee1"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/temporal-full-final-v3.log",
+      "bytes": 13576,
+      "sha256": "e7ee59ddfe48d914ec085f808f83ff3f8f665e4b57daed3759b427feb1b56ece"
+    },
+    {
+      "private_path": "/private/tmp/cad-coedit-20260912/temporal-full-final-v4.log",
+      "bytes": 15676,
+      "sha256": "20b2e24e54857d04dc3ca681fd1e13cc23e4bbc6dec32e7466f2e8c4051f33d8"
+    }
+  ],
+  "published_summaries": [
+    {
+      "path": "coediting.json",
+      "sha256": "70a9e97fbc90df03670142aba41a8ec190273c6e97fa5cafa21b8687940cb7a2",
+      "original_private_path": "/private/tmp/cad-coedit-20260912/live/coedit-selection-final-v2/report.json"
+    },
+    {
+      "path": "recovery.json",
+      "sha256": "c6bb32af48ab290682c0b0804c5ae834b21cba7412a0c216050c661970474397",
+      "original_private_path": "/private/tmp/cad-coedit-20260912/live/recovery-browser-v5/report.json"
+    },
+    {
+      "path": "scene.json",
+      "sha256": "2dc94607c74e8191ea6b7d61a787fbe88b4fa40a1cc2ddcf2ee0df9927efcc4a",
+      "original_private_path": "/private/tmp/cad-coedit-20260912/live/scene-async-v4/report.json"
+    },
+    {
+      "path": "multi-hole.json",
+      "sha256": "66553d235407c52dffe428d96eaaf714a77e85fc1fd0d71ee2b62e0c1c5a836b",
+      "original_private_path": "/private/tmp/cad-coedit-20260912/live/t18-multi-hole/report.json"
+    },
+    {
+      "path": "view-identity.json",
+      "sha256": "7bbdefbf66737c60b27a971324785b649474aa36f0217ad88f73ec06288ac350",
+      "original_private_path": "/private/tmp/cad-coedit-20260912/live/t17-view-identity-v2/report.json"
+    },
+    {
+      "path": "joint-restore.json",
+      "sha256": "7655ff31a0cd787aec667797d1d4c2946bbee1d519bd29df77279ad62ac2ead0",
+      "original_private_path": "/private/tmp/cad-coedit-20260912/live/joint-restore-v3/report.json"
+    },
+    {
+      "path": "workflow-replay.json",
+      "sha256": "dea4fedaf14e8dae046230ee47d28943e8ce6ac79450f11d6a0e3fa7c6f4b9a1",
+      "original_private_path": "/private/tmp/cad-coedit-20260912/live/temporal-replay/report.json"
+    },
+    {
+      "path": "packaged-browser.json",
+      "sha256": "c8cccc0bb72b715792d65ee20a7d9acff4d24bc8ad2144a628aa69a30108ded3",
+      "original_private_path": "/private/tmp/cad-coedit-20260912/packaged/browser/report.json"
+    },
+    {
+      "path": "bridge-browser.json",
+      "sha256": "0de3d4c08a789b9d572681f4f4ee383a671cea1cde053e9d55cc4544bc9a48a8",
+      "original_private_path": "/private/tmp/cad-coedit-20260912/live/cad-expansion-bridge-browser.json"
+    },
+    {
+      "path": "release-browser.json",
+      "sha256": "d2bf60939d873b77715515727ac677e865748c47e1e6b67e15c45a14ba3ec3f4",
+      "original_private_path": "/private/tmp/cad-coedit-20260912/live/cad-expansion-release-browser.json"
+    },
+    {
+      "path": "packaged-provenance.json",
+      "sha256": "4b2621636039846230e5b9f6533b0a4d47d9e0e86a321766323617c394fd1677",
+      "original_private_path": "/private/tmp/cad-coedit-20260912/packaged/provenance.json"
+    },
+    {
+      "path": "file-checks.json",
+      "sha256": "a6193b9066702dcd21b8b52f68115906520f341fdbf32bc8061231a165d17189",
+      "original_private_path": "/private/tmp/cad-coedit-20260912/final-file-checks.json"
+    },
+    {
+      "path": "readiness.json",
+      "sha256": "432a318339a859e6037995a1b30c4acb1671524ea7ec1090bf925e11e1e37410",
+      "original_private_path": "/private/tmp/cad-coedit-20260912/final-readiness.json"
+    },
+    {
+      "path": "first-candidate.json",
+      "sha256": "d8c5147aa7b0076b9b03998595a83a67ac40a9a03980d60b4d0de8049f9d0fef",
+      "original_private_path": "/private/tmp/cad-coedit-20260912/packaged/first-candidate/report.json"
+    },
+    {
+      "path": "backend-regression.json",
+      "sha256": "be4d50b34ae095e4dfee5cd3f381a29642622f60325b699bcc4104cf6053f83d",
+      "original_private_path": "/private/tmp/cad-coedit-20260912/packaged-regression-summary.json"
+    }
+  ]
+}

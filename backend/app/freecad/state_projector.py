@@ -280,6 +280,23 @@ def project_object(obj: Any) -> dict[str, Any]:
         ),
         "properties": properties,
     }
+    type_id = projected["type_id"]
+    categories = {"PartDesign::Body": "body", "App::Part": "part", "App::DocumentObjectGroup": "group",
+                  "App::Link": "instance", "Sketcher::SketchObject": "sketch",
+                  "App::Origin": "datum", "App::Plane": "datum", "App::Line": "datum", "App::Point": "datum"}
+    structure = {"status": "measured", "category": categories.get(type_id, "feature" if type_id.startswith("PartDesign::") else "other"),
+                 "members": [], "body_tip": None}
+    if type_id in {"PartDesign::Body", "App::Part", "App::DocumentObjectGroup"}:
+        try:
+            # Group preserves the kernel's container order. OutList is a
+            # dependency graph and must never be used as a tree substitute.
+            structure["members"] = [str(member.Name) for member in obj.Group]
+            if type_id == "PartDesign::Body":
+                structure["body_tip"] = str(obj.Tip.Name) if obj.Tip is not None else None
+        except (AttributeError, RuntimeError, TypeError):
+            structure = {"status": "unavailable", "category": structure["category"],
+                         "reason": "native_container_members_unavailable"}
+    projected["structure"] = structure
     shape = _shape_state(getattr(obj, "Shape", None))
     if shape is not None:
         projected["shape"] = shape

@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+from acceptance_paths import evidence_path
 import time
 from uuid import uuid4
 from urllib.parse import urlparse, parse_qs
@@ -36,7 +37,7 @@ def review_in_browser(page, client, task_id):
 
 def main():
     private=json.loads(Path(os.environ['CAD_NATIVE_E2E_PRIVATE']).read_text())
-    fixture=json.loads(Path('/tmp/cad-expansion-merge-evidence.json').read_text())
+    fixture=json.loads(Path(str(evidence_path('cad-expansion-merge-evidence.json'))).read_text())
     web=os.environ['CAD_NATIVE_E2E_WEB']
     client=httpx.Client(headers={'Authorization':'Bearer '+private['owner']['token']})
     path='/api/documents/'+fixture['target_document_id']
@@ -74,8 +75,29 @@ def main():
         comparison=page.get_by_test_id('branch-comparison')
         expect(comparison.get_by_role('button',name='提交合并校验')).to_be_disabled(timeout=20000)
         expect(comparison.get_by_text('来源标注不应覆盖目标',exact=False)).to_have_count(1)
-        page.screenshot(path='/tmp/cad-expansion-branch-conflict.png')
+        expect(comparison.get_by_test_id('merge-source-version')).to_contain_text(f"v{source['state_version']} · {source['head_revision_id'][:8]}")
+        expect(comparison.get_by_test_id('merge-target-version')).to_contain_text(f"v{target['state_version']} · {target['head_revision_id'][:8]}")
+        page.screenshot(path=str(evidence_path('cad-expansion-branch-conflict.png')))
         comparison.get_by_role('combobox',name='合并方式').select_option('source_geometry')
+        def advance_and_rollback(document):
+            previous = {p['id']:p['value'] for f in document['features'] for p in f['parameters']}
+            modified = modify(client,document['document_id'],'PadA.Length',previous['PadA.Length']+1)
+            operations = call(client,'GET','/api/documents/'+document['document_id']+'/collaboration')['operations']
+            op = next(o for o in operations if o['result_revision_id']==modified['head_revision_id'])
+            call(client,'POST','/api/change-sets/'+op['change_set_id']+'/rollback',json={'note':'Restore this isolated ABA test edit after inspecting its actual checkpoint'})
+            restored = call(client,'GET','/api/documents/'+document['document_id'])
+            assert restored['head_revision_id']==document['head_revision_id'] and restored['state_version']==document['state_version']+2
+            return restored
+        source = advance_and_rollback(source)
+        expect(comparison.get_by_text('来源版本已更新，请重新比较。',exact=True)).to_be_visible(timeout=15000)
+        expect(comparison.get_by_role('button',name='提交合并校验')).to_be_disabled()
+        region.get_by_role('button',name='比较分支差异',exact=True).click()
+        expect(comparison.get_by_test_id('merge-source-version')).to_contain_text(f"v{source['state_version']} · {source['head_revision_id'][:8]}",timeout=15000)
+        target = advance_and_rollback(target)
+        expect(comparison.get_by_text('目标版本已更新，请重新比较。',exact=True)).to_be_visible(timeout=15000)
+        expect(comparison.get_by_role('button',name='提交合并校验')).to_be_disabled()
+        region.get_by_role('button',name='比较分支差异',exact=True).click()
+        expect(comparison.get_by_test_id('merge-target-version')).to_contain_text(f"v{target['state_version']} · {target['head_revision_id'][:8]}",timeout=15000)
         with page.expect_response(lambda r:r.url.endswith(path+'/merges') and r.request.method=='POST') as submitted:
             comparison.get_by_role('button',name='提交合并校验').click()
         assert submitted.value.status==202,submitted.value.text()
@@ -96,7 +118,7 @@ def main():
         branch={'document_id':query['document'][0],'tenant_id':query['workspace'][0],'workflow_run_id':query['task'][0]}
         persisted=next(b for b in call(client,'GET',path+'/branches')['branches'] if b['name']==name)
         assert persisted['document_id']==branch['document_id'] and persisted['workflow_run_id']==branch['workflow_run_id']
-        expect(page).to_have_url(web+'?document='+branch['document_id']+'&workspace='+branch['tenant_id']+'&task='+branch['workflow_run_id'],timeout=15000)
+        expect(page).to_have_url(web.rstrip('/')+'/?document='+branch['document_id']+'&workspace='+branch['tenant_id']+'&task='+branch['workflow_run_id'],timeout=15000)
         review_in_browser(page,client,branch['workflow_run_id'])
         viewer=page.get_by_test_id('document-scene')
         final=call(client,'GET','/api/documents/'+branch['document_id'])
@@ -104,12 +126,13 @@ def main():
         expect(viewer.get_by_text('2 个部件',exact=False)).to_be_visible()
         expect(page.get_by_role('region',name='文档分支').get_by_role('link',name=name,exact=True)).to_have_attribute('aria-current','page')
         assert viewer.locator('canvas').evaluate("c=>!!c.getContext('webgl2')")
-        page.screenshot(path='/tmp/cad-expansion-branch-browser.png')
+        page.screenshot(path=str(evidence_path('cad-expansion-branch-browser.png')))
         assert not errors,errors
         assert not console_errors,console_errors
-        Path('/tmp/cad-expansion-branch-browser.json').write_text(json.dumps({'merge_workflow_id':merge_id,
+        Path(str(evidence_path('cad-expansion-branch-browser.json'))).write_text(json.dumps({'merge_workflow_id':merge_id,
             'created_branch':branch,'geometry_adoption_reviewed':True,'target_annotation_preserved':True,
-            'fork_created_and_committed_in_browser':True,'page_errors':errors,'console_errors':console_errors},indent=2))
+            'fork_created_and_committed_in_browser':True,'source_and_target_aba_disable_stale_merge':True,
+            'fresh_comparison_allows_reviewed_merge':True,'page_errors':errors,'console_errors':console_errors},indent=2))
         print('browser comparison, conflict, geometry adoption, fork and review/commit passed',flush=True)
         browser.close()
     client.close()

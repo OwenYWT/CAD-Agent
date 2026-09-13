@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from acceptance_paths import evidence_path
 from uuid import uuid4
 
 import httpx
@@ -29,7 +30,7 @@ def main():
         form=panel.get_by_role('form',name='外轮廓加工设置')
         expect(form.get_by_role('button',name='生成外轮廓加工路径')).to_be_disabled()
         form.get_by_role('textbox',name='刀具名称').fill('Browser acceptance 6 mm flat end mill')
-        for label,value in [('刀具直径 / mm','6'),('有效刃长 / mm','12'),('每层切深 / mm','3'),('轮廓进给 / mm/min','400'),
+        for label,value in [('刀具直径 / mm','6'),('有效刃长 / mm',os.getenv('CAD_CAM_TOOL_LENGTH_MM','30')),('每层切深 / mm','3'),('轮廓进给 / mm/min','400'),
             ('垂直进给 / mm/min','100'),('主轴转速 / rpm','12000'),('安全高度 / mm','5'),('毛坯侧边余量 / mm','5'),
             ('径向保留余量 / mm','0'),('弦差精度 / mm','0.01'),('G54 原点 X / mm','5'),('G54 原点 Y / mm','-2'),('G54 原点 Z / mm','1')]:
             form.get_by_role('spinbutton',name=label,exact=True).fill(value)
@@ -50,15 +51,15 @@ def main():
         report=call(client,'GET',path+'/engineering/'+task_id)
         with page.expect_download() as download:
             result.get_by_role('button',name='下载 GRBL 程序').click()
-        destination=Path('/tmp/cad-expansion-cam-browser.nc');download.value.save_as(destination)
+        destination=Path(str(evidence_path('cad-expansion-cam-browser.nc')));download.value.save_as(destination)
         program=destination.read_bytes();ref=report['artifacts']['cam_program']
         assert len(program)==ref['size_bytes'] and hashlib.sha256(program).hexdigest()==ref['sha256']
         assert b'G21 G90 G17 G94 G40 G49 G80' in program and program.endswith(b'M5\nM2\n')
         with page.expect_download() as bundle:
             result.get_by_role('button',name='下载加工证据').click()
-        bundle.value.save_as('/tmp/cad-expansion-cam-browser-evidence.zip')
+        bundle.value.save_as(str(evidence_path('cad-expansion-cam-browser-evidence.zip')))
         viewer.get_by_role('slider',name='加工路径进度').fill(str(original))
-        result.scroll_into_view_if_needed();page.screenshot(path='/tmp/cad-expansion-cam-browser.png')
+        result.scroll_into_view_if_needed();page.screenshot(path=str(evidence_path('cad-expansion-cam-browser.png')))
         assert not errors,errors
         assert not console_errors,console_errors
         browser.close()
@@ -76,7 +77,7 @@ def main():
         'minimum_target_clearance_mm':report['report']['minimum_target_clearance_mm'],
         'internal_loops_explicitly_excluded':report['report']['internal_loops_not_machined'],
         'idempotency_verified':True,'native_short_tool_rejected':True,'source_revision_unchanged':True,'page_errors':errors,'console_errors':console_errors}
-    Path('/tmp/cad-expansion-cam-browser.json').write_text(json.dumps(evidence,indent=2))
+    Path(str(evidence_path('cad-expansion-cam-browser.json'))).write_text(json.dumps(evidence,indent=2))
     print('CAD_CAM_BROWSER='+json.dumps(evidence),flush=True)
 
 

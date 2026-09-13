@@ -98,13 +98,17 @@ interface AgentPanelProps {
   onPreview?: () => void;
   onCollapse?: () => void;
   embedded?: boolean;
+  selectionLabel?: string;
+  onClearSelection?: () => void;
+  blockedReason?: string;
 }
 
-export default function AgentPanel({ context, connection, suggestedPrompt = "", onSend, onCancel, onPreview, onCollapse, embedded = false }: AgentPanelProps) {
+export default function AgentPanel({ context, connection, suggestedPrompt = "", onSend, onCancel, onPreview, onCollapse, embedded = false, selectionLabel, onClearSelection, blockedReason }: AgentPanelProps) {
   const { translate } = useI18n();
   const panel = useSessionStore((state) => state.getActivePanel());
   const [input, setInput] = useState(suggestedPrompt);
   const [pendingRequest, setPendingRequest] = useState<string | null>(null);
+  const reviewedTarget = useRef<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [confirmationPending, setConfirmationPending] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
@@ -124,14 +128,20 @@ export default function AgentPanel({ context, connection, suggestedPrompt = "", 
   }, [messages, panel.stepHistory.length]);
 
   const reviewRequest = () => {
+    if (blockedReason) { setError(blockedReason); return; }
     const value = input.trim();
     if (!value) return;
+    reviewedTarget.current = selectionLabel;
     setPendingRequest(value);
     setError(null);
   };
 
   const execute = () => {
     if (!pendingRequest) return;
+    if (reviewedTarget.current !== selectionLabel) {
+      setPendingRequest(null); setError("AI 目标或版本已改变，请重新预览修改范围。"); return;
+    }
+    if (blockedReason) { setError(blockedReason); return; }
     const request = `当前上下文：${AGENT_CONTEXT_LABELS[context]}。请先限定修改范围，再执行以下请求并验证结果：${pendingRequest}`;
     if (!onSend(request)) {
       setError("实时连接尚未就绪，计划已保留。");
@@ -261,10 +271,13 @@ export default function AgentPanel({ context, connection, suggestedPrompt = "", 
       </div>
 
       <div className="ww-agent-composer-wrap">
+        {selectionLabel ? <div className="mb-2 rounded border border-[var(--agent-border)] bg-[var(--agent-soft)] p-2 type-caption" data-testid="agent-selection">修改目标：{selectionLabel}
+          {onClearSelection ? <button className="ml-2 underline" onClick={onClearSelection} type="button">清除本次 AI 选择</button> : null}</div> : null}
+        {blockedReason ? <p role="status" className="mb-2 type-caption text-amber-800">{blockedReason}</p> : null}
         <SuggestionPills disabled={panel.isGenerating} onSelect={(suggestion) => setInput(suggestion.prompt)} suggestions={suggestions} />
         <div className="ww-agent-composer">
           <textarea aria-label="询问 Agent" disabled={panel.isGenerating} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") reviewRequest(); }} placeholder="继续迭代当前设计…" rows={3} value={input} />
-          <div className="ww-agent-composer__toolbar"><div className="ww-agent-composer__modes"><span><Icon name="box" size={12} />参数化</span><span>{panel.durable?.workflowRunId ? "Agent V2" : "Agent"}</span></div><span className="ww-agent-composer__shortcut">⌘ Enter 审查</span><button aria-label="审查请求" className="ww-agent-send" disabled={!input.trim() || panel.isGenerating} onClick={reviewRequest} type="button"><Icon name="send" size={15} /></button></div>
+          <div className="ww-agent-composer__toolbar"><div className="ww-agent-composer__modes"><span><Icon name="box" size={12} />参数化</span><span>{panel.durable?.workflowRunId ? "Agent V2" : "Agent"}</span></div><span className="ww-agent-composer__shortcut">⌘ Enter 审查</span><button aria-label="审查请求" className="ww-agent-send" disabled={!input.trim() || panel.isGenerating || !!blockedReason} onClick={reviewRequest} type="button"><Icon name="send" size={15} /></button></div>
         </div>
       </div>
     </section>

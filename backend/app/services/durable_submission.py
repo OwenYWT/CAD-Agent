@@ -32,6 +32,7 @@ from app.workflows.temporal import (
     start_mcad_workflow,
 )
 from app.services.run_state import IdempotencyConflict
+from app.freecad.selection import SelectionContextV1, SelectionError, needs_selection, freeze_selection
 
 
 _MEDIA_TYPES = {
@@ -57,6 +58,32 @@ class WorkspaceIdentity:
     project_id: UUID
     branch_id: UUID
     head_revision_id: UUID
+
+
+async def recover_session_submission(principal, *, session_id: str, panel_id: str, idempotency_key: str):
+    """Read a lost receipt within its original authenticated session and panel.
+
+    No input resolution or head comparison is repeated: an acknowledged workflow
+    may already be complete, and its original base is still the correct identity.
+    """
+    if not isinstance(idempotency_key, str) or not 1 <= len(idempotency_key) <= 500:
+        raise ValueError("原请求标识无效")
+    from app.services.cloud_documents import authorized_document
+    async with tenant_transaction(principal.tenant_id, principal.principal_id) as conn:
+        row = (await conn.execute(text("""SELECT w.id,w.project_id,w.status,w.request_payload,b.id AS branch_id
+            FROM workflow_runs w JOIN project_branches b ON b.id=CAST(w.request_payload->>'branch_id' AS uuid)
+                AND b.project_id=w.project_id AND b.tenant_id=w.tenant_id
+            JOIN workspace_sessions s ON s.project_id=w.project_id AND s.tenant_id=w.tenant_id
+            WHERE w.tenant_id=:tenant AND w.requested_by_principal_id=:principal AND w.idempotency_key=:key
+                AND s.id=:session AND b.name=:branch_name"""),
+            {'tenant':principal.tenant_id,'principal':principal.principal_id,'key':idempotency_key,
+             'session':session_id,'branch_name':'panel-'+hashlib.sha256(panel_id.encode()).hexdigest()[:16]})).mappings().one_or_none()
+        if row is None:
+            return None
+        await authorized_document(conn,principal,row['branch_id'])
+        return {'workflow_run_id':str(row['id']),'project_id':str(row['project_id']),
+                'branch_id':str(row['branch_id']),'expected_base_revision_id':row['request_payload']['expected_base_revision_id'],
+                'panel_id':panel_id,'submission_id':idempotency_key,'status':row['status']}
 
 
 async def resolve_native_revision_restore(
@@ -283,8 +310,18 @@ async def submit_durable_workflow(
     structured_modification: FreeCADStructuredModificationV1 | None = None,
     revision_restore: FreeCADRevisionRestoreV1 | None = None,
     expected_state_version: int | None = None,
+    selection_context: SelectionContextV1 | None = None,
 ) -> DurableSubmission:
     normalized_objective = objective.strip()
+    if selection_context is not None:
+        if (operation != "modify" or modeling_backend != "freecad" or operation_context is None
+                or structured_modification is not None or revision_restore is not None):
+            raise SelectionError("选择上下文只适用于自然语言原生修改")
+        if (selection_context.revision_id != expected_base_revision_id
+                or selection_context.state_version != expected_state_version):
+            raise SelectionError("选择版本与请求基线不一致，请重新选择目标")
+        operation_context = OperationContextV1.model_validate({
+            **operation_context.model_dump(), "selection_context": selection_context})
     if expected_state_version is not None and (type(expected_state_version) is not int or expected_state_version < 0):
         raise ValueError("expected_state_version must be a non-negative integer")
     normalized_idempotency_key = idempotency_key.strip()
@@ -522,6 +559,16 @@ async def submit_durable_workflow(
         branch_id=branch_id,
         expected_base_revision_id=expected_base_revision_id,
     )
+    if operation == "modify" and modeling_backend == "freecad" and not structured_modification and not revision_restore:
+        if selection_context is None and needs_selection(normalized_objective):
+            raise SelectionError("请先选择目标特征；这条指令的指代无法唯一确认")
+        if selection_context is not None:
+            from app.services.cloud_documents import checkpoint, authorized_document
+            projection = await checkpoint(principal, branch_id, expected_base_revision_id)
+            async with tenant_transaction(principal.tenant_id, principal.principal_id) as connection:
+                document = await authorized_document(connection, principal, branch_id, Permission.MODIFY_DESIGN)
+            freeze_selection(projection, selection_context, revision_id=document["head_revision_id"],
+                             state_version=document["state_version"], objective=normalized_objective)
     if is_agent_v2:
         workflow_run_id, handle = await start_mcad_agent_v2_workflow(
             tenant_id=principal.tenant_id,

@@ -1,0 +1,24 @@
+{
+  "source_sha256": "f2373fefff2265bdfb1f44100d848c22c2efc193eefa53f19089e7d18a96a6ac",
+  "redactions": [],
+  "evidence": {
+    "status": "passed",
+    "document_id": "2f38d791-a9fd-4f32-9d53-7aa7aaed3fac",
+    "workflow_id": "76f4765c-ebf5-4c62-b91c-fad737610893",
+    "before_revision": "55fc5ca0-1a6f-4e7c-b1e6-359b98329958",
+    "after_revision": "5ce0140c-5a23-4889-91cd-ba7ed1c9bf49",
+    "before_generation": 1,
+    "after_generation": 2,
+    "pad_a_length_mm": 11.0,
+    "pad_b_unchanged": true,
+    "stable_feature_ids": true,
+    "refresh_during_task_and_after_commit": true,
+    "artifact_sha256": {
+      "fcstd": "5459726352837371d34c4cc8d5a2984e919d63834ee9ff6af3857bc8dc6b39f0",
+      "state": "3910e00bc6b9bf43a6be3362ffce5f38961b5b15c7473a4ffbc75e18db6c03f3",
+      "mesh": "b6d5c27fed017cef138e1ba35889abab0f9c63acfd82c2441e6af704fac79d3e"
+    },
+    "page_errors": [],
+    "console_errors": []
+  }
+}

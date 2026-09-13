@@ -17,6 +17,8 @@ interface WorkspaceInspectorProps {
   versionHistory: ReactNode;
   onProperties: () => void;
   onExport?: () => void;
+  canExport?: boolean;
+  canEdit?: boolean;
   onCollapse?: () => void;
   showHeader?: boolean;
   projectId?: string | null;
@@ -48,6 +50,8 @@ export default function WorkspaceInspector({
   versionHistory,
   onProperties,
   onExport,
+  canExport = true,
+  canEdit = true,
   onCollapse,
   showHeader = true,
   projectId = null,
@@ -58,6 +62,7 @@ export default function WorkspaceInspector({
   const [downloadError, setDownloadError] = useState("");
   const [downloading, setDownloading] = useState<string | null>(null);
   const downloadFile = async (url: string, fallbackName: string) => {
+    if (!canExport) return;
     setDownloadError("");
     setDownloading(url);
     try {
@@ -153,7 +158,7 @@ export default function WorkspaceInspector({
         {tab === "document" ? cloudDocument : null}
         {tab === "parameters" ? (
           <div className="ww-inspector-section">
-            <div className="ww-inspector-section__header"><div><h3>模型属性</h3><p>显示当前结果解析出的真实参数。</p></div><button className="workspace-button" onClick={onProperties} type="button"><Icon name="sliders" size={14} />编辑</button></div>
+            <div className="ww-inspector-section__header"><div><h3>模型属性</h3><p>显示当前结果解析出的真实参数。</p></div><button className="workspace-button" onClick={onProperties} type="button"><Icon name="sliders" size={14} />{canEdit ? "编辑" : "查看属性"}</button></div>
             {parameters.length ? <div className="ww-parameter-list">{parameters.map((parameter) => <div key={parameter.id}><span><strong>{parameter.label}</strong><small>{parameter.group}</small></span><span>{parameter.value}{parameter.unit}</span></div>)}</div> : <p className="ww-inspector-empty">当前结果没有可编辑参数。生成参数化模型后会显示真实参数。</p>}
           </div>
         ) : null}
@@ -170,7 +175,8 @@ export default function WorkspaceInspector({
         {tab === "files" ? (
           <div className="ww-inspector-section">
             <div className="ww-inspector-section__header"><div><h3>工程文件</h3><p>当前结果和实时任务返回的产物。</p></div></div>
-            {files.length ? <div className="ww-file-list">{files.map(([format, url]) => <button disabled={downloading !== null} key={format} onClick={() => void downloadFile(url, `model.${format}`)} type="button"><Icon name="file" size={14} /><span><strong>{fileLabel(format)}{downloading === url ? " · 正在下载" : ""}</strong><small>{url}</small></span><Icon name="download" size={13} /></button>)}</div> : <p className="ww-inspector-empty">当前结果尚未返回可用工程文件。</p>}
+            {!canExport ? <p className="ww-inspector-empty">当前账号可查看模型，没有导出权限。</p> : null}
+            {files.length ? <div className="ww-file-list">{files.map(([format, url]) => <button disabled={!canExport || downloading !== null} key={format} onClick={() => void downloadFile(url, `model.${format}`)} type="button"><Icon name="file" size={14} /><span><strong>{fileLabel(format)}{downloading === url ? " · 正在下载" : ""}</strong><small>{url}</small></span><Icon name="download" size={13} /></button>)}</div> : <p className="ww-inspector-empty">当前结果尚未返回可用工程文件。</p>}
             {downloadError ? <p className="ww-inspector-empty" role="alert">{downloadError}</p> : null}
             {artifacts.length ? <div className="ww-artifact-list"><h4>任务产物事件</h4>{artifacts.slice(-10).reverse().map((artifact, index) => <div key={`${artifact.path}:${index}`}><span>{artifact.artifact_type.toUpperCase()}</span><code>{artifact.path}</code></div>)}</div> : null}
           </div>
@@ -178,7 +184,7 @@ export default function WorkspaceInspector({
 
         {tab === "bom" ? (
           <div className="ww-inspector-section">
-            <div className="ww-inspector-section__header"><div><h3>物料清单</h3><p>来自当前版本持久化的 FreeCAD Assembly 原生 BOM。</p></div>{bomState === "succeeded" && bom?.csv_download_url ? <button className="workspace-button" onClick={() => void downloadEngineeringArtifact(bom.csv_download_url!, "bom.csv")} type="button"><Icon name="download" size={14} />CSV</button> : null}</div>
+            <div className="ww-inspector-section__header"><div><h3>物料清单</h3><p>来自当前版本持久化的 FreeCAD Assembly 原生 BOM。</p></div>{canExport && bomState === "succeeded" && bom?.csv_download_url ? <button className="workspace-button" onClick={() => void downloadFile(bom.csv_download_url!, "bom.csv")} type="button"><Icon name="download" size={14} />CSV</button> : null}</div>
             {bomState === "loading" ? <p className="ww-inspector-empty">正在读取已验证的 BOM…</p> : null}
             {bomState === "not_applicable" ? <p className="ww-inspector-empty">当前版本不是装配体，无需生成 BOM。</p> : null}
             {bomState === "missing" ? <p className="ww-inspector-empty">当前历史版本没有 BOM 证据。</p> : null}
@@ -192,7 +198,7 @@ export default function WorkspaceInspector({
       </div>
       <div className="ww-inspector-export">
         <span>{files.length ? files.map(([format]) => fileLabel(format)).join(" · ") : "等待工程产物"}</span>
-        <button className="workspace-button workspace-button--primary" disabled={!files.length} onClick={onExport} type="button"><Icon name="download" size={14} />导出</button>
+        <button className="workspace-button workspace-button--primary" disabled={!canExport || !files.length} onClick={onExport} type="button"><Icon name="download" size={14} />导出</button>
       </div>
     </div>
   );

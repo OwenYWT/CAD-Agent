@@ -68,6 +68,17 @@ async def enqueue_operation(connection, *, workflow_id: UUID, tenant_id: UUID,
     ):
         raise DocumentConflict("文档已更新，请读取当前版本后重新提交")
     frozen_arguments = {**payload, "_feature_annotations": await annotation_context(connection, document_id)}
+    selection = (payload.get("operation_context") or {}).get("selection_context")
+    if selection is not None:
+        from app.freecad.selection import SelectionContextV1, SelectionError, freeze_selection
+        projection = await connection.scalar(text("""SELECT projection FROM document_checkpoints
+            WHERE document_id=:doc AND revision_id=:revision ORDER BY projector_version DESC LIMIT 1"""),
+            {"doc": document_id, "revision": doc["head_revision_id"]})
+        if projection is None:
+            raise SelectionError("目标检查点尚不可用，不能冻结选择")
+        frozen_arguments["_selection_context"] = freeze_selection(dict(projection),
+            SelectionContextV1.model_validate(selection), revision_id=doc["head_revision_id"],
+            state_version=doc["state_version"], objective=payload["objective"])
     from app.services.engineering_evidence import engineering_references
     engineering = await engineering_references(connection, document_id, doc['head_revision_id'])
     if engineering:
@@ -154,7 +165,7 @@ async def checkpoint(context: PrincipalContext, document_id: UUID, revision_id: 
         async with tenant_transaction(context.tenant_id, context.principal_id) as conn:
             doc = await authorized_document(conn, context, current_doc)
             cached = await conn.scalar(text("""SELECT projection FROM document_checkpoints
-                WHERE document_id=:doc AND revision_id=:revision AND projector_version=3"""),
+                WHERE document_id=:doc AND revision_id=:revision AND projector_version=4"""),
                 {"doc": current_doc, "revision": current_rev})
             if cached is not None:
                 previous = dict(cached)
@@ -188,13 +199,13 @@ async def checkpoint(context: PrincipalContext, document_id: UUID, revision_id: 
             return {"artifact_id": str(a["id"]), "sha256": a["sha256"], "size_bytes": a["size_bytes"],
                     "url": f"/api/documents/{current_doc}/artifacts/{a['id']}", "runtime": a["runtime_metadata"]} if a else None
 
-        projection.update(projector_version=3, revision_id=str(current_rev), parameter_state_sha256=state_hash,
+        projection.update(projector_version=4, revision_id=str(current_rev), parameter_state_sha256=state_hash,
             lineage_id=str(lineage_id), fcstd=ref("fcstd"), mesh=ref("stl"), state=ref("state"),
             modeling_backend="freecad" if any(a["artifact_kind"] == "fcstd" for a in artifacts) else "cadquery" if artifacts else None)
         async with tenant_transaction(context.tenant_id, context.principal_id) as conn:
             await authorized_document(conn, context, current_doc)
             await conn.execute(text("""INSERT INTO document_checkpoints(tenant_id, document_id, revision_id, projector_version, projection)
-                VALUES(:tenant, :doc, :rev, 3, CAST(:projection AS jsonb)) ON CONFLICT DO NOTHING"""),
+                VALUES(:tenant, :doc, :rev, 4, CAST(:projection AS jsonb)) ON CONFLICT DO NOTHING"""),
                 {"tenant": context.tenant_id, "doc": current_doc, "rev": current_rev, "projection": json.dumps(projection)})
         previous = projection
     return previous
@@ -209,12 +220,56 @@ async def document_snapshot(context: PrincipalContext, document_id: UUID) -> dic
             principal_id=context.principal_id, permission=Permission.MANAGE_MEMBERS)
         can_commit = await principal_has_permission(conn, tenant_id=context.tenant_id, project_id=doc["project_id"],
             principal_id=context.principal_id, permission=Permission.COMMIT_VERSION)
+        capabilities = {name: await principal_has_permission(conn, tenant_id=context.tenant_id,
+            project_id=doc["project_id"], principal_id=context.principal_id, permission=permission)
+            for name, permission in {"can_review": Permission.REVIEW_CHANGE,
+                "can_export": Permission.EXPORT_ARTIFACT, "can_rollback": Permission.ROLLBACK_VERSION}.items()}
         annotations = await annotation_context(conn, document_id, through_sequence=doc["event_sequence"])
     projection = await checkpoint(context, document_id, doc["head_revision_id"])
     projection = annotate_projection(projection, annotations)
     return {"document_id": str(document_id), "project_id": str(doc["project_id"]), "active_branch_id": str(document_id),
             "head_revision_id": str(doc["head_revision_id"]), "state_version": doc["state_version"],
-            "event_sequence": doc["event_sequence"], "can_edit": can_edit, "can_share": can_share, "can_commit":can_commit, **projection}
+            "event_sequence": doc["event_sequence"], "can_edit": can_edit, "can_share": can_share,
+            "can_commit":can_commit, **capabilities, **projection}
+
+
+async def document_revision_view(context: PrincipalContext, document_id: UUID, revision_id: UUID) -> dict:
+    """One immutable view projection, with current head metadata kept explicit."""
+    async with tenant_transaction(context.tenant_id, context.principal_id) as conn:
+        doc = await authorized_document(conn, context, document_id)
+        revision = (await conn.execute(text("""SELECT r.revision_number, c.id AS change_set_id,
+            c.status AS review_status, c.validation_summary, c.base_state_version, c.source_workflow_run_id
+            FROM project_revisions r LEFT JOIN change_sets c ON c.candidate_revision_id=r.id
+            WHERE r.branch_id=:doc AND r.id=:revision"""),
+            {"doc": document_id, "revision": revision_id})).mappings().one_or_none()
+        if revision is None:
+            raise KeyError(revision_id)
+        artifacts = (await conn.execute(text("""SELECT id, artifact_kind, filename FROM artifacts a WHERE revision_id=:revision
+            AND NOT EXISTS(SELECT 1 FROM workflow_runs w WHERE w.id=a.workflow_run_id AND w.kind='mcad.scene') ORDER BY filename, id"""),
+                                       {"revision": revision_id})).mappings().all()
+        can_export = await principal_has_permission(conn, tenant_id=context.tenant_id, project_id=doc["project_id"],
+            principal_id=context.principal_id, permission=Permission.EXPORT_ARTIFACT)
+    projection = await checkpoint(context, document_id, revision_id)
+    from app.storage.postgres_history import get_model_snapshot
+    snapshot = await get_model_snapshot(str(revision_id), context=context)
+    if snapshot:
+        from collections import Counter
+        counts = Counter(a["artifact_kind"] for a in artifacts)
+        files = {(a["artifact_kind"] if counts[a["artifact_kind"]] == 1 else f"{a['artifact_kind']}:{a['filename']}"):
+                 f"/api/documents/{document_id}/artifacts/{a['id']}" for a in artifacts
+                 if can_export or a["artifact_kind"] in {"stl", "state"}}
+        result = {**snapshot["result"], "files": files, "revision_id": str(revision_id),
+                  "snapshot_id": snapshot["id"], "project_id": str(doc["project_id"]),
+                  "branch_id": str(document_id), "change_set_id": str(revision["change_set_id"]) if revision["change_set_id"] else None}
+        if revision["source_workflow_run_id"]:
+            result.update(request_id=str(revision["source_workflow_run_id"]),
+                          workflow_run_id=str(revision["source_workflow_run_id"]))
+        if revision["validation_summary"]:
+            result["validation"] = {**(result.get("validation") or {}), **dict(revision["validation_summary"])}
+        snapshot = {**snapshot, "files": files, "result": result}
+    return {"document_id": str(document_id), "project_id": str(doc["project_id"]),
+            "head_revision_id": str(doc["head_revision_id"]), "head_state_version": doc["state_version"],
+            **projection, **dict(revision), "snapshot": snapshot, "can_export": can_export}
 
 
 async def document_events(context: PrincipalContext, document_id: UUID, after: int) -> list[dict]:

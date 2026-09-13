@@ -20,6 +20,8 @@ import type {
   WSMessage,
 } from "../types";
 import type { PanelState } from "../stores/sessionStore";
+import type { SelectionContext } from "../types/document";
+import { pendingSubmission, rememberSubmission, acknowledgeSubmission } from "../stores/pendingSubmissions";
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const BASE_RECONNECT_DELAY_MS = 1000;
@@ -35,6 +37,9 @@ export function durableIdentityPayload(panel: PanelState) {
 export function operationIntentForPanel(
   panel: PanelState | undefined,
 ): "generate" | "modify" {
+  const document = panel?.durable?.branchId ? observedDocument(panel.durable.branchId) : null;
+  if (document) return document.modeling_backend ? "modify" : "generate";
+  if (panel?.durable?.branchId) return panel.result?.success && panel.result.revision_id === panel.durable.currentRevisionId ? "modify" : "generate";
   return panel?.result?.success ? "modify" : "generate";
 }
 
@@ -107,6 +112,8 @@ export function useWebSocket() {
         const state = useSessionStore.getState();
         requestPanelReplay(ws);
         for (const panel of state.panels) {
+          const pending = pendingSubmission(state.ownerId, sessionId, panel.id);
+          if (pending) ws.send(JSON.stringify({type:"recover_submission",panel_id:panel.id,idempotency_key:pending.idempotency_key}));
           if (panel.isGenerating) {
             ws.send(JSON.stringify({
               type: "restore_task",
@@ -119,12 +126,19 @@ export function useWebSocket() {
       };
 
       ws.onmessage = (event) => {
+        if (disposed || wsRef.current !== ws) return;
         try {
           const msg: WSMessage = JSON.parse(event.data);
           if (msg.type === "run_created") {
             setRunCreated(msg.data, msg.data.panel_id);
           } else if (msg.type === "task_submitted") {
+            const pending = pendingSubmission(useSessionStore.getState().ownerId, sessionId, msg.data.panel_id);
+            if (pending && msg.data.submission_id !== pending.idempotency_key) return;
+            acknowledgeSubmission(useSessionStore.getState().ownerId, sessionId, msg.data.panel_id, msg.data.submission_id);
             setDurableWorkflowStarted(msg.data, msg.data.panel_id);
+          } else if (msg.type === "submission_not_found") {
+            const pending = pendingSubmission(useSessionStore.getState().ownerId, sessionId, msg.data.panel_id);
+            if (pending?.idempotency_key === msg.data.submission_id) ws.send(JSON.stringify(pending));
           } else if (msg.type === "step_update") {
             setStep(msg.data, msg.data.panel_id);
           } else if (msg.type === "agent_step") {
@@ -132,6 +146,15 @@ export function useWebSocket() {
           } else if (msg.type === "artifact_update") {
             addArtifactUpdate(msg.data, msg.data.panel_id);
           } else if (msg.type === "generation_result") {
+            if (msg.data.submission_id && msg.data.panel_id) {
+              const pending = pendingSubmission(useSessionStore.getState().ownerId,sessionId,msg.data.panel_id);
+              if (pending && pending.idempotency_key !== msg.data.submission_id) return;
+              if (msg.data.submission_outcome === "rejected") acknowledgeSubmission(useSessionStore.getState().ownerId, sessionId, msg.data.panel_id, msg.data.submission_id);
+              else if (pending) {
+                setError("任务是否受理尚未确认，原始请求已保留。请查询原请求状态后继续。",msg.data.panel_id);
+                return;
+              }
+            }
             setResult(msg.data, msg.data.panel_id);
           } else if (msg.type === "task_status" && msg.data.status === "not_found") {
             setError("未找到可恢复的任务，请重新提交", msg.data.panel_id);
@@ -215,13 +238,16 @@ export function useWebSocket() {
         reconnectAttempts = 0;
       };
       socket.onmessage = (raw) => {
+        if (disposed || durableWsRef.current !== socket) return;
         try {
           const message: DurableWSMessage = JSON.parse(raw.data);
           if (message.type === "task_snapshot") {
+            if (message.data.id !== durableWorkflowRunId) return;
             applyDurableSnapshot(message.data, activePanelId);
             return;
           }
           if (message.type === "task_event") {
+            if (message.data.workflow_run_id !== durableWorkflowRunId) return;
             const current = useSessionStore.getState().panels.find(
               (candidate) => candidate.id === activePanelId,
             )?.durable?.lastEventSequence || 0;
@@ -282,10 +308,33 @@ export function useWebSocket() {
     setStep,
   ]);
 
+  const sendSubmission = useCallback((request: Record<string, unknown> & {panel_id:string;idempotency_key:string}) => {
+    const ws = wsRef.current;
+    if (ws?.readyState !== WebSocket.OPEN) return false;
+    const state = useSessionStore.getState();
+    if (!rememberSubmission(state.ownerId,state.sessionId,request.panel_id,request)) {
+      setError("原请求尚待确认，或浏览器无法保存恢复信息。请先查询原请求状态。",request.panel_id);
+      return false;
+    }
+    try { ws.send(JSON.stringify(request)); }
+    catch { setError("发送结果尚未确认，原始请求已保留，请查询原请求状态。",request.panel_id); }
+    return true;
+  },[setError]);
+
+  const retryPendingSubmission = useCallback(() => {
+    const state = useSessionStore.getState();
+    const pending = pendingSubmission(state.ownerId,state.sessionId,state.activePanelId);
+    const ws = wsRef.current;
+    if (!pending || ws?.readyState !== WebSocket.OPEN) return false;
+    ws.send(JSON.stringify({type:"recover_submission",panel_id:state.activePanelId,idempotency_key:pending.idempotency_key}));
+    return true;
+  },[]);
+
   const sendMessage = useCallback((
     text: string,
     capability: CapabilitySelection = "auto",
     manufacturingProfile: ManufacturingProfile | null = null,
+    selectionContext?: SelectionContext | null,
   ) => {
     const ws = wsRef.current;
     if (ws?.readyState !== WebSocket.OPEN) return false;
@@ -293,7 +342,7 @@ export function useWebSocket() {
     const panelId = state.activePanelId;
     const panel = state.panels.find((candidate) => candidate.id === panelId);
     const identity = panel ? durableIdentityPayload(panel) : {};
-    ws.send(JSON.stringify({
+    const message = {
       type: "user_message",
       text,
       operation_intent: operationIntentForPanel(panel),
@@ -303,9 +352,10 @@ export function useWebSocket() {
       manufacturing_profile: manufacturingProfile,
       ...identity,
       idempotency_key: identity.idempotency_key || createId(),
-    }));
-    return true;
-  }, []);
+      ...(selectionContext ? { selection_context: selectionContext } : {}),
+    };
+    return sendSubmission(message);
+  }, [sendSubmission]);
 
   const executeCode = useCallback((code: string) => {
     const ws = wsRef.current;
@@ -314,15 +364,14 @@ export function useWebSocket() {
     const panelId = state.activePanelId;
     const panel = state.panels.find((candidate) => candidate.id === panelId);
     const identity = panel ? durableIdentityPayload(panel) : {};
-    ws.send(JSON.stringify({
+    return sendSubmission({
       type: "execute_code",
       code,
       panel_id: panelId,
       ...identity,
       idempotency_key: identity.idempotency_key || createId(),
-    }));
-    return true;
-  }, []);
+    });
+  }, [sendSubmission]);
 
   const restoreRevision = useCallback((revisionId: string) => {
     const ws = wsRef.current;
@@ -332,14 +381,14 @@ export function useWebSocket() {
     if (!panel || panel.isGenerating || !revisionId) return false;
     const identity = durableIdentityPayload(panel);
     if (!identity.project_id) return false;
-    ws.send(JSON.stringify({
+    return sendSubmission({
       type: "restore_revision",
       source_revision_id: revisionId,
       panel_id: panel.id,
       ...identity,
-    }));
-    return true;
-  }, []);
+      idempotency_key: identity.idempotency_key || createId(),
+    });
+  }, [sendSubmission]);
 
   const resumeRun = useCallback((runId: string) => {
     const ws = wsRef.current;
@@ -350,15 +399,14 @@ export function useWebSocket() {
       (candidate) => candidate.id === panelId,
     );
     const identity = panel ? durableIdentityPayload(panel) : {};
-    ws.send(JSON.stringify({
+    return sendSubmission({
       type: "resume_run",
       run_id: runId,
       panel_id: panelId,
       ...identity,
       idempotency_key: identity.idempotency_key || createId(),
-    }));
-    return true;
-  }, []);
+    });
+  }, [sendSubmission]);
 
   const cancelGeneration = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -381,11 +429,7 @@ export function useWebSocket() {
       (candidate) => candidate.id === panelId,
     );
     const identity = panel ? durableIdentityPayload(panel) : {};
-    useSessionStore.getState().addMessage({
-      role: "user",
-      content: `\u4fee\u6539\u96f6\u4ef6 ${partName}: ${instruction}`,
-    });
-    wsRef.current.send(JSON.stringify({
+    const sent = sendSubmission({
       type: "modify_part",
       part_name: partName,
       instruction,
@@ -393,9 +437,10 @@ export function useWebSocket() {
       code: panel?.result?.code || undefined,
       ...identity,
       idempotency_key: identity.idempotency_key || createId(),
-    }));
-    return true;
-  }, []);
+    });
+    if (sent) useSessionStore.getState().addMessage({role:"user",content:`修改零件 ${partName}: ${instruction}`});
+    return sent;
+  }, [sendSubmission]);
 
   const modifyParameters = useCallback((
     updates: { parameter_id: string; value: number }[],
@@ -410,16 +455,15 @@ export function useWebSocket() {
     if (!panel || !stateSha256 || updates.length === 0) return false;
     const identity = durableIdentityPayload(panel);
     if (!identity.project_id) return false;
-    wsRef.current.send(JSON.stringify({
+    return sendSubmission({
       type: "modify_parameters",
       updates,
       expected_state_sha256: stateSha256,
       panel_id: panelId,
       ...identity,
       idempotency_key: identity.idempotency_key || createId(),
-    }));
-    return true;
-  }, []);
+    });
+  }, [sendSubmission]);
 
   const restoreContext = useCallback((panelId: string, code = "", assemblyParts: AssemblyPartInfo[] = []) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -429,6 +473,8 @@ export function useWebSocket() {
 
   return {
     connectionState,
+    pendingRequest: pendingSubmission(useSessionStore.getState().ownerId,sessionId,activePanelId),
+    retryPendingSubmission,
     sendMessage,
     executeCode,
     restoreRevision,

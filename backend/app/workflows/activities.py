@@ -1487,6 +1487,12 @@ class McadWorkflowActivities:
                                             {"id": request.workflow_run_id})
             references = await conn.scalar(text("SELECT arguments->'_engineering_evidence' FROM cad_operations WHERE id=:id"),
                                            {"id": request.workflow_run_id})
+            selection = await conn.scalar(text("SELECT arguments->'_selection_context' FROM cad_operations WHERE id=:id"),
+                                          {"id": request.workflow_run_id})
+            if request.operation_context and request.operation_context.selection_context:
+                if not selection or selection.get("parameter_state_sha256") != str(artifact["sha256"]):
+                    raise ValueError("冻结的选择与原生检查点不一致")
+                state = {**state, "selection_context": selection}
             if references:
                 from app.services.engineering_evidence import verified_engineering_context
                 state = {**state, 'engineering_evidence': await verified_engineering_context(conn, references,
@@ -1626,14 +1632,17 @@ class McadWorkflowActivities:
                 "requirements": requirements.model_dump(mode="json"),
                 "base_state": base_state,
             }
-            if base_state and base_state.get('engineering_evidence'):
+            if base_state and (base_state.get('engineering_evidence') or base_state.get('selection_context')):
                 from app.llm import get_last_chat_completion_provenance
                 provider = get_last_chat_completion_provenance()
                 if provider is None:
-                    raise ValueError('工程分析参考的 Agent 规划缺少真实模型调用记录')
-                result['engineering_context'] = {**provider,
-                    'references':[e['source'] for e in base_state['engineering_evidence']],
-                    'context_sha256':hashlib.sha256(model_context.encode('utf-8')).hexdigest()}
+                    raise ValueError('原生文档 Agent 规划缺少真实模型调用记录')
+                provenance = {**provider, 'context_sha256': hashlib.sha256(model_context.encode('utf-8')).hexdigest()}
+                if base_state.get('selection_context'):
+                    result['native_context'] = {**provenance, 'selection_context': base_state['selection_context']}
+                if base_state.get('engineering_evidence'):
+                    result['engineering_context'] = {**provenance,
+                        'references':[e['source'] for e in base_state['engineering_evidence']]}
         except Exception as exc:
             error = self._agent_planning_error(exc)
             await _fail_agent_logical_step(
@@ -5267,9 +5276,13 @@ class McadWorkflowActivities:
         try:
             inputs, materialized = (), None
             if payload.get("input_artifacts"):
-                from app.workflows.engineering_activities import materialize_engineering_input
                 input_directory = tempfile.TemporaryDirectory(prefix="cad-engineering-input-")
-                inputs, materialized = await materialize_engineering_input(payload, input_directory.name)
+                if payload.get("scene_task"):
+                    from app.workflows.scene_activities import materialize_scene_input
+                    inputs, materialized = await materialize_scene_input(payload, input_directory.name)
+                else:
+                    from app.workflows.engineering_activities import materialize_engineering_input
+                    inputs, materialized = await materialize_engineering_input(payload, input_directory.name)
             snapshot = await asyncio.to_thread(self.backend.runtime_snapshot)
             source_code = str(execution["source_code"])
             spec = ExecutionSpec(
@@ -5387,7 +5400,7 @@ class McadWorkflowActivities:
                 filename = (
                     f"{execution['step_key']}-{Path(declared.name).name}"
                 )
-                if payload.get("engineering_task"):
+                if payload.get("engineering_task") or payload.get("scene_task"):
                     # Several analyses can reference one immutable revision;
                     # each workflow must own distinct revision filenames.
                     filename = f"{workflow_id}-{filename}"
@@ -5505,6 +5518,11 @@ class McadWorkflowActivities:
     async def engineering_compute(self, payload: dict[str, Any]) -> dict[str, Any]:
         from app.workflows.engineering_activities import compute_engineering
         return await compute_engineering(self, payload)
+
+    @activity.defn(name="scene.compute")
+    async def scene_compute(self, payload: dict[str, Any]) -> dict[str, Any]:
+        from app.workflows.scene_activities import compute_scene
+        return await compute_scene(self, payload)
 
     @activity.defn(name="mcad.check")
     async def check(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -6464,6 +6482,7 @@ class McadWorkflowActivities:
             self.execute,
             self.check,
             self.engineering_compute,
+            self.scene_compute,
             self.validate,
             self.wait_confirmation,
             self.resume_after_confirmation,

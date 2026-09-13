@@ -1,0 +1,73 @@
+{
+  "source_sha256": "c400530a3032082a70b615a1aca3ee987e8bbd5060de4efcb6fe30dae713c98f",
+  "redactions": [],
+  "evidence": {
+    "deduplication": {
+      "concurrent_requests": 20,
+      "authorized_accounts": 2,
+      "workflow_id": "47a07f6b-ad12-4760-936b-948b6d0abc3a",
+      "revision_id": "153d9b63-9129-46b3-b2f0-8b16c46efb65",
+      "status": "pending"
+    },
+    "browser": {
+      "pending_state_visible": true,
+      "historical_scene_revision": "153d9b63-9129-46b3-b2f0-8b16c46efb65",
+      "javascript_errors": []
+    },
+    "read_only_cache": {
+      "head_revision_id": "79247e53-50b0-401f-a877-38be3fc67932",
+      "state_version": 7,
+      "head_unchanged": true,
+      "model_operations_unchanged": true,
+      "model_file_inventory_unchanged": true,
+      "cache_hit_ms": [
+        7.65,
+        7.19,
+        7.19,
+        7.21,
+        7.79
+      ],
+      "verified_meshes": [
+        {
+          "lod": "fine",
+          "sha256": "5f43c9bf00efd58d0236027141045f7dd7fc3cca1677fe9ad9b8358ca628a33c",
+          "size_bytes": 21884
+        },
+        {
+          "lod": "coarse",
+          "sha256": "22a2138789106bfdc207a97ae8d8265587cfc9b49e7e18561ca7e1e0644b2ed8",
+          "size_bytes": 4084
+        },
+        {
+          "lod": "medium",
+          "sha256": "42d9d138cd32da31743f1081aa25dd022625cd12b2d67d35a327567a90906ac8",
+          "size_bytes": 8084
+        }
+      ]
+    },
+    "durable_execution": {
+      "steps": 1,
+      "attempts": 1,
+      "source_sha256": "516c51b137db465eecc022692bead8bb338693aa0207be4397745f4498389ebf",
+      "runtime_digest": "sha256:9d0a86ea27e96960f87430c7320f1ce06fa51dbdabf65fb599aa7da7a911e20c",
+      "scene_schema": "cad-scene.v1",
+      "artifacts": [
+        {
+          "artifact_kind": "capability-result",
+          "sha256": "1d0b87a46878879f0974d92af908b1db7a0f4891cf5b51aa49831c2a3053a145",
+          "size_bytes": 395
+        },
+        {
+          "artifact_kind": "meshes",
+          "sha256": "3ff9b1573ded65c0357f4fbc5f3805ccdd90eaec5d5d4064937de35d50896d66",
+          "size_bytes": 34748
+        },
+        {
+          "artifact_kind": "scene",
+          "sha256": "a5b6e8ec7ecf6b311de02db8f517e2927422db1afa7f22522f8bb6aa56fbc708",
+          "size_bytes": 1249
+        }
+      ]
+    }
+  }
+}

@@ -521,6 +521,9 @@ async def _require_project_permission(
     project_id: UUID,
     permission: Permission,
 ) -> None:
+    from app.services.cloud_documents import _active_workspace_member
+    if not await _active_workspace_member(connection, context.tenant_id, context.principal_id):
+        raise PermissionError("工作区授权已失效")
     if not await principal_has_permission(
         connection,
         tenant_id=context.tenant_id,
@@ -983,7 +986,7 @@ async def get_change_set_detail(
                 text(
                     """
                     SELECT c.*, b.name AS branch_name,
-                           b.head_revision_id,
+                           b.head_revision_id, d.state_version AS head_state_version,
                            base.revision_number AS base_revision_number,
                            base.content_hash AS base_content_hash,
                            base.manifest AS base_manifest,
@@ -993,6 +996,7 @@ async def get_change_set_detail(
                            w.status AS workflow_status
                     FROM change_sets c
                     JOIN project_branches b ON b.id=c.branch_id
+                    JOIN cloud_documents d ON d.id=b.id
                     JOIN project_revisions base ON base.id=c.base_revision_id
                     JOIN project_revisions candidate
                       ON candidate.id=c.candidate_revision_id
@@ -1021,10 +1025,11 @@ async def get_change_set_detail(
                     SELECT id, revision_id, artifact_kind, filename,
                            content_type, size_bytes, sha256, object_key,
                            created_at
-                    FROM artifacts
+                    FROM artifacts a
                     WHERE revision_id IN (
                         :base_revision_id, :candidate_revision_id
                     )
+                      AND NOT EXISTS(SELECT 1 FROM workflow_runs w WHERE w.id=a.workflow_run_id AND w.kind='mcad.scene')
                     ORDER BY revision_id, created_at, filename
                     """
                 ),
@@ -1034,6 +1039,17 @@ async def get_change_set_detail(
                 },
             )
         ).mappings().all()
+        from app.domain.projects import role_allows
+        role = await connection.scalar(text("SELECT role FROM project_memberships WHERE project_id=:project AND principal_id=:principal"),
+            {"project": row["project_id"], "principal": context.principal_id})
+        permissions = {name: bool(role and role_allows(role, permission)) for name, permission in {
+            "can_review": Permission.REVIEW_CHANGE, "can_commit": Permission.COMMIT_VERSION,
+            "can_rollback": Permission.ROLLBACK_VERSION, "can_export": Permission.EXPORT_ARTIFACT}.items()}
+        merge = (await connection.execute(text("""SELECT m.source_document_id, m.source_revision_id,
+            m.source_state_version, d.head_revision_id AS source_head_revision_id,
+            d.state_version AS source_head_state_version FROM document_merges m
+            JOIN cloud_documents d ON d.id=m.source_document_id WHERE m.workflow_run_id=:workflow"""),
+            {"workflow": row["source_workflow_run_id"]})).mappings().one_or_none()
         audit_rows = (
             await connection.execute(
                 text(
@@ -1104,7 +1120,7 @@ async def get_change_set_detail(
             for key, value in dict(artifact).items()
             if key != "object_key"
         }
-        public_artifact["download_url"] = presign_get(artifact["object_key"])
+        public_artifact["download_url"] = f"/api/documents/{row['branch_id']}/artifacts/{artifact['id']}"
         artifacts.append(public_artifact)
     public_fields = (
         "id",
@@ -1112,6 +1128,9 @@ async def get_change_set_detail(
         "branch_id",
         "branch_name",
         "base_revision_id",
+        "base_state_version",
+        "head_revision_id",
+        "head_state_version",
         "base_revision_number",
         "base_content_hash",
         "base_manifest",
@@ -1135,6 +1154,14 @@ async def get_change_set_detail(
         "rolled_back_at",
     )
     item = {field: row[field] for field in public_fields}
+    item.update(permissions)
+    item["merge_source"] = dict(merge) if merge else None
+    item["base_is_current"] = (row["base_state_version"] is not None
+        and row["base_revision_id"] == row["head_revision_id"]
+        and row["base_state_version"] == row["head_state_version"]
+        and (not merge or (merge["source_revision_id"] == merge["source_head_revision_id"]
+                          and merge["source_state_version"] == merge["source_head_state_version"])))
+    item["can_rollback"] = permissions["can_rollback"] and row["status"] == "committed" and row["head_revision_id"] == row["candidate_revision_id"]
     item["change_summary"] = dict(item["change_summary"] or {})
     item["change_summary"]["parameter_changes"] = parameter_changes
     item["base_artifacts"] = [
@@ -1325,8 +1352,9 @@ async def get_revision_detail(
                     """
                     SELECT id, artifact_kind, filename, content_type, size_bytes,
                            sha256, object_key, runtime_metadata, created_at
-                    FROM artifacts
+                    FROM artifacts a
                     WHERE project_id=:project_id AND revision_id=:revision_id
+                      AND NOT EXISTS(SELECT 1 FROM workflow_runs w WHERE w.id=a.workflow_run_id AND w.kind='mcad.scene')
                     ORDER BY created_at, filename
                     """
                 ),
@@ -1353,7 +1381,7 @@ async def get_revision_detail(
             for key, value in dict(artifact).items()
             if key != "object_key"
         }
-        public_artifact["download_url"] = presign_get(artifact["object_key"])
+        public_artifact["download_url"] = f"/api/documents/{revision['branch_id']}/artifacts/{artifact['id']}"
         result["artifacts"].append(public_artifact)
     bom_manifest = dict(result.get("manifest") or {}).get("bom")
     if not isinstance(bom_manifest, dict):

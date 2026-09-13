@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 from pathlib import Path
+from acceptance_paths import evidence_path
 from uuid import uuid4
 import zipfile
 
@@ -52,7 +53,7 @@ def main():
     assert call(guest,'GET',path+'/releases/'+submission['release_id'])['source_revision_id']==doc['head_revision_id']
     call(guest,'POST',path+'/releases',json={**payload,'release_name':'viewer'},expected=403)
     assert guest.get(BASE+result['artifacts']['engineering_bundle']['url']).status_code==403
-    old_evidence=Path('/tmp/cad-expansion-engineering-agent.json')
+    old_evidence=evidence_path('cad-expansion-engineering-agent.json')
     if old_evidence.exists():
         old=json.loads(old_evidence.read_text());changed_path='/api/documents/'+old['document_id'];changed=call(client,'GET',changed_path)
         call(client,'POST',changed_path+'/releases',json={'release_name':'Reject obsolete analysis','expected_revision_id':changed['head_revision_id'],
@@ -64,8 +65,8 @@ def main():
         'engineering_workflow_ids':selected,'package_files':len(manifest['files'])+1,'all_hashes_verified':True,
         'revision_unchanged':True,'replay_and_conflicts_verified':True,'viewer_export_and_publish_denied':True,
         'previous_revision_analysis_rejected':old_evidence.exists()}
-    Path('/tmp/cad-expansion-release-http.json').write_text(json.dumps(evidence,indent=2))
-    Path('/tmp/cad-expansion-release-actual.zip').write_bytes(downloads['engineering_bundle'])
+    evidence_path('cad-expansion-release-http.json').write_text(json.dumps(evidence,indent=2))
+    evidence_path('cad-expansion-release-actual.zip').write_bytes(downloads['engineering_bundle'])
     print('CAD_RELEASE_HTTP='+json.dumps(evidence),flush=True)
 
 

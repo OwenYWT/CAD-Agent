@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from acceptance_paths import evidence_path
 from uuid import uuid4
 
 import httpx
@@ -16,7 +17,7 @@ def main():
     private=json.loads(PRIVATE.read_text())
     owner=httpx.Client(headers={'Authorization':'Bearer '+private['owner']['token']})
     doc_id=private['document_id'];path='/api/documents/'+doc_id;before=call(owner,'GET',path)
-    evidence=json.loads(Path('/tmp/cad-expansion-engineering-http.json').read_text())
+    evidence=json.loads(Path(str(evidence_path('cad-expansion-engineering-http.json'))).read_text())
     result=call(owner,'GET',path+'/engineering/'+evidence['workflow_run_id'])
     def payload():
         return {'expected_revision_id':before['head_revision_id'],'expected_state_version':before['state_version'],
@@ -65,7 +66,7 @@ def main():
     report={'cancelled_workflow':cancelled,'recovered_workflow':recovery,'revoked_workflow':denied,
         'viewer_can_inspect_results':True,'viewer_cannot_compute_or_export':True,'tenant_boundary_enforced':True,
         'queued_cancellation_persisted':True,'actual_worker_outage_recovered':True,'revocation_rechecked_before_execution':True,'CAD_head_unchanged':True}
-    Path('/tmp/cad-expansion-engineering-controls.json').write_text(json.dumps(report,indent=2))
+    Path(str(evidence_path('cad-expansion-engineering-controls.json'))).write_text(json.dumps(report,indent=2))
     print('CAD_ENGINEERING_CONTROLS='+json.dumps(report),flush=True)
 
 

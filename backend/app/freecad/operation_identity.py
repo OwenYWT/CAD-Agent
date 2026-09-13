@@ -13,6 +13,8 @@ def scope_plan_to_base(plan: FreeCADOperationPlan, base_state: dict) -> FreeCADO
     The verified state includes the prior ledger, so a restored value cannot be
     mistaken for a replay. Already persisted operation plans are never rewritten.
     """
+    from app.freecad.selection import validate_selected_operations
+    validate_selected_operations(plan, base_state)
     base = hashlib.sha256(json.dumps(base_state, sort_keys=True, ensure_ascii=False,
                                     separators=(",", ":")).encode()).hexdigest()
     operations = []

@@ -45,9 +45,9 @@ async def main():
             continue
         results = await temporal.data_converter.decode(event.activity_task_completed_event_attributes.result.payloads)
         for result in results:
-            if not isinstance(result, dict) or not result.get("engineering_context"):
+            if not isinstance(result, dict) or not (result.get("engineering_context") or result.get("native_context")):
                 continue
-            state, provenance = result["base_state"], result["engineering_context"]
+            state, provenance = result["base_state"], result.get("native_context") or result["engineering_context"]
             assert all(state[key] == value for key, value in native_state.items())
             assert state["revision_id"] == str(operation["base_revision_id"])
             assert state["dfm_summary"] == expected_dfm
@@ -56,12 +56,19 @@ async def main():
             assert hashlib.sha256(encoded).hexdigest() == provenance["context_sha256"]
             assert provenance["provider"] not in {None, "mock", "deterministic"}
             assert provenance["request_hash"] and provenance["response_hash"]
+            if result.get("native_context"):
+                selection = operation["arguments"]["_selection_context"]
+                assert selection == provenance["selection_context"] == state["selection_context"] == context["selection_context"]
+                assert selection["revision_id"] == str(operation["base_revision_id"])
+                assert selection["state_version"] == operation["base_state_version"]
+                assert selection["parameter_state_sha256"] == artifact["sha256"]
             summary = context["summary"]
             assert summary["dimensions_status"] == "measured"
             assert all(math.isfinite(v) and v > 0 for v in summary["main_dimensions_mm"].values())
             assert summary["key_features"] and summary["dfm"]["revision_id"] == state["revision_id"]
             witnessed.append({"provider": provenance["provider"], "model": provenance["model"],
-                              "context_sha256": provenance["context_sha256"], "summary": summary})
+                              "context_sha256": provenance["context_sha256"], "summary": summary,
+                              "selection": provenance.get("selection_context")})
     assert witnessed, "no recorded real provider context matched verified native state"
     before = await checkpoint(owner, operation["document_id"], operation["base_revision_id"])
     after = await checkpoint(owner, operation["document_id"], operation["result_revision_id"])

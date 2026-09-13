@@ -1341,8 +1341,9 @@ async def get_model_snapshot(
     snapshot_id: str,
     *,
     include_artifact_fingerprints: bool = False,
+    context=None,
 ) -> dict | None:
-    context = current_principal()
+    context = context or current_principal()
     async with tenant_transaction(
         context.tenant_id,
         context.principal_id,
@@ -1400,8 +1401,9 @@ async def get_model_snapshot(
                     """
                     SELECT artifact_kind, filename, workflow_run_id,
                            size_bytes, sha256, object_key
-                    FROM artifacts
+                    FROM artifacts a
                     WHERE tenant_id=:tenant AND revision_id=:revision
+                      AND NOT EXISTS(SELECT 1 FROM workflow_runs w WHERE w.id=a.workflow_run_id AND w.kind='mcad.scene')
                     ORDER BY created_at, filename
                     """
                 ),

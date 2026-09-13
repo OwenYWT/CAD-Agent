@@ -1,0 +1,59 @@
+{
+  "source_sha256": "961869c034c534e32e43930bbd2dbf46473d1eb060b95e2b12db1e57d20d25ff",
+  "redactions": [],
+  "evidence": {
+    "invalid_selection": {
+      "stale_revision": true,
+      "stale_generation": true,
+      "foreign_feature": true,
+      "kernel_jobs_created": 0
+    },
+    "draft_guard": {
+      "retained_on_stay": true,
+      "explicit_discard": true,
+      "head_unchanged": true
+    },
+    "ai_submission": {
+      "workflow_id": "a705e2ee-fff1-460f-9473-e6d7b110343f",
+      "selection": {
+        "revision_id": "79247e53-50b0-401f-a877-38be3fc67932",
+        "state_version": 13,
+        "feature_ids": [
+          "ebb685dd-8686-5070-a0d0-2e640c78f64c"
+        ]
+      },
+      "idempotency_key": "9b7f14ca-a2fa-4af4-968e-e961f38162d9"
+    },
+    "same_model_ai_commit": {
+      "source_revision": "79247e53-50b0-401f-a877-38be3fc67932",
+      "revision_id": "e767ae0a-f7af-4ef7-a7ff-c96fc132830c",
+      "change_set_id": "63d0718d-99f9-45f0-a016-9b1ee58ecaee",
+      "state_version": 14,
+      "preserved_hole_mm": 9,
+      "pad_length_mm": 18.0,
+      "feature_ids_preserved": true,
+      "candidate_did_not_advance_head": true
+    },
+    "reload_and_files": {
+      "revision_id": "e767ae0a-f7af-4ef7-a7ff-c96fc132830c",
+      "files": {
+        "fcstd": {
+          "path": "/private/tmp/cad-coedit-20260912/live/coedit-selection-final-v2/committed.FCStd",
+          "sha256": "57fe2f6345af1019ea9f2e610c3e3d6dc164db60a44914f602dbbc17bf3a89b2",
+          "size_bytes": 15117
+        },
+        "step": {
+          "path": "/private/tmp/cad-coedit-20260912/live/coedit-selection-final-v2/committed.step",
+          "sha256": "5093b5599a3a00e9943a6124e5848f6b589a960a668502f96cc14df9814955c5",
+          "size_bytes": 8368
+        },
+        "stl": {
+          "path": "/private/tmp/cad-coedit-20260912/live/coedit-selection-final-v2/committed.stl",
+          "sha256": "5316415ddebcadbc5be554e1b5d6f7c332291f3894c05f0cb77c322832e46a05",
+          "size_bytes": 235812
+        }
+      },
+      "page_errors": []
+    }
+  }
+}

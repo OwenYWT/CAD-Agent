@@ -1,6 +1,8 @@
 """Two-phase S3 artifact authorization, verification, and atomic DB commit."""
 from __future__ import annotations
 
+from app.validation.gate_policy import gate_blocks
+
 import hashlib
 import hmac
 import json
@@ -527,7 +529,7 @@ async def _load_candidate_seal_selection(
                 or evidence["staging_manifest_id"] != manifest_id
                 or evidence["gate"] != gate
                 or evidence["mode"] != mode
-                or (mode == "required" and evidence["outcome"] != "passed")
+                or gate_blocks(gate, mode, evidence["outcome"], stage="seal")
             ):
                 raise CandidateSealVerificationError(
                     f"selected {gate} evidence does not satisfy its gate"
@@ -1169,6 +1171,10 @@ async def authorize_artifact_upload(
         if attempt["workflow_kind"] == "mcad.engineering":
             await _engineering_evidence_access(connection, attempt, revision_id, principal_id, [kind])
             is_declared_check_evidence = True
+        if attempt["workflow_kind"] == "mcad.scene":
+            from app.services.scene_jobs import scene_evidence_access
+            await scene_evidence_access(connection, attempt, revision_id, principal_id, [kind])
+            is_declared_check_evidence = True
         if (
             revision_source != attempt["workflow_run_id"]
             and not is_declared_check_evidence
@@ -1345,6 +1351,10 @@ async def commit_artifacts(
                 )
             if attempt["workflow_kind"] == "mcad.engineering":
                 await _engineering_evidence_access(connection, attempt, revision_id, principal_id,
+                    [upload['artifact_kind'] for upload in uploads])
+            if attempt["workflow_kind"] == "mcad.scene":
+                from app.services.scene_jobs import scene_evidence_access
+                await scene_evidence_access(connection, attempt, revision_id, principal_id,
                     [upload['artifact_kind'] for upload in uploads])
             for upload in uploads:
                 if (

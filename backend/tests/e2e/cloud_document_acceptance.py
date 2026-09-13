@@ -144,7 +144,7 @@ def main():
     hole = next(f for f in first["features"] if f["type"] == "PartDesign::Hole")
     diameter = next(p for p in hole["parameters"] if p["property_name"] == "Diameter")
     assert diameter["value"] == 6
-    assert first["projector_version"] == 3
+    assert first["projector_version"] == 4
     assert all(f["revision_created"] == first["head_revision_id"] for f in first["features"])
     assert any(f["topology_bindings"] for f in first["features"])
     assert all(b["revision_id"] == first["head_revision_id"] for f in first["features"] for b in f["topology_bindings"])

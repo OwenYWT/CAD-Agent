@@ -1,0 +1,70 @@
+{
+  "source_sha256": "ab2ca8d1b4f4aee9fb8e2be39be4f250ccfb47217d109b14a7a8727f4d5f6372",
+  "redactions": [],
+  "evidence": {
+    "aba_fixture": {
+      "workflow_id": "85e443d8-10d5-4ba2-86f0-0a1cde8648b1",
+      "change_set_id": "b1c5c072-e4fb-4b56-84f1-5cd81384f4c9",
+      "original_revision": "79247e53-50b0-401f-a877-38be3fc67932",
+      "original_generation": 11
+    },
+    "lost_receipt": {
+      "workflow_id": "5f459b36-3721-4d1c-af8d-0a4e5d8e10f2",
+      "submission_id": "2d26a35e-68ac-4eaa-9d39-408c78b32f14",
+      "restore_transmissions": 1,
+      "receipt_recovered_after_refresh": true,
+      "source_revision": "153d9b63-9129-46b3-b2f0-8b16c46efb65",
+      "candidate_revision": "a8b9422d-051d-4bac-a119-1613c7c78ef2"
+    },
+    "partial_apply": {
+      "accepted_persisted": true,
+      "retry_committed_same_candidate": true,
+      "head_advanced_once": true,
+      "state_version": 12,
+      "revision_id": "a8b9422d-051d-4bac-a119-1613c7c78ef2"
+    },
+    "browser_export": {
+      "revision_id": "a8b9422d-051d-4bac-a119-1613c7c78ef2",
+      "sha256": "0e39699d2aa0963223c68b45e2e00cd476eaf5e9ec7e3a435e90ec0b5dd8f937",
+      "size_bytes": 8343
+    },
+    "rollback_aba": {
+      "restored_original_revision": "79247e53-50b0-401f-a877-38be3fc67932",
+      "new_generation": 13,
+      "old_candidate_accept_status": 409,
+      "original_generation": 11
+    },
+    "browser_errors": [],
+    "durable_deduplication": {
+      "workflows_for_original_key": 1,
+      "native_restore_attempts": 1,
+      "separate_validation_attempts": 3,
+      "steps": [
+        {
+          "step_key": "modify-main",
+          "kind": "agent_freecad_operations",
+          "attempt_number": 1,
+          "status": "succeeded"
+        },
+        {
+          "step_key": "geometry-modify-main-01",
+          "kind": "agent_geometry_validation",
+          "attempt_number": 1,
+          "status": "succeeded"
+        },
+        {
+          "step_key": "visual-modify-main-01",
+          "kind": "agent_visual_render",
+          "attempt_number": 1,
+          "status": "succeeded"
+        },
+        {
+          "step_key": "dfm-modify-main-00",
+          "kind": "agent_dfm_validation",
+          "attempt_number": 1,
+          "status": "succeeded"
+        }
+      ]
+    }
+  }
+}

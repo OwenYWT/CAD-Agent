@@ -10,6 +10,7 @@ export interface SemanticFeature {
   role: string | null; intent: string | null;
   annotation_version?: number; annotation_source?: "user";
   revision_created?: string | null; last_modified?: string | null;
+  structure?: { category: string; container_ids: string[]; member_ids: string[]; body_tip_id: string | null } | null;
   topology_bindings?: Array<{ schema_version: "topology-selector.v1"; backend: "freecad";
     revision_id: string; object_name: string; subelement_kind: "face" | "edge";
     geometry: "planar" | "circular"; axis: "x" | "y" | "z"; extreme: "min" | "max";
@@ -36,8 +37,28 @@ export interface CloudDocument {
   head_revision_id: string; revision_id: string; state_version: number; event_sequence: number;
   can_edit: boolean; can_share: boolean; features: SemanticFeature[]; roots: string[];
   can_commit?: boolean;
+  can_review?: boolean; can_export?: boolean; can_rollback?: boolean;
+  view_mode?: DocumentViewMode;
+  hierarchy_status?: "measured" | "unavailable";
   mesh: DocumentArtifact | null; fcstd: DocumentArtifact | null; state: DocumentArtifact | null;
   parameter_state_sha256: string | null; modeling_backend: string | null;
+}
+
+export type DocumentViewMode = "committed" | "candidate" | "history";
+export interface DocumentViewIdentity {
+  documentId: string; mode: DocumentViewMode; viewedRevisionId: string;
+  headRevisionId: string; headStateVersion: number; changeSetId?: string | null;
+}
+export interface SelectionContext {
+  revision_id: string; state_version: number; feature_ids: string[];
+  topology_selector?: NonNullable<SemanticFeature["topology_bindings"]>[number];
+}
+export interface DocumentRevisionView extends Pick<CloudDocument, "document_id" | "project_id" | "head_revision_id" |
+  "revision_id" | "features" | "roots" | "mesh" | "fcstd" | "state" | "modeling_backend" | "parameter_state_sha256" | "can_export" | "hierarchy_status"> {
+  head_state_version: number; revision_number: number; change_set_id: string | null;
+  review_status: string | null; base_state_version: number | null;
+  snapshot: import("./index").ModelSnapshotDetail | null;
+  validation_summary: Record<string, unknown> | null;
 }
 
 export interface DocumentDelta extends Pick<CloudDocument, "mesh" | "fcstd" | "state" | "modeling_backend" | "parameter_state_sha256" | "roots"> {

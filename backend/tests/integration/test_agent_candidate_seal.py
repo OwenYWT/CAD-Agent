@@ -147,7 +147,7 @@ def _plan(objective: str = "创建支架") -> AgentPlan:
     )
 
 
-async def _seed_selection(*, two_outputs: bool = True):
+async def _seed_selection(*, two_outputs: bool = True, visual_outcome: str = "indeterminate"):
     owner = user_principal(f"seal-owner-{uuid4()}")
     project_id = uuid4()
     plan = _plan()
@@ -315,7 +315,7 @@ async def _seed_selection(*, two_outputs: bool = True):
         for index, (gate, mode, outcome) in enumerate(
             (
                 ("geometry", "required", "passed"),
-                ("visual", "advisory", "indeterminate"),
+                ("visual", "advisory", visual_outcome),
                 ("dfm", "advisory", "failed"),
             )
         ):
@@ -402,6 +402,17 @@ async def test_late_workflow_failure_during_cancellation_reaches_a_terminal_stat
         ), {"id": context["workflow_id"]})).mappings().one()
     assert row["status"] == "failed" and row["completed_at"] and row["cancellation_requested_at"]
     assert row["error_code"] == "provider_timeout"
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_explicit_visual_failure_cannot_be_sealed_even_when_advisory():
+    context = await _seed_selection(visual_outcome="failed")
+    with pytest.raises(CandidateSealVerificationError, match="visual evidence"):
+        await _seal(context)
+    owner = context["owner"]
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        assert await conn.scalar(text("SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id"),
+                                 {"id": context["workflow_id"]}) == 0
 
 
 @pytest.mark.asyncio(loop_scope="module")

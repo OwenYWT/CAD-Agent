@@ -473,13 +473,14 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
           const sameWorkflow = (
             panel.durable?.workflowRunId === task.workflow_run_id
           );
+          const terminal = ["succeeded", "failed", "cancelled", "timed_out"].includes(task.status);
           return {
-            isGenerating: true,
+            isGenerating: !terminal,
             generationStartTime: Date.now(),
             currentStep: {
               step: "workflow.created",
-              message: "持久任务已提交",
-              status: "queued",
+              message: terminal ? "正在恢复已结束任务的结果" : "持久任务已提交",
+              status: terminal ? task.status === "succeeded" ? "success" : "failed" : "queued",
             },
             lastError: null,
             durable: {
@@ -487,8 +488,10 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
               projectId: task.project_id,
               branchId: task.branch_id,
               baseRevisionId: task.expected_base_revision_id,
-              currentRevisionId: task.expected_base_revision_id,
+              currentRevisionId: panel.durable?.branchId === task.branch_id
+                ? panel.durable.currentRevisionId || task.expected_base_revision_id : task.expected_base_revision_id,
               workflowRunId: task.workflow_run_id,
+              changeSetId: sameWorkflow ? panel.durable?.changeSetId || null : null,
               lastEventSequence: sameWorkflow
                 ? panel.durable?.lastEventSequence || 0
                 : 0,

@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+from acceptance_paths import evidence_path
 from uuid import uuid4
 
 import httpx
@@ -10,7 +11,7 @@ from cloud_document_acceptance import call, wait_task, commit
 
 def main():
     private = json.loads(Path(os.environ['CAD_NATIVE_E2E_PRIVATE']).read_text())
-    fixture = json.loads(Path('/tmp/cad-expansion-collaboration-document.json').read_text())
+    fixture = json.loads(Path(str(evidence_path('cad-expansion-collaboration-document.json'))).read_text())
     client = httpx.Client(headers={'Authorization':'Bearer '+private['owner']['token']})
     path = '/api/documents/'+fixture['document_id']
     source = call(client,'GET',path)
@@ -21,7 +22,7 @@ def main():
     body = {'name':'branch-acceptance-'+uuid4().hex[:8],'expected_revision_id':source['head_revision_id'],
         'expected_state_version':source['state_version'],'idempotency_key':str(uuid4())}
     created = call(client,'POST',path+'/branches',expected=202,json=body)
-    Path('/tmp/cad-expansion-branch-document.json').write_text(json.dumps({**created,'source_document_id':fixture['document_id'],
+    Path(str(evidence_path('cad-expansion-branch-document.json'))).write_text(json.dumps({**created,'source_document_id':fixture['document_id'],
         'source_revision_id':source['head_revision_id'],'source_state_version':source['state_version']}))
     print('fork accepted',created,flush=True)
     replay = call(client,'POST',path+'/branches',expected=202,json=body)

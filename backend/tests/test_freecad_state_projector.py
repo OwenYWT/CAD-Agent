@@ -94,3 +94,16 @@ def test_state_projector_emits_bounded_feature_tree_and_shape_facts() -> None:
         "maximum": None,
         "step": None,
     }]
+
+
+def test_body_membership_order_is_independent_of_dependencies_and_tip():
+    from app.freecad.state_projector import project_object
+    first, second = Feature(), Feature()
+    first.Name, second.Name = "First", "Second"
+    body = SimpleNamespace(Name="Body", TypeId="PartDesign::Body", Group=[second, first], Tip=first,
+                           OutList=[first, second], InList=[])
+    projected = project_object(body)
+    assert projected["out"] == ["First", "Second"]
+    assert projected["structure"] == {"status": "measured", "category": "body", "members": ["Second", "First"], "body_tip": "First"}
+    del body.Group
+    assert project_object(body)["structure"]["status"] == "unavailable"

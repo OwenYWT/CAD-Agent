@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, StringConstraints, field_validator, model
 from app.execution.contracts import ExecutionError
 from app.parameters import CADParameter, extract_parameters
 from app.config import settings
+from app.domain.selection import SelectionContextV1
 
 
 class ManufacturingProfile(BaseModel):
@@ -296,6 +297,8 @@ class ModifyRequest(DurableRequestIdentity):
     modeling_backend: Literal["auto", "freecad", "cadquery"] = "auto"
     prompt: DurablePrompt
     output_formats: list[str] = ["step", "stl"]
+    expected_state_version: int | None = Field(default=None, ge=0, strict=True)
+    selection_context: SelectionContextV1 | None = None
 
     _check_formats = field_validator("output_formats")(_validate_output_formats)
 

@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+from acceptance_paths import evidence_path
 import time
 
 import httpx
@@ -11,13 +12,13 @@ from cloud_document_acceptance import accept_in_browser
 PRIVATE = Path(os.environ['CAD_NATIVE_E2E_PRIVATE'])
 BASE = os.environ['CAD_NATIVE_E2E_URL']
 WEB = os.environ['CAD_NATIVE_E2E_WEB']
-REPORT = Path('/tmp/cad-expansion-collaboration-browser.json')
-SHOTS = Path('/tmp/cad-expansion-collaboration-browser')
+REPORT = Path(str(evidence_path('cad-expansion-collaboration-browser.json')))
+SHOTS = Path(str(evidence_path('cad-expansion-collaboration-browser')))
 
 
 def main():
     private = json.loads(PRIVATE.read_text())
-    model = json.loads(Path('/tmp/cad-expansion-collaboration-document.json').read_text())
+    model = json.loads(Path(str(evidence_path('cad-expansion-collaboration-document.json'))).read_text())
     doc = '/api/documents/' + model['document_id']
     client = httpx.Client(base_url=BASE, timeout=30, headers={'Authorization': 'Bearer ' + private['owner']['token']})
     invitation = client.post(doc + '/invitations?role=editor')
