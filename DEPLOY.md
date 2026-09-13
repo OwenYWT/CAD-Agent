@@ -185,9 +185,9 @@ docker compose ps
 
 Fusion Connector 的 schema、HTTP、Palette controller、Dispatcher 和纯 Python facade 测试不能替代真实桌面 Fusion。完成 [Windows/macOS 验收矩阵](docs/fusion360-installation.md#8-windowsmacos-真实-fusion-验收门槛) 前，不得把该集成标记为 production-ready。
 
-## 8. 腾讯云独立部署（2026-09-11）
+## 8. 腾讯云独立部署（2026-09-13）
 
 新版入口为 https://www.wordswave.ai，原 https://wordswave.ai 保留。
 新旧数据库独立，旧账号和项目没有自动迁移。
 实际受管配置、固定镜像、证书与备份路径见 [腾讯云部署说明](deploy/tencent/README.md)；
-真实测试结果及未验证范围见 [部署验证报告](docs/qa/tencent-deployment-2026-09-11.md)。
+真实测试结果及未验证范围见 [部署验证报告](docs/qa/tencent-deployment-2026-09-13.md)。

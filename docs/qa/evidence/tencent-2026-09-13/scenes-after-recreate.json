@@ -1,0 +1,43 @@
+{
+  "status": "passed",
+  "workflow_id": "7231248c-c059-41a8-b2fc-6a2bc05a7104",
+  "document_id": "dc0c59ad-633f-49ca-aff0-2821c01c3b11",
+  "revision_id": "cda65f66-57af-4be5-aad3-fda245e9b2f0",
+  "concurrent_authorized_requests": 4,
+  "distinct_jobs": 1,
+  "two_account_mesh_downloads": true,
+  "verified_meshes": [
+    {
+      "lod": "fine",
+      "sha256": "c4b2c2bf6460246fd2b9880a1ad5d80605420aae9d0d0779bc9bca98e48908e0",
+      "size_bytes": 20884
+    },
+    {
+      "lod": "coarse",
+      "sha256": "3878975a3bbd40acfb8bf96c3f33ce11ed257a349b655aeca2a8654edef11520",
+      "size_bytes": 3084
+    },
+    {
+      "lod": "medium",
+      "sha256": "04b6a90b9f281d0ae4c80210c16c59f4a79330bc563ccd028fba29238cfc1935",
+      "size_bytes": 7084
+    },
+    {
+      "lod": "fine",
+      "sha256": "e3dce5c3b913acb5e8b05f602c853dfa6dd8ae13fa591804709960e80872a622",
+      "size_bytes": 20884
+    },
+    {
+      "lod": "coarse",
+      "sha256": "657e28ede5e695afe4389197a6c1e6f20ad43ee4ebd1c5643f9791e2d0fa885a",
+      "size_bytes": 3084
+    },
+    {
+      "lod": "medium",
+      "sha256": "ff776a868e089a0d84685b8d4ddf461210edf60ceec40e420863892b248aa52e",
+      "size_bytes": 7084
+    }
+  ],
+  "head_unchanged": true,
+  "step_count": 1
+}

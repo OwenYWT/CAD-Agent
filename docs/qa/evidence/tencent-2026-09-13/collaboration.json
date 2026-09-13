@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "workflow_id": "f8c9d9de-f567-43e8-b9cc-45201bb0790b",
+  "document_id": "dc0c59ad-633f-49ca-aff0-2821c01c3b11",
+  "generation": 2,
+  "editor_edit_and_review": true,
+  "editor_commit_denied": true,
+  "owner_commit": true,
+  "independent_leases": true,
+  "conflicting_lease_rejected": true,
+  "foreign_release_denied": true,
+  "idempotency": true,
+  "stale_revision_rejected": true,
+  "pad_b_length_mm": 11.0,
+  "hashes": {
+    "fcstd": "86e1ebd2d48b3dcd607e5550fbbe4a28616b757f1a2dc952dcfd6b655d0c161f",
+    "mesh": "cd87a4b6d63074bca8ebc7f42e290afd67e8c0b6e77fde98efa74a25e8a50cf2",
+    "state": "f1a5a956e7ce8a016df094cdd22e85d5beebcc268aa775046ad102ee17e6dffb"
+  }
+}

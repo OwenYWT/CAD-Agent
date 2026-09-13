@@ -1,0 +1,12 @@
+{
+  "status": "passed",
+  "recreated_containers": [
+    "/cad-native-backend-1",
+    "/cad-native-workflow-worker-1",
+    "/cad-native-frontend-1",
+    "/cad-native-postgres-1",
+    "/cad-native-minio-1"
+  ],
+  "all_container_ids_changed": true,
+  "same_persistent_volumes": true
+}

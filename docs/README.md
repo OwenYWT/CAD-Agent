@@ -16,7 +16,7 @@
 
 | 文档 | 作用 |
 | --- | --- |
-| [`qa/native-coediting-2026-09-13.md`](qa/native-coediting-2026-09-13.md) | 最新方案差异、共同编辑实现、端云与 Agent 架构、T01–T19 真实验证及额度 / 最终 CI 阻塞 |
+| [`qa/native-coediting-2026-09-13.md`](qa/native-coediting-2026-09-13.md) | 最新方案差异、共同编辑实现、端云与 Agent 架构、T01–T19 真实验证及开发阶段额度 / CI 状态；后续上线见部署报告 |
 | [`qa/acceptance-remediation-2026-09-10.md`](qa/acceptance-remediation-2026-09-10.md) | 独立验收发现的问题、当前整改进展、真实复验证据与尚未通过的范围 |
 | [`qa/cloud-cad-fusion-2026-09-09.md`](qa/cloud-cad-fusion-2026-09-09.md) | 历史融合测试及交接记录；整体完成结论已被独立验收推翻 |
 | [`cloud-documents.md`](cloud-documents.md) | 云文档版本权威、自动派发、特征协作、组件场景、分支与草图的真实调用链及边界 |
@@ -49,7 +49,7 @@ Fusion 自动化测试与真实桌面验收必须分开表述。没有完成 Win
 
 ## 当前架构改造
 
-- [`superpowers/plans/2026-09-12-native-coediting.md`](superpowers/plans/2026-09-12-native-coediting.md)：新版方案差异、起始代码与实施记录；P0/P1 实现及本地回归已推进，整体验收待真实 Provider 剩余用例和最终 CI。
+- [`superpowers/plans/2026-09-12-native-coediting.md`](superpowers/plans/2026-09-12-native-coediting.md)：新版方案差异、起始代码与实施记录；P0/P1 实现及本地回归已推进，真实 Provider 剩余用例待完成；最终提交 CI 与部署见下方上线报告。
 
 - [`releases-and-local-bridge.md`](releases-and-local-bridge.md)：命名发布、原生 BOM、同修订工程证据和本地文件交付；安装方式、权限、恢复行为与外部环境边界。
 
@@ -71,7 +71,7 @@ Fusion 自动化测试与真实桌面验收必须分开表述。没有完成 Win
 
 ## 维护规则
 
-最新腾讯云上线记录见 [`qa/tencent-deployment-2026-09-11.md`](qa/tencent-deployment-2026-09-11.md)，
+最新腾讯云上线记录见 [`qa/tencent-deployment-2026-09-13.md`](qa/tencent-deployment-2026-09-13.md)，
 运行配置见 [`../deploy/tencent/README.md`](../deploy/tencent/README.md)。该报告区分部署验证与完整产品验收。
 
 1. `README.md` 只保留项目概览和最短路径；开发细节进入 `development.md`，生产运维进入 `DEPLOY.md`。

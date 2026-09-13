@@ -1,0 +1,17 @@
+{
+  "verified_files": 9,
+  "sha256": {
+    "index.html": "aef41fa07a2e773eda872153438d1df3627c1f7baf1692628a9c68b16cfd2803",
+    "assets/Viewer3D-CmcdOwja.js": "052d409b0e6049954a5d4eee719882eb99ff54f141f3091d829b0adafe8b4323",
+    "assets/STLLoader-DW5wd63d.js": "573bb311ebfa9e1a56d8464d3949ecfc31c0e67df005d8fd7f4fd7df9ec70a71",
+    "assets/wordswave-logo-CadXiMWD.jpg": "69cdb95c55ca00205c8b0d25ccb6a41ef7d44bf7790fc26dc6d6a980df362b88",
+    "assets/Icon-khNGHdxY.js": "5fbb3b9a2aba242b5c3934f47bd68401d06b7ae64a08a574f83623a04900bdd0",
+    "assets/index-DAhbiYCz.css": "823a9fb154e22c9e61d16a021f5cb534efe80fec9f83722d09f23caf8e0d8e70",
+    "assets/OrbitControls-Bc0tU5Ro.js": "316c05aff518d35cb48e312f5c7e9b3922030982963e0545279f8cad9548ebcf",
+    "assets/DocumentSceneViewer-DEm1mivB.js": "a66a9d78671821f37d0677786fbfe74837ec1aa4b9174b0a915067a67aa575be",
+    "assets/index-CYFwqvfr.js": "69b7ecc433d539b612abd253730e81c3dfee633c70dbe7b83d6635402fbff017"
+  },
+  "base_nginx_error_page": [
+    "50x.html"
+  ]
+}

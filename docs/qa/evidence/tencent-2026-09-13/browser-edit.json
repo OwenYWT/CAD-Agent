@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "document_id": "dc0c59ad-633f-49ca-aff0-2821c01c3b11",
+  "workflow_id": "50a9eb6b-5ff8-4923-9660-878a86debd8b",
+  "before_revision": "3e69d6cd-7693-4908-a72b-32388b076fd0",
+  "after_revision": "250774f3-db17-4329-914c-6f656f5e1480",
+  "before_generation": 2,
+  "after_generation": 3,
+  "pad_a_length_mm": 11.0,
+  "pad_b_unchanged": true,
+  "stable_feature_ids": true,
+  "refresh_during_task_and_after_commit": true,
+  "artifact_sha256": {
+    "fcstd": "6bb748369ff973d7fa0418a5d1a85e6a416a3a2068f70aaffed85d0227f55157",
+    "state": "63b582cbe64487463834a1b807533056548e97aaa746d7dcb6814e5796cfee00",
+    "mesh": "23bd31ed6bc1b99f106bfed87a532e4ab5bf8616d5b2ee627aefa66063c582c3"
+  },
+  "page_errors": [],
+  "console_errors": []
+}

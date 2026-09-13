@@ -1,0 +1,10 @@
+{
+  "workflow_id": "cd6912f8-f10c-42fb-93cc-98821fcd0771",
+  "document_id": "d6d2ff34-a9e5-4e13-8b96-3682dad2089c",
+  "real_websocket_submission": true,
+  "status": "failed",
+  "error_code": "ProviderQuotaError",
+  "error_message": "ProviderQuotaError: 模型服务额度不足，当前无法生成或修改。请联系管理员补充服务额度。",
+  "head_generation": 0,
+  "has_native_file": false
+}

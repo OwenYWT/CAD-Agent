@@ -1,0 +1,26 @@
+[
+  {
+    "role": "owner",
+    "navigation_ms": 15500.4,
+    "password_login": true,
+    "shared_document_visible": true,
+    "editable_native_parameters": true,
+    "canvas_visible": true,
+    "page_errors": [],
+    "console_errors": [],
+    "websocket_count": 1,
+    "elapsed_seconds": 23.39
+  },
+  {
+    "role": "editor",
+    "navigation_ms": 20975.8,
+    "password_login": true,
+    "shared_document_visible": true,
+    "editable_native_parameters": true,
+    "canvas_visible": true,
+    "page_errors": [],
+    "console_errors": [],
+    "websocket_count": 1,
+    "elapsed_seconds": 34.85
+  }
+]

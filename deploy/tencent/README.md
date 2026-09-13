@@ -4,16 +4,18 @@
 原 `https://wordswave.ai` 及其 `cad-agent` 容器、数据库和文件存储保留。
 
 线上旧版的 Alembic 分支是 `0013_guest_project_lifecycle`，本地新版为
-`0025_semantic_checkpoints`，两者在 `0010_agent_candidate_seal_links` 后分叉。
+`0027_document_scene_tasks`，两者在 `0010_agent_candidate_seal_links` 后分叉。
 本配置使用独立的 `cad-native` Compose 项目、网络、PostgreSQL、MinIO 和 Temporal，
 没有修改旧库迁移标记，也没有把旧版游客/Onshape 数据强行导入新版。
 新旧站账号和项目分别存储；新版 bootstrap 管理员沿用现有部署的管理员密码。
 
 ## 文件与启动
 
-本次服务器发布目录：`/www/releases/cad-20260910-5a208af-worktree`。
+本次服务器发布目录：`/www/releases/cad-20260913-bae67ae`。
 Compose 文件及私密配置位于该目录的 `tencent/`。
-源代码是当前工作区快照；不能仅用 Git HEAD 代替它。
+部署应用对应 main 提交 `9743344e0736d2f0e72931a734e5887856d88a41`，
+与构建源码 `590642f90f6102e1776985b9cccebac5ce161a5b` 的 Git tree 完全一致。
+目录名保留首轮构建标识；实际来源以 `tencent/release.json` 为准。
 `source-manifest.json` 记录源文件和源码压缩包的 SHA-256。
 
 运行需要两个仅由部署方持有、权限为 `0600` 的文件：
@@ -22,13 +24,16 @@ Compose 文件及私密配置位于该目录的 `tencent/`。
   `BACKEND_IMAGE` 和 `FRONTEND_IMAGE`；镜像使用已经验证的 OCI 摘要。
 - `backend.env`：实际应用配置。生产模式、认证开启、验证码回显关闭、邀请注册；
   使用真实模型凭据、独立 PostgreSQL URL、HTTPS S3 入口和独立 Temporal 队列。
-  `SANDBOX_IMAGE` 必须是已通过真实探测的摘要，不能改成可变标签。
+  `SANDBOX_IMAGE` 必须是已通过真实探测的 `repository@sha256:digest`，
+  不能使用裸 `sha256:digest` 或可变标签；生产启动会拒绝不完整引用。
 
 服务器上执行：
 
 ```bash
-cd /www/releases/cad-20260910-5a208af-worktree/tencent
+cd /www/releases/cad-20260913-bae67ae/tencent
 docker compose config -q
+docker compose run --rm --no-deps backend python -c \
+  'from app.config import settings; settings.assert_auth_config_safe(); settings.assert_sandbox_config_safe(); settings.assert_durable_control_plane_config_safe()'
 docker compose up -d --no-build
 docker compose ps
 curl --fail https://www.wordswave.ai/ready
@@ -80,7 +85,9 @@ CAD Skills 是否与源码 manifest 一致。它不加载应用凭据，也不�
 ## 回退与资源边界
 
 原发布保留在 `/www/releases/0209a4b-20260822-2345`，原站持续提供服务。
-本次旧库备份及容器/代理配置备份位于 `/www/backups/cad-20260910`，该目录仅 root 可读。
+2026-09-10 的旧库与配置备份仍保留。本次更新前、重试和容器重建前的联合备份位于
+`/www/backups/cad-20260913`，仅 root 可读；包含 PostgreSQL、Temporal、MinIO 和 cad_data。
+上一版 native 发布目录 `/www/releases/cad-20260910-5a208af-worktree` 仍保留。
 停止新版只需在新版目录执行 `docker compose stop`；不要删除卷、覆盖旧配置或执行
 `down -v`。恢复新版使用同一配置和固定镜像摘要。
 
@@ -91,3 +98,6 @@ CAD Skills 是否与源码 manifest 一致。它不加载应用凭据，也不�
 
 部署验证不等于完整产品方案验收。硬件实机适配和外部企业系统集成仍以
 `docs/qa/acceptance-remediation-2026-09-10.md` 中列出的真实完成状态为准。
+
+本次上线、两个持久测试账户的角色、真实测试与限制见
+[2026-09-13 部署报告](../../docs/qa/tencent-deployment-2026-09-13.md)。账号密码仅保存在私密交接文件中。

@@ -1,0 +1,28 @@
+{
+  "status": "passed",
+  "native_freecad_version": "1.1.3",
+  "bodies": [
+    {
+      "body": "BodyA",
+      "dimensions_mm": [
+        10.0,
+        10.0,
+        11.0
+      ],
+      "volume_mm3": 863.937979737193,
+      "valid": true,
+      "solids": 1
+    },
+    {
+      "body": "BodyB",
+      "dimensions_mm": [
+        10.0,
+        10.0,
+        11.0
+      ],
+      "volume_mm3": 863.937979737193,
+      "valid": true,
+      "solids": 1
+    }
+  ]
+}

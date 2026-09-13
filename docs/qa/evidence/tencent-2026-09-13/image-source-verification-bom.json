@@ -1,0 +1,12 @@
+{
+  "backend": {
+    "image": "cad-agent-backend:590642f",
+    "verified_files": 778,
+    "mismatches": []
+  },
+  "sandbox": {
+    "image": "cad-agent-sandbox:bae67ae",
+    "verified_files": 467,
+    "mismatches": []
+  }
+}
