@@ -4776,7 +4776,10 @@ class McadWorkflowActivities:
                 columns=tuple(runner["columns"]),
                 rows=tuple(runner["rows"]),
             )
-            runner_path.write_text(
+            # Sandbox outputs belong to its isolated UID. Preserve the original
+            # result and write the provenance envelope in our own staging dir.
+            document_path = temp_dir / "bom.json"
+            document_path.write_text(
                 json.dumps(
                     bom_document.model_dump(mode="json"),
                     ensure_ascii=False,
@@ -4790,7 +4793,7 @@ class McadWorkflowActivities:
                 ("bom-json", "bom.json", "application/json"),
                 ("bom-csv", "bom.csv", "text/csv; charset=utf-8"),
             ):
-                path = outcome.files[role]
+                path = document_path if role == "bom-json" else outcome.files[role]
                 digest = hashlib.sha256(path.read_bytes()).hexdigest()
                 object_key = (
                     "staging/agent/tenants/"
