@@ -158,7 +158,9 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [inspectorSelection,setInspectorSelection]=useState<{panelId:string;tab:InspectorTab} | null>(null);
   const inspectorTab=inspectorSelection?.panelId===panel.id ? inspectorSelection.tab : documentView.document?.fcstd ? "document" : "requirements";
-  const selectInspectorTab=(tab:InspectorTab)=>setInspectorSelection({panelId:panel.id,tab});
+  const selectInspectorTab=(tab:InspectorTab)=> {
+    if (tab !== inspectorTab) guardDraft(() => setInspectorSelection({panelId:panel.id,tab}));
+  };
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [mobileSidebar, setMobileSidebar] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
