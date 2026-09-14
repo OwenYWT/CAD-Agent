@@ -6,6 +6,7 @@
 
 | 文档 | 受众 | 作用 |
 | --- | --- | --- |
+| [`functional-inventory-2026-09-14.md`](functional-inventory-2026-09-14.md) | 产品、测试与研发 | 按实际代码整理的完整功能清单，含入口、实现范围、角色权限、可选集成和未完成项 |
 | [`README.md`](../README.md) | 所有人 | 产品能力、架构、最短启动路径和文档入口 |
 | [`development.md`](development.md) | 开发与交接人员 | 环境、目录、双服务启动、测试、安全边界和排障 |
 | [`DEPLOY.md`](../DEPLOY.md) | 运维 | Docker Compose、生产配置、上线检查和更新流程 |
