@@ -15,6 +15,7 @@ const GROUPS: ValidationResult["domain"][] = ["几何", "装配", "DFM", "ERC / 
 
 interface ValidationDialogProps {
   open: boolean;
+  embedded?: boolean;
   result: GenerationResult | null;
   analysis?: DesignAnalysis | null;
   description: string;
@@ -45,7 +46,7 @@ function checkIconClass(status: ValidationResult["status"]) {
 }
 
 export default function ValidationDialog({
-  open,
+  open, embedded = false,
   result,
   analysis: providedAnalysis = null,
   description,
@@ -116,7 +117,7 @@ export default function ValidationDialog({
     : "请帮助我确认当前工程设计简报后继续生成。";
 
   return (
-    <WorkspaceDialog
+    <WorkspaceDialog embedded={embedded}
       description={viewLabel || "汇总当前任务的设计简报、执行过程、几何检查、修复记录和历史版本。"}
       footer={
         <div className="flex justify-end gap-2">
@@ -269,14 +270,14 @@ export default function ValidationDialog({
           </p>
         ) : null}
 
-        <VersionHistoryPanel
+        {!embedded ? <VersionHistoryPanel
           activeSnapshotId={activeSnapshotId}
           currentParts={currentParts || result?.assembly_parts || []}
           onModifyPart={onModifyPart}
           onRestore={onRestore}
           panelId={panelId}
           refreshKey={refreshKey}
-        />
+        /> : null}
       </div>
     </WorkspaceDialog>
   );

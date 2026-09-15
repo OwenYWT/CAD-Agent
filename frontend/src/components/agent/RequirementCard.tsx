@@ -2,9 +2,14 @@ import { useState } from "react";
 import type { RequirementBasis } from "../../types/requirements";
 import type { ManufacturingProfile } from "../../types";
 
-export function RequirementSummary({ objective, basis, profile }: {
-  objective:string; basis?:RequirementBasis | null; profile?:ManufacturingProfile | null;
+export function RequirementSummary({ objective, basis, profile, compact = false }: {
+  compact?:boolean; objective:string; basis?:RequirementBasis | null; profile?:ManufacturingProfile | null;
 }) {
+  if (compact) return <section className="ww-requirement-card" aria-label="用户需求">
+    <h3>用户需求</h3><p data-i18n-skip>{basis?.target || objective}</p>
+    <p className="type-caption text-amber-800">{!basis || basis.source_kind === "none" ? "概念外形，适配未验证。" : "依据已记录，适配未验证。"}</p>
+    <details><summary>条件、默认值与尺寸依据</summary><RequirementSummary objective={objective} basis={basis} profile={profile} /></details>
+  </section>;
   return <section className="ww-requirement-card" aria-label="需求卡">
     <h3>需求依据</h3>
     <dl><div><dt>已确认条件</dt><dd data-i18n-skip>{basis?.target || objective || "等待描述目标"}</dd></div>

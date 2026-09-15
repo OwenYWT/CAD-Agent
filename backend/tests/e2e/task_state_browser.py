@@ -55,6 +55,8 @@ def card(page):
 
 
 def consistent(page, phase):
+    back = page.get_by_role('button',name='返回 Agent',exact=True)
+    if back.is_visible(): back.click()
     expect(card(page)).to_have_count(1)
     expect(card(page)).to_have_attribute('data-task-phase', phase, timeout=30000)
     expect(page.get_by_test_id('viewer-task-state')).to_have_attribute('data-task-phase', phase)
@@ -69,6 +71,8 @@ def save(page, name):
 
 
 def review(page):
+    back=page.get_by_role('button',name='返回 Agent',exact=True)
+    if back.is_visible(): back.click()
     page.get_by_role('button', name='审阅候选与参数变化', exact=True).click()
     dialog = page.get_by_role('dialog', name='变更审查', exact=True)
     expect(dialog.get_by_test_id('candidate-base')).to_be_visible()
@@ -156,8 +160,8 @@ def candidate(page, client):
     consistent(page,'candidate')
     scene = page.get_by_test_id('document-scene')
     expect(scene).to_have_attribute('data-revision', __import__('re').compile(r'.+'),timeout=90000)
-    expect(page.get_by_role('tab',name='特征与属性',exact=True)).to_have_attribute('aria-selected','true')
-    tree = page.get_by_test_id('cloud-document-panel')
+    page.get_by_role('button',name='属性',exact=True).click()
+    tree = page.locator('[data-testid=cloud-document-panel]:visible')
     tree.get_by_role('treeitem',name='Pad',exact=True).click()
     expect(tree.get_by_role('spinbutton',name='Pad.Length',exact=True)).to_be_disabled()
     save(page, '04-candidate-uncommitted')
@@ -169,7 +173,8 @@ def candidate(page, client):
     page.reload()
     consistent(page,'saved')
     expect(scene).to_have_attribute('data-revision',saved['head_revision_id'],timeout=90000)
-    tree = page.get_by_test_id('cloud-document-panel')
+    page.get_by_role('button',name='属性',exact=True).click()
+    tree = page.locator('[data-testid=cloud-document-panel]:visible')
     tree.get_by_role('treeitem',name='Hole',exact=True).click()
     field = tree.get_by_role('spinbutton',name='Hole.Diameter',exact=True)
     expect(field).to_have_value('6')
@@ -178,8 +183,8 @@ def candidate(page, client):
     page.evaluate('window.__taskStateCanvas = document.querySelector("[data-testid=document-scene] canvas")')
     selected = tree.get_by_role('treeitem',name='Hole',exact=True)
     expect(selected).to_have_attribute('aria-selected','true')
-    page.get_by_role('button',name='折叠检查器',exact=True).click()
-    page.get_by_role('button',name='展开检查器',exact=True).click()
+    page.get_by_role('button',name='返回 Agent',exact=True).click()
+    page.get_by_role('button',name='属性',exact=True).click()
     expect(field).to_have_value('6.5')
     expect(selected).to_have_attribute('aria-selected','true')
     assert page.evaluate('window.__taskStateCanvas === document.querySelector("[data-testid=document-scene] canvas")')
@@ -223,6 +228,8 @@ def main():
     mode=sys.argv[1] if len(sys.argv)>1 else 'candidate'
     errors=[]
     with httpx.Client(base_url=API,timeout=60,headers={'Authorization':'Bearer '+PRIVATE['owner']['token']}) as client, sync_playwright() as pw:
+        auth=client.post('/api/auth/login/password',json={k:PRIVATE['owner'][k] for k in ('phone','password')});auth.raise_for_status()
+        client.headers['Authorization']='Bearer '+auth.json()['token']
         browser=pw.chromium.launch(headless=True,args=['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
         context=browser.new_context(viewport={'width':1440,'height':1000})
         context.tracing.start(screenshots=True,snapshots=True)

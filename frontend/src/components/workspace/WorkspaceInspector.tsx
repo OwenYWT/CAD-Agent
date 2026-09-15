@@ -24,6 +24,8 @@ interface WorkspaceInspectorProps {
   canEdit?: boolean;
   onCollapse?: () => void;
   showHeader?: boolean;
+  showTabs?: boolean;
+  visible?: boolean;
   projectId?: string | null;
   revisionId?: string | null;
   bom?: DurableBOMProjection | null;
@@ -60,6 +62,8 @@ export default function WorkspaceInspector({
   canEdit = true,
   onCollapse,
   showHeader = true,
+  showTabs = true,
+  visible = true,
   projectId = null,
   revisionId = null,
   bom = null,
@@ -94,7 +98,7 @@ export default function WorkspaceInspector({
 
   useEffect(() => {
     if (
-      bom?.status !== "succeeded"
+      !visible || tab !== "bom" || bom?.status !== "succeeded"
       || !projectId
       || !revisionId
       || !bomRequestKey
@@ -122,7 +126,7 @@ export default function WorkspaceInspector({
         });
       });
     return () => controller.abort();
-  }, [bom?.revision_id, bom?.status, bomRequestKey, projectId, revisionId]);
+  }, [bom?.revision_id, bom?.status, bomRequestKey, projectId, revisionId, visible, tab]);
 
   const bomStale = Boolean(
     bom?.revision_id && revisionId && bom.revision_id !== revisionId,
@@ -158,7 +162,7 @@ export default function WorkspaceInspector({
   return (
     <div className="ww-pane-content ww-inspector-content">
       {showHeader ? <div className="ww-pane-header"><div><p className="ww-pane-eyebrow">机械设计</p><h2>检查器 {!cloudDocument && result?.version ? <span className="ww-inspector-version">v{result.version}</span> : null}</h2></div>{onCollapse ? <button aria-label="折叠检查器" className="workspace-icon-button" onClick={onCollapse} type="button"><Icon name="minus" size={15} /></button> : null}</div> : null}
-      <div className="ww-inspector-tabs" role="tablist" aria-label="机械设计检查器">
+      <div className="ww-inspector-tabs" hidden={!showTabs} role="tablist" aria-label="更多工程工具">
         {TABS.filter(([id]) => (
           id === "requirements" ? !!requirementContent : id === "sharing" ? !!sharingContent : id === "engineering" ? !!engineeringContent
           : id === "document" ? !!cloudDocument : id === "parameters" || id === "code" ? !result?.files?.fcstd && !!result?.success : id === "bom" ? !!bom : true
@@ -168,7 +172,7 @@ export default function WorkspaceInspector({
         {tab === "requirements" ? requirementContent : null}
         {tab === "sharing" ? sharingContent : null}
         {tab === "engineering" ? engineeringContent : null}
-        {tab === "document" ? cloudDocument : null}
+        <div hidden={tab !== "document"}>{cloudDocument}</div>
         {tab === "parameters" ? (
           <div className="ww-inspector-section">
             <div className="ww-inspector-section__header"><div><h3>模型属性</h3><p>显示当前结果解析出的真实参数。</p></div><button className="workspace-button" onClick={onProperties} type="button"><Icon name="sliders" size={14} />{canEdit ? "编辑" : "查看属性"}</button></div>
@@ -176,7 +180,7 @@ export default function WorkspaceInspector({
           </div>
         ) : null}
 
-        {tab === "versions" ? <div className="ww-version-history-host">{versionHistory}{branchContent}</div> : null}
+        {tab === "versions" ? <div className="ww-version-history-host">{versionHistory}<details className="ww-inspector-section"><summary>分支与发布</summary>{branchContent}</details></div> : null}
 
         {tab === "code" ? (
           <div className="ww-inspector-section">
@@ -209,7 +213,7 @@ export default function WorkspaceInspector({
           </div>
         ) : null}
       </div>
-      <div className="ww-inspector-export">
+      <div className="ww-inspector-export" hidden={tab !== "files" && tab !== "bom"}>
         <span>{files.length ? files.map(([format]) => fileLabel(format)).join(" · ") : "等待工程产物"}</span>
         <button className="workspace-button workspace-button--primary" disabled={!canExport || !files.length} onClick={onExport} type="button"><Icon name="download" size={14} />导出</button>
       </div>
