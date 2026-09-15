@@ -379,11 +379,13 @@ class CodeGenerator:
             )
             child_name = str(part.get("name") or f"part_{index:02d}")
             color = str(part.get("color") or "lightgray")
+            # The planner palette includes CSS silver, absent from OCCT's names.
+            color_args = "192/255, 192/255, 192/255" if color.lower() == "silver" else repr(color)
             add_lines.append(
                 "result.add("
                 f"_assembly_anchor_to_origin({component_name}()), "
                 f"name={child_name!r}, "
-                f"loc=cq.Location({position!r}), color=cq.Color({color!r})"
+                f"loc=cq.Location({position!r}), color=cq.Color({color_args})"
                 ")"
             )
 
@@ -425,60 +427,28 @@ class CodeGenerator:
         issues_text = "\n".join(f"- {i}" for i in issues)
         suggestions_text = "\n".join(f"- {s}" for s in suggestions)
 
-        # Step 1: Generate fix plan
-        plan_system = (
-            "你是 CadQuery 代码修复专家。以下代码生成的 3D 模型有视觉问题。\n\n"
-            f"问题:\n{issues_text}\n\n"
-            f"建议:\n{suggestions_text}\n\n"
-            f"当前代码:\n```python\n{code}\n```\n\n"
-            "请先分析每个问题的原因，然后列出具体的修复计划。\n\n"
-            "## 关键约束\n"
-            "- **禁止删除任何已有特征**。修复分离问题时，应修改合并方式（union/cut），而不是删除特征\n"
-            "- 修复后的代码必须保留原代码中所有特征（孔、筋、柱、耳、槽等）\n"
-            "- 如果某个特征无法合并，保留它并注明原因，不要删掉\n\n"
-            "输出格式:\n"
-            "## 问题分析\n"
-            "1. 问题描述 → 原因\n\n"
-            "## 修复计划\n"
-            "1. 具体要改哪行、怎么改（只改合并方式，不删特征）\n\n"
-            "只输出分析和计划，不输出代码。"
-        )
-
-        plan_response = await self.client.chat.completions.create(
-            model=settings.llm_model,
-            max_tokens=settings.planner_max_tokens,
-            stream=True,
-            stream_options={"include_usage": True},
-            temperature=0.1,
-            messages=[
-                {"role": "system", "content": plan_system},
-                {"role": "user", "content": "请分析问题并制定修复计划。"},
-            ],
-        )
-
-        fix_plan = completed_text(plan_response, "plan")
-        logger.info(f"Visual fix plan:\n{fix_plan}")
-
         if on_step:
             from app.models.schemas import StepUpdate
             import asyncio
-            step = StepUpdate(step="fixing_error", message=f"修复计划: {fix_plan[:200]}")
-            result = on_step(step)
+            result = on_step(StepUpdate(
+                step="fixing_error", message="根据检查结果修复模型，并保留明确尺寸和已有特征。",
+            ))
             if asyncio.iscoroutine(result):
                 await result
 
-        # Step 2: Apply fix based on plan
+        # The issues already contain the visual diagnosis. A separate prose-plan
+        # completion can consume the reasoning budget before any code is produced.
         fix_system = (
-            f"根据以下修复计划，修改 CadQuery 代码:\n\n"
-            f"修复计划:\n{fix_plan}\n\n"
+            "你是 CadQuery 代码修复专家。请根据实际检查结果修复以下代码。\n\n"
+            f"问题:\n{issues_text}\n\n建议:\n{suggestions_text}\n\n"
             f"当前代码:\n```python\n{code}\n```\n\n"
             "规则:\n"
-            "- **禁止删除原代码中的任何特征**，所有孔、筋、柱、耳、槽必须保留\n"
-            "- 所有子特征必须 union/cut 到 result 上，不能有分离实体\n"
-            "- 只允许一次 show_object(result)\n"
-            "- fillet/chamfer 半径不超过最短边 40%\n"
-            "- 如果 union 某个特征导致错误，用 try-except 包裹并保留主体\n\n"
-            "只输出修复后的完整 Python 代码。"
+            "- 保留明确尺寸、零件名称和装配位置，只修改检查指出的问题。\n"
+            "- 不得通过删除孔、筋、柱、耳、槽等必要特征来消除错误。\n"
+            "- 装配体允许独立零件；仅在要求相连时合并，不擅自改变零件关系。\n"
+            "- 只允许一次 show_object(result)。\n"
+            "- 不得吞掉建模异常或用未完成的主体代替失败的特征。\n"
+            "只输出修复后的完整 Python 代码，不输出分析、计划或解释。"
         )
 
         fix_response = await self.client.chat.completions.create(
@@ -489,7 +459,7 @@ class CodeGenerator:
             temperature=0.1,
             messages=[
                 {"role": "system", "content": fix_system},
-                {"role": "user", "content": "请按计划修复代码。"},
+                {"role": "user", "content": "请根据检查结果修复代码。"},
             ],
         )
 
