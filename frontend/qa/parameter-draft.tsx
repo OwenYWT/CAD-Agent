@@ -6,7 +6,7 @@ import "../src/index.css";
 
 // Component state fixture only. This QA entry cannot submit a modeling task.
 const unavailable = (): never => { throw new Error("组件验收页不连接建模服务"); };
-function ParameterDraftQA() {
+export function ParameterDraftQA() {
   const [parameters, setParameters] = useState<Parameter[]>([]);
   const [open, setOpen] = useState(false);
   const [readOnly, setReadOnly] = useState(false);
