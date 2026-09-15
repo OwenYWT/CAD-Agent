@@ -11,11 +11,11 @@
 
 ## 文件与启动
 
-本次服务器发布目录：`/www/releases/cad-20260913-task-state-7d1dd5e`。
+本次服务器发布目录：`/www/releases/cad-20260915-continuation-a8cd956`。
 Compose 文件及私密配置位于该目录的 `deploy/tencent/`。
-部署应用对应 main 合并提交 `06b1ed3a00b5f39fe68e2b930f8386da5b697657`，
-与构建源码 `7d1dd5e7a1903d8991f9028d961678c4224b3710` 的 Git tree 完全一致。
-实际来源、固定镜像摘要和备份位置记录在 `deploy/tencent/release.json`。
+部署应用对应 main 合并提交 `8fdbec1c566653babe9c5d6aba28dde2b1222514`，
+与构建源码 `a8cd9569e35d67354b56dcb8259244503aca7f00` 的 Git tree 完全一致。
+实际来源与固定镜像摘要记录在 `deploy/tencent/release.json`；备份位置见下文回退说明。
 `source-manifest.json` 记录源文件和前端产物的 SHA-256。
 
 运行需要两个仅由部署方持有、权限为 `0600` 的文件：
@@ -30,7 +30,7 @@ Compose 文件及私密配置位于该目录的 `deploy/tencent/`。
 服务器上执行：
 
 ```bash
-cd /www/releases/cad-20260913-task-state-7d1dd5e/deploy/tencent
+cd /www/releases/cad-20260915-continuation-a8cd956/deploy/tencent
 docker compose config -q
 docker compose run --rm --no-deps backend python -c \
   'from app.config import settings; settings.assert_auth_config_safe(); settings.assert_sandbox_config_safe(); settings.assert_durable_control_plane_config_safe()'
@@ -85,9 +85,10 @@ CAD Skills 是否与源码 manifest 一致。它不加载应用凭据，也不�
 ## 回退与资源边界
 
 原发布保留在 `/www/releases/0209a4b-20260822-2345`，原站持续提供服务。
-2026-09-10 的旧库与配置备份仍保留。本次切换前的联合备份位于
+2026-09-10 的旧库与配置备份仍保留。2026-09-13 切换前的联合备份位于
 `/www/backups/cad-20260913-task-state-7d1dd5e`，仅 root 可读；包含 PostgreSQL、Temporal、MinIO 和 cad_data。
-上一版 native 配置目录 `/www/releases/cad-20260913-bae67ae/tencent` 及更早发布仍保留。
+本次应用更新前的 PostgreSQL 与旧配置备份位于 `/www/backups/cad-20260915-continuation-a8cd956`。
+上一版 native 配置目录 `/www/releases/cad-20260913-task-state-7d1dd5e/deploy/tencent` 及更早发布仍保留。
 停止新版只需在新版目录执行 `docker compose stop`；不要删除卷、覆盖旧配置或执行
 `down -v`。恢复新版使用同一配置和固定镜像摘要。
 
@@ -104,5 +105,8 @@ CAD Skills 是否与源码 manifest 一致。它不加载应用凭据，也不�
 
 五状态改造与本次发布的实际验证、原账户保留情况及手机壳失败限制见
 [2026-09-13 五状态与发布报告](../../docs/qa/task-state-2026-09-13.md)。
-本轮复用已经验证的 AMD64 运行时层；后端应用、沙箱入口及前端静态文件
-通过逐文件 SHA-256 校验，线上另执行真实候选生成、审查、保存与刷新验收。
+2026-09-13 发布复用已经验证的 AMD64 运行时层；后端应用、沙箱入口及前端静态文件
+通过逐文件 SHA-256 校验，当次线上另执行真实候选生成、审查、保存与刷新验收。
+
+2026-09-15 的旧“继续”任务恢复修复、CI、真实本地候选生成和线上原任务恢复验证见
+[恢复修复与发布报告](../../docs/qa/continuation-recovery-2026-09-15.md)。本次线上没有替用户确认手机壳建模或适配依据。
