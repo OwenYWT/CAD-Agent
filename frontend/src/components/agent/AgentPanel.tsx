@@ -113,8 +113,8 @@ export default function AgentPanel({context,connection,suggestedPrompt='',onSend
     {embedded?<header className="ww-pane-header"><div className="ww-agent-title"><span className="ww-agent-avatar">A</span><div><p className="ww-pane-eyebrow">工程协作</p><h2>Agent</h2></div></div>
       <div className="flex items-center gap-1"><span className={`ww-connection-dot ${connection==='connected'?'ww-connection-dot--online':''}`} title={connection==='connected'?'文档连接正常':'正在连接'}/>{onCollapse?<button aria-label="折叠 Agent" className="workspace-icon-button" onClick={onCollapse} type="button"><Icon name="minus" size={15}/></button>:null}</div></header>:null}
     <div className="ww-agent-thread">
-      <div className="ww-agent-context"><span>当前上下文</span><strong>{AGENT_CONTEXT_LABELS[context]}</strong><span className="ml-auto">{connection==='connected'?'文档连接正常':'连接中'}</span></div>
-      {task.objective && !pendingRequest?<RequirementSummary objective={task.objective} basis={contextValue?.requirement_basis || panel.requirementBasis} profile={profile}/>:null}
+      <div className="ww-agent-context"><strong>{AGENT_CONTEXT_LABELS[context]}</strong><span className="ml-auto">{connection==='connected'?'文档连接正常':'连接中'}</span></div>
+      {task.objective && !pendingRequest?<RequirementSummary compact objective={task.objective} basis={contextValue?.requirement_basis || panel.requirementBasis} profile={profile}/>:null}
       {!pendingRequest?<TaskCard key={task.taskId || 'submitting'} task={task} onRetry={onRetry} onRecover={recover} onCancel={onCancel} onReview={onReview} isAdmin={isAdmin} canModify={canModify} failureLabel={structuredErrorLabel(task.errorCode)}/>:null}
       {pendingRequest && !task.hasSaved ? <RequirementCard key={pendingRequest} objective={pendingRequest} profile={profile} onBack={()=>setPendingRequest(null)} onConfirm={basis=>execute(basis)} disabled={task.running || !canModify}/>:null}
       {pendingRequest && task.hasSaved ? <div className="ww-agent-confirmation" data-task-phase="needs_input"><p>确认本次修改</p><p data-i18n-skip>{pendingRequest}</p><p>目标：{selectionLabel || '当前已保存版本'}。明确尺寸保持原值，遇到冲突需重新确认。</p><div className="mt-3 flex gap-2"><button className="workspace-button" onClick={()=>setPendingRequest(null)} type="button">返回修改</button><button className="workspace-button workspace-button--primary" onClick={()=>execute()} type="button">确认并执行</button></div></div>:null}
@@ -126,7 +126,7 @@ export default function AgentPanel({context,connection,suggestedPrompt='',onSend
     <div className="ww-agent-composer-wrap">
       {selectionLabel?<div className="mb-2 rounded border border-[var(--agent-border)] bg-[var(--agent-soft)] p-2 type-caption" data-testid="agent-selection">修改目标：{selectionLabel}{onClearSelection?<button className="ml-2 underline" onClick={onClearSelection} type="button">清除本次 AI 选择</button>:null}</div>:null}
       {blockedReason?<p role="status" className="mb-2 type-caption text-amber-800">{blockedReason}</p>:null}
-      <SuggestionPills disabled={task.running} onSelect={suggestion=>setInput(suggestion.prompt)} suggestions={suggestions}/>
+      <details className="ww-task-history"><summary>需求示例</summary><SuggestionPills disabled={task.running} onSelect={suggestion=>setInput(suggestion.prompt)} suggestions={suggestions}/></details>
       <div className="ww-agent-composer"><textarea aria-label="询问 Agent" disabled={task.running || !canModify} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if((e.metaKey || e.ctrlKey) && e.key==='Enter')reviewRequest();}} placeholder="说明需求或对所选对象的修改…" rows={3} value={input}/>
         <div className="ww-agent-composer__toolbar"><span className="ww-agent-composer__shortcut">⌘ Enter 审查</span><button aria-label="审查请求" className="ww-agent-send" disabled={!input.trim() || task.running || !!blockedReason || !canModify} onClick={reviewRequest} type="button"><Icon name="send" size={15}/></button></div></div>
     </div>

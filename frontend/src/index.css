@@ -427,6 +427,7 @@ body {
   height: 100dvh;
   min-width: 320px;
   grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   background: var(--canvas);
 }
@@ -436,13 +437,14 @@ body {
   min-width: 0;
   min-height: 0;
   grid-template-rows: 48px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .ww-workspace {
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: var(--ww-agent-width) 5px minmax(320px, 1fr) 5px var(--ww-inspector-width);
+  grid-template-columns: minmax(0, 1fr) 5px var(--ww-right-width);
   overflow: hidden;
   background: var(--surface);
 }
@@ -1397,6 +1399,7 @@ button,
 
 .workspace-header__actions {
   display: flex;
+  flex: 0 0 auto;
   min-width: 0;
   align-items: center;
   gap: 4px;
@@ -1790,68 +1793,33 @@ button,
   }
 }
 
-@media (min-width: 1181px) and (max-width: 1279px) {
-  .ww-workspace {
-    grid-template-columns:
-      min(var(--ww-agent-width), 340px)
-      5px
-      minmax(320px, 1fr)
-      5px
-      min(var(--ww-inspector-width), 280px);
-  }
-}
-
-@media (max-width: 1180px) {
-  .ww-workspace {
-    grid-template-columns: var(--ww-agent-width) 5px minmax(340px, 1fr);
-  }
-
-  .ww-inspector-pane,
-  .ww-resize-handle--inspector {
-    display: none;
-  }
-}
-
+/* One shared right pane: tools replace Agent without changing the model viewport. */
+.ww-right-pane { min-width:0; min-height:0; height:100%; }
+.ww-right-pane > aside { height:100%; display:flex; flex-direction:column; }
+.ww-right-pane [hidden], .ww-drawer-content [hidden] { display:none !important; }
+.ww-right-pane .ww-agent-pane { border-right:0; border-left:1px solid var(--line); }
+.ww-inspector-pane > .ww-pane-host { height:auto; flex:1; }
+.ww-drawer-content, .ww-drawer-host, .ww-embedded-panel { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; height:100%; }
+.ww-drawer-title { padding:10px 16px 0; font-weight:var(--type-section-weight); }
+.ww-drawer-task { display:flex; flex-direction:column; gap:4px; padding:10px 16px; border-bottom:1px solid var(--line); font-size:var(--type-caption-size); overflow-wrap:anywhere; }
+.ww-drawer-task span { color:var(--muted); }
+.ww-embedded-panel__header { padding:12px 16px; border-bottom:1px solid var(--line); }
+.ww-embedded-panel__header h2 { font-weight:var(--type-section-weight); }
+.ww-embedded-panel__header p { font-size:var(--type-caption-size); color:var(--muted); margin-top:6px; }
+.ww-embedded-panel__body { min-height:0; flex:1; overflow:auto; }
+.ww-embedded-panel > footer { padding:12px; border-top:1px solid var(--line); }
+.ww-embedded-panel .grid { grid-template-columns:minmax(0,1fr); }
+.ww-embedded-panel input, .ww-embedded-panel select { max-width:100%; }
+.ww-embedded-panel footer > div { flex-wrap:wrap; }
 @media (max-width: 760px) {
-  .ww-workspace {
-    position: relative;
-    display: block;
-  }
-
-  .ww-agent-pane {
-    display: block;
-    width: 100%;
-    height: 100%;
-    border-right: 0;
-  }
-
-  .ww-resize-handle,
-  .ww-inspector-pane {
-    display: none;
-  }
-
-  .ww-primary-pane {
-    display: none;
-  }
-
-  .ww-primary-pane--mobile-open {
-    position: fixed;
-    inset: 48px 0 0;
-    z-index: 80;
-    display: block;
-    border-top: 1px solid var(--line);
-    background: var(--surface);
-    box-shadow: 0 -8px 30px rgba(35, 35, 31, 0.12);
-  }
-
-  .workspace-header__preview-action {
-    display: inline-flex;
-  }
-
-  .workspace-header__agent-action,
-  .workspace-header__changes-action {
-    display: none;
-  }
+  .ww-workspace { position:relative; display:block; }
+  .ww-primary-pane { display:block; height:100%; }
+  .ww-right-pane { position:absolute; inset:0; z-index:80; background:var(--surface); }
+  .ww-right-pane--mobile-hidden { display:none; }
+  .ww-resize-handle { display:none; }
+  .workspace-header__preview-action { display:inline-flex; }
+  .workspace-header__preview-action span { display:none; }
+  .workspace-header__agent-action { display:none; }
 }
 
 @media (max-width: 640px) {
@@ -1877,8 +1845,8 @@ button,
 }
 
 @media (max-width: 479px) {
-  .workspace-header__export-action,
-  .workspace-header__settings-action {
+  .workspace-header__settings-action,
+  .workspace-header .ww-language-switch {
     display: none;
   }
 
@@ -1925,7 +1893,7 @@ button,
   border-bottom: 1px solid var(--line); font-size: var(--type-body-size);
   background: var(--surface);
 }
-@media (max-width: 1180px) {
+@media (max-width: 760px) {
   .ww-inspector-pane.ww-inspector-pane--overlay {
     position: fixed; inset: 0 0 0 auto; z-index: 90; display: flex;
     width: min(100%, 440px); height: 100dvh; flex-direction: column;
@@ -1934,4 +1902,3 @@ button,
   .ww-inspector-pane--overlay > .ww-pane-host { height: auto; flex: 1; }
 }
 .ww-feature-tree { max-height: 260px; overflow: auto; }
-@media (min-width: 900px) { .workspace-header__agent-action { display:none; } }
