@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { useSessionStore } from "../src/stores/sessionStore.ts";
 import type { DurableTaskSnapshot } from "../src/types/index.ts";
-import { taskState } from "../src/adapters/taskState.ts";
+import { isContinuationOnly, taskState } from "../src/adapters/taskState.ts";
 
 function panel() { useSessionStore.getState().reset(); return useSessionStore.getState().getActivePanel(); }
 function snapshot(id: string, status: string): DurableTaskSnapshot {
@@ -10,6 +10,36 @@ function snapshot(id: string, status: string): DurableTaskSnapshot {
     request_payload: {branch_id:'branch',objective:'制作手机壳'}, last_event_sequence:8,
     error_code:status==='failed'?'ProviderQuotaError':null, error_message:status==='failed'?'模型服务额度不足':null };
 }
+
+test('legacy continuation tasks recover only a concrete user request from the current panel for confirmation', () => {
+  const p=panel(); const s=useSessionStore.getState();
+  const original='我想做一个手机壳，适配iphone 17 pro max';
+  const legacy='当前上下文：机械设计。请先限定修改范围，再执行以下请求并验证结果：继续';
+  s.addMessage({role:'user',content:original});
+  s.addMessage({role:'assistant',content:'不能把助手建议当作原始需求'});
+  s.addMessage({role:'user',content:'继续'});
+  s.applyDurableSnapshot({...snapshot('legacy','failed'),kind:'mcad.agent.v2.generate',
+    request_payload:{objective:legacy}},p.id);
+  const current=taskState(s.getActivePanel());
+  assert.equal(current.objective,legacy);
+  assert.equal(current.recovery,'request');
+  assert.equal(current.recoveryObjective,original);
+  assert.equal(current.continuationOnly,true);
+});
+
+test('missing history never invents the objective for a continuation', () => {
+  const p=panel(); const s=useSessionStore.getState();
+  s.addMessage({role:'assistant',content:'生成手机壳'});
+  s.applyDurableSnapshot({...snapshot('legacy','failed'),kind:'mcad.agent.v2.generate',
+    request_payload:{objective:'继续'}},p.id);
+  assert.equal(taskState(s.getActivePanel()).recoveryObjective,'');
+  assert.equal(taskState(s.getActivePanel()).recovery,'request');
+});
+
+test('continuation detection is narrow and preserves concrete modeling instructions', () => {
+  for(const text of ['继续',' 重试！ ','continue.','当前上下文：机械设计。请先限定修改范围，再执行以下请求并验证结果：再试一次']) assert.equal(isContinuationOnly(text),true,text);
+  for(const text of ['继续添加一个直径 5 mm 的孔','将文字改为“继续”','retry the hole with diameter 5 mm','']) assert.equal(isContinuationOnly(text),false,text);
+});
 
 test('terminal snapshot cannot be restarted by replayed running steps', () => {
   const p=panel();const s=useSessionStore.getState();s.applyDurableSnapshot(snapshot('task-1','failed'),p.id);

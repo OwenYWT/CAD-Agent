@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import re
 from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import UUID
@@ -329,6 +330,16 @@ async def submit_durable_workflow(
     requirement_basis: RequirementBasisV1 | None = None,
 ) -> DurableSubmission:
     normalized_objective = objective.strip()
+    # Older clients wrapped bare continuation commands as new design objectives.
+    # Retrying those immutable inputs cannot recover the missing design intent.
+    intent = re.sub(
+        r"^当前上下文：[^。\n]{1,40}。请先限定修改范围，再执行以下请求并验证结果：",
+        "", normalized_objective,
+    ).strip()
+    if operation in {"generate", "modify"} and re.fullmatch(
+        r"(?:继续|重试|再试一次|continue|retry)[。.!！\s]*", intent, re.IGNORECASE,
+    ):
+        raise ValueError("缺少建模目标：此任务仅记录了“继续”或“重试”。请恢复历史中的具体需求，确认后再提交。")
     if requirement_basis is not None:
         if operation_context is None or operation not in {"generate", "modify"}:
             raise ValueError("工程依据必须绑定到已解析的建模请求")

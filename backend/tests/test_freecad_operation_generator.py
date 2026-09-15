@@ -123,6 +123,16 @@ def _provenance() -> dict:
     }
 
 
+@pytest.mark.asyncio
+async def test_generator_preserves_rejection_reason_after_exhausting_repairs():
+    reason='unsupported: 没有提供具体的零件描述、尺寸或需继续的设计目标'
+    generator=FreeCADOperationGenerator(client=_client([{'error':reason},{'error':reason}]), provenance_reader=_provenance)
+    with pytest.raises(ValueError, match='没有提供具体的零件描述') as caught:
+        await generator.generate(plan=_plan(),requirements={'description':'继续'},
+            base_state=None,output_formats=('step','stl'))
+    assert str(caught.value.__cause__)==reason
+
+
 def _plate_state() -> dict:
     return {
         "schema_version": "freecad-state.v1",

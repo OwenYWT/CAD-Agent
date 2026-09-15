@@ -7,6 +7,11 @@ export const TASK_PHASE_LABELS: Record<TaskPhase,string> = {
 };
 export const isActiveTask = (status?: string | null) => ["pending","planning","running","cancelling"].includes(status || "");
 
+export function isContinuationOnly(text: string) {
+  const intent=text.trim().replace(/^当前上下文：[^。\n]{1,40}。请先限定修改范围，再执行以下请求并验证结果：/,'').trim();
+  return /^(继续|重试|再试一次|continue|retry)[。.!！\s]*$/i.test(intent);
+}
+
 /** One projection for the active task. Document sync and the viewed revision are separate facts. */
 export function taskState(panel: PanelState, document?: CloudDocument | null) {
   const durable=panel.durable;
@@ -29,8 +34,15 @@ export function taskState(panel: PanelState, document?: CloudDocument | null) {
   const changeStatus=durable?.changeSetStatus || snapshot?.change_set?.status;
   const operation=String(snapshot?.request_payload.operation || (snapshot?.kind.endsWith('.modify') ? 'modify' : 'generate'));
   const operationLabel=operation==='modify' ? '修改模型' : operation==='inspect' ? '校验模型' : '首次生成';
+  const objective=typeof snapshot?.request_payload.objective==='string' ? snapshot.request_payload.objective
+    : panel.messages.filter(m=>m.role==='user').at(-1)?.content || '';
+  const continuationOnly=isContinuationOnly(objective);
+  // Only offer current-panel user text for review; never rewrite a persisted task
+  // or infer a design from assistant replies, labels, or another panel's history.
+  const recoveryObjective=continuationOnly ? panel.messages.filter(m=>m.role==='user' && m.content.trim() && !isContinuationOnly(m.content)).at(-1)?.content || '' : objective;
   const recovery = !taskId ? 'request' : snapshot?.request_payload.structured_modification ? 'properties'
     : snapshot?.request_payload.revision_restore ? 'versions'
+    : continuationOnly ? 'request'
     : snapshot && !['mcad.agent.v2.generate','mcad.agent.v2.modify'].includes(snapshot.kind) ? 'request' : 'retry';
   let phase: TaskPhase;
   if (panel.submissionPending || isActiveTask(status) || (!taskId && panel.isGenerating)) phase='running';
@@ -44,8 +56,7 @@ export function taskState(panel: PanelState, document?: CloudDocument | null) {
     : phase==='running' ? panel.submissionPending ? '正在提交需求' : status==='cancelling' ? '正在取消任务' : operationLabel
     : phase==='candidate' ? '模型已生成，候选待确认'
     : phase==='saved' ? '模型已保存为当前版本' : unconfirmed ? '等待确认任务是否受理' : snapshot?.confirmation ? '执行计划等待确认' : '等待补充需求';
-  return {phase,label:TASK_PHASE_LABELS[phase],title,taskId,status,operationLabel,hasSaved,quota,errorCode,errorMessage,error,snapshot,recovery,
+  return {phase,label:TASK_PHASE_LABELS[phase],title,taskId,status,operationLabel,hasSaved,quota,errorCode,errorMessage,error,snapshot,recovery,continuationOnly,recoveryObjective,
     running:phase==='running',changeSetId:durable?.changeSetId || null,changeStatus,
-    objective:typeof snapshot?.request_payload.objective==='string' ? snapshot.request_payload.objective
-      : panel.messages.filter(m=>m.role==='user').at(-1)?.content || ''};
+    objective};
 }

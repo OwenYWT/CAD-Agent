@@ -386,7 +386,8 @@ class FreeCADOperationGenerator:
                     **({'engineering_evidence': [e['source'] for e in base_state['engineering_evidence']]}
                         if base_state and base_state.get('engineering_evidence') else {})},
             )
-        raise ValueError("operation generator did not return a valid plan") from last_error
+        reason = str(last_error)[:1000] if last_error is not None else "inspection query budget exhausted before a plan was returned"
+        raise ValueError(f"operation generator did not return a valid plan: {reason}") from last_error
 
     @staticmethod
     def _required_formats(output_formats: tuple[str, ...]) -> tuple[str, ...]:
