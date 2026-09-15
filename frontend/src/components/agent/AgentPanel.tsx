@@ -5,7 +5,7 @@ import type { EngineeringDomain } from "../../types/engineering";
 import type { CloudDocument } from "../../types/document";
 import type { ManufacturingProfile } from "../../types";
 import type { RequirementBasis } from "../../types/requirements";
-import { taskState } from "../../adapters/taskState";
+import { isContinuationOnly, taskState } from "../../adapters/taskState";
 import { buildPromptSuggestions } from "../../utils/suggestions";
 import { confirmDurableTask, EngineeringApiError } from "../../services/engineeringService";
 import SuggestionPills from "../SuggestionPills";
@@ -78,15 +78,20 @@ export default function AgentPanel({context,connection,suggestedPrompt='',onSend
   const profile=task.snapshot?.request_payload.manufacturing_profile as ManufacturingProfile|null|undefined;
   const recover = () => {
     if (task.recovery === 'properties' || task.recovery === 'versions') onRecover?.(task.recovery);
-    else {setInput(task.objective);setPendingRequest(null);setError(null);}
+    else {
+      setInput(task.recoveryObjective);reviewedTarget.current=selectionLabel;
+      setPendingRequest(task.continuationOnly && task.recoveryObjective ? task.recoveryObjective : null);
+      setError(task.continuationOnly && !task.recoveryObjective ? '当前线程没有可恢复的具体需求，请补充建模目标。' : null);
+    }
   };
   const reviewRequest=()=>{
     if(blockedReason){setError(blockedReason);return;}if(!input.trim())return;
     // A continuation after failure is a retry action, never a new objective consisting of “继续”.
-    if(task.phase==='failed' && task.recovery!=='retry' && /^(继续|重试|再试一次|continue|retry)[。.!！\s]*$/i.test(input.trim())){recover();return;}
-    if(task.phase==='failed' && task.recovery==='retry' && /^(继续|重试|再试一次|continue|retry)[。.!！\s]*$/i.test(input.trim()) && onRetry){
+    if(task.phase==='failed' && task.recovery!=='retry' && isContinuationOnly(input)){recover();return;}
+    if(task.phase==='failed' && task.recovery==='retry' && isContinuationOnly(input) && onRetry){
       void onRetry().then(()=>setInput('')).catch(e=>setError(e instanceof Error?e.message:'重试失败'));return;
     }
+    if(isContinuationOnly(input)){setError('请描述具体建模目标，或使用当前任务的确认、重试入口。');return;}
     reviewedTarget.current=selectionLabel;setPendingRequest(input.trim());setError(null);
   };
   const execute=(basis?:RequirementBasis)=>{
