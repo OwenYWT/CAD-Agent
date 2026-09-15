@@ -78,6 +78,19 @@ class AssemblyPlanner:
         last_error: Exception | None = None
         for attempt in range(2):
             try:
+                messages = [
+                    {"role": "system", "content": ASSEMBLY_DECOMPOSE_PROMPT},
+                    {"role": "user", "content": user_content},
+                ]
+                if last_error is not None:
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"上次输出未通过校验：{str(last_error)[:1000]}。"
+                            "请重新输出完整、精简的 JSON 装配方案，不要输出解释文字。"
+                            "保留原需求中的明确尺寸和结构，不要为了缩短输出省略必要零件。"
+                        ),
+                    })
                 t0 = time.time()
                 logger.info(
                     "AssemblyPlanner LLM call start (attempt=%d)",
@@ -85,12 +98,9 @@ class AssemblyPlanner:
                 )
                 response = await self.client.chat.completions.create(
                     model=settings.llm_model,
-                    max_tokens=2048,
+                    max_tokens=settings.planner_max_tokens,
                     temperature=0.1,
-                    messages=[
-                        {"role": "system", "content": ASSEMBLY_DECOMPOSE_PROMPT},
-                        {"role": "user", "content": user_content},
-                    ],
+                    messages=messages,
                     response_format={"type": "json_object"},
                 )
                 choice = response.choices[0]
@@ -102,7 +112,8 @@ class AssemblyPlanner:
                 )
                 if finish_reason == "length":
                     raise ValueError(
-                        "assembly planner output was truncated at 2048 completion tokens"
+                        "assembly planner output was truncated at "
+                        f"{settings.planner_max_tokens} completion tokens"
                     )
                 content = choice.message.content
                 if not isinstance(content, str) or not content.strip():
@@ -146,7 +157,8 @@ class AssemblyPlanner:
 
         if not allow_fallback:
             raise ValueError(
-                "assembly planner model did not return a valid assembly plan"
+                "assembly planner model did not return a valid assembly plan: "
+                f"{str(last_error)[:1000]}"
             ) from last_error
         logger.warning(
             "AssemblyPlanner exhausted valid responses; falling back to single part"
