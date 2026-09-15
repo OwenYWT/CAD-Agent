@@ -410,6 +410,18 @@ class CodeGenerator:
         self, code: str, issues: list[str], suggestions: list[str],
         on_step=None,
     ) -> str:
+        def completed_text(response, stage: str) -> str:
+            choice = response.choices[0]
+            if getattr(choice, "finish_reason", None) == "length":
+                raise ValueError(
+                    f"visual repair {stage} output was truncated at "
+                    f"{settings.planner_max_tokens} completion tokens"
+                )
+            content = choice.message.content
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError(f"visual repair {stage} returned empty content")
+            return content.strip()
+
         issues_text = "\n".join(f"- {i}" for i in issues)
         suggestions_text = "\n".join(f"- {s}" for s in suggestions)
 
@@ -434,7 +446,9 @@ class CodeGenerator:
 
         plan_response = await self.client.chat.completions.create(
             model=settings.llm_model,
-            max_tokens=1024,
+            max_tokens=settings.planner_max_tokens,
+            stream=True,
+            stream_options={"include_usage": True},
             temperature=0.1,
             messages=[
                 {"role": "system", "content": plan_system},
@@ -442,7 +456,7 @@ class CodeGenerator:
             ],
         )
 
-        fix_plan = plan_response.choices[0].message.content.strip()
+        fix_plan = completed_text(plan_response, "plan")
         logger.info(f"Visual fix plan:\n{fix_plan}")
 
         if on_step:
@@ -469,7 +483,9 @@ class CodeGenerator:
 
         fix_response = await self.client.chat.completions.create(
             model=settings.llm_model,
-            max_tokens=4096,
+            max_tokens=settings.planner_max_tokens,
+            stream=True,
+            stream_options={"include_usage": True},
             temperature=0.1,
             messages=[
                 {"role": "system", "content": fix_system},
@@ -477,7 +493,7 @@ class CodeGenerator:
             ],
         )
 
-        return self._extract_code(fix_response.choices[0].message.content)
+        return self._extract_code(completed_text(fix_response, "code"))
 
     def _extract_code(self, text: str) -> str:
         text = text.strip()

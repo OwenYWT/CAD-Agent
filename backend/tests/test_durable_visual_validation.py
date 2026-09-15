@@ -13,6 +13,56 @@ from app.validation.durable_visual import (
     indeterminate_visual_report,
 )
 from app.llm import _completion_provenance
+from app.agent.code_gen import CodeGenerator
+from app.config import settings
+
+
+class _VisualRepairCompletions:
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.calls = []
+
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.replies.pop(0)
+
+
+def _repair_reply(content, finish="stop"):
+    return SimpleNamespace(choices=[SimpleNamespace(
+        message=SimpleNamespace(content=content), finish_reason=finish,
+    )])
+
+
+@pytest.mark.asyncio
+async def test_visual_repair_streams_both_calls_with_configured_budget(monkeypatch):
+    monkeypatch.setattr(settings, "planner_max_tokens", 12288)
+    replies = _VisualRepairCompletions([
+        _repair_reply("Move the cavity upward, preserving the wall dimensions."),
+        _repair_reply("```python\nresult = outer.cut(cavity)\n```"),
+    ])
+    generator = CodeGenerator()
+    generator._client = SimpleNamespace(chat=SimpleNamespace(completions=replies))
+    result = await generator.fix_visual_issues("result = outer", ["missing cavity"], [])
+    assert result == "result = outer.cut(cavity)"
+    assert len(replies.calls) == 2
+    assert all(call.get("stream") is True for call in replies.calls)
+    assert all(call["max_tokens"] == 12288 for call in replies.calls)
+    assert all(call["stream_options"] == {"include_usage": True} for call in replies.calls)
+
+
+@pytest.mark.parametrize("stage", ["plan", "code"])
+@pytest.mark.parametrize("content,finish,reason", [("partial", "length", "truncated"), ("", "stop", "empty")])
+@pytest.mark.asyncio
+async def test_visual_repair_rejects_incomplete_provider_output(stage, content, finish, reason):
+    replies = _VisualRepairCompletions(
+        ([_repair_reply("Preserve dimensions and open the cavity.")] if stage == "code" else [])
+        + [_repair_reply(content, finish)],
+    )
+    generator = CodeGenerator()
+    generator._client = SimpleNamespace(chat=SimpleNamespace(completions=replies))
+    with pytest.raises(ValueError, match=f"visual repair {stage}.*{reason}"):
+        await generator.fix_visual_issues("result = outer", ["missing cavity"], [])
+    assert len(replies.calls) == (2 if stage == "code" else 1)
 
 
 def _render(view: str) -> VisualRenderEvidence:

@@ -67,6 +67,8 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 `PLANNER_MAX_TOKENS` 控制需求规划和装配拆解的单次输出上限，默认 8192，允许 2048–32768。装配拆解最多调用两次；校验失败时保留原需求并反馈具体原因，耗尽重试后 Durable 任务失败，不用单零件占位结果代替装配方案。若详情显示 `assembly planner output was truncated`，检查实际配置及模型服务支持的输出上限；增加额度不能保证任意需求都能生成有效方案。
 
+CadQuery 外观修复的分析和代码回复也使用该上限，并通过已有模型适配器流式接收，避免长回复生成期间一直等不到响应头。空回复或截断回复明确失败；流中断不会当作完整代码，网络无数据超时和 Temporal Activity 总时限仍然生效。
+
 本地也不应使用空或公开的认证密钥。需要完全跳过登录时只能显式设置 `AUTH_REQUIRED=false`，且只允许在本机回环开发环境使用。
 
 ## 构建 MCAD Runtime
