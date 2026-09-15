@@ -40,8 +40,6 @@ export default function MechanicalWorkspace({
   isGenerating,
   taskLabel,taskPhase,hasParameters=true,
   onBack,
-  onProperties,
-  onInspector,
 }: MechanicalWorkspaceProps) {
   const [viewerKey, setViewerKey] = useState(0);
   const stlUrl = viewedMeshUrl || result?.files?.stl || null;
@@ -49,7 +47,7 @@ export default function MechanicalWorkspace({
   const is2D = Boolean(svgUrl && !stlUrl);
   const files = Object.entries(result?.files || {});
   const activeUrl = stlUrl || svgUrl || files[0]?.[1] || "";
-  const activeFilename = nativeDocumentId ? "原生 CAD 模型" : activeUrl ? decodeURIComponent(activeUrl.split("/").pop()?.split("?")[0] || "工程模型") : "等待生成";
+  const activeFilename = nativeDocumentId ? "原生 CAD 模型" : activeUrl ? "几何预览" : "等待生成";
 
 
   return (
@@ -62,14 +60,12 @@ export default function MechanicalWorkspace({
           {onCandidate ? <button className="workspace-button" type="button" onClick={onCandidate}>预览候选变更</button> : null}
           <span className="ww-viewer-hint hidden 2xl:inline">拖动旋转 · 滚轮缩放 · 右键平移</span>
           <button aria-label="适应视图" className="workspace-icon-button" onClick={() => setViewerKey((key) => key + 1)} title="适应视图" type="button"><Icon name="rotate" size={14} /></button>
-          <button className="workspace-button" disabled={!hasParameters} onClick={onProperties} type="button"><Icon name="sliders" size={14} />参数</button>
-          {onInspector ? <button className="workspace-button xl:hidden" onClick={onInspector} type="button"><Icon name="sliders" size={14} />检查器</button> : null}
         </div>
       </header>
       <div className="ww-viewer-canvas">
         <div className="absolute left-3 top-3 z-10 flex gap-2">
-          {identity ? <span data-testid="view-identity" data-revision={identity.viewedRevisionId} data-mode={identity.mode} className="workspace-chip bg-white">{result?.success || hasParameters ? viewLabel(identity) : "空文档，尚无模型"}</span> : null}
-          <details className="workspace-chip bg-white"><summary>版本来源</summary><p>{result?.request_id ? `生成此版本的任务：${result.request_id}` : "尚无模型版本"}</p></details>
+          {identity ? <span data-testid="view-identity" data-revision={identity.viewedRevisionId} data-mode={identity.mode} className="workspace-chip bg-white">{result?.success || hasParameters ? identity.mode === "committed" ? `已保存版本 · v${identity.headStateVersion}` : identity.mode === "candidate" ? "AI 候选 · 待确认" : "历史版本 · 只读" : "空文档，尚无模型"}</span> : null}
+          <details className="workspace-chip bg-white"><summary>版本来源</summary><p>{viewLabel(identity || null)}</p><p>{result?.request_id ? `生成此版本的任务：${result.request_id}` : "尚无模型版本"}</p></details>
           {result?.validation?.is_watertight ? <span className="workspace-chip bg-white text-emerald-700">已闭合</span> : null}
         </div>
         {viewError ? <p role="alert" className="absolute inset-x-4 bottom-12 z-20 rounded bg-red-50 p-3 text-red-700">{viewError}</p> : null}

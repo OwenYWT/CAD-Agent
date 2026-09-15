@@ -84,32 +84,35 @@ export default function WorkspaceShell({
   inspectorOverlayOpen = false,
   onInspectorOverlayClose,
 }: WorkspaceShellProps) {
-  const [narrowInspector, setNarrowInspector] = useState(() => window.matchMedia("(max-width: 1180px)").matches);
+  const [narrowInspector, setNarrowInspector] = useState(() => window.matchMedia("(max-width: 760px)").matches);
   const inspectorRef = useRef<HTMLElement>(null);
   const inspectorCloseRef = useRef<HTMLButtonElement>(null);
   const closeInspectorRef = useRef(onInspectorOverlayClose);
   useEffect(() => { closeInspectorRef.current = onInspectorOverlayClose; }, [onInspectorOverlayClose]);
   useEffect(() => {
-    const query = window.matchMedia("(max-width: 1180px)");
+    const query = window.matchMedia("(max-width: 760px)");
     const update = (event: MediaQueryListEvent) => setNarrowInspector(event.matches);
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
   }, []);
   const inspectorOverlayActive = narrowInspector && inspectorOverlayOpen;
   useEffect(() => {
-    if (!inspectorOverlayActive) return;
+    if (inspectorCollapsed) return;
     const overlayElement = inspectorRef.current;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const frame = window.requestAnimationFrame(() => inspectorCloseRef.current?.focus());
     const handleKey = (event: globalThis.KeyboardEvent) => {
       const inspectorElement = inspectorRef.current;
       if (!inspectorElement) return;
-      if (event.key === "Escape" && inspectorElement.contains(document.activeElement)) {
+      const otherModal = Array.from(document.querySelectorAll<HTMLElement>('[aria-modal="true"]'))
+        .some(element => element !== inspectorElement && !inspectorElement.contains(element) && element.getClientRects().length > 0);
+      if (otherModal) return;
+      if (event.key === "Escape") {
         event.preventDefault();
         event.stopImmediatePropagation();
         closeInspectorRef.current?.();
       }
-      if (event.key !== "Tab") return;
+      if (event.key !== "Tab" || !inspectorOverlayActive) return;
       const controls = Array.from(inspectorElement.querySelectorAll<HTMLElement>(
         'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], summary, [tabindex]:not([tabindex="-1"])',
       )).filter(element => element.tabIndex >= 0 && element.getClientRects().length > 0);
@@ -129,19 +132,14 @@ export default function WorkspaceShell({
       window.removeEventListener("keydown", handleKey, true);
       if (previousFocus?.isConnected && overlayElement?.contains(document.activeElement)) previousFocus.focus();
     };
-  }, [inspectorOverlayActive]);
-  const [agentWidth, setAgentWidth] = useState(() => window.innerWidth < 1360 ? 340 : 390);
-  const [inspectorWidth, setInspectorWidth] = useState(() => window.innerWidth < 1360 ? 280 : 300);
+  }, [inspectorOverlayActive, inspectorCollapsed]);
+  const [agentWidth, setAgentWidth] = useState(340);
   const resizeAgent = useCallback((delta: number) => {
-    setAgentWidth((width) => clamp(width + delta, 300, 520));
+    setAgentWidth((width) => clamp(width + delta, 300, 480));
   }, []);
-  const resizeInspector = useCallback((delta: number) => {
-    setInspectorWidth((width) => clamp(width + delta, 280, 440));
-  }, []);
-  const style = {
-    "--ww-agent-width": agentCollapsed ? "44px" : `${agentWidth}px`,
-    "--ww-inspector-width": inspectorCollapsed ? "44px" : `${inspectorWidth}px`,
-  } as CSSProperties;
+  const drawerOpen = !inspectorCollapsed;
+  const collapsed = agentCollapsed && !drawerOpen;
+  const style = { "--ww-right-width": collapsed ? "44px" : `${agentWidth}px` } as CSSProperties;
 
   return (
     <div className="ww-app-shell">
@@ -149,31 +147,19 @@ export default function WorkspaceShell({
       <div className="ww-app-main">
         {header}
         <div className="ww-workspace" style={style}>
-          <aside className={`ww-agent-pane ${agentCollapsed ? "ww-pane--collapsed" : ""}`}>
-            {agentCollapsed ? (
-              <button aria-label="展开 Agent" className="ww-collapsed-pane-button" onClick={onAgentCollapse} type="button">
-                <Icon name="message" size={16} />
-                <span>Agent</span>
-              </button>
-            ) : null}
-            <div className="ww-pane-host" hidden={agentCollapsed}>{agent}</div>
-          </aside>
-          {!agentCollapsed ? <ResizeHandle direction={1} kind="agent" label="调整 Agent 面板宽度" onResize={resizeAgent} /> : null}
-
           <main className={`ww-primary-pane ${mobilePreviewOpen ? "ww-primary-pane--mobile-open" : ""}`}>{children}</main>
-
-          {!inspectorCollapsed ? <ResizeHandle direction={-1} kind="inspector" label="调整检查器宽度" onResize={resizeInspector} /> : null}
-          {inspectorOverlayActive ? <button aria-label="关闭机械设计检查器遮罩" className="ww-inspector-overlay-backdrop" onClick={onInspectorOverlayClose} tabIndex={-1} type="button" /> : null}
-          <aside aria-label="机械设计检查器" aria-modal={inspectorOverlayActive ? true : undefined} className={`ww-inspector-pane ${inspectorCollapsed && !inspectorOverlayActive ? "ww-pane--collapsed" : ""} ${inspectorOverlayActive ? "ww-inspector-pane--overlay" : ""}`} ref={inspectorRef} role={inspectorOverlayActive ? "dialog" : undefined}>
-            {inspectorOverlayActive ? <header className="ww-inspector-overlay-header"><strong>机械设计检查器</strong><button aria-label="关闭机械设计检查器" className="workspace-icon-button" onClick={onInspectorOverlayClose} ref={inspectorCloseRef} type="button"><Icon name="x" size={17} /></button></header> : null}
-            {inspectorCollapsed && !inspectorOverlayActive ? (
-              <button aria-label="展开检查器" className="ww-collapsed-pane-button" onClick={onInspectorCollapse} type="button">
-                <Icon name="sliders" size={16} />
-                <span>检查器</span>
-              </button>
-            ) : null}
-            <div className="ww-pane-host" hidden={inspectorCollapsed && !inspectorOverlayActive}>{inspector}</div>
-          </aside>
+          {!collapsed ? <ResizeHandle direction={-1} kind="agent" label="调整右侧面板宽度" onResize={resizeAgent} /> : <div />}
+          <div className={`ww-right-pane ${mobilePreviewOpen && !drawerOpen ? "ww-right-pane--mobile-hidden" : ""}`}>
+            <aside className={`ww-agent-pane ${collapsed ? "ww-pane--collapsed" : ""}`} hidden={drawerOpen}>
+              {collapsed ? <button aria-label="展开 Agent" className="ww-collapsed-pane-button" onClick={onAgentCollapse} type="button"><Icon name="message" size={16} /><span>Agent</span></button> : null}
+              <div className="ww-pane-host" hidden={collapsed}>{agent}</div>
+            </aside>
+            {inspectorOverlayActive ? <button aria-label="返回模型" className="ww-inspector-overlay-backdrop" onClick={onInspectorOverlayClose} tabIndex={-1} type="button" /> : null}
+            <aside aria-label="工程信息" aria-modal={inspectorOverlayActive ? true : undefined} className={`ww-inspector-pane ${inspectorOverlayActive ? "ww-inspector-pane--overlay" : ""}`} hidden={!drawerOpen} ref={inspectorRef} role={inspectorOverlayActive ? "dialog" : undefined}>
+              <header className="ww-inspector-overlay-header"><button className="workspace-button" onClick={onInspectorOverlayClose || onInspectorCollapse} ref={inspectorCloseRef} type="button"><Icon name="message" size={15} />返回 Agent</button><button aria-label="关闭工程信息" className="workspace-icon-button" onClick={onInspectorOverlayClose || onInspectorCollapse} type="button"><Icon name="x" size={17} /></button></header>
+              <div className="ww-pane-host">{inspector}</div>
+            </aside>
+          </div>
         </div>
       </div>
     </div>

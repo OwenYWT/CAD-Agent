@@ -7,26 +7,18 @@ import test from "node:test";
 // Found by /qa on 2026-08-27
 // Report: .gstack/qa-reports/frontend-fixes-20260827/
 
-test("intermediate desktop widths cap both side panes without hiding the inspector", () => {
+test("intermediate desktop widths share Agent and inspector space", () => {
   const css = readFileSync(join(import.meta.dirname, "..", "src", "index.css"), "utf8");
-  const media = css.match(/@media \(min-width: 1181px\) and \(max-width: 1279px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
-
-  assert.match(media, /min\(var\(--ww-agent-width\), 340px\)/);
-  assert.match(media, /min\(var\(--ww-inspector-width\), 280px\)/);
-  assert.doesNotMatch(media, /display:\s*none/);
+  assert.match(css, /minmax\(0, 1fr\) 5px var\(--ww-right-width\)/);
+  assert.doesNotMatch(css, /--ww-inspector-width|--ww-agent-width/);
 });
 
-test("mobile header keeps preview and language controls reachable without redundant actions", () => {
+test("mobile header retains four engineering entry points", () => {
   const css = readFileSync(join(import.meta.dirname, "..", "src", "index.css"), "utf8");
   const header = readFileSync(join(import.meta.dirname, "..", "src", "components", "project", "WorkspaceHeader.tsx"), "utf8");
-  const mobile = css.match(/@media \(max-width: 760px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+  for (const label of ["属性", "检查", "版本", "导出"]) assert.ok(header.includes(`aria-label="${label}"`));
   const narrow = css.match(/@media \(max-width: 479px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
-
-  assert.match(header, /workspace-header__changes-action/);
-  assert.match(header, /workspace-header__export-action/);
-  assert.match(mobile, /workspace-header__preview-action[\s\S]*display:\s*inline-flex/);
-  assert.match(mobile, /workspace-header__agent-action[\s\S]*workspace-header__changes-action[\s\S]*display:\s*none/);
-  assert.match(narrow, /workspace-header__export-action[\s\S]*display:\s*none/);
+  assert.doesNotMatch(narrow, /workspace-header__export-action/);
 });
 
 test("fixed mobile sidebar no longer reserves an empty grid track", () => {

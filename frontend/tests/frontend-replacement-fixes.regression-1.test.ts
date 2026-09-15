@@ -55,18 +55,14 @@ test("account popover closes on Escape and restores focus", () => {
   assert.match(account, /triggerRef\.current\?\.focus\(\)/);
 });
 
-test("responsive workspace keeps inspector through 1181px and uses Agent-first preview overlay at 760px", () => {
+test("responsive workspace keeps one right pane and a mounted mobile model", () => {
   const css = read("src/index.css");
   const shell = read("src/components/workspace/WorkspaceShell.tsx");
-  const workspace = read("src/components/workspace/EngineeringWorkspace.tsx");
-
-  assert.match(css, /@media \(max-width: 1180px\)/);
-  assert.doesNotMatch(css, /@media \(max-width: 1279px\)/);
-  assert.match(css, /@media \(max-width: 760px\)[\s\S]*\.ww-agent-pane[\s\S]*\.ww-primary-pane--mobile-open/);
-  assert.doesNotMatch(css, /@media \(max-width: 719px\)/);
-  assert.match(shell, /mobilePreviewOpen/);
-  assert.match(shell, /ww-primary-pane--mobile-open/);
-  assert.match(workspace, /setMobilePreviewOpen/);
+  assert.match(css, /grid-template-columns: minmax\(0, 1fr\) 5px var\(--ww-right-width\)/);
+  assert.doesNotMatch(css, /var\(--ww-inspector-width\)/);
+  assert.match(css, /\.ww-primary-pane \{ display:block; height:100%; \}/);
+  assert.match(shell, /hidden=\{drawerOpen\}/);
+  assert.match(shell, /hidden=\{!drawerOpen\}/);
 });
 
 test("production UI exposes a persisted React language switch", () => {

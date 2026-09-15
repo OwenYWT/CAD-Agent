@@ -86,7 +86,7 @@ function FeatureProperties({ feature, document, onSubmitted, operations = [] }: 
     finally { setPending(false); }
   };
   return <div className="ww-inspector-section" data-i18n-skip data-feature-properties={feature.id}>
-    <h3>{feature.label}</h3><p className="type-caption text-[var(--muted)]">{feature.type} · {feature.kernel_name}</p>
+    <h3>{feature.label}</h3><p className="type-caption text-[var(--muted)]">{feature.type}</p><details className="type-caption"><summary>对象详情</summary><p>{feature.kernel_name} · {feature.id}</p></details>
     <p className="type-caption">{feature.is_valid === true ? "几何对象有效" : feature.is_valid === false ? "几何对象无效" : "未提供几何检查"}</p>
     {feature.shape?.volume !== undefined && feature.shape.volume > 0 ? <p className="type-caption">体积 {feature.shape.volume.toFixed(2)} mm³</p> : null}
     {originalFeature.parameters.map((p) => <label className="my-3 flex items-center gap-2 type-caption" key={p.id}>
@@ -153,14 +153,14 @@ export default function CloudDocumentPanel({ connection, onSubmitted, onReview, 
     {!section ? <div className="ww-inspector-tabs" role="tablist" aria-label="云文档内容">{([
       ["features","特征与属性"],["activity","需求与任务"],["sharing","共享"],["versions","版本"],["engineering","工程"]
     ] as const).map(([id,label])=><button role="tab" aria-selected={currentSection===id} className={currentSection===id?"is-active":""} key={id} type="button" onClick={()=>guardDraft(()=>setLocalSection(id))}>{label}</button>)}</div> : null}
-    <div className="ww-inspector-section">
+    <details className="ww-inspector-section" open={currentSection !== "features"}><summary>文档详情</summary>
       <h3>云文档 <span className="type-caption text-[var(--muted)]">{!document.view_mode || document.view_mode === "committed" ? `v${document.state_version}` : `${document.view_mode === "candidate" ? "候选" : "历史"} ${document.revision_id.slice(0, 8)}`}</span></h3>
       <p className="type-caption text-[var(--muted)]">{connected ? "文档已同步" : "文档连接中断"} · {collaboration?.presence.length ?? 0} 个在线会话</p>
       <p className="mt-1 type-caption">{document.view_mode && document.view_mode !== "committed" ? "当前查看版本只读；请返回已提交版本后编辑。" : document.modeling_backend ? "已保存版本 · 手动编辑先保留为草稿；AI 方案审核并提交后才更新此版本。" : "空文档，尚未保存模型。首个候选审核并提交后成为当前版本。"}</p>
       {currentSection==="sharing" && document.can_share && onSubmitted ? <div className="mt-2"><select aria-label="邀请权限" className="mr-2 rounded border border-[var(--line)] p-2 type-caption" value={inviteRole} onChange={(e) => setInviteRole(e.target.value as "viewer" | "editor")}><option value="viewer">审阅者：查看和评论</option><option value="editor">编辑者：修改和审阅</option></select><button className="workspace-button mt-2" type="button" disabled={sharing} onClick={() => void share()}>{inviteRole === "viewer" ? "邀请项目审阅者" : "邀请项目编辑者"}</button></div> : null}
       {currentSection==="sharing" && reviewLink ? <div className="mt-2 type-caption"><p>链接 24 小时有效，仅可由一个账号接受，{grantedRole === "viewer" ? "授予本项目查看和评论权限。" : "授予本项目编辑和审阅权限；版本提交仍由项目管理者执行。"}</p><input aria-label="项目审阅邀请链接" className="mt-1 w-full rounded border border-[var(--line)] p-2" readOnly value={reviewLink} onFocus={(e) => e.target.select()} /></div> : null}
-      {error ? <p role="alert" className="type-caption text-red-700">{error}</p> : null}
-    </div>
+    </details>
+    {error ? <p role="alert" className="ww-inspector-section type-caption text-red-700">{error}</p> : null}
     {currentSection==="sharing" && document.can_share ? <ProjectMembers key={document.document_id} documentId={document.document_id} /> : null}
     {currentSection==="versions" ? <DocumentBranches key={`branches:${document.document_id}`} document={document} onSubmitted={onSubmitted} /> : null}
     {currentSection==="engineering" ? <EngineeringTasks key={`engineering:${document.document_id}`} document={document} onTasksChange={onEngineeringTasksChange} /> : null}
@@ -175,9 +175,10 @@ export default function CloudDocumentPanel({ connection, onSubmitted, onReview, 
         onClick={() => select(feature.id)} type="button"><span aria-hidden>{feature.structure?.member_ids.length ? "▾" : feature.structure?.category === "datum" ? "○" : "◇"}</span><span className="min-w-0 truncate">{feature.label}</span>{bodyTip ? <small aria-hidden className="ml-auto text-[var(--muted)]">Body Tip</small> : null}</button>)}
       {!document.features.length ? <p className="type-caption text-[var(--muted)]">{document.modeling_backend ? "当前模型没有原生特征状态。" : "提交首个模型后显示特征树。"}</p> : null}
     </div>
+    {!selected ? <p className="ww-inspector-section type-caption">选择模型对象或特征，查看参数与约束。</p> : null}
     {selected && onSubmitted ? <FeatureProperties key={`${document.document_id}:${selected.id}`} feature={selected} document={document} operations={collaboration?.operations} onSubmitted={onSubmitted} /> : selected ? <div className="ww-inspector-section" data-i18n-skip><h3>{selected.label}</h3><p className="type-caption">{selected.type}</p>{selected.parameters.map((p) => <p key={p.id} className="type-caption">{p.property_name}: {p.value} {p.unit}</p>)}</div> : null}
     {collaboration?.leases?.length ? <div className="ww-inspector-section"><h3>正在编辑</h3>{collaboration.leases.map((l) => <p className="type-caption" key={l.feature_id}>{document.features.find((f) => f.id === l.feature_id)?.label || l.feature_id} · {l.display_name || "项目成员"}</p>)}</div> : null}
-    {selected ? <FeatureMeaning key={`meaning:${document.head_revision_id}:${selected.id}:${selected.annotation_version || 0}`} feature={selected} document={document} /> : null}
+    {selected ? <details><summary className="ww-inspector-section">特征说明</summary><FeatureMeaning key={`meaning:${document.head_revision_id}:${selected.id}:${selected.annotation_version || 0}`} feature={selected} document={document} /></details> : null}
     {selected?.type === 'Sketcher::SketchObject' ? <SketchEditor key={`sketch:${document.document_id}:${selected.id}`} document={document} feature={selected} onSubmitted={onSubmitted} /> : null}
     {selected && onSubmitted && ['PartDesign::Body','Part::Feature','PartDesign::Feature','App::Link'].includes(selected.type || '') ? <InstanceProperties
       key={`instance:${document.head_revision_id}:${selected.id}`} document={document} feature={selected} onSubmitted={onSubmitted} /> : null}

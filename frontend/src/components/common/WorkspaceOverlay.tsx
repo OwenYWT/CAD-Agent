@@ -3,6 +3,7 @@ import { Icon } from "../ui/Icon";
 
 interface OverlayProps {
   open: boolean;
+  embedded?: boolean;
   title: string;
   description?: string;
   onClose: () => void;
@@ -21,9 +22,14 @@ function useEscape(open: boolean, onClose: () => void) {
   }, [open, onClose]);
 }
 
-export function WorkspaceDrawer({ open, title, description, onClose, children, footer }: OverlayProps) {
-  useEscape(open, onClose);
+export function WorkspaceDrawer({ open, title, description, onClose, children, footer, embedded = false }: OverlayProps) {
+  useEscape(open && !embedded, onClose);
   if (!open) return null;
+  if (embedded) return <section aria-label={title} className="ww-embedded-panel">
+    <header className="ww-embedded-panel__header"><h2>{title}</h2>{description ? <p>{description}</p> : null}</header>
+    <div className="ww-embedded-panel__body">{children}</div>
+    {footer ? <footer>{footer}</footer> : null}
+  </section>;
   return (
     <div className="fixed inset-0 z-[70]" role="presentation">
       <button aria-label={`关闭${title}`} className="absolute inset-0 bg-[rgba(23,23,20,0.2)] backdrop-blur-[1px]" onClick={onClose} type="button" />
@@ -42,9 +48,14 @@ export function WorkspaceDrawer({ open, title, description, onClose, children, f
   );
 }
 
-export function WorkspaceDialog({ open, title, description, onClose, children, footer }: OverlayProps) {
-  useEscape(open, onClose);
+export function WorkspaceDialog({ open, title, description, onClose, children, footer, embedded = false }: OverlayProps) {
+  useEscape(open && !embedded, onClose);
   if (!open) return null;
+  if (embedded) return <section aria-label={title} className="ww-embedded-panel">
+    <header className="ww-embedded-panel__header"><h2>{title}</h2>{description ? <p>{description}</p> : null}</header>
+    <div className="ww-embedded-panel__body">{children}</div>
+    {footer ? <footer>{footer}</footer> : null}
+  </section>;
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8">
       <button aria-label={`关闭${title}`} className="absolute inset-0 bg-[rgba(23,23,20,0.25)] backdrop-blur-[1px]" onClick={onClose} type="button" />

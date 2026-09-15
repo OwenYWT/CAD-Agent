@@ -6,10 +6,10 @@ const workspace = readFileSync(new URL("../src/components/workspace/EngineeringW
 
 // Wiring guard; the real browser regression also switches populated panels and
 // opens a suggested repair from the mobile engineering-check dialog.
-test("both Agent composers isolate local pending requests by owner, session and panel", () => {
+test("the shared Agent composer isolates local pending requests by owner, session and panel", () => {
   assert.match(workspace, /agentContextKey = `\$\{ownerId\}:\$\{sessionId\}:\$\{panel.id\}`/);
   assert.match(workspace, /<AgentPanel key=\{agentKey\}/);
-  assert.match(workspace, /<AgentDrawer[^\n]+key=\{`\$\{agentKey\}:/);
+  assert.doesNotMatch(workspace, /<AgentDrawer/);
 });
 
 test("explicit suggestions refresh even the embedded mobile composer and are panel scoped", () => {

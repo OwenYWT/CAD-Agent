@@ -30,6 +30,7 @@ function onshapeStatusLabel(status: string): string {
 
 interface ExportDialogProps {
   open: boolean;
+  embedded?: boolean;
   jobs: ExportJob[];
   requestId?: string | null;
   onClose: () => void;
@@ -37,7 +38,8 @@ interface ExportDialogProps {
   canExport?: boolean;
 }
 
-export default function ExportDialog({ open, jobs, requestId, onClose, viewLabel, canExport = true }: ExportDialogProps) {
+export default function ExportDialog({ open, embedded = false, jobs, requestId, onClose, viewLabel, canExport = true }: ExportDialogProps) {
+  const [cloudOpen, setCloudOpen] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [onshapeStatus, setOnshapeStatus] = useState<AsyncStatus>("idle");
@@ -70,10 +72,10 @@ export default function ExportDialog({ open, jobs, requestId, onClose, viewLabel
   }, [requestId]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !cloudOpen) return;
     const timer = window.setTimeout(() => void loadOnshape(), 0);
     return () => window.clearTimeout(timer);
-  }, [loadOnshape, open]);
+  }, [loadOnshape, open, cloudOpen]);
 
   const download = async (job: ExportJob) => {
     if (!canExport || !job.artifact) return;
@@ -118,7 +120,7 @@ export default function ExportDialog({ open, jobs, requestId, onClose, viewLabel
   const canPublish = Boolean(canExport && onshapeConfig?.configured && requestId && stepArtifact);
 
   return (
-    <WorkspaceDialog
+    <WorkspaceDialog embedded={embedded}
       description={viewLabel || "只显示当前查看版本实际提供的文件。"}
       footer={<div className="flex justify-end"><button className="workspace-button" onClick={onClose} type="button">完成</button></div>}
       onClose={onClose}
@@ -142,8 +144,8 @@ export default function ExportDialog({ open, jobs, requestId, onClose, viewLabel
           ) : <InlineState detail="完成一次成功生成后，这里只会列出后端实际返回的文件。" title="暂无可导出产物" />}
         </section>
 
-        <section>
-          <div className="mb-2 flex items-center justify-between gap-3">
+        <details open={cloudOpen} onToggle={event => setCloudOpen(event.currentTarget.open)}><summary className="type-body cursor-pointer">云端发布到 Onshape</summary>
+          <div className="mb-2 mt-3 flex items-center justify-between gap-3">
             <div><h3 className="type-section-heading  text-[var(--muted)]">Onshape 云端发布</h3><p className="mt-1 type-caption text-[var(--faint)]">将当前真实 STEP 文件提交到后端配置的 Onshape 账号。</p></div>
             {onshapeStatus === "success" && canPublish ? <button className="workspace-button workspace-button--primary" disabled={onshapeAction !== null} onClick={() => void publish()} type="button">{onshapeAction === "publish" ? "发布中" : onshapeLink ? "重新发布" : "发布"}</button> : null}
           </div>
@@ -169,7 +171,7 @@ export default function ExportDialog({ open, jobs, requestId, onClose, viewLabel
             ) : null}
             {onshapeError && onshapeStatus === "success" ? <p className="mt-3 type-body text-red-700" role="alert">{onshapeError}</p> : null}
           </div>
-        </section>
+        </details>
       </div>
     </WorkspaceDialog>
   );
