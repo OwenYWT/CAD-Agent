@@ -1,0 +1,574 @@
+{
+    "inventory":  "docs/functional-inventory-2026-09-14.md",
+    "domains":  [
+                    {
+                        "id":  "01",
+                        "name":  "account and login",
+                        "feature_ids":  [
+                                            "01.01-01.09"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/auth.ts",
+                                               "frontend/src/components/LoginPage.tsx",
+                                               "backend/app/api/login.py",
+                                               "backend/app/storage/auth.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_auth_local.py",
+                                      "backend/tests/integration/test_postgres_auth.py",
+                                      "backend/tests/test_deploy_auth_security.py"
+                                  ]
+                    },
+                    {
+                        "id":  "02",
+                        "name":  "projects sessions and threads",
+                        "feature_ids":  [
+                                            "02.01-02.08"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/stores/sessionStore.ts",
+                                               "frontend/src/components/workspace/EngineeringWorkspace.tsx",
+                                               "backend/app/api/history.py",
+                                               "backend/app/storage/postgres_history.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_history_regression_qa.py",
+                                      "backend/tests/test_model_snapshots.py",
+                                      "backend/tests/integration/test_postgres_history.py",
+                                      "frontend/tests/sessionStoreResumeState.test.ts",
+                                      "frontend/tests/history-restore-commit-regression.test.ts"
+                                  ]
+                    },
+                    {
+                        "id":  "03",
+                        "name":  "workspace and layout",
+                        "feature_ids":  [
+                                            "03.01-03.10"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/workspace/EngineeringWorkspace.tsx",
+                                               "frontend/src/components/workspace/WorkspaceShell.tsx",
+                                               "frontend/src/components/workspace/WorkspaceInspector.tsx",
+                                               "frontend/src/components/PanelTabs.tsx"
+                                           ],
+                        "tests":  [
+                                      "frontend/tests/empty-workspace-shell.regression-1.test.ts",
+                                      "frontend/tests/responsive-intermediate.regression-1.test.ts",
+                                      "frontend/tests/vertical-conversations-typography.test.ts",
+                                      "frontend/tests/reference-workspace-content.regression-1.test.ts"
+                                  ]
+                    },
+                    {
+                        "id":  "04",
+                        "name":  "requirements and engineering basis",
+                        "feature_ids":  [
+                                            "04.01-04.09"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/agent/RequirementCard.tsx",
+                                               "frontend/src/components/DesignBriefPanel.tsx",
+                                               "backend/app/domain/requirement_basis.py",
+                                               "backend/app/agent/design_brief.py",
+                                               "backend/app/services/durable_submission.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_requirement_basis.py",
+                                      "backend/tests/test_design_brief.py",
+                                      "backend/tests/test_design_confirmation_gate.py",
+                                      "backend/tests/test_contract_and_brief.py",
+                                      "frontend/tests/manufacturingProfiles.test.ts"
+                                  ]
+                    },
+                    {
+                        "id":  "05",
+                        "name":  "Agent modeling collaboration",
+                        "feature_ids":  [
+                                            "05.01-05.12"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/agent/AgentPanel.tsx",
+                                               "frontend/src/components/agent/TaskCard.tsx",
+                                               "backend/app/workflows/agent_v2.py",
+                                               "backend/app/agent/durable_planner.py",
+                                               "backend/app/agent/durable_repair.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_durable_agent_planner.py",
+                                      "backend/tests/test_durable_agent_plan.py",
+                                      "backend/tests/test_durable_agent_repair.py",
+                                      "backend/tests/test_agent_recovery.py",
+                                      "backend/tests/e2e/cloud_agent_inspection_acceptance.py",
+                                      "backend/tests/e2e/native_first_candidate_browser.py"
+                                  ]
+                    },
+                    {
+                        "id":  "06",
+                        "name":  "task state and recovery",
+                        "feature_ids":  [
+                                            "06.01-06.10"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/adapters/taskState.ts",
+                                               "frontend/src/hooks/useWebSocket.ts",
+                                               "backend/app/api/tasks.py",
+                                               "backend/app/services/task_retry.py",
+                                               "backend/app/services/durable_submission.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_state_machine.py",
+                                      "backend/tests/test_task_retry.py",
+                                      "backend/tests/test_task_stream_snapshot_marker.py",
+                                      "backend/tests/test_reliability.py",
+                                      "frontend/tests/task-state.test.ts",
+                                      "frontend/tests/websocket-replay.test.ts",
+                                      "backend/tests/e2e/task_state_boundaries.py",
+                                      "backend/tests/e2e/continuation_recovery_browser.py"
+                                  ]
+                    },
+                    {
+                        "id":  "07",
+                        "name":  "CAD generation and native modeling",
+                        "feature_ids":  [
+                                            "07.01-07.10"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "backend/app/freecad/contracts.py",
+                                               "backend/app/freecad/operation_generator.py",
+                                               "backend/app/freecad/state_projector.py",
+                                               "backend/sandbox/freecad_entry.py",
+                                               "backend/app/execution"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_freecad_contracts.py",
+                                      "backend/tests/test_freecad_operation_generator.py",
+                                      "backend/tests/test_freecad_runtime.py",
+                                      "backend/tests/test_freecad_subtractive_semantics_regression_1.py",
+                                      "backend/tests/test_2d_pipeline.py",
+                                      "backend/tests/e2e/freecad_checkpoint_acceptance.py",
+                                      "backend/tests/e2e/freecad_sketch_acceptance.py"
+                                  ]
+                    },
+                    {
+                        "id":  "08",
+                        "name":  "features properties and manual edits",
+                        "feature_ids":  [
+                                            "08.01-08.11"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/workspace/FeatureInspection.tsx",
+                                               "frontend/src/components/parameters/ParameterDrawer.tsx",
+                                               "backend/app/freecad/state_contract.py",
+                                               "backend/app/services/feature_leases.py",
+                                               "backend/app/services/feature_annotations.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_freecad_state_contract.py",
+                                      "backend/tests/test_freecad_state_projector.py",
+                                      "backend/tests/test_parameters.py",
+                                      "backend/tests/test_native_selection.py",
+                                      "backend/tests/test_operation_resolution.py",
+                                      "frontend/tests/feature-tree.test.ts",
+                                      "frontend/tests/parameter-validation.test.ts",
+                                      "backend/tests/e2e/cloud_exact_parameter_failure.py"
+                                  ]
+                    },
+                    {
+                        "id":  "09",
+                        "name":  "sketch dimension editing",
+                        "feature_ids":  [
+                                            "09.01-09.07"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/workspace/SketchEditor.tsx",
+                                               "frontend/src/adapters/sketchPreview.ts",
+                                               "backend/app/freecad/contracts.py",
+                                               "backend/sandbox/freecad_entry.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_sketch_dimensions.py",
+                                      "frontend/tests/sketch-preview.test.ts",
+                                      "backend/tests/e2e/freecad_sketch_acceptance.py",
+                                      "backend/tests/e2e/cloud_sketch_browser.py"
+                                  ]
+                    },
+                    {
+                        "id":  "10",
+                        "name":  "model view selection and scenes",
+                        "feature_ids":  [
+                                            "10.01-10.12"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/viewer/MechanicalWorkspace.tsx",
+                                               "frontend/src/components/viewer/DocumentSceneViewer.tsx",
+                                               "frontend/src/services/sceneService.ts",
+                                               "backend/app/services/scene_jobs.py",
+                                               "backend/app/services/document_geometry.py",
+                                               "backend/sandbox/freecad_scene.py",
+                                               "backend/app/freecad/selection.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_document_geometry.py",
+                                      "backend/tests/test_visual_depth_buffer.py",
+                                      "backend/tests/test_native_selection.py",
+                                      "frontend/tests/native-view.test.ts",
+                                      "frontend/tests/viewer2d-security.test.ts",
+                                      "backend/tests/e2e/freecad_scene_acceptance.py",
+                                      "backend/tests/e2e/native_scene_jobs.py",
+                                      "backend/tests/e2e/native_scene_controls.py"
+                                  ]
+                    },
+                    {
+                        "id":  "11",
+                        "name":  "parts and assembly",
+                        "feature_ids":  [
+                                            "11.01-11.07"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/workspace/InstanceProperties.tsx",
+                                               "backend/app/agent/assembly_manifest.py",
+                                               "backend/app/agent/assembly_planner.py",
+                                               "backend/app/freecad/bom_contracts.py",
+                                               "backend/sandbox/freecad_entry.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_assembly_manifest.py",
+                                      "backend/tests/test_assembly_planner_regression_1.py",
+                                      "backend/tests/test_assembly_combiner_regression_1.py",
+                                      "backend/tests/test_freecad_bom_contracts.py",
+                                      "backend/tests/test_freecad_bom_real_regression_1.py",
+                                      "backend/tests/e2e/freecad_link_acceptance.py"
+                                  ]
+                    },
+                    {
+                        "id":  "12",
+                        "name":  "inspection validation and evidence",
+                        "feature_ids":  [
+                                            "12.01-12.11"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/validation/ValidationDialog.tsx",
+                                               "frontend/src/components/InspectReportPanel.tsx",
+                                               "backend/app/api/analyze.py",
+                                               "backend/app/services/task_evidence.py",
+                                               "backend/app/workflows/activities.py",
+                                               "backend/app/validation"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_inspect_report.py",
+                                      "backend/tests/test_task_evidence.py",
+                                      "backend/tests/test_gate_policy.py",
+                                      "backend/tests/test_durable_geometry_validation.py",
+                                      "backend/tests/test_durable_dfm_validation.py",
+                                      "backend/tests/test_durable_visual_validation.py",
+                                      "backend/tests/test_vision_honesty.py",
+                                      "backend/tests/test_printability.py",
+                                      "frontend/tests/designAnalysisGate.test.ts",
+                                      "backend/tests/e2e/freecad_inspection_acceptance.py"
+                                  ]
+                    },
+                    {
+                        "id":  "13",
+                        "name":  "DFM knowledge and standard parts",
+                        "feature_ids":  [
+                                            "13.01-13.12"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/DFMRuleConfig.tsx",
+                                               "frontend/src/components/KnowledgeGraph.tsx",
+                                               "backend/app/api/dfm_rules.py",
+                                               "backend/app/api/knowledge.py",
+                                               "backend/app/dfm/rule_engine.py",
+                                               "backend/app/parts_library/data.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_dfm_rules.py",
+                                      "backend/tests/test_manufacturing_profile.py",
+                                      "backend/tests/test_printability.py",
+                                      "backend/tests/test_deploy_dfm_knowledge.py",
+                                      "backend/tests/e2e/dfm_geometry_acceptance.py",
+                                      "backend/tests/e2e/cloud_dfm_budget_browser.py",
+                                      "backend/tests/e2e/cloud_dfm_repair_browser.py"
+                                  ]
+                    },
+                    {
+                        "id":  "14",
+                        "name":  "candidate review and commit",
+                        "feature_ids":  [
+                                            "14.01-14.09"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/changes/ChangeSetDialog.tsx",
+                                               "backend/app/api/changes.py",
+                                               "backend/app/services/change_sets.py",
+                                               "backend/app/repositories/agent_candidates.py",
+                                               "backend/app/services/artifact_commit.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/integration/test_change_set_api.py",
+                                      "backend/tests/postgres/test_change_sets.py",
+                                      "backend/tests/postgres/test_agent_candidate_builds.py",
+                                      "backend/tests/integration/test_agent_candidate_seal.py",
+                                      "backend/tests/postgres/test_artifact_commit.py",
+                                      "frontend/tests/change-set-flow.test.ts",
+                                      "frontend/tests/change-set-commit-gating.test.ts",
+                                      "backend/tests/e2e/native_first_candidate_browser.py"
+                                  ]
+                    },
+                    {
+                        "id":  "15",
+                        "name":  "history rollback branches and merge",
+                        "feature_ids":  [
+                                            "15.01-15.10"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/VersionHistoryPanel.tsx",
+                                               "frontend/src/components/workspace/DocumentBranches.tsx",
+                                               "backend/app/api/revisions.py",
+                                               "backend/app/services/document_branches.py",
+                                               "backend/app/services/document_diff.py",
+                                               "backend/app/services/document_rebase.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_document_diff.py",
+                                      "backend/tests/test_native_revision_restore_regression_1.py",
+                                      "backend/tests/test_history_native_diff_regression_1.py",
+                                      "backend/tests/postgres/test_cloud_documents.py",
+                                      "backend/tests/postgres/test_revision_cas.py",
+                                      "frontend/tests/native-revision-restore.regression-1.test.ts",
+                                      "frontend/tests/history-restore-commit-regression.test.ts",
+                                      "backend/tests/e2e/cloud_branch_acceptance.py",
+                                      "backend/tests/e2e/cloud_merge_acceptance.py"
+                                  ]
+                    },
+                    {
+                        "id":  "16",
+                        "name":  "multi-user collaboration and permissions",
+                        "feature_ids":  [
+                                            "16.01-16.10"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/workspace/SharedDocumentWorkspace.tsx",
+                                               "frontend/src/components/workspace/ProjectMembers.tsx",
+                                               "backend/app/api/documents.py",
+                                               "backend/app/services/document_sharing.py",
+                                               "backend/app/services/feature_leases.py",
+                                               "backend/app/domain/projects.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/postgres/test_cloud_documents.py",
+                                      "backend/tests/postgres/test_tenant_rls.py",
+                                      "backend/tests/postgres/test_legacy_store_rls.py",
+                                      "backend/tests/e2e/cloud_collaboration_acceptance.py",
+                                      "backend/tests/e2e/cloud_collaboration_browser.py",
+                                      "backend/tests/e2e/native_coediting_browser.py",
+                                      "backend/tests/e2e/native_revocation_controls.py"
+                                  ]
+                    },
+                    {
+                        "id":  "17",
+                        "name":  "FEA static analysis",
+                        "feature_ids":  [
+                                            "17.01-17.08"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/workspace/EngineeringTasks.tsx",
+                                               "frontend/src/components/viewer/EngineeringFieldViewer.tsx",
+                                               "backend/app/services/document_engineering.py",
+                                               "backend/app/workflows/engineering_activities.py",
+                                               "backend/sandbox/freecad_engineering.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_engineering_contracts.py",
+                                      "frontend/tests/engineering-field.test.ts",
+                                      "frontend/tests/engineering-check-stage.regression-1.test.ts",
+                                      "backend/tests/e2e/freecad_fea_acceptance.py",
+                                      "backend/tests/e2e/cloud_engineering_acceptance.py",
+                                      "backend/tests/e2e/cloud_engineering_browser.py"
+                                  ]
+                    },
+                    {
+                        "id":  "18",
+                        "name":  "CAM contour milling",
+                        "feature_ids":  [
+                                            "18.01-18.08"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/workspace/ContourMillingForm.tsx",
+                                               "frontend/src/components/viewer/CamToolpathViewer.tsx",
+                                               "backend/app/services/document_engineering.py",
+                                               "backend/sandbox/freecad_cam.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_engineering_contracts.py",
+                                      "frontend/tests/cam-toolpath.test.ts",
+                                      "backend/tests/e2e/freecad_cam_acceptance.py",
+                                      "backend/tests/e2e/cloud_cam_browser.py"
+                                  ]
+                    },
+                    {
+                        "id":  "19",
+                        "name":  "files export BOM and releases",
+                        "feature_ids":  [
+                                            "19.01-19.11"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/export/ExportDialog.tsx",
+                                               "frontend/src/components/workspace/DocumentReleases.tsx",
+                                               "backend/app/api/files.py",
+                                               "backend/app/services/document_releases.py",
+                                               "backend/sandbox/freecad_release.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_output_files.py",
+                                      "backend/tests/test_bom_csv_download_regression_1.py",
+                                      "backend/tests/test_freecad_bom_contracts.py",
+                                      "backend/tests/e2e/freecad_release_acceptance.py",
+                                      "backend/tests/e2e/cloud_release_acceptance.py",
+                                      "backend/tests/e2e/cloud_release_browser.py",
+                                      "backend/tests/e2e/cloud_release_database.py",
+                                      "frontend/tests/mcad-real-flow.test.ts"
+                                  ]
+                    },
+                    {
+                        "id":  "20",
+                        "name":  "local Bridge delivery",
+                        "feature_ids":  [
+                                            "20.01-20.09"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/workspace/LocalBridgePanel.tsx",
+                                               "backend/app/api/local_bridge.py",
+                                               "backend/app/services/local_bridge.py",
+                                               "backend/app/integrations/local_bridge_client.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_local_bridge.py",
+                                      "backend/tests/test_local_workflow_lifecycle.py",
+                                      "backend/tests/e2e/cloud_bridge_acceptance.py",
+                                      "backend/tests/e2e/cloud_bridge_browser.py",
+                                      "backend/tests/e2e/cloud_bridge_failure.py"
+                                  ]
+                    },
+                    {
+                        "id":  "21",
+                        "name":  "CAD Skills capability catalog and runner",
+                        "feature_ids":  [
+                                            "21.01-21.11"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/CapabilityCatalog.tsx",
+                                               "frontend/src/components/CapabilityRunner.tsx",
+                                               "backend/app/capabilities/registry.py",
+                                               "backend/app/capabilities/runtime.py",
+                                               "backend/app/api/capability_actions.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_capabilities_api.py",
+                                      "backend/tests/test_capability_actions_api.py",
+                                      "backend/tests/test_capability_runtime.py",
+                                      "backend/tests/integration/test_postgres_capability_artifacts.py",
+                                      "backend/tests/test_execution_backend.py",
+                                      "backend/tests/test_execution_contracts.py"
+                                  ]
+                    },
+                    {
+                        "id":  "22",
+                        "name":  "external CAD connectors",
+                        "feature_ids":  [
+                                            "22.01-22.10"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "frontend/src/components/export/ExportDialog.tsx",
+                                               "backend/app/api/onshape.py",
+                                               "backend/app/integrations/onshape",
+                                               "backend/app/fusion360",
+                                               "fusion_addin"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_onshape_integration.py",
+                                      "backend/tests/test_tools_onshape_plugin.py",
+                                      "backend/tests/fusion360/test_api.py",
+                                      "backend/tests/fusion360/test_contract.py",
+                                      "backend/tests/fusion360/test_agent_api.py",
+                                      "backend/tests/fusion360/test_addin_protocol.py",
+                                      "backend/tests/fusion360/test_runtime_integration.py",
+                                      "backend/tests/fusion360/test_fusion_e2e.py",
+                                      "frontend/tests/freecad-fusion-acceptance.test.ts"
+                                  ]
+                    },
+                    {
+                        "id":  "23",
+                        "name":  "interfaces and tool extensions",
+                        "feature_ids":  [
+                                            "23.01-23.10"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "backend/app/api/batch.py",
+                                               "backend/app/api/feedback.py",
+                                               "backend/app/api/agent_tools.py",
+                                               "backend/app/tools",
+                                               "backend/app/api/capability_actions.py"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_agent_tools_api.py",
+                                      "backend/tests/test_tools_framework.py",
+                                      "backend/tests/test_tools_onshape_plugin.py",
+                                      "backend/tests/test_api_durable_cutover.py",
+                                      "backend/tests/test_capabilities_api.py",
+                                      "backend/tests/integration/test_api_compatibility_matrix.py"
+                                  ]
+                    },
+                    {
+                        "id":  "24",
+                        "name":  "reliability deployment and operations",
+                        "feature_ids":  [
+                                            "24.01-24.13"
+                                        ],
+                        "logic":  "See functional inventory for detailed item semantics; this entry records the domain logic used for review routing.",
+                        "implementation":  [
+                                               "backend/app/main.py",
+                                               "backend/app/config.py",
+                                               "backend/app/services/workflow_dispatch.py",
+                                               "backend/app/execution",
+                                               "backend/app/temporal_client.py",
+                                               "deploy/tencent"
+                                           ],
+                        "tests":  [
+                                      "backend/tests/test_reliability.py",
+                                      "backend/tests/test_infrastructure_readiness.py",
+                                      "backend/tests/test_execution_wiring.py",
+                                      "backend/tests/test_execution_backend.py",
+                                      "backend/tests/postgres/test_workflow_dispatch.py",
+                                      "backend/tests/postgres/test_run_state_machine.py",
+                                      "backend/tests/test_temporal_workflow_contracts.py",
+                                      "backend/tests/test_deploy_config.py",
+                                      "backend/tests/test_deploy_persistence.py",
+                                      "backend/tests/test_deploy_pipeline_matrix.py",
+                                      "backend/tests/test_deploy_websocket.py"
+                                  ]
+                    }
+                ]
+}

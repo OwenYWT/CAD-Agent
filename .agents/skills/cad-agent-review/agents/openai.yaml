@@ -1,0 +1,4 @@
+interface:
+  display_name: "CAD-Agent Review"
+  short_description: "Review CAD-Agent changes without modifying business code"
+  default_prompt: "Use $cad-agent-review to review the current CAD-Agent changes for encoding corruption, fake implementations, regressions, contract drift, related-feature impact, and test closure. Run available targeted regression checks, record evidence, and do not modify business code."

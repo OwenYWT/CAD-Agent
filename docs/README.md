@@ -12,6 +12,7 @@
 | [`development.md`](development.md) | 开发与交接人员 | 环境、目录、双服务启动、测试、安全边界和排障 |
 | [`DEPLOY.md`](../DEPLOY.md) | 运维 | Docker Compose、生产配置、上线检查和更新流程 |
 | [`CLAUDE.md`](../CLAUDE.md) | 代码代理 | 本仓库工作边界、验证命令和文档维护规则 |
+| [`qa/code-review/USAGE.md`](qa/code-review/USAGE.md) | 开发者与代码代理 | Codex、Claude 等 Agent 共用的代码审阅、回归测试和 Skill 维护说明 |
 | [`backend/benchmark/README.md`](../backend/benchmark/README.md) | 模型/生成链路维护者 | 真实 LLM + sandbox 的手动评测基线 |
 
 ## MCAD 架构验收
