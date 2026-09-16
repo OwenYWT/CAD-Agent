@@ -19,7 +19,7 @@
 
 ## 验证
 
-所有浏览器验证连接真实 HTTP、WebSocket、数据库、Temporal 与 CAD 内核，没有替换网络响应或业务结果。
+业务链路的浏览器验证连接真实 HTTP、WebSocket、数据库、Temporal 与 CAD 内核，没有替换网络响应或业务结果。参数初始化另有隔离组件回归，使用明确标注的组件输入数据，不连接建模服务。
 
 | 验证 | 方法与结果 |
 | --- | --- |
@@ -42,7 +42,7 @@
 - `backend/tests/e2e/workspace_layout_browser.py`：右栏、相机、真实对象联动和响应式。
 - `backend/tests/e2e/workspace_failure_browser.py`：既有真实失败任务与执行前需求确认。
 
-原始截图、追踪、文件与结果保存在本机私有目录 `/private/tmp/cad-ui-20260915/`；不将测试凭据或浏览器追踪提交到仓库。
+原始截图、追踪、文件与结果保存在本机私有目录 `/Users/wentao/.local/share/cad-agent/model-first-20260916/`；不将测试凭据或浏览器追踪提交到仓库。
 
 ## 边界与未完成项
 
@@ -53,4 +53,14 @@
 
 ## 发布状态
 
-本地实现与验收已完成。GitHub main 与腾讯云发布结果将在发布验收后补充。
+2026-09-16（北京时间）已完成 GitHub main 合并和腾讯云前端部署。
+
+- PR：[ #8 模型优先执行页与统一工程抽屉](https://github.com/OwenYWT/CAD-Agent/pull/8)。合并提交：`0011cc63cbf81b529bc477e4eb487bc4a9d4c9e1`。
+- 实际构建与部署源码：`0b382d26b37549a32a843edb9dd2556ab2fcb2fe`；与合并后的源文件一致。
+- [最终提交 CI](https://github.com/OwenYWT/CAD-Agent/actions/runs/34994066621)：前端、后端、真实 MCAD 与持久化 E2E 三项均成功。
+- 地址：[www.wordswave.ai](https://www.wordswave.ai)。发布目录：`/www/releases/cad-20260916-ui-0b382d2`。
+- 前端镜像：`sha256:4c3dd2af1472e809ed534354cae0004559bedf69395ec7768c62cd497c0fd148`。9 个静态文件已逐一校验镜像与线上响应哈希。
+- 本次仅切换前端。后端、Worker、数据库、对象存储与现有任务保持原发布；没有发布尚未完成的装配修复。
+- 线上浏览器：1440 px 下模型区域宽 867 px；属性、检查、版本、导出、更多工具均能打开并返回 Agent；尺寸与画布节点保持不变；真实特征选择同步 Agent 修改目标；实际下载的 FCStd 哈希与服务端记录一致；页面错误为 0。
+- 持久化核验：两个原有测试账号可登录，既有测试模型版本与三份产物哈希保持不变，原失败任务保持不变。
+- 新镜像验证或就绪检查失败会自动恢复旧前端；旧发布保留在 `/www/releases/cad-20260915-continuation-a8cd956`。
