@@ -2,8 +2,39 @@
 from __future__ import annotations
 
 import pytest
+from types import SimpleNamespace
 
 from app.agent.durable_repair import DurableRepairSourceGenerator, decide_repair
+from app.agent.code_gen import CodeGenerator
+from app.config import settings
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("content,finish,error", [
+    ("result = outer.cut(cavity)", "stop", None),
+    ("result = outer", "length", "truncated"),
+    ("", "stop", "empty"),
+])
+async def test_kernel_and_dfm_repair_require_complete_streamed_code(monkeypatch, content, finish, error):
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content=content), finish_reason=finish,
+        )])
+
+    generator = CodeGenerator()
+    generator._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    if error:
+        with pytest.raises(ValueError, match=f"code repair.*{error}"):
+            await generator.fix_error("result = outer", {"type": "CADKernelError", "message": "invalid shell"})
+    else:
+        assert await generator.fix_error("result = outer", {"type": "CADKernelError", "message": "invalid shell"}) == content
+    assert len(calls) == 1
+    assert calls[0].get("stream") is True
+    assert "max_tokens" not in calls[0]
+    assert calls[0]["stream_options"] == {"include_usage": True}
 
 
 @pytest.mark.parametrize(

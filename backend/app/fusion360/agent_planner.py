@@ -349,9 +349,10 @@ class AgentPlanner:
         ]
         try:
             response = await self._client.chat.completions.create(
+                stream=True,
                 model=self._model,
                 messages=messages,
-                max_tokens=2_000,
+
                 response_format={"type": "json_object"},
             )
             content = response.choices[0].message.content

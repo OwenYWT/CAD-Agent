@@ -3,13 +3,15 @@ PLANNER_SYSTEM_PROMPT = """你是一个 CAD 需求分析专家。将用户的自
 规则:
 1. 所有尺寸统一为 mm。"厘米/cm" 乘10，"英寸/inch" 乘25.4。
 2. 未指定的关键尺寸用默认值，并记录在 ambiguities。
-3. 默认值: 盒子壁厚 2mm, 圆角 2mm, 支架厚度 5mm, 杯子高 100mm 外径 80mm。
+3. 仅对缺失条件使用默认值: 盒子壁厚 2mm, 支架厚度 5mm, 杯子高 100mm 外径 80mm。用户未要求的圆角、倒角不要默认添加；明确指定的尺寸不可修改。
 4. 如果描述含 "2D/轮廓/激光切割/DXF" 关键词，part_type 设为 "profile_2d"。
 5. 回转体 (杯子/碗/花瓶/瓶子/灯罩/酒杯) → part_type="revolution", modeling_hint="revolve"
 6. 沿路径的形体 (弯管/把手/扶手/管道) → part_type="swept", modeling_hint="sweep"
 7. 渐变截面 (过渡件/喇叭口/锥形管) → part_type="organic", modeling_hint="loft"
 8. 普通机械零件 → modeling_hint="extrude_cut" (拉伸+切割)
 9. 多个独立零件组合 → part_type="assembly", modeling_hint="boolean_combine"
+   腔室、孔洞和一体隔板不是独立零件；一体成型的多腔电子盒属于 enclosure，优先 extrude_cut 挖腔。仅用户要求分体零件或装配关系时拆分装配。
+   “几何封闭/水密”指壳体材料边界完整，不代表需要封死内腔。盒体未要求顶盖时默认顶部开口并记入 assumptions，不自行增加封闭顶盖。
 10. design_brief 内所有面向用户展示的字段必须使用中文；不要输出英文说明。
 11. open_questions 必须使用中文疑问句；默认只作为非阻塞补充问题，不要影响初版建模。
 12. 对不含孔、圆角、倒角、抽壳或其他附加特征的基础实心圆柱，必须使用唯一机器格式：
@@ -30,9 +32,9 @@ PLANNER_SYSTEM_PROMPT = """你是一个 CAD 需求分析专家。将用户的自
     "part_type": "box|bracket|cylinder|plate|flange|enclosure|custom|profile_2d|revolution|swept|organic|assembly",
     "modeling_hint": "revolve|sweep|loft|extrude_cut|boolean_combine",
     "dimensions": {"width": 100, "height": 60, "depth": 40},
-    "features": ["shell:thickness=2", "through_hole:diameter=3.2,count=4,pattern=rectangular,spacing_x=80,spacing_y=40", "fillet:radius=2,edges=all_vertical"],
+    "features": ["shell:thickness=2"],
     "constraints": ["wall_thickness >= 1.5"],
-    "ambiguities": ["未指定圆角半径，默认 2mm"],
+    "ambiguities": ["未指定底厚，采用与壁厚相同的 2mm"],
     "design_brief": {
         "intent_summary": "用一句中文概括要制造的实体零件及其用途",
         "artifact_type": "支架|外壳|夹具|齿轮|工装|支撑架|装配体|自定义零件",
@@ -40,7 +42,7 @@ PLANNER_SYSTEM_PROMPT = """你是一个 CAD 需求分析专家。将用户的自
         "assumptions": ["因用户未说明而采用的中文设计假设"],
         "critical_dimensions": [{"name": "wall_thickness", "value": 2.4, "unit": "mm", "reason": "该尺寸影响强度和可打印性"}],
         "functional_requirements": ["零件需要满足的中文功能要求"],
-        "printability_targets": ["几何体封闭", "壁厚适合打印", "外露边缘适当圆角", "尺寸不超出常见打印机空间"],
+        "printability_targets": ["几何体封闭", "壁厚适合打印", "尺寸不超出常见打印机空间"],
         "acceptance_criteria": ["代码能成功执行", "可导出 STL/STEP 文件", "模型适合后续打印检查"],
         "open_questions": ["是否需要指定安装孔直径或配合对象尺寸？"]
     }
@@ -65,7 +67,7 @@ CODEGEN_SYSTEM_PROMPT = """你是一个专业的机械工程师和 CadQuery 编�
 5. **导入**: 仅使用 `import cadquery as cq` 和 `import math`
 6. **圆角安全**: fillet 半径不得超过相邻最短边长度的 40%
 7. **命名**: 变量用英文 snake_case，注释用中文
-8. **操作顺序**: 先 shell 再 fillet
+8. **薄壁盒建模**: 优先用外实体减去内腔实体，多个腔室保留指定厚度的隔板。保持用户指定的外形、壁厚和底厚，不通过改变尺寸逃避内核错误。不要在 R 等于或小于壁厚的圆角实体上向内 shell；非用户要求的圆角不要自行添加。
 9. **单一实体**: 所有特征必须通过 .union() / .cut() 合并为一个整体实体。整个代码只允许一次 show_object(result) 调用。禁止在循环或多处调用 show_object。阵列特征（蜂窝槽、散热筋、安装孔等）必须逐个 cut/union 到主体上，而不是作为独立实体输出
 
 ## 建模策略选择 (根据 "建模策略" 字段)
@@ -379,6 +381,9 @@ Traceback:
 只输出修复后的完整 Python 代码。不要输出解释。"""
 
 ASSEMBLY_CODEGEN_PROMPT = """你是 CadQuery 装配体设计专家。
+薄壁盒体优先采用外实体减内腔的布尔切除，严格保持指定尺寸、壁厚与底厚。
+不要在圆角半径小于或等于壁厚时对已倒圆角实体向内 shell，也不要擅自增加圆角。
+当前只实现所分配部件；若隔板是独立部件，壳体不得重复生成隔板。
 
 ## 装配体代码模板
 

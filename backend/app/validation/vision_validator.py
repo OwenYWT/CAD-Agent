@@ -133,8 +133,8 @@ class VisionValidator:
 
         try:
             response = await self.client.chat.completions.create(
+                stream=True,
                 model=settings.llm_model,
-                max_tokens=1024,
                 temperature=0.3,
                 messages=[
                     {"role": "system", "content": VISION_VALIDATION_PROMPT},

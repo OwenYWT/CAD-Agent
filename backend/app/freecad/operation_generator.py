@@ -46,10 +46,22 @@ constraint value_mm must be strictly positive. Unless an absolute world origin w
 explicitly requested, position the plate's lower left corner at (10,10) and add this
 offset to every requested coordinate relative to the plate. Never change relative
 dimensions/positions to satisfy that coordinate convention.
+All sketches in one body share that SAME XY origin; sketch.create offset_mm changes
+only the plane's normal coordinate. Internal profiles do not reset the XY origin.
+Derive each feature coordinate from the actual outer sketch bounds: a centered
+partition of thickness t across a body spanning y0..y0+D starts at y0+(D-t)/2,
+not (D-t)/2. For equally spaced cavities, subtract both exterior walls and ALL
+partitions before dividing the remaining span. Check the two clearances to the
+inner walls are equal when the requirement says centered/equal chambers; include
+the original offset exactly once in both geometry coordinates and constraints.
 Fully constrain a rectangle using horizontal on lines 0,2, vertical on 1,3,
 four endpoint coincidences linking the loop, distance on line 0 for width and line 1
 for height, and distance_x/distance_y on line 0 point 1 for the positive origin offset.
 Each circle needs distance_x and distance_y at point_position=3 plus radius or diameter.
+Constrain each degree of freedom only once. When two widths/heights/radii already have
+independent dimensions, do not also add equality between them. Equal dimensions do not
+require an extra equality constraint. Diagnose constraints with the actual solver;
+never assume a particular constraint number should be deleted.
 Put subtractive profiles on the TOP face using offset_mm=plate thickness, reversed=false.
 feature.hole applies its diameter_mm to every profile circle. Use feature.pocket to
 preserve different circle diameters or create flat-bottom blind holes of exact depth.
@@ -249,6 +261,8 @@ class FreeCADOperationGenerator:
         output_formats: tuple[str, ...],
     ) -> FreeCADOperationGenerationResult:
         current = FreeCADOperationPlan.model_validate_json(source_code)
+        from app.freecad.constraint_repair import SKETCH_FAILURES, validate_constraint_repair
+        constraint_repair = failure.get('error_code') in SKETCH_FAILURES
         payload = {
             "task": "repair",
             "current_operation_plan": current.model_dump(mode="json"),
@@ -258,6 +272,14 @@ class FreeCADOperationGenerator:
             "instruction": (
                 "Make the smallest operation-plan change that fixes the reported failure. "
                 "Keep already-correct intent and deterministic names."
+                + (" This is a constrained sketch repair: preserve document name, operation IDs, "
+                   "all existing numerical constraints, geometry and non-constraint operations. "
+                   "Only adjust geometric constraints on the diagnosed sketch. For underconstraint, "
+                   "only ADD missing constraints consistent with the existing geometry and requirements. "
+                   "For redundancy/conflict, do not add/change/delete dimensional constraints. "
+                   "Inspect all redundant relations in that sketch, not only the first rejected operation. "
+                   "If conflicting dimensions cannot be satisfied without changing them, return an explicit error."
+                   if constraint_repair else "")
             ),
         }
         result = await self._complete(
@@ -268,6 +290,7 @@ class FreeCADOperationGenerator:
         )
         if result.source_code == current.model_dump_json():
             raise ValueError("FreeCAD operation repair returned an unchanged plan")
+        validate_constraint_repair(current, result.operation_plan, failure)
         return self._scope_result(result, base_state)
 
     @staticmethod
@@ -323,9 +346,7 @@ class FreeCADOperationGenerator:
                 last_error = None
             response = await self.client.chat.completions.create(
                 model=settings.llm_model,
-                max_tokens=settings.planner_max_tokens,
                 temperature=0.0,
-                timeout=max(settings.llm_timeout_s, 120.0),
                 messages=messages,
                 response_format={"type": "json_object"},
                 stream=True,

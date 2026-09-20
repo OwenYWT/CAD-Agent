@@ -10,6 +10,12 @@ import sys
 import traceback
 from pathlib import Path
 from typing import Any, Sequence
+from uuid import uuid4
+
+try:
+    from freecad_result_channel import ResultProtocolError, read_result
+except ModuleNotFoundError:
+    from sandbox.freecad_result_channel import ResultProtocolError, read_result
 
 
 INPUT_ROOT = Path("/sandbox/input")
@@ -138,12 +144,16 @@ def _run(
 
 
 def _freecad(task: dict[str, Any]) -> tuple[dict[str, Path], dict[str, Any]]:
+    invocation = uuid4().hex
+    result_path = OUTPUT_ROOT / f'.freecad-result-{invocation}.json'
     env = {
         **os.environ,
         "HOME": "/tmp",
         "TMPDIR": "/tmp",
         "LANG": "C.UTF-8",
         "PYTHONPATH": "/opt/cad-agent",
+        "CAD_FREECAD_INVOCATION_ID": invocation,
+        "CAD_FREECAD_RESULT_PATH": str(result_path),
     }
     completed = subprocess.run(
         [
@@ -169,19 +179,21 @@ def _freecad(task: dict[str, Any]) -> tuple[dict[str, Path], dict[str, Any]]:
     )
     stdout = completed.stdout[:512 * 1024]
     stderr = completed.stderr[:256 * 1024]
-    parsed: dict[str, Any] | None = None
-    for line in reversed(stdout.splitlines()):
-        try:
-            candidate = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(candidate, dict):
-            parsed = candidate
-            break
-    if parsed is None:
-        detail = (stderr or stdout or "FreeCAD runner returned no structured result").strip()
-        raise RuntimeError(detail[-4000:])
-    if completed.returncode != 0 or parsed.get("status") != "succeeded":
+    try:
+        parsed = read_result(result_path, invocation, success_schema=(
+            'freecad-engineering-result.v1' if task.get('operation') == 'engineering'
+            else 'freecad-operation-result.v1'
+        ))
+        if completed.returncode != 0 and parsed['status'] == 'succeeded':
+            raise ResultProtocolError('FreeCAD exited abnormally after reporting success')
+    except ResultProtocolError as exc:
+        raise StructuredCapabilityError(_freecad_error_envelope({
+            'code':'sandbox_protocol_error', 'message':str(exc)[:4000],
+            'details':{'exit_code':completed.returncode, 'stderr':stderr[-4000:]},
+        })) from exc
+    finally:
+        result_path.unlink(missing_ok=True)
+    if parsed.get("status") != "succeeded":
         raise StructuredCapabilityError(
             _freecad_error_envelope(parsed.get("error"))
         )

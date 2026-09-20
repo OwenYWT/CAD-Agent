@@ -212,6 +212,28 @@ async def transition_workflow(
             "error_message": error_message,
         },
     )
+    if target in {WorkflowStatus.FAILED, WorkflowStatus.CANCELLED, WorkflowStatus.TIMED_OUT}:
+        # Finalize every outstanding step and revoke execution leases in the
+        # same transaction as the run. Old successful/repaired history stays.
+        open_steps = (await connection.execute(text("""SELECT id,status FROM step_runs
+            WHERE workflow_run_id=:id AND status IN ('pending','ready','running')
+            ORDER BY step_index FOR UPDATE"""),{'id':workflow_id})).mappings().all()
+        for step in open_steps:
+            previous = StepStatus(step['status'])
+            terminal_step = (StepStatus.FAILED if target == WorkflowStatus.FAILED else StepStatus.TIMED_OUT)
+            if target == WorkflowStatus.CANCELLED or previous != StepStatus.RUNNING:
+                terminal_step = StepStatus.CANCELLED
+            await transition_step(connection,step['id'],expected=previous,target=terminal_step,
+                error_code=error_code,error_message=error_message,now=current_time)
+        revoked = (await connection.execute(text("""UPDATE execution_attempts SET status='cancelled',
+            lease_generation=lease_generation+1,lease_token_hash=NULL,leased_until=NULL,
+            completed_at=:now,updated_at=:now
+            WHERE workflow_run_id=:id AND status IN ('pending','leased','running')
+            RETURNING id,step_run_id"""),{'id':workflow_id,'now':current_time})).mappings().all()
+        for attempt in revoked:
+            await append_workflow_event(connection,tenant_id=row['tenant_id'],workflow_id=workflow_id,
+                event_type='attempt.state_changed',payload={'attempt_id':str(attempt['id']),
+                    'step_id':str(attempt['step_run_id']),'status':'cancelled','reason':'workflow_terminal'})
     await append_workflow_event(
         connection,
         tenant_id=row["tenant_id"],

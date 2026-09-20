@@ -43,6 +43,7 @@ async def tenant_transaction(
     principal_id: UUID | None = None,
     *,
     role: DatabaseRole = "runtime",
+    fence_model_job: bool = True,
 ) -> AsyncIterator[AsyncConnection]:
     """Open one tenant-scoped transaction with pool-safe PostgreSQL context.
 
@@ -62,6 +63,21 @@ async def tenant_transaction(
             text("SELECT set_config('app.principal_id', :principal_id, true)"),
             {"principal_id": str(principal_id) if principal_id else ""},
         )
+        if fence_model_job:
+            from app.model_job_context import model_job_context
+            job = model_job_context.get()
+            if job is not None:
+                # Lock parent before job, matching enqueue/terminal transitions.
+                active = await connection.scalar(text("""SELECT id FROM workflow_runs
+                    WHERE id=(SELECT workflow_run_id FROM model_jobs WHERE id=:job)
+                      AND status NOT IN ('failed','cancelled','timed_out','succeeded','cancelling')
+                      AND cancellation_requested_at IS NULL FOR UPDATE"""),{'job':job.job_id})
+                lease = await connection.scalar(text("""SELECT id FROM model_jobs
+                    WHERE id=:job AND generation=:generation AND status='running'
+                      AND NOT cancel_requested AND lease_until>now() FOR UPDATE"""),
+                    {'job':job.job_id,'generation':job.generation})
+                if not active or not lease:
+                    raise asyncio.CancelledError('Model job cancelled or lease superseded')
         yield connection
 
 

@@ -43,6 +43,9 @@ with sync_playwright() as pw:
   p.get_by_role('button',name='属性',exact=True).click();p.keyboard.press('Escape');expect(p.locator('.ww-agent-panel:visible')).to_have_count(1)
   # A real mesh hit must select the same feature in the property tree.
   area=canvas.bounding_box();canvas.click(position={'x':area['width']*.5,'y':area['height']*.62})
+  expect(p.locator('.ww-agent-panel:visible')).to_have_count(1)
+  expect(p.get_by_test_id('agent-selection')).to_contain_text('整个部件')
+  p.get_by_role('button',name='属性',exact=True).click()
   tree=p.locator('[data-testid=cloud-document-panel]:visible')
   selected=tree.get_by_role('treeitem',selected=True);expect(selected).to_have_count(1)
   selected_label=selected.get_attribute('aria-label');expect(tree.locator('[data-feature-properties]')).to_be_visible()
@@ -55,6 +58,40 @@ with sync_playwright() as pw:
   p.get_by_role('button',name='折叠 Agent',exact=True).click();expect(p.get_by_role('button',name='展开 Agent',exact=True)).to_be_visible()
   p.get_by_role('button',name='展开 Agent',exact=True).click()
   assert p.evaluate('window.__layoutCanvas === document.querySelector("[data-testid=document-scene] canvas")')
+  before_fit=len(requests)
+  p.get_by_role('button',name='适应视图',exact=True).click();p.wait_for_timeout(750)
+  assert p.evaluate('window.__layoutCanvas === document.querySelector("[data-testid=document-scene] canvas")')
+  assert not any('/scene' in u or '.stl' in u for u in requests[before_fit:]), 'fit unexpectedly reloaded geometry'
+  area=canvas.bounding_box();canvas.dblclick(position={'x':area['width']*.5,'y':area['height']*.62})
+  expect(p.locator('.ww-inspector-pane:visible')).to_have_count(1)
+  p.get_by_role('button',name='返回 Agent',exact=True).click()
+  # A history round trip retains the exact camera, Canvas, LOD and cached geometry.
+  p.get_by_role('combobox',name='网格精度',exact=True).select_option('fine')
+  expect(scene).to_have_attribute('data-lod','fine',timeout=90000)
+  current_revision=scene.get_attribute('data-revision')
+  p.get_by_role('button',name='版本',exact=True).click()
+  before_history=canvas.screenshot()
+  for _ in range(20):
+   p.wait_for_timeout(400);stable=canvas.screenshot()
+   if stable==before_history: break
+   before_history=stable
+  p.get_by_role('button',name='查看此版本',exact=True).nth(1).click()
+  expect(scene).not_to_have_attribute('data-requested-revision',current_revision,timeout=30000)
+  history_revision=scene.get_attribute('data-requested-revision')
+  expect(scene).to_have_attribute('data-revision',history_revision,timeout=90000)
+  assert p.evaluate('window.__layoutCanvas === document.querySelector("[data-testid=document-scene] canvas")')
+  expect(scene).to_have_attribute('data-lod','fine')
+  previous_requests=len(requests)
+  p.get_by_role('button',name='查看已提交版本',exact=True).click()
+  expect(scene).to_have_attribute('data-revision',current_revision,timeout=90000)
+  p.wait_for_timeout(500)
+  assert p.evaluate('window.__layoutCanvas === document.querySelector("[data-testid=document-scene] canvas")')
+  expect(scene).to_have_attribute('data-lod','fine')
+  after_history=canvas.screenshot()
+  (out/'history-before.png').write_bytes(before_history);(out/'history-after.png').write_bytes(after_history)
+  assert before_history==after_history,'camera or selection changed after history round trip'
+  assert not any('/artifacts/' in u for u in requests[previous_requests:]),'cached scene mesh downloaded again'
+  p.get_by_role('button',name='返回 Agent',exact=True).click()
   rows=[]
   for w in [1440,1181,1024,900,760,390,320]:
    p.set_viewport_size({'width':w,'height':900});p.wait_for_timeout(350)

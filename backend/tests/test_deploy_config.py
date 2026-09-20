@@ -130,16 +130,15 @@ def test_make_llm_client_raises_without_key(monkeypatch):
         config.make_llm_client()
 
 
-def test_make_llm_client_sets_timeout_and_retries_with_key(monkeypatch):
+def test_make_llm_client_disables_timeout_and_sets_retries_with_key(monkeypatch):
     from app import config
     monkeypatch.setattr(config.settings, "llm_provider", "moonshot")
     monkeypatch.setattr(config.settings, "moonshot_api_key", "sk-present")
     monkeypatch.setattr(config.settings, "llm_base_url", "https://api.moonshot.cn/v1")
-    monkeypatch.setattr(config.settings, "llm_timeout_s", 42.0)
+    monkeypatch.setenv("LLM_TIMEOUT_S", "42")
     monkeypatch.setattr(config.settings, "llm_max_retries", 1)
     client = config.make_llm_client()
-    # AsyncOpenAI exposes the configured read timeout and max_retries.
-    assert client.timeout == 42.0
+    assert client.timeout is None
     assert client.max_retries == 1
     assert str(client.base_url).startswith(config.settings.llm_base_url.rstrip("/"))
 

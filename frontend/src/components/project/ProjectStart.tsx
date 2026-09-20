@@ -27,7 +27,7 @@ export default function ProjectStart({ connectionState, onStart, onOpenHistory, 
   const [error, setError] = useState<string | null>(null);
 
   const start = (basis?: RequirementBasis) => {
-    const value = prompt.trim();
+    const value = (basis?.target || prompt).trim();
     if (!value) return;
     if (!basis) { setReviewing(true); return; }
     if (!onStart(value, getManufacturingProfilePreset(profileId).profile,basis)) {

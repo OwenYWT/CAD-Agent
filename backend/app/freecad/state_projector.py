@@ -10,6 +10,16 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+try:
+    from freecad_sketch_diagnostics import diagnose_sketch
+except ModuleNotFoundError:
+    from .sketch_diagnostics import diagnose_sketch
+
+try:
+    from freecad_reference_geometry import REFERENCE_KINDS, normalize_reference_object
+except ModuleNotFoundError:
+    from .reference_geometry import REFERENCE_KINDS, normalize_reference_object
+
 
 _SKIP_PROPERTIES = {
     "Constraints",
@@ -177,18 +187,6 @@ def project_parameters(obj: Any) -> list[dict[str, Any]]:
     return result
 
 
-def _constraint_status(solve_status: int, fully_constrained: bool) -> str:
-    if solve_status < 0 and solve_status not in {-2, -3}:
-        return "invalid"
-    if solve_status == -3:
-        return "conflicting"
-    if solve_status == -2:
-        return "redundant"
-    if not fully_constrained:
-        return "under_constrained"
-    return "fully_constrained"
-
-
 def _vector(value):
     return [float(value.x), float(value.y), float(value.z)]
 
@@ -297,26 +295,22 @@ def project_object(obj: Any) -> dict[str, Any]:
             structure = {"status": "unavailable", "category": structure["category"],
                          "reason": "native_container_members_unavailable"}
     projected["structure"] = structure
-    shape = _shape_state(getattr(obj, "Shape", None))
+    is_reference = type_id in REFERENCE_KINDS
+    native_shape = getattr(obj, "Shape", None)
+    shape = None if is_reference else _shape_state(native_shape)
     if shape is not None:
         projected["shape"] = shape
-        exporter = getattr(obj.Shape, "exportBrepToString", None)
+    if native_shape is not None and not bool(getattr(native_shape, "isNull", lambda: True)()):
+        exporter = getattr(native_shape, "exportBrepToString", None)
         if callable(exporter):
             projected["geometry_sha256"] = hashlib.sha256(exporter().encode("utf-8")).hexdigest()
     if str(getattr(obj, "TypeId", "")) == "Sketcher::SketchObject":
-        solve_status = int(obj.solve())
-        fully_constrained = bool(getattr(obj, "FullyConstrained", False))
         projected["sketch"] = {
-            "fully_constrained": fully_constrained,
+            **diagnose_sketch(obj),
             "constraint_count": int(getattr(obj, "ConstraintCount", 0)),
             "geometry_count": int(getattr(obj, "GeometryCount", 0)),
-            "solver_status": solve_status,
-            "constraint_status": _constraint_status(
-                solve_status,
-                fully_constrained,
-            ),
         }
-    projected["inspection"] = _inspection(obj)
+    projected["inspection"] = {} if is_reference else _inspection(obj)
     if str(getattr(obj, 'TypeId', '')) == 'App::Link':
         placement = obj.Placement
         projected['instance'] = {'source':obj.getLinkedObject(True).Name,
@@ -336,7 +330,7 @@ def project_object(obj: Any) -> dict[str, Any]:
             json.dumps(fingerprint_constraints,
                 sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()
-    return projected
+    return normalize_reference_object(projected)
 
 
 def project_document(document: Any) -> dict[str, Any]:

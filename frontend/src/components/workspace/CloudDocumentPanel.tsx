@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { parameterSubmissionState } from "../../adapters/parameterSubmission";
+import { useSessionStore } from "../../stores/sessionStore";
 import { useDraftGuard } from "../../hooks/useDraftGuard";
 import { guardDraft } from "../../stores/draftGuard";
 import { featureTreeRows } from "../../adapters/featureTree";
@@ -14,7 +16,7 @@ import { useFeatureLease } from "../../hooks/useFeatureLease";
 import type { CloudDocumentConnection } from "../../hooks/useCloudDocument";
 import type { CloudDocument, DocumentOperation, SemanticFeature } from "../../types/document";
 import type { EngineeringTaskSummary } from "../../types/engineeringTask";
-import { commentOnDocument, updateDocumentParameters, createDocumentReviewLink, annotateDocumentFeature, EngineeringApiError } from "../../services/engineeringService";
+import { confirmDurableTask, commentOnDocument, updateDocumentParameters, createDocumentReviewLink, annotateDocumentFeature, EngineeringApiError } from "../../services/engineeringService";
 
 const STATUS: Record<string, string> = { queued: "排队中", running: "运行中", reviewable: "等待审核",
   committed: "已提交", rejected: "已拒绝", failed: "失败", cancelled: "已取消", rolled_back: "已回退" };
@@ -44,8 +46,9 @@ function FeatureMeaning({ feature, document }: { feature: SemanticFeature; docum
   </div>;
 }
 
-function FeatureProperties({ feature, document, onSubmitted, operations = [] }: {
+function FeatureProperties({ feature, document, onSubmitted, onReview, operations = [] }: {
   feature: SemanticFeature; document: CloudDocument; onSubmitted: (id: string, document: CloudDocument) => void; operations?:DocumentOperation[];
+  onReview?: (id: string) => void;
 }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [editBase, setEditBase] = useState<CloudDocument | null>(null);
@@ -56,7 +59,28 @@ function FeatureProperties({ feature, document, onSubmitted, operations = [] }: 
   const [submittedId, setSubmittedId] = useState<string | null>(null);
   const [attemptToken, setAttemptToken] = useState<string | null>(null);
   const [uncertain, setUncertain] = useState(false);
-  const submittedOperation = operations.find(operation => operation.id === submittedId);
+  const durable = useSessionStore(state=>state.getActivePanel().durable);
+  const confirmation = durable?.workflowRunId === submittedId && durable.taskStatus === 'waiting_confirmation' ? durable.confirmation : null;
+  const [confirming, setConfirming] = useState(false);
+  const confirm = async (accepted:boolean) => {
+    if (!confirmation || confirming) return;
+    setConfirming(true); setError("");
+    try { await confirmDurableTask(confirmation.workflow_run_id, accepted, accepted ? '' : '用户拒绝当前参数执行计划'); }
+    catch(e){ setError(e instanceof Error ? e.message : "执行计划确认失败"); }
+    finally {setConfirming(false);}
+  };
+  const [savedMessage, setSavedMessage] = useState("");
+  const {operation: submittedOperation, saved, failed} = parameterSubmissionState(submittedId, operations, document);
+  // Update only from this request's authoritative operation + corresponding head,
+  // never from a different task succeeding or from a changed parameter value.
+  if (submittedId && (saved || failed)) {
+    setSubmittedId(null); setAttemptToken(null); setUncertain(false); setIdempotencyKey(crypto.randomUUID());
+    if (saved) {
+      setValues({}); setEditBase(null); setError(""); setSavedMessage(`已保存 · v${document.state_version}，可继续编辑`);
+    } else {
+      setError(`本次参数修改${STATUS[submittedOperation!.status] || submittedOperation!.status}，输入已保留，可修正后重新提交。${submittedOperation?.error_code || ""}`);
+    }
+  }
   const originalFeature = editBase?.features.find((f) => f.id === feature.id) || feature;
   const stale = Boolean(editBase && (editBase.head_revision_id !== document.head_revision_id || editBase.state_version !== document.state_version));
   const updates = originalFeature.parameters.filter((p) => p.editable && values[p.id] !== undefined && Number(values[p.id]) !== p.value)
@@ -70,7 +94,7 @@ function FeatureProperties({ feature, document, onSubmitted, operations = [] }: 
   useDraftGuard(dirty || pending, `${feature.label} 参数`, reset);
   const submit = async () => {
     if (!valid || (stale && !uncertain) || submittedId || !document.can_edit) return;
-    setPending(true); setError("");
+    setPending(true); setError(""); setSavedMessage("");
     try {
       const token = attemptToken || await lease.ensure();
       setAttemptToken(token);
@@ -94,15 +118,23 @@ function FeatureProperties({ feature, document, onSubmitted, operations = [] }: 
       <input aria-label={p.id} className="w-24 rounded border border-[var(--line)] bg-white p-2" type="number"
         disabled={!document.can_edit || !p.editable || pending || !!submittedId || uncertain} min={p.minimum ?? undefined} max={p.maximum ?? undefined} step={p.step ?? "any"}
         onFocus={() => { void lease.ensure().catch(() => {}); }}
-        value={values[p.id] ?? String(p.value)} onChange={(e) => { setEditBase((base) => base || document); setValues((v) => ({ ...v, [p.id]: e.target.value })); setIdempotencyKey(crypto.randomUUID()); }} />
+        value={values[p.id] ?? String(p.value)} onChange={(e) => { setSavedMessage(""); setEditBase((base) => base || document); setValues((v) => ({ ...v, [p.id]: e.target.value })); setIdempotencyKey(crypto.randomUUID()); }} />
     </label>)}
     {feature.parameters.some((p) => p.editable) ? <button className="workspace-button" disabled={!valid || pending || !document.can_edit || (stale && !uncertain) || !!submittedId} onClick={() => void submit()} type="button">{pending ? "正在提交" : uncertain ? "核对并重试同一请求" : submittedId ? "已提交候选计算" : "提交参数变更"}</button> : <p className="type-caption text-[var(--muted)]">{feature.type==='Sketcher::SketchObject' ? '草图尺寸可在下方约束编辑器中修改。' : '此特征没有已开放的可编辑参数。'}</p>}
     {editBase ? <p className="mt-2 type-caption"><strong>{submittedId ? '已提交计算的参数' : '我的未提交修改'}</strong> · 基线 v{editBase.state_version} · {editBase.head_revision_id.slice(0, 8)}。数值经求解、审核并提交后生效。其他任务运行时先保留草稿；提交由服务端排队或报告冲突，不会静默覆盖。</p> : null}
     {submittedOperation ? <p role="status" className="mt-2 type-caption">本次参数任务：{STATUS[submittedOperation.status] || submittedOperation.status}</p> : null}
-    {submittedId ? <p role="status" className="mt-2 type-caption">请求 {submittedId.slice(0, 8)} 已受理；上方保留本次请求数值，请在操作记录中查看计算结果并审核候选。</p> : null}
+    {confirmation ? <section aria-label="参数执行计划确认" className="mt-2 type-caption"><p>{confirmation.reason}</p><p>{confirmation.affected_objects.map(item=>`${item.label}（${item.change}）`).join('、')}</p><button className="workspace-button" type="button" disabled={confirming || !document.can_edit} onClick={()=>void confirm(false)}>拒绝执行计划</button><button className="workspace-button" type="button" disabled={confirming || !document.can_edit} onClick={()=>void confirm(true)}>确认并继续</button></section> : null}
+    {submittedId ? <div className="mt-2 type-caption" role="status">
+      {submittedOperation?.change_set_id && ['reviewable','committed'].includes(submittedOperation.status)
+        ? <><p>{submittedOperation.status === 'committed' ? '候选已提交，正在同步已保存参数…' : '计算完成，审核后应用修改。'}</p>
+          {onReview ? <button className="workspace-button mt-2" type="button" onClick={()=>onReview(submittedOperation.change_set_id!)}>查看变更 / 应用修改</button> : null}</>
+        : <p>{confirmation ? "等待确认执行计划" : "计算中 · 保留本次输入，完成后在此查看变更。"}</p>}
+      <details><summary>请求详情</summary>{submittedId}</details>
+    </div> : null}
+    {savedMessage ? <p role="status" className="mt-2 type-caption text-emerald-700">{savedMessage}</p> : null}
     {dirty && !valid ? <p role="status" className="mt-2 type-caption">请输入有变化、非空且位于允许范围内的有限数值。</p> : null}
     {uncertain ? <p role="status" className="mt-2 type-caption">尚未确认服务器响应。重试会沿用同一请求 ID 和原始数值，避免重复建模。</p> : null}
-    {editBase && !pending ? <button className="workspace-button mt-2" type="button" onClick={() => guardDraft(reset)}>{submittedId ? "结束本次参数查看" : "放弃草稿并读取当前参数"}</button> : null}
+    {editBase && !pending && !submittedId ? <button className="workspace-button mt-2" type="button" onClick={() => guardDraft(reset)}>放弃草稿并读取当前参数</button> : null}
     {error ? <p role="alert" className="mt-2 type-caption text-red-700">{error}</p> : null}
     {lease.error ? <p role="alert" className="mt-2 type-caption text-red-700">{lease.error}</p> : null}
     {lease.held ? <p className="mt-2 type-caption">已保留此特征的编辑租约。<button className="underline" type="button" onClick={() => void lease.release().catch((e: unknown) => setError(e instanceof Error ? e.message : "释放失败"))}>释放租约</button></p> : null}
@@ -176,7 +208,7 @@ export default function CloudDocumentPanel({ connection, onSubmitted, onReview, 
       {!document.features.length ? <p className="type-caption text-[var(--muted)]">{document.modeling_backend ? "当前模型没有原生特征状态。" : "提交首个模型后显示特征树。"}</p> : null}
     </div>
     {!selected ? <p className="ww-inspector-section type-caption">选择模型对象或特征，查看参数与约束。</p> : null}
-    {selected && onSubmitted ? <FeatureProperties key={`${document.document_id}:${selected.id}`} feature={selected} document={document} operations={collaboration?.operations} onSubmitted={onSubmitted} /> : selected ? <div className="ww-inspector-section" data-i18n-skip><h3>{selected.label}</h3><p className="type-caption">{selected.type}</p>{selected.parameters.map((p) => <p key={p.id} className="type-caption">{p.property_name}: {p.value} {p.unit}</p>)}</div> : null}
+    {selected && onSubmitted ? <FeatureProperties key={`${document.document_id}:${selected.id}`} feature={selected} document={document} operations={collaboration?.operations} onSubmitted={onSubmitted} onReview={onReview} /> : selected ? <div className="ww-inspector-section" data-i18n-skip><h3>{selected.label}</h3><p className="type-caption">{selected.type}</p>{selected.parameters.map((p) => <p key={p.id} className="type-caption">{p.property_name}: {p.value} {p.unit}</p>)}</div> : null}
     {collaboration?.leases?.length ? <div className="ww-inspector-section"><h3>正在编辑</h3>{collaboration.leases.map((l) => <p className="type-caption" key={l.feature_id}>{document.features.find((f) => f.id === l.feature_id)?.label || l.feature_id} · {l.display_name || "项目成员"}</p>)}</div> : null}
     {selected ? <details><summary className="ww-inspector-section">特征说明</summary><FeatureMeaning key={`meaning:${document.head_revision_id}:${selected.id}:${selected.annotation_version || 0}`} feature={selected} document={document} /></details> : null}
     {selected?.type === 'Sketcher::SketchObject' ? <SketchEditor key={`sketch:${document.document_id}:${selected.id}`} document={document} feature={selected} onSubmitted={onSubmitted} /> : null}

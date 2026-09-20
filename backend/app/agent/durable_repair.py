@@ -47,6 +47,7 @@ def _failure_signature(
     error_code: str,
     failure_class: str,
     error_message: str,
+    operation_id: str | None = None,
 ) -> str:
     """Collapse volatile runtime details before applying the oscillation guard."""
     normalized = error_message.casefold()
@@ -59,7 +60,8 @@ def _failure_signature(
     normalized = re.sub(r"\bline\s+\d+\b", "line <n>", normalized)
     normalized = " ".join(normalized.split())
     return hashlib.sha256(
-        f"{category}\0{error_code}\0{failure_class}\0{normalized}".encode(
+        (f"{category}\0{error_code}\0{failure_class}\0{normalized}"
+         + (f"\0operation:{operation_id}" if operation_id else "")).encode(
             "utf-8"
         )
     ).hexdigest()
@@ -73,8 +75,9 @@ def decide_repair(
     runtime_error_type: str | None,
     repair_count: int,
     seen_signatures: tuple[str, ...],
+    operation_id: str | None = None,
 ) -> RepairDecision:
-    specific_failure = classify(None, error_message)
+    specific_failure = classify(error_code, error_message)
     generic_gate = (
         "InvalidCode"
         if category == "user_code"
@@ -96,6 +99,7 @@ def decide_repair(
         error_code=error_code,
         failure_class=failure.key,
         error_message=error_message,
+        operation_id=operation_id,
     )
     allowed_category = category in {"user_code", "cad_kernel"} or (
         category == "validation"
@@ -105,6 +109,9 @@ def decide_repair(
             "geometry_validation_failed",
             "visual_validation_failed",
             "dfm_validation_failed",
+            "sketch_redundant_constraints",
+            "sketch_conflicting_constraints",
+            "sketch_under_constrained",
         }
     )
     expected_fix_path = (

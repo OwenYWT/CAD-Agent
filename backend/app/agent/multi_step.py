@@ -145,8 +145,8 @@ class PlanDecomposer:
             logger.info("PlanDecomposer LLM call start")
             for attempt in range(2):
                 response = await self.client.chat.completions.create(
+                    stream=True,
                     model=settings.llm_model,
-                    max_tokens=settings.planner_max_tokens,
                     temperature=0.1,
                     messages=[
                         {"role": "system", "content": DECOMPOSE_PROMPT},

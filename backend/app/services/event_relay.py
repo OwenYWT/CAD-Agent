@@ -173,9 +173,23 @@ def _project_task_error(
     *,
     workflow_status: str,
     steps: list[dict[str, Any]],
+    workflow_error: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     if workflow_status not in {"failed", "timed_out"}:
         return None
+    # Repaired steps retain history; only the run identifies its terminal cause.
+    if workflow_error and workflow_error.get("error_code"):
+        code = str(workflow_error["error_code"])
+        message = str(workflow_error.get("error_message") or "")
+        terminal_status = (
+            "timed_out" if "timeout" in code.lower() or "timed out" in message.lower()
+            else workflow_status
+        )
+        for step in reversed(steps):
+            if (step.get("error_code") == code and step.get("error_message") == message
+                    and step.get("status") in {"failed", "timed_out"}):
+                return _decode_execution_error(step, fallback_status=terminal_status)
+        return _decode_execution_error(workflow_error, fallback_status=terminal_status)
     terminal_steps = [
         step for step in steps
         if step.get("status") in {"failed", "timed_out"}
@@ -887,6 +901,7 @@ async def get_task_snapshot(
     task_error = _project_task_error(
         workflow_status=str(workflow["status"]),
         steps=steps,
+        workflow_error=dict(workflow),
     )
     return {
         **dict(workflow),

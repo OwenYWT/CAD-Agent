@@ -283,7 +283,14 @@ async def _stored_agent_step_result(
     ).mappings().one_or_none()
     if row is None:
         return None
-    return {**dict(row["payload"]), "replayed": True}
+    stored = dict(row["payload"])
+    # The event projection remains queryable JSONB. Its execution result also
+    # keeps the original JSON text, so a worker restart cannot change numbers.
+    result = json.loads(stored["_result_json"]) if "_result_json" in stored else stored
+    if isinstance(result.get("base_state"), dict):
+        from app.freecad.reference_geometry import normalize_reference_state
+        result = {**result, "base_state": normalize_reference_state(result["base_state"])}
+    return {**result, "replayed": True}
 
 
 async def _start_agent_logical_step(
@@ -384,7 +391,7 @@ async def _complete_agent_logical_step(
         tenant_id=tenant_id,
         workflow_id=workflow_id,
         event_type=event_type,
-        payload=result,
+        payload={**result, "_result_json": json.dumps(result, allow_nan=False)},
     )
     if enter_running:
         workflow_status = await _workflow_status(connection, workflow_id)
@@ -1499,7 +1506,8 @@ class McadWorkflowActivities:
                     request.branch_id, request.expected_base_revision_id)}
         if annotations:
             state = {**state, "feature_annotations": annotations}
-        return state
+        from app.freecad.reference_geometry import normalize_reference_state
+        return normalize_reference_state(state)
 
     @staticmethod
     def _agent_planning_error(exc: Exception) -> ApplicationError:
@@ -2059,6 +2067,7 @@ class McadWorkflowActivities:
             category=str(failure["category"]),
             error_code=str(failure["error_code"]),
             error_message=str(failure["error_message"]),
+            operation_id=failure.get("operation_id"),
             runtime_error_type=(
                 str(failure["runtime_error_type"])
                 if failure.get("runtime_error_type")
@@ -2420,6 +2429,7 @@ class McadWorkflowActivities:
             category=str(failure["category"]),
             error_code=str(failure["error_code"]),
             error_message=str(failure["error_message"]),
+            operation_id=failure.get("operation_id"),
             runtime_error_type=(
                 str(failure["runtime_error_type"])
                 if failure.get("runtime_error_type")
@@ -2697,6 +2707,10 @@ class McadWorkflowActivities:
                     {
                         "execution_attempt_id": str(attempt_id),
                         "category": error.category.value if error else "internal",
+                        "operation_id": error.operation_id if error else None,
+                        "action": error.action if error else None,
+                        "details": dict(error.details) if error else {},
+                        "evidence": dict(error.evidence) if error else {},
                         "error_code": code,
                         "error_message": message,
                         "runtime_error_type": (
@@ -3118,6 +3132,10 @@ class McadWorkflowActivities:
                             "category": (
                                 error.category.value if error else "cad_kernel"
                             ),
+                            "operation_id": error.operation_id if error else None,
+                            "action": error.action if error else None,
+                            "details": dict(error.details) if error else {},
+                            "evidence": dict(error.evidence) if error else {},
                             "error_code": code,
                             "error_message": message,
                             "runtime_error_type": (

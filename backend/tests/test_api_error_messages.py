@@ -5,19 +5,17 @@ from app.api.error_messages import (
     generation_error_http_status,
     public_generation_error,
 )
-from app.config import settings
 import pytest
 
 
-def test_model_timeout_has_actionable_public_message(monkeypatch):
-    monkeypatch.setattr(settings, "llm_timeout_s", 75.0)
+def test_model_timeout_has_actionable_public_message():
     error = APITimeoutError(request=httpx.Request("POST", "https://api.example.test/v1/chat/completions"))
 
     payload = public_generation_error(error)
 
     assert payload["type"] == "TimeoutError"
-    assert "75 秒" in payload["message"]
-    assert "LLM_TIMEOUT_S" in payload["message"]
+    assert "未设置模型 API 等待时限" in payload["message"]
+    assert "LLM_TIMEOUT_S" not in payload["message"]
 
 
 def test_unexpected_error_keeps_original_type_and_message():

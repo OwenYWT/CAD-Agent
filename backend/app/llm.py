@@ -1,6 +1,7 @@
 from contextvars import ContextVar
 import hashlib
 import json
+import time
 from typing import Any
 
 from openai import AsyncAzureOpenAI, AsyncOpenAI, OpenAIError, RateLimitError
@@ -134,18 +135,20 @@ def build_chat_params(
 ) -> dict[str, Any]:
     params: dict[str, Any] = {"model": model, "messages": messages}
     params.update(extra)
+    # Output length is provider-owned. Ignore legacy callers and all aliases.
+    for key in ("max_tokens", "max_completion_tokens", "max_output_tokens"):
+        params.pop(key, None)
+    if isinstance(params.get("extra_body"), dict):
+        params["extra_body"] = {key: value for key, value in params["extra_body"].items()
+                                if key not in {"max_tokens", "max_completion_tokens", "max_output_tokens"}}
 
     if _is_gpt5_model(model) or _is_moonshot_provider(llm_settings):
-        if max_tokens is not None and "max_completion_tokens" not in params:
-            params["max_completion_tokens"] = max_tokens
         if _is_gpt5_model(model) and llm_settings.llm_reasoning_effort and "reasoning_effort" not in params:
             params["reasoning_effort"] = llm_settings.llm_reasoning_effort
         params.pop("max_tokens", None)
         params.pop("temperature", None)
         return params
 
-    if max_tokens is not None:
-        params["max_tokens"] = max_tokens
     if temperature is not None and not _is_moonshot_provider(llm_settings):
         params["temperature"] = temperature
     return params
@@ -167,7 +170,20 @@ class ChatCompletionAdapter:
             llm_settings=self._settings,
             **kwargs,
         )
+        from app.services.llm_usage import start_call, finish_call
+        # Explicit None disables SDK/HTTP timeouts, including caller overrides.
+        # Omitting this option would inherit the SDK or client default instead.
+        params["timeout"] = None
+        if params.get("stream"):
+            params["stream_options"] = {**params.get("stream_options", {}), "include_usage": True}
+        request_hash = hashlib.sha256(json.dumps(params, sort_keys=True, default=str).encode()).hexdigest()
+        reset_chat_completion_provenance()
         for attempt in range(self._settings.llm_max_retries + 1):
+            handle = await start_call(provider=self._settings.normalized_llm_provider,
+                                      model=params["model"], request_hash=request_hash, attempt=attempt + 1)
+            started = time.perf_counter()
+            provenance = None
+            error = None
             try:
                 response = await self._raw_completions.create(**params)
                 if params.get("stream"):
@@ -179,26 +195,33 @@ class ChatCompletionAdapter:
                         provider=self._settings.normalized_llm_provider,
                     )
                 )
+                provenance = get_last_chat_completion_provenance()
                 return response
             except OpenAIError as exc:
+                error = exc
                 if (
                     is_nonretryable_provider_error(exc)
                     or attempt >= self._settings.llm_max_retries
                 ):
                     raise
+            except BaseException as exc:
+                error = exc
+                raise
+            finally:
+                await finish_call(handle, duration_ms=round((time.perf_counter() - started) * 1000),
+                                  provenance=provenance, error=error)
 
 
 async def _complete_stream(stream) -> ChatCompletion:
     """Accumulate actual provider chunks; a disconnected stream is never success.
 
-    Streaming keeps the SDK's read deadline tied to network inactivity while a
-    reasoning model is working. Temporal still bounds the entire activity.
+    No API waiting deadline is imposed. Temporal still bounds the entire
+    activity; cancellation closes the stream in the finally block below.
     """
     identity = None
     content, refusal = [], []
     finish = None
     usage = None
-    size = 0
     try:
         async for chunk in stream:
             if (
@@ -223,9 +246,6 @@ async def _complete_stream(stream) -> ChatCompletion:
                 if finish is not None:
                     raise ValueError("model stream continued after its terminal choice")
                 delta = choice.delta.content or ""
-                size += len(delta)
-                if size > 1_000_000:
-                    raise ValueError("model stream exceeded response size budget")
                 content.append(delta)
                 if choice.delta.refusal:
                     refusal.append(choice.delta.refusal)
@@ -268,7 +288,7 @@ def create_llm_client(llm_settings: Settings = settings):
             azure_endpoint=llm_settings.azure_openai_endpoint,
             api_key=llm_settings.azure_openai_api_key,
             api_version=llm_settings.azure_openai_api_version,
-            timeout=llm_settings.llm_timeout_s,
+            timeout=None,
             # The adapter owns retries so quota/auth/config failures can be
             # rejected immediately instead of being retried blindly by the SDK.
             max_retries=0,
@@ -277,7 +297,7 @@ def create_llm_client(llm_settings: Settings = settings):
         raw_client = AsyncOpenAI(
             api_key=llm_settings.llm_api_key,
             base_url=llm_settings.llm_base_url,
-            timeout=llm_settings.llm_timeout_s,
+            timeout=None,
             max_retries=0,
         )
 

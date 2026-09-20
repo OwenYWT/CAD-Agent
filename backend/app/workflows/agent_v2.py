@@ -5,12 +5,15 @@ import asyncio
 import json
 from datetime import timedelta
 from typing import Any
+from uuid import UUID, uuid5
 
 from temporalio import workflow
 from app.workflows.document_queue import wait_for_document, release_document
 from temporalio.common import RetryPolicy
-from temporalio.exceptions import ActivityError, ApplicationError
+from temporalio.exceptions import ActivityError, ApplicationError, ChildWorkflowError
 from temporalio.workflow import ActivityCancellationType
+from app.workflows.model_job import ModelJobWorkflow
+from app.workflows.model_job_policy import MODEL_OPERATIONS
 
 from app.geometry_ir.planner import build_geometry_plan, summarize_geometry_plan
 from app.topology.step_resolver import resolve_step_topology
@@ -56,6 +59,7 @@ class McadAgentWorkflowV2:
         self._candidate_build_id: str | None = None
         self._validation_repair_v2 = False
         self._provider_streaming_v1 = False
+        self._model_jobs_v1 = False
 
     @workflow.signal(name="confirmation")
     async def confirmation(self, decision: dict[str, Any]) -> None:
@@ -86,6 +90,8 @@ class McadAgentWorkflowV2:
         suffix: str,
         execution: bool = False,
     ) -> dict[str, Any]:
+        if self._model_jobs_v1 and name in MODEL_OPERATIONS:
+            return await self._model_job(name,payload,suffix)
         timeout_seconds = int(payload.get("timeout_seconds") or 120)
         provider_operation = self._provider_streaming_v1 and name in {
             "agent_v2.generate_operations", "agent_v2.repair_operations"
@@ -135,6 +141,26 @@ class McadAgentWorkflowV2:
             raise asyncio.CancelledError
         return result
 
+    async def _model_job(self, name: str, payload: dict, suffix: str) -> dict:
+        if self._cancel_reason is not None:
+            raise asyncio.CancelledError
+        request = {'job_id':str(uuid5(UUID(payload['workflow_run_id']),suffix)),
+                   'operation':name,'payload':payload}
+        child = await workflow.start_child_workflow(ModelJobWorkflow.run,request,
+            id=f"{payload['workflow_run_id']}:model:{suffix}",
+            parent_close_policy=workflow.ParentClosePolicy.REQUEST_CANCEL)
+        cancel_wait = asyncio.create_task(workflow.wait_condition(lambda:self._cancel_reason is not None))
+        try:
+            done,_ = await workflow.wait({child,cancel_wait},return_when=asyncio.FIRST_COMPLETED)
+            if cancel_wait in done or self._cancel_reason is not None:
+                child.cancel()
+                await asyncio.gather(child,return_exceptions=True)
+                raise asyncio.CancelledError
+            return await child
+        finally:
+            cancel_wait.cancel()
+            await asyncio.gather(cancel_wait,return_exceptions=True)
+
     async def _record_cancel(self, request: dict[str, Any]) -> dict[str, Any]:
         self._phase = "cancelling"
         if self._candidate_build_id is not None:
@@ -159,15 +185,23 @@ class McadAgentWorkflowV2:
         return result
 
     @staticmethod
+    def _root_application_error(exc: Exception) -> ApplicationError | None:
+        # Child workflows wrap activity failures in another FailureError.
+        # Keep walking the explicit Temporal cause chain; do not infer a cause
+        # from logs or from the last failed modeling attempt.
+        current = exc
+        root = None
+        seen = set()
+        while current is not None and id(current) not in seen:
+            seen.add(id(current))
+            if isinstance(current, ApplicationError):
+                root = current
+            current = getattr(current, "cause", None)
+        return root
+
+    @staticmethod
     def _execution_failure(exc: Exception) -> dict[str, Any] | None:
-        application_error = (
-            exc.cause
-            if isinstance(exc, ActivityError)
-            and isinstance(exc.cause, ApplicationError)
-            else exc
-            if isinstance(exc, ApplicationError)
-            else None
-        )
+        application_error = McadAgentWorkflowV2._root_application_error(exc)
         if application_error is None:
             return None
         detail = next(
@@ -190,6 +224,10 @@ class McadAgentWorkflowV2:
                 detail.get("error_message") or application_error
             )[:4000],
             "runtime_error_type": detail.get("runtime_error_type"),
+            "operation_id": detail.get("operation_id"),
+            "action": detail.get("action"),
+            "details": detail.get("details") or {},
+            "evidence": detail.get("evidence") or {},
         }
 
     @staticmethod
@@ -968,6 +1006,7 @@ class McadAgentWorkflowV2:
             native_bom_v1 = workflow.patched("agent-v2-native-bom-v1")
             self._validation_repair_v2 = workflow.patched("agent-v2-validation-repair-v2")
             self._provider_streaming_v1 = workflow.patched("agent-v2-provider-streaming-v1")
+            self._model_jobs_v1 = workflow.patched("agent-v2-model-jobs-v1")
             self._phase = "requirements"
             requirements = await self._activity(
                 "agent_v2.requirements",
@@ -1339,13 +1378,18 @@ class McadAgentWorkflowV2:
             error_code = "agent_v2_workflow_failed"
             error_message = str(exc)[:4000]
             if (
-                isinstance(exc, ActivityError)
+                isinstance(exc, (ActivityError, ChildWorkflowError))
                 and isinstance(exc.cause, ApplicationError)
             ):
                 error_code = (exc.cause.type or error_code)[:200]
                 error_message = str(exc.cause)[:4000]
             elif isinstance(exc, ApplicationError):
                 error_code = (exc.type or error_code)[:200]
+            if workflow.patched("agent-v2-nested-failure-v1"):
+                cause = self._root_application_error(exc)
+                if cause is not None:
+                    error_code = (cause.type or error_code)[:200]
+                    error_message = str(cause)[:4000]
             if self._candidate_build_id is not None:
                 await self._activity(
                     "agent_v2.terminate_candidate",

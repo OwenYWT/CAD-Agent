@@ -8,7 +8,8 @@ class RequirementBasisV1(BaseModel):
     schema_version: Literal['requirement-basis.v1'] = 'requirement-basis.v1'
     target: str = Field(min_length=1, max_length=1000)
     purpose: str = Field(default='', max_length=500)
-    source_kind: Literal['none', 'user_measurement', 'reference'] = 'none'
+    design_scope: Literal['geometry', 'physical_fit'] = 'physical_fit'
+    source_kind: Literal['none', 'user_specification', 'user_measurement', 'reference'] = 'none'
     source_reference: str = Field(default='', max_length=500)
     dimensions: str = Field(default='', max_length=1500)
     fit_notes: str = Field(default='', max_length=1000)
@@ -16,6 +17,8 @@ class RequirementBasisV1(BaseModel):
 
     @model_validator(mode='after')
     def explicit_missing_basis(self):
+        if self.design_scope == 'physical_fit' and self.source_kind == 'user_specification':
+            raise ValueError('实物适配需要测量或参考依据，设计尺寸不等于实物尺寸')
         if self.source_kind != 'none' and (not self.source_reference or not self.dimensions):
             raise ValueError('请提供关键尺寸及其来源说明，或明确选择概念外形')
         if self.source_kind == 'none' and not self.concept_acknowledged:
@@ -30,5 +33,7 @@ class RequirementBasisV1(BaseModel):
             f'用户明确尺寸：{self.dimensions or "未提供，不得凭机型名称声称尺寸可靠"}',
             f'开孔与装配依据：{self.fit_notes or "未提供"}',
             '不得擅自替换用户明确尺寸；冲突必须请求确认。',
-            '适配未验证。缺少依据的几何只能作为概念外形，不得声称适配、配合或制造条件已验证。',
+            ('适配未验证。缺少依据的几何只能作为概念外形，不得声称适配、配合或制造条件已验证。'
+             if self.design_scope == 'physical_fit' else
+             '本次为几何设计，指定尺寸是设计输入，不是实物测量。缺失或矛盾的关键尺寸需请求确认；不得声称制造条件已验证。'),
         ])

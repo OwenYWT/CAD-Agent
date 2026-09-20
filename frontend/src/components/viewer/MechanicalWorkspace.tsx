@@ -13,6 +13,8 @@ interface MechanicalWorkspaceProps {
   identity?: DocumentViewIdentity | null;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
+  onOpenProperties?: () => void;
+  selectionLabel?: string;
   onCommitted?: () => void;
   onCandidate?: () => void;
   viewError?: string;
@@ -31,7 +33,7 @@ export default function MechanicalWorkspace({
   viewedMeshUrl,
   identity,
   selectedId,
-  onSelect,
+  onSelect, onOpenProperties, selectionLabel,
   onCommitted,
   onCandidate,
   viewError,
@@ -74,14 +76,15 @@ export default function MechanicalWorkspace({
             <Viewer2D key={svgUrl} svgUrl={svgUrl} />
           ) : (
             <Suspense fallback={<div className="grid h-full place-items-center type-body text-[var(--muted)]">{String.fromCharCode(0x6b63, 0x5728, 0x52a0, 0x8f7d, 0x20, 0x33, 0x44, 0x20, 0x6a21, 0x578b, 0x2e, 0x2e, 0x2e)}</div>}>
-              {nativeDocumentId && identity ? <DocumentSceneViewer key={`${nativeDocumentId}:${identity.viewedRevisionId}:${viewerKey}`} documentId={nativeDocumentId} revisionId={identity.viewedRevisionId} selectedId={selectedId} onSelect={onSelect} />
-                : <Viewer3D key={`${stlUrl}:${viewerKey}`} stlUrl={stlUrl} />}
+              {nativeDocumentId && identity ? <DocumentSceneViewer key={nativeDocumentId} fitRequest={viewerKey} onOpenProperties={onOpenProperties} documentId={nativeDocumentId} revisionId={identity.viewedRevisionId} selectedId={selectedId} onSelect={onSelect} />
+                : <Viewer3D fitRequest={viewerKey} stlUrl={stlUrl} />}
             </Suspense>
           )}
         </div>
 
       </div>
       <footer className="ww-viewer-statusbar">
+        {selectionLabel ? <span data-testid="viewport-selection">已选中：{selectionLabel}</span> : null}
         <span>{is2D ? "SVG 预览" : nativeDocumentId ? "部件场景" : "STL 预览"}</span>
         <span>{files.length ? `${files.length} 个工程文件` : "尚无工程文件"}</span>
         <span className="ml-auto" data-testid="viewer-task-state" data-task-phase={taskPhase}>{taskLabel || (result?.validation?.is_watertight ? "模型已闭合" : result?.success ? "模型已生成" : isGenerating ? "正在生成" : "等待任务")}</span>

@@ -77,6 +77,8 @@ def review(page):
     dialog = page.get_by_role('dialog', name='变更审查', exact=True)
     expect(dialog.get_by_test_id('candidate-base')).to_be_visible()
     dialog.get_by_role('textbox', name='审查意见', exact=True).fill('核验真实几何、明确参数变化与证据；未做实物适配验证。')
+    expect(dialog.get_by_role('button', name='接受变更', exact=True)).to_have_count(0)
+    expect(dialog.get_by_role('button', name='提交版本', exact=True)).to_have_count(0)
     dialog.get_by_role('button', name='应用修改', exact=True).click()
     expect(dialog.get_by_text('审查状态：committed', exact=True)).to_be_visible(timeout=30000)
     dialog.get_by_role('button', name='关闭', exact=True).last.click()
@@ -91,7 +93,6 @@ def generation(page, client):
     intake = page.get_by_role('region', name='执行前需求确认', exact=True)
     expect(intake.get_by_role('button', name='按概念外形继续', exact=True)).to_be_disabled()
     expect(intake).to_contain_text('概念外形，适配未验证')
-    intake.get_by_role('textbox', name='模型用途', exact=True).fill('概念外观评估；尺寸和适配尚未核验')
     save(page, '01-waiting-for-basis')
     intake.get_by_role('checkbox', name='确认仅生成概念外形', exact=True).check()
     intake.get_by_role('button', name='按概念外形继续', exact=True).click()
@@ -141,6 +142,43 @@ def generation(page, client):
         consistent(page,'needs_input')
         save(page,'phone-case-server-confirmation')
     return report
+
+
+def geometry_intake(page, client):
+    import io
+    import trimesh
+    objective='创建一个 100×60×3 mm 的长方形板，不添加孔、槽或其他特征。'
+    page.get_by_role('button',name='新建设计',exact=True).click()
+    page.get_by_role('textbox',name='工程需求',exact=True).fill(objective)
+    page.get_by_role('button',name='开始创建',exact=True).click()
+    intake=page.get_by_role('region',name='执行前需求确认',exact=True)
+    expect(intake.get_by_role('textbox',name='关键尺寸依据',exact=True)).to_have_value('100×60×3 mm')
+    assert '适配未验证' not in intake.inner_text()
+    intake.get_by_role('textbox',name='关键尺寸依据',exact=True).fill('100×60×4 mm')
+    expect(intake.get_by_role('textbox',name='建模目标',exact=True)).to_have_value(objective.replace('100×60×3','100×60×4'))
+    intake.get_by_role('button',name='确认并执行',exact=True).click()
+    consistent(page,'running')
+    expect(card(page)).to_have_attribute('data-task-id',__import__('re').compile('.+'),timeout=30000)
+    workflow=card(page).get_attribute('data-task-id')
+    (OUT/'workflow.json').write_text(json.dumps({'workflow_id':workflow}))
+    snapshot=terminal(client,page,workflow)
+    if snapshot['status']=='waiting_confirmation':
+        page.get_by_role('group',name='服务端执行计划确认',exact=True).get_by_role('button',name='确认并继续',exact=True).click()
+        expect(card(page)).to_have_attribute('data-task-phase','running',timeout=30000)
+        snapshot=terminal(client,page,workflow)
+    (OUT/'snapshot.json').write_text(json.dumps(snapshot,ensure_ascii=False,indent=2))
+    basis=snapshot['request_payload']['operation_context']['requirement_basis']
+    assert basis['design_scope']=='geometry' and basis['source_kind']=='user_specification'
+    assert basis['dimensions']=='100×60×4 mm' and not basis['concept_acknowledged']
+    assert snapshot['status']=='succeeded',snapshot.get('error_message')
+    consistent(page,'candidate');review(page)
+    document=read(client,'/api/documents/'+snapshot['request_payload']['branch_id'])
+    response=client.get(document['mesh']['url']);response.raise_for_status()
+    assert hashlib.sha256(response.content).hexdigest()==document['mesh']['sha256']
+    mesh=trimesh.load(io.BytesIO(response.content),file_type='stl',force='mesh')
+    assert all(abs(a-b)<.01 for a,b in zip(sorted(mesh.extents),[4,60,100])),mesh.extents
+    save(page,'explicit-geometry-saved')
+    return {'workflow_id':workflow,'basis_persisted':True,'extent_mm':mesh.extents.tolist(),'state_version':document['state_version'],'mesh_sha256':document['mesh']['sha256']}
 
 
 def candidate(page, client):
@@ -195,15 +233,24 @@ def candidate(page, client):
     workflow=response.value.json()['workflow_run_id']
     result=terminal(client,page,workflow)
     if result['status']=='waiting_confirmation':
-        consistent(page,'needs_input')
         save(page,'manual-plan-confirmation')
-        page.get_by_role('group',name='服务端执行计划确认',exact=True).get_by_role('button',name='确认并继续',exact=True).click()
+        tree.get_by_role('region',name='参数执行计划确认',exact=True).get_by_role('button',name='确认并继续',exact=True).click()
         # Wait for the persisted confirmation to be consumed before polling.
-        expect(card(page)).to_have_attribute('data-task-phase','running',timeout=30000)
+        expect(page.get_by_test_id('drawer-task-state')).to_have_attribute('data-task-phase','running',timeout=30000)
         result=terminal(client,page,workflow)
     assert result['status']=='succeeded',result.get('error_message')
-    consistent(page,'candidate')
-    review(page)
+    tree.get_by_role('button',name='查看变更 / 应用修改',exact=True).click()
+    dialog=page.get_by_role('dialog',name='变更审查',exact=True)
+    dialog.get_by_role('textbox',name='审查意见',exact=True).fill('核验本次孔径参数及几何检查，不代表实物适配。')
+    expect(dialog.get_by_role('button',name='接受变更',exact=True)).to_have_count(0)
+    expect(dialog.get_by_role('button',name='提交版本',exact=True)).to_have_count(0)
+    dialog.get_by_role('button',name='应用修改',exact=True).click()
+    expect(dialog.get_by_text('审查状态：committed',exact=True)).to_be_visible(timeout=30000)
+    dialog.get_by_role('button',name='关闭',exact=True).last.click()
+    expect(field).to_be_enabled(timeout=30000)
+    expect(field).to_have_value('6.5')
+    expect(tree.get_by_text('已保存 · v2，可继续编辑',exact=True)).to_be_visible()
+    assert page.evaluate('window.__taskStateCanvas === document.querySelector("[data-testid=document-scene] canvas")')
     final=read(client,'/api/documents/'+fixture['document_id'])
     params=lambda doc:{p['id']:p['value'] for f in doc['features'] for p in f['parameters']}
     assert params(final)=={**params(saved),'Hole.Diameter':6.5}
@@ -236,7 +283,7 @@ def main():
         page=context.new_page();page.on('pageerror',lambda error:errors.append(str(error)))
         try:
             login(page)
-            report=(generation if mode=='generation' else candidate)(page,client)
+            report=({'generation':generation,'geometry':geometry_intake,'candidate':candidate}[mode])(page,client)
             assert not errors,errors
             report.update({'status':'passed','mode':mode,'page_errors':errors})
             (OUT/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))

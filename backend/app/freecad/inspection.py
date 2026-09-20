@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.execution.canonical import canonical_sha256
+from app.freecad.reference_geometry import normalize_reference_state
 
 
 class InspectionRequest(BaseModel):
@@ -16,6 +17,7 @@ class InspectionRequest(BaseModel):
 
 
 def inspect_state(state: dict, request: InspectionRequest) -> dict:
+    state = normalize_reference_state(state)
     by_name = {o["name"]: o for o in state.get("objects", [])}
     result = []
     budget = 16000
@@ -25,6 +27,8 @@ def inspect_state(state: dict, request: InspectionRequest) -> dict:
             result.append({"name": name, "error": "object_not_found"})
             continue
         detail = {"name": name, "type_id": obj.get("type_id"), "is_valid": obj.get("is_valid")}
+        if obj.get("reference_geometry"):
+            detail["reference_geometry"] = obj["reference_geometry"]
         for field in dict.fromkeys(request.fields):
             if field == "properties":
                 values = [{"name": k, "value": str(v)[:500] if isinstance(v,str) else v}
@@ -37,6 +41,9 @@ def inspect_state(state: dict, request: InspectionRequest) -> dict:
                 stored = obj.get("inspection", {}).get(field)
                 if stored is None:
                     detail[field] = {"status": "unavailable", "reason": "not_recorded_in_kernel_checkpoint"}
+                    continue
+                if stored.get("status") == "not_applicable":
+                    detail[field] = dict(stored)
                     continue
                 values = stored["items"]
                 known = stored["total"]

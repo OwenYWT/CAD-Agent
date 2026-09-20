@@ -16,6 +16,7 @@ def test_v1_and_v2_workers_use_distinct_queues_and_workflow_types(monkeypatch):
             captured.append({"client": client, **kwargs})
 
     monkeypatch.setattr("app.workers.workflow_worker.Worker", CapturingWorker)
+    monkeypatch.setattr("app.workers.workflow_worker.ModelJobWorker", CapturingWorker)
     client = object()
     backend = object()
 
@@ -31,8 +32,12 @@ def test_v1_and_v2_workers_use_distinct_queues_and_workflow_types(monkeypatch):
     ]
     assert [item.__name__ for item in captured[1]["workflows"]] == [
         "McadAgentWorkflowV2",
+        "ModelJobWorkflow",
     ]
     assert {item.__temporal_activity_definition.name for item in captured[1]["activities"]} == {
+        "model_jobs.submit",
+        "model_jobs.read",
+        "model_jobs.cancel",
         "document.acquire",
         "document.release",
         "agent_v2.requirements",

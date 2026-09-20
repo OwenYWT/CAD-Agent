@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.agent.assembly_planner import AssemblyPlanner
+from app.config import settings
 from app.models.schemas import CADPlan
 
 
@@ -87,4 +88,43 @@ async def test_durable_assembly_planning_fails_closed_after_invalid_responses():
     ):
         await planner.plan_assembly(_plan(), allow_fallback=False)
 
+    assert len(completions.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_truncated_assembly_retries_without_output_cap_and_with_feedback(monkeypatch):
+    completions = _CompletionsStub([
+        _response(None, finish_reason="length"),
+        _response('{"assembly_description":"盒体", "parts":['
+                  '{"name":"box","description":"两腔电子盒",'
+                  '"dimensions":{"length":60,"width":40,"height":25,"wall":2}}]}'),
+    ])
+    planner = AssemblyPlanner()
+    planner._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+    result = await planner.plan_assembly(_plan(), allow_fallback=False)
+
+    assert result.parts[0].dimensions["wall"] == 2
+    assert all("max_tokens" not in call for call in completions.calls)
+    assert all(call["stream"] is True for call in completions.calls)
+    first, retry = [call["messages"] for call in completions.calls]
+    assert first[1] == retry[1]  # Preserve the original requirements on retry.
+    assert len(retry) > len(first)
+    assert "truncated by the model service" in retry[-1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_exhausted_assembly_reports_actual_truncation_without_fallback(monkeypatch):
+    completions = _CompletionsStub([
+        _response(None, finish_reason="length"),
+        _response(None, finish_reason="length"),
+    ])
+    planner = AssemblyPlanner()
+    planner._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+    with pytest.raises(ValueError, match="truncated by the model service") as error:
+        await planner.plan_assembly(_plan(), allow_fallback=False)
+
+    assert "valid assembly plan" in str(error.value)
+    assert error.value.__cause__ is not None
     assert len(completions.calls) == 2

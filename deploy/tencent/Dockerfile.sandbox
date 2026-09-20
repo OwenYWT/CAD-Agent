@@ -1,6 +1,14 @@
 # Incremental Tencent release from the previously verified AMD64 runtime.
-# Only projector code changed in this release. verify-images.py MUST check all
+# Projector and validation updates. verify-images.py MUST check all
 # runtime and vendored source bytes against the release manifest before use.
 ARG VERIFIED_SANDBOX_IMAGE
 FROM ${VERIFIED_SANDBOX_IMAGE}
+COPY backend/sandbox/freecad_entry.py /opt/cad-agent/freecad_entry.py
+COPY backend/sandbox/capability_entry.py /opt/cad-agent/capability_entry.py
+COPY backend/sandbox/freecad_result_channel.py /opt/cad-agent/freecad_result_channel.py
+COPY backend/app/freecad/sketch_diagnostics.py /opt/cad-agent/freecad_sketch_diagnostics.py
+COPY backend/app/freecad/reference_geometry.py /opt/cad-agent/freecad_reference_geometry.py
 COPY --chown=1000:1000 backend/app/freecad/state_projector.py /opt/cad-agent/freecad_state_projector.py
+COPY backend/sandbox/geometry_validation.py /opt/cad-agent/geometry_validation.py
+COPY backend/sandbox/dfm_validation.py /opt/cad-agent/dfm_validation.py
+COPY backend/sandbox/mesh_normalization.py /opt/cad-agent/mesh_normalization.py

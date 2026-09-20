@@ -45,7 +45,11 @@ def _metrics(stl_path: Path) -> tuple[dict[str, Any], str | None]:
             from sandbox.dfm_brep import measure_brep
         analytic = measure_brep(model.val())
         cq.exporters.export(model, str(mesh_source), exportType="STL")
-    mesh = trimesh.load_mesh(mesh_source, force="mesh")
+    try:
+        from mesh_normalization import load_normalized_mesh
+    except ModuleNotFoundError:
+        from sandbox.mesh_normalization import load_normalized_mesh
+    mesh = load_normalized_mesh(mesh_source)
     if not isinstance(mesh, trimesh.Trimesh) or mesh.is_empty or not len(mesh.faces):
         raise ValueError("DFM input contains no mesh")
     bounds = mesh.bounding_box.bounds

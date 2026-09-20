@@ -1902,3 +1902,8 @@ button,
   .ww-inspector-pane--overlay > .ww-pane-host { height: auto; flex: 1; }
 }
 .ww-feature-tree { max-height: 260px; overflow: auto; }
+
+.ww-mobile-task-alert { display: none; }
+@media (max-width: 760px) {
+  .ww-mobile-task-alert { display: flex; flex-shrink: 0; width: 100%; border-color: #d8c594; background: #fff9e9; justify-content: center; }
+}

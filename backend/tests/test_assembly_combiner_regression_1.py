@@ -150,11 +150,34 @@ async def test_assembly_combiner_isolates_equal_parameter_names(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_assembly_combiner_translates_silver_to_supported_rgb(monkeypatch):
+    def color(*values):
+        if values == ("silver",):
+            raise ValueError("Unknown color name: silver")
+        return values
+
+    monkeypatch.setitem(sys.modules, "cadquery", SimpleNamespace(
+        Assembly=_Assembly, Location=tuple, Color=color,
+    ))
+    source = await CodeGenerator().generate_assembly_combiner([{
+        "name": "wall", "code": "result = _Component(23, 0)",
+        "position": [29, 0, 2], "color": "silver",
+    }])
+    namespace = {"_Component": _Component, "show_object": lambda value: None}
+    exec(compile(source, "<silver-assembly>", "exec"), namespace)
+    part = namespace["result"].parts[0]
+    assert part["color"] == pytest.approx((192 / 255, 192 / 255, 192 / 255))
+    assert part["position"] == (29, 0, 2)
+    assert part["value"].height == 23
+
+
+@pytest.mark.asyncio
 @pytest.mark.skipif(
     os.getenv("RUN_REAL_PODMAN") != "1",
     reason="set RUN_REAL_PODMAN=1 to exercise the actual assembly STL exporter",
 )
-async def test_touching_assembly_exports_a_watertight_preview_stl() -> None:
+@pytest.mark.parametrize("lid_color", ["steelblue", "silver"])
+async def test_touching_assembly_exports_a_watertight_preview_stl(lid_color) -> None:
     generator = CodeGenerator()
     source = await generator.generate_assembly_combiner([
         {
@@ -174,7 +197,7 @@ async def test_touching_assembly_exports_a_watertight_preview_stl() -> None:
                 "result = cq.Workplane('XY').box(30, 20, 3)\n"
             ),
             "position": [0, 0, 5],
-            "color": "steelblue",
+            "color": lid_color,
         },
     ])
     executor = CadQueryExecutor(

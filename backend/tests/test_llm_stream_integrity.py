@@ -93,3 +93,10 @@ async def test_incomplete_or_mixed_response_stream_cannot_be_reported_as_success
 async def test_stream_preserves_truncation_for_generator_retry():
     result = await adapter_response([chunk('{"partial":', finish="length")])
     assert result.choices[0].finish_reason == "length"
+
+
+@pytest.mark.asyncio
+async def test_stream_does_not_impose_an_application_character_cap():
+    content = "x" * 1_000_001
+    response = await adapter_response([chunk(content), chunk(finish="stop"), chunk(usage=True)])
+    assert response.choices[0].message.content == content

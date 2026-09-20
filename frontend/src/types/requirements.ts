@@ -3,7 +3,8 @@ export interface RequirementBasis {
   schema_version: "requirement-basis.v1";
   target: string;
   purpose: string;
-  source_kind: "none" | "user_measurement" | "reference";
+  design_scope?: "geometry" | "physical_fit";
+  source_kind: "none" | "user_specification" | "user_measurement" | "reference";
   source_reference: string;
   dimensions: string;
   fit_notes: string;

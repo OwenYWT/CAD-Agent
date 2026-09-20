@@ -97,7 +97,7 @@ def test_moonshot_client_uses_async_openai():
     assert client.raw_client.max_retries == 0
 
 
-def test_gpt5_uses_max_completion_tokens_and_reasoning_effort():
+def test_gpt5_omits_output_cap_and_preserves_reasoning_effort():
     params = build_chat_params(
         model="gpt-5",
         messages=[{"role": "user", "content": "hello"}],
@@ -107,7 +107,7 @@ def test_gpt5_uses_max_completion_tokens_and_reasoning_effort():
     )
 
     assert params["model"] == "gpt-5"
-    assert params["max_completion_tokens"] == 1234
+    assert "max_completion_tokens" not in params
     assert params["reasoning_effort"] == "minimal"
     assert "max_tokens" not in params
     assert "temperature" not in params
@@ -122,7 +122,7 @@ def test_non_gpt5_keeps_legacy_chat_params():
         llm_settings=Settings(_env_file=None, llm_provider="openai_compatible"),
     )
 
-    assert params["max_tokens"] == 1234
+    assert "max_tokens" not in params
     assert params["temperature"] == 0.2
     assert "max_completion_tokens" not in params
     assert "reasoning_effort" not in params
@@ -138,7 +138,7 @@ def test_moonshot_drops_temperature_param():
     )
 
     assert params["model"] == "kimi-k2.7-code"
-    assert params["max_completion_tokens"] == 1234
+    assert "max_completion_tokens" not in params
     assert "max_tokens" not in params
     assert "temperature" not in params
 
