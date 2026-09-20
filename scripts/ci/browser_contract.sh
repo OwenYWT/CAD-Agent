@@ -23,9 +23,14 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port "$api_port" > "$report_ro
 api_pid=$!
 python -m app.workers.workflow_worker > "$report_root/browser-worker.log" 2>&1 &
 worker_pid=$!
-(cd "$root/frontend" && npm run dev -- --host 127.0.0.1 --port "$web_port") > "$report_root/browser-web.log" 2>&1 &
+(cd "$root/frontend" && exec node node_modules/vite/bin/vite.js --host 127.0.0.1 --port "$web_port") > "$report_root/browser-web.log" 2>&1 &
 web_pid=$!
-trap 'kill "$api_pid" "$worker_pid" "$web_pid" 2>/dev/null || true; rm -f "$CAD_NATIVE_E2E_PRIVATE"' EXIT
+cleanup() {
+  kill "$api_pid" "$worker_pid" "$web_pid" 2>/dev/null || true
+  wait "$api_pid" "$worker_pid" "$web_pid" 2>/dev/null || true
+  rm -f "$CAD_NATIVE_E2E_PRIVATE"
+}
+trap cleanup EXIT
 for attempt in {1..90}; do
   # This contract executes a real compiled native plan, without a Provider key.
   # Require the durable dependencies, not the unrelated LLM readiness claim.
