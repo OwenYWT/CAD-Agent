@@ -268,3 +268,49 @@ async def test_real_temporal_wait_and_cancellation(request_job,monkeypatch):
             assert (await jobs.read(request_job))['status']=='cancelled'
     finally:
         runner.cancel();await asyncio.gather(runner,return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_real_continue_as_new_keeps_one_job_and_provider_operation(request_job, monkeypatch):
+    """Real Temporal/DB; only the poll timer is accelerated in this test worker."""
+    if not os.getenv('CAD_MODEL_JOB_TEST_TEMPORAL'):
+        pytest.skip('real Temporal required')
+    from datetime import timedelta
+    from temporalio import activity, workflow
+    from temporalio.client import Client
+    from app.workers.model_job_worker import ModelJobWorker
+    from app.workflows.model_job import ModelJobWorkflow
+    client = await Client.connect(os.environ['CAD_MODEL_JOB_TEST_TEMPORAL'])
+    original_sleep = workflow.sleep
+    async def short_poll(duration):
+        return await original_sleep(timedelta(milliseconds=1))
+    monkeypatch.setattr(workflow, 'sleep', short_poll)
+    release = asyncio.Event()
+    polls = calls = 0
+    @activity.defn(name='model_jobs.read')
+    async def counted_read(payload: dict) -> dict:
+        nonlocal polls
+        polls += 1
+        if polls > 500:
+            release.set()
+        return await jobs.read(payload)
+    async def operation(payload):
+        nonlocal calls
+        calls += 1
+        await release.wait()
+        return {'retained_workflow': payload['workflow_run_id']}
+    queue = 'rollover-contract-' + str(uuid4())
+    async with ModelJobWorker(client, task_queue=queue, workflows=[ModelJobWorkflow],
+            activities=[jobs.submit_activity, counted_read, jobs.cancel_activity],
+            model_operations={request_job['operation']: operation}):
+        handle = await client.start_workflow(ModelJobWorkflow.run, request_job, id=queue, task_queue=queue)
+        initial_run = handle.first_execution_run_id
+        result = await handle.result()
+        assert result == {'retained_workflow': request_job['payload']['workflow_run_id']}
+        assert polls > 500 and calls == 1
+        state = await jobs.read(request_job)
+        assert state['status'] == 'succeeded'
+        description = await client.get_workflow_handle(queue).describe()
+        assert description.run_id != initial_run
+        history = await client.get_workflow_handle(queue, run_id=initial_run).fetch_history()
+        assert any(event.HasField('workflow_execution_continued_as_new_event_attributes') for event in history.events)

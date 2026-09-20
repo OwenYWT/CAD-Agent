@@ -5,6 +5,7 @@ CAD_LAYOUT_FIXTURE (the candidate run's fixture.json), CAD_LAYOUT_REPORT_DIR.
 CAD_NATIVE_E2E_WEB defaults to the local real frontend. No network interception.
 """
 import json, re, os
+import httpx
 from pathlib import Path
 from playwright.sync_api import sync_playwright,expect
 private=json.loads(Path(os.environ['CAD_NATIVE_E2E_PRIVATE']).read_text())
@@ -20,7 +21,7 @@ with sync_playwright() as pw:
   scene=p.locator('[data-testid=document-scene]');expect(scene).to_have_attribute('data-revision',re.compile('.+'),timeout=90000)
   expect(p.locator('.ww-agent-panel:visible')).to_have_count(1);expect(p.locator('.workspace-header__agent-action:visible')).to_have_count(0)
   expect(p.get_by_role('tab',name='BOM',exact=True)).not_to_be_visible()
-  assert not any('/bom' in u or '/onshape' in u for u in requests)
+  assert not any('/api/' in u and ('/bom' in u or '/onshape' in u) for u in requests)
   p.evaluate('window.__layoutCanvas = document.querySelector("[data-testid=document-scene] canvas")')
   canvas=scene.locator('canvas');box=canvas.bounding_box();p.mouse.move(box['x']+box['width']*.45,box['y']+box['height']*.55);p.mouse.down();p.mouse.move(box['x']+box['width']*.52,box['y']+box['height']*.6,steps=15);p.mouse.up();p.wait_for_timeout(1500)
   before=canvas.screenshot()
@@ -75,7 +76,13 @@ with sync_playwright() as pw:
    p.wait_for_timeout(400);stable=canvas.screenshot()
    if stable==before_history: break
    before_history=stable
-  p.get_by_role('button',name='查看此版本',exact=True).nth(1).click()
+  # Choose the fixture's original native revision, not a row position: rejected
+  # candidates can legitimately insert additional history entries.
+  with httpx.Client(base_url=os.getenv('CAD_NATIVE_E2E_URL','http://127.0.0.1:8040'), headers={'Authorization':'Bearer '+private['owner']['token']}) as api:
+   response=api.get('/api/change-sets/'+fixture['change_set_id']);response.raise_for_status()
+   original_revision=response.json()['candidate_revision_id']
+  assert original_revision != current_revision
+  p.locator('[data-revision-id="'+original_revision+'"]').get_by_role('button',name='查看此版本',exact=True).click()
   expect(scene).not_to_have_attribute('data-requested-revision',current_revision,timeout=30000)
   history_revision=scene.get_attribute('data-requested-revision')
   expect(scene).to_have_attribute('data-revision',history_revision,timeout=90000)

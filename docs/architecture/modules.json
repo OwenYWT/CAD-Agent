@@ -1,0 +1,252 @@
+{
+  "modules": {
+    "M01": {
+      "owner": "identity",
+      "writes": [
+        "auth_users",
+        "auth_sessions",
+        "project_memberships"
+      ],
+      "public": [
+        "app.services.authentication",
+        "app.domain.identity"
+      ]
+    },
+    "M02": {
+      "owner": "documents",
+      "writes": [
+        "cloud_documents",
+        "project_branches",
+        "project_revisions",
+        "cad_operations",
+        "change_sets"
+      ],
+      "public": [
+        "app.services.document_operations",
+        "app.services.cloud_documents",
+        "app.services.change_sets",
+        "app.services.workflow_admission"
+      ]
+    },
+    "M03": {
+      "owner": "execution",
+      "writes": [
+        "workflow_runs",
+        "step_runs",
+        "execution_attempts",
+        "model_jobs",
+        "workflow_dispatches"
+      ],
+      "public": [
+        "app.services.run_state",
+        "app.services.model_jobs",
+        "app.execution.backend"
+      ]
+    },
+    "M04": {
+      "owner": "cad",
+      "public": [
+        "app.freecad.contracts",
+        "app.freecad.reference_geometry",
+        "app.freecad.constraint_repair"
+      ]
+    },
+    "M05": {
+      "owner": "agent",
+      "public": [
+        "app.agent.durable_plan",
+        "app.agent.durable_planner"
+      ]
+    },
+    "M06": {
+      "owner": "validation",
+      "public": [
+        "app.validation.durable_geometry",
+        "app.validation.durable_visual",
+        "app.validation.durable_dfm"
+      ]
+    },
+    "M07": {
+      "owner": "scene",
+      "public": [
+        "app.services.scene_jobs",
+        "app.services.document_geometry",
+        "frontend/src/hooks/useDocumentView"
+      ]
+    },
+    "M08": {
+      "owner": "engineering",
+      "public": [
+        "app.services.document_engineering",
+        "app.freecad.engineering_contracts"
+      ]
+    },
+    "M09": {
+      "owner": "delivery",
+      "public": [
+        "app.services.document_releases",
+        "app.freecad.release_contracts"
+      ]
+    },
+    "M10": {
+      "owner": "connectors",
+      "public": [
+        "app.fusion360",
+        "app.onshape",
+        "app.tools"
+      ]
+    },
+    "M11": {
+      "owner": "observability",
+      "writes": [
+        "llm_calls"
+      ],
+      "public": [
+        "app.services.llm_usage",
+        "app.services.monitor_queries"
+      ]
+    }
+  },
+  "import_rules": [
+    {
+      "id": "business-no-http",
+      "sources": [
+        "backend/app/services/*.py",
+        "backend/app/workflows/*.py",
+        "backend/app/agent/*.py",
+        "backend/app/execution/*.py",
+        "backend/app/validation/*.py",
+        "backend/app/freecad/*.py"
+      ],
+      "forbidden": [
+        "app.api",
+        "app.api.*"
+      ]
+    },
+    {
+      "id": "domain-no-adapters",
+      "sources": [
+        "backend/app/domain/*.py",
+        "backend/app/contracts/*.py"
+      ],
+      "forbidden": [
+        "app.api*",
+        "app.services*",
+        "app.workflows*",
+        "app.workers*",
+        "app.db",
+        "app.llm",
+        "sqlalchemy*",
+        "fastapi*",
+        "temporalio*"
+      ]
+    },
+    {
+      "id": "provider-no-storage",
+      "sources": [
+        "backend/app/llm.py",
+        "backend/app/providers/*.py"
+      ],
+      "forbidden": [
+        "app.services*",
+        "app.db",
+        "app.monitoring",
+        "sqlalchemy*"
+      ]
+    },
+    {
+      "id": "model-runner-no-business",
+      "sources": [
+        "backend/app/services/model_jobs.py",
+        "backend/app/workers/model_job_worker.py"
+      ],
+      "forbidden": [
+        "app.agent*",
+        "app.workflows.activities*",
+        "app.validation*",
+        "app.freecad*",
+        "app.api*"
+      ]
+    },
+    {
+      "id": "clients-no-ui",
+      "sources": [
+        "frontend/src/services/clients/*"
+      ],
+      "forbidden": [
+        "frontend/src/components/*",
+        "frontend/src/hooks/*",
+        "frontend/src/stores/*",
+        "frontend/src/services/engineeringService",
+        "react",
+        "zustand"
+      ]
+    },
+    {
+      "id": "handlers-no-legacy",
+      "sources": [
+        "backend/app/workflows/handlers/*.py"
+      ],
+      "forbidden": [
+        "app.workflows.activities",
+        "app.api*"
+      ]
+    },
+    {
+      "id": "frontend-no-legacy-facade",
+      "sources": [
+        "frontend/src/components/*",
+        "frontend/src/hooks/*",
+        "frontend/src/controllers/*"
+      ],
+      "forbidden": [
+        "frontend/src/services/engineeringService"
+      ]
+    },
+    {
+      "id": "run-state-no-document-policy",
+      "sources": [
+        "backend/app/services/run_state.py"
+      ],
+      "forbidden": [
+        "app.services.cloud_documents",
+        "app.services.workflow_admission",
+        "app.freecad*"
+      ]
+    },
+    {
+      "id": "shared-inputs-no-orchestration",
+      "sources": [
+        "backend/app/models/authentication.py",
+        "backend/app/models/document_requests.py",
+        "backend/app/models/native_modification.py"
+      ],
+      "forbidden": [
+        "app.api*",
+        "app.services*",
+        "app.workflows*",
+        "app.workers*",
+        "app.db"
+      ]
+    }
+  ],
+  "fence_bypass": {
+    "backend/app/services/llm_usage.py": "Finish telemetry after cancellation; tenant role remains enforced."
+  },
+  "mandatory_suites": [
+    "backend",
+    "frontend",
+    "mcad-runtime",
+    "architecture-contract",
+    "model-lifecycle-db",
+    "usage-monitoring"
+  ],
+  "runtime_contracts": [
+    "Job ID/generation and cancellation",
+    "Workflow patch/activity names",
+    "JSON numeric representation and canonical hashes",
+    "native invocation envelope",
+    "atomic admission/head/terminal transitions",
+    "scoped draft/task/view identity"
+  ]
+}

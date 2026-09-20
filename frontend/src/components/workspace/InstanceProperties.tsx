@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useFeatureLease } from "../../hooks/useFeatureLease";
-import { updateDocumentInstance } from "../../services/engineeringService";
+import { updateDocumentInstance } from "../../services/clients/documents";
 import type { CloudDocument, SemanticFeature } from "../../types/document";
 
 export default function InstanceProperties({ document, feature, onSubmitted }: {

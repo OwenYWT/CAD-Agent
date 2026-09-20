@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { confirmDurableTask, getDurableTaskSnapshot } from "../../services/engineeringService";
+import { confirmDurableTask, getDurableTaskSnapshot } from "../../services/clients/tasks";
 import type { DurableTaskSnapshot } from "../../types";
 
 const STATUS: Record<string,string> = { pending:"等待执行",planning:"正在规划",running:"正在执行",waiting_confirmation:"等待确认",

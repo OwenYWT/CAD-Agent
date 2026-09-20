@@ -182,12 +182,10 @@ def geometry_intake(page, client):
 
 
 def candidate(page, client):
-    container = os.environ['CAD_NATIVE_E2E_API']
-    assert container.startswith('cad-coedit-') and container.endswith('-api')
     session, panel_id = str(uuid4()), str(uuid4())
     title = '五状态原生验收 ' + session[:8]
-    seed = subprocess.run([os.getenv('CAD_NATIVE_E2E_PODMAN','/opt/homebrew/bin/podman'),'exec','-i',container,'python','-',
-        PRIVATE['owner']['user']['id'],session,panel_id,title],input=SEED,text=True,capture_output=True,timeout=240)
+    from runtime_fixture import run_native_seed
+    seed = run_native_seed(SEED, [PRIVATE['owner']['user']['id'],session,panel_id,title])
     (OUT/'seed.log').write_text(seed.stdout + seed.stderr)
     assert seed.returncode == 0, 'real kernel seed failed; inspect seed.log'
     fixture = json.loads(next(line.split('=',1)[1] for line in seed.stdout.splitlines() if line.startswith('FIRST_CANDIDATE=')))

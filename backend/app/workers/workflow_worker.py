@@ -1,6 +1,8 @@
 """Temporal Worker process for durable MCAD workflows."""
 from __future__ import annotations
 
+from functools import partial
+from app.workflows.handlers import planning, decomposition, source_generation, native_generation, visual_validation
 import asyncio
 
 from temporalio.client import Client
@@ -26,7 +28,6 @@ from app.services.model_jobs import submit_activity, read_activity, cancel_activ
 from app.workers.model_job_worker import ModelJobWorker
 from app.workflows.model_job import ModelJobWorkflow
 from app.workflows.model_job_policy import MODEL_OPERATIONS
-from temporalio import activity
 
 
 def build_workflow_worker(
@@ -63,9 +64,18 @@ def build_agent_v2_workflow_worker(
         durable_visual=durable_visual,
         freecad_operations=freecad_operations,
     )
-    operations = {activity._Definition.must_from_callable(fn).name:fn
-                  for fn in activities.registered_agent_v2()
-                  if activity._Definition.must_from_callable(fn).name in MODEL_OPERATIONS}
+    operations = {
+        'agent_v2.requirements': partial(planning.agent_requirements, durable_planner=activities.durable_planner),
+        'agent_v2.decompose': partial(decomposition.decompose, planner=activities.durable_planner),
+        'agent_v2.generate_source': partial(source_generation.agent_generate_source, durable_modeling=activities.durable_modeling),
+        'agent_v2.repair_source': partial(source_generation.agent_repair_source, durable_repair=activities.durable_repair),
+        'agent_v2.generate_operations': partial(native_generation.agent_generate_operations, freecad_operations=activities.freecad_operations),
+        'agent_v2.repair_operations': partial(native_generation.agent_repair_operations, freecad_operations=activities.freecad_operations),
+        'agent_v2.judge_visual': partial(visual_validation.agent_judge_visual, durable_visual=activities.durable_visual),
+        'agent_v2.repair_visual': partial(visual_validation.agent_repair_visual, durable_visual=activities.durable_visual),
+    }
+    if operations.keys() != MODEL_OPERATIONS:
+        raise RuntimeError('Model operation registration differs from the durable contract')
     return ModelJobWorker(
         client,
         model_operations=operations,

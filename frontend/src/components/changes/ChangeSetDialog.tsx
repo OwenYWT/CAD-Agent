@@ -6,16 +6,8 @@ import {
   durableChangeSetCanCommit,
 } from "../../adapters/changeSetAdapter";
 import type { DurableChangeSetAcceptanceBlockReason } from "../../adapters/changeSetAdapter";
-import {
-  acceptDurableChangeSet,
-  commitDurableChangeSet,
-  getDurableChangeSet,
-  getModelSnapshot,
-  listModelSnapshots,
-  rejectDurableChangeSet,
-  requestDurableChangeSetModification,
-  rollbackDurableChangeSet,
-} from "../../services/engineeringService";
+import { acceptDurableChangeSet, commitDurableChangeSet, getDurableChangeSet, rejectDurableChangeSet, requestDurableChangeSetModification, rollbackDurableChangeSet } from "../../services/clients/changes";
+import { getModelSnapshot, listModelSnapshots } from "../../services/clients/revisions";
 import type { ModelSnapshotDetail } from "../../types";
 import type {
   ChangeSet,

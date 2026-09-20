@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CloudDocument } from "../../types/document";
 import type { BranchComparison, DocumentBranches as Branches, SemanticChange } from "../../types/branches";
-import { getDocumentBranches, createDocumentBranch, compareDocumentBranches, mergeDocumentBranch } from "../../services/engineeringService";
+import { getDocumentBranches, createDocumentBranch, compareDocumentBranches, mergeDocumentBranch } from "../../services/clients/branches";
 import { comparisonStaleness } from "../../adapters/branchView";
 import { guardDraft } from "../../stores/draftGuard";
 

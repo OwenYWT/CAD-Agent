@@ -12,12 +12,15 @@
                                                "frontend/src/auth.ts",
                                                "frontend/src/components/LoginPage.tsx",
                                                "backend/app/api/login.py",
-                                               "backend/app/storage/auth.py"
+                                               "backend/app/storage/auth.py",
+                                               "backend/app/models/authentication.py",
+                                               "backend/app/services/authentication.py"
                                            ],
                         "tests":  [
                                       "backend/tests/test_auth_local.py",
                                       "backend/tests/integration/test_postgres_auth.py",
-                                      "backend/tests/test_deploy_auth_security.py"
+                                      "backend/tests/test_deploy_auth_security.py",
+                                      "backend/tests/postgres/test_monitoring.py"
                                   ]
                     },
                     {
@@ -31,14 +34,17 @@
                                                "frontend/src/stores/sessionStore.ts",
                                                "frontend/src/components/workspace/EngineeringWorkspace.tsx",
                                                "backend/app/api/history.py",
-                                               "backend/app/storage/postgres_history.py"
+                                               "backend/app/storage/postgres_history.py",
+                                               "frontend/src/controllers/sessionMessages.ts",
+                                               "frontend/src/services/clients/history.ts"
                                            ],
                         "tests":  [
                                       "backend/tests/test_history_regression_qa.py",
                                       "backend/tests/test_model_snapshots.py",
                                       "backend/tests/integration/test_postgres_history.py",
                                       "frontend/tests/sessionStoreResumeState.test.ts",
-                                      "frontend/tests/history-restore-commit-regression.test.ts"
+                                      "frontend/tests/history-restore-commit-regression.test.ts",
+                                      "frontend/tests/session-message-boundary.test.ts"
                                   ]
                     },
                     {
@@ -95,7 +101,12 @@
                                                "frontend/src/components/agent/TaskCard.tsx",
                                                "backend/app/workflows/agent_v2.py",
                                                "backend/app/agent/durable_planner.py",
-                                               "backend/app/agent/durable_repair.py"
+                                               "backend/app/agent/durable_repair.py",
+                                               "backend/app/contracts/model_operations.py",
+                                               "backend/app/workflows/handlers/planning.py",
+                                               "backend/app/workflows/handlers/decomposition.py",
+                                               "backend/app/workflows/handlers/source_generation.py",
+                                               "backend/app/workflows/handlers/native_generation.py"
                                            ],
                         "tests":  [
                                       "backend/tests/test_durable_agent_planner.py",
@@ -103,7 +114,8 @@
                                       "backend/tests/test_durable_agent_repair.py",
                                       "backend/tests/test_agent_recovery.py",
                                       "backend/tests/e2e/cloud_agent_inspection_acceptance.py",
-                                      "backend/tests/e2e/native_first_candidate_browser.py"
+                                      "backend/tests/e2e/native_first_candidate_browser.py",
+                                      "backend/tests/test_activity_handler_wiring.py"
                                   ]
                     },
                     {
@@ -118,7 +130,12 @@
                                                "frontend/src/hooks/useWebSocket.ts",
                                                "backend/app/api/tasks.py",
                                                "backend/app/services/task_retry.py",
-                                               "backend/app/services/durable_submission.py"
+                                               "backend/app/services/durable_submission.py",
+                                               "backend/app/services/model_jobs.py",
+                                               "backend/app/workflows/model_job.py",
+                                               "backend/app/execution/model_fence.py",
+                                               "backend/app/workflows/logical_steps.py",
+                                               "backend/app/workflows/handlers/lifecycle.py"
                                            ],
                         "tests":  [
                                       "backend/tests/test_state_machine.py",
@@ -128,7 +145,9 @@
                                       "frontend/tests/task-state.test.ts",
                                       "frontend/tests/websocket-replay.test.ts",
                                       "backend/tests/e2e/task_state_boundaries.py",
-                                      "backend/tests/e2e/continuation_recovery_browser.py"
+                                      "backend/tests/e2e/continuation_recovery_browser.py",
+                                      "backend/tests/postgres/test_model_jobs.py",
+                                      "backend/tests/test_contract_goldens.py"
                                   ]
                     },
                     {
@@ -143,7 +162,10 @@
                                                "backend/app/freecad/operation_generator.py",
                                                "backend/app/freecad/state_projector.py",
                                                "backend/sandbox/freecad_entry.py",
-                                               "backend/app/execution"
+                                               "backend/app/execution",
+                                               "backend/app/workflows/handlers/cad_execution.py",
+                                               "backend/app/workflows/handlers/legacy_modeling.py",
+                                               "backend/app/workflows/execution_support.py"
                                            ],
                         "tests":  [
                                       "backend/tests/test_freecad_contracts.py",
@@ -152,7 +174,8 @@
                                       "backend/tests/test_freecad_subtractive_semantics_regression_1.py",
                                       "backend/tests/test_2d_pipeline.py",
                                       "backend/tests/e2e/freecad_checkpoint_acceptance.py",
-                                      "backend/tests/e2e/freecad_sketch_acceptance.py"
+                                      "backend/tests/e2e/freecad_sketch_acceptance.py",
+                                      "backend/tests/e2e/browser_contract.py"
                                   ]
                     },
                     {
@@ -167,7 +190,10 @@
                                                "frontend/src/components/parameters/ParameterDrawer.tsx",
                                                "backend/app/freecad/state_contract.py",
                                                "backend/app/services/feature_leases.py",
-                                               "backend/app/services/feature_annotations.py"
+                                               "backend/app/services/feature_annotations.py",
+                                               "frontend/src/controllers/useParameterEditor.ts",
+                                               "backend/app/services/document_operations.py",
+                                               "backend/app/models/document_requests.py"
                                            ],
                         "tests":  [
                                       "backend/tests/test_freecad_state_contract.py",
@@ -177,7 +203,9 @@
                                       "backend/tests/test_operation_resolution.py",
                                       "frontend/tests/feature-tree.test.ts",
                                       "frontend/tests/parameter-validation.test.ts",
-                                      "backend/tests/e2e/cloud_exact_parameter_failure.py"
+                                      "backend/tests/e2e/cloud_exact_parameter_failure.py",
+                                      "backend/tests/e2e/parameter_rejection_browser.py",
+                                      "backend/tests/e2e/task_state_browser.py"
                                   ]
                     },
                     {
@@ -214,7 +242,8 @@
                                                "backend/app/services/scene_jobs.py",
                                                "backend/app/services/document_geometry.py",
                                                "backend/sandbox/freecad_scene.py",
-                                               "backend/app/freecad/selection.py"
+                                               "backend/app/freecad/selection.py",
+                                               "backend/app/workflows/handlers/engineering.py"
                                            ],
                         "tests":  [
                                       "backend/tests/test_document_geometry.py",
@@ -224,7 +253,8 @@
                                       "frontend/tests/viewer2d-security.test.ts",
                                       "backend/tests/e2e/freecad_scene_acceptance.py",
                                       "backend/tests/e2e/native_scene_jobs.py",
-                                      "backend/tests/e2e/native_scene_controls.py"
+                                      "backend/tests/e2e/native_scene_controls.py",
+                                      "backend/tests/e2e/workspace_layout_browser.py"
                                   ]
                     },
                     {
@@ -263,7 +293,10 @@
                                                "backend/app/api/analyze.py",
                                                "backend/app/services/task_evidence.py",
                                                "backend/app/workflows/activities.py",
-                                               "backend/app/validation"
+                                               "backend/app/validation",
+                                               "backend/app/workflows/handlers/geometry_validation.py",
+                                               "backend/app/workflows/handlers/visual_validation.py",
+                                               "backend/app/workflows/validation_support.py"
                                            ],
                         "tests":  [
                                       "backend/tests/test_inspect_report.py",
@@ -291,7 +324,8 @@
                                                "backend/app/api/dfm_rules.py",
                                                "backend/app/api/knowledge.py",
                                                "backend/app/dfm/rule_engine.py",
-                                               "backend/app/parts_library/data.py"
+                                               "backend/app/parts_library/data.py",
+                                               "backend/app/workflows/handlers/dfm_validation.py"
                                            ],
                         "tests":  [
                                       "backend/tests/test_dfm_rules.py",
@@ -315,7 +349,10 @@
                                                "backend/app/api/changes.py",
                                                "backend/app/services/change_sets.py",
                                                "backend/app/repositories/agent_candidates.py",
-                                               "backend/app/services/artifact_commit.py"
+                                               "backend/app/services/artifact_commit.py",
+                                               "backend/app/workflows/handlers/candidates.py",
+                                               "backend/app/workflows/handlers/review.py",
+                                               "backend/app/services/workflow_admission.py"
                                            ],
                         "tests":  [
                                       "backend/tests/integration/test_change_set_api.py",
@@ -325,7 +362,8 @@
                                       "backend/tests/postgres/test_artifact_commit.py",
                                       "frontend/tests/change-set-flow.test.ts",
                                       "frontend/tests/change-set-commit-gating.test.ts",
-                                      "backend/tests/e2e/native_first_candidate_browser.py"
+                                      "backend/tests/e2e/native_first_candidate_browser.py",
+                                      "backend/tests/postgres/test_cloud_documents.py"
                                   ]
                     },
                     {
@@ -435,7 +473,10 @@
                                                "frontend/src/components/workspace/DocumentReleases.tsx",
                                                "backend/app/api/files.py",
                                                "backend/app/services/document_releases.py",
-                                               "backend/sandbox/freecad_release.py"
+                                               "backend/sandbox/freecad_release.py",
+                                               "backend/app/workflows/handlers/bom.py",
+                                               "frontend/src/services/clients/downloads.ts",
+                                               "frontend/src/services/clients/delivery.ts"
                                            ],
                         "tests":  [
                                       "backend/tests/test_output_files.py",
@@ -445,7 +486,8 @@
                                       "backend/tests/e2e/cloud_release_acceptance.py",
                                       "backend/tests/e2e/cloud_release_browser.py",
                                       "backend/tests/e2e/cloud_release_database.py",
-                                      "frontend/tests/mcad-real-flow.test.ts"
+                                      "frontend/tests/mcad-real-flow.test.ts",
+                                      "backend/tests/e2e/freecad_engineering_result_channel.py"
                                   ]
                     },
                     {
@@ -554,7 +596,13 @@
                                                "backend/app/services/workflow_dispatch.py",
                                                "backend/app/execution",
                                                "backend/app/temporal_client.py",
-                                               "deploy/tencent"
+                                               "deploy/tencent",
+                                               "backend/app/contracts/usage.py",
+                                               "backend/app/llm_composition.py",
+                                               "backend/app/services/monitor_queries.py",
+                                               "backend/app/workers/model_job_worker.py",
+                                               "scripts/architecture/check_boundaries.py",
+                                               "scripts/ci/require_test_report.py"
                                            ],
                         "tests":  [
                                       "backend/tests/test_reliability.py",
@@ -567,7 +615,12 @@
                                       "backend/tests/test_deploy_config.py",
                                       "backend/tests/test_deploy_persistence.py",
                                       "backend/tests/test_deploy_pipeline_matrix.py",
-                                      "backend/tests/test_deploy_websocket.py"
+                                      "backend/tests/test_deploy_websocket.py",
+                                      "backend/tests/test_architecture_boundaries.py",
+                                      "backend/tests/test_worker_lifecycle.py",
+                                      "backend/tests/postgres/test_upgrade_contract.py",
+                                      "backend/tests/postgres/test_monitoring.py",
+                                      "backend/tests/e2e/monitoring_browser.py"
                                   ]
                     }
                 ]

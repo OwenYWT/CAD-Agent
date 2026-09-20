@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.api.error_messages import public_generation_error
+from app.services.public_errors import public_generation_error
 from app.storage import local_runs
 
 logger = logging.getLogger(__name__)

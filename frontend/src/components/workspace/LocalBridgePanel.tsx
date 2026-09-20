@@ -2,7 +2,7 @@ import { useEffect,useState } from 'react';
 import type { CloudDocument } from '../../types/document';
 import type { BridgeState,BridgePairing } from '../../types/localBridge';
 import type { DocumentRelease } from '../../types/release';
-import { createLocalBridgePairing,deliverLocalRelease,downloadLocalBridgeClient,getLocalBridges,listDocumentReleases,revokeLocalBridge } from '../../services/engineeringService';
+import { createLocalBridgePairing, deliverLocalRelease, downloadLocalBridgeClient, getLocalBridges, listDocumentReleases, revokeLocalBridge } from "../../services/clients/delivery";
 
 const inputClass='mt-1 w-full rounded border border-[var(--line)] bg-white p-2';
 const statuses:Record<string,string>={queued:'等待本地连接',leased:'正在交付',delivered:'文件已送达',failed:'交付失败',cancelled:'已取消'};

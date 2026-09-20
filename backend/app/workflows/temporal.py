@@ -13,11 +13,12 @@ from temporalio.client import WorkflowHandle
 from temporalio.service import RPCError
 
 from app.db import tenant_transaction
-from app.freecad.contracts import FreeCADOperation
+from app.models.native_modification import (FreeCADParameterUpdateV1, FreeCADNativeEditV1, FreeCADStructuredModificationV1)
 from app.domain.requirement_basis import RequirementBasisV1
 from app.freecad.selection import SelectionContextV1
 from app.services.workflow_dispatch import persist_dispatch, start_dispatch, acknowledge_dispatch
 from app.config import settings
+from app.services.workflow_admission import create_document_workflow
 from app.services.run_state import (
     IllegalTransition,
     create_workflow,
@@ -162,60 +163,6 @@ class OperationContextV1(BaseModel):
                 raise ValueError("source-free generation requires auto or CadQuery")
             if self.base_source_id is not None or self.base_source_sha256 is not None:
                 raise ValueError("source-free generation cannot have source identity")
-        return self
-
-
-class FreeCADParameterUpdateV1(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    parameter_id: str = Field(
-        min_length=3,
-        max_length=161,
-        pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,79}\.[A-Za-z_][A-Za-z0-9_]{0,79}$",
-    )
-    value: float = Field(allow_inf_nan=False, strict=True)
-
-
-class FreeCADNativeEditV1(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
-    action: Literal['assembly.instance', 'assembly.place', 'sketch.set_constraint']
-    args: dict
-
-    @model_validator(mode='after')
-    def typed_arguments(self):
-        operation = FreeCADOperation(op_id='validate', action=self.action, args=self.args)
-        object.__setattr__(self, 'args', operation.args)
-        return self
-
-
-class FreeCADStructuredModificationV1(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    schema_version: Literal["freecad-structured-modification.v1"] = (
-        "freecad-structured-modification.v1"
-    )
-    expected_state_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    parameter_updates: tuple[FreeCADParameterUpdateV1, ...] = Field(
-        default=(),
-        min_length=0,
-        max_length=100,
-    )
-    native_edits: tuple[FreeCADNativeEditV1, ...] = Field(default=(), max_length=20)
-
-    @model_serializer(mode='wrap')
-    def historical_wire_identity(self, handler):
-        payload = handler(self)
-        if not self.native_edits:
-            payload.pop('native_edits', None)
-        return payload
-
-    @model_validator(mode="after")
-    def unique_updates(self) -> "FreeCADStructuredModificationV1":
-        if bool(self.parameter_updates) == bool(self.native_edits):
-            raise ValueError('provide either parameter_updates or native_edits')
-        identifiers = [update.parameter_id for update in self.parameter_updates]
-        if len(identifiers) != len(set(identifiers)):
-            raise ValueError("parameter_duplicate_update")
         return self
 
 
@@ -587,7 +534,7 @@ async def start_mcad_agent_v2_workflow(
     if require_worker_ready:
         await temporal_agent_v2_worker_readiness()
     async with tenant_transaction(tenant_id, principal_id) as connection:
-        created = await create_workflow(
+        created = await create_document_workflow(
             connection,
             tenant_id=tenant_id,
             project_id=project_id,
@@ -679,7 +626,7 @@ async def start_mcad_workflow(
     if expected_state_version is not None:
         request_payload["expected_state_version"] = expected_state_version
     async with tenant_transaction(tenant_id, principal_id) as connection:
-        created = await create_workflow(
+        created = await create_document_workflow(
             connection,
             tenant_id=tenant_id,
             project_id=project_id,

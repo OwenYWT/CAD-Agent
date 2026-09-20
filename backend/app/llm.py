@@ -154,8 +154,13 @@ def build_chat_params(
     return params
 
 
+from app.contracts.usage import UsageSink
+from app.llm_composition import usage_sink
+
+
 class ChatCompletionAdapter:
-    def __init__(self, raw_completions: Any, llm_settings: Settings):
+    def __init__(self, raw_completions: Any, llm_settings: Settings, *, sink: UsageSink | None = None):
+        self._usage = sink if sink is not None else usage_sink()
         self._raw_completions = raw_completions
         self._settings = llm_settings
 
@@ -170,7 +175,6 @@ class ChatCompletionAdapter:
             llm_settings=self._settings,
             **kwargs,
         )
-        from app.services.llm_usage import start_call, finish_call
         # Explicit None disables SDK/HTTP timeouts, including caller overrides.
         # Omitting this option would inherit the SDK or client default instead.
         params["timeout"] = None
@@ -179,7 +183,7 @@ class ChatCompletionAdapter:
         request_hash = hashlib.sha256(json.dumps(params, sort_keys=True, default=str).encode()).hexdigest()
         reset_chat_completion_provenance()
         for attempt in range(self._settings.llm_max_retries + 1):
-            handle = await start_call(provider=self._settings.normalized_llm_provider,
+            handle = await self._usage.start_call(provider=self._settings.normalized_llm_provider,
                                       model=params["model"], request_hash=request_hash, attempt=attempt + 1)
             started = time.perf_counter()
             provenance = None
@@ -208,7 +212,7 @@ class ChatCompletionAdapter:
                 error = exc
                 raise
             finally:
-                await finish_call(handle, duration_ms=round((time.perf_counter() - started) * 1000),
+                await self._usage.finish_call(handle, duration_ms=round((time.perf_counter() - started) * 1000),
                                   provenance=provenance, error=error)
 
 

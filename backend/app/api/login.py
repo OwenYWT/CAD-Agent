@@ -1,3 +1,5 @@
+from app.models.authentication import LoginWithPasswordRequest
+from app.services import authentication
 from collections import defaultdict
 from time import time
 
@@ -15,7 +17,7 @@ from app.services.sms import SmsDeliveryError, send_verification_code_sms
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 _bearer_scheme = HTTPBearer(auto_error=False)
-_failed_logins: dict[str, list[float]] = defaultdict(list)
+_failed_logins = authentication._failed_logins
 
 _LOGIN_WINDOW_S = 300
 _MAX_FAILED_PER_KEY = 5
@@ -39,11 +41,6 @@ class RegisterWithInviteRequest(BaseModel):
     phone: str = Field(..., min_length=6, max_length=20)
     invite_code: str = Field(..., min_length=3, max_length=120)
     password: str = Field(..., min_length=8, max_length=128)
-
-
-class LoginWithPasswordRequest(BaseModel):
-    phone: str = Field(..., min_length=3, max_length=20)
-    password: str = Field(..., min_length=1, max_length=128)
 
 
 class LoginWithCodeRequest(BaseModel):
@@ -101,39 +98,33 @@ def _ip_key(request: Request) -> str:
     return f"ip:{_client_host(request)}"
 
 
-def _recent(key: str, now: float) -> list[float]:
-    window = [item for item in _failed_logins[key] if item > now - _LOGIN_WINDOW_S]
-    _failed_logins[key] = window
-    return window
+def _recent(key: str, now: float):
+    return authentication._recent(key, now)
 
 
 def _check_login_attempts(request: Request, phone: str):
-    now = time()
-    per_key = _recent(_client_key(request, phone), now)
-    per_ip = _recent(_ip_key(request), now)
-    if len(per_key) >= _MAX_FAILED_PER_KEY or len(per_ip) >= _MAX_FAILED_PER_IP:
-        raise HTTPException(status_code=429, detail="登录失败次数过多，请 5 分钟后再试")
+    try:
+        return authentication._check_login_attempts(_client_host(request), phone)
+    except authentication.AuthenticationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 def _record_failed_login(request: Request, phone: str):
-    now = time()
-    _failed_logins[_client_key(request, phone)].append(now)
-    _failed_logins[_ip_key(request)].append(now)
+    try:
+        return authentication._record_failed_login(_client_host(request), phone)
+    except authentication.AuthenticationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 def _clear_failed_login(request: Request, phone: str):
-    _failed_logins.pop(_client_key(request, phone), None)
+    try:
+        return authentication._clear_failed_login(_client_host(request), phone)
+    except authentication.AuthenticationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 async def _auth_response(user: dict) -> dict:
-    if settings.durable_control_plane_enabled:
-        from app.repositories.identity import reconcile_authenticated_user
-
-        await reconcile_authenticated_user(user)
-    return {
-        "token": await auth_store.create_session_token(user["id"]),
-        "user": user,
-    }
+    return await authentication._auth_response(user)
 
 
 def require_admin(user=Depends(get_current_user)):
@@ -199,16 +190,10 @@ async def register_with_invite(req: RegisterWithInviteRequest):
 
 @router.post("/login/password")
 async def login_with_password(req: LoginWithPasswordRequest, request: Request):
-    _check_login_attempts(request, req.phone)
     try:
-        user = await auth_store.authenticate_password(req.phone, req.password)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if not user:
-        _record_failed_login(request, req.phone)
-        raise HTTPException(status_code=400, detail="手机号或密码错误")
-    _clear_failed_login(request, req.phone)
-    return await _auth_response(user)
+        return await authentication.login_with_password(req.phone, req.password, _client_host(request))
+    except authentication.AuthenticationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.post("/login/code")

@@ -25,6 +25,7 @@ def main():
         page.locator('input[type="password"]').fill(private['owner']['password']);page.locator('button[type="submit"]').click()
         expect(page.get_by_role('button',name='新建设计',exact=True)).to_be_visible(timeout=20000)
         page.goto(web+'?document='+before['document_id']+'&workspace='+private['tenant_id'])
+        page.get_by_role('tab',name='工程',exact=True).click()
         panel=page.get_by_test_id('engineering-tasks');panel.locator('summary',has_text='有限元与外轮廓加工').click()
         panel.get_by_role('combobox',name='工程计算类型').select_option('contour_milling')
         form=panel.get_by_role('form',name='外轮廓加工设置')

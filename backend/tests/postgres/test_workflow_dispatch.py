@@ -17,7 +17,7 @@ from app.domain.identity import user_principal
 from app.repositories.identity import ensure_principal
 from app.repositories.projects import create_project
 from app.repositories.revisions import create_initial_branch
-from app.services.run_state import create_workflow
+from app.services.workflow_admission import create_document_workflow as create_workflow
 from app.services.workflow_dispatch import (persist_dispatch,claim_dispatch,finish_claim,
     dispatch_once,start_dispatch,_dispatcher_transaction)
 from app.workflows.temporal import McadWorkflowRequest,McadExecutionRequest,McadOutputRequest,temporal_workflow_id

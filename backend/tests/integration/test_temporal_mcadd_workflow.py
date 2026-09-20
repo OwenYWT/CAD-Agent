@@ -82,6 +82,21 @@ pytestmark = [
 
 
 @pytest.fixture(autouse=True)
+def provider_credentials_are_scoped_to_live_cases(request, monkeypatch):
+    live = {
+        "test_agent_v2_real_freecad_generation_validation_seal_and_commit",
+        "test_agent_v2_real_visual_provider_persists_provenance",
+        "test_agent_v2_real_repair_provider_persists_provenance_and_attempt",
+        "test_agent_v2_real_planner_retriever_codegen_and_execution_provenance",
+    }
+    if request.node.name not in live:
+        # The same invocation may include live-provider and controlled cases.
+        # Credentials must not silently change assertions in controlled cases.
+        for name in ("moonshot_api_key", "dashscope_api_key", "azure_openai_api_key"):
+            monkeypatch.setattr(settings, name, None)
+
+
+@pytest.fixture(autouse=True)
 def legacy_cadquery_history(request, monkeypatch):
     """Exercise the retained pre-cutover source-code history explicitly.
 
@@ -112,6 +127,10 @@ def legacy_cadquery_history(request, monkeypatch):
     original = workflow.patched
 
     def legacy_patch(change_id):
+        # Retain one genuine pre-model-job command history for the replay gate.
+        # Other V2 cases keep the new child-workflow path enabled.
+        if change_id == "agent-v2-model-jobs-v1" and request.node.name == "test_agent_v2_confirmed_plan_seals_reviewable_candidate":
+            return False
         if change_id == "agent-v2-backend-policy-v1" and request.node.name in source_history_tests:
             return False
         if change_id == "agent-v2-validation-repair-v2":
@@ -158,7 +177,8 @@ async def external_lifecycle(migrated_database):
         "localhost/cad-agent-sandbox:m0-unified",
     )
     real_provider = (
-        os.environ.get("CAD_AGENT_TEST_REAL_LLM") == "1"
+        REAL_FREECAD_AGENT
+        or os.environ.get("CAD_AGENT_TEST_REAL_LLM") == "1"
         or os.environ.get("CAD_AGENT_TEST_REAL_VISION") == "1"
     )
     if real_provider:
@@ -338,7 +358,7 @@ async def test_agent_v2_real_freecad_generation_validation_seal_and_commit():
         owner.tenant_id,
         owner.principal_id,
     ) as connection:
-        from app.services.run_state import create_workflow
+        from app.services.workflow_admission import create_document_workflow as create_workflow
 
         created = await create_workflow(
             connection,
@@ -480,7 +500,7 @@ async def test_agent_v2_real_freecad_generation_validation_seal_and_commit():
         owner.tenant_id,
         owner.principal_id,
     ) as connection:
-        from app.services.run_state import create_workflow
+        from app.services.workflow_admission import create_document_workflow as create_workflow
 
         modified_run = await create_workflow(
             connection,
@@ -649,6 +669,16 @@ class _V2PlannerStub:
                 open_questions=["必须先确认安装孔中心距，否则无法安全默认"],
             ),
         )
+
+
+class _V2SolidBoxPlannerStub(_V2PlannerStub):
+    async def plan_new(self, messages):
+        from app.models.schemas import CADPlan, DesignBrief
+        self.calls += 1
+        return CADPlan(description="创建 20x10x4 mm 实心长方体", part_type="box",
+            dimensions={"length":20,"width":10,"height":4}, features=[], constraints=[],
+            modeling_hint="extrude", design_brief=DesignBrief(
+                intent_summary="创建无孔、无圆角的实心长方体", artifact_type="box"))
 
 
 class _V2DecomposerStub:
@@ -1085,7 +1115,7 @@ class _NativeNegativeVisual:
 ])
 async def test_native_visual_negative_budget_with_real_kernel(mode, outcome, expected_repairs):
     """T10: real PG/Temporal/FreeCAD/render/S3; controlled provider negatives."""
-    from app.services.run_state import create_workflow
+    from app.services.workflow_admission import create_document_workflow as create_workflow
     owner, project_id, initial = await _seed_project('native-budget-'+mode+'-'+outcome)
     objective = 'Create a 60x40x8 mm plate with one centered 6 mm through hole.'
     async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
@@ -1424,7 +1454,7 @@ async def test_agent_v2_plan_waits_before_candidate_source_or_execution():
         owner.tenant_id,
         owner.principal_id,
     ) as connection:
-        from app.services.run_state import create_workflow
+        from app.services.workflow_admission import create_document_workflow as create_workflow
 
         created = await create_workflow(
             connection,
@@ -1520,7 +1550,7 @@ async def test_agent_v2_confirmed_plan_seals_reviewable_candidate():
         owner.tenant_id,
         owner.principal_id,
     ) as connection:
-        from app.services.run_state import create_workflow
+        from app.services.workflow_admission import create_document_workflow as create_workflow
 
         created = await create_workflow(
             connection,
@@ -1746,7 +1776,7 @@ async def test_agent_v2_real_visual_provider_persists_provenance():
     owner, project_id, initial = await _seed_project("agent-v2-real-vision")
     client = await get_temporal_client()
     planner = DurableAgentPlanner(
-        planner=_V2PlannerStub(),
+        planner=_V2SolidBoxPlannerStub(),
         decomposer=_V2DecomposerStub(),
         assembly_planner=_V2AssemblyStub(),
     )
@@ -1754,7 +1784,7 @@ async def test_agent_v2_real_visual_provider_persists_provenance():
         owner.tenant_id,
         owner.principal_id,
     ) as connection:
-        from app.services.run_state import create_workflow
+        from app.services.workflow_admission import create_document_workflow as create_workflow
 
         created = await create_workflow(
             connection,
@@ -1788,13 +1818,9 @@ async def test_agent_v2_real_visual_provider_persists_provenance():
             id=temporal_agent_v2_workflow_id(created.workflow_id),
             task_queue=settings.temporal_agent_v2_task_queue,
         )
-        await _wait_for_status(owner, created.workflow_id, {"waiting_confirmation"})
-        await confirm_mcad_workflow(
-            created.workflow_id,
-            accepted=True,
-            note="确认真实视觉服务测试",
-            workflow_kind="mcad.agent.v2.generate",
-        )
+        # This fully specified box may proceed without missing-input confirmation.
+        # Pre-send the test's approval so either actual planner decision can run.
+        await handle.signal("confirmation", {"accepted": True, "note": "确认真实视觉服务测试"})
         result = await asyncio.wait_for(handle.result(), timeout=180)
         assert result["status"] == "succeeded"
 
@@ -1863,7 +1889,7 @@ async def test_agent_v2_visual_mismatch_repairs_and_revalidates_geometry():
         owner.tenant_id,
         owner.principal_id,
     ) as connection:
-        from app.services.run_state import create_workflow
+        from app.services.workflow_admission import create_document_workflow as create_workflow
 
         created = await create_workflow(
             connection,
@@ -2032,7 +2058,7 @@ async def test_agent_v2_user_code_failure_creates_durable_repair_attempt():
         owner.tenant_id,
         owner.principal_id,
     ) as connection:
-        from app.services.run_state import create_workflow
+        from app.services.workflow_admission import create_document_workflow as create_workflow
 
         created = await create_workflow(
             connection,
@@ -2175,7 +2201,7 @@ async def test_agent_v2_geometry_failure_repairs_and_revalidates_new_manifest():
         owner.tenant_id,
         owner.principal_id,
     ) as connection:
-        from app.services.run_state import create_workflow
+        from app.services.workflow_admission import create_document_workflow as create_workflow
 
         created = await create_workflow(
             connection,
@@ -2337,7 +2363,7 @@ async def test_agent_v2_repeated_repair_failure_stops_without_second_llm_call():
         owner.tenant_id,
         owner.principal_id,
     ) as connection:
-        from app.services.run_state import create_workflow
+        from app.services.workflow_admission import create_document_workflow as create_workflow
 
         created = await create_workflow(
             connection,
@@ -2434,7 +2460,7 @@ async def test_agent_v2_complex_steps_survive_worker_restart_without_regeneratio
         owner.tenant_id,
         owner.principal_id,
     ) as connection:
-        from app.services.run_state import create_workflow
+        from app.services.workflow_admission import create_document_workflow as create_workflow
 
         created = await create_workflow(
             connection,
@@ -2563,7 +2589,7 @@ async def _run_assembly_case(*, fail_step: str | None):
         owner.tenant_id,
         owner.principal_id,
     ) as connection:
-        from app.services.run_state import create_workflow
+        from app.services.workflow_admission import create_document_workflow as create_workflow
 
         created = await create_workflow(
             connection,
@@ -2760,7 +2786,7 @@ async def test_agent_v2_assembly_cancel_stops_active_parts_before_execution():
         owner.tenant_id,
         owner.principal_id,
     ) as connection:
-        from app.services.run_state import create_workflow
+        from app.services.workflow_admission import create_document_workflow as create_workflow
 
         created = await create_workflow(
             connection,
@@ -2837,7 +2863,7 @@ async def test_agent_v2_real_repair_provider_persists_provenance_and_attempt():
         owner.tenant_id,
         owner.principal_id,
     ) as connection:
-        from app.services.run_state import create_workflow
+        from app.services.workflow_admission import create_document_workflow as create_workflow
 
         created = await create_workflow(
             connection,
@@ -2949,7 +2975,7 @@ async def test_agent_v2_real_planner_retriever_codegen_and_execution_provenance(
         owner.tenant_id,
         owner.principal_id,
     ) as connection:
-        from app.services.run_state import create_workflow
+        from app.services.workflow_admission import create_document_workflow as create_workflow
 
         created = await create_workflow(
             connection,

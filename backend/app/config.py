@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     # external services; every runnable environment fails closed below.
     durable_control_plane_enabled: bool = False
     database_url: str = Field(default="", repr=False)
+    monitor_database_url: str = Field(default="", repr=False)
     database_pool_size: int = Field(default=10, ge=1, le=100)
     database_max_overflow: int = Field(default=20, ge=0, le=200)
     dependency_readiness_timeout_s: float = Field(default=5.0, ge=0.5, le=30.0)

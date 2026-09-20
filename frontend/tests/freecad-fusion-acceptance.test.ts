@@ -20,7 +20,7 @@ test("FreeCAD parameters use the verified state hash and structured socket contr
 
 test("the inspector exposes persisted native BOM states and never fabricates rows", () => {
   const inspector = read("src/components/workspace/WorkspaceInspector.tsx");
-  const service = read("src/services/engineeringService.ts");
+  const service = read("src/services/clients/revisions.ts");
 
   assert.match(inspector, /getRevisionBOM/);
   assert.match(inspector, /bomState === "unsupported"/);
@@ -42,7 +42,7 @@ test("Agent failures render stable service codes and diagnostic fields", () => {
 });
 
 test("history restoration hydrates the complete durable snapshot before review", () => {
-  const service = read("src/services/engineeringService.ts");
+  const service = read("src/services/clients/history.ts");
   const store = read("src/stores/sessionStore.ts");
   const sidebar = read("src/components/project/ProjectSidebar.tsx");
 

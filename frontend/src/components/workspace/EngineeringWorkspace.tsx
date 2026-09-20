@@ -2,7 +2,7 @@ import { RequirementSummary } from "../agent/RequirementCard";
 import type { InspectorTab } from "./WorkspaceInspector";
 import type { RequirementBasis } from "../../types/requirements";
 import { taskState } from "../../adapters/taskState";
-import { retryDurableTask } from "../../services/engineeringService";
+import { retryDurableTask } from "../../services/clients/tasks";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AuthUser } from "../../auth";
 import EngineeringTasks from "./EngineeringTasks";
@@ -13,11 +13,8 @@ import {
   resultMatchesSnapshot,
 } from "../../adapters/resultSnapshotAdapter";
 import { useWebSocket } from "../../hooks/useWebSocket";
-import {
-  getModelSnapshot,
-  listEngineeringTasks,
-  listModelSnapshots,
-} from "../../services/engineeringService";
+import { getModelSnapshot, listModelSnapshots } from "../../services/clients/revisions";
+import { listEngineeringTasks } from "../../services/clients/engineering";
 import { useSessionStore } from "../../stores/sessionStore";
 import type {
   DesignAnalysis,
@@ -408,7 +405,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const inspector = (
     <WorkspaceInspector {...documentSections} showHeader={false} showTabs={drawer === "tools"} visible={drawer === "tools" || drawer === "versions" || drawer === "properties"} activeTab={drawer === "properties" ? "document" : drawer === "versions" ? "versions" : inspectorTab} onTabChange={selectInspectorTab}
       canExport={canExport} canEdit={canEdit}
-      cloudDocument={<CloudDocumentPanel section="features" key={viewKey} connection={viewedCloud} onEngineeringTasksChange={onEngineeringTasksChange} onSubmitted={onDocumentSubmitted} onReview={(id) => { setReviewDocumentChange(id); setChangesOpen(true); }} />}
+      cloudDocument={<CloudDocumentPanel durable={panel.durable} section="features" key={viewKey} connection={viewedCloud} onEngineeringTasksChange={onEngineeringTasksChange} onSubmitted={onDocumentSubmitted} onReview={(id) => { setReviewDocumentChange(id); setChangesOpen(true); }} />}
       artifacts={viewedArtifacts}
       onCollapse={closeDrawer}
       onExport={() => setExportOpen(true)}

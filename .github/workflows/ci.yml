@@ -212,4 +212,126 @@ jobs:
             tests/integration/test_change_set_api.py \
             tests/integration/test_postgres_project_files.py \
             tests/integration/test_postgres_history.py \
-            tests/integration/test_api_compatibility_matrix.py
+            tests/integration/test_api_compatibility_matrix.py \
+            -k 'not real_freecad_generation_validation and not real_visual_provider and not real_repair_provider and not real_planner_retriever and not real_generate_runs_llm' \
+            --junitxml=../reports/durable-core.xml
+          python ../scripts/ci/require_test_report.py ../reports/durable-core.xml
+
+      - name: Mandatory transaction and data-ownership contracts
+        working-directory: backend
+        env:
+          APP_ENVIRONMENT: test
+          CAD_AGENT_TEST_DATABASE_URL: postgresql+asyncpg://cad_agent:task11-ci-postgres-secret@127.0.0.1:55432/cad_agent
+          CAD_AGENT_TEST_OBJECT_STORE: "1"
+          CAD_AGENT_TEST_TEMPORAL: "1"
+          TEMPORAL_TARGET: 127.0.0.1:57233
+          OBJECT_STORE_ENDPOINT_URL: http://127.0.0.1:59000
+          OBJECT_STORE_ACCESS_KEY: task11ci
+          OBJECT_STORE_SECRET_KEY: task11-ci-minio-secret
+          OBJECT_STORE_BUCKET: cad-agent-artifacts
+          SANDBOX_RUNTIME: docker
+          SANDBOX_COMMAND: docker
+          SANDBOX_IMAGE: cad-agent-sandbox:ci
+        run: |
+          python -m pytest tests/postgres \
+            --ignore=tests/postgres/test_model_jobs.py \
+            --ignore=tests/postgres/test_monitoring.py \
+            --ignore=tests/postgres/test_upgrade_contract.py \
+            -q --junitxml=../reports/transactions.xml
+          python ../scripts/ci/require_test_report.py ../reports/transactions.xml
+
+      - name: Native constraints, saved references, FEA, CAM and release contracts
+        env:
+          SANDBOX_COMMAND: docker
+          SANDBOX_IMAGE: cad-agent-sandbox:ci
+          CAD_NATIVE_CONTRACT_REPORT: reports/native
+        run: bash scripts/ci/native_contracts.sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install browser contract dependencies
+        run: |
+          npm ci --prefix frontend
+          pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Real browser candidate and saved-version contract
+        env:
+          DATABASE_URL: postgresql+asyncpg://cad_agent:task11-ci-postgres-secret@127.0.0.1:55432/cad_agent
+          TEMPORAL_TARGET: 127.0.0.1:57233
+          OBJECT_STORE_ENDPOINT_URL: http://127.0.0.1:59000
+          OBJECT_STORE_ACCESS_KEY: task11ci
+          OBJECT_STORE_SECRET_KEY: task11-ci-minio-secret
+          OBJECT_STORE_BUCKET: cad-agent-artifacts
+          SANDBOX_RUNTIME: docker
+          SANDBOX_COMMAND: docker
+          SANDBOX_IMAGE: cad-agent-sandbox:ci
+        run: bash scripts/ci/browser_contract.sh
+
+      - name: Migrate isolated model and monitoring contract databases
+        env:
+          DATABASE_URL: postgresql+asyncpg://cad_agent:task11-ci-postgres-secret@127.0.0.1:55432/cad_model_contracts
+        working-directory: backend
+        run: |
+          docker exec cad-agent-postgres createdb -U cad_agent cad_model_contracts
+          docker exec cad-agent-postgres createdb -U cad_agent cad_monitor_contracts
+          docker exec cad-agent-postgres createdb -U cad_agent cad_upgrade_contracts
+          python -m alembic upgrade head
+          DATABASE_URL=postgresql+asyncpg://cad_agent:task11-ci-postgres-secret@127.0.0.1:55432/cad_monitor_contracts python -m alembic upgrade head
+
+      - name: Mandatory model lifecycle and monitoring contracts
+        working-directory: backend
+        env:
+          APP_ENVIRONMENT: test
+          CAD_MODEL_JOB_TEST_DATABASE_URL: postgresql+asyncpg://cad_agent:task11-ci-postgres-secret@127.0.0.1:55432/cad_model_contracts
+          CAD_MODEL_JOB_TEST_TEMPORAL: 127.0.0.1:57233
+          CAD_MODEL_JOB_TEST_WAIT_SECONDS: "310"
+          CAD_MIGRATION_TEST_DATABASE_URL: postgresql+asyncpg://cad_agent:task11-ci-postgres-secret@127.0.0.1:55432/cad_upgrade_contracts
+          CAD_MONITOR_TEST_DATABASE_URL: postgresql+asyncpg://cad_agent:task11-ci-postgres-secret@127.0.0.1:55432/cad_monitor_contracts
+        run: |
+          python -m pytest tests/postgres/test_model_jobs.py -q --junitxml=../reports/model-lifecycle-db.xml
+          python -m pytest tests/postgres/test_monitoring.py -q --junitxml=../reports/usage-monitoring.xml
+          python -m pytest tests/postgres/test_upgrade_contract.py -q --junitxml=../reports/schema-upgrade.xml
+          python ../scripts/ci/require_test_report.py ../reports/model-lifecycle-db.xml ../reports/usage-monitoring.xml ../reports/schema-upgrade.xml
+
+      - name: Replay retained real workflow histories
+        working-directory: backend
+        env:
+          TEMPORAL_TARGET: 127.0.0.1:57233
+        run: PYTHONPATH=. python tests/e2e/replay_histories.py --output ../reports/workflow-replay.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: durable-contracts-${{ github.sha }}
+          path: reports/
+          if-no-files-found: error
+
+  architecture-contract:
+    name: Architecture and protocol boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python scripts/architecture/check_boundaries.py
+      - run: python .agents/skills/cad-agent-review/scripts/validate_feature_map.py
+
+  regression-gate:
+    name: Required regression gate
+    if: always()
+    needs: [backend, frontend, mcad-runtime, architecture-contract]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every selected job to have succeeded
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PY'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          assert results and all(item['result'] == 'success' for item in results.values()), results
+          PY

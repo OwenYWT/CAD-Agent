@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { taskState } from "../../adapters/taskState";
 import { engineeringTaskEventLabel } from "../../utils/engineeringLabels";
-import { getTaskValidationEvidence, type TaskValidationEvidence } from "../../services/engineeringService";
+import { getTaskValidationEvidence, type TaskValidationEvidence } from "../../services/clients/tasks";
 
 const STEP_NAMES:Record<string,string>={agent_requirements:'确认需求依据',agent_decompose:'拆解建模步骤',agent_plan:'制定执行计划',agent_freecad_operations:'构建原生特征',agent_geometry:'校验几何',agent_visual:'检查外观',agent_dfm:'检查制造条件',agent_seal:'准备候选版本'};
 const STATUS:Record<string,string>={pending:'等待执行',ready:'等待执行',running:'正在执行',succeeded:'已完成',failed:'失败',cancelled:'已取消',timed_out:'超时',skipped:'未执行'};

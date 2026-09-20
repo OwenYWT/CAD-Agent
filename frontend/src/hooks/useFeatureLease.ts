@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { acquireDocumentFeatureLease, releaseDocumentFeatureLease } from "../services/engineeringService";
+import { acquireDocumentFeatureLease, releaseDocumentFeatureLease } from "../services/clients/documents";
 import type { CloudDocument } from "../types/document";
 
 export function useFeatureLease(document: CloudDocument, featureId: string) {

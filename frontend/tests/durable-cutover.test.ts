@@ -5,7 +5,7 @@ import test from "node:test";
 
 
 const ROOT = join(import.meta.dirname, "..", "..");
-const SOCKET = readFileSync(
+const SOCKET = readFileSync(join(ROOT, "frontend/src/controllers/sessionMessages.ts"), "utf8") + readFileSync(
   join(ROOT, "frontend/src/hooks/useWebSocket.ts"),
   "utf8",
 );
@@ -22,7 +22,7 @@ const CHANGE_SET = readFileSync(
   "utf8",
 );
 const ENGINEERING_SERVICE = readFileSync(
-  join(ROOT, "frontend/src/services/engineeringService.ts"),
+  join(ROOT, "frontend/src/services/clients/history.ts"),
   "utf8",
 );
 

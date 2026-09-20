@@ -67,17 +67,8 @@ async def tenant_transaction(
             from app.model_job_context import model_job_context
             job = model_job_context.get()
             if job is not None:
-                # Lock parent before job, matching enqueue/terminal transitions.
-                active = await connection.scalar(text("""SELECT id FROM workflow_runs
-                    WHERE id=(SELECT workflow_run_id FROM model_jobs WHERE id=:job)
-                      AND status NOT IN ('failed','cancelled','timed_out','succeeded','cancelling')
-                      AND cancellation_requested_at IS NULL FOR UPDATE"""),{'job':job.job_id})
-                lease = await connection.scalar(text("""SELECT id FROM model_jobs
-                    WHERE id=:job AND generation=:generation AND status='running'
-                      AND NOT cancel_requested AND lease_until>now() FOR UPDATE"""),
-                    {'job':job.job_id,'generation':job.generation})
-                if not active or not lease:
-                    raise asyncio.CancelledError('Model job cancelled or lease superseded')
+                from app.execution.model_fence import assert_model_execution_current
+                await assert_model_execution_current(connection, job)
         yield connection
 
 

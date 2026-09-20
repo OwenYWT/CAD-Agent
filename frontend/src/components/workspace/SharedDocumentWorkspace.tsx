@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { acceptDocumentReviewLink } from "../../services/engineeringService";
+import { acceptDocumentReviewLink } from "../../services/clients/documents";
 import { useCloudDocument } from "../../hooks/useCloudDocument";
 import CloudDocumentPanel from "./CloudDocumentPanel";
 import DocumentTaskPanel from "./DocumentTaskPanel";

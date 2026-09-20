@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ArtifactUpdateEvent, DurableBOMProjection, FreeCADBOMDocument, GenerationResult } from "../../types";
 import type { EngineeringDomain, EngineeringStage, Parameter, Project } from "../../types/engineering";
-import { downloadEngineeringArtifact, getRevisionBOM } from "../../services/engineeringService";
+import { downloadEngineeringArtifact } from "../../services/clients/downloads";
+import { getRevisionBOM } from "../../services/clients/revisions";
 import { guardDraft } from "../../stores/draftGuard";
 import { Icon } from "../ui/Icon";
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { GenerationResult } from "../types";
 import type { CloudDocument, DocumentRevisionView, DocumentViewMode } from "../types/document";
-import { getDocumentRevisionView } from "../services/engineeringService";
+import { getDocumentRevisionView } from "../services/clients/documents";
 import { projectViewedDocument, viewIdentity } from "../adapters/documentView";
 import { guardDraft } from "../stores/draftGuard";
 

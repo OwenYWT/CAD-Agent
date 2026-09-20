@@ -20,7 +20,7 @@ from app.db import get_database_engine, tenant_transaction
 from app.execution.canonical import canonical_sha256
 from app.model_job_context import ModelJobContext, model_job_context
 from app.services.llm_usage import UsageContext, usage_context
-from app.workflows.model_job_policy import MODEL_OPERATIONS
+from app.contracts.model_operations import MODEL_OPERATIONS, ModelHandlers
 
 logger = logging.getLogger(__name__)
 LEASE_SECONDS = 30
@@ -116,7 +116,7 @@ async def finish(job: dict, *, status: str, result=None, error=None):
              'error': json.dumps(error, allow_nan=False)})
 
 
-async def execute(job: dict, operations: dict):
+async def execute(job: dict, operations: ModelHandlers):
     """Run one fenced job. Cancellation closes the actual provider connection."""
     async def invoke():
         context = model_job_context.set(ModelJobContext(job['id'], job['generation']))
@@ -178,7 +178,7 @@ async def execute(job: dict, operations: dict):
         await asyncio.gather(work,lease,return_exceptions=True)
 
 
-async def run_model_jobs(operations: dict, *, concurrency: int = 4):
+async def run_model_jobs(operations: ModelHandlers, *, concurrency: int = 4):
     running = set()
     try:
         while True:
