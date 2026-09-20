@@ -12,9 +12,9 @@ for script in freecad_constraint_diagnostics freecad_reference_fixture; do
     -c "exec(compile(open('/tests/$script.py').read(), '/tests/$script.py', 'exec'))" > "$report/$script.log" 2>&1
   # FreeCADCmd can return zero for a Python exception; require the actual report.
   if [[ "$script" == freecad_constraint_diagnostics ]]; then
-    rg 'CAD_CONSTRAINT_DIAGNOSTICS=' "$report/$script.log"
+    grep -F 'CAD_CONSTRAINT_DIAGNOSTICS=' "$report/$script.log"
   else
-    rg 'CAD_REFERENCE_GEOMETRY=' "$report/$script.log"
+    grep -F 'CAD_REFERENCE_GEOMETRY=' "$report/$script.log"
   fi
 done
 "$runtime" run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
