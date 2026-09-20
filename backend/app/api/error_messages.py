@@ -9,7 +9,6 @@ from openai import (
     RateLimitError,
 )
 
-from app.config import settings
 from app.llm import find_provider_exception, is_provider_quota_error
 
 
@@ -20,9 +19,9 @@ def public_generation_error(exc: Exception) -> dict[str, str]:
         return {
             "type": "TimeoutError",
             "message": (
-                f"模型服务请求超过 {int(settings.llm_timeout_s)} 秒。"
-                "请稍后重试；若持续发生，请检查服务器到模型 API 的网络，"
-                "或适当提高 LLM_TIMEOUT_S。"
+                "模型服务调用发生超时，本次未收到完整结果。"
+                "应用未设置模型 API 等待时限；请重试，"
+                "若持续发生，请管理员检查模型服务与网络链路。"
             ),
         }
     if is_provider_quota_error(exc):

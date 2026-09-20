@@ -98,8 +98,9 @@ export default function AgentPanel({context,connection,suggestedPrompt='',onSend
     if(!pendingRequest)return;
     if(reviewedTarget.current!==selectionLabel){setPendingRequest(null);setError('AI 目标或版本已改变，请重新预览修改范围。');return;}
     if(blockedReason){setError(blockedReason);return;}
-    if(!onSend(pendingRequest,basis)){setError('实时连接尚未就绪，需求已保留。');return;}
-    useSessionStore.getState().beginGeneration(undefined,basis);useSessionStore.getState().addMessage({role:'user',content:pendingRequest});
+    const confirmedRequest = basis?.target || pendingRequest;
+    if(!onSend(confirmedRequest,basis)){setError('实时连接尚未就绪，需求已保留。');return;}
+    useSessionStore.getState().beginGeneration(undefined,basis);useSessionStore.getState().addMessage({role:'user',content:confirmedRequest});
     setInput('');setPendingRequest(null);setError(null);
   };
   const submitServerConfirmation=async(accepted:boolean)=>{
@@ -124,7 +125,7 @@ export default function AgentPanel({context,connection,suggestedPrompt='',onSend
       {error?<p className="ww-agent-error" role="alert">{error}</p>:null}
     </div>
     <div className="ww-agent-composer-wrap">
-      {selectionLabel?<div className="mb-2 rounded border border-[var(--agent-border)] bg-[var(--agent-soft)] p-2 type-caption" data-testid="agent-selection">修改目标：{selectionLabel}{onClearSelection?<button className="ml-2 underline" onClick={onClearSelection} type="button">清除本次 AI 选择</button>:null}</div>:null}
+      {selectionLabel?<div className="mb-2 rounded border border-[var(--agent-border)] bg-[var(--agent-soft)] p-2 type-caption" data-testid="agent-selection">已选中：{selectionLabel}{onClearSelection?<button className="ml-2 underline" onClick={onClearSelection} type="button">清除本次 AI 选择</button>:null}</div>:null}
       {blockedReason?<p role="status" className="mb-2 type-caption text-amber-800">{blockedReason}</p>:null}
       <details className="ww-task-history"><summary>需求示例</summary><SuggestionPills disabled={task.running} onSelect={suggestion=>setInput(suggestion.prompt)} suggestions={suggestions}/></details>
       <div className="ww-agent-composer"><textarea aria-label="询问 Agent" disabled={task.running || !canModify} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if((e.metaKey || e.ctrlKey) && e.key==='Enter')reviewRequest();}} placeholder="说明需求或对所选对象的修改…" rows={3} value={input}/>

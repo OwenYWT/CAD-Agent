@@ -35,7 +35,6 @@ def _repair_reply(content, finish="stop"):
 
 @pytest.mark.asyncio
 async def test_visual_repair_streams_code_with_configured_budget(monkeypatch):
-    monkeypatch.setattr(settings, "planner_max_tokens", 12288)
     replies = _VisualRepairCompletions([
         _repair_reply("```python\nresult = outer.cut(cavity)\n```"),
     ])
@@ -45,7 +44,7 @@ async def test_visual_repair_streams_code_with_configured_budget(monkeypatch):
     assert result == "result = outer.cut(cavity)"
     assert len(replies.calls) == 1
     assert all(call.get("stream") is True for call in replies.calls)
-    assert all(call["max_tokens"] == 12288 for call in replies.calls)
+    assert all("max_tokens" not in call for call in replies.calls)
     assert all(call["stream_options"] == {"include_usage": True} for call in replies.calls)
 
 

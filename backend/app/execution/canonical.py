@@ -13,7 +13,7 @@ import rfc8785
 from pydantic import BaseModel
 
 
-def _normalize(value: Any) -> Any:
+def _normalize(value: Any, path: str = "$") -> Any:
     if isinstance(value, BaseModel):
         value = value.model_dump(
             mode="json",
@@ -22,8 +22,16 @@ def _normalize(value: Any) -> Any:
             exclude_defaults=False,
         )
     if isinstance(value, Enum):
-        return _normalize(value.value)
+        return _normalize(value.value, path)
     if value is None or isinstance(value, (bool, int)):
+        if isinstance(value, int) and not isinstance(value, bool):
+            try:
+                rfc8785.dumps(value)
+            except rfc8785.IntegerDomainError as exc:
+                # Keep RFC 8785's precision contract and error type. Report
+                # the exact field instead of silently coercing an integer.
+                exc.args = (f"{path}: {exc}",)
+                raise
         return value
     if isinstance(value, str):
         return unicodedata.normalize("NFC", value)
@@ -34,7 +42,7 @@ def _normalize(value: Any) -> Any:
             raise ValueError("canonical JSON numbers must be finite")
         return value
     if isinstance(value, (list, tuple)):
-        return [_normalize(item) for item in value]
+        return [_normalize(item, f"{path}[{index}]") for index, item in enumerate(value)]
     if isinstance(value, dict):
         normalized: dict[str, Any] = {}
         for key, item in value.items():
@@ -45,7 +53,7 @@ def _normalize(value: Any) -> Any:
                 raise ValueError(
                     f"canonical JSON key collision after Unicode NFC: {normalized_key!r}"
                 )
-            normalized[normalized_key] = _normalize(item)
+            normalized[normalized_key] = _normalize(item, f"{path}.{normalized_key}")
         return normalized
     raise TypeError(f"unsupported canonical JSON value: {type(value).__name__}")
 

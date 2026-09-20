@@ -58,12 +58,12 @@ def test_llm_factory_requires_key(monkeypatch):
         make_llm_client()
 
 
-def test_llm_factory_sets_timeout(monkeypatch):
+def test_llm_factory_disables_timeout(monkeypatch):
     monkeypatch.setattr(settings, "llm_provider", "moonshot")
     monkeypatch.setattr(settings, "moonshot_api_key", "sk-test")
-    monkeypatch.setattr(settings, "llm_timeout_s", 42.0)
+    monkeypatch.setenv("LLM_TIMEOUT_S", "42")
     client = make_llm_client()
-    assert client.timeout == 42.0
+    assert client.timeout is None
 
 
 # === planner no longer masks unexpected exceptions (#26) ===
@@ -131,7 +131,6 @@ async def test_planner_retries_truncated_output_with_configured_budget(monkeypat
                 message=SimpleNamespace(content=valid),
             )])
 
-    monkeypatch.setattr(settings, "planner_max_tokens", 8192)
     completions = RecordingCompletions()
     planner = Planner()
     planner._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
@@ -140,7 +139,7 @@ async def test_planner_retries_truncated_output_with_configured_budget(monkeypat
 
     assert plan.description == "盒子"
     assert len(completions.calls) == 2
-    assert all(call["max_tokens"] == 8192 for call in completions.calls)
+    assert all("max_tokens" not in call for call in completions.calls)
 
 
 @pytest.mark.asyncio
@@ -170,7 +169,6 @@ async def test_modification_planner_retries_truncated_output(monkeypatch):
                 message=SimpleNamespace(content=valid),
             )])
 
-    monkeypatch.setattr(settings, "planner_max_tokens", 8192)
     completions = RecordingCompletions()
     planner = Planner()
     planner._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
@@ -182,7 +180,7 @@ async def test_modification_planner_retries_truncated_output(monkeypatch):
 
     assert plan.description == "加宽底座"
     assert len(completions.calls) == 2
-    assert all(call["max_tokens"] == 8192 for call in completions.calls)
+    assert all("max_tokens" not in call for call in completions.calls)
 
 
 @pytest.mark.asyncio

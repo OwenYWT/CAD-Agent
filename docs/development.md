@@ -65,9 +65,11 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 - Azure OpenAI：设置 `LLM_PROVIDER=azure`、endpoint、key、API version 和部署名。
 - 其他 OpenAI-compatible：设置 `LLM_PROVIDER=openai_compatible`、base URL、key 和 model。
 
-`PLANNER_MAX_TOKENS` 控制需求规划和装配拆解的单次输出上限，默认 8192，允许 2048–32768。装配拆解最多调用两次；校验失败时保留原需求并反馈具体原因，耗尽重试后 Durable 任务失败，不用单零件占位结果代替装配方案。若详情显示 `assembly planner output was truncated`，检查实际配置及模型服务支持的输出上限；增加额度不能保证任意需求都能生成有效方案。
+应用不再向模型服务传入 `max_tokens`、`max_completion_tokens` 或 `max_output_tokens`，包括规划、装配拆解、代码生成、修改、修复和视觉检查。旧 `PLANNER_MAX_TOKENS` 环境变量不再生效。服务自身仍有上下文、输出和网络时限；`finish_reason=length` 必须如实判定为截断，不把缺失代码补成成功。流式调用保留真实终止标记检查，无应用字符数截断。网络无数据超时、任务取消与 Temporal Activity 总时限继续生效。
 
-CadQuery 外观修复直接依据实际检查意见生成完整代码，使用同一输出上限和已有流式模型适配器，不再先生成长篇分析再调用一次模型。空回复或截断回复明确失败；流中断不会当作完整代码，网络无数据超时和 Temporal Activity 总时限仍然生效。确定性装配组合器把规划允许、但 OCCT 不识别的 `silver` 名称转为等价 RGB，不因此重写零件几何。
+CadQuery 内核／制造修复与外观修复使用已有流式模型适配器。外观修复直接依据实际检查意见生成完整代码，不再先生成长篇分析再调用一次模型。确定性装配组合器把规划允许、但 OCCT 不识别的 `silver` 名称转为等价 RGB，不因此重写零件几何。
+
+独立账号使用监控见 [monitoring.md](monitoring.md)。每次模型调用及其重试写入 PostgreSQL `llm_calls`，通过 Temporal Activity 上下文关联真实账号与任务。监控应用独立运行，不在 CAD 页面增加入口。
 
 本地也不应使用空或公开的认证密钥。需要完全跳过登录时只能显式设置 `AUTH_REQUIRED=false`，且只允许在本机回环开发环境使用。
 

@@ -338,7 +338,7 @@ class PodmanExecutionBackend:
                 error=ExecutionError(
                     category=category,
                     code=code,
-                    message=_redact(sandbox_result.error_message, redacted_values),
+                    message=_redact(sandbox_result.error_message or sandbox_result.error_type, redacted_values),
                     operation_id=(
                         str(structured.get("operation_id"))[:200]
                         if structured.get("operation_id") is not None

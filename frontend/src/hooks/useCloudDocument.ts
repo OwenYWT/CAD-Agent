@@ -99,6 +99,7 @@ export function useCloudDocument(documentId: string | null): CloudDocumentConnec
 
   const document = snapshot?.document_id === documentId ? snapshot : null;
   const select = (id: string | null) => {
+    if (id === selectedId && selectedContext?.revision_id === document?.head_revision_id) return;
     guardDraft(() => {
       setSelectedId(id);
       setSelectedContext(document && id ? { documentId: document.document_id, revision_id: document.head_revision_id,

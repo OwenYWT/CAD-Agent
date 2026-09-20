@@ -105,13 +105,15 @@ def _validate_stl(path: Path, *, role: str) -> dict[str, Any]:
     import trimesh
 
     result = _common(path, role=role, artifact_format="stl")
-    mesh = trimesh.load_mesh(path, force="mesh", process=False)
+    try:
+        from mesh_normalization import load_normalized_mesh
+    except ModuleNotFoundError:
+        from sandbox.mesh_normalization import load_normalized_mesh
     # Binary/ASCII STL repeats vertices per triangle and FreeCAD may emit
     # duplicate or degenerate triangles at analytic-surface seams. Normalize
     # only numerically identical vertices (1e-8 mm) and invalid duplicate
     # faces; do not fill holes or otherwise heal failed geometry.
-    mesh.merge_vertices(digits_vertex=8)
-    mesh.process(validate=True)
+    mesh = load_normalized_mesh(path)
     dimensions = tuple(float(item) for item in mesh.bounding_box.extents)
     bounds = mesh.bounding_box.bounds
     valid = bool(

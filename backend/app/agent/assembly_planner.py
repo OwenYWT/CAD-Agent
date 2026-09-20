@@ -98,7 +98,7 @@ class AssemblyPlanner:
                 )
                 response = await self.client.chat.completions.create(
                     model=settings.llm_model,
-                    max_tokens=settings.planner_max_tokens,
+                    stream=True,
                     temperature=0.1,
                     messages=messages,
                     response_format={"type": "json_object"},
@@ -112,8 +112,7 @@ class AssemblyPlanner:
                 )
                 if finish_reason == "length":
                     raise ValueError(
-                        "assembly planner output was truncated at "
-                        f"{settings.planner_max_tokens} completion tokens"
+                        "assembly planner output was truncated by the model service"
                     )
                 content = choice.message.content
                 if not isinstance(content, str) or not content.strip():

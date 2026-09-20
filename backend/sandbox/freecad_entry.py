@@ -27,6 +27,8 @@ from freecad_topology import TopologyResolutionError, resolve_topology_selector
 from freecad_bom import BOMError, run_bom
 from freecad_scene import component_shapes, run_scene
 from freecad_engineering import EngineeringError, run_engineering
+from freecad_result_channel import publish_result
+from freecad_sketch_diagnostics import diagnose_sketch
 
 
 INPUT_ROOT = Path("/sandbox/input")
@@ -364,22 +366,25 @@ def _sketch_set_constraint(document, args):
 
 
 def _require_fully_constrained(profile: Any) -> None:
-    solve_status = int(profile.solve())
-    if solve_status != 0:
-        code = {
-            -2: "sketch_redundant_constraints",
-            -3: "sketch_conflicting_constraints",
-        }.get(solve_status, "sketch_solver_failed")
+    _validate_sketch(profile, require_fully_constrained=True)
+
+
+def _validate_sketch(sketch: Any, *, require_fully_constrained: bool = False,
+                     op_id: str | None = None, action: str | None = None) -> dict[str, Any]:
+    diagnosis = diagnose_sketch(sketch)
+    state = diagnosis['constraint_status']
+    code = {
+        'redundant': 'sketch_redundant_constraints',
+        'conflicting': 'sketch_conflicting_constraints',
+        'invalid': 'sketch_solver_failed',
+        **({'under_constrained': 'sketch_under_constrained'} if require_fully_constrained else {}),
+    }.get(state)
+    if code:
         raise FreeCADRunnerError(
-            code,
-            f"Sketch {profile.Name} solver returned {solve_status}",
-            details={"solver_status": solve_status},
+            code, f"Sketch {sketch.Name}: {state}; {diagnosis['native_status']}"[:4000],
+            op_id=op_id, action=action, details=diagnosis,
         )
-    if not bool(getattr(profile, "FullyConstrained", False)):
-        raise FreeCADRunnerError(
-            "sketch_under_constrained",
-            f"Sketch {profile.Name} must be fully constrained before modeling",
-        )
+    return diagnosis
 
 
 def _feature_pad(document: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -747,6 +752,10 @@ def _validate_document(document: Any, *, op_id: str, action: str) -> dict[str, A
     document.recompute()
     checked_shapes = 0
     sketch_states: list[dict[str, str | int | bool]] = []
+    # Diagnose sketches before dependent Body/feature invalidity hides the cause.
+    for obj in document.Objects:
+        if getattr(obj, "TypeId", "") == "Sketcher::SketchObject":
+            sketch_states.append(_validate_sketch(obj, op_id=op_id, action=action))
     for obj in document.Objects:
         if not bool(getattr(obj, "isValid", lambda: True)()):
             raise FreeCADRunnerError(
@@ -764,26 +773,6 @@ def _validate_document(document: Any, *, op_id: str, action: str) -> dict[str, A
                 action=action,
             )
         if getattr(obj, "TypeId", "") == "Sketcher::SketchObject":
-            solve_status = int(obj.solve())
-            sketch_states.append(
-                {
-                    "name": obj.Name,
-                    "solver_status": solve_status,
-                    "fully_constrained": bool(getattr(obj, "FullyConstrained", False)),
-                }
-            )
-            if solve_status < 0:
-                code = {
-                    -2: "sketch_redundant_constraints",
-                    -3: "sketch_conflicting_constraints",
-                }.get(solve_status, "sketch_solver_failed")
-                raise FreeCADRunnerError(
-                    code,
-                    f"Sketch {obj.Name} solver returned {solve_status}",
-                    op_id=op_id,
-                    action=action,
-                    details={"object": obj.Name, "solver_status": solve_status},
-                )
             # Sketch validity is owned by the solver contract above. Calling
             # OpenCascade Shape.check() on an intermediate sketch wire can
             # crash FreeCAD 1.1.3 inside BRep_Tool before the profile is
@@ -1131,6 +1120,7 @@ def main() -> int:
             result = run_engineering(task,INPUT_ROOT,OUTPUT_ROOT)
         else:
             result = run_task(task)
+        publish_result(result)
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         return 0
     except Exception as exc:
@@ -1160,21 +1150,17 @@ def main() -> int:
                 "action": None,
                 "details": {"exception_type": type(exc).__name__},
             }
-        print(
-            json.dumps(
-                {
-                    "schema_version": "freecad-operation-result.v1",
-                    "status": "failed",
-                    "operations": [],
-                    "files": {},
-                    "validations": [],
-                    "error": error,
-                    "traceback": traceback.format_exc(limit=20),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
-        )
+        result = {
+            "schema_version": "freecad-operation-result.v1",
+            "status": "failed",
+            "operations": [],
+            "files": {},
+            "validations": [],
+            "error": error,
+            "traceback": traceback.format_exc(limit=20),
+        }
+        publish_result(result)
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         return 1
 
 

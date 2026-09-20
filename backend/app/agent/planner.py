@@ -63,13 +63,6 @@ class Planner:
             self._client = make_llm_client()
         return self._client
 
-    _ASSEMBLY_KEYWORDS = re.compile(
-        r"\u88c5\u914d|\u88c5\u914d\u4f53|\u7ec4\u88c5|\u7ec4\u4ef6|\u7ec4\u5408\u4f53|\u72ec\u7acb\u96f6\u4ef6|\u591a\u4e2a\u96f6\u4ef6|\u591a\u4e2a\u90e8\u4ef6|\u5206\u522b\u5efa\u6a21"
-        r"|\u591a\u4e2a.*\u7ec4\u5408|\u591a\u4e2a.*\u645e|[2-9]\u4e2a.*(\u6b63\u65b9\u4f53|\u65b9\u5757|\u96f6\u4ef6|\u90e8\u4ef6)|\u7531\u4e0a\u5230\u4e0b.*\u645e|\u4ece\u4e0a\u5230\u4e0b.*\u645e"
-        r"|assembly|assemble|gearbox|reducer|backstop|overrunning",
-        re.IGNORECASE,
-    )
-
     @staticmethod
     def _parse_plan_payload(data: dict) -> CADPlan:
         normalized = dict(data)
@@ -114,7 +107,7 @@ class Planner:
                 logger.info(f"Planner LLM call start (model={settings.llm_model}, attempt={attempt+1})")
                 response = await self.client.chat.completions.create(
                     model=settings.llm_model,
-                    max_tokens=settings.planner_max_tokens,
+                    stream=True,
                     temperature=0.1,
                     messages=[{"role": "system", "content": PLANNER_SYSTEM_PROMPT}] + messages,
                     response_format={"type": "json_object"},
@@ -125,7 +118,7 @@ class Planner:
                 logger.info(f"Planner LLM call done in {elapsed:.1f}s (stop={finish_reason})")
                 if finish_reason == "length":
                     raise ValueError(
-                        f"planner output was truncated at {settings.planner_max_tokens} completion tokens"
+                        "planner output was truncated by the model service"
                     )
                 content = choice.message.content
                 if not isinstance(content, str) or not content.strip():
@@ -140,11 +133,8 @@ class Planner:
                 parsed = json.loads(text)
                 plan = self._parse_plan_payload(parsed)
 
-                # Detect assembly intent from user message.
-                user_text = messages[-1]["content"] if messages else ""
-                if self._ASSEMBLY_KEYWORDS.search(user_text):
-                    plan.part_type = "assembly"
-
+                # Preserve the validated semantic classification. Context labels
+                # (e.g. 装配依据) and negations are not assembly requests.
                 return plan
             except RuntimeError:
                 # Missing credentials / unrecoverable config; propagate, don't mask.
@@ -176,7 +166,7 @@ class Planner:
                 logger.info(f"Modification planner LLM call start (attempt={attempt+1})")
                 response = await self.client.chat.completions.create(
                     model=settings.llm_model,
-                    max_tokens=settings.planner_max_tokens,
+                    stream=True,
                     temperature=0.1,
                     messages=[{"role": "system", "content": system}] + messages,
                     response_format={"type": "json_object"},
@@ -191,8 +181,7 @@ class Planner:
                 )
                 if finish_reason == "length":
                     raise ValueError(
-                        "modification planner output was truncated at "
-                        f"{settings.planner_max_tokens} completion tokens"
+                        f"modification planner output was truncated by the model service"
                     )
                 content = choice.message.content
                 if not isinstance(content, str) or not content.strip():

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { BufferGeometry, Box3 } from "three";
 import { Box3 as ThreeBox3, Vector3 } from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
@@ -12,7 +12,7 @@ export function useCADModel(stlUrl: string) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [centerOffset, setCenterOffset] = useState<[number, number, number]>([0, 0, 0]);
-  const geometryRef = useRef<BufferGeometry | null>(null);
+  useEffect(()=>()=>{geometry?.dispose();},[geometry]);
 
   useEffect(() => {
     let active = true;
@@ -20,7 +20,9 @@ export function useCADModel(stlUrl: string) {
     const loader = new STLLoader();
     const target = /^https?:\/\//.test(stlUrl) ? stlUrl : `${API_BASE}${stlUrl}`;
 
-    void authFetch(target, { signal: controller.signal })
+    const load = () => {
+      setIsLoading(true); setError(null);
+      return authFetch(target, { signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.arrayBuffer();
@@ -37,7 +39,6 @@ export function useCADModel(stlUrl: string) {
         box.getCenter(center);
         nextGeometry.translate(-center.x, -center.y, -center.z);
         nextGeometry.computeBoundingBox();
-        geometryRef.current = nextGeometry;
         setCenterOffset([-center.x, -center.y, -center.z]);
         setGeometry(nextGeometry);
         setBoundingBox(nextGeometry.boundingBox);
@@ -48,12 +49,12 @@ export function useCADModel(stlUrl: string) {
         setError("模型文件无法加载");
         setIsLoading(false);
       });
+    };
+    void load();
 
     return () => {
       active = false;
       controller.abort();
-      geometryRef.current?.dispose();
-      geometryRef.current = null;
     };
   }, [stlUrl]);
 

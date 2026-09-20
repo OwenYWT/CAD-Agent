@@ -185,7 +185,7 @@ async def test_generator_retries_contract_error_and_returns_typed_plan() -> None
     assert json.loads(result.source_code)["schema_version"] == (
         "freecad-operation-plan.v1"
     )
-    assert client.completions.kwargs[0]["max_tokens"] >= 8192
+    assert "max_tokens" not in client.completions.kwargs[0]
 
 
 @pytest.mark.asyncio

@@ -288,27 +288,6 @@ export default function ChangeSetDialog({
     }
   };
 
-  const commit = async () => {
-    if (!changeSet || changeSet.source !== "durable") return;
-    if (!commitReady) {
-      setError("当前候选尚未满足提交条件，请完成审阅、验证和工作流后重试。");
-      return;
-    }
-    const actionGeneration = generation.current;
-    setRestoring(true);
-    setError("");
-    try {
-      await commitDurableChangeSet(changeSet.id);
-      if (generation.current !== actionGeneration) return;
-      await load();
-      if (generation.current === actionGeneration) await onApplied?.();
-    } catch (reason) {
-      if (generation.current === actionGeneration) setError(reason instanceof Error ? reason.message : "提交版本失败");
-    } finally {
-      if (generation.current === actionGeneration) setRestoring(false);
-    }
-  };
-
   const apply = async () => {
     if (!changeSet || changeSet.source !== "durable") return;
     const id = changeSet.id, actionGeneration = generation.current;
@@ -332,6 +311,14 @@ export default function ChangeSetDialog({
         current = await present();
       }
       if (generation.current !== actionGeneration) return;
+      // The same Apply action waits for acceptance to finish the workflow.
+      const deadline = Date.now() + 60000;
+      while (current.status === "accepted" && !durableChangeSetCanCommit(adaptDurableChangeSet(current, panelId), canCommit)
+        && !["failed", "cancelled", "timed_out"].includes(current.workflow_status || "") && Date.now() < deadline) {
+        await new Promise(resolve => window.setTimeout(resolve, 1500));
+        if (generation.current !== actionGeneration) return;
+        current = await present();
+      }
       if (current.status === "accepted") {
         if (!durableChangeSetCanCommit(adaptDurableChangeSet(current, panelId), canCommit)) {
           // Acceptance is persisted. Polling resumes the same candidate after
@@ -367,7 +354,7 @@ export default function ChangeSetDialog({
               ? `审查状态：${changeSet.reviewStatus || "未知"}`
               : "当前为兼容快照审查；持久 Change Set 建立后可执行接受与提交。"}
           </span>
-          {changeSet && acceptanceHint ? (
+          {changeSet?.reviewStatus === "pending_review" && acceptanceHint ? (
             <span className="mr-auto type-caption text-amber-700" id="change-set-acceptance-hint" role="status">
               {acceptanceHint}
             </span>
@@ -419,7 +406,7 @@ export default function ChangeSetDialog({
                 ? "拒绝变更"
                 : "回滚"}
           </button>
-          <button
+          {detail?.can_review && !(detail.can_commit && canCommit) ? <button
             aria-describedby={acceptanceHint ? "change-set-acceptance-hint" : undefined}
             className="workspace-button"
             disabled={!acceptanceReady || restoring}
@@ -427,21 +414,13 @@ export default function ChangeSetDialog({
             type="button"
           >
             {changeSet?.validation.status === "warning" ? "接受并确认已审阅风险" : "接受变更"}
-          </button>
-          <button
-            className="workspace-button workspace-button--primary"
-            disabled={!commitReady || restoring}
-            onClick={() => void commit()}
-            type="button"
-          >
-            提交版本
-          </button>
+          </button> : null}
           {detail?.can_commit && canCommit ? <button className="workspace-button workspace-button--primary" type="button"
             disabled={restoring || !["pending_review", "accepted", "committed"].includes(detail.status)
               || (detail.status === "accepted" && !commitReady)
               || (detail.status !== "committed" && (!detail.base_is_current || changeSet?.validation.status === "fail" || changeSet?.validation.status === "unknown"))
               || (detail.status === "pending_review" && (!detail.can_review || (changeSet?.validation.status === "warning" && !reviewNote.trim())))}
-            onClick={() => void apply()}>{restoring ? "正在核对并应用" : detail.status === "committed" ? "同步已提交版本" : detail.status === "accepted" ? "继续提交此候选" : "应用修改"}</button> : null}
+            onClick={() => void apply()}>{restoring ? "正在核对并应用" : detail.status === "committed" ? "同步已提交版本" : "应用修改"}</button> : null}
         </div>
       )}
       onClose={onClose}
@@ -450,8 +429,8 @@ export default function ChangeSetDialog({
     >
       <div className="space-y-5 p-5">
         {detail ? <div className="rounded border border-[var(--line)] p-3 type-caption" data-testid="candidate-base">
-          <p>候选 {detail.candidate_revision_id.slice(0,8)} · 基线 {detail.base_revision_id.slice(0,8)} / {detail.base_state_version === null ? "代次未知" : `v${detail.base_state_version}`}</p>
-          <p>当前 Head {detail.head_revision_id?.slice(0,8)} / v{detail.head_state_version}</p>
+          <details><summary>版本技术详情</summary><p>候选 {detail.candidate_revision_id.slice(0,8)} · 基线 {detail.base_revision_id.slice(0,8)} / {detail.base_state_version === null ? "代次未知" : `v${detail.base_state_version}`}</p>
+          <p>当前 Head {detail.head_revision_id?.slice(0,8)} / v{detail.head_state_version}</p></details>
           {detail.status === "accepted" ? <p role="status">已接受，尚未提交。重试将继续提交同一候选。</p> : null}
           {detail.status === "committed" ? <p role="status">服务器已提交；工作区以同步后的文档 Head 为准。</p> : null}
           {!detail.base_is_current && ["pending_review", "accepted"].includes(detail.status) ? <p role="alert">候选基线或合并来源已过期，请基于当前版本重新确认。</p> : null}

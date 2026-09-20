@@ -36,6 +36,27 @@ class FailureClass:
 # substring classes in the legacy _ERROR_HINTS order; `unknown` is the catch-all.
 FAILURE_CLASSES: list[FailureClass] = [
     FailureClass(
+        key="sketch_redundant_constraints", label="Sketch redundant constraints",
+        cause="草图包含重复限制自由度的约束",
+        fix_hint="依据求解器诊断移除多余几何关系，保留已有尺寸和其他建模操作，再由求解器验证",
+        fix_scope="只调整报错草图的非尺寸约束；不得删除固定编号约束或改变尺寸来绕过错误",
+        retry_budget=2, gates=("sketch_redundant_constraints",),
+    ),
+    FailureClass(
+        key="sketch_conflicting_constraints", label="Sketch conflicting constraints",
+        cause="草图约束无法同时满足",
+        fix_hint="检查报错草图的几何关系；保留数值尺寸，尺寸本身冲突时停止并报告冲突",
+        fix_scope="只调整报错草图的非尺寸约束，不得猜测并更改用户尺寸",
+        retry_budget=2, gates=("sketch_conflicting_constraints",),
+    ),
+    FailureClass(
+        key="sketch_under_constrained", label="Sketch under constrained",
+        cause="草图尚有未约束自由度",
+        fix_hint="依据已有几何和需求补齐缺失约束，不改已有尺寸或其他特征",
+        fix_scope="只补充报错草图缺失的约束，重新运行求解器确认",
+        retry_budget=2, gates=("sketch_under_constrained",),
+    ),
+    FailureClass(
         key="dfm_violation", label="DFMError",
         cause="真实制造规则检查发现几何问题",
         fix_hint="根据实际规则、测量值和建议修改未被用户锁定的制造特征，随后重新执行全部校验",
@@ -172,9 +193,9 @@ FAILURE_CLASSES: list[FailureClass] = [
     ),
     FailureClass(
         key="shell_failed", label="shell failed / StdFail_NotDone",
-        cause="shell 壁厚不合理或几何太复杂", fix_hint="减小壁厚；或改用 outer.cut(inner) 方式挖空",
+        cause="抽壳偏移无法构造有效实体", fix_hint="保持用户指定壁厚和外形，改用 outer.cut(inner) 挖腔；不要擅自减小壁厚",
         fix_scope="只改 shell 相关的那几行：改用 outer.cut(inner) 方式挖空。其它行保持不变。",
-        substrings=("shell failed", "StdFail_NotDone"),
+        substrings=("shell failed", "StdFail_NotDone", "Standard_ConstructionError"),
     ),
     FailureClass(
         key="wire_not_closed", label="Wire is not closed",

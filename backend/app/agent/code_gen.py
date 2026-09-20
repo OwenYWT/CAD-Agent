@@ -99,8 +99,8 @@ class CodeGenerator:
         t0 = time.time()
         logger.info(f"CodeGen.generate LLM call start (model={settings.llm_model})")
         response = await self.client.chat.completions.create(
+            stream=True,
             model=settings.llm_model,
-            max_tokens=4096,
             temperature=0.2,
             messages=[{"role": "system", "content": system}] + messages,
         )
@@ -130,8 +130,8 @@ class CodeGenerator:
         t0 = time.time()
         logger.info("CodeGen.generate_2d LLM call start")
         response = await self.client.chat.completions.create(
+            stream=True,
             model=settings.llm_model,
-            max_tokens=4096,
             temperature=0.2,
             messages=[{"role": "system", "content": system}] + messages,
         )
@@ -161,8 +161,8 @@ class CodeGenerator:
         t0 = time.time()
         logger.info("CodeGen.generate_assembly LLM call start")
         response = await self.client.chat.completions.create(
+            stream=True,
             model=settings.llm_model,
-            max_tokens=8192,
             temperature=0.2,
             messages=[{"role": "system", "content": system}] + messages,
         )
@@ -172,8 +172,7 @@ class CodeGenerator:
         code = self._extract_code(text)
 
         if response.choices[0].finish_reason == "length":
-            logger.warning("Assembly code was truncated by max_tokens, attempting to close")
-            code = self._close_truncated_code(code)
+            raise ValueError("assembly code output was truncated by the model service")
 
         return code
 
@@ -194,8 +193,8 @@ class CodeGenerator:
         t0 = time.time()
         logger.info("CodeGen.modify LLM call start")
         response = await self.client.chat.completions.create(
+            stream=True,
             model=settings.llm_model,
-            max_tokens=4096,
             temperature=0.2,
             messages=[{"role": "system", "content": system}] + messages,
         )
@@ -203,6 +202,18 @@ class CodeGenerator:
 
         text = response.choices[0].message.content
         return self._extract_code(text)
+
+    @staticmethod
+    def _complete_repair_text(response, stage: str) -> str:
+        choice = response.choices[0]
+        if getattr(choice, "finish_reason", None) == "length":
+            raise ValueError(
+                f"{stage} output was truncated by the model service"
+            )
+        content = choice.message.content
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError(f"{stage} returned empty content")
+        return content.strip()
 
     async def fix_error(
         self, code: str, error: dict, plan: CADPlan | None = None
@@ -239,13 +250,14 @@ class CodeGenerator:
         logger.info(f"CodeGen.fix_error LLM call start (class={fc.key})")
         response = await self.client.chat.completions.create(
             model=settings.llm_model,
-            max_tokens=8192,
+            stream=True,
+            stream_options={"include_usage": True},
             temperature=0.1,
             messages=[{"role": "system", "content": system}] + messages,
         )
         logger.info(f"CodeGen.fix_error LLM call done in {time.time()-t0:.1f}s")
 
-        text = response.choices[0].message.content
+        text = self._complete_repair_text(response, "code repair")
         return self._extract_code(text)
 
     async def generate_step(
@@ -281,8 +293,8 @@ class CodeGenerator:
         t0 = time.time()
         logger.info(f"CodeGen.generate_step LLM call start (step {step_index+1}/{total_steps})")
         response = await self.client.chat.completions.create(
+            stream=True,
             model=settings.llm_model,
-            max_tokens=4096,
             temperature=0.2,
             messages=[{"role": "system", "content": system}] + messages,
         )
@@ -322,8 +334,8 @@ class CodeGenerator:
         t0 = time.time()
         logger.info(f"CodeGen.generate_single_part start: {part_name}")
         response = await self.client.chat.completions.create(
+            stream=True,
             model=settings.llm_model,
-            max_tokens=4096,
             temperature=0.2,
             messages=[
                 {"role": "system", "content": system},
@@ -412,18 +424,6 @@ class CodeGenerator:
         self, code: str, issues: list[str], suggestions: list[str],
         on_step=None,
     ) -> str:
-        def completed_text(response, stage: str) -> str:
-            choice = response.choices[0]
-            if getattr(choice, "finish_reason", None) == "length":
-                raise ValueError(
-                    f"visual repair {stage} output was truncated at "
-                    f"{settings.planner_max_tokens} completion tokens"
-                )
-            content = choice.message.content
-            if not isinstance(content, str) or not content.strip():
-                raise ValueError(f"visual repair {stage} returned empty content")
-            return content.strip()
-
         issues_text = "\n".join(f"- {i}" for i in issues)
         suggestions_text = "\n".join(f"- {s}" for s in suggestions)
 
@@ -453,7 +453,6 @@ class CodeGenerator:
 
         fix_response = await self.client.chat.completions.create(
             model=settings.llm_model,
-            max_tokens=settings.planner_max_tokens,
             stream=True,
             stream_options={"include_usage": True},
             temperature=0.1,
@@ -463,7 +462,7 @@ class CodeGenerator:
             ],
         )
 
-        return self._extract_code(completed_text(fix_response, "code"))
+        return self._extract_code(self._complete_repair_text(fix_response, "visual repair code"))
 
     def _extract_code(self, text: str) -> str:
         text = text.strip()

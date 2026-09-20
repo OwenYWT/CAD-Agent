@@ -1,3 +1,4 @@
+import CameraFit from "./viewer/CameraFit";
 import { Grid, OrbitControls } from "@react-three/drei";
 import { canvasEvents } from "./viewer/canvasEvents";
 import { Canvas } from "@react-three/fiber";
@@ -10,6 +11,7 @@ import { Icon } from "./ui/Icon";
 
 interface Viewer3DProps {
   stlUrl: string | null;
+  fitRequest?: number;
   annotations?: Annotation3D[];
   showAnnotations?: boolean;
   selectedAnnotation?: string | null;
@@ -69,9 +71,10 @@ function LoadedViewer({
   showAnnotations,
   selectedAnnotation,
   onSelectAnnotation,
-  onToggleAnnotations,
+  onToggleAnnotations, fitRequest,
 }: {
   stlUrl: string;
+  fitRequest?: number;
   annotations: Annotation3D[];
   showAnnotations: boolean;
   selectedAnnotation: string | null;
@@ -93,14 +96,15 @@ function LoadedViewer({
       ) : null}
 
       {error ? (
-        <div className="flex h-full items-center justify-center px-6 text-center" role="alert">
+        <div className="absolute bottom-3 left-3 z-10 rounded bg-white/95 p-2" role="alert">
           <div className="max-w-sm">
             <Icon className="mx-auto text-red-400" name="box" size={32} />
             <p className="mt-3 type-body  text-red-700">{String.fromCharCode(0x33, 0x44, 0x20, 0x6a21, 0x578b, 0x52a0, 0x8f7d, 0x5931, 0x8d25)}</p>
             <p className="mt-1 type-body  text-[var(--muted)]">{String.fromCharCode(0x6a21, 0x578b, 0x6587, 0x4ef6, 0x53ef, 0x80fd, 0x5df2, 0x8fc7, 0x6716, 0x4e0d, 0x53ef, 0x8bbf, 0x95ee, 0xff0c, 0x8bf7, 0x91cd, 0x65b0, 0x751f, 0x6210, 0x540e, 0x518d, 0x8bd5, 0x3002)}</p>
           </div>
         </div>
-      ) : webGLAvailable === false ? (
+      ) : null}
+      {webGLAvailable === false ? (
         <div className="flex h-full items-center justify-center px-6 text-center" role="status">
           <div className="max-w-md">
             <Icon className="mx-auto text-amber-500" name="box" size={32} />
@@ -135,6 +139,7 @@ function LoadedViewer({
             <ambientLight intensity={1.1} />
             <directionalLight intensity={1.4} position={[10, 10, 5]} />
             <directionalLight intensity={0.5} position={[-10, -10, -5]} />
+            <CameraFit bounds={geometry?.boundingBox || null} request={fitRequest} />
             {geometry ? (
               <Scene
                 annotations={annotations}
@@ -153,7 +158,7 @@ function LoadedViewer({
 }
 
 export default function Viewer3D({
-  stlUrl,
+  stlUrl, fitRequest,
   annotations = [],
   showAnnotations = false,
   selectedAnnotation = null,
@@ -175,7 +180,7 @@ export default function Viewer3D({
   return (
     <LoadedViewer
       annotations={annotations}
-      key={stlUrl}
+      fitRequest={fitRequest}
       onSelectAnnotation={onSelectAnnotation}
       onToggleAnnotations={onToggleAnnotations}
       selectedAnnotation={selectedAnnotation}

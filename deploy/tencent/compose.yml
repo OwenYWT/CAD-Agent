@@ -141,6 +141,24 @@ services:
     memswap_limit: 128m
     restart: unless-stopped
 
+  monitoring:
+    image: ${MONITORING_IMAGE:-${BACKEND_IMAGE}}
+    env_file: ./backend.env
+    command: [uvicorn, app.monitoring:app, --host, 0.0.0.0, --port, '8000']
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - 127.0.0.1:8092:8000
+    mem_limit: 256m
+    memswap_limit: 512m
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=10)"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+
 volumes:
   postgres_data:
   minio_data:

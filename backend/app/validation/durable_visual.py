@@ -161,8 +161,8 @@ class DurableVisualValidator:
             )
         reset_chat_completion_provenance()
         response = await self.client.chat.completions.create(
+            stream=True,
             model=settings.effective_vision_model,
-            max_tokens=settings.planner_max_tokens,
             temperature=0.1,
             response_format={"type": "json_object"},
             messages=[

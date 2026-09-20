@@ -18,7 +18,6 @@ class Settings(BaseSettings):
     # model must set it explicitly; a removed provider model cannot be a default.
     vision_model: str = ""
     llm_reasoning_effort: str | None = None
-    planner_max_tokens: int = Field(default=8192, ge=2048, le=32768)
     azure_openai_endpoint: str | None = None
     azure_openai_api_key: str | None = None
     azure_openai_api_version: str = "2025-03-01-preview"
@@ -148,9 +147,8 @@ class Settings(BaseSettings):
     onshape_timeout_s: float = 30.0
     onshape_default_document_public: bool = False
 
-    # LLM call resilience (SDK default read timeout is 600s — far too long for an
-    # interactive product; one slow call would block the whole generate request).
-    llm_timeout_s: float = 60.0
+    # Model API waits have no application timeout. Legacy LLM_TIMEOUT_S is ignored.
+    # Transport failures may still be retried; tasks remain explicitly cancellable.
     llm_max_retries: int = 1
     # Overall hard deadline for one generate()/modify() pipeline (planning + N×LLM +
     # N×sandbox). Beyond this we fail fast instead of hanging a tester's request.
@@ -409,8 +407,7 @@ def make_llm_client():
     """Single factory for the LLM client.
 
     Supports both Azure OpenAI and OpenAI-compatible providers. The returned
-    adapter also normalizes GPT-5 parameters such as max_completion_tokens and
-    reasoning_effort.
+    adapter normalizes provider parameters and omits application output-token caps.
     """
     from app.llm import create_llm_client
 

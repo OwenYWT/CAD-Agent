@@ -6,6 +6,7 @@ import asyncio
 from temporalio.client import Client
 from temporalio.worker import Worker
 
+from app.workers.usage_interceptor import UsageWorkerInterceptor
 from app.config import settings
 from app.agent.durable_planner import DurableAgentPlanner
 from app.agent.durable_repair import DurableRepairSourceGenerator
@@ -21,6 +22,11 @@ from app.workflows.agent_v2 import McadAgentWorkflowV2
 from app.validation.durable_visual import DurableVisualValidator
 from app.workflows.definitions import McadCheckWorkflow, McadDurableWorkflow
 from app.services.workflow_dispatch import run_dispatcher, dispatcher_readiness
+from app.services.model_jobs import submit_activity, read_activity, cancel_activity
+from app.workers.model_job_worker import ModelJobWorker
+from app.workflows.model_job import ModelJobWorkflow
+from app.workflows.model_job_policy import MODEL_OPERATIONS
+from temporalio import activity
 
 
 def build_workflow_worker(
@@ -34,6 +40,7 @@ def build_workflow_worker(
         task_queue=settings.temporal_task_queue,
         workflows=[McadDurableWorkflow, McadCheckWorkflow],
         activities=activities.registered(),
+        interceptors=[UsageWorkerInterceptor()],
     )
 
 
@@ -56,11 +63,16 @@ def build_agent_v2_workflow_worker(
         durable_visual=durable_visual,
         freecad_operations=freecad_operations,
     )
-    return Worker(
+    operations = {activity._Definition.must_from_callable(fn).name:fn
+                  for fn in activities.registered_agent_v2()
+                  if activity._Definition.must_from_callable(fn).name in MODEL_OPERATIONS}
+    return ModelJobWorker(
         client,
+        model_operations=operations,
         task_queue=settings.temporal_agent_v2_task_queue,
-        workflows=[McadAgentWorkflowV2],
-        activities=activities.registered_agent_v2(),
+        workflows=[McadAgentWorkflowV2,ModelJobWorkflow],
+        activities=[*activities.registered_agent_v2(),submit_activity,read_activity,cancel_activity],
+        interceptors=[UsageWorkerInterceptor()],
     )
 
 

@@ -92,8 +92,7 @@ async def test_durable_assembly_planning_fails_closed_after_invalid_responses():
 
 
 @pytest.mark.asyncio
-async def test_truncated_assembly_retries_with_configured_budget_and_feedback(monkeypatch):
-    monkeypatch.setattr(settings, "planner_max_tokens", 12288)
+async def test_truncated_assembly_retries_without_output_cap_and_with_feedback(monkeypatch):
     completions = _CompletionsStub([
         _response(None, finish_reason="length"),
         _response('{"assembly_description":"盒体", "parts":['
@@ -106,16 +105,16 @@ async def test_truncated_assembly_retries_with_configured_budget_and_feedback(mo
     result = await planner.plan_assembly(_plan(), allow_fallback=False)
 
     assert result.parts[0].dimensions["wall"] == 2
-    assert [call["max_tokens"] for call in completions.calls] == [12288, 12288]
+    assert all("max_tokens" not in call for call in completions.calls)
+    assert all(call["stream"] is True for call in completions.calls)
     first, retry = [call["messages"] for call in completions.calls]
     assert first[1] == retry[1]  # Preserve the original requirements on retry.
     assert len(retry) > len(first)
-    assert "truncated at 12288" in retry[-1]["content"]
+    assert "truncated by the model service" in retry[-1]["content"]
 
 
 @pytest.mark.asyncio
 async def test_exhausted_assembly_reports_actual_truncation_without_fallback(monkeypatch):
-    monkeypatch.setattr(settings, "planner_max_tokens", 8192)
     completions = _CompletionsStub([
         _response(None, finish_reason="length"),
         _response(None, finish_reason="length"),
@@ -123,7 +122,7 @@ async def test_exhausted_assembly_reports_actual_truncation_without_fallback(mon
     planner = AssemblyPlanner()
     planner._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
 
-    with pytest.raises(ValueError, match="truncated at 8192 completion tokens") as error:
+    with pytest.raises(ValueError, match="truncated by the model service") as error:
         await planner.plan_assembly(_plan(), allow_fallback=False)
 
     assert "valid assembly plan" in str(error.value)
