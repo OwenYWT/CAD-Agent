@@ -1,7 +1,254 @@
-{"Command":"\"uvicorn app.main:ap…\"","CreatedAt":"2026-09-23 01:27:16 +0800 CST","Engine":"","ExitCode":0,"Health":"healthy","ID":"1c0ca3034ee6","Image":"sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439","Labels":"com.docker.compose.container-number=1,com.docker.compose.image=sha256:a8dabe0baed2f12b95e876471df8b4b7a1e9edfaadd49617e36a178836929382,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/private/tmp/cad-deploy-20260922/source/deploy/acceptance/compose.yml,com.docker.compose.project.environment_file=/private/tmp/cad-fixes-20260923/stack.env,com.docker.compose.project.working_dir=/private/tmp/cad-deploy-20260922/source/deploy/acceptance,com.docker.compose.service=backend,com.docker.compose.config-hash=13291927527c8cb7021df652e818ac86b2a274596d753e45b6d0fd99d70bcd6b,com.docker.compose.depends_on=,com.docker.compose.project=cad-acceptance-20260923,com.docker.compose.replace=backend-1,com.docker.compose.version=5.5.1","LocalVolumes":"1","Mounts":"cad-acceptance…,/tmp/cad-relea…,/run/user/501/…","Name":"cad-acceptance-20260923-backend-1","Names":"cad-acceptance-20260923-backend-1","Networks":"cad-acceptance-20260923_default","Ports":"127.0.0.1:18060-\u003e8000/tcp","Project":"cad-acceptance-20260923","Publishers":[{"URL":"127.0.0.1","TargetPort":8000,"PublishedPort":18060,"Protocol":"tcp"}],"RunningFor":"4 minutes ago","Service":"backend","Size":"0B","State":"running","Status":"Up 4 minutes (healthy)"}
-{"Command":"\"/docker-entrypoint.…\"","CreatedAt":"2026-09-23 01:23:47 +0800 CST","Engine":"","ExitCode":0,"Health":"","ID":"8743ef2b227f","Image":"sha256:fef4ee231cfa992907ecbc1738b5fc4d86e1198e15157b858829724e19e44539","Labels":"com.docker.compose.image=sha256:61b12e26d7873439bfef40bf484837b4dcf7c013b0c1c408f121344716c44d6f,com.docker.compose.project=cad-acceptance-20260923,com.docker.compose.project.environment_file=/private/tmp/cad-fixes-20260923/stack.env,com.docker.compose.project.working_dir=/private/tmp/cad-deploy-20260922/source/deploy/acceptance,com.docker.compose.service=frontend,maintainer=NGINX Docker Maintainers \u003cdocker-maint@nginx.com\u003e,com.docker.compose.container-number=1,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/private/tmp/cad-deploy-20260922/source/deploy/acceptance/compose.yml,com.docker.compose.version=5.5.1,com.docker.compose.config-hash=99df60869c03537ac18452af35c4309d0bc5c1a9958ad10a35f59afe7b1b9f4d,com.docker.compose.depends_on=backend:service_healthy:false","LocalVolumes":"0","Mounts":"","Name":"cad-acceptance-20260923-frontend-1","Names":"cad-acceptance-20260923-frontend-1","Networks":"cad-acceptance-20260923_default","Ports":"127.0.0.1:18160-\u003e80/tcp","Project":"cad-acceptance-20260923","Publishers":[{"URL":"127.0.0.1","TargetPort":80,"PublishedPort":18160,"Protocol":"tcp"}],"RunningFor":"7 minutes ago","Service":"frontend","Size":"0B","State":"running","Status":"Up 7 minutes"}
-{"Command":"\"/usr/bin/docker-ent…\"","CreatedAt":"2026-09-23 01:23:47 +0800 CST","Engine":"","ExitCode":0,"Health":"healthy","ID":"6931d1305ca8","Image":"quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z","Labels":"com.docker.compose.depends_on=,com.docker.compose.image=sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2,com.docker.compose.version=5.5.1,com.docker.compose.config-hash=b8e8886f7eea363601320ea222902cfa91630c5fe9f220ec8425f2efc716c3b4,com.redhat.component=ubi9-micro-container,io.buildah.version=1.40.1,io.k8s.description=Very small image which doesn't install the package manager.,distribution-scope=public,io.k8s.display-name=Red Hat Universal Base Image 9 Micro,release=RELEASE.2025-09-07T16-13-09Z,com.docker.compose.project.working_dir=/private/tmp/cad-deploy-20260922/source/deploy/acceptance,com.redhat.license_terms=https://www.redhat.com/en/about/red-hat-end-user-license-agreements#UBI,description=MinIO object storage is fundamentally different. Designed for performance and the S3 API, it is 100% open-source. MinIO is ideal for large, private cloud environments with stringent security requirements and delivers mission-critical availability across a diverse range of workloads.,vcs-type=git,com.docker.compose.container-number=1,com.docker.compose.project.environment_file=/private/tmp/cad-fixes-20260923/stack.env,name=MinIO,vendor=MinIO Inc \u003cdev@min.io\u003e,version=RELEASE.2025-09-07T16-13-09Z,com.docker.compose.oneoff=False,com.docker.compose.project=cad-acceptance-20260923,com.docker.compose.project.config_files=/private/tmp/cad-deploy-20260922/source/deploy/acceptance/compose.yml,com.docker.compose.service=minio,io.openshift.expose-services=,maintainer=MinIO Inc \u003cdev@min.io\u003e,summary=MinIO is a High Performance Object Storage, API compatible with Amazon S3 cloud storage service.,url=https://catalog.redhat.com/en/search?searchType=containers,build-date=2025-08-06T08:12:37,vcs-ref=32d8e5209f029a1fb7235308ab32253bface1001,architecture=x86_64","LocalVolumes":"1","Mounts":"cad-acceptance…","Name":"cad-acceptance-20260923-minio-1","Names":"cad-acceptance-20260923-minio-1","Networks":"cad-acceptance-20260923_default","Ports":"9000/tcp","Project":"cad-acceptance-20260923","Publishers":[{"URL":"","TargetPort":9000,"PublishedPort":0,"Protocol":"tcp"}],"RunningFor":"7 minutes ago","Service":"minio","Size":"0B","State":"running","Status":"Up 7 minutes (healthy)"}
-{"Command":"\"uvicorn app.monitor…\"","CreatedAt":"2026-09-23 01:27:10 +0800 CST","Engine":"","ExitCode":0,"Health":"","ID":"6c9bacb528d7","Image":"sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439","Labels":"com.docker.compose.service=monitoring,com.docker.compose.version=5.5.1,com.docker.compose.config-hash=2db6dc989f6ff006bbdfc4623c182b618e867c6b5a4537faac90d557ccc52277,com.docker.compose.depends_on=,com.docker.compose.oneoff=False,com.docker.compose.project=cad-acceptance-20260923,com.docker.compose.project.environment_file=/private/tmp/cad-fixes-20260923/stack.env,com.docker.compose.project.working_dir=/private/tmp/cad-deploy-20260922/source/deploy/acceptance,com.docker.compose.replace=monitoring-1,com.docker.compose.container-number=1,com.docker.compose.image=sha256:a8dabe0baed2f12b95e876471df8b4b7a1e9edfaadd49617e36a178836929382,com.docker.compose.project.config_files=/private/tmp/cad-deploy-20260922/source/deploy/acceptance/compose.yml","LocalVolumes":"0","Mounts":"","Name":"cad-acceptance-20260923-monitoring-1","Names":"cad-acceptance-20260923-monitoring-1","Networks":"cad-acceptance-20260923_default","Ports":"127.0.0.1:18061-\u003e8000/tcp","Project":"cad-acceptance-20260923","Publishers":[{"URL":"127.0.0.1","TargetPort":8000,"PublishedPort":18061,"Protocol":"tcp"}],"RunningFor":"4 minutes ago","Service":"monitoring","Size":"0B","State":"running","Status":"Up 4 minutes"}
-{"Command":"\"docker-entrypoint.s…\"","CreatedAt":"2026-09-23 01:23:47 +0800 CST","Engine":"","ExitCode":0,"Health":"healthy","ID":"7ae827e779b1","Image":"postgres:16.14-alpine3.24","Labels":"com.docker.compose.container-number=1,com.docker.compose.image=sha256:7a396fd264a2067788b6551122b50f162bf6136312c7fc9d74381cb92c648382,com.docker.compose.project.environment_file=/private/tmp/cad-fixes-20260923/stack.env,com.docker.compose.project.working_dir=/private/tmp/cad-deploy-20260922/source/deploy/acceptance,com.docker.compose.service=postgres,com.docker.compose.config-hash=4e26618a9e0fac722581b64285918b5a00e62c7d88d719ba066c8153f53ab0a2,com.docker.compose.depends_on=,com.docker.compose.oneoff=False,com.docker.compose.project=cad-acceptance-20260923,com.docker.compose.project.config_files=/private/tmp/cad-deploy-20260922/source/deploy/acceptance/compose.yml,com.docker.compose.version=5.5.1","LocalVolumes":"1","Mounts":"cad-acceptance…","Name":"cad-acceptance-20260923-postgres-1","Names":"cad-acceptance-20260923-postgres-1","Networks":"cad-acceptance-20260923_default","Ports":"5432/tcp","Project":"cad-acceptance-20260923","Publishers":[{"URL":"","TargetPort":5432,"PublishedPort":0,"Protocol":"tcp"}],"RunningFor":"7 minutes ago","Service":"postgres","Size":"0B","State":"running","Status":"Up 7 minutes (healthy)"}
-{"Command":"\"/etc/temporal/entry…\"","CreatedAt":"2026-09-23 01:23:47 +0800 CST","Engine":"","ExitCode":0,"Health":"healthy","ID":"4577f7b1a3cd","Image":"temporalio/auto-setup:1.29.7","Labels":"com.docker.compose.project=cad-acceptance-20260923,com.docker.compose.project.environment_file=/private/tmp/cad-fixes-20260923/stack.env,com.docker.compose.config-hash=5f58848f799e88151423d3d528d9a076f6e8c44bea10155780d252e4a8c63841,com.docker.compose.image=sha256:e6177198ce6031f289bf24d80c42bf6b50f19768a8833d043eb74422430b054e,com.docker.compose.project.config_files=/private/tmp/cad-deploy-20260922/source/deploy/acceptance/compose.yml,org.opencontainers.image.created=2026-06-11T04:30:53.297Z,org.opencontainers.image.url=https://github.com/temporalio/docker-builds,com.docker.compose.oneoff=False,com.docker.compose.project.working_dir=/private/tmp/cad-deploy-20260922/source/deploy/acceptance,com.docker.compose.service=temporal,com.docker.compose.version=5.5.1,org.opencontainers.image.licenses=MIT,org.opencontainers.image.source=https://github.com/temporalio/docker-builds,com.docker.compose.container-number=1,com.docker.compose.depends_on=postgres:service_healthy:false,org.opencontainers.image.description=Workflow as Code (TM) to build and operate resilient applications,org.opencontainers.image.revision=cb8c66860ecef6ddc413fdc187494df0beae7407,org.opencontainers.image.title=auto-setup,org.opencontainers.image.version=1.15.24","LocalVolumes":"0","Mounts":"","Name":"cad-acceptance-20260923-temporal-1","Names":"cad-acceptance-20260923-temporal-1","Networks":"cad-acceptance-20260923_default","Ports":"6933-6935/tcp, 6939/tcp, 7233-7235/tcp, 7239/tcp","Project":"cad-acceptance-20260923","Publishers":[{"URL":"","TargetPort":6933,"PublishedPort":0,"Protocol":"tcp"},{"URL":"","TargetPort":6934,"PublishedPort":0,"Protocol":"tcp"},{"URL":"","TargetPort":6935,"PublishedPort":0,"Protocol":"tcp"},{"URL":"","TargetPort":6939,"PublishedPort":0,"Protocol":"tcp"},{"URL":"","TargetPort":7233,"PublishedPort":0,"Protocol":"tcp"},{"URL":"","TargetPort":7234,"PublishedPort":0,"Protocol":"tcp"},{"URL":"","TargetPort":7235,"PublishedPort":0,"Protocol":"tcp"},{"URL":"","TargetPort":7239,"PublishedPort":0,"Protocol":"tcp"}],"RunningFor":"7 minutes ago","Service":"temporal","Size":"0B","State":"running","Status":"Up 7 minutes (healthy)"}
-{"Command":"\"python -m app.worke…\"","CreatedAt":"2026-09-23 01:23:47 +0800 CST","Engine":"","ExitCode":0,"Health":"","ID":"3e3cf1f6b796","Image":"sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439","Labels":"com.docker.compose.image=sha256:a8dabe0baed2f12b95e876471df8b4b7a1e9edfaadd49617e36a178836929382,com.docker.compose.oneoff=False,com.docker.compose.project=cad-acceptance-20260923,com.docker.compose.project.config_files=/private/tmp/cad-deploy-20260922/source/deploy/acceptance/compose.yml,com.docker.compose.project.working_dir=/private/tmp/cad-deploy-20260922/source/deploy/acceptance,com.docker.compose.version=5.5.1,com.docker.compose.config-hash=108f27abe52fe3a2cc995ac15a1185c05a89d47a5aa391b5ca7540bcf845a648,com.docker.compose.container-number=1,com.docker.compose.depends_on=temporal:service_healthy:false,migrate:service_completed_successfully:false,minio-init:service_completed_successfully:false,com.docker.compose.project.environment_file=/private/tmp/cad-fixes-20260923/stack.env,com.docker.compose.service=workflow-worker","LocalVolumes":"1","Mounts":"cad-acceptance…,/tmp/cad-relea…,/run/user/501/…","Name":"cad-acceptance-20260923-workflow-worker-1","Names":"cad-acceptance-20260923-workflow-worker-1","Networks":"cad-acceptance-20260923_default","Ports":"8000/tcp","Project":"cad-acceptance-20260923","Publishers":[{"URL":"","TargetPort":8000,"PublishedPort":0,"Protocol":"tcp"}],"RunningFor":"7 minutes ago","Service":"workflow-worker","Size":"0B","State":"running","Status":"Up 7 minutes"}
+[
+  {
+    "Command": "\"uvicorn app.main:ap\u2026\"",
+    "CreatedAt": "2026-09-23 01:27:16 +0800 CST",
+    "Engine": "",
+    "ExitCode": 0,
+    "Health": "healthy",
+    "ID": "1c0ca3034ee6",
+    "Image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+    "Labels": "com.docker.compose.container-number=1,com.docker.compose.image=sha256:a8dabe0baed2f12b95e876471df8b4b7a1e9edfaadd49617e36a178836929382,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/private/tmp/cad-deploy-20260922/source/deploy/acceptance/compose.yml,com.docker.compose.project.environment_file=/private/tmp/cad-fixes-20260923/stack.env,com.docker.compose.project.working_dir=/private/tmp/cad-deploy-20260922/source/deploy/acceptance,com.docker.compose.service=backend,com.docker.compose.config-hash=13291927527c8cb7021df652e818ac86b2a274596d753e45b6d0fd99d70bcd6b,com.docker.compose.depends_on=,com.docker.compose.project=cad-acceptance-20260923,com.docker.compose.replace=backend-1,com.docker.compose.version=5.5.1",
+    "LocalVolumes": "1",
+    "Mounts": "cad-acceptance\u2026,/tmp/cad-relea\u2026,/run/user/501/\u2026",
+    "Name": "cad-acceptance-20260923-backend-1",
+    "Names": "cad-acceptance-20260923-backend-1",
+    "Networks": "cad-acceptance-20260923_default",
+    "Ports": "127.0.0.1:18060->8000/tcp",
+    "Project": "cad-acceptance-20260923",
+    "Publishers": [
+      {
+        "URL": "127.0.0.1",
+        "TargetPort": 8000,
+        "PublishedPort": 18060,
+        "Protocol": "tcp"
+      }
+    ],
+    "RunningFor": "4 minutes ago",
+    "Service": "backend",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 4 minutes (healthy)"
+  },
+  {
+    "Command": "\"/docker-entrypoint.\u2026\"",
+    "CreatedAt": "2026-09-23 01:23:47 +0800 CST",
+    "Engine": "",
+    "ExitCode": 0,
+    "Health": "",
+    "ID": "8743ef2b227f",
+    "Image": "sha256:fef4ee231cfa992907ecbc1738b5fc4d86e1198e15157b858829724e19e44539",
+    "Labels": "com.docker.compose.image=sha256:61b12e26d7873439bfef40bf484837b4dcf7c013b0c1c408f121344716c44d6f,com.docker.compose.project=cad-acceptance-20260923,com.docker.compose.project.environment_file=/private/tmp/cad-fixes-20260923/stack.env,com.docker.compose.project.working_dir=/private/tmp/cad-deploy-20260922/source/deploy/acceptance,com.docker.compose.service=frontend,maintainer=NGINX Docker Maintainers <docker-maint@nginx.com>,com.docker.compose.container-number=1,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/private/tmp/cad-deploy-20260922/source/deploy/acceptance/compose.yml,com.docker.compose.version=5.5.1,com.docker.compose.config-hash=99df60869c03537ac18452af35c4309d0bc5c1a9958ad10a35f59afe7b1b9f4d,com.docker.compose.depends_on=backend:service_healthy:false",
+    "LocalVolumes": "0",
+    "Mounts": "",
+    "Name": "cad-acceptance-20260923-frontend-1",
+    "Names": "cad-acceptance-20260923-frontend-1",
+    "Networks": "cad-acceptance-20260923_default",
+    "Ports": "127.0.0.1:18160->80/tcp",
+    "Project": "cad-acceptance-20260923",
+    "Publishers": [
+      {
+        "URL": "127.0.0.1",
+        "TargetPort": 80,
+        "PublishedPort": 18160,
+        "Protocol": "tcp"
+      }
+    ],
+    "RunningFor": "7 minutes ago",
+    "Service": "frontend",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 7 minutes"
+  },
+  {
+    "Command": "\"/usr/bin/docker-ent\u2026\"",
+    "CreatedAt": "2026-09-23 01:23:47 +0800 CST",
+    "Engine": "",
+    "ExitCode": 0,
+    "Health": "healthy",
+    "ID": "6931d1305ca8",
+    "Image": "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z",
+    "Labels": "com.docker.compose.depends_on=,com.docker.compose.image=sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2,com.docker.compose.version=5.5.1,com.docker.compose.config-hash=b8e8886f7eea363601320ea222902cfa91630c5fe9f220ec8425f2efc716c3b4,com.redhat.component=ubi9-micro-container,io.buildah.version=1.40.1,io.k8s.description=Very small image which doesn't install the package manager.,distribution-scope=public,io.k8s.display-name=Red Hat Universal Base Image 9 Micro,release=RELEASE.2025-09-07T16-13-09Z,com.docker.compose.project.working_dir=/private/tmp/cad-deploy-20260922/source/deploy/acceptance,com.redhat.license_terms=https://www.redhat.com/en/about/red-hat-end-user-license-agreements#UBI,description=MinIO object storage is fundamentally different. Designed for performance and the S3 API, it is 100% open-source. MinIO is ideal for large, private cloud environments with stringent security requirements and delivers mission-critical availability across a diverse range of workloads.,vcs-type=git,com.docker.compose.container-number=1,com.docker.compose.project.environment_file=/private/tmp/cad-fixes-20260923/stack.env,name=MinIO,vendor=MinIO Inc <dev@min.io>,version=RELEASE.2025-09-07T16-13-09Z,com.docker.compose.oneoff=False,com.docker.compose.project=cad-acceptance-20260923,com.docker.compose.project.config_files=/private/tmp/cad-deploy-20260922/source/deploy/acceptance/compose.yml,com.docker.compose.service=minio,io.openshift.expose-services=,maintainer=MinIO Inc <dev@min.io>,summary=MinIO is a High Performance Object Storage, API compatible with Amazon S3 cloud storage service.,url=https://catalog.redhat.com/en/search?searchType=containers,build-date=2025-08-06T08:12:37,vcs-ref=32d8e5209f029a1fb7235308ab32253bface1001,architecture=x86_64",
+    "LocalVolumes": "1",
+    "Mounts": "cad-acceptance\u2026",
+    "Name": "cad-acceptance-20260923-minio-1",
+    "Names": "cad-acceptance-20260923-minio-1",
+    "Networks": "cad-acceptance-20260923_default",
+    "Ports": "9000/tcp",
+    "Project": "cad-acceptance-20260923",
+    "Publishers": [
+      {
+        "URL": "",
+        "TargetPort": 9000,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      }
+    ],
+    "RunningFor": "7 minutes ago",
+    "Service": "minio",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 7 minutes (healthy)"
+  },
+  {
+    "Command": "\"uvicorn app.monitor\u2026\"",
+    "CreatedAt": "2026-09-23 01:27:10 +0800 CST",
+    "Engine": "",
+    "ExitCode": 0,
+    "Health": "",
+    "ID": "6c9bacb528d7",
+    "Image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+    "Labels": "com.docker.compose.service=monitoring,com.docker.compose.version=5.5.1,com.docker.compose.config-hash=2db6dc989f6ff006bbdfc4623c182b618e867c6b5a4537faac90d557ccc52277,com.docker.compose.depends_on=,com.docker.compose.oneoff=False,com.docker.compose.project=cad-acceptance-20260923,com.docker.compose.project.environment_file=/private/tmp/cad-fixes-20260923/stack.env,com.docker.compose.project.working_dir=/private/tmp/cad-deploy-20260922/source/deploy/acceptance,com.docker.compose.replace=monitoring-1,com.docker.compose.container-number=1,com.docker.compose.image=sha256:a8dabe0baed2f12b95e876471df8b4b7a1e9edfaadd49617e36a178836929382,com.docker.compose.project.config_files=/private/tmp/cad-deploy-20260922/source/deploy/acceptance/compose.yml",
+    "LocalVolumes": "0",
+    "Mounts": "",
+    "Name": "cad-acceptance-20260923-monitoring-1",
+    "Names": "cad-acceptance-20260923-monitoring-1",
+    "Networks": "cad-acceptance-20260923_default",
+    "Ports": "127.0.0.1:18061->8000/tcp",
+    "Project": "cad-acceptance-20260923",
+    "Publishers": [
+      {
+        "URL": "127.0.0.1",
+        "TargetPort": 8000,
+        "PublishedPort": 18061,
+        "Protocol": "tcp"
+      }
+    ],
+    "RunningFor": "4 minutes ago",
+    "Service": "monitoring",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 4 minutes"
+  },
+  {
+    "Command": "\"docker-entrypoint.s\u2026\"",
+    "CreatedAt": "2026-09-23 01:23:47 +0800 CST",
+    "Engine": "",
+    "ExitCode": 0,
+    "Health": "healthy",
+    "ID": "7ae827e779b1",
+    "Image": "postgres:16.14-alpine3.24",
+    "Labels": "com.docker.compose.container-number=1,com.docker.compose.image=sha256:7a396fd264a2067788b6551122b50f162bf6136312c7fc9d74381cb92c648382,com.docker.compose.project.environment_file=/private/tmp/cad-fixes-20260923/stack.env,com.docker.compose.project.working_dir=/private/tmp/cad-deploy-20260922/source/deploy/acceptance,com.docker.compose.service=postgres,com.docker.compose.config-hash=4e26618a9e0fac722581b64285918b5a00e62c7d88d719ba066c8153f53ab0a2,com.docker.compose.depends_on=,com.docker.compose.oneoff=False,com.docker.compose.project=cad-acceptance-20260923,com.docker.compose.project.config_files=/private/tmp/cad-deploy-20260922/source/deploy/acceptance/compose.yml,com.docker.compose.version=5.5.1",
+    "LocalVolumes": "1",
+    "Mounts": "cad-acceptance\u2026",
+    "Name": "cad-acceptance-20260923-postgres-1",
+    "Names": "cad-acceptance-20260923-postgres-1",
+    "Networks": "cad-acceptance-20260923_default",
+    "Ports": "5432/tcp",
+    "Project": "cad-acceptance-20260923",
+    "Publishers": [
+      {
+        "URL": "",
+        "TargetPort": 5432,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      }
+    ],
+    "RunningFor": "7 minutes ago",
+    "Service": "postgres",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 7 minutes (healthy)"
+  },
+  {
+    "Command": "\"/etc/temporal/entry\u2026\"",
+    "CreatedAt": "2026-09-23 01:23:47 +0800 CST",
+    "Engine": "",
+    "ExitCode": 0,
+    "Health": "healthy",
+    "ID": "4577f7b1a3cd",
+    "Image": "temporalio/auto-setup:1.29.7",
+    "Labels": "com.docker.compose.project=cad-acceptance-20260923,com.docker.compose.project.environment_file=/private/tmp/cad-fixes-20260923/stack.env,com.docker.compose.config-hash=5f58848f799e88151423d3d528d9a076f6e8c44bea10155780d252e4a8c63841,com.docker.compose.image=sha256:e6177198ce6031f289bf24d80c42bf6b50f19768a8833d043eb74422430b054e,com.docker.compose.project.config_files=/private/tmp/cad-deploy-20260922/source/deploy/acceptance/compose.yml,org.opencontainers.image.created=2026-06-11T04:30:53.297Z,org.opencontainers.image.url=https://github.com/temporalio/docker-builds,com.docker.compose.oneoff=False,com.docker.compose.project.working_dir=/private/tmp/cad-deploy-20260922/source/deploy/acceptance,com.docker.compose.service=temporal,com.docker.compose.version=5.5.1,org.opencontainers.image.licenses=MIT,org.opencontainers.image.source=https://github.com/temporalio/docker-builds,com.docker.compose.container-number=1,com.docker.compose.depends_on=postgres:service_healthy:false,org.opencontainers.image.description=Workflow as Code (TM) to build and operate resilient applications,org.opencontainers.image.revision=cb8c66860ecef6ddc413fdc187494df0beae7407,org.opencontainers.image.title=auto-setup,org.opencontainers.image.version=1.15.24",
+    "LocalVolumes": "0",
+    "Mounts": "",
+    "Name": "cad-acceptance-20260923-temporal-1",
+    "Names": "cad-acceptance-20260923-temporal-1",
+    "Networks": "cad-acceptance-20260923_default",
+    "Ports": "6933-6935/tcp, 6939/tcp, 7233-7235/tcp, 7239/tcp",
+    "Project": "cad-acceptance-20260923",
+    "Publishers": [
+      {
+        "URL": "",
+        "TargetPort": 6933,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      },
+      {
+        "URL": "",
+        "TargetPort": 6934,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      },
+      {
+        "URL": "",
+        "TargetPort": 6935,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      },
+      {
+        "URL": "",
+        "TargetPort": 6939,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      },
+      {
+        "URL": "",
+        "TargetPort": 7233,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      },
+      {
+        "URL": "",
+        "TargetPort": 7234,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      },
+      {
+        "URL": "",
+        "TargetPort": 7235,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      },
+      {
+        "URL": "",
+        "TargetPort": 7239,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      }
+    ],
+    "RunningFor": "7 minutes ago",
+    "Service": "temporal",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 7 minutes (healthy)"
+  },
+  {
+    "Command": "\"python -m app.worke\u2026\"",
+    "CreatedAt": "2026-09-23 01:23:47 +0800 CST",
+    "Engine": "",
+    "ExitCode": 0,
+    "Health": "",
+    "ID": "3e3cf1f6b796",
+    "Image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+    "Labels": "com.docker.compose.image=sha256:a8dabe0baed2f12b95e876471df8b4b7a1e9edfaadd49617e36a178836929382,com.docker.compose.oneoff=False,com.docker.compose.project=cad-acceptance-20260923,com.docker.compose.project.config_files=/private/tmp/cad-deploy-20260922/source/deploy/acceptance/compose.yml,com.docker.compose.project.working_dir=/private/tmp/cad-deploy-20260922/source/deploy/acceptance,com.docker.compose.version=5.5.1,com.docker.compose.config-hash=108f27abe52fe3a2cc995ac15a1185c05a89d47a5aa391b5ca7540bcf845a648,com.docker.compose.container-number=1,com.docker.compose.depends_on=temporal:service_healthy:false,migrate:service_completed_successfully:false,minio-init:service_completed_successfully:false,com.docker.compose.project.environment_file=/private/tmp/cad-fixes-20260923/stack.env,com.docker.compose.service=workflow-worker",
+    "LocalVolumes": "1",
+    "Mounts": "cad-acceptance\u2026,/tmp/cad-relea\u2026,/run/user/501/\u2026",
+    "Name": "cad-acceptance-20260923-workflow-worker-1",
+    "Names": "cad-acceptance-20260923-workflow-worker-1",
+    "Networks": "cad-acceptance-20260923_default",
+    "Ports": "8000/tcp",
+    "Project": "cad-acceptance-20260923",
+    "Publishers": [
+      {
+        "URL": "",
+        "TargetPort": 8000,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      }
+    ],
+    "RunningFor": "7 minutes ago",
+    "Service": "workflow-worker",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 7 minutes"
+  }
+]
