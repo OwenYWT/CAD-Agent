@@ -1,0 +1,31 @@
+WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+CAD_REFERENCE_GEOMETRY={"references": 6, "physical_measurements": {"Body": [19200.0, 60.0, 40.0, 8.0]}, "source_sha256": "7d281e49622cfcf6fef7bd87e825c1ccf494609617374bde1b86069dd1f1525c"}
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Importing project files......
+						(25 %)
+						(50 %)
+						(75 %)
+						(100 %)
+
+Postprocessing......
+						(100 %)
+
+Importing project files......
+						(25 %)
+						(50 %)
+						(75 %)
+						(100 %)
+
+Postprocessing......
+						(100 %)

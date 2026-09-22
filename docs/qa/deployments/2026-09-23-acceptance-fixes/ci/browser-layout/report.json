@@ -1,0 +1,72 @@
+{
+  "status": "passed",
+  "widths": [
+    {
+      "width": 1440,
+      "model": {
+        "x": 228,
+        "y": 48,
+        "width": 867,
+        "height": 852
+      }
+    },
+    {
+      "width": 1181,
+      "model": {
+        "x": 228,
+        "y": 48,
+        "width": 608,
+        "height": 852
+      }
+    },
+    {
+      "width": 1024,
+      "model": {
+        "x": 228,
+        "y": 48,
+        "width": 451,
+        "height": 852
+      }
+    },
+    {
+      "width": 900,
+      "model": {
+        "x": 0,
+        "y": 48,
+        "width": 555,
+        "height": 852
+      }
+    },
+    {
+      "width": 760,
+      "model": {
+        "x": 0,
+        "y": 48,
+        "width": 760,
+        "height": 852
+      }
+    },
+    {
+      "width": 390,
+      "model": {
+        "x": 0,
+        "y": 48,
+        "width": 390,
+        "height": 852
+      }
+    },
+    {
+      "width": 320,
+      "model": {
+        "x": 0,
+        "y": 48,
+        "width": 320,
+        "height": 852
+      }
+    }
+  ],
+  "mesh_tree_and_agent_selection": "Body",
+  "same_canvas": true,
+  "camera_pixels_unchanged": true,
+  "page_errors": []
+}

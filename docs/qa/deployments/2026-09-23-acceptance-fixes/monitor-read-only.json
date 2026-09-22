@@ -1,0 +1,7 @@
+{
+  "role": "cad_agent_monitor",
+  "attempted_statement": "UPDATE model_jobs SET generation=generation WHERE false",
+  "write_denied": true,
+  "exit_code": 3,
+  "database_error": "ERROR:  permission denied for table model_jobs"
+}

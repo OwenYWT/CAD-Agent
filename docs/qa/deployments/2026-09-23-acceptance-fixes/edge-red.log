@@ -1,0 +1,188 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_generator_preserves_explicit_outer_scope_with_protected_hole_mouths[Change the hole to 8 mm and add a 1 mm chamfer to all outer edges. Do not chamfer the hole mouths.] _
+
+objective = 'Change the hole to 8 mm and add a 1 mm chamfer to all outer edges. Do not chamfer the hole mouths.'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("objective", [
+        "Change the hole to 8 mm and add a 1 mm chamfer to all outer edges. Do not chamfer the hole mouths.",
+        "中心孔改为8mm，仅外边倒角1mm，孔口保持不变。",
+        "Chamfer outer edges only; leave the hole rims unchanged.",
+        "仅外边倒角，排除孔口。",
+    ])
+    async def test_generator_preserves_explicit_outer_scope_with_protected_hole_mouths(objective):
+        client = _client([])
+>       result = await FreeCADOperationGenerator(client=client).generate(
+            plan=_plan().model_copy(update={"operation": "modify", "objective": objective}),
+            requirements={"description": objective, "target_params": {"hole_diameter": 8},
+                          "new_features": ["1 mm chamfer on all outer edges"]},
+            base_state=_plate_state(), output_formats=("step",),
+        )
+
+backend/tests/test_freecad_operation_generator.py:497:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+backend/app/freecad/operation_generator.py:185: in generate
+    validate_chamfer_intent(compiled, requirements, plan.objective)
+backend/app/freecad/edge_intent.py:28: in validate_chamfer_intent
+    declared = requested_edge_scope(text)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+text = '{"description": "Change the hole to 8 mm and add a 1 mm chamfer to all outer edges. Do not chamfer the hole mouths.", "new_features": ["1 mm chamfer on all outer edges"], "features": null, "constraints": null}'
+
+    def requested_edge_scope(text: str) -> str | None:
+        normalized = text.lower()
+        scopes = set()
+        if re.search(r'\ball_outer\b|\b(?:outer|external)\s+edges?\b|外(?:部)?(?:边|棱)', normalized):
+            scopes.add('outer')
+        if re.search(r'\bhole[_ ](?:mouths?|rims?)\b|孔口', normalized):
+            scopes.add('hole_mouths')
+        if re.search(r'\ball\s+edges\b|\bedges\s*=\s*all\b|所有边|全部边', normalized):
+            scopes.add('all')
+        if len(scopes) > 1:
+>           raise ValueError('ambiguous chamfer scope: confirm outer edges, hole mouths or all edges')
+E           ValueError: ambiguous chamfer scope: confirm outer edges, hole mouths or all edges
+
+backend/app/freecad/edge_intent.py:18: ValueError
+_ test_generator_preserves_explicit_outer_scope_with_protected_hole_mouths[\u4e2d\u5fc3\u5b54\u6539\u4e3a8mm\uff0c\u4ec5\u5916\u8fb9\u5012\u89d21mm\uff0c\u5b54\u53e3\u4fdd\u6301\u4e0d\u53d8\u3002] _
+
+objective = '中心孔改为8mm，仅外边倒角1mm，孔口保持不变。'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("objective", [
+        "Change the hole to 8 mm and add a 1 mm chamfer to all outer edges. Do not chamfer the hole mouths.",
+        "中心孔改为8mm，仅外边倒角1mm，孔口保持不变。",
+        "Chamfer outer edges only; leave the hole rims unchanged.",
+        "仅外边倒角，排除孔口。",
+    ])
+    async def test_generator_preserves_explicit_outer_scope_with_protected_hole_mouths(objective):
+        client = _client([])
+>       result = await FreeCADOperationGenerator(client=client).generate(
+            plan=_plan().model_copy(update={"operation": "modify", "objective": objective}),
+            requirements={"description": objective, "target_params": {"hole_diameter": 8},
+                          "new_features": ["1 mm chamfer on all outer edges"]},
+            base_state=_plate_state(), output_formats=("step",),
+        )
+
+backend/tests/test_freecad_operation_generator.py:497:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+backend/app/freecad/operation_generator.py:185: in generate
+    validate_chamfer_intent(compiled, requirements, plan.objective)
+backend/app/freecad/edge_intent.py:28: in validate_chamfer_intent
+    declared = requested_edge_scope(text)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+text = '{"description": "中心孔改为8mm，仅外边倒角1mm，孔口保持不变。", "new_features": ["1 mm chamfer on all outer edges"], "features": null, "constraints": null}'
+
+    def requested_edge_scope(text: str) -> str | None:
+        normalized = text.lower()
+        scopes = set()
+        if re.search(r'\ball_outer\b|\b(?:outer|external)\s+edges?\b|外(?:部)?(?:边|棱)', normalized):
+            scopes.add('outer')
+        if re.search(r'\bhole[_ ](?:mouths?|rims?)\b|孔口', normalized):
+            scopes.add('hole_mouths')
+        if re.search(r'\ball\s+edges\b|\bedges\s*=\s*all\b|所有边|全部边', normalized):
+            scopes.add('all')
+        if len(scopes) > 1:
+>           raise ValueError('ambiguous chamfer scope: confirm outer edges, hole mouths or all edges')
+E           ValueError: ambiguous chamfer scope: confirm outer edges, hole mouths or all edges
+
+backend/app/freecad/edge_intent.py:18: ValueError
+_ test_generator_preserves_explicit_outer_scope_with_protected_hole_mouths[Chamfer outer edges only; leave the hole rims unchanged.] _
+
+objective = 'Chamfer outer edges only; leave the hole rims unchanged.'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("objective", [
+        "Change the hole to 8 mm and add a 1 mm chamfer to all outer edges. Do not chamfer the hole mouths.",
+        "中心孔改为8mm，仅外边倒角1mm，孔口保持不变。",
+        "Chamfer outer edges only; leave the hole rims unchanged.",
+        "仅外边倒角，排除孔口。",
+    ])
+    async def test_generator_preserves_explicit_outer_scope_with_protected_hole_mouths(objective):
+        client = _client([])
+>       result = await FreeCADOperationGenerator(client=client).generate(
+            plan=_plan().model_copy(update={"operation": "modify", "objective": objective}),
+            requirements={"description": objective, "target_params": {"hole_diameter": 8},
+                          "new_features": ["1 mm chamfer on all outer edges"]},
+            base_state=_plate_state(), output_formats=("step",),
+        )
+
+backend/tests/test_freecad_operation_generator.py:497:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+backend/app/freecad/operation_generator.py:185: in generate
+    validate_chamfer_intent(compiled, requirements, plan.objective)
+backend/app/freecad/edge_intent.py:28: in validate_chamfer_intent
+    declared = requested_edge_scope(text)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+text = '{"description": "Chamfer outer edges only; leave the hole rims unchanged.", "new_features": ["1 mm chamfer on all outer edges"], "features": null, "constraints": null}'
+
+    def requested_edge_scope(text: str) -> str | None:
+        normalized = text.lower()
+        scopes = set()
+        if re.search(r'\ball_outer\b|\b(?:outer|external)\s+edges?\b|外(?:部)?(?:边|棱)', normalized):
+            scopes.add('outer')
+        if re.search(r'\bhole[_ ](?:mouths?|rims?)\b|孔口', normalized):
+            scopes.add('hole_mouths')
+        if re.search(r'\ball\s+edges\b|\bedges\s*=\s*all\b|所有边|全部边', normalized):
+            scopes.add('all')
+        if len(scopes) > 1:
+>           raise ValueError('ambiguous chamfer scope: confirm outer edges, hole mouths or all edges')
+E           ValueError: ambiguous chamfer scope: confirm outer edges, hole mouths or all edges
+
+backend/app/freecad/edge_intent.py:18: ValueError
+_ test_generator_preserves_explicit_outer_scope_with_protected_hole_mouths[\u4ec5\u5916\u8fb9\u5012\u89d2\uff0c\u6392\u9664\u5b54\u53e3\u3002] _
+
+objective = '仅外边倒角，排除孔口。'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("objective", [
+        "Change the hole to 8 mm and add a 1 mm chamfer to all outer edges. Do not chamfer the hole mouths.",
+        "中心孔改为8mm，仅外边倒角1mm，孔口保持不变。",
+        "Chamfer outer edges only; leave the hole rims unchanged.",
+        "仅外边倒角，排除孔口。",
+    ])
+    async def test_generator_preserves_explicit_outer_scope_with_protected_hole_mouths(objective):
+        client = _client([])
+>       result = await FreeCADOperationGenerator(client=client).generate(
+            plan=_plan().model_copy(update={"operation": "modify", "objective": objective}),
+            requirements={"description": objective, "target_params": {"hole_diameter": 8},
+                          "new_features": ["1 mm chamfer on all outer edges"]},
+            base_state=_plate_state(), output_formats=("step",),
+        )
+
+backend/tests/test_freecad_operation_generator.py:497:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+backend/app/freecad/operation_generator.py:185: in generate
+    validate_chamfer_intent(compiled, requirements, plan.objective)
+backend/app/freecad/edge_intent.py:28: in validate_chamfer_intent
+    declared = requested_edge_scope(text)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+text = '{"description": "仅外边倒角，排除孔口。", "new_features": ["1 mm chamfer on all outer edges"], "features": null, "constraints": null}'
+
+    def requested_edge_scope(text: str) -> str | None:
+        normalized = text.lower()
+        scopes = set()
+        if re.search(r'\ball_outer\b|\b(?:outer|external)\s+edges?\b|外(?:部)?(?:边|棱)', normalized):
+            scopes.add('outer')
+        if re.search(r'\bhole[_ ](?:mouths?|rims?)\b|孔口', normalized):
+            scopes.add('hole_mouths')
+        if re.search(r'\ball\s+edges\b|\bedges\s*=\s*all\b|所有边|全部边', normalized):
+            scopes.add('all')
+        if len(scopes) > 1:
+>           raise ValueError('ambiguous chamfer scope: confirm outer edges, hole mouths or all edges')
+E           ValueError: ambiguous chamfer scope: confirm outer edges, hole mouths or all edges
+
+backend/app/freecad/edge_intent.py:18: ValueError
+=========================== short test summary info ============================
+FAILED backend/tests/test_freecad_operation_generator.py::test_generator_preserves_explicit_outer_scope_with_protected_hole_mouths[Change the hole to 8 mm and add a 1 mm chamfer to all outer edges. Do not chamfer the hole mouths.]
+FAILED backend/tests/test_freecad_operation_generator.py::test_generator_preserves_explicit_outer_scope_with_protected_hole_mouths[\u4e2d\u5fc3\u5b54\u6539\u4e3a8mm\uff0c\u4ec5\u5916\u8fb9\u5012\u89d21mm\uff0c\u5b54\u53e3\u4fdd\u6301\u4e0d\u53d8\u3002]
+FAILED backend/tests/test_freecad_operation_generator.py::test_generator_preserves_explicit_outer_scope_with_protected_hole_mouths[Chamfer outer edges only; leave the hole rims unchanged.]
+FAILED backend/tests/test_freecad_operation_generator.py::test_generator_preserves_explicit_outer_scope_with_protected_hole_mouths[\u4ec5\u5916\u8fb9\u5012\u89d2\uff0c\u6392\u9664\u5b54\u53e3\u3002]
+4 failed, 12 deselected in 0.34s

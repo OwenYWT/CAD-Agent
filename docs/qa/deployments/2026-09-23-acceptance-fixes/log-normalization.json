@@ -1,0 +1,110 @@
+{
+  "transformation": "CR/LF normalized to LF and trailing whitespace stripped; content and test outcomes unchanged. Raw logs retained in private local evidence directory. Trailing blank EOF lines removed.",
+  "files": [
+    {
+      "file": "frontend-final-lint.log",
+      "raw_sha256": "961db50e56d4e05b6f9a22354c797b82c37bb48b1e7b63c5e37a503d2b0f6ea1",
+      "archived_sha256": "f061134497645ac1f9a14cc985cadeb7f33a17a1835aa4416fa39f26e541e7f3"
+    },
+    {
+      "file": "amd64-freecad_constraint_diagnostics.log",
+      "raw_sha256": "a8a8e8eecd1548203a051305645930d7dbbee4f509bca61ef324b44f408f8c63",
+      "archived_sha256": "197fbbc272c3c8d7486bb1005b55c799f5d1307a0ee38ac19d1c899e2ad7f315"
+    },
+    {
+      "file": "frontend-final-tests.log",
+      "raw_sha256": "e649fdb14e84282a648f34d6b8029ea1107d7145545b9a522beafc2d5eb1341d",
+      "archived_sha256": "e649fdb14e84282a648f34d6b8029ea1107d7145545b9a522beafc2d5eb1341d"
+    },
+    {
+      "file": "stack-postcheck4.log",
+      "raw_sha256": "0c26afff30d0c75b4e8d31b0db00c3cba790457753974b6935a76c6d2a6d1bd8",
+      "archived_sha256": "0c26afff30d0c75b4e8d31b0db00c3cba790457753974b6935a76c6d2a6d1bd8"
+    },
+    {
+      "file": "native-freecad_constraint_diagnostics.log",
+      "raw_sha256": "da7c48c23c4d1afe642b243d52c0f6c839b3be798d3c00e0e4dbe1cae4579c2c",
+      "archived_sha256": "d2ab2d40a7637fc6c86f129e03c7ade8d7a16986c1f34c89d356859045ede71c"
+    },
+    {
+      "file": "frontend-final-build.log",
+      "raw_sha256": "a5de98acc09d6587a6582c986fe04e6b6876a8b53a7c64aff5001ec137355b39",
+      "archived_sha256": "22e957e4705aa82f91cc03d765f9ab82e3bca115a9917428d654ac173a30b82a"
+    },
+    {
+      "file": "native-freecad_reference_fixture.log",
+      "raw_sha256": "b1f468a9716daf5d1082ee102150f4e5d13586e2bc1046b51ec8183b64f7e659",
+      "archived_sha256": "14278bada708d93b86df4fa181f73066f579728b4128d61860dfe62726c26101"
+    },
+    {
+      "file": "amd64-engineering.log",
+      "raw_sha256": "9bf6493c97edcf80ad0ef7871481c47b4c9e3d3d32cd22c8150f323ffb6249f4",
+      "archived_sha256": "9bf6493c97edcf80ad0ef7871481c47b4c9e3d3d32cd22c8150f323ffb6249f4"
+    },
+    {
+      "file": "body-target-red.log",
+      "raw_sha256": "8e31c590e70232bde9ee24c03b2b8b86c87c9b933776cfac6c5d5e5056f999f9",
+      "archived_sha256": "33efbf3d1a4adf57d2c31b26bee27b31c2bd24fa49625be2e562fd5783a91cf3"
+    },
+    {
+      "file": "native-engineering.log",
+      "raw_sha256": "a6950e237a5a885495e70b5698fd3fd914ab03e1b778b94b87db35e945b4df5c",
+      "archived_sha256": "a6950e237a5a885495e70b5698fd3fd914ab03e1b778b94b87db35e945b4df5c"
+    },
+    {
+      "file": "amd64-freecad_reference_fixture.log",
+      "raw_sha256": "4b3ae78e5a1a438f3d3390f97383835a522a94b26f95b85db5ad5be8f243013c",
+      "archived_sha256": "6f8e5420e893fb125d8fdb0d29deef44b7717f565585a16907476bf1e378ad84"
+    },
+    {
+      "file": "edge-red.log",
+      "raw_sha256": "a11d4d8faf7cd4e50a1b0ca006b2a5f9644fbcfe948f06cdbb366f907e01448f",
+      "archived_sha256": "306c59f1b511ef287e1441b2a339266267f79c8ef780f8fd96a036de16943315"
+    },
+    {
+      "file": "native-chamfer_scope_geometry.log",
+      "raw_sha256": "b46a630d779988611039baa6e296c6c860f15d2542592889b30c0934a29828f4",
+      "archived_sha256": "9135650cc2b9fbb2e747255a0094861d4ae3bce7bed78bcfd45670ecdb8b9c69"
+    },
+    {
+      "file": "edge-final.log",
+      "raw_sha256": "4a3ee741216c31c2d8269fd5211d567f083808f1b1552a31115606d1ad0e05cd",
+      "archived_sha256": "4a3ee741216c31c2d8269fd5211d567f083808f1b1552a31115606d1ad0e05cd"
+    },
+    {
+      "file": "unchamfered-red.log",
+      "raw_sha256": "8708ba48243493a86fec7a799b8ba4150a96377d64648906e492af1101f4b54e",
+      "archived_sha256": "da25d16a70f1a440bce55f3f58deaa6444f6dc30cee00f7d1b72323bbd912c49"
+    },
+    {
+      "file": "stack-drill5.log",
+      "raw_sha256": "f74df3410ebbc127af48c0513dfa016de19ff88ed971ecd3514b7c532ac33aab",
+      "archived_sha256": "f74df3410ebbc127af48c0513dfa016de19ff88ed971ecd3514b7c532ac33aab"
+    },
+    {
+      "file": "amd64-chamfer_scope_geometry.log",
+      "raw_sha256": "cc1178cf5787c73e253b4427df1f1900dfe3f5ef93afd36d8de134c82c59be90",
+      "archived_sha256": "3d8fc60078db87b0ce481d4b777f7c60d4cfdfe0d423ae43c7309ca8320b28e7"
+    },
+    {
+      "file": "ci/native/engineering.log",
+      "raw_sha256": "a6950e237a5a885495e70b5698fd3fd914ab03e1b778b94b87db35e945b4df5c",
+      "archived_sha256": "a6950e237a5a885495e70b5698fd3fd914ab03e1b778b94b87db35e945b4df5c"
+    },
+    {
+      "file": "ci/native/freecad_constraint_diagnostics.log",
+      "raw_sha256": "da7c48c23c4d1afe642b243d52c0f6c839b3be798d3c00e0e4dbe1cae4579c2c",
+      "archived_sha256": "d2ab2d40a7637fc6c86f129e03c7ade8d7a16986c1f34c89d356859045ede71c"
+    },
+    {
+      "file": "ci/native/chamfer_scope_geometry.log",
+      "raw_sha256": "b46a630d779988611039baa6e296c6c860f15d2542592889b30c0934a29828f4",
+      "archived_sha256": "9135650cc2b9fbb2e747255a0094861d4ae3bce7bed78bcfd45670ecdb8b9c69"
+    },
+    {
+      "file": "ci/native/freecad_reference_fixture.log",
+      "raw_sha256": "9c3096db7abb948bccbdc17ae5906be8cf7c8a7074855fb182ef4e78e40311c6",
+      "archived_sha256": "b8088231327bee26b93d59b7882320eb96d53cc2838cd32d75ac7ed585e5f4f4"
+    }
+  ]
+}

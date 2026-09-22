@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "fixture": {
+    "document_id": "d61d2b9b-3111-46b6-a1e8-285d786e4252",
+    "project_id": "efe9e391-efcf-5001-ab14-8ff9107fe3bd",
+    "tenant_id": "599493c7-2aad-599d-9cda-56ae6e09540f",
+    "base_revision_id": "8fbe3027-19e1-4987-aaf1-4a86b430ac65",
+    "workflow_id": "1c189975-1eeb-4829-a7de-057ebe6ffc4b",
+    "change_set_id": "12bf22a7-ea21-4d4d-9ab7-6e459129dc16"
+  },
+  "saved_revision": "622b0ae1-2f46-4f02-bad5-ad308f0db607",
+  "real_kernel": true,
+  "real_auth": true,
+  "same_canvas": true,
+  "page_errors": []
+}

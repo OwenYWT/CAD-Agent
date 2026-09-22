@@ -1,0 +1,30 @@
+{
+  "fixture": {
+    "document_id": "67bb1c26-0f04-49f9-8567-1cf377e53a26",
+    "project_id": "214888d3-69e8-5b4c-ab7e-1b419e4d62b3",
+    "tenant_id": "641461d3-ccd2-5ead-a089-72d329c49359",
+    "base_revision_id": "12cef5a5-2af8-4c01-8046-b4bfbd7b5822",
+    "workflow_id": "041c4ee5-4aa2-43e1-b86d-d98dd13cf183",
+    "change_set_id": "0eec39ac-1002-481c-ae20-cc3a3a99b4a8",
+    "session_id": "8f46df48-9ba4-4f96-ad56-264e1f33859d",
+    "panel_id": "bcf5a6d2-c6f3-4e6f-8bba-5446538956bc",
+    "title": "五状态原生验收 8f46df48"
+  },
+  "manual_workflow_id": "b17b704e-b078-4786-ab84-ac068f80bff9",
+  "original_diameter_mm": 6,
+  "final_diameter_mm": 6.5,
+  "unknown_acceptance_same_request": true,
+  "panel_scope_and_draft_guard": true,
+  "unchanged_other_parameters": true,
+  "draft_and_selection_survive_collapse": true,
+  "canvas_not_remounted": true,
+  "final_generation": 2,
+  "artifact_sha256": {
+    "fcstd": "ec8c59996145dc8d73401b65d188e866e1dd8ce3be547ea02280eec8130fad4f",
+    "state": "5a53ec5d51c1e989b8387dc0dc831199177075fc3410ec11d88f3b8ec3f8a93d",
+    "mesh": "75a453dfb744f9a2ea9374b99c9bb9b51b61f5e0f45bd0d8480f73244544d76f"
+  },
+  "status": "passed",
+  "mode": "candidate",
+  "page_errors": []
+}

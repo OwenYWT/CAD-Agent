@@ -1,0 +1,25 @@
+
+> cad-frontend-tmp@0.0.0 build
+> tsc -b && vite build
+
+vite v8.0.8 building client environment for production...
+[2K
+transforming...✓ 677 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                0.77 kB │ gzip:   0.44 kB
+dist/assets/wordswave-logo-CadXiMWD.jpg      140.22 kB
+dist/assets/index-DgTq2TjI.css                58.50 kB │ gzip:  11.41 kB
+dist/assets/STLLoader-BhUj7whh.js              7.25 kB │ gzip:   3.06 kB
+dist/assets/DocumentSceneViewer-IUuR3v_L.js    7.72 kB │ gzip:   3.65 kB
+dist/assets/Viewer3D-C2k9wlqv.js              14.69 kB │ gzip:   5.81 kB
+dist/assets/Icon-CN3tT-Zl.js                 182.60 kB │ gzip:  57.15 kB
+dist/assets/index-BV5cyvUp.js                409.44 kB │ gzip: 120.38 kB
+dist/assets/OrbitControls-BMlwkpAp.js        901.04 kB │ gzip: 241.53 kB
+
+✓ built in 679ms
+[plugin builtin:vite-reporter]
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.

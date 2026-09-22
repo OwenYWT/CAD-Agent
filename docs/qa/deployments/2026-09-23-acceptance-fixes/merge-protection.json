@@ -1,0 +1,15 @@
+{
+  "observed_at": "2026-09-22T17:38:07.355018+00:00",
+  "repository": "OwenYWT/CAD-Agent",
+  "branch": "main",
+  "protected": false,
+  "sha": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+  "protection_http_status": 403,
+  "message": "Upgrade to GitHub Pro or make this repository public to enable this feature.",
+  "status": "BLOCKED",
+  "not_done": [
+    "required checks enforcement",
+    "independent review enforcement",
+    "failing PR merge rejection proof"
+  ]
+}

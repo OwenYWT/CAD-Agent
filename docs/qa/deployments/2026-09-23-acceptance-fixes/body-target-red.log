@@ -1,0 +1,35 @@
+<Exception> FeatureDressUp.cpp(217): Invalid edge link: ;Edge1;:He58,E.Edge1
+EdgeTreatment: Invalid edge link: ;Edge1;:He58,E.Edge1
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/test.py", line 4, in <module>
+    print(run_case({'edge_scope':'outer','use_all_edges':False},'outer',(100,60,10),4,target_body=True))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tests/chamfer_scope_geometry.py", line 63, in run_case
+    result = runner._feature_chamfer(doc, runner._keys('feature.chamfer', args))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/cad-agent/freecad_entry.py", line 540, in _feature_chamfer
+    raise FreeCADRunnerError("chamfer_invalid_shape", "chamfer did not produce a valid solid")
+<class 'freecad_entry.FreeCADRunnerError'>: chamfer did not produce a valid solid
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(9 %)
+						(18 %)
+						(27 %)
+						(36 %)
+						(45 %)
+						(54 %)
+						(63 %)
+						(72 %)
+						(81 %)
