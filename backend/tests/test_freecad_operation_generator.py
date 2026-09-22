@@ -483,3 +483,37 @@ async def test_compiles_planner_dimensions_without_using_hole_as_thickness() -> 
         60,
         10,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("objective", [
+    "Change the hole to 8 mm and add a 1 mm chamfer to all outer edges. Do not chamfer the hole mouths.",
+    "中心孔改为8mm，仅外边倒角1mm，孔口保持不变。",
+    "Chamfer outer edges only; leave the hole rims unchanged.",
+    "仅外边倒角，排除孔口。",
+])
+async def test_generator_preserves_explicit_outer_scope_with_protected_hole_mouths(objective):
+    client = _client([])
+    result = await FreeCADOperationGenerator(client=client).generate(
+        plan=_plan().model_copy(update={"operation": "modify", "objective": objective}),
+        requirements={"description": objective, "target_params": {"hole_diameter": 8},
+                      "new_features": ["1 mm chamfer on all outer edges"]},
+        base_state=_plate_state(), output_formats=("step",),
+    )
+    chamfer = next(op.typed_args() for op in result.operation_plan.operations if op.action == "feature.chamfer")
+    assert chamfer.edge_scope == "outer" and not chamfer.use_all_edges
+    assert client.completions.calls == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("requirements", [{'description': '将现有中心通孔直径从 6 mm 改为 8 mm，保持其他尺寸不变；在所有外边缘添加 1 mm 倒角，不倒孔口；导出 STEP 和 STL。', 'modification_type': 'dimension_change', 'target_params': {'center_hole.Diameter': 8.0}, 'new_features': ['1 mm chamfer on all outer edges, excluding hole mouths']}, {'description': 'Increase the existing centered through-hole diameter from 6 mm to 8 mm, preserving all other dimensions. Add a 1 mm chamfer only on the outer edge while keeping the hole openings unchanged. Export the part as STEP and STL.', 'modification_type': 'dimension_change', 'target_params': {'Hole.Diameter': 8.0}, 'new_features': ['Add a 1 mm chamfer on the outer edge only; do not chamfer the hole openings']}])
+async def test_actual_provider_wording_retains_protected_hole_scope(requirements):
+    # Captured synthetic plate requirements; no private user input or credentials.
+    base = _plate_state()
+    hole_key = next(iter(requirements["target_params"]))
+    requirements = {**requirements, "target_params": {"hole_diameter": requirements["target_params"][hole_key]}}
+    result = await FreeCADOperationGenerator(client=_client([])).generate(
+        plan=_plan().model_copy(update={"operation":"modify", "objective":"Chamfer outer edges only. Do not chamfer hole mouths."}),
+        requirements=requirements, base_state=base, output_formats=("step",),
+    )
+    assert next(op.typed_args().edge_scope for op in result.operation_plan.operations if op.action=="feature.chamfer") == "outer"

@@ -37,6 +37,9 @@ export function useDocumentView(head: CloudDocument | null, connected: boolean, 
     : latest?.revision_id === revisionId ? latest : null;
   const show = (mode: DocumentViewMode, revision: string, changeSetId?: string | null) => {
     if (!head) return;
+    const target = viewIdentity(head, { mode, revisionId: revision, changeSetId });
+    if (identity?.documentId === target.documentId && identity.viewedRevisionId === target.viewedRevisionId
+      && identity.mode === target.mode) return;
     guardDraft(() => setChoice({ documentId: head.document_id, mode, revisionId: revision, changeSetId }));
   };
   return { identity, document, result, evidence, loading: loaded?.key !== key,

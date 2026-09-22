@@ -444,12 +444,29 @@ def _feature_hole(document: Any, args: dict[str, Any]) -> dict[str, Any]:
     return {"object": feature.Name, "type_id": feature.TypeId}
 
 
+def _dressup_target(document: Any, args: dict[str, Any], label: str) -> tuple[Any, Any]:
+    target = _object(document, args["target"], label)
+    if getattr(target, "TypeId", "") != "PartDesign::Body":
+        return target, _body_for(document, target)
+    # A Body is a container whose Tip will change when the dress-up is added.
+    # Linking the new feature to the Body itself would create a cyclic base.
+    # Snapshot its actual Tip before insertion; never pick an object by name.
+    if args.get("selector") is not None:
+        raise FreeCADRunnerError(
+            "topology_target_mismatch",
+            "a Body topology selection must be mapped to its feature before a dress-up",
+        )
+    tip = getattr(target, "Tip", None)
+    if tip is None or tip == target or tip not in target.Group or not hasattr(tip, "Shape"):
+        raise FreeCADRunnerError("invalid_dressup_target", "Body has no valid feature Tip")
+    return tip, target
+
+
 def _feature_fillet(document: Any, args: dict[str, Any]) -> dict[str, Any]:
     name = _name(args["name"], "fillet name")
     if document.getObject(name) is not None:
         raise FreeCADRunnerError("object_name_conflict", f"object already exists: {name}")
-    target = _object(document, args["target"], "fillet target")
-    body = _body_for(document, target)
+    target, body = _dressup_target(document, args, "fillet target")
     selector = args.get("selector")
     use_all_edges = args.get("use_all_edges", True)
     if (
@@ -491,8 +508,7 @@ def _feature_chamfer(document: Any, args: dict[str, Any]) -> dict[str, Any]:
     name = _name(args["name"], "chamfer name")
     if document.getObject(name) is not None:
         raise FreeCADRunnerError("object_name_conflict", f"object already exists: {name}")
-    target = _object(document, args["target"], "chamfer target")
-    body = _body_for(document, target)
+    target, body = _dressup_target(document, args, "chamfer target")
     selector = args.get("selector")
     use_all_edges = args.get("use_all_edges", True)
     edge_scope = args.get("edge_scope")

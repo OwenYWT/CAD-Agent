@@ -89,7 +89,7 @@ def provider_credentials_are_scoped_to_live_cases(request, monkeypatch):
         "test_agent_v2_real_repair_provider_persists_provenance_and_attempt",
         "test_agent_v2_real_planner_retriever_codegen_and_execution_provenance",
     }
-    if request.node.name not in live:
+    if request.node.originalname not in live:
         # The same invocation may include live-provider and controlled cases.
         # Credentials must not silently change assertions in controlled cases.
         for name in ("moonshot_api_key", "dashscope_api_key", "azure_openai_api_key"):
@@ -340,7 +340,11 @@ async def _wait_for_status(owner, workflow_id, expected: set[str], timeout=30):
     not REAL_FREECAD_AGENT,
     reason="set CAD_AGENT_TEST_REAL_FREECAD_AGENT=1 for the real fused flow",
 )
-async def test_agent_v2_real_freecad_generation_validation_seal_and_commit():
+@pytest.mark.parametrize("scope_instruction", [
+    "Add a 1 mm chamfer to all outer edges. Do not chamfer the hole mouths.",
+    "仅外边倒角1mm，孔口保持不变。",
+], ids=["en-protected-mouths", "zh-protected-mouths"])
+async def test_agent_v2_real_freecad_generation_validation_seal_and_commit(scope_instruction):
     owner, project_id, initial = await _seed_project("agent-v2-freecad-real")
     client = await get_temporal_client()
     objective = (
@@ -486,8 +490,7 @@ async def test_agent_v2_real_freecad_generation_validation_seal_and_commit():
     assert events[-1]['event_type']=='feature.annotated'
     modify_objective = (
         "Change the existing centered through hole diameter from 6 mm to 8 mm "
-        "and add a 1 mm chamfer to all outer edges. Preserve all other dimensions "
-        "and export STEP and STL."
+        f"and preserve all other dimensions. {scope_instruction} Export STEP and STL."
     )
     modify_payload = {
         "branch_id": str(initial.branch_id),

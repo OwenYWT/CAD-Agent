@@ -503,7 +503,12 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
         onAskAgent={(prompt) => { setChangesOpen(false); askAgent(prompt); }}
         onClose={() => { setChangesOpen(false); setReviewDocumentChange(null); }}
         onDurableChangeSet={syncDurableChangeSet}
-        onApplied={async () => { await cloud.refresh?.(); documentView.showCommitted(); }}
+        onReviewed={async (status) => {
+          await cloud.refresh?.();
+          // A rejected/requested-change candidate restores its input draft. A
+          // background refresh must not act like the user leaving that draft.
+          if (status === "committed" || status === "rolled_back") documentView.showCommitted();
+        }}
         onRestore={restoreSnapshot}
         open={changesOpen}
         panelId={panel.id}

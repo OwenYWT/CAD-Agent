@@ -947,7 +947,14 @@
         "cancelled_input_preserved": true,
         "rejected_input_preserved": true,
         "saved_head_unchanged": true,
-        "mobile_candidate_action": true
+        "mobile_candidate_action": true,
+        "no_extra_draft_prompt": true,
+        "same_revision_no_guard": true,
+        "real_history_navigation_guarded": true,
+        "rejection_refresh_orders": [
+          "refresh-before-draft",
+          "draft-before-refresh"
+        ]
       }
     },
     "browser-layout/report.json": {

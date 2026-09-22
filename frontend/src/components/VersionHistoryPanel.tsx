@@ -242,7 +242,7 @@ export default function VersionHistoryPanel({
                     <span>{formatTime(snapshot.created_at, locale)}</span>
                     <div className="flex flex-wrap items-center gap-2">
                       {activeSnapshotId && !isActive ? <button className="workspace-button !min-h-7 !px-2" disabled={diffLoadingKey === cacheKey} onClick={() => void loadDiff(snapshot.id)} type="button">{diffLoadingKey === cacheKey ? "对比中..." : "对比当前"}</button> : null}
-                      {onView ? <button className="workspace-button !min-h-7 !px-2" type="button" onClick={() => guardDraft(() => { void viewSnapshot(snapshot.id); })}>查看此版本</button> : null}
+                      {onView ? <button className="workspace-button !min-h-7 !px-2" type="button" onClick={() => { void viewSnapshot(snapshot.id); }}>查看此版本</button> : null}
                       <button className="workspace-button !min-h-7 !px-2 text-[var(--focus)]" disabled={restoringId !== null || snapshot.id === (currentRevisionId || activeSnapshotId)} onClick={() => guardDraft(() => { void restoreSnapshot(snapshot.id); })} type="button">{snapshot.id === (currentRevisionId || activeSnapshotId) ? "当前提交" : restoringId === snapshot.id ? "提交中..." : "从此版本生成恢复候选"}</button>
                     </div>
                   </div>

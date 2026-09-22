@@ -38,7 +38,7 @@ def measure(shape, expected, *, radius, height, center, chamfer_hole):
             'straight_hole_depth_mm': cylinder.BoundBox.ZLength}
 
 
-def run_case(args, scope, dimensions, radius):
+def run_case(args, scope, dimensions, radius, *, target_body=False):
     width, depth, height = dimensions
     center = App.Vector(width/2, depth/2, 0)
     original = Part.makeBox(width, depth, height).cut(Part.makeCylinder(radius,height,center))
@@ -59,7 +59,7 @@ def run_case(args, scope, dimensions, radius):
     source = body.newObject('PartDesign::Feature','UnrelatedLabel')
     source.Shape = original
     doc.recompute()
-    args = {**args, 'target':source.Name, 'name':'EdgeTreatment', 'size_mm':1}
+    args = {**args, 'target':body.Name if target_body else source.Name, 'name':'EdgeTreatment', 'size_mm':1}
     result = runner._feature_chamfer(doc, runner._keys('feature.chamfer', args))
     runner._validate_document(doc, op_id='scope-contract', action='feature.chamfer')
     assert body.Tip.Name == result['object']
@@ -73,7 +73,34 @@ def run_case(args, scope, dimensions, radius):
                          chamfer_hole=scope in {'hole_mouths','all'})
              for kind,shape in [('body_tip',tip),('step',Part.read(str(stem.with_suffix('.step'))))]}
     App.closeDocument(saved.Name)
-    return {'scope':scope,'radius':radius,'measurements':facts}
+    return {'scope':scope,'radius':radius,'target_body':target_body,'measurements':facts}
+
+
+def body_target_contracts():
+    doc = App.newDocument('BodyTargets')
+    # The target's identity, not a conventional name, determines its body.
+    unrelated = doc.addObject('PartDesign::Body', 'Body')
+    body = doc.addObject('PartDesign::Body', 'ActualPart')
+    source = body.newObject('PartDesign::Feature', 'ActualTip')
+    source.Shape = Part.makeBox(30, 20, 10)
+    doc.recompute()
+    expected = source.Shape.makeFillet(1, source.Shape.Edges)
+    result = runner._feature_fillet(doc, {'target':body.Name, 'name':'Rounded', 'radius_mm':1, 'use_all_edges':True})
+    runner._validate_document(doc, op_id='fillet-body', action='feature.fillet')
+    assert body.Tip.Name == result['object'] and unrelated.Tip is None
+    assert body.Tip.Base[0] == source
+    assert body.Tip.Shape.isValid()
+    assert body.Tip.Shape.cut(expected).Volume + expected.cut(body.Tip.Shape).Volume < 1e-5
+    for args, code in [({'target':body.Name,'selector':{}}, 'topology_target_mismatch'),
+                       ({'target':unrelated.Name}, 'invalid_dressup_target')]:
+        try:
+            runner._dressup_target(doc, args, 'test')
+        except runner.FreeCADRunnerError as error:
+            assert error.code == code
+        else:
+            raise AssertionError('ambiguous/empty Body target was silently accepted')
+    App.closeDocument(doc.Name)
+    return {'body_fillet_tip_reference':True,'non_default_body':True,'ambiguous_body_selector_rejected':True,'empty_body_rejected':True}
 
 
 def adversarial_topologies():
@@ -142,5 +169,7 @@ if __name__ == '__main__':
                  for scope in ('outer','hole_mouths','all')]
     results = [run_case(args,scope,dims,radius) for args,scope in cases
                for dims,radius in [((100,60,10),4),((72,48,14),5.5)]]
+    results.extend(run_case(args,scope,(100,60,10),4,target_body=True) for args,scope in cases)
+    results.append(body_target_contracts())
     results.append(adversarial_topologies())
     print('CAD_CHAMFER_SCOPE='+json.dumps(results),flush=True)
