@@ -1,0 +1,27 @@
+{
+  "new_account_in_postgres": true,
+  "services": {
+    "backend": {
+      "running": true,
+      "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+      "health": "healthy"
+    },
+    "workflow-worker": {
+      "running": true,
+      "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+      "health": null
+    },
+    "monitoring": {
+      "running": true,
+      "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+      "health": "healthy"
+    },
+    "frontend": {
+      "running": true,
+      "image": "sha256:704569d3f918ef21c07e7a7c6d10a3b777cfe243cfc74e2b67739fbac1df2092",
+      "health": null
+    }
+  },
+  "schema": "0030_model_job_json_numbers",
+  "health_checks_passed": true
+}

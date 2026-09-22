@@ -1,0 +1,34 @@
+{
+  "passed": true,
+  "database": "cad_release_acceptance_20260922",
+  "schema": "0030_model_job_json_numbers",
+  "images": {
+    "backend": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+    "sandbox": "sha256:94245a1c0b3d3d393fa9d3decfc2fa42c90982e7179ce87e649661c7d5385f03",
+    "frontend": "sha256:704569d3f918ef21c07e7a7c6d10a3b777cfe243cfc74e2b67739fbac1df2092",
+    "monitoring": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117"
+  },
+  "old_images": {
+    "backend": {
+      "image": "sha256:fe792b335dff24fe4852cc5c01f547b563ab966b23717714a561c828dd9f25c4",
+      "compose_dir": "/www/releases/cad-20260919-numeric-state-final/deploy/tencent"
+    },
+    "workflow-worker": {
+      "image": "sha256:fe792b335dff24fe4852cc5c01f547b563ab966b23717714a561c828dd9f25c4",
+      "compose_dir": "/www/releases/cad-20260919-numeric-state-final/deploy/tencent"
+    },
+    "frontend": {
+      "image": "sha256:3255e63e651c602fc4087428d1a9bc2a992ce0e7db40dc63bfeac6939593d143",
+      "compose_dir": "/www/releases/cad-20260917-acceptance/deploy/tencent"
+    },
+    "monitoring": {
+      "image": "sha256:7a167df47233a9e5c35e7f73dd9a16e317d163cc7891558a3201c175b1700e4f",
+      "compose_dir": "/www/releases/cad-20260918-monitoring/deploy/tencent"
+    }
+  },
+  "native_geometry": true,
+  "frontend_bytes": true,
+  "upgrade_fencing": true,
+  "rollback_fencing": true,
+  "old_new_monitor_images": true
+}

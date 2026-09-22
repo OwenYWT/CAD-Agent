@@ -1,0 +1,78 @@
+[
+  {
+    "path": "evidence/account-provisioning.json",
+    "sha256": "5725d1e1c7fe0e1c7df9b7585458e0288093859d8fe9457b73be91094ff3bbbf"
+  },
+  {
+    "path": "evidence/ci-summary.json",
+    "sha256": "d140879d8c5f604e5b08c1accddedb1739dcc78b752bb88ebf4bcfefe78e4801"
+  },
+  {
+    "path": "evidence/deployment.json",
+    "sha256": "9ed49549f7a58c3a75985293f60f51fa2baafb8cef58ef5844e1465ebc56705b"
+  },
+  {
+    "path": "evidence/final-production.json",
+    "sha256": "28618319468c6501d3286dfbba76523030070a137499044a372ef2489d3d3ad0"
+  },
+  {
+    "path": "evidence/image-source-verification.json",
+    "sha256": "6aca4296c686e1af2b0cb8232110bcaf39b3ba57968c1e9945b15cb0f3fa3631"
+  },
+  {
+    "path": "evidence/images.json",
+    "sha256": "50d64516accc9b28fca33a660a1acc9a9cd19573c5454a632baa97e8f9a5ae02"
+  },
+  {
+    "path": "evidence/live-chain.json",
+    "sha256": "e07a94f22c6b1e258f9a281680eeb6ea0ccf96513d9fd62859541c5fc08e1817"
+  },
+  {
+    "path": "evidence/live-geometry.json",
+    "sha256": "85213f02d82e13a8bf0b93431d3ee3e7308bf63e5218c528dd00c62ff51f29db"
+  },
+  {
+    "path": "evidence/live-geometry.log",
+    "sha256": "4ab724fe87dddf96b6ec34ecc65d8f392693a682f91d5f7aa8e7577917ee2418"
+  },
+  {
+    "path": "evidence/monitor-production.json",
+    "sha256": "be6bca3d9e6762bb0c9817ada58383384f9bb707d3e30c6227d6343d01cbf46f"
+  },
+  {
+    "path": "evidence/preflight/chamfer_scope_geometry.log",
+    "sha256": "6c27b493a955976e75c92b0e6b0142077b1f8a3f316bfa63f6179585b4f3807e"
+  },
+  {
+    "path": "evidence/preflight/frontend.json",
+    "sha256": "c0a6d60748071593dd8cea7b0a805c21bc3d9364ee0e01f81edd8942b1b441d7"
+  },
+  {
+    "path": "evidence/preflight/new-monitor.log",
+    "sha256": "d5379d2706245227252946e4712aacf5f5177975386abc44e95cb1bb4c8cdfea"
+  },
+  {
+    "path": "evidence/preflight/old-monitor.log",
+    "sha256": "d5379d2706245227252946e4712aacf5f5177975386abc44e95cb1bb4c8cdfea"
+  },
+  {
+    "path": "evidence/preflight/rollback.json",
+    "sha256": "cc8448f413c43b6f6d483c41121c4d3d821342bb895add6889736e63e82ab3f1"
+  },
+  {
+    "path": "evidence/preflight/summary.json",
+    "sha256": "6892ac3f71149697391368dba595594c0679c7d12014b09b33c410ec1c812e63"
+  },
+  {
+    "path": "evidence/preflight/upgrade.json",
+    "sha256": "6569ed4fd00c50792bbf88b9277b5762cb85ab1d568e7afd69cc51e736568816"
+  },
+  {
+    "path": "evidence/public-browser.json",
+    "sha256": "67c32117d6950f7baa7a2836703d448ee43823f67d0770765bb86eec7b331691"
+  },
+  {
+    "path": "evidence/public-model-browser.json",
+    "sha256": "90b11cb07efbb4b9c4cc5652f267ce39d14de8b6d0a31ed41235a0c1fc0b4a35"
+  }
+]
