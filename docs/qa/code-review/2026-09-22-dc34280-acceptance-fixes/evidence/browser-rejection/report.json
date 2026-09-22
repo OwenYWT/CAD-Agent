@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "workflows": [
+    "69d091f0-a5c0-4f88-9641-2807b2eb2566",
+    "c4e3c5bc-00d2-40aa-862d-16b11fd9bcd5"
+  ],
+  "saved_head_unchanged": true,
+  "cancelled_input_preserved": true,
+  "rejected_input_preserved": true,
+  "mobile_candidate_action": true,
+  "page_errors": []
+}

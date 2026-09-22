@@ -1,4 +1,6 @@
 """Real DB/Temporal orchestration tests. Controlled operations are test fixtures."""
+
+from app.services import llm_usage
 import asyncio
 import os
 from uuid import uuid4
@@ -215,7 +217,7 @@ async def test_provider_socket_cancellation_persists_real_usage_state(request_jo
     server=await asyncio.start_server(serve,'127.0.0.1',0)
     port=server.sockets[0].getsockname()[1]
     client=create_llm_client(Settings(_env_file=None,moonshot_api_key='test-only',llm_max_retries=0,
-        llm_base_url=f'http://127.0.0.1:{port}/v1'))
+        llm_base_url=f'http://127.0.0.1:{port}/v1'), sink=llm_usage)
     async def operation(_):return await client.chat.completions.create(model='transport-test',messages=[],stream=True)
     await jobs.submit(request_job);job=await jobs.claim()
     task=asyncio.create_task(jobs.execute(job,{request_job['operation']:operation}))

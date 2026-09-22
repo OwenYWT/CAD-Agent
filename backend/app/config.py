@@ -410,6 +410,6 @@ def make_llm_client():
     Supports both Azure OpenAI and OpenAI-compatible providers. The returned
     adapter normalizes provider parameters and omits application output-token caps.
     """
-    from app.llm import create_llm_client
+    from app.llm_composition import create_llm_client
 
     return create_llm_client(settings)

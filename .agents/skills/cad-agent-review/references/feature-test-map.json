@@ -160,6 +160,8 @@
                         "implementation":  [
                                                "backend/app/freecad/contracts.py",
                                                "backend/app/freecad/operation_generator.py",
+                                               "backend/app/freecad/edge_intent.py",
+                                               "backend/sandbox/freecad_edge_scope.py",
                                                "backend/app/freecad/state_projector.py",
                                                "backend/sandbox/freecad_entry.py",
                                                "backend/app/execution",
@@ -170,6 +172,8 @@
                         "tests":  [
                                       "backend/tests/test_freecad_contracts.py",
                                       "backend/tests/test_freecad_operation_generator.py",
+                                      "backend/tests/test_chamfer_scope_contract.py",
+                                      "backend/tests/e2e/chamfer_scope_geometry.py",
                                       "backend/tests/test_freecad_runtime.py",
                                       "backend/tests/test_freecad_subtractive_semantics_regression_1.py",
                                       "backend/tests/test_2d_pipeline.py",
@@ -602,7 +606,9 @@
                                                "backend/app/services/monitor_queries.py",
                                                "backend/app/workers/model_job_worker.py",
                                                "scripts/architecture/check_boundaries.py",
-                                               "scripts/ci/require_test_report.py"
+                                               "scripts/ci/require_test_report.py",
+                                               "scripts/ci/require_runtime_evidence.py",
+                                               "backend/app/models/workflow_requests.py"
                                            ],
                         "tests":  [
                                       "backend/tests/test_reliability.py",
@@ -617,6 +623,11 @@
                                       "backend/tests/test_deploy_pipeline_matrix.py",
                                       "backend/tests/test_deploy_websocket.py",
                                       "backend/tests/test_architecture_boundaries.py",
+                                      "backend/tests/test_released_histories.py",
+                                      "backend/tests/test_release_preflight.py",
+                                      "backend/tests/e2e/replay_released_histories.py",
+                                      "backend/tests/e2e/release_source_compatibility.py",
+                                      "backend/tests/e2e/monitoring_permissions_browser.py",
                                       "backend/tests/test_worker_lifecycle.py",
                                       "backend/tests/postgres/test_upgrade_contract.py",
                                       "backend/tests/postgres/test_monitoring.py",

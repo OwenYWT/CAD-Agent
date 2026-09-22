@@ -12,7 +12,7 @@ from app.execution.contracts import ArtifactInput
 from app.freecad.contracts import FreeCADOperationPlan
 from app.object_store import download_object, get_object
 from app.repositories.artifacts import committed_artifact_for_revision
-from app.workflows.temporal import McadAgentWorkflowV2Request
+from app.models.workflow_requests import (McadAgentWorkflowV2Request)
 
 def _revision_restore_operation_plan(request: McadAgentWorkflowV2Request) -> FreeCADOperationPlan:
     restore = request.revision_restore

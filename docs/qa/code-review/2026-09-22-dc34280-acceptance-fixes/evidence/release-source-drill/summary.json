@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "sources": {
+    "old": {
+      "head": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+      "app_source_sha256": "6b94f0c514b9c70d1b92a2f021881ebaa7f9239c0e604d79bdd5d83df5238603",
+      "dirty": false
+    },
+    "current": {
+      "head": "dc342808390134e54db48fb63393dbc588b6004a",
+      "app_source_sha256": "eea43c5f481aad25dc2c5341badface39d86a2bbd3dcfe3e069e3d5a30683b8d",
+      "dirty": true
+    }
+  },
+  "upgrade_fencing": true,
+  "rollback_fencing": true,
+  "old_new_monitor_roles": true,
+  "scope": "source processes and database; excludes deployment images/cloud"
+}

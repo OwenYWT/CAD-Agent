@@ -108,6 +108,7 @@ RUN python -m pip install --no-cache-dir --no-deps \
 COPY backend/sandbox/executor_entry.py /opt/cad-agent/executor_entry.py
 COPY backend/sandbox/capability_entry.py /opt/cad-agent/capability_entry.py
 COPY backend/sandbox/freecad_entry.py /opt/cad-agent/freecad_entry.py
+COPY backend/sandbox/freecad_edge_scope.py /opt/cad-agent/freecad_edge_scope.py
 COPY backend/sandbox/freecad_result_channel.py /opt/cad-agent/freecad_result_channel.py
 COPY backend/sandbox/freecad_bom.py /opt/cad-agent/freecad_bom.py
 COPY backend/sandbox/freecad_scene.py /opt/cad-agent/freecad_scene.py

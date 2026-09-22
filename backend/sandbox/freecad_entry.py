@@ -29,6 +29,7 @@ from freecad_scene import component_shapes, run_scene
 from freecad_engineering import EngineeringError, run_engineering
 from freecad_result_channel import publish_result
 from freecad_sketch_diagnostics import diagnose_sketch
+from freecad_edge_scope import EdgeScopeError, resolve_edge_scope, verify_protected_faces
 
 
 INPUT_ROOT = Path("/sandbox/input")
@@ -61,7 +62,7 @@ ACTION_KEYS: dict[str, tuple[set[str], set[str]]] = {
         {"name", "target", "radius_mm"},
     ),
     "feature.chamfer": (
-        {"name", "target", "size_mm", "use_all_edges", "selector"},
+        {"name", "target", "size_mm", "use_all_edges", "selector", "edge_scope"},
         {"name", "target", "size_mm"},
     ),
     "property.set": (
@@ -494,15 +495,22 @@ def _feature_chamfer(document: Any, args: dict[str, Any]) -> dict[str, Any]:
     body = _body_for(document, target)
     selector = args.get("selector")
     use_all_edges = args.get("use_all_edges", True)
+    edge_scope = args.get("edge_scope")
     if (
         not isinstance(use_all_edges, bool)
-        or use_all_edges == (selector is not None)
+        or sum((use_all_edges, selector is not None, edge_scope is not None)) != 1
     ):
         raise FreeCADRunnerError(
             "invalid_edge_selection_mode",
-            "chamfer requires exactly one of use_all_edges or selector",
+            "chamfer requires exactly one of use_all_edges, selector or edge_scope",
         )
-    if selector is not None:
+    protected_faces = []
+    if edge_scope is not None:
+        try:
+            subelements, protected_faces = resolve_edge_scope(target.Shape, edge_scope)
+        except EdgeScopeError as exc:
+            raise FreeCADRunnerError("edge_scope_unsupported", str(exc)) from exc
+    elif selector is not None:
         try:
             resolved = resolve_topology_selector(
                 document,
@@ -526,6 +534,14 @@ def _feature_chamfer(document: Any, args: dict[str, Any]) -> dict[str, Any]:
     feature.Size = _number(args["size_mm"], "size_mm", positive=True)
     body.addObject(feature)
     feature.UseAllEdges = use_all_edges
+    if protected_faces:
+        document.recompute()
+        if feature.Shape.isNull() or not feature.Shape.isValid():
+            raise FreeCADRunnerError("chamfer_invalid_shape", "chamfer did not produce a valid solid")
+        try:
+            verify_protected_faces(protected_faces, feature.Shape)
+        except EdgeScopeError as exc:
+            raise FreeCADRunnerError("edge_scope_violation", str(exc)) from exc
     return {"object": feature.Name, "type_id": feature.TypeId}
 
 

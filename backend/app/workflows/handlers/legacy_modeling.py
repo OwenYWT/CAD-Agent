@@ -22,7 +22,7 @@ from app.services.artifact_commit import authorize_artifact_upload, commit_artif
 from app.services.run_state import create_step, transition_step, transition_workflow
 from app.llm import is_nonretryable_provider_error
 from app.workflows.source_preparation import SourcePreparer
-from app.workflows.temporal import McadSourcePreparationRequest
+from app.models.workflow_requests import (McadSourcePreparationRequest)
 from app.workflows.logical_steps import _step_row, _workflow_status, _succeed_logical_step
 from app.workflows.inputs import _uuid
 from app.workflows.execution_support import _stored_execution_result

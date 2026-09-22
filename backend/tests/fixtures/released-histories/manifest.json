@@ -1,0 +1,226 @@
+{
+  "schema_version": "released-workflow-histories.v1",
+  "capture_date": "2026-09-22",
+  "provenance": "Captured by running the exact released commits in isolated namespaces; not customer production histories. Selected tests do not override workflow.patched. CAD/database/Temporal run for real; model responses in these tests are controlled fixtures.",
+  "sanitization": [
+    "signed URL credentials",
+    "credential fields",
+    "local user paths"
+  ],
+  "required_cases": [
+    "before-model-jobs",
+    "after-model-jobs",
+    "parent-cancellation",
+    "worker-crash-recovery",
+    "model-job-cancellation",
+    "model-job-success"
+  ],
+  "histories": [
+    {
+      "file": "new-McadAgentWorkflowV2-01a0c6e8-6575-734a-a2ba-733a0243eeb4.json",
+      "workflow_type": "McadAgentWorkflowV2",
+      "workflow_id": "mcad-agent-v2-workflow-2095f404-958b-4743-82b3-75b0571bbc27",
+      "run_id": "01a0c6e8-6575-734a-a2ba-733a0243eeb4",
+      "source_sha": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+      "source_tree": "590d5cecd376215a25a23ba4fa41ce02050b6050",
+      "capture_kind": "isolated execution of unchanged released source",
+      "source_tests": "native_visual_negative_budget / plan_waits / worker_process_crash / model_job_success_cancel",
+      "patch_overrides": false,
+      "events": 149,
+      "cases": [
+        "after-model-jobs"
+      ],
+      "sha256": "e0812ad8fd716522302a545286c2e60f7c81ab66f9564b4ad4884c7bb2a01b12",
+      "raw_history_sha256": "3b9fe7462f10804b42f749183760fa7954e6cf921984e320dfe1bfa8699b3613"
+    },
+    {
+      "file": "new-McadAgentWorkflowV2-01a0c6e8-ca99-7270-b016-bd647688cd77.json",
+      "workflow_type": "McadAgentWorkflowV2",
+      "workflow_id": "mcad-agent-v2-workflow-1e18c455-9367-4e8a-a803-3b895d33d4ac",
+      "run_id": "01a0c6e8-ca99-7270-b016-bd647688cd77",
+      "source_sha": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+      "source_tree": "590d5cecd376215a25a23ba4fa41ce02050b6050",
+      "capture_kind": "isolated execution of unchanged released source",
+      "source_tests": "native_visual_negative_budget / plan_waits / worker_process_crash / model_job_success_cancel",
+      "patch_overrides": false,
+      "events": 149,
+      "cases": [
+        "after-model-jobs"
+      ],
+      "sha256": "7fd1f1bc74a3c64c78270705596dd11f83469e720c446cc8f67078fb5b483a72",
+      "raw_history_sha256": "e846a18ffea91628cf8e9a35251e8c9bc0d0402bfe9a0a98396cc1b18f732725"
+    },
+    {
+      "file": "new-McadAgentWorkflowV2-01a0c6e9-2cf4-7836-a801-dc877be99591.json",
+      "workflow_type": "McadAgentWorkflowV2",
+      "workflow_id": "mcad-agent-v2-workflow-a95d0482-595b-4bb9-9b04-7d98f7e94a2e",
+      "run_id": "01a0c6e9-2cf4-7836-a801-dc877be99591",
+      "source_sha": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+      "source_tree": "590d5cecd376215a25a23ba4fa41ce02050b6050",
+      "capture_kind": "isolated execution of unchanged released source",
+      "source_tests": "native_visual_negative_budget / plan_waits / worker_process_crash / model_job_success_cancel",
+      "patch_overrides": false,
+      "events": 113,
+      "cases": [
+        "after-model-jobs"
+      ],
+      "sha256": "97af330410470811e68c6667ff3a176bbcac0c84e2bf3b98c263e4e4017515a2",
+      "raw_history_sha256": "2a9db4cd91c3282648decba152173df1e73a84ccaa4c85ae79f9008c0a3472fd"
+    },
+    {
+      "file": "new-McadAgentWorkflowV2-01a0c6e9-677c-7339-a92c-499e18bc2104.json",
+      "workflow_type": "McadAgentWorkflowV2",
+      "workflow_id": "mcad-agent-v2-workflow-d510f73c-59c8-45dd-9257-d0c9165a9f31",
+      "run_id": "01a0c6e9-677c-7339-a92c-499e18bc2104",
+      "source_sha": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+      "source_tree": "590d5cecd376215a25a23ba4fa41ce02050b6050",
+      "capture_kind": "isolated execution of unchanged released source",
+      "source_tests": "native_visual_negative_budget / plan_waits / worker_process_crash / model_job_success_cancel",
+      "patch_overrides": false,
+      "events": 57,
+      "cases": [
+        "after-model-jobs",
+        "parent-cancellation"
+      ],
+      "sha256": "8478eed45b19f1fb96abd2ae231f2844de1fab9d01d2c6b7bd7e362e656a2d21",
+      "raw_history_sha256": "98a316cd45cb85e8cbdbe3b529cf83349260705382d2b153f2bfaf2e0c426498"
+    },
+    {
+      "file": "new-McadDurableWorkflow-01a0c6e9-79b8-7af4-9bcb-1765e3b6ab46.json",
+      "workflow_type": "McadDurableWorkflow",
+      "workflow_id": "mcad-workflow-6d278ba6-34d3-458c-b758-e3724f306c55",
+      "run_id": "01a0c6e9-79b8-7af4-9bcb-1765e3b6ab46",
+      "source_sha": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+      "source_tree": "590d5cecd376215a25a23ba4fa41ce02050b6050",
+      "capture_kind": "isolated execution of unchanged released source",
+      "source_tests": "native_visual_negative_budget / plan_waits / worker_process_crash / model_job_success_cancel",
+      "patch_overrides": false,
+      "events": 59,
+      "cases": [
+        "worker-crash-recovery"
+      ],
+      "sha256": "d174332f8ee3ae79e20971cfa5d0bb87b86499d17cfeaec82e2941b08f6ec8f0",
+      "raw_history_sha256": "87e5d66b47c3a658dc0161166941dbc8fe40a56afc79675a2492ee00d5d1716d"
+    },
+    {
+      "file": "new-ModelJobWorkflow-01a0c6eb-9950-7580-bed7-d1239cdb0747.json",
+      "workflow_type": "ModelJobWorkflow",
+      "workflow_id": "model-success-72fed741-b98f-47c1-8c1d-f9360ef7f420",
+      "run_id": "01a0c6eb-9950-7580-bed7-d1239cdb0747",
+      "source_sha": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+      "source_tree": "590d5cecd376215a25a23ba4fa41ce02050b6050",
+      "capture_kind": "isolated execution of unchanged released source",
+      "source_tests": "native_visual_negative_budget / plan_waits / worker_process_crash / model_job_success_cancel",
+      "patch_overrides": false,
+      "events": 28,
+      "cases": [
+        "model-job-success"
+      ],
+      "sha256": "11084e4a220f01289009d9dba200ccda0e01927c553cb7f4f7aa789b2eb00918",
+      "raw_history_sha256": "5d706f0a64a208e3d0a11f5eeb601e2da9f69943790525e6dcfd10b7739a6394"
+    },
+    {
+      "file": "new-ModelJobWorkflow-01a0c6eb-a196-7dee-8f1c-a94319fccce3.json",
+      "workflow_type": "ModelJobWorkflow",
+      "workflow_id": "job-test-85cd1379-a613-428b-8766-166afe07255b",
+      "run_id": "01a0c6eb-a196-7dee-8f1c-a94319fccce3",
+      "source_sha": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+      "source_tree": "590d5cecd376215a25a23ba4fa41ce02050b6050",
+      "capture_kind": "isolated execution of unchanged released source",
+      "source_tests": "native_visual_negative_budget / plan_waits / worker_process_crash / model_job_success_cancel",
+      "patch_overrides": false,
+      "events": 29,
+      "cases": [
+        "model-job-cancellation"
+      ],
+      "sha256": "75f71503575972ec08d603202d620eca96c302471a4f2862f698656e7c756776",
+      "raw_history_sha256": "3812ca9cd160dad8bf98fb949edce87ac71b58d4195eb8e4d02f6161e6d4aa0c"
+    },
+    {
+      "file": "old-McadAgentWorkflowV2-01a0c6e5-9c0f-7dff-ab0e-08a4735e0dcf.json",
+      "workflow_type": "McadAgentWorkflowV2",
+      "workflow_id": "mcad-agent-v2-workflow-056526b9-5c28-4ee7-8a2c-fe166b43f6ee",
+      "run_id": "01a0c6e5-9c0f-7dff-ab0e-08a4735e0dcf",
+      "source_sha": "3dee44b18370203563bdf5d27788c83570004eb0",
+      "source_tree": "ddfc15cf53671e5e6bc8b24a5b98c9116db4752d",
+      "capture_kind": "isolated execution of unchanged released source",
+      "source_tests": "native_visual_negative_budget / plan_waits / worker_process_crash / model_job_success_cancel",
+      "patch_overrides": false,
+      "events": 127,
+      "cases": [
+        "before-model-jobs"
+      ],
+      "sha256": "5b93f25f6a79f6cb451cb736b132f882048c5e9ebb24d9935f59ec4a08c259ac",
+      "raw_history_sha256": "838045e6065aca32fff30dbdb95ba040f6c779fcaa326e9904d0ed908a2c70a8"
+    },
+    {
+      "file": "old-McadAgentWorkflowV2-01a0c6e5-cd37-7b8c-bfae-edcbbbb32343.json",
+      "workflow_type": "McadAgentWorkflowV2",
+      "workflow_id": "mcad-agent-v2-workflow-1a0b20e4-7389-4371-a3a9-c4e850edfe5b",
+      "run_id": "01a0c6e5-cd37-7b8c-bfae-edcbbbb32343",
+      "source_sha": "3dee44b18370203563bdf5d27788c83570004eb0",
+      "source_tree": "ddfc15cf53671e5e6bc8b24a5b98c9116db4752d",
+      "capture_kind": "isolated execution of unchanged released source",
+      "source_tests": "native_visual_negative_budget / plan_waits / worker_process_crash / model_job_success_cancel",
+      "patch_overrides": false,
+      "events": 127,
+      "cases": [
+        "before-model-jobs"
+      ],
+      "sha256": "4e76f4582eb9d07cbbe280c76a8ad3cfb4f9515b5776fd970eae237ffd2ab1e7",
+      "raw_history_sha256": "bb3ed2af37f50456206bcb53b67a98f3348cadfb64d2471aff36370f4b7a46cb"
+    },
+    {
+      "file": "old-McadAgentWorkflowV2-01a0c6e5-fb7e-75d7-8793-a11dbabbf4ac.json",
+      "workflow_type": "McadAgentWorkflowV2",
+      "workflow_id": "mcad-agent-v2-workflow-cdd13e5b-3527-4ac1-b6cf-eff3b5859bc5",
+      "run_id": "01a0c6e5-fb7e-75d7-8793-a11dbabbf4ac",
+      "source_sha": "3dee44b18370203563bdf5d27788c83570004eb0",
+      "source_tree": "ddfc15cf53671e5e6bc8b24a5b98c9116db4752d",
+      "capture_kind": "isolated execution of unchanged released source",
+      "source_tests": "native_visual_negative_budget / plan_waits / worker_process_crash / model_job_success_cancel",
+      "patch_overrides": false,
+      "events": 97,
+      "cases": [
+        "before-model-jobs"
+      ],
+      "sha256": "2043e92895b0fd4eda1713c771e838928591fc4f022c82f9bfd58b536e16eb12",
+      "raw_history_sha256": "84cf7e89f863b57da4c3f0be9b9316d8d42a3bf5cea8d647287958ac63dc80c5"
+    },
+    {
+      "file": "old-McadAgentWorkflowV2-01a0c6e6-161d-714f-a232-925b3cda72da.json",
+      "workflow_type": "McadAgentWorkflowV2",
+      "workflow_id": "mcad-agent-v2-workflow-e2e235fc-e658-43d3-8416-fe3d2bb1ce77",
+      "run_id": "01a0c6e6-161d-714f-a232-925b3cda72da",
+      "source_sha": "3dee44b18370203563bdf5d27788c83570004eb0",
+      "source_tree": "ddfc15cf53671e5e6bc8b24a5b98c9116db4752d",
+      "capture_kind": "isolated execution of unchanged released source",
+      "source_tests": "native_visual_negative_budget / plan_waits / worker_process_crash / model_job_success_cancel",
+      "patch_overrides": false,
+      "events": 49,
+      "cases": [
+        "before-model-jobs",
+        "parent-cancellation"
+      ],
+      "sha256": "9117ec89aba0a2083008b92452da56ecd81fccef855d051ef729a18f11ba694c",
+      "raw_history_sha256": "cd96c2cec625936a6f485c41e9c9f2bea4b4bbb068fd0a67850442cf812738be"
+    },
+    {
+      "file": "old-McadDurableWorkflow-01a0c6e6-17f4-7e8d-85ab-d2676fc08c37.json",
+      "workflow_type": "McadDurableWorkflow",
+      "workflow_id": "mcad-workflow-3fea1dde-e71d-4a7c-be12-fa3f16d2dc8e",
+      "run_id": "01a0c6e6-17f4-7e8d-85ab-d2676fc08c37",
+      "source_sha": "3dee44b18370203563bdf5d27788c83570004eb0",
+      "source_tree": "ddfc15cf53671e5e6bc8b24a5b98c9116db4752d",
+      "capture_kind": "isolated execution of unchanged released source",
+      "source_tests": "native_visual_negative_budget / plan_waits / worker_process_crash / model_job_success_cancel",
+      "patch_overrides": false,
+      "events": 59,
+      "cases": [
+        "worker-crash-recovery"
+      ],
+      "sha256": "c190bc8ad1f2ba4542f10b32673e85399490b6d37f6af3d37a5488ef692c9310",
+      "raw_history_sha256": "938a74c2e9753863a409f8c51b574b5dab72933f1eb3e9675f5ef12709454414"
+    }
+  ]
+}

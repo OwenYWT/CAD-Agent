@@ -19,9 +19,8 @@ from app.services.document_diff import common_ancestor, semantic_changes, parame
 from app.services.document_rebase import ParameterRebaseConflict
 from app.services.feature_annotations import annotation_context, annotate_projection
 from app.freecad.state_contract import read_verified_state_artifact, compile_parameter_operation_plan
-from app.workflows.temporal import (FreeCADRevisionRestoreV1, FreeCADStructuredModificationV1,
-    McadAgentWorkflowV2Request, OperationContextV1, mcad_agent_v2_request_payload,
-    temporal_agent_v2_workflow_id, _dispatch_after_commit)
+from app.models.workflow_requests import (FreeCADRevisionRestoreV1, McadAgentWorkflowV2Request, OperationContextV1)
+from app.workflows.temporal import (FreeCADStructuredModificationV1, mcad_agent_v2_request_payload, temporal_agent_v2_workflow_id, _dispatch_after_commit)
 
 
 async def _lineage(conn, document_id):

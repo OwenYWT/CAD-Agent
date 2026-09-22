@@ -213,11 +213,12 @@ class FeatureChamferArgs(FrozenContract):
     size_mm: Millimetres
     use_all_edges: bool = True
     selector: FreeCADTopologySelector | None = None
+    edge_scope: Literal["outer", "hole_mouths", "all"] | None = None
 
     @model_validator(mode="after")
     def selection_mode(self) -> "FeatureChamferArgs":
-        if self.use_all_edges == (self.selector is not None):
-            raise ValueError("chamfer requires exactly one of use_all_edges or selector")
+        if sum((self.use_all_edges, self.selector is not None, self.edge_scope is not None)) != 1:
+            raise ValueError("chamfer requires exactly one of use_all_edges, selector or edge_scope")
         if self.selector is not None and self.selector.subelement_kind != "edge":
             raise ValueError("chamfer selector must resolve an edge")
         return self
@@ -315,7 +316,11 @@ class FreeCADOperation(FrozenContract):
     @model_validator(mode="after")
     def validate_args(self) -> "FreeCADOperation":
         validated = _ACTION_ARG_TYPES[self.action].model_validate(self.args)
-        object.__setattr__(self, "args", validated.model_dump(mode="json"))
+        payload = validated.model_dump(mode="json")
+        # Additive scope support must not change hashes of retained v1 plans.
+        if self.action == "feature.chamfer" and payload.get("edge_scope") is None:
+            payload.pop("edge_scope", None)
+        object.__setattr__(self, "args", payload)
         return self
 
     def typed_args(self) -> OperationArgs:

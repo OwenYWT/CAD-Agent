@@ -259,7 +259,7 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Real browser candidate and saved-version contract
         env:
-          DATABASE_URL: postgresql+asyncpg://cad_agent:task11-ci-postgres-secret@127.0.0.1:55432/cad_agent
+          DATABASE_URL: postgresql+asyncpg://cad_agent:task11-ci-postgres-secret@127.0.0.1:55432/cad_browser_contracts
           TEMPORAL_TARGET: 127.0.0.1:57233
           OBJECT_STORE_ENDPOINT_URL: http://127.0.0.1:59000
           OBJECT_STORE_ACCESS_KEY: task11ci
@@ -268,7 +268,10 @@ jobs:
           SANDBOX_RUNTIME: docker
           SANDBOX_COMMAND: docker
           SANDBOX_IMAGE: cad-agent-sandbox:ci
-        run: bash scripts/ci/browser_contract.sh
+        run: |
+          docker exec cad-agent-postgres createdb -U cad_agent cad_browser_contracts
+          (cd backend && python -m alembic upgrade head)
+          bash scripts/ci/browser_contract.sh
 
       - name: Migrate isolated model and monitoring contract databases
         env:
@@ -301,6 +304,24 @@ jobs:
         env:
           TEMPORAL_TARGET: 127.0.0.1:57233
         run: PYTHONPATH=. python tests/e2e/replay_histories.py --output ../reports/workflow-replay.json
+
+      - name: Replay frozen histories from released source
+        working-directory: backend
+        run: PYTHONPATH=. python tests/e2e/replay_released_histories.py --output ../reports/released-workflow-replay.json
+
+      - name: Cross-release source and database protocol drill
+        env:
+          CAD_RELEASE_TEST_DATABASE_URL: postgresql+asyncpg://cad_agent:task11-ci-postgres-secret@127.0.0.1:55432/cad_release_contracts
+        run: |
+          git fetch origin 62084d5c84ead7bcd88030695fdfcd61112280ea
+          git worktree add --detach "$RUNNER_TEMP/release-baseline" 62084d5c84ead7bcd88030695fdfcd61112280ea
+          docker exec cad-agent-postgres createdb -U cad_agent cad_release_contracts
+          (cd backend && DATABASE_URL="$CAD_RELEASE_TEST_DATABASE_URL" python -m alembic upgrade head)
+          python backend/tests/e2e/release_source_compatibility.py \
+            --old "$RUNNER_TEMP/release-baseline" --current "$GITHUB_WORKSPACE" --output reports/release-source-drill
+
+      - name: Require complete runtime evidence
+        run: python scripts/ci/require_runtime_evidence.py reports
 
       - uses: actions/upload-artifact@v4
         if: always()

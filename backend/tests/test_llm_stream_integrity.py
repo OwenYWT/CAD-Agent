@@ -1,3 +1,5 @@
+
+from app.services import llm_usage
 from types import SimpleNamespace
 
 import pytest
@@ -48,7 +50,7 @@ async def adapter_response(parts):
     stream = Stream(parts)
     async def create(**_kwargs):
         return stream
-    adapter = ChatCompletionAdapter(SimpleNamespace(create=create), Settings(app_environment="test", llm_max_retries=0))
+    adapter = ChatCompletionAdapter(SimpleNamespace(create=create), Settings(app_environment="test", llm_max_retries=0), sink=llm_usage)
     reset_chat_completion_provenance()
     result = await adapter.create(model="requested-model", messages=[], stream=True)
     assert stream.closed

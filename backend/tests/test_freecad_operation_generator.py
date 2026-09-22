@@ -429,6 +429,8 @@ async def test_compiles_hole_change_and_chamfer_against_observed_state() -> None
     )
     chamfer_args = result.operation_plan.operations[1].typed_args()
     assert (chamfer_args.target, chamfer_args.size_mm) == ("Hole", 1.0)
+    assert chamfer_args.use_all_edges is False
+    assert chamfer_args.edge_scope == "outer"
     assert result.operation_plan.operations[0].op_id != (
         result.operation_plan.operations[1].op_id
     )

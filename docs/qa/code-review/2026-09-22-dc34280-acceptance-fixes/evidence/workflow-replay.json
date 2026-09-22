@@ -1,0 +1,63 @@
+[
+  {
+    "workflow_type": "McadAgentWorkflowV2",
+    "workflow_id": "mcad-agent-v2-workflow-757ced66-4c53-4547-ae01-e409d3e9fb8b",
+    "run_id": "01a0c6fe-7e93-7af0-b55b-861f2be91d71",
+    "events": 90,
+    "patches": [
+      "agent-v2-model-jobs-v1",
+      "agent-v2-native-bom-v1",
+      "agent-v2-provider-streaming-v1"
+    ],
+    "replay": "passed"
+  },
+  {
+    "workflow_type": "McadAgentWorkflowV2",
+    "workflow_id": "mcad-agent-v2-workflow-07456dc0-0e92-4716-b652-05455a418e76",
+    "run_id": "01a0c6fe-d16b-7d39-9739-5c911c7427ce",
+    "events": 83,
+    "patches": [
+      "agent-v2-backend-policy-v1",
+      "agent-v2-model-jobs-v1",
+      "agent-v2-native-bom-v1",
+      "agent-v2-provider-streaming-v1",
+      "agent-v2-validation-repair-v2"
+    ],
+    "replay": "passed"
+  },
+  {
+    "workflow_type": "McadAgentWorkflowV2",
+    "workflow_id": "mcad-agent-v2-workflow-5553923a-03de-4499-a797-6ab9e2e940bb",
+    "run_id": "01a0c6fb-8722-7966-907e-b328d7b1cdfb",
+    "events": 93,
+    "patches": [
+      "agent-v2-native-bom-v1",
+      "agent-v2-provider-streaming-v1"
+    ],
+    "replay": "passed"
+  },
+  {
+    "workflow_type": "McadDurableWorkflow",
+    "workflow_id": "mcad-workflow-1af02bc3-0d7e-4f63-9f8b-88b29ea4916e",
+    "run_id": "01a0c700-cfa1-7e94-be72-4f1c4d4218ec",
+    "events": 41,
+    "patches": [],
+    "replay": "passed"
+  },
+  {
+    "workflow_type": "McadCheckWorkflow",
+    "workflow_id": "mcad-check-workflow-80b007e6-bd29-4951-af1f-319797aa4f88",
+    "run_id": "01a0c700-b3fc-7cb8-bf03-60b16c667fea",
+    "events": 11,
+    "patches": [],
+    "replay": "passed"
+  },
+  {
+    "workflow_type": "ModelJobWorkflow",
+    "workflow_id": "757ced66-4c53-4547-ae01-e409d3e9fb8b:model:judge-visual-model-01-base-01",
+    "run_id": "01a0c6ff-8cdb-7c62-9bb1-3cc1b69e6758",
+    "events": 28,
+    "patches": [],
+    "replay": "passed"
+  }
+]

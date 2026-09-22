@@ -13,6 +13,7 @@ from typing import Any, Callable
 from app.agent.durable_plan import AgentPlan
 from app.config import make_llm_client, settings
 from app.freecad.contracts import FreeCADOperationPlan
+from app.freecad.edge_intent import validate_chamfer_intent, validate_chamfer_repair
 from app.freecad.operation_identity import scope_plan_to_base
 from app.freecad.operation_compiler import (
     compile_common_generation,
@@ -78,7 +79,10 @@ Allowed actions and args:
 - feature.pocket: {name, profile, exactly one of length_mm or through_all:true, reversed?}
 - feature.hole: {name, profile, diameter_mm, exactly one of depth_mm or through_all:true, reversed?}
 - feature.fillet: {name, target, radius_mm, exactly one of use_all_edges:true or selector}
-- feature.chamfer: {name, target, size_mm, exactly one of use_all_edges:true or selector}
+- feature.chamfer: {name, target, size_mm, use_all_edges:false, exactly one of edge_scope or selector}
+  edge_scope is "outer", "hole_mouths" or "all". Outer NEVER includes hole mouths.
+  Missing/ambiguous scope requires an unsupported error, not a guess. Native scope
+  resolution can reject unsupported topology; do not repair by widening the scope.
 - property.set: {object, property, value}
 - assembly.instance: {object, source, translation_mm:[x,y,z], rotation_axis?:[x,y,z], rotation_deg?:number};
   source is an existing solid Body or Part feature in this document. Creates a rigid App::Link.
@@ -178,6 +182,7 @@ class FreeCADOperationGenerator:
         else:
             compiled = None
         if compiled is not None:
+            validate_chamfer_intent(compiled, requirements, plan.objective)
             source_code = compiled.model_dump_json()
             inspections = []
             if base_state is not None:
@@ -291,6 +296,7 @@ class FreeCADOperationGenerator:
         if result.source_code == current.model_dump_json():
             raise ValueError("FreeCAD operation repair returned an unchanged plan")
         validate_constraint_repair(current, result.operation_plan, failure)
+        validate_chamfer_repair(current, result.operation_plan)
         return self._scope_result(result, base_state)
 
     @staticmethod
@@ -381,6 +387,14 @@ class FreeCADOperationGenerator:
                 if base_state is not None and not inspections:
                     raise ValueError("inspect relevant existing objects before planning their modification")
                 operation_plan = FreeCADOperationPlan.model_validate(raw)
+                if user_payload.get('task') == 'repair':
+                    validate_chamfer_repair(
+                        FreeCADOperationPlan.model_validate(user_payload['current_operation_plan']),
+                        operation_plan,
+                    )
+                else:
+                    validate_chamfer_intent(operation_plan, user_payload.get('requirements', {}),
+                                           user_payload.get('agent_plan', {}).get('objective', ''))
                 required = self._required_formats(output_formats)
                 exported = tuple(
                     operation_plan.operations[-1].typed_args().formats

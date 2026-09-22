@@ -1,7 +1,5 @@
 from app.models.authentication import LoginWithPasswordRequest
 from app.services import authentication
-from collections import defaultdict
-from time import time
 
 from datetime import datetime, timezone
 
@@ -17,13 +15,6 @@ from app.services.sms import SmsDeliveryError, send_verification_code_sms
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 _bearer_scheme = HTTPBearer(auto_error=False)
-_failed_logins = authentication._failed_logins
-
-_LOGIN_WINDOW_S = 300
-_MAX_FAILED_PER_KEY = 5
-# Independent of the per-(ip,phone) bucket: a single IP attacking many phones is
-# capped here so phone-rotation can't sidestep the throttle entirely.
-_MAX_FAILED_PER_IP = 30
 
 
 class CodeRequest(BaseModel):
@@ -90,41 +81,29 @@ def _client_host(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _client_key(request: Request, phone: str) -> str:
-    return f"{_client_host(request)}:{phone}"
-
-
-def _ip_key(request: Request) -> str:
-    return f"ip:{_client_host(request)}"
-
-
-def _recent(key: str, now: float):
-    return authentication._recent(key, now)
-
-
 def _check_login_attempts(request: Request, phone: str):
     try:
-        return authentication._check_login_attempts(_client_host(request), phone)
+        return authentication.check_login_attempts(_client_host(request), phone)
     except authentication.AuthenticationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 def _record_failed_login(request: Request, phone: str):
     try:
-        return authentication._record_failed_login(_client_host(request), phone)
+        return authentication.record_failed_login(_client_host(request), phone)
     except authentication.AuthenticationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 def _clear_failed_login(request: Request, phone: str):
     try:
-        return authentication._clear_failed_login(_client_host(request), phone)
+        return authentication.clear_failed_login(_client_host(request), phone)
     except authentication.AuthenticationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 async def _auth_response(user: dict) -> dict:
-    return await authentication._auth_response(user)
+    return await authentication.create_auth_response(user)
 
 
 def require_admin(user=Depends(get_current_user)):

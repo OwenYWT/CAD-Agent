@@ -1,0 +1,11 @@
+{
+  "baseline": "dc34280",
+  "prior_release": "62084d5",
+  "compiler_and_runner_diff_between_releases": "",
+  "independent_failure": [
+    "assert delta < 1e-5, f'final solid differs from requested region: {delta} mm3'",
+    "<class 'AssertionError'>: final solid differs from requested region: 27.22713633111168 mm3"
+  ],
+  "baseline_result": "failed",
+  "fixed_result": "see native/chamfer_scope_geometry.log"
+}

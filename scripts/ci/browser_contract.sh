@@ -11,6 +11,13 @@ export CAD_NATIVE_E2E_COMMAND='["python"]'
 export CAD_NATIVE_E2E_PRIVATE="${RUNNER_TEMP:?}/cad-browser-private.json"
 report_root=${CAD_BROWSER_REPORT_ROOT:-$root/reports}
 export CAD_BROWSER_CONTRACT_REPORT="$report_root/browser-contract"
+export CAD_TASK_STATE_REPORT_DIR="$report_root/browser-parameters"
+export CAD_PARAMETER_REJECTION_REPORT="$report_root/browser-rejection"
+export CAD_LAYOUT_REPORT_DIR="$report_root/browser-layout"
+export CAD_LAYOUT_FIXTURE="$CAD_TASK_STATE_REPORT_DIR/fixture.json"
+export CAD_BROWSER_FAULT_CONTRACTS=1
+export CAD_MONITOR_E2E_REPORT="$report_root/browser-monitor"
+export CAD_MONITOR_E2E_URL="http://127.0.0.1:${CAD_BROWSER_MONITOR_PORT:-18092}/"
 export TEMPORAL_TASK_QUEUE="browser-contract-${GITHUB_RUN_ID:-local}"
 export TEMPORAL_AGENT_V2_TASK_QUEUE="browser-contract-v2-${GITHUB_RUN_ID:-local}"
 export APP_ENVIRONMENT=test DURABLE_CONTROL_PLANE_ENABLED=true AUTH_REQUIRED=true
@@ -23,11 +30,13 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port "$api_port" > "$report_ro
 api_pid=$!
 python -m app.workers.workflow_worker > "$report_root/browser-worker.log" 2>&1 &
 worker_pid=$!
+python -m uvicorn app.monitoring:app --host 127.0.0.1 --port "${CAD_BROWSER_MONITOR_PORT:-18092}" > "$report_root/browser-monitor.log" 2>&1 &
+monitor_pid=$!
 (cd "$root/frontend" && exec node node_modules/vite/bin/vite.js --host 127.0.0.1 --port "$web_port") > "$report_root/browser-web.log" 2>&1 &
 web_pid=$!
 cleanup() {
-  kill "$api_pid" "$worker_pid" "$web_pid" 2>/dev/null || true
-  wait "$api_pid" "$worker_pid" "$web_pid" 2>/dev/null || true
+  kill "$api_pid" "$worker_pid" "$web_pid" "$monitor_pid" 2>/dev/null || true
+  wait "$api_pid" "$worker_pid" "$web_pid" "$monitor_pid" 2>/dev/null || true
   rm -f "$CAD_NATIVE_E2E_PRIVATE"
 }
 trap cleanup EXIT
@@ -54,3 +63,7 @@ PYREADY
   sleep 1
 done
 python tests/e2e/browser_contract.py
+python tests/e2e/task_state_browser.py candidate
+python tests/e2e/parameter_rejection_browser.py
+python tests/e2e/workspace_layout_browser.py
+python tests/e2e/monitoring_permissions_browser.py

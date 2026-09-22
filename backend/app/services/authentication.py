@@ -22,7 +22,7 @@ def _recent(key: str, now: float) -> list[float]:
     return window
 
 
-def _check_login_attempts(host: str, phone: str):
+def check_login_attempts(host: str, phone: str):
     now = time()
     per_key = _recent(f"{host}:{phone}", now)
     per_ip = _recent(f"ip:{host}", now)
@@ -30,17 +30,17 @@ def _check_login_attempts(host: str, phone: str):
         raise AuthenticationError(status_code=429, detail="登录失败次数过多，请 5 分钟后再试")
 
 
-def _record_failed_login(host: str, phone: str):
+def record_failed_login(host: str, phone: str):
     now = time()
     _failed_logins[f"{host}:{phone}"].append(now)
     _failed_logins[f"ip:{host}"].append(now)
 
 
-def _clear_failed_login(host: str, phone: str):
+def clear_failed_login(host: str, phone: str):
     _failed_logins.pop(f"{host}:{phone}", None)
 
 
-async def _auth_response(user: dict) -> dict:
+async def create_auth_response(user: dict) -> dict:
     if settings.durable_control_plane_enabled:
         from app.repositories.identity import reconcile_authenticated_user
 
@@ -52,13 +52,18 @@ async def _auth_response(user: dict) -> dict:
 
 
 async def login_with_password(phone: str, password: str, host: str):
-    _check_login_attempts(host, phone)
+    check_login_attempts(host, phone)
     try:
         user = await auth_store.authenticate_password(phone, password)
     except ValueError as exc:
         raise AuthenticationError(status_code=400, detail=str(exc)) from exc
     if not user:
-        _record_failed_login(host, phone)
+        record_failed_login(host, phone)
         raise AuthenticationError(status_code=400, detail="手机号或密码错误")
-    _clear_failed_login(host, phone)
-    return await _auth_response(user)
+    clear_failed_login(host, phone)
+    return await create_auth_response(user)
+
+
+def reset_login_throttle() -> None:
+    """Clear the process throttle for isolated test/application lifecycle setup."""
+    _failed_logins.clear()

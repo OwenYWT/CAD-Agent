@@ -578,6 +578,26 @@ async def test_agent_v2_real_freecad_generation_validation_seal_and_commit():
     chamfers = [obj for obj in objects.values() if obj['type_id'] == 'PartDesign::Chamfer']
     assert len(chamfers) == 1 and chamfers[0]['properties']['Size'].startswith('1.00 mm')
 
+    # Verify final artifacts, not the upstream Hole feature hidden by Chamfer.
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory(prefix='chamfer-final-') as directory:
+        for kind, filename in [('fcstd','model.FCStd'),('step','model.step')]:
+            payload = await get_object(modified_artifacts[kind]['object_key'])
+            assert hashlib.sha256(payload).hexdigest() == modified_artifacts[kind]['sha256']
+            Path(directory,filename).write_bytes(payload)
+        verifier = Path(__file__).resolve().parents[1] / 'e2e/chamfer_scope_geometry.py'
+        process = await asyncio.create_subprocess_exec(
+            settings.sandbox_command,'run','--rm','--network','none','--read-only',
+            '--tmpfs','/tmp:rw,size=2g','-e','CAD_SCOPE_VERIFY_ARTIFACTS=1',
+            '-v',f'{directory}:/sandbox/input:ro','-v',f'{verifier}:/verify.py:ro',
+            '--entrypoint','/opt/freecad/bin/FreeCADCmd',settings.sandbox_image,
+            '-c',"exec(compile(open('/verify.py').read(), '/verify.py', 'exec'))",
+            stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.STDOUT,
+        )
+        measurement, _ = await process.communicate()
+        assert process.returncode == 0 and b'CAD_CHAMFER_SCOPE=' in measurement, measurement.decode()
+
     modified_change_set_id = UUID(modify_result["change_set_id"])
     modified_accepted = await accept_change_set(
         tenant_id=owner.tenant_id,

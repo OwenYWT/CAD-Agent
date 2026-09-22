@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import Any
 from uuid import UUID
-from app.workflows.temporal import McadAgentWorkflowV2Request
+from app.models.workflow_requests import (McadAgentWorkflowV2Request)
 
 def _uuid(payload: dict[str, Any], key: str) -> UUID:
     return UUID(str(payload[key]))

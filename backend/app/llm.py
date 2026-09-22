@@ -155,12 +155,11 @@ def build_chat_params(
 
 
 from app.contracts.usage import UsageSink
-from app.llm_composition import usage_sink
 
 
 class ChatCompletionAdapter:
-    def __init__(self, raw_completions: Any, llm_settings: Settings, *, sink: UsageSink | None = None):
-        self._usage = sink if sink is not None else usage_sink()
+    def __init__(self, raw_completions: Any, llm_settings: Settings, *, sink: UsageSink):
+        self._usage = sink
         self._raw_completions = raw_completions
         self._settings = llm_settings
 
@@ -265,15 +264,15 @@ async def _complete_stream(stream) -> ChatCompletion:
 
 
 class ChatAdapter:
-    def __init__(self, raw_chat: Any, llm_settings: Settings):
-        self.completions = ChatCompletionAdapter(raw_chat.completions, llm_settings)
+    def __init__(self, raw_chat: Any, llm_settings: Settings, *, sink: UsageSink):
+        self.completions = ChatCompletionAdapter(raw_chat.completions, llm_settings, sink=sink)
 
 
 class LLMClientAdapter:
-    def __init__(self, raw_client: Any, llm_settings: Settings):
+    def __init__(self, raw_client: Any, llm_settings: Settings, *, sink: UsageSink):
         self.raw_client = raw_client
         self._settings = llm_settings
-        self.chat = ChatAdapter(raw_client.chat, llm_settings)
+        self.chat = ChatAdapter(raw_client.chat, llm_settings, sink=sink)
 
     @property
     def max_retries(self) -> int:
@@ -283,7 +282,7 @@ class LLMClientAdapter:
         return getattr(self.raw_client, name)
 
 
-def create_llm_client(llm_settings: Settings = settings):
+def create_llm_client(llm_settings: Settings = settings, *, sink: UsageSink):
     if not llm_settings.has_llm_credentials:
         raise RuntimeError(llm_settings.llm_credentials_error)
 
@@ -305,4 +304,4 @@ def create_llm_client(llm_settings: Settings = settings):
             max_retries=0,
         )
 
-    return LLMClientAdapter(raw_client, llm_settings)
+    return LLMClientAdapter(raw_client, llm_settings, sink=sink)

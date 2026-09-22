@@ -14,7 +14,7 @@ from app.freecad.operation_generator import FreeCADOperationGenerator
 from app.validation.durable_visual import DurableVisualValidator
 from app.workflows.source_preparation import SourcePreparer
 from app.workflows.modeling import DurableModelingSourceGenerator
-from app.workflows.temporal import McadAgentWorkflowV2Request
+from app.models.workflow_requests import (McadAgentWorkflowV2Request)
 from app.workflows.handlers.decomposition import decompose
 from app.workflows.errors import planning_error
 

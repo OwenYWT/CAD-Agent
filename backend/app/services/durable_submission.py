@@ -23,17 +23,8 @@ from app.repositories.revisions import (
     create_initial_branch,
 )
 from app.config import settings
-from app.workflows.temporal import (
-    FreeCADStructuredModificationV1,
-    FreeCADRevisionRestoreV1,
-    McadExecutionRequest,
-    McadOutputRequest,
-    OperationContextV1,
-    mcad_workflow_request_payload,
-    mcad_agent_v2_request_payload,
-    start_mcad_agent_v2_workflow,
-    start_mcad_workflow,
-)
+from app.models.workflow_requests import (FreeCADRevisionRestoreV1, McadExecutionRequest, McadOutputRequest, OperationContextV1)
+from app.workflows.temporal import (FreeCADStructuredModificationV1, mcad_workflow_request_payload, mcad_agent_v2_request_payload, start_mcad_agent_v2_workflow, start_mcad_workflow)
 from app.services.run_state import IdempotencyConflict
 from app.freecad.selection import SelectionContextV1, SelectionError, needs_selection, freeze_selection
 
