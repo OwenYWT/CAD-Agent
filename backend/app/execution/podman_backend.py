@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Mapping
 
+from app.freecad.contracts import capability_contract_sha256
 from app.execution.backend import MaterializedExecutionOutcome
 from app.execution.canonical import canonical_sha256
 from app.execution.contracts import (
@@ -120,6 +121,8 @@ def inspect_container_runtime(command: str, image_ref: str) -> RuntimeSnapshot:
         )
     ):
         raise RuntimeError("runtime operation probe returned incomplete evidence")
+    if report.get("freecad_capabilities_sha256") != capability_contract_sha256():
+        raise RuntimeError("FreeCAD host/sandbox capability contracts differ; deploy matching backend and sandbox images")
     versions = report.get("versions")
     if not isinstance(versions, dict) or versions.get("freecad") != "1.1.3":
         raise RuntimeError("runtime operation probe returned wrong FreeCAD version")
@@ -193,6 +196,9 @@ _STRUCTURED_ERROR_POLICY: dict[str, tuple[ExecutionErrorCategory, bool]] = {
     "bom_seal_timed_out": (ExecutionErrorCategory.TIMEOUT, False),
     "sandbox_protocol_error": (ExecutionErrorCategory.INFRASTRUCTURE, False),
     "freecad_internal_error": (ExecutionErrorCategory.INTERNAL, False),
+    "api_execution_failed": (ExecutionErrorCategory.USER_CODE, False),
+    "api_dependency_unavailable": (ExecutionErrorCategory.INFRASTRUCTURE, False),
+    "api_runtime_unavailable": (ExecutionErrorCategory.INFRASTRUCTURE, False),
 }
 
 

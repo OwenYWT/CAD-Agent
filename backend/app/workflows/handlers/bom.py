@@ -1,5 +1,6 @@
 """Bom use cases; Temporal names live in the adapter."""
 from __future__ import annotations
+from app.config import settings
 import asyncio
 import hashlib
 import json
@@ -10,6 +11,7 @@ from typing import Any
 from uuid import UUID
 from sqlalchemy import text
 from temporalio import activity
+from app.workflows.execution_support import execution_identity, execution_timeout
 from temporalio.exceptions import ApplicationError
 from app.agent.durable_plan import AgentPlan
 from app.db import tenant_transaction
@@ -26,7 +28,7 @@ from app.workflows.execution_support import _mark_execution_failure
 from app.workflows.validation_support import _record_agent_validation_outcome
 
 async def agent_generate_bom(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[str, Any]:
-    info = activity.info()
+    info = execution_identity()
     request = _agent_v2_request(payload)
     plan = AgentPlan.model_validate(payload["plan"])
     candidate_build_id = _uuid(payload, "candidate_build_id")
@@ -36,7 +38,7 @@ async def agent_generate_bom(payload: dict[str, Any], *, backend: ExecutionBacke
             payload,
             temporal_attempt=info.attempt,
             step_key=step_key,
-            step_index=60_000,
+            step_index=None if payload.get("checkpoint_enabled") else 60_000,
             step_kind="agent_bom",
         )
     )
@@ -282,8 +284,8 @@ async def agent_generate_bom(payload: dict[str, Any], *, backend: ExecutionBacke
                 platform=snapshot.platform,
                 sandbox_tier="ephemeral-job",
             ),
-            limits=ResourceLimits(
-                timeout_seconds=180,
+            limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit,
+                timeout_seconds=execution_timeout(payload, 180),
                 memory_bytes=1536 * 1024 * 1024,
                 cpu_millis=2000,
                 pids=512,

@@ -2,13 +2,14 @@
 from __future__ import annotations
 from temporalio.exceptions import ApplicationError
 from app.services.public_errors import public_generation_error
+from app.freecad.contracts import FreeCADPlanningError
 from app.freecad.state_contract import ParameterStateError
 from app.llm import is_nonretryable_provider_error
 
 def planning_error(exc: Exception) -> ApplicationError:
     if isinstance(exc, ApplicationError):
         return exc
-    if isinstance(exc, ParameterStateError):
+    if isinstance(exc, (ParameterStateError, FreeCADPlanningError)):
         return ApplicationError(
             str(exc),
             type=exc.code,

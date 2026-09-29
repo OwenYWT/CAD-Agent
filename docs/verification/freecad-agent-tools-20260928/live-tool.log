@@ -1,0 +1,35 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________________ test_agent_v2_live_freecad_tools_contract ___________________
+temporalio.exceptions.ApplicationError: ProviderConfigurationError: ProviderConfigurationError: 模型服务配置与当前请求不兼容，请管理员检查模型和接口配置。
+
+The above exception was the direct cause of the following exception:
+temporalio.exceptions.ApplicationError: ProviderConfigurationError: ProviderConfigurationError: 模型服务配置与当前请求不兼容，请管理员检查模型和接口配置。
+
+The above exception was the direct cause of the following exception:
+
+temporalio.exceptions.ChildWorkflowError: Child Workflow execution failed
+
+The above exception was the direct cause of the following exception:
+tests/integration/test_temporal_mcadd_workflow.py:3569: in test_agent_v2_live_freecad_tools_contract
+    await test_native_engineering_acceptance_gates_commit(6, 'live_tools')
+tests/integration/test_temporal_mcadd_workflow.py:3603: in test_native_engineering_acceptance_gates_commit
+    result=await handle.result()
+           ^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/site-packages/temporalio/client/_workflow.py:255: in result
+    raise WorkflowFailureError(
+E   temporalio.client._exceptions.WorkflowFailureError: Workflow execution failed
+---------------------------- Captured stderr setup -----------------------------
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+=============================== warnings summary ===============================
+../../usr/local/lib/python3.11/site-packages/pydantic/_internal/_fields.py:160
+  /usr/local/lib/python3.11/site-packages/pydantic/_internal/_fields.py:160: UserWarning: Field "model_kind" has conflict with protected namespace "model_".
+  
+  You may be able to resolve this warning by setting `model_config['protected_namespaces'] = ()`.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/integration/test_temporal_mcadd_workflow.py::test_agent_v2_live_freecad_tools_contract
+1 failed, 33 deselected, 1 warning in 11.50s

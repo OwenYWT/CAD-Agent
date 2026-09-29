@@ -243,7 +243,7 @@ async def create_step(
     tenant_id: UUID,
     workflow_id: UUID,
     step_key: str,
-    step_index: int,
+    step_index: int | None,
     kind: str,
 ) -> StepCreated:
     # Serialize step-key allocation and its event sequence on the parent run.
@@ -276,12 +276,16 @@ async def create_step(
         )
     ).mappings().one_or_none()
     if existing:
-        if existing["step_index"] != step_index or existing["kind"] != kind:
+        if (step_index is not None and existing["step_index"] != step_index) or existing["kind"] != kind:
             raise IdempotencyConflict(
                 "step key was reused with a different index or kind"
             )
         return StepCreated(step_id=existing["id"], replayed=True)
 
+    if step_index is None:
+        step_index = await connection.scalar(text(
+            "SELECT COALESCE(MAX(step_index), -1)+1 FROM step_runs WHERE workflow_run_id=:id"
+        ), {"id": workflow_id})
     step_id = uuid4()
     await connection.execute(
         text(

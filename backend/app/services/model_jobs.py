@@ -20,7 +20,7 @@ from app.db import get_database_engine, tenant_transaction
 from app.execution.canonical import canonical_sha256
 from app.model_job_context import ModelJobContext, model_job_context
 from app.services.llm_usage import UsageContext, usage_context
-from app.contracts.model_operations import MODEL_OPERATIONS, ModelHandlers
+from app.contracts.model_operations import DURABLE_OPERATIONS, ModelHandlers
 
 logger = logging.getLogger(__name__)
 LEASE_SECONDS = 30
@@ -37,7 +37,7 @@ async def dispatcher():
 async def submit(request: dict) -> dict:
     payload = request['payload']
     operation = request['operation']
-    if operation not in MODEL_OPERATIONS:
+    if operation not in DURABLE_OPERATIONS:
         raise ApplicationError('Unsupported model operation', type='model_job_operation_invalid', non_retryable=True)
     digest = canonical_sha256({'operation': operation, 'payload': payload})
     values = dict(id=UUID(request['job_id']), tenant=UUID(payload['tenant_id']),

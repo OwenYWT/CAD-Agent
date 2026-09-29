@@ -473,6 +473,7 @@ async def _load_candidate_seal_selection(
             or source["workflow_run_id"] != workflow_id
             or source["source_hash"] != manifest.get("source_hash")
             or manifest.get("plan_step_key") != supplied["step_key"]
+            or manifest.get("execution_mode", "final") != "final"
             or row["manifest_hash"] != supplied["manifest_hash"]
             or str(manifest.get("source_id")) != str(supplied["source_id"])
             or manifest.get("source_hash") != supplied["source_hash"]

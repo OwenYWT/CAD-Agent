@@ -1,6 +1,7 @@
 """Typed adapter from local MCAD capability actions to ``ExecutionBackend``."""
 
 from __future__ import annotations
+from app.config import settings
 
 import hashlib
 import json
@@ -128,7 +129,7 @@ class CapabilityExecutionAdapter:
                 image_digest=snapshot.image_digest,
                 platform=snapshot.platform,
             ),
-            limits=ResourceLimits(
+            limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit,
                 timeout_seconds=timeout_seconds,
                 memory_bytes=(
                     1536 * 1024 * 1024

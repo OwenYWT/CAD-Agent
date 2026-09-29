@@ -1,0 +1,179 @@
+{
+  "results": [
+    {
+      "case_id": "P01",
+      "workflow_id": "d2d05163-cce2-4452-8159-09e73a74b091",
+      "status": "succeeded",
+      "saved": true,
+      "seconds": 60.880237102508545,
+      "error_code": null,
+      "error_message": null,
+      "calls": 2,
+      "tokens": 7609,
+      "confirmation": null
+    },
+    {
+      "case_id": "P03",
+      "workflow_id": "b82265b3-6a42-4410-8be3-de9d1dcfe7dc",
+      "status": "succeeded",
+      "saved": true,
+      "seconds": 139.27115893363953,
+      "error_code": null,
+      "error_message": null,
+      "calls": 7,
+      "tokens": 54395,
+      "confirmation": null
+    },
+    {
+      "case_id": "P08",
+      "workflow_id": "33372e25-a0d9-4ccd-ad97-f1d24d4812d5",
+      "status": "needs_confirmation",
+      "saved": false,
+      "seconds": 63.5305061340332,
+      "error_code": null,
+      "error_message": null,
+      "calls": 2,
+      "tokens": 11545,
+      "confirmation": {
+        "status": "waiting",
+        "workflow_run_id": "33372e25-a0d9-4ccd-ad97-f1d24d4812d5",
+        "reason": "必须确认：用户未指定直径和厚度的公差范围",
+        "plan_hash": "7e863136047c150ad2ad9e84b8221917cfc8cfa4c33018a3b70b049a710728d9",
+        "affected_objects": [
+          {
+            "object_id": "part-main",
+            "object_type": "part",
+            "label": "制造一个用于门把手的环形垫圈，起支撑和分散压力作用",
+            "change": "create"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "P17",
+      "workflow_id": "e52233e3-8b62-44f6-b4be-d63035917c5f",
+      "status": "needs_confirmation",
+      "saved": false,
+      "seconds": 172.2246880531311,
+      "error_code": null,
+      "error_message": null,
+      "calls": 1,
+      "tokens": 10136,
+      "confirmation": {
+        "status": "waiting",
+        "workflow_run_id": "e52233e3-8b62-44f6-b4be-d63035917c5f",
+        "reason": "必须确认：三个磁铁孔在底面的具体分布位置未在描述中给出，当前按中心均布、分度圆半径15mm假设；若实际磁铁布局或装配有干涉，需提供精确坐标。",
+        "plan_hash": "05e3bc513a3d32acb3077cde1dcff6a6e34b6ce5c4b2788dbbb9059c2402bf25",
+        "affected_objects": [
+          {
+            "object_id": "part-main",
+            "object_type": "part",
+            "label": "一个圆柱形磁吸笔筒底座，用于插放笔具并通过底部磁铁孔嵌入磁铁实现固定。",
+            "change": "create"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "P18",
+      "workflow_id": "d20fce8b-09a9-43f3-8f6c-f886470652bb",
+      "status": "failed",
+      "saved": false,
+      "seconds": 652.6302950382233,
+      "error_code": "agent_geometry_validation_failed",
+      "error_message": "agent_geometry_validation_failed: Required geometry validation did not pass.",
+      "calls": 14,
+      "tokens": 229832,
+      "confirmation": null
+    },
+    {
+      "case_id": "P32",
+      "workflow_id": "02722092-520c-4536-8114-4732c78e087a",
+      "status": "needs_confirmation",
+      "saved": false,
+      "seconds": 96.78232979774475,
+      "error_code": null,
+      "error_message": null,
+      "calls": 2,
+      "tokens": 14999,
+      "confirmation": {
+        "status": "waiting",
+        "workflow_run_id": "02722092-520c-4536-8114-4732c78e087a",
+        "reason": "必须确认：16x8mm 接口开窗应设置在哪个侧面的什么位置、中心点及距边尺寸？",
+        "plan_hash": "7fc7a491add7121aa3d702776b233a4b7bb411def2876b1afcd90a0bc038212c",
+        "affected_objects": [
+          {
+            "object_id": "part-main",
+            "object_type": "part",
+            "label": "用于安装 Raspberry Pi 风格单板计算机的顶部开口保护外壳，带壁厚、内置螺柱和侧面接口开窗",
+            "change": "create"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "P35",
+      "workflow_id": "b66a7675-0a8e-4979-856a-049b0d512f36",
+      "status": "failed",
+      "saved": false,
+      "seconds": 72.61607909202576,
+      "error_code": "ValueError",
+      "error_message": "ValueError: ValueError: planner model did not return a valid CAD plan: [{\"field\": \"design_brief.acceptance\", \"type\": \"value_error\", \"message\": \"Value error, an unconfirmed assumption cannot become a required check\"}]",
+      "calls": 2,
+      "tokens": 13106,
+      "confirmation": null
+    },
+    {
+      "case_id": "M01",
+      "workflow_id": "656f3b96-2026-416a-8710-349491239077",
+      "status": "failed",
+      "saved": false,
+      "seconds": 48.4422709941864,
+      "error_code": "ValueError",
+      "error_message": "ValueError: ValueError: planner model did not return a valid CAD plan: [{\"field\": \"design_brief.acceptance.checks.0\", \"type\": \"value_error\", \"message\": \"Value error, overall dimension requires an explicit axis\"}, {\"field\": \"design_brief.acceptance.checks.1\", \"type\": \"value_error\", \"message\": \"Value error, overall dimension requires an explicit axis\"}, {\"field\": \"design_brief.acceptance.checks.2\", \"type\": \"value_error\", \"message\": \"Value error, overall dimension requires an explicit axis\"}, {\"field\": \"design_brief.acceptance.checks.4\", \"type\": \"value_error\", \"message\": \"Value error, hole positions require centers and an axis\"}, {\"field\": \"design_brief.acceptance.checks.7\", \"type\": \"value_error\", \"message\": \"Value error, hole positions require centers and an axis\"}]",
+      "calls": 2,
+      "tokens": 10413,
+      "confirmation": null
+    },
+    {
+      "case_id": "X04",
+      "workflow_id": "5caf0f8b-529d-49f0-a83f-19d873bf4e7b",
+      "status": "needs_confirmation",
+      "saved": false,
+      "seconds": 120.94447898864746,
+      "error_code": null,
+      "error_message": null,
+      "calls": 2,
+      "tokens": 16927,
+      "confirmation": {
+        "status": "waiting",
+        "workflow_run_id": "5caf0f8b-529d-49f0-a83f-19d873bf4e7b",
+        "reason": "必须确认：当前 schema 未提供弯曲半径检查类型，无法直接验证中心线弯曲半径 45mm（来源：弯曲半径 45mm）。",
+        "plan_hash": "c775e12da4d21b0feee2fec8fcbfbe326379d809a22e40b1f33e9c81fe434c33",
+        "affected_objects": [
+          {
+            "object_id": "part-main",
+            "object_type": "part",
+            "label": "制造一根90度空心弯管，用于连接两段管道并改变流体走向",
+            "change": "create"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "X05",
+      "workflow_id": "cfb8f8ec-c893-4fab-b396-b8884bee7ca0",
+      "status": "failed",
+      "saved": false,
+      "seconds": 63.48757195472717,
+      "error_code": "ValueError",
+      "error_message": "ValueError: ValueError: planner model did not return a valid CAD plan: [{\"field\": \"design_brief.acceptance.checks.5\", \"type\": \"value_error\", \"message\": \"Value error, void connectivity requires expected 0/1, interior probes and an explicit region\"}]",
+      "calls": 2,
+      "tokens": 11098,
+      "confirmation": null
+    }
+  ],
+  "calls": 36,
+  "total_tokens": 380060,
+  "note": "Frozen first cohort; do not overwrite with repaired-version results."
+}

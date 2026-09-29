@@ -1,5 +1,6 @@
 """Cad execution use cases; Temporal names live in the adapter."""
 from __future__ import annotations
+from app.config import settings
 import asyncio
 import hashlib
 import json
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from sqlalchemy import text
 from temporalio import activity
+from app.workflows.execution_support import execution_identity, execution_timeout
 from temporalio.exceptions import ApplicationError
 from app.agent.durable_plan import AgentPlan
 from app.agent.durable_plan import AgentPlanStep
@@ -17,6 +19,7 @@ from app.domain.runs import StepStatus
 from app.execution.backend import ExecutionBackend, MaterializedExecutionOutcome
 from app.execution.contracts import ArtifactInput, ExecutionSource, ExecutionSpec, ExecutionStatus, OutputDeclaration, ResourceLimits, RuntimeRequirement
 from app.freecad.contracts import FreeCADOperationPlan
+from app.contracts.cad_tools import execution_receipt
 from app.object_store import download_object, put_file
 from app.repositories.agent_candidates import accept_staging_manifest, get_staging_manifest_for_step
 from app.services.run_state import complete_attempt, transition_step
@@ -29,9 +32,10 @@ from app.workflows.execution_support import _heartbeat_loop
 from app.workflows.execution_support import _run_backend_with_heartbeats
 from app.workflows.execution_support import _mark_execution_failure
 from app.workflows.revision_inputs import _freecad_revision_artifact
+from app.workflows.checkpoint_inputs import checkpoint_manifest, checkpoint_artifact
 
 async def agent_execute_model(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[str, Any]:
-    info = activity.info()
+    info = execution_identity()
     request = _agent_v2_request(payload)
     plan = AgentPlan.model_validate(payload["plan"])
     step = AgentPlanStep.model_validate(payload["step"])
@@ -101,7 +105,7 @@ async def agent_execute_model(payload: dict[str, Any], *, backend: ExecutionBack
                 platform=snapshot.platform,
                 sandbox_tier="ephemeral-job",
             ),
-            limits=ResourceLimits(timeout_seconds=120),
+            limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit, timeout_seconds=execution_timeout(payload, 120)),
             metadata={
                 "candidate_build_id": str(candidate_build_id),
                 "source_id": str(payload["source_id"]),
@@ -120,7 +124,7 @@ async def agent_execute_model(payload: dict[str, Any], *, backend: ExecutionBack
             lease_token=lease_token,
             lease_generation=lease_generation,
         )
-        if activity.is_cancelled():
+        if activity.in_activity() and activity.is_cancelled():
             raise asyncio.CancelledError
         if outcome.result.status is not ExecutionStatus.SUCCEEDED:
             error = outcome.result.error
@@ -319,7 +323,7 @@ async def agent_execute_model(payload: dict[str, Any], *, backend: ExecutionBack
 
 
 async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[str, Any]:
-    info = activity.info()
+    info = execution_identity()
     request = _agent_v2_request(payload)
     plan = AgentPlan.model_validate(payload["plan"])
     if (
@@ -390,6 +394,8 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
         )
     try:
         operation_plan = FreeCADOperationPlan.model_validate_json(source_code)
+        if operation_plan.execution_mode == "checkpoint" and not payload.get("checkpoint_enabled"):
+            raise ValueError("checkpoint execution requires the versioned tool workflow")
     except Exception as exc:
         raise ApplicationError(
             "persisted FreeCAD operation plan is invalid",
@@ -402,8 +408,12 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
     materialized: dict[str, Path] = {}
     task_inputs: dict[str, str] = {}
     try:
-        if request.operation == "modify":
-            artifact = await _freecad_revision_artifact(request, "fcstd")
+        if request.operation == "modify" or payload.get("checkpoint_manifest_id"):
+            if payload.get("checkpoint_manifest_id"):
+                checkpoint = await checkpoint_manifest(request, candidate_build_id, payload["checkpoint_manifest_id"])
+                artifact = checkpoint_artifact(checkpoint, "fcstd")
+            else:
+                artifact = await _freecad_revision_artifact(request, "fcstd")
             base_path = temp_dir / "base.FCStd"
             downloaded = await download_object(
                 str(artifact["object_key"]),
@@ -422,7 +432,7 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                 request.revision_restore.source_revision_id
                 if request.revision_restore else request.expected_base_revision_id
             )
-            artifact_id = f"{input_revision_id}:fcstd"
+            artifact_id = f"{payload.get('checkpoint_manifest_id') or input_revision_id}:fcstd"
             declarations.append(
                 ArtifactInput(
                     artifact_id=artifact_id,
@@ -513,8 +523,8 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                     platform=snapshot.platform,
                     sandbox_tier="ephemeral-job",
                 ),
-                limits=ResourceLimits(
-                    timeout_seconds=int(payload.get("timeout_seconds") or 180),
+                limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit,
+                    timeout_seconds=execution_timeout(payload, 180),
                     memory_bytes=1536 * 1024 * 1024,
                     cpu_millis=2000,
                     pids=512,
@@ -540,7 +550,7 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                 lease_generation=lease_generation,
                 materialized_inputs=materialized,
             )
-            if activity.is_cancelled():
+            if activity.in_activity() and activity.is_cancelled():
                 raise asyncio.CancelledError
             if outcome.result.status is not ExecutionStatus.SUCCEEDED:
                 error = outcome.result.error
@@ -652,6 +662,9 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
             }
             if request.revision_restore is not None:
                 manifest["revision_restore"] = request.revision_restore.model_dump(mode="json")
+            if payload.get("checkpoint_enabled"):
+                manifest["execution_mode"] = operation_plan.execution_mode
+                manifest["predecessor_checkpoint_id"] = payload.get("checkpoint_manifest_id")
             result_payload = {
                 "status": "succeeded",
                 "attempt_id": str(attempt_id),
@@ -659,6 +672,8 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                 "source_hash": source_hash,
                 "outputs": staged_outputs,
                 "execution_result": outcome.result.model_dump(mode="json"),
+                "tool_result": execution_receipt(source_id=str(payload["source_id"]),
+                    source_hash=source_hash, attempt_id=str(attempt_id), outputs=staged_outputs),
             }
             async with tenant_transaction(
                 request.tenant_id,

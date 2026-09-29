@@ -88,6 +88,8 @@ def provider_credentials_are_scoped_to_live_cases(request, monkeypatch):
         "test_agent_v2_real_visual_provider_persists_provenance",
         "test_agent_v2_real_repair_provider_persists_provenance_and_attempt",
         "test_agent_v2_real_planner_retriever_codegen_and_execution_provenance",
+        "test_agent_v2_live_freecad_tools_contract",
+        "test_agent_v2_live_freecad_checkpoint_contract",
     }
     if request.node.originalname not in live:
         # The same invocation may include live-provider and controlled cases.
@@ -120,20 +122,27 @@ def legacy_cadquery_history(request, monkeypatch):
     legacy_validation_tests = source_history_tests | {
         "test_agent_v2_assembly_executes_parts_then_combine_with_source_edges",
     }
-    if request.node.name not in legacy_validation_tests:
+    legacy_requirement_tests = legacy_validation_tests | {
+        "test_agent_v2_plan_waits_before_candidate_source_or_execution",
+        "test_agent_v2_assembly_partial_failure_preserves_successful_part",
+        "test_agent_v2_assembly_cancel_stops_active_parts_before_execution",
+    }
+    if request.node.name not in legacy_requirement_tests:
         return
     from temporalio import workflow
 
     original = workflow.patched
 
     def legacy_patch(change_id):
+        if change_id in {'agent-v2-engineering-acceptance-v1','agent-v2-final-solid-acceptance-v1'}:
+            return False
         # Retain one genuine pre-model-job command history for the replay gate.
         # Other V2 cases keep the new child-workflow path enabled.
         if change_id == "agent-v2-model-jobs-v1" and request.node.name == "test_agent_v2_confirmed_plan_seals_reviewable_candidate":
             return False
         if change_id == "agent-v2-backend-policy-v1" and request.node.name in source_history_tests:
             return False
-        if change_id == "agent-v2-validation-repair-v2":
+        if change_id == "agent-v2-validation-repair-v2" and request.node.name in legacy_validation_tests:
             return False
         return original(change_id)
 
@@ -282,6 +291,19 @@ async def clean_control_plane():
     try:
         yield
     finally:
+        if os.environ.get('CAD_AGENT_TEST_EVIDENCE_DIR'):
+            from pathlib import Path
+            retained=Path(os.environ['CAD_AGENT_TEST_EVIDENCE_DIR'])/('run-'+suffix)
+            retained.mkdir(parents=True,exist_ok=True)
+            async with get_database_engine().connect() as connection:
+                diagnostics={}
+                for table in ('workflow_runs','step_runs','agent_validation_evidence','llm_calls'):
+                    diagnostics[table]=[dict(row) for row in (await connection.execute(text('SELECT * FROM '+table))).mappings()]
+                artifacts=[dict(row) for row in (await connection.execute(text('SELECT artifact_kind,object_key,sha256 FROM artifacts'))).mappings()]
+            (retained/'diagnostics.json').write_text(json.dumps(diagnostics,ensure_ascii=False,default=str,indent=2))
+            for artifact in artifacts:
+                if artifact['artifact_kind'] in {'fcstd','step','state'}:
+                    (retained/(artifact['sha256']+'.'+artifact['artifact_kind'])).write_bytes(await get_object(artifact['object_key']))
         await clean()
         settings.temporal_task_queue, settings.temporal_agent_v2_task_queue = queues
 
@@ -585,17 +607,26 @@ async def test_agent_v2_real_freecad_generation_validation_seal_and_commit(scope
     import tempfile
     from pathlib import Path
     with tempfile.TemporaryDirectory(prefix='chamfer-final-') as directory:
+        Path(directory).chmod(0o755)
         for kind, filename in [('fcstd','model.FCStd'),('step','model.step')]:
             payload = await get_object(modified_artifacts[kind]['object_key'])
             assert hashlib.sha256(payload).hexdigest() == modified_artifacts[kind]['sha256']
             Path(directory,filename).write_bytes(payload)
+            if os.environ.get('CAD_AGENT_TEST_EVIDENCE_DIR'):
+                retained=Path(os.environ['CAD_AGENT_TEST_EVIDENCE_DIR'])/str(modified_run.workflow_id)
+                retained.mkdir(parents=True,exist_ok=True)
+                (retained/filename).write_bytes(payload)
         verifier = Path(__file__).resolve().parents[1] / 'e2e/chamfer_scope_geometry.py'
+        # The Docker daemon sees the shared task directory, not /app inside the
+        # backend container. Stage the verifier beside its declared inputs.
+        shared_verifier=Path(directory)/'verify.py'
+        shared_verifier.write_bytes(verifier.read_bytes())
         process = await asyncio.create_subprocess_exec(
             settings.sandbox_command,'run','--rm','--network','none','--read-only',
             '--tmpfs','/tmp:rw,size=2g','-e','CAD_SCOPE_VERIFY_ARTIFACTS=1',
-            '-v',f'{directory}:/sandbox/input:ro','-v',f'{verifier}:/verify.py:ro',
+            '-v',f'{directory}:/sandbox/input:ro',
             '--entrypoint','/opt/freecad/bin/FreeCADCmd',settings.sandbox_image,
-            '-c',"exec(compile(open('/verify.py').read(), '/verify.py', 'exec'))",
+            '-c',"exec(compile(open('/sandbox/input/verify.py').read(), '/sandbox/input/verify.py', 'exec'))",
             stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.STDOUT,
         )
         measurement, _ = await process.communicate()
@@ -1072,13 +1103,22 @@ class _V2PassingVisualStub:
 
 
 class _NativeBudgetRequirements:
-    async def plan_new(self, messages):
+    async def plan_new(self, messages, *, require_acceptance=False):
         from app.models.schemas import CADPlan, DesignBrief
-        return CADPlan(description=messages[-1]['content'], part_type='plate',
+        from app.contracts.acceptance import AcceptanceContract
+        objective=messages[-1]['content']
+        contract=AcceptanceContract.model_validate({'objective':objective,'checks':[
+            {'check_id':'hole-count','kind':'hole_count','nominal':1,'description':'round hole count','source_quote':objective},
+            {'check_id':'hole-diameter','kind':'hole_diameter','nominal':6,'description':'round shaft diameter','source_quote':objective},
+            {'check_id':'hole-depth','kind':'hole_depth','nominal':8,'description':'through depth','source_quote':objective},
+            {'check_id':'hole-position','kind':'hole_position','description':'centered hole','source_quote':objective,
+             'scope':{'frame':'bounds_center','axis':[0,0,1],'centers_mm':[[0,0,0]]}},
+        ]}) if require_acceptance else None
+        return CADPlan(description=objective, part_type='plate',
             dimensions={'length':60,'width':40,'thickness':8},
             features=['through_hole:diameter=6,position=centered'], constraints=[],
             modeling_hint='extrude_cut', design_brief=DesignBrief(intent_summary=messages[-1]['content'],
-                artifact_type='plate',open_questions=['必须先确认此受控负例计划']))
+                artifact_type='plate',acceptance=contract,open_questions=['必须先确认此受控负例计划']))
 
 
 class _NativeBudgetPlanner(DurableAgentPlanner):
@@ -3433,3 +3473,573 @@ async def test_worker_process_crash_retries_with_new_fenced_attempt():
         snapshot["change_set"]["head_revision_id"]
         == snapshot["change_set"]["candidate_revision_id"]
     )
+
+class _EngineeringAcceptancePlanner(DurableAgentPlanner):
+    """Fault injection only at requirement interpretation, never at measurement."""
+    def __init__(self, diameter):
+        super().__init__(planner=_NativeBudgetRequirements())
+        self.diameter=diameter
+
+    def compose_freecad_generation(self,*args,**kwargs):
+        plan=super().compose_freecad_generation(*args,**kwargs)
+        contract=plan.design_brief.acceptance
+        checks=tuple(c.model_copy(update={'nominal':self.diameter}) if c.kind=='hole_diameter' else c for c in contract.checks)
+        brief=plan.design_brief.model_copy(update={'acceptance':contract.model_copy(update={'checks':checks})})
+        policy=plan.validation_policy.model_copy(update={'geometry':plan.validation_policy.geometry.model_copy(update={'repair_budget':0})})
+        return plan.model_copy(update={'design_brief':brief,'validation_policy':policy})
+
+
+class _RequirementsToolFixture:
+    """Controlled provider replies through the real requirements parser/repair."""
+    def __init__(self, objective):
+        self.objective=objective
+        self.calls=0
+
+    async def create(self, **kwargs):
+        from openai.types.chat import ChatCompletion
+        self.calls+=1
+        assert kwargs['tools'][0]['function']['name']=='submit_cad_plan'
+        value=await _NativeBudgetRequirements().plan_new(
+            [{'role':'user','content':self.objective}],require_acceptance=True)
+        payload=value.model_dump(mode='json')
+        if self.calls==1:
+            payload['design_brief']['acceptance']['checks'][3]['scope']['axis']=None
+        else:
+            assert kwargs['messages'][-1]['tool_call_id']=='requirements-1'
+            assert 'hole positions' in kwargs['messages'][-1]['content']
+        return ChatCompletion(id=f'requirements-{self.calls}',model='controlled-requirements',created=1,
+            object='chat.completion',choices=[{'index':0,'finish_reason':'tool_calls','message':{
+                'role':'assistant','tool_calls':[{'id':f'requirements-{self.calls}','type':'function',
+                    'function':{'name':'submit_cad_plan','arguments':json.dumps(payload)}}]}}])
+
+
+@pytest.mark.asyncio(loop_scope='module')
+async def test_unsupported_required_measurement_is_not_a_user_confirmation_or_cad_success():
+    from app.services.workflow_admission import create_document_workflow
+    class UnsupportedMeasurement(DurableAgentPlanner):
+        async def requirements_generation(self, objective, **kwargs):
+            value=await _NativeBudgetRequirements().plan_new(
+                [{'role':'user','content':objective}],require_acceptance=True)
+            acceptance=value.design_brief.acceptance.model_copy(update={
+                'verification_limits':('Controlled unsupported required measurement',)})
+            return value.model_copy(update={'design_brief':value.design_brief.model_copy(update={
+                'acceptance':acceptance,'open_questions':[]})})
+    owner,project_id,initial=await _seed_project('verification-unavailable')
+    objective='Create a part with a required unsupported measurement.'
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+        created=await create_document_workflow(conn,tenant_id=owner.tenant_id,project_id=project_id,
+            requested_by_principal_id=owner.principal_id,kind='mcad.agent.v2.generate',
+            idempotency_key=f'unsupported-{project_id}',request_payload={'objective':objective})
+    request=McadAgentWorkflowV2Request(workflow_run_id=created.workflow_id,tenant_id=owner.tenant_id,
+        project_id=project_id,principal_id=owner.principal_id,branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,operation='generate',modeling_backend='freecad',objective=objective)
+    client=await get_temporal_client()
+    async with build_agent_v2_workflow_worker(client,backend=get_execution_backend(),durable_planner=UnsupportedMeasurement()):
+        handle=await client.start_workflow('McadAgentWorkflowV2',request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),task_queue=settings.temporal_agent_v2_task_queue)
+        with pytest.raises(WorkflowFailureError) as error:
+            await handle.result()
+        from app.workflows.agent_v2 import McadAgentWorkflowV2
+        cause=McadAgentWorkflowV2._root_application_error(error.value)
+        assert cause is not None and cause.type=='engineering_verification_unavailable'
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+        assert await conn.scalar(text('SELECT count(*) FROM execution_attempts WHERE workflow_run_id=:id'),{'id':created.workflow_id})==0
+        assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'),{'id':created.workflow_id})==0
+        status=await conn.scalar(text('SELECT status FROM workflow_runs WHERE id=:id'),{'id':created.workflow_id})
+        assert status=='failed'
+        assert await conn.scalar(text('SELECT error_code FROM workflow_runs WHERE id=:id'),{'id':created.workflow_id})=='engineering_verification_unavailable'
+
+
+class _NativeAPIProgramFixture:
+    """Fixed native program as input; no execution or validation output is faked."""
+    async def generate(self,**kwargs):
+        from app.freecad.contracts import FreeCADOperationPlan
+        from app.freecad.operation_generator import FreeCADOperationGenerationResult
+        plan=FreeCADOperationPlan.model_validate({'operations':[
+            {'op_id':'native-program','action':'api.execute','args':{'source':
+                "base=document.addObject('Part::Box','Base')\nbase.Length=60;base.Width=40;base.Height=8\n"
+                "tool=document.addObject('Part::Cylinder','Tool');tool.Radius=3;tool.Height=8\n"
+                "tool.Placement.Base=App.Vector(30,20,0)\n"
+                "cut=document.addObject('Part::Cut','Final');cut.Base=base;cut.Tool=tool\n"}},
+            {'op_id':'export','action':'document.export','args':{'formats':['fcstd','step','stl'],'objects':['Final']}}]})
+        source=plan.model_dump_json()
+        return FreeCADOperationGenerationResult(operation_plan=plan,source_code=source,
+            generator_kind='controlled_native_api_program',provenance={**_controlled_provenance(),
+                'provider':'controlled-native-program','response_hash':hashlib.sha256(source.encode()).hexdigest()})
+
+
+class _CurvedPanelToolFixture:
+    """Real tool dispatch and native surface construction, controlled LLM input."""
+    def __init__(self):
+        from types import SimpleNamespace
+        from app.freecad.operation_generator import FreeCADOperationGenerator
+        self.calls=0
+        self.engine=FreeCADOperationGenerator(client=SimpleNamespace(chat=SimpleNamespace(completions=self)),
+            provenance_reader=lambda:{**_controlled_provenance(),'finish_reason':'tool_calls'})
+
+    async def create(self, **kwargs):
+        from openai.types.chat import ChatCompletion
+        self.calls+=1
+        if self.calls==1:
+            name,args='freecad_discover',{'module':'Part','symbol':'Shape.makeOffsetShape'}
+        else:
+            name='freecad_execute'
+            args={'operations':[
+                {'op_id':'curved-panel','action':'api.execute','args':{'source':
+                    "surface=Part.BezierSurface()\nsurface.increase(2,2)\n"
+                    "for i,x in enumerate([-10,0,10],1):\n"
+                    " for j,y in enumerate([-10,0,10],1):\n"
+                    "  surface.setPole(i,j,App.Vector(x,y,[2,-2,2][i-1]+[2,-2,2][j-1]))\n"
+                    "panel=document.addObject('PartDesign::Feature','Panel')\n"
+                    "panel.Shape=surface.toShape().makeOffsetShape(-2,1e-7,fill=True)\n"
+                    + ("panel.Placement.Rotation=App.Rotation(App.Vector(0,0,1),30)\n" if self.calls>2 else '')}},
+                {'op_id':'export','action':'document.export','args':{'formats':['fcstd','step','stl'],'objects':['Panel']}}]}
+        return ChatCompletion(id=f'curve-{self.calls}',model='controlled-curved-panel',created=1,
+            object='chat.completion',choices=[{'index':0,'finish_reason':'tool_calls','message':{
+                'role':'assistant','tool_calls':[{'id':f'curve-{self.calls}','type':'function',
+                    'function':{'name':name,'arguments':json.dumps(args)}}]}}])
+
+    async def generate(self, **kwargs):
+        return await self.engine._complete(user_payload={'task':'generate'},generator_kind='controlled_curve_tool',
+            output_formats=kwargs['output_formats'],rejection_sink=kwargs.get('rejection_sink'))
+
+    async def repair(self, **kwargs):
+        # Rotate the real panel about the build axis. This changes the candidate
+        # without fixing its overhangs; repeated inspection must retain failure.
+        return await self.engine.repair(**kwargs)
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('required_thickness,dfm_mode',[(2,'advisory'),(2,'required'),(3,'advisory')])
+async def test_curved_panel_tool_requires_whole_material_thickness_before_commit(required_thickness,dfm_mode):
+    from app.services.workflow_admission import create_document_workflow
+    from app.models.schemas import CADPlan,DesignBrief
+    from app.contracts.acceptance import AcceptanceContract
+    class CurveRequirements(DurableAgentPlanner):
+        async def requirements_generation(self,objective,**kwargs):
+            criteria=AcceptanceContract.model_validate({'objective':objective,'checks':[
+                {'check_id':'whole-wall','kind':'wall_thickness','nominal':required_thickness,
+                 'description':'whole panel normal thickness','source_quote':objective},
+                {'check_id':'single-solid','kind':'solid_count','nominal':1,
+                 'description':'one part','source_quote':objective}]})
+            return CADPlan(description=objective,part_type='custom',dimensions={},features=['curved panel'],
+                design_brief=DesignBrief(acceptance=criteria,open_questions=['必须确认：受控曲面验收测试']))
+        async def decompose_generation(self,plan):
+            return None
+        def compose_freecad_generation(self,*args,**kwargs):
+            from app.agent.durable_plan import GateMode
+            plan=super().compose_freecad_generation(*args,**kwargs)
+            # Exercise both advisory and required manufacturing gates with the
+            # same geometry. Neither mode may relabel the real FDM result.
+            policy=plan.validation_policy.model_copy(update={
+                'geometry':plan.validation_policy.geometry.model_copy(update={'repair_budget':0}),
+                'dfm':plan.validation_policy.dfm.model_copy(update={'mode':GateMode(dfm_mode),'repair_budget':0})})
+            return plan.model_copy(update={'validation_policy':policy})
+    owner,project_id,initial=await _seed_project('curved-panel-acceptance')
+    objective=f'Create one freeform curved panel with {required_thickness} mm whole-part normal wall thickness.'
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+        created=await create_document_workflow(conn,tenant_id=owner.tenant_id,project_id=project_id,
+            requested_by_principal_id=owner.principal_id,kind='mcad.agent.v2.generate',
+            idempotency_key=f'curved-{project_id}',request_payload={'objective':objective})
+    request=McadAgentWorkflowV2Request(workflow_run_id=created.workflow_id,tenant_id=owner.tenant_id,
+        project_id=project_id,principal_id=owner.principal_id,branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,operation='generate',modeling_backend='freecad',objective=objective)
+    client=await get_temporal_client();provider=_CurvedPanelToolFixture()
+    async with build_agent_v2_workflow_worker(client,backend=get_execution_backend(),
+            durable_planner=CurveRequirements(),durable_visual=_V2PassingVisualStub(),freecad_operations=provider):
+        handle=await client.start_workflow('McadAgentWorkflowV2',request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),task_queue=settings.temporal_agent_v2_task_queue)
+        await _wait_for_status(owner,created.workflow_id,{'waiting_confirmation'})
+        await confirm_mcad_workflow(created.workflow_id,accepted=True,note='Independent full panel measurement',workflow_kind='mcad.agent.v2.generate')
+        can_commit=required_thickness==2 and dfm_mode=='advisory'
+        if can_commit:
+            result=await handle.result()
+            assert result['status']=='succeeded'
+        else:
+            with pytest.raises(WorkflowFailureError) as failure:
+                await handle.result()
+            assert failure.value.cause.type==('agent_dfm_validation_failed' if required_thickness==2 else 'agent_geometry_validation_failed')
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+        report=await conn.scalar(text("SELECT evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"),{'id':created.workflow_id})
+        wall=next(e for e in report['acceptance']['evidence'] if e['check_id']=='whole-wall')
+        assert wall['method']=='whole_part_certified_normal_layer_coverage'
+        assert all(abs(v-2)<1e-7 for v in wall['measured'])
+        assert wall['outcome']==('passed' if required_thickness==2 else 'failed')
+        assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'),{'id':initial.branch_id})==initial.revision_id
+        if required_thickness==2:
+            reports=(await conn.execute(text("SELECT mode,outcome,evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='dfm'"),{'id':created.workflow_id})).mappings().all()
+            assert len(reports)==2  # Real initial inspection and ineffective repair.
+            assert all(dfm['mode']==dfm_mode and dfm['outcome']=='failed' for dfm in reports)
+            assert all(any(v['rule_id']=='fdm_overhang' for v in dfm['evidence']['violations']) for dfm in reports)
+        if not can_commit:
+            assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'),{'id':created.workflow_id})==0
+    if can_commit:
+        from app.services.change_sets import ValidationRequired
+        change_set=UUID(result['change_set_id'])
+        with pytest.raises(ValidationRequired,match='风险审查意见'):
+            await accept_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,change_set_id=change_set)
+        await accept_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,
+            change_set_id=change_set,review_note='仅保存几何设计；已知悬垂需要支撑，尚不批准直接制造。')
+        committed=await commit_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,change_set_id=change_set)
+        assert committed.status=='committed'
+    assert provider.calls==(3 if required_thickness==2 else 2)
+
+
+class _NativeToolProgramFixture:
+    """Scripted provider calls; production tool protocol, execution and gates."""
+    def __init__(self, *, fail_first=False):
+        from types import SimpleNamespace
+        from app.freecad.operation_generator import FreeCADOperationGenerator
+        self.calls = 0
+        self.fail_first = fail_first
+        self.engine = FreeCADOperationGenerator(client=SimpleNamespace(chat=SimpleNamespace(completions=self)),
+            provenance_reader=lambda: {**_controlled_provenance(), 'finish_reason':'tool_calls'})
+
+    async def create(self, **kwargs):
+        from openai.types.chat import ChatCompletion
+        self.calls += 1
+        assert kwargs['tools'] and kwargs['tool_choice']=='auto'
+        if self.calls==1:
+            name,args='freecad_discover',{'module':'Part','symbol':'makeBox'}
+        else:
+            generated=await _NativeAPIProgramFixture().generate()
+            args=json.loads(generated.source_code)
+            if self.calls==2 and self.fail_first:
+                args['operations'][0]['args']['source']="raise RuntimeError('controlled native tool failure')"
+            name='freecad_execute'
+        return ChatCompletion(id=f'controlled-tool-{self.calls}',model='controlled-tools',created=1,
+            object='chat.completion',choices=[{'index':0,'finish_reason':'tool_calls','message':{
+                'role':'assistant','tool_calls':[{'id':f'call-{self.calls}','type':'function',
+                    'function':{'name':name,'arguments':json.dumps(args)}}]}}])
+
+    async def generate(self, **kwargs):
+        return await self.engine._complete(user_payload={'task':'generate'},generator_kind='controlled_tool_protocol',
+            output_formats=kwargs['output_formats'],rejection_sink=kwargs.get('rejection_sink'))
+
+    async def repair(self, **kwargs):
+        return await self.engine.repair(**kwargs)
+
+
+class _LiveToolProvider:
+    """Exercise the paid model tool path, bypassing only the deterministic compiler.
+
+    Requirement/vision fixtures are explicit; CAD execution and final STEP
+    acceptance remain real. This isolates tools, not end-user success rates.
+    """
+    def __init__(self):
+        from app.freecad.operation_generator import FreeCADOperationGenerator
+        self.engine = FreeCADOperationGenerator()
+
+    async def generate(self, **kwargs):
+        plan=kwargs['plan']
+        return await self.engine._complete(user_payload={'task':'generate',
+            'agent_plan':{'objective':plan.objective}, 'requirements':kwargs['requirements'],
+            'instruction':'Before building, use freecad_describe_operation to check the exact schema of a modeling operation you will use.',
+            'required_export_formats':['fcstd',*kwargs['output_formats']]},
+            generator_kind='live_freecad_tools', output_formats=kwargs['output_formats'],
+            rejection_sink=kwargs.get('rejection_sink'))
+
+    async def repair(self, **kwargs):
+        return await self.engine.repair(**kwargs)
+
+
+class _CheckpointToolFixture(_NativeToolProgramFixture):
+    """Fixed tool inputs; checkpoints, restart reads, kernel and measurements are real."""
+    async def create(self, **kwargs):
+        from openai.types.chat import ChatCompletion
+        self.calls += 1
+        payload = json.loads(kwargs['messages'][1]['content'])
+        state = payload.get('base_freecad_state')
+        replies = [m for m in kwargs['messages'] if m['role']=='tool']
+        if state and not replies:
+            name, args = 'freecad_inspect', {'objects':['Base'], 'fields':['properties','geometry']}
+        else:
+            name = 'freecad_execute'
+            if not state:
+                program = "base=document.addObject('Part::Box','Base')\nbase.Length=60;base.Width=40;base.Height=8"
+                mode, roots, formats = 'checkpoint', ['Base'], ['fcstd']
+            else:
+                assert 'Base' in json.dumps(state)
+                if payload.get('task')!='repair':
+                    feedback=payload['execution_feedback']
+                    assert feedback['status']=='executed' and feedback['saved_revision'] is None
+                program = ("base=document.getObject('Base')\n"
+                    "assert base is not None and abs(base.Shape.Volume-19200)<1e-6\n"
+                    "tool=document.addObject('Part::Cylinder','Tool');tool.Radius=3;tool.Height=8\n"
+                    "tool.Placement.Base=App.Vector(30,20,0)\n"
+                    "cut=document.addObject('Part::Cut','Final');cut.Base=base;cut.Tool=tool")
+                if self.fail_first and payload.get('task')!='repair':
+                    # The failed attempt creates an object before failing. The
+                    # repair must load the clean checkpoint, with no leaked Tool.
+                    program += "\nraise RuntimeError('controlled incremental failure')"
+                mode, roots, formats = 'final', ['Final'], ['fcstd','step','stl']
+            args={'execution_mode':mode,'operations':[
+                {'op_id':'program','action':'api.execute','args':{'source':program}},
+                {'op_id':'export','action':'document.export','args':{'objects':roots,'formats':formats}}]}
+        return ChatCompletion(id=f'checkpoint-{self.calls}',model='checkpoint-fixture',created=1,
+            object='chat.completion',choices=[{'index':0,'finish_reason':'tool_calls','message':{
+                'role':'assistant','tool_calls':[{'id':f'checkpoint-call-{self.calls}','type':'function',
+                    'function':{'name':name,'arguments':json.dumps(args)}}]}}])
+
+    async def generate(self, **kwargs):
+        if kwargs.get('execution_feedback'):
+            return await self.engine.generate(**kwargs)
+        return await self.engine._complete(user_payload={'task':'generate','checkpoint_enabled':kwargs['checkpoint_enabled']},
+            generator_kind='checkpoint-fixture', output_formats=kwargs['output_formats'])
+
+
+class _LiveCheckpointProvider(_LiveToolProvider):
+    """Paid tool-loop probe with frozen requirements, real intermediate CAD state."""
+    async def generate(self, **kwargs):
+        if kwargs.get('execution_feedback'):
+            return await self.engine.generate(**kwargs)
+        return await self.engine._complete(user_payload={
+            'task':'generate','checkpoint_enabled':True,
+            'agent_plan':{'objective':kwargs['plan'].objective},
+            'requirements':kwargs['requirements'],
+            'instruction':'Use freecad_describe_operation for a needed schema first. For this tool protocol contract, '
+                'execute the plate stock as execution_mode=checkpoint, exporting fcstd; leave the hole for the '
+                'next turn after the actual checkpoint is returned. Do not claim completion. The next turn '
+                'must inspect that verified state, add the requested centered through hole, and export the final formats.',
+            'required_export_formats':['fcstd',*kwargs['output_formats']]},
+            generator_kind='live_freecad_checkpoint', output_formats=kwargs['output_formats'],
+            rejection_sink=kwargs.get('rejection_sink'))
+
+
+class _RestartCheckpointFixture(_CheckpointToolFixture):
+    def __init__(self):
+        super().__init__()
+        self.entered=asyncio.Event()
+        self.release=asyncio.Event()
+    async def generate(self, **kwargs):
+        if kwargs.get('execution_feedback') and not self.release.is_set():
+            self.entered.set()
+            await self.release.wait()
+        return await super().generate(**kwargs)
+
+
+class _SlowCheckpointFixture(_CheckpointToolFixture):
+    async def create(self, **kwargs):
+        response=await super().create(**kwargs)
+        call=response.choices[0].message.tool_calls[0]
+        if call.function.name=='freecad_execute':
+            args=json.loads(call.function.arguments)
+            if args['execution_mode']=='final':
+                args['operations'][0]['args']['source']='import time\ntime.sleep(5)\n'+args['operations'][0]['args']['source']
+                call.function.arguments=json.dumps(args)
+        return response
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('interruption',['generation','execution','cancel'])
+async def test_freecad_checkpoint_survives_worker_restart_without_rebuilding_base(interruption,monkeypatch):
+    from app.services.workflow_admission import create_document_workflow
+    owner,project_id,initial=await _seed_project('checkpoint-restart')
+    objective='Create a 60x40x8 mm plate with one centered 6 mm through hole.'
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+        created=await create_document_workflow(conn,tenant_id=owner.tenant_id,project_id=project_id,
+            requested_by_principal_id=owner.principal_id,kind='mcad.agent.v2.generate',
+            idempotency_key=f'checkpoint-restart-{project_id}',request_payload={'objective':objective})
+    request=McadAgentWorkflowV2Request(workflow_run_id=created.workflow_id,tenant_id=owner.tenant_id,
+        project_id=project_id,principal_id=owner.principal_id,branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,operation='generate',modeling_backend='freecad',objective=objective)
+    client=await get_temporal_client()
+    generator=_RestartCheckpointFixture() if interruption=='generation' else _SlowCheckpointFixture()
+    backend=get_execution_backend()
+    # A configured legacy one-second fallback must not kill the new leased CAD
+    # job, including its deliberately slower real FreeCAD program.
+    monkeypatch.setattr(settings,'sandbox_timeout_s',1)
+    original_execute=backend.execute
+    native_specs=[]
+    async def observe(spec,**kwargs):
+        assert spec.limits.timeout_seconds is None
+        if spec.capability=='mcad.freecad':native_specs.append(spec)
+        return await original_execute(spec,**kwargs)
+    monkeypatch.setattr(backend,'execute',observe)
+    worker_args=dict(backend=backend,durable_planner=_EngineeringAcceptancePlanner(6),
+                     durable_visual=_V2PassingVisualStub(),freecad_operations=generator)
+    async with build_agent_v2_workflow_worker(client,**worker_args):
+        handle=await client.start_workflow('McadAgentWorkflowV2',request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),task_queue=settings.temporal_agent_v2_task_queue)
+        await _wait_for_status(owner,created.workflow_id,{'waiting_confirmation'})
+        await confirm_mcad_workflow(created.workflow_id,accepted=True,note='Checkpoint restart contract',workflow_kind='mcad.agent.v2.generate')
+        if interruption=='generation':
+            await generator.entered.wait()
+        else:
+            # Observe the real Docker container, not merely a queued activity.
+            while len(native_specs)<2 or not backend._sandbox._active_containers:
+                await asyncio.sleep(0.05)
+        async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+            before=(await conn.execute(text('SELECT id,manifest_hash FROM agent_staging_manifests WHERE workflow_run_id=:id'),{'id':created.workflow_id})).mappings().one()
+        assert generator.calls==(1 if interruption=='generation' else 3)
+        if interruption=='cancel':
+            await cancel_mcad_workflow(tenant_id=owner.tenant_id,principal_id=owner.principal_id,
+                workflow_run_id=created.workflow_id,reason='Cancel active native checkpoint continuation')
+            result=await handle.result()
+            assert result['status']=='cancelled'
+            while backend._sandbox._active_containers:
+                await asyncio.sleep(0.05)
+    assert not backend._sandbox._active_containers
+    if interruption=='cancel':
+        async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+            assert await conn.scalar(text('SELECT count(*) FROM agent_staging_manifests WHERE workflow_run_id=:id'),{'id':created.workflow_id})==1
+            assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'),{'id':created.workflow_id})==0
+        return
+    # A new worker must consume the persisted native checkpoint. The provider
+    # has never emitted the second transaction and no in-memory document exists.
+    if interruption=='generation':generator.release.set()
+    async with build_agent_v2_workflow_worker(client,**worker_args):
+        result=await handle.result()
+        assert result['status']=='succeeded'
+    assert generator.calls==3  # one first execute, then inspect and final execute
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+        after=(await conn.execute(text('SELECT id,manifest_hash FROM agent_staging_manifests WHERE workflow_run_id=:id ORDER BY created_at'),{'id':created.workflow_id})).mappings().all()
+        assert len(after)==2 and dict(after[0])==dict(before)
+        assert await conn.scalar(text("SELECT count(*) FROM execution_attempts WHERE workflow_run_id=:id AND status='succeeded' AND result_payload->>'source_id'=(SELECT manifest->>'source_id' FROM agent_staging_manifests WHERE id=:manifest)"),{'id':created.workflow_id,'manifest':before['id']})==1
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.skipif(not REAL_FREECAD_AGENT, reason='paid FreeCAD tool provider explicitly enabled')
+async def test_agent_v2_live_freecad_tools_contract():
+    await test_native_engineering_acceptance_gates_commit(6, 'live_tools')
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.skipif(not REAL_FREECAD_AGENT, reason='paid checkpoint provider explicitly enabled')
+async def test_agent_v2_live_freecad_checkpoint_contract():
+    await test_native_engineering_acceptance_gates_commit(6, 'live_checkpoints')
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('required_diameter',[6,7])
+@pytest.mark.parametrize('execution_path',['typed','api','tools','tool_repair','checkpoint','checkpoint_repair','requirements_tool'])
+async def test_native_engineering_acceptance_gates_commit(required_diameter,execution_path):
+    """Real Temporal→FreeCAD→STEP→S3→DB→seal/commit, controlled requirements/vision.
+
+    The negative deliberately plans a 6 mm hole while the frozen criterion asks
+    for 7 mm. A correct volume/bounds/closed-solid check must not authorize it.
+    """
+    from app.services.workflow_admission import create_document_workflow
+    owner,project_id,initial=await _seed_project('engineering-acceptance')
+    objective=f'Create a 60x40x8 mm plate with one centered {required_diameter} mm through hole.'
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+        created=await create_document_workflow(conn,tenant_id=owner.tenant_id,project_id=project_id,
+            requested_by_principal_id=owner.principal_id,kind='mcad.agent.v2.generate',
+            idempotency_key=f'engineering-{project_id}',request_payload={'objective':objective})
+    request=McadAgentWorkflowV2Request(workflow_run_id=created.workflow_id,tenant_id=owner.tenant_id,
+        project_id=project_id,principal_id=owner.principal_id,branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,operation='generate',modeling_backend='freecad',objective=objective)
+    client=await get_temporal_client()
+    operation_generator = (_LiveCheckpointProvider() if execution_path=='live_checkpoints' else
+        _LiveToolProvider() if execution_path=='live_tools' else
+        _CheckpointToolFixture(fail_first=execution_path=='checkpoint_repair') if execution_path.startswith('checkpoint') else
+        _NativeAPIProgramFixture() if execution_path=='api' else
+        _NativeToolProgramFixture(fail_first=execution_path=='tool_repair') if execution_path in {'tools','tool_repair'} else None)
+    durable_planner=_EngineeringAcceptancePlanner(required_diameter)
+    requirements_provider=None
+    if execution_path=='requirements_tool':
+        from types import SimpleNamespace
+        from app.agent.planner import Planner
+        requirements_provider=_RequirementsToolFixture(objective)
+        durable_planner.planner=Planner()
+        durable_planner.planner._client=SimpleNamespace(chat=SimpleNamespace(completions=requirements_provider))
+    async with build_agent_v2_workflow_worker(client,backend=get_execution_backend(),
+            durable_planner=durable_planner,durable_visual=_V2PassingVisualStub(),
+            **({'freecad_operations':operation_generator} if operation_generator else {})):
+        handle=await client.start_workflow('McadAgentWorkflowV2',request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),task_queue=settings.temporal_agent_v2_task_queue)
+        await _wait_for_status(owner,created.workflow_id,{'waiting_confirmation'})
+        await confirm_mcad_workflow(created.workflow_id,accepted=True,note='Deterministic measurement contract test',workflow_kind='mcad.agent.v2.generate')
+        if required_diameter==6:
+            result=await handle.result()
+            assert result['status']=='succeeded'
+        else:
+            with pytest.raises(WorkflowFailureError) as error:
+                await handle.result()
+            assert error.value.cause.type=='agent_geometry_validation_failed'
+    if requirements_provider:
+        assert requirements_provider.calls==2
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+        rows=(await conn.execute(text("SELECT outcome,evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"),{'id':created.workflow_id})).mappings().all()
+        assert len(rows)==1
+        report=rows[0]['evidence'];assert report['request_sha256']
+        measured={e['check_id']:e for e in report['acceptance']['evidence']}
+        assert measured['hole-diameter']['measured']==[6]
+        if execution_path=='live_checkpoints':
+            staged=(await conn.execute(text('SELECT manifest FROM agent_staging_manifests WHERE workflow_run_id=:id ORDER BY created_at'),{'id':created.workflow_id})).scalars().all()
+            assert len(staged)>=2
+            assert staged[-1]['execution_mode']=='final'
+            assert any(s['execution_mode']=='checkpoint' for s in staged[:-1])
+            dispatched=(await conn.execute(text("SELECT payload FROM task_events WHERE workflow_run_id=:id AND event_type='agent.freecad.tool_dispatched' ORDER BY sequence"),{'id':created.workflow_id})).scalars().all()
+            assert len(dispatched)>=len(staged) and all(d['provider_response_id'] for d in dispatched)
+            assert await conn.scalar(text("SELECT count(*) FROM task_events WHERE workflow_run_id=:id AND event_type='agent.freecad.tool_read' AND payload->'call'->'function'->>'name'='freecad_inspect'"),{'id':created.workflow_id})>0
+        if execution_path.startswith('checkpoint'):
+            from app.workflows.checkpoint_inputs import checkpoint_context
+            from temporalio.exceptions import ApplicationError
+            stages=(await conn.execute(text('SELECT id, candidate_build_id, manifest FROM agent_staging_manifests WHERE workflow_run_id=:id ORDER BY created_at'),{'id':created.workflow_id})).mappings().all()
+            assert len(stages)==2
+            first, final = stages
+            assert first['manifest']['execution_mode']=='checkpoint'
+            assert final['manifest']['execution_mode']=='final'
+            assert final['manifest']['predecessor_checkpoint_id']==str(first['id'])
+            assert {a['format'] for a in first['manifest']['outputs']}=={'fcstd','state','capability-result'}
+            state, feedback=await checkpoint_context(request,first['candidate_build_id'],first['id'])
+            assert any(o['name']=='Base' for o in state['objects'])
+            assert not any(o['name'] in {'Tool','Final'} for o in state['objects'])
+            assert feedback['engineering_validation']=='pending'
+            with pytest.raises(ApplicationError, match='this workflow and candidate'):
+                await checkpoint_context(request,uuid4(),first['id'])
+            with pytest.raises(ApplicationError, match='execution mode'):
+                await checkpoint_context(request,final['candidate_build_id'],final['id'])
+            if execution_path=='checkpoint_repair':
+                assert await conn.scalar(text("SELECT count(*) FROM execution_attempts WHERE workflow_run_id=:id AND status='failed'"),{'id':created.workflow_id})==1
+        if execution_path in {'tools','tool_repair','live_tools'}:
+            dispatched=(await conn.execute(text("SELECT payload FROM task_events WHERE workflow_run_id=:id AND event_type='agent.freecad.tool_dispatched' ORDER BY sequence"),{'id':created.workflow_id})).scalars().all()
+            if execution_path=='live_tools':
+                assert dispatched and all(d['provider_response_id'] for d in dispatched)
+                assert await conn.scalar(text("SELECT count(*) FROM task_events WHERE workflow_run_id=:id AND event_type='agent.freecad.tool_read'"),{'id':created.workflow_id}) > 0
+            else:
+                assert len(dispatched)==(2 if execution_path=='tool_repair' else 1)
+            staged=(await conn.execute(text('SELECT a.result_payload FROM agent_staging_manifests m JOIN execution_attempts a ON a.id=m.execution_attempt_id WHERE m.workflow_run_id=:id'),{'id':created.workflow_id})).scalars().all()
+            assert len(staged)==1
+            receipt=staged[0]['tool_result']
+            assert receipt['status']=='executed' and receipt['saved_revision'] is None
+            assert receipt['engineering_validation']=='pending'
+            assert receipt['source_hash']==dispatched[-1]['source_hash']
+            assert receipt['source_id']==dispatched[-1]['source_id']
+            if execution_path!='live_tools':
+                assert operation_generator.calls==(3 if execution_path=='tool_repair' else 2)
+        if required_diameter==7:
+            assert rows[0]['outcome']=='failed' and measured['hole-diameter']['outcome']=='failed'
+            assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'),{'id':created.workflow_id})==0
+            assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'),{'id':initial.branch_id})==initial.revision_id
+    if required_diameter==6:
+        change_set=UUID(result['change_set_id'])
+        await accept_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,change_set_id=change_set)
+        committed=await commit_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,change_set_id=change_set)
+        assert committed.status=='committed'
+        if execution_path=='tools':
+            from functools import partial
+            from temporalio.testing import ActivityEnvironment
+            from app.workflows.handlers.native_generation import agent_generate_operations
+            from app.workflows.handlers.cad_execution import agent_execute_freecad
+            async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+                job_payload=await conn.scalar(text("SELECT payload FROM model_jobs WHERE workflow_run_id=:id AND operation='agent_v2.generate_operations'"),{'id':created.workflow_id})
+            # Replay after commit must return persisted results, never call the
+            # provider again or rerun CAD against the now-different branch head.
+            replay=await agent_generate_operations(job_payload,freecad_operations=operation_generator)
+            assert replay['replayed'] and operation_generator.calls==2
+            replay_execution=await ActivityEnvironment().run(
+                partial(agent_execute_freecad,backend=get_execution_backend()),{**job_payload,**replay})
+            assert replay_execution['replayed']
+            assert replay_execution['tool_result']==receipt
+        if execution_path in {'live_tools','live_checkpoints'} and os.environ.get('CAD_NATIVE_TOOL_REPORT'):
+            async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+                sources=(await conn.execute(text('SELECT provider, model, provider_response_id, request_hash, response_hash, finish_reason, usage, source_hash, source_code FROM agent_generated_sources WHERE workflow_run_id=:id ORDER BY created_at'),{'id':created.workflow_id})).mappings().all()
+            Path(os.environ['CAD_NATIVE_TOOL_REPORT']).write_text(json.dumps({
+                'status':'passed','workflow_id':str(created.workflow_id),'model_tool_provider':'live',
+                'requirements_provider':'controlled_frozen_contract','vision_provider':'controlled_passing_fixture',
+                'runtime':'real_FreeCAD_Temporal_PostgreSQL_S3','tool_calls':dispatched,
+                'sources':[dict(row) for row in sources],'geometry':report,'commit_status':committed.status,
+                'scope':'tool protocol integration only; not end-user model success rate',
+                'execution_path':execution_path},ensure_ascii=False,indent=2))

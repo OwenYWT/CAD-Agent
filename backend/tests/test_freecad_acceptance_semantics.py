@@ -50,3 +50,15 @@ def test_exact_negative_edge_constraint_is_consumed_not_dropped():
     assert compile_common_generation(request, output_formats=("step",)) is not None
     request["features"].append("fillet:radius=1,edges=all_outer")
     assert compile_common_generation(request, output_formats=("step",)) is None
+
+
+@pytest.mark.parametrize("part_type,dimensions", [
+    ("plate", {"width":60,"depth":40,"thickness":8}),
+    ("cylinder", {"diameter":20,"height":30}),
+])
+def test_compiler_does_not_translate_geometry_to_satisfy_coordinate_constraints(part_type,dimensions):
+    plan = compile_common_generation({"part_type":part_type,"dimensions":dimensions,
+        "features":[],"constraints":[]}, output_formats=("step",))
+    assert plan is not None
+    geometry = next(op.args["geometry"] for op in plan.operations if op.action.startswith("sketch.add_") and "geometry" in op.args)
+    assert geometry.get("corner",geometry.get("center")) == {"x":0,"y":0}

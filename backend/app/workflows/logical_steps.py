@@ -135,7 +135,7 @@ async def _start_agent_logical_step(
     tenant_id: UUID,
     workflow_id: UUID,
     step_key: str,
-    step_index: int,
+    step_index: int | None,
     kind: str,
 ) -> UUID:
     status = await _workflow_status(connection, workflow_id)

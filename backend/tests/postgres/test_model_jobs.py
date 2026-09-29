@@ -282,7 +282,8 @@ async def test_real_continue_as_new_keeps_one_job_and_provider_operation(request
     from temporalio.client import Client
     from app.workers.model_job_worker import ModelJobWorker
     from app.workflows.model_job import ModelJobWorkflow
-    client = await Client.connect(os.environ['CAD_MODEL_JOB_TEST_TEMPORAL'])
+    client = await Client.connect(os.environ['CAD_MODEL_JOB_TEST_TEMPORAL'],
+                                  namespace=os.getenv('CAD_MODEL_JOB_TEST_TEMPORAL_NAMESPACE', 'default'))
     original_sleep = workflow.sleep
     async def short_poll(duration):
         return await original_sleep(timedelta(milliseconds=1))

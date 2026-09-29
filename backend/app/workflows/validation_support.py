@@ -264,7 +264,21 @@ async def _complete_check_workflow(
     }
 
 
-async def _record_freecad_inspections(connection, request, step_key, provenance):
+async def _record_freecad_inspections(connection, request, step_key, provenance, *, source_id=None, source_hash=None):
+    for index, call in enumerate(provenance.get("tool_calls", [])):
+        await append_workflow_event(connection, tenant_id=request.tenant_id,
+            workflow_id=request.workflow_run_id, event_type="agent.freecad.tool_read",
+            payload={"step_key": step_key, "index": index, **call})
+    if provenance.get("execution_tool_call"):
+        import hashlib
+        call = provenance["execution_tool_call"]
+        await append_workflow_event(connection, tenant_id=request.tenant_id,
+            workflow_id=request.workflow_run_id, event_type="agent.freecad.tool_dispatched",
+            payload={"step_key": step_key, "tool_call_id": call["id"],
+                "tool_name": call["function"]["name"], "source_id": str(source_id),
+                "source_hash": source_hash, "status": "pending_execution",
+                "provider_response_id": provenance.get("provider_response_id"),
+                "arguments_sha256": hashlib.sha256(call["function"]["arguments"].encode()).hexdigest()})
     if provenance.get('engineering_evidence'):
         await append_workflow_event(connection, tenant_id=request.tenant_id, workflow_id=request.workflow_run_id,
             event_type='agent.engineering_evidence.used', payload={'step_key':step_key,
@@ -274,3 +288,20 @@ async def _record_freecad_inspections(connection, request, step_key, provenance)
         await append_workflow_event(connection, tenant_id=request.tenant_id,
             workflow_id=request.workflow_run_id, event_type="agent.kernel_inspected",
             payload={"step_key": step_key, "inspection_index": index, **inspection})
+
+
+async def record_freecad_rejection(request, step_key: str, evidence: dict) -> None:
+    """Persist rejected provider output privately; events carry only integrity metadata."""
+    import hashlib
+    import json
+    from app.object_store import put_object
+    payload = json.dumps(evidence, ensure_ascii=False, sort_keys=True).encode('utf-8')
+    digest = hashlib.sha256(payload).hexdigest()
+    key = f"tenants/{request.tenant_id}/workflow-evidence/{request.workflow_run_id}/{digest}.json"
+    stored = await put_object(key, payload, content_type='application/json')
+    async with tenant_transaction(request.tenant_id, request.principal_id) as connection:
+        await append_workflow_event(connection, tenant_id=request.tenant_id,
+            workflow_id=request.workflow_run_id, event_type='agent.freecad.plan_rejected',
+            payload={'step_key':step_key,'error_type':evidence['error_type'],
+                'attempt':evidence['attempt'], 'evidence_object_key':stored['key'],
+                'sha256':stored['sha256'],'size_bytes':stored['size_bytes']})

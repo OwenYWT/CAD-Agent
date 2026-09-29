@@ -55,13 +55,13 @@ async def test_rejected_early_plan_can_recover_through_checkpoint_inspection():
         output_formats=('step','stl'),base_state=state)
     assert client.completions.calls==3
     messages=client.completions.kwargs[-1]['messages']
-    assert '"inspect"' in json.loads(messages[1]['content'])['next_response']
+    assert 'freecad_inspect' in json.loads(messages[1]['content'])['next_response']
     assert json.loads(messages[2]['content'])==early_plan
     assert messages[2]['role']=='assistant'
     assert 'Do not return an operation plan' in messages[3]['content']
     measurement=json.loads(messages[-1]['content'])
     assert measurement['inspection_result']['objects'][0]['properties']['items']==[
         {'name':'Length','value':'10.00 mm'}]
-    assert measurement['remaining_inspection_queries']==2
+    assert 'remaining_inspection_queries' not in measurement
     assert result.provenance['inspection_calls'][0]['request']['objects']==['Pad']
     assert result.provenance['inspection_calls'][0]['result']==measurement['inspection_result']

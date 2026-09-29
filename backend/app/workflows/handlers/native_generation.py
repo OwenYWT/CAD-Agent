@@ -18,9 +18,18 @@ from app.workflows.logical_steps import _start_agent_logical_step, _fail_agent_l
 from app.workflows.inputs import _uuid, _agent_v2_request
 from app.workflows.handlers.legacy_modeling import plan
 from app.workflows.execution_support import _await_provider_operation
-from app.workflows.validation_support import _record_freecad_inspections
+from app.workflows.validation_support import _record_freecad_inspections, record_freecad_rejection
 from app.workflows.revision_inputs import _revision_restore_operation_plan
 from app.workflows.errors import planning_error
+from app.workflows.checkpoint_inputs import checkpoint_context
+
+
+def _provenance_reference(provenance):
+    # Full read results live in task events. Do not copy document-sized
+    # inspection traces into every Temporal model-job completion.
+    return {key: provenance[key] for key in (
+        'provider','model','provider_response_id','request_hash','response_hash','finish_reason','usage'
+    ) if key in provenance}
 
 async def agent_generate_operations(payload: dict[str, Any], *, freecad_operations: FreeCADOperationGenerator) -> dict[str, Any]:
     request = _agent_v2_request(payload)
@@ -36,6 +45,11 @@ async def agent_generate_operations(payload: dict[str, Any], *, freecad_operatio
         )
     step = AgentPlanStep.model_validate(payload["step"])
     candidate_build_id = _uuid(payload, "candidate_build_id")
+    base_state = payload.get("base_state")
+    feedback = None
+    if payload.get("checkpoint_manifest_id"):
+        base_state, feedback = await checkpoint_context(request, candidate_build_id,
+            payload["checkpoint_manifest_id"], base_state)
     async with tenant_transaction(
         request.tenant_id,
         request.principal_id,
@@ -70,7 +84,7 @@ async def agent_generate_operations(payload: dict[str, Any], *, freecad_operatio
             tenant_id=request.tenant_id,
             workflow_id=request.workflow_run_id,
             step_key=step.step_key,
-            step_index=int(payload["step_index"]),
+            step_index=None if payload.get("checkpoint_enabled") else int(payload["step_index"]),
             kind="agent_freecad_operations",
         )
     try:
@@ -116,15 +130,20 @@ async def agent_generate_operations(payload: dict[str, Any], *, freecad_operatio
                 "usage": {},
             }
         else:
+            async def rejection_sink(evidence):
+                await record_freecad_rejection(request, step.step_key, evidence)
             generated = await _await_provider_operation(freecad_operations.generate(
                 plan=plan,
                 requirements=dict(payload["requirements"]),
                 base_state=(
-                    dict(payload["base_state"])
-                    if payload.get("base_state") is not None
+                    dict(base_state)
+                    if base_state is not None
                     else None
                 ),
                 output_formats=request.output_formats,
+                rejection_sink=rejection_sink,
+                **({"checkpoint_enabled": True, "execution_feedback": feedback}
+                   if payload.get("checkpoint_enabled") else {}),
             ))
             source_code = generated.source_code
             generator_kind = generated.generator_kind
@@ -158,14 +177,15 @@ async def agent_generate_operations(payload: dict[str, Any], *, freecad_operatio
                 usage=dict(provenance.get("usage") or {}),
             )
             if not recorded.replayed:
-                await _record_freecad_inspections(connection, request, step.step_key, provenance)
+                await _record_freecad_inspections(connection, request, step.step_key, provenance,
+                    source_id=recorded.source_id, source_hash=recorded.source_hash)
         return {
             "source_id": str(recorded.source_id),
             "source_hash": recorded.source_hash,
             "source_code": source_code,
             "mode": "3d",
             "generator_kind": generator_kind,
-            "provenance": provenance,
+            "provenance": _provenance_reference(provenance),
             "replayed": recorded.replayed,
         }
     except Exception as exc:
@@ -285,19 +305,26 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
             tenant_id=request.tenant_id,
             workflow_id=request.workflow_run_id,
             step_key=repair_step_key,
-            step_index=int(payload["step_index"]),
+            step_index=None if payload.get("checkpoint_enabled") else int(payload["step_index"]),
             kind="agent_freecad_repair",
         )
     try:
+        async def rejection_sink(evidence):
+            await record_freecad_rejection(request, repair_step_key, evidence)
+        base_state = payload.get('base_state')
+        if payload.get('checkpoint_manifest_id'):
+            base_state, _ = await checkpoint_context(request, candidate_build_id,
+                payload['checkpoint_manifest_id'], base_state)
         repaired = await _await_provider_operation(freecad_operations.repair(
             source_code=str(source["source_code"]),
             failure=failure,
             base_state=(
-                dict(payload["base_state"])
-                if payload.get("base_state") is not None
+                dict(base_state)
+                if base_state is not None
                 else None
             ),
             output_formats=request.output_formats,
+            rejection_sink=rejection_sink,
         ))
         provenance = repaired.provenance
         async with tenant_transaction(
@@ -330,7 +357,8 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
                 usage=dict(provenance.get("usage") or {}),
             )
             if not recorded.replayed:
-                await _record_freecad_inspections(connection, request, repair_step_key, provenance)
+                await _record_freecad_inspections(connection, request, repair_step_key, provenance,
+                    source_id=recorded.source_id, source_hash=recorded.source_hash)
             await append_workflow_event(
                 connection,
                 tenant_id=request.tenant_id,
@@ -355,7 +383,7 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
             "failure_class": decision.failure_class,
             "strategy": decision.strategy,
             "signature": decision.signature,
-            "provenance": provenance,
+            "provenance": _provenance_reference(provenance),
             "replayed": recorded.replayed,
         }
     except Exception as exc:

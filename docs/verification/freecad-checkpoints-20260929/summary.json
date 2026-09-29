@@ -1,0 +1,911 @@
+{
+  "date": "2026-09-29",
+  "goal_status": "partial_progress_not_all_goals_completed",
+  "workspace": "/Users/wentao/CAD-Agent-native-reliability",
+  "branch": "fix/native-engineering-reliability",
+  "pushed": false,
+  "deployed": false,
+  "final_app_sha256": "36a1166861b5e56450751789c57c01e9e351070177d6d9316c5e5858b9b0c331",
+  "runtime_unit": {
+    "passed": 1700,
+    "skipped": 204,
+    "failures": 0,
+    "skip_details": [
+      {
+        "case": "test_late_workflow_failure_during_cancellation_reaches_a_terminal_state",
+        "reason": "real PostgreSQL and MinIO are required"
+      },
+      {
+        "case": "test_explicit_visual_failure_cannot_be_sealed_even_when_advisory",
+        "reason": "real PostgreSQL and MinIO are required"
+      },
+      {
+        "case": "test_candidate_seal_commits_once_and_preserves_advisory_risks",
+        "reason": "real PostgreSQL and MinIO are required"
+      },
+      {
+        "case": "test_concurrent_seal_creates_one_revision_and_change_set",
+        "reason": "real PostgreSQL and MinIO are required"
+      },
+      {
+        "case": "test_tampered_staging_and_missing_required_evidence_fail_closed",
+        "reason": "real PostgreSQL and MinIO are required"
+      },
+      {
+        "case": "test_cross_candidate_manifest_selection_is_rejected",
+        "reason": "real PostgreSQL and MinIO are required"
+      },
+      {
+        "case": "test_superseded_manifest_selection_is_rejected",
+        "reason": "real PostgreSQL and MinIO are required"
+      },
+      {
+        "case": "test_stale_base_copy_is_not_committed_and_orphan_is_reconciled",
+        "reason": "real PostgreSQL and MinIO are required"
+      },
+      {
+        "case": "test_copy_crash_reconciles_without_duplicate_products[after_partial_copy]",
+        "reason": "real PostgreSQL and MinIO are required"
+      },
+      {
+        "case": "test_copy_crash_reconciles_without_duplicate_products[after_all_copies]",
+        "reason": "real PostgreSQL and MinIO are required"
+      },
+      {
+        "case": "test_cleanup_crash_reconciles_committed_seal",
+        "reason": "real PostgreSQL and MinIO are required"
+      },
+      {
+        "case": "test_execute_replay_download_review_and_stale_base_matrix",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_engineering_check_is_durable_downloadable_and_idempotent",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_conversational_ws_submits_once_then_replays_after_disconnect",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_real_generate_runs_llm_inside_temporal_before_podman",
+        "reason": "set CAD_AGENT_TEST_LLM=1 for the real planner/codegen provider"
+      },
+      {
+        "case": "test_real_change_set_api_accepts_signals_commits_and_reads_revision",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_real_manual_accept_commit_reject_and_request_change_apis",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_real_task_cancel_api_stops_execution_without_artifacts",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_import_replay_collision_quarantine_and_rollback",
+        "reason": "real PostgreSQL and S3-compatible storage are required"
+      },
+      {
+        "case": "test_import_rollback_preserves_post_import_document_evidence",
+        "reason": "real PostgreSQL and S3-compatible storage are required"
+      },
+      {
+        "case": "test_import_reports_existing_global_invite_collision",
+        "reason": "real PostgreSQL and S3-compatible storage are required"
+      },
+      {
+        "case": "test_presigned_put_head_read_copy_list_and_delete_round_trip",
+        "reason": "CAD_AGENT_TEST_OBJECT_STORE=1 is required for real MinIO tests"
+      },
+      {
+        "case": "test_register_login_session_codes_and_atomic_invite_consumption",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required"
+      },
+      {
+        "case": "test_capability_artifact_survives_local_cache_loss",
+        "reason": "real PostgreSQL and S3-compatible storage are required"
+      },
+      {
+        "case": "test_compat_workflow_progress_result_cancel_and_owner_isolation",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required"
+      },
+      {
+        "case": "test_dfm_and_knowledge_are_seeded_mutable_and_tenant_isolated",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required"
+      },
+      {
+        "case": "test_fusion_oauth_tokens_are_encrypted_one_time_and_tenant_isolated",
+        "reason": "real PostgreSQL and S3-compatible storage are required"
+      },
+      {
+        "case": "test_fusion_agent_metadata_audit_and_artifacts_are_durable",
+        "reason": "real PostgreSQL and S3-compatible storage are required"
+      },
+      {
+        "case": "test_workspace_revisions_restore_feedback_and_tenant_isolation",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required"
+      },
+      {
+        "case": "test_ensure_workspace_identity_creates_session_and_branch",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required"
+      },
+      {
+        "case": "test_generated_bytes_commit_idempotently_and_download_after_local_delete",
+        "reason": "real PostgreSQL and S3-compatible storage are required"
+      },
+      {
+        "case": "test_agent_v2_real_freecad_generation_validation_seal_and_commit[en-protected-mouths]",
+        "reason": "set CAD_AGENT_TEST_REAL_FREECAD_AGENT=1 for the real fused flow"
+      },
+      {
+        "case": "test_agent_v2_real_freecad_generation_validation_seal_and_commit[zh-protected-mouths]",
+        "reason": "set CAD_AGENT_TEST_REAL_FREECAD_AGENT=1 for the real fused flow"
+      },
+      {
+        "case": "test_native_visual_negative_budget_with_real_kernel[advisory-failed-1]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_native_visual_negative_budget_with_real_kernel[required-failed-1]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_native_visual_negative_budget_with_real_kernel[required-indeterminate-0]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_real_geometry_capability_reports_valid_and_corrupt_artifacts",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_agent_v2_plan_waits_before_candidate_source_or_execution",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_agent_v2_confirmed_plan_seals_reviewable_candidate",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_agent_v2_real_visual_provider_persists_provenance",
+        "reason": "CAD_AGENT_TEST_REAL_VISION=1 is required for vision integration"
+      },
+      {
+        "case": "test_agent_v2_visual_mismatch_repairs_and_revalidates_geometry",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_agent_v2_user_code_failure_creates_durable_repair_attempt",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_agent_v2_geometry_failure_repairs_and_revalidates_new_manifest",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_agent_v2_repeated_repair_failure_stops_without_second_llm_call",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_agent_v2_complex_steps_survive_worker_restart_without_regeneration",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_agent_v2_assembly_executes_parts_then_combine_with_source_edges",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_agent_v2_assembly_partial_failure_preserves_successful_part",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_agent_v2_assembly_cancel_stops_active_parts_before_execution",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_agent_v2_real_repair_provider_persists_provenance_and_attempt",
+        "reason": "CAD_AGENT_TEST_REAL_LLM=1 is required for provider integration"
+      },
+      {
+        "case": "test_agent_v2_real_planner_retriever_codegen_and_execution_provenance",
+        "reason": "CAD_AGENT_TEST_REAL_LLM=1 is required for provider integration"
+      },
+      {
+        "case": "test_real_plan_model_validate_confirmation_export_and_replay",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_real_confirmation_timer_rejects_without_advancing_branch",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_real_cancellation_stops_execution_and_blocks_artifacts",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_nonretryable_user_code_failure_has_no_false_success",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_stale_base_fails_persisted_workflow_without_execution",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_worker_process_crash_retries_with_new_fenced_attempt",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_unsupported_required_measurement_is_not_a_user_confirmation_or_cad_success",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_curved_panel_tool_requires_whole_material_thickness_before_commit[2-advisory]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_curved_panel_tool_requires_whole_material_thickness_before_commit[2-required]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_curved_panel_tool_requires_whole_material_thickness_before_commit[3-advisory]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_freecad_checkpoint_survives_worker_restart_without_rebuilding_base[generation]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_freecad_checkpoint_survives_worker_restart_without_rebuilding_base[execution]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_freecad_checkpoint_survives_worker_restart_without_rebuilding_base[cancel]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_agent_v2_live_freecad_tools_contract",
+        "reason": "paid FreeCAD tool provider explicitly enabled"
+      },
+      {
+        "case": "test_agent_v2_live_freecad_checkpoint_contract",
+        "reason": "paid checkpoint provider explicitly enabled"
+      },
+      {
+        "case": "test_native_engineering_acceptance_gates_commit[typed-6]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_native_engineering_acceptance_gates_commit[typed-7]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_native_engineering_acceptance_gates_commit[api-6]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_native_engineering_acceptance_gates_commit[api-7]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_native_engineering_acceptance_gates_commit[tools-6]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_native_engineering_acceptance_gates_commit[tools-7]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_native_engineering_acceptance_gates_commit[tool_repair-6]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_native_engineering_acceptance_gates_commit[tool_repair-7]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_native_engineering_acceptance_gates_commit[checkpoint-6]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_native_engineering_acceptance_gates_commit[checkpoint-7]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_native_engineering_acceptance_gates_commit[checkpoint_repair-6]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_native_engineering_acceptance_gates_commit[checkpoint_repair-7]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_native_engineering_acceptance_gates_commit[requirements_tool-6]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_native_engineering_acceptance_gates_commit[requirements_tool-7]",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_real_websocket_replay_reconnect_slow_consumer_auth_and_retention",
+        "reason": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      },
+      {
+        "case": "test_candidate_create_and_terminal_lifecycle_are_idempotent",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_generated_source_is_provenanced_immutable_and_idempotent",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_staging_manifest_requires_current_succeeded_lease_and_replays",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_evidence_is_candidate_scoped_immutable_and_idempotent",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_seal_identity_is_one_per_candidate_and_content_bound",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_agent_candidate_tables_force_tenant_rls_and_worker_permissions",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_two_phase_commit_creates_immutable_artifacts_and_replays_once",
+        "reason": "real PostgreSQL and MinIO test configuration is required"
+      },
+      {
+        "case": "test_partial_upload_and_hash_mismatch_cannot_commit_success",
+        "reason": "real PostgreSQL and MinIO test configuration is required"
+      },
+      {
+        "case": "test_stale_lease_and_cancellation_cannot_attach_uploaded_bytes",
+        "reason": "real PostgreSQL and MinIO test configuration is required"
+      },
+      {
+        "case": "test_wrong_revision_and_real_object_store_outage_fail_closed",
+        "reason": "real PostgreSQL and MinIO test configuration is required"
+      },
+      {
+        "case": "test_orphan_cleanup_deletes_unknown_objects_but_preserves_artifacts",
+        "reason": "real PostgreSQL and MinIO test configuration is required"
+      },
+      {
+        "case": "test_generation_migration_uses_original_operation_and_keeps_unknown_history_null",
+        "reason": "real PostgreSQL and MinIO test configuration is required"
+      },
+      {
+        "case": "test_accept_commit_and_rollback_are_distinct_audited_operations",
+        "reason": "real PostgreSQL and MinIO test configuration is required"
+      },
+      {
+        "case": "test_file_damage_after_accept_does_not_commit_or_lose_accepted_state[missing]",
+        "reason": "real PostgreSQL and MinIO test configuration is required"
+      },
+      {
+        "case": "test_file_damage_after_accept_does_not_commit_or_lose_accepted_state[truncated]",
+        "reason": "real PostgreSQL and MinIO test configuration is required"
+      },
+      {
+        "case": "test_file_damage_after_accept_does_not_commit_or_lose_accepted_state[replaced]",
+        "reason": "real PostgreSQL and MinIO test configuration is required"
+      },
+      {
+        "case": "test_accept_requires_real_artifacts_and_successful_validation",
+        "reason": "real PostgreSQL and MinIO test configuration is required"
+      },
+      {
+        "case": "test_reject_and_request_change_never_advance_branch",
+        "reason": "real PostgreSQL and MinIO test configuration is required"
+      },
+      {
+        "case": "test_concurrent_accept_and_commit_are_idempotent_and_cas_safe",
+        "reason": "real PostgreSQL and MinIO test configuration is required"
+      },
+      {
+        "case": "test_stale_base_cannot_commit_an_already_accepted_change_set",
+        "reason": "real PostgreSQL and MinIO test configuration is required"
+      },
+      {
+        "case": "test_document_admission_and_event_roll_back_together",
+        "reason": "requires isolated CAD_AGENT_TEST_DATABASE_URL"
+      },
+      {
+        "case": "test_generic_workflow_does_not_implicitly_enqueue_document",
+        "reason": "requires isolated CAD_AGENT_TEST_DATABASE_URL"
+      },
+      {
+        "case": "test_real_queue_serializes_and_replays_without_duplicate_mutations",
+        "reason": "requires isolated CAD_AGENT_TEST_DATABASE_URL"
+      },
+      {
+        "case": "test_head_commit_rollback_delta_and_aba_stale_state",
+        "reason": "requires isolated CAD_AGENT_TEST_DATABASE_URL"
+      },
+      {
+        "case": "test_candidate_cas_rejects_old_generation_after_head_returns_to_same_revision",
+        "reason": "requires isolated CAD_AGENT_TEST_DATABASE_URL"
+      },
+      {
+        "case": "test_merge_candidate_rejects_source_aba_at_review_and_commit",
+        "reason": "requires isolated CAD_AGENT_TEST_DATABASE_URL"
+      },
+      {
+        "case": "test_candidate_generation_cannot_be_rewritten",
+        "reason": "requires isolated CAD_AGENT_TEST_DATABASE_URL"
+      },
+      {
+        "case": "test_projection_upgrade_preserves_immutable_v1_v2_and_v3_caches",
+        "reason": "requires isolated CAD_AGENT_TEST_DATABASE_URL"
+      },
+      {
+        "case": "test_viewer_presence_comments_and_tenant_isolation",
+        "reason": "requires isolated CAD_AGENT_TEST_DATABASE_URL"
+      },
+      {
+        "case": "test_real_cross_account_invitation_does_not_grant_tenant_ownership",
+        "reason": "requires isolated CAD_AGENT_TEST_DATABASE_URL"
+      },
+      {
+        "case": "test_queued_operation_cannot_run_after_workspace_membership_is_revoked",
+        "reason": "requires isolated CAD_AGENT_TEST_DATABASE_URL"
+      },
+      {
+        "case": "test_late_cancelled_attempt_cannot_cancel_its_replacement_step",
+        "reason": "requires isolated CAD_AGENT_TEST_DATABASE_URL"
+      },
+      {
+        "case": "test_editor_invite_grants_project_edit_only_and_replay_cannot_restore_downgraded_role",
+        "reason": "requires isolated CAD_AGENT_TEST_DATABASE_URL"
+      },
+      {
+        "case": "test_snapshot_freezes_tenant_rules_and_process_material_constraints",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_snapshot_rejects_unsupported_process_instead_of_silent_fallback",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_planning_steps_persist_and_replay_without_new_provider_calls",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_planning_failure_marks_step_failed_without_static_fallback",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_event_and_outbox_rows_commit_together_with_matching_payloads",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_every_run_table_forces_tenant_rls",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_concurrent_events_get_one_gapless_monotonic_workflow_sequence",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_transaction_rollback_leaves_neither_event_nor_outbox",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_task_events_are_append_only",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_all_replacement_tables_force_tenant_rls_and_have_named_policies",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_runtime_rows_are_visible_only_inside_the_owning_tenant",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_auth_role_is_narrow_and_runtime_cannot_read_auth_rows",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_quarantine_index_is_tenant_isolated_and_not_runtime_visible",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_idempotent_submission_and_conflicting_input",
+        "reason": "isolated migrated PostgreSQL required"
+      },
+      {
+        "case": "test_numeric_payload_and_result_survive_real_database_roundtrip",
+        "reason": "isolated migrated PostgreSQL required"
+      },
+      {
+        "case": "test_logical_step_replay_preserves_numeric_result",
+        "reason": "isolated migrated PostgreSQL required"
+      },
+      {
+        "case": "test_cancellation_closes_operation_and_preserves_account",
+        "reason": "isolated migrated PostgreSQL required"
+      },
+      {
+        "case": "test_expired_worker_lease_fences_old_writes",
+        "reason": "isolated migrated PostgreSQL required"
+      },
+      {
+        "case": "test_lease_database_failure_stops_provider_without_fabricating_failure",
+        "reason": "isolated migrated PostgreSQL required"
+      },
+      {
+        "case": "test_real_worker_returns_persisted_result",
+        "reason": "isolated migrated PostgreSQL required"
+      },
+      {
+        "case": "test_terminal_run_closes_outstanding_steps",
+        "reason": "isolated migrated PostgreSQL required"
+      },
+      {
+        "case": "test_other_tenant_cannot_read_job",
+        "reason": "isolated migrated PostgreSQL required"
+      },
+      {
+        "case": "test_provider_socket_cancellation_persists_real_usage_state",
+        "reason": "isolated migrated PostgreSQL required"
+      },
+      {
+        "case": "test_real_temporal_wait_and_cancellation",
+        "reason": "isolated migrated PostgreSQL required"
+      },
+      {
+        "case": "test_real_continue_as_new_keeps_one_job_and_provider_operation",
+        "reason": "isolated migrated PostgreSQL required"
+      },
+      {
+        "case": "test_separate_monitor_login_cannot_become_runtime_or_read_credentials",
+        "reason": "requires migrated isolated PostgreSQL"
+      },
+      {
+        "case": "test_monitor_requires_real_platform_admin",
+        "reason": "requires migrated isolated PostgreSQL"
+      },
+      {
+        "case": "test_actual_usage_nullable_failures_and_cross_workspace_account_grouping",
+        "reason": "requires migrated isolated PostgreSQL"
+      },
+      {
+        "case": "test_reader_cannot_write_or_read_prompts_or_credentials",
+        "reason": "requires migrated isolated PostgreSQL"
+      },
+      {
+        "case": "test_cancel_and_unfinished_are_not_success",
+        "reason": "requires migrated isolated PostgreSQL"
+      },
+      {
+        "case": "test_usage_context_does_not_cross_concurrent_accounts",
+        "reason": "requires migrated isolated PostgreSQL"
+      },
+      {
+        "case": "test_initial_branch_and_candidate_revision_are_immutable_and_uncommitted",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_change_set_idempotency_replays_and_rejects_different_candidate",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_concurrent_branch_cas_has_one_winner_and_preserves_both_candidates",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_revision_branch_and_change_set_tables_force_tenant_rls",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_cross_tenant_revision_ids_are_invisible",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_transition_matrices_cover_every_state_and_keep_terminals_closed",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_workflow_idempotency_hash_replays_and_rejects_payload_reuse",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_only_approved_workflow_and_step_transitions_are_accepted",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_retry_creates_a_new_immutable_attempt_instead_of_overwriting",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_lease_generation_fences_stale_workers_and_completion_replays_once",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_real_worker_role_can_lease_heartbeat_and_complete_without_bypass",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_attempt_identity_is_immutable_and_timeout_is_terminal",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_cancellation_intent_blocks_late_worker_completion",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_identity_mappings_are_stable_and_never_retain_raw_api_keys",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_one_authenticated_user_can_have_distinct_principals_in_multiple_tenants",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_project_policy_decisions_are_explicit[owner-delete_project-True]",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_project_policy_decisions_are_explicit[admin-manage_members-True]",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_project_policy_decisions_are_explicit[editor-modify_design-True]",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_project_policy_decisions_are_explicit[editor-manage_members-False]",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_project_policy_decisions_are_explicit[viewer-view_project-True]",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_project_policy_decisions_are_explicit[viewer-modify_design-False]",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_personal_tenant_project_membership_audit_and_usage_are_real",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_api_key_service_principal_stores_only_sha256_fingerprint",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_real_auth_dependency_binds_api_key_to_persisted_service_tenant",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_real_login_session_binds_user_to_personal_tenant",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_local_and_quarantine_mappings_persist_with_explicit_status",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_runtime_and_worker_roles_cannot_bypass_rls",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_every_control_plane_table_forces_rls_and_usage_is_provider_neutral",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_cross_tenant_ids_fail_and_pooled_transactions_do_not_leak_context",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_audit_records_are_append_only_even_inside_the_same_tenant",
+        "reason": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests"
+      },
+      {
+        "case": "test_upgrade_preserves_pending_job_and_unfinished_usage",
+        "reason": "requires dedicated empty migration database"
+      },
+      {
+        "case": "test_dispatch_is_atomic_with_workflow_and_queue",
+        "reason": "requires isolated PostgreSQL"
+      },
+      {
+        "case": "test_dispatch_leases_fence_expired_dispatchers",
+        "reason": "requires isolated PostgreSQL"
+      },
+      {
+        "case": "test_dispatch_payload_is_immutable_and_runtime_is_tenant_isolated",
+        "reason": "requires isolated PostgreSQL"
+      },
+      {
+        "case": "test_committed_intent_starts_real_kernel_without_client_retry",
+        "reason": "requires real Temporal and sandbox"
+      },
+      {
+        "case": "test_touching_assembly_exports_a_watertight_preview_stl[steelblue]",
+        "reason": "set RUN_REAL_PODMAN=1 to exercise the actual assembly STL exporter"
+      },
+      {
+        "case": "test_touching_assembly_exports_a_watertight_preview_stl[silver]",
+        "reason": "set RUN_REAL_PODMAN=1 to exercise the actual assembly STL exporter"
+      },
+      {
+        "case": "test_real_backend_runs_all_local_capability_families",
+        "reason": "set RUN_REAL_PODMAN=1 to exercise the actual unified MCAD runtime"
+      },
+      {
+        "case": "test_real_podman_backend_exports_step_and_stl",
+        "reason": "set RUN_REAL_PODMAN=1 to exercise the actual sandbox image"
+      },
+      {
+        "case": "test_real_natural_language_to_freecad_plate_with_hole",
+        "reason": "set RUN_REAL_FREECAD_AGENT=1 for real LLM-to-FreeCAD integration"
+      },
+      {
+        "case": "test_real_provider_requests_l2_measurement_then_modifies_native_model",
+        "reason": "requires real LLM and FreeCAD"
+      },
+      {
+        "case": "test_real_cadquery_assembly_steps_generate_native_freecad_bom",
+        "reason": "set RUN_REAL_FREECAD=1 to exercise native FreeCAD Assembly BOM"
+      },
+      {
+        "case": "test_real_freecad_generate_reopen_modify_replay_and_rollback",
+        "reason": "set RUN_REAL_FREECAD=1 to exercise the real FreeCAD sandbox"
+      },
+      {
+        "case": "test_real_structured_parameter_edits_revert_and_replay",
+        "reason": "requires real FreeCAD sandbox"
+      },
+      {
+        "case": "test_real_freecad_hole_pocket_fillet_and_chamfer",
+        "reason": "set RUN_REAL_FREECAD=1 to exercise the real FreeCAD sandbox"
+      },
+      {
+        "case": "test_real_freecad_semantic_selector_targets_current_circular_edge",
+        "reason": "set RUN_REAL_FREECAD=1 to exercise the real FreeCAD sandbox"
+      },
+      {
+        "case": "test_real_subtractive_features_change_solid_or_fail_closed",
+        "reason": "set RUN_REAL_FREECAD=1 to exercise the real FreeCAD sandbox"
+      },
+      {
+        "case": "test_real_through_hole_survives_thickness_changes_and_reopen",
+        "reason": "requires real FreeCAD"
+      },
+      {
+        "case": "test_simple_box_generation",
+        "reason": "ANTHROPIC_API_KEY not set"
+      },
+      {
+        "case": "test_websocket_handle_message",
+        "reason": "ANTHROPIC_API_KEY not set"
+      },
+      {
+        "case": "test_full_generation_with_validation",
+        "reason": "ANTHROPIC_API_KEY not set"
+      },
+      {
+        "case": "test_standard_parts_in_prompt",
+        "reason": "ANTHROPIC_API_KEY not set"
+      },
+      {
+        "case": "test_batch_generate_full",
+        "reason": "ANTHROPIC_API_KEY not set"
+      },
+      {
+        "case": "test_vector_retriever",
+        "reason": "chromadb unavailable (e.g. numpy>=2); production falls back to TF-IDF"
+      },
+      {
+        "case": "test_orchestrator_uses_vector_retriever",
+        "reason": "chromadb unavailable (e.g. numpy>=2); production falls back to TF-IDF"
+      },
+      {
+        "case": "test_real_sandbox_build123d_exports_step_and_stl",
+        "reason": "set RUN_REAL_PODMAN=1 to exercise the actual sandbox image"
+      },
+      {
+        "case": "test_real_sandbox_blocks_file_network_and_process_access[open('/etc/passwd').read()\\n-open]",
+        "reason": "set RUN_REAL_PODMAN=1 to exercise the actual sandbox image"
+      },
+      {
+        "case": "test_real_sandbox_blocks_file_network_and_process_access[import socket\\nsocket.socket()\\n-not allowed]",
+        "reason": "set RUN_REAL_PODMAN=1 to exercise the actual sandbox image"
+      },
+      {
+        "case": "test_real_sandbox_blocks_file_network_and_process_access[import subprocess\\nsubprocess.run(['true'])\\n-not allowed]",
+        "reason": "set RUN_REAL_PODMAN=1 to exercise the actual sandbox image"
+      },
+      {
+        "case": "test_real_execution_failures_are_normalized_and_bounded",
+        "reason": "set RUN_REAL_PODMAN=1 to exercise normalized real failures"
+      }
+    ],
+    "source": "current-source",
+    "pydantic": "2.7.0"
+  },
+  "full_service_regression": {
+    "passed": 41,
+    "skipped": 7,
+    "failures": 0,
+    "skip_details": [
+      {
+        "case": "test_agent_v2_real_freecad_generation_validation_seal_and_commit[en-protected-mouths]",
+        "reason": "set CAD_AGENT_TEST_REAL_FREECAD_AGENT=1 for the real fused flow"
+      },
+      {
+        "case": "test_agent_v2_real_freecad_generation_validation_seal_and_commit[zh-protected-mouths]",
+        "reason": "set CAD_AGENT_TEST_REAL_FREECAD_AGENT=1 for the real fused flow"
+      },
+      {
+        "case": "test_agent_v2_real_visual_provider_persists_provenance",
+        "reason": "CAD_AGENT_TEST_REAL_VISION=1 is required for vision integration"
+      },
+      {
+        "case": "test_agent_v2_real_repair_provider_persists_provenance_and_attempt",
+        "reason": "CAD_AGENT_TEST_REAL_LLM=1 is required for provider integration"
+      },
+      {
+        "case": "test_agent_v2_real_planner_retriever_codegen_and_execution_provenance",
+        "reason": "CAD_AGENT_TEST_REAL_LLM=1 is required for provider integration"
+      },
+      {
+        "case": "test_agent_v2_live_freecad_tools_contract",
+        "reason": "paid FreeCAD tool provider explicitly enabled"
+      },
+      {
+        "case": "test_agent_v2_live_freecad_checkpoint_contract",
+        "reason": "paid checkpoint provider explicitly enabled"
+      }
+    ],
+    "source": "validated-source",
+    "app_sha256": "cee2247e8be8bbf3597559893db149f58dcbd7be363b844ece07bfd2568a71ec",
+    "test_file": "backend/tests/integration/test_temporal_mcadd_workflow.py"
+  },
+  "final_tool_integration": {
+    "passed": 4,
+    "skipped": 0,
+    "failures": 0,
+    "skip_details": [],
+    "source": "current-source"
+  },
+  "last_delta": "Resolve JSON Schema references for fillet/chamfer parameter publication; runtime validators and kernel unchanged. Covered by full runtime unit suite and final tool integration. Source manifests retain this distinction.",
+  "native_contract_scripts": 19,
+  "released_histories": 12,
+  "browser_suites": 5,
+  "frontend_tests": 155,
+  "model_evidence": {
+    "full_cohort": "full-model-cohort.json",
+    "requirements_cohorts": [
+      "requirements-cohort.json",
+      "requirements-cohort-final.json"
+    ],
+    "offline_replay": "requirements-offline-replay.json",
+    "checkpoint": "live-checkpoint.json",
+    "usage_attribution": "requirements-usage-attribution.json"
+  },
+  "limitations": [
+    "Official capability inventory is not exhaustive functional certification",
+    "Whole-part normal material-layer proof has a restricted domain; unknown offsets remain unverified",
+    "Final code has not had another full paid ten-case modeling or live modification cohort",
+    "Full clean AppImage image build and Tencent cloud rollout not verified"
+  ],
+  "database_contracts": {
+    "passed": 18,
+    "skipped": 0,
+    "failures": 0,
+    "source": "current-source",
+    "scope": "Real PostgreSQL/Temporal; controlled operations; idempotency, cancellation, fencing, continue-as-new without restarting the operation, usage isolation, monitor read-only access",
+    "test_files": [
+      "backend/tests/postgres/test_model_jobs.py",
+      "backend/tests/postgres/test_monitoring.py"
+    ]
+  }
+}

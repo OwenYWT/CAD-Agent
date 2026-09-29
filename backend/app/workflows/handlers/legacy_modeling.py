@@ -1,5 +1,6 @@
 """Legacy modeling use cases; Temporal names live in the adapter."""
 from __future__ import annotations
+from app.config import settings
 import asyncio
 import hashlib
 import shutil
@@ -403,7 +404,7 @@ async def execute(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict
                 platform=snapshot.platform,
                 sandbox_tier="ephemeral-job",
             ),
-            limits=ResourceLimits(
+            limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit,
                 timeout_seconds=int(execution["timeout_seconds"]),
                 **({"memory_bytes": 1024 * 1024 * 1024, "pids": 256,
                     "cpu_millis": 2000, "output_bytes": 128 * 1024 * 1024} if inputs else {}),

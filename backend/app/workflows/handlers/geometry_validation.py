@@ -1,5 +1,8 @@
 """Geometry validation use cases; Temporal names live in the adapter."""
 from __future__ import annotations
+from app.config import settings
+from app.contracts.acceptance import AcceptanceContract, acceptance_outcome
+from app.contracts.geometry_request import geometry_request_digest
 import asyncio
 import hashlib
 import json
@@ -9,13 +12,14 @@ from pathlib import Path
 from typing import Any
 from sqlalchemy import text
 from temporalio import activity
+from app.workflows.execution_support import execution_identity, execution_timeout
 from temporalio.exceptions import ApplicationError
 from app.db import tenant_transaction
 from app.execution.backend import ExecutionBackend, MaterializedExecutionOutcome
 from app.execution.contracts import ArtifactInput, ExecutionSource, ExecutionSpec, ExecutionStatus, OutputDeclaration, ResourceLimits, RuntimeRequirement
 from app.object_store import download_object
 from app.repositories.agent_candidates import get_validation_evidence_for_manifest
-from app.validation.durable_geometry import DurableGeometryReport, indeterminate_geometry_report
+from app.validation.durable_geometry import DurableGeometryReport, indeterminate_geometry_report, verify_geometry_evidence
 from app.workflows.inputs import _uuid, _agent_v2_request
 from app.workflows.execution_support import _prepare_agent_validation_attempt
 from app.workflows.execution_support import _run_backend_with_heartbeats
@@ -23,8 +27,10 @@ from app.workflows.execution_support import _mark_execution_failure
 from app.workflows.validation_support import _record_agent_validation_outcome
 
 async def agent_validate_geometry(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[str, Any]:
-    info = activity.info()
+    info = execution_identity()
     request = _agent_v2_request(payload)
+    acceptance = (AcceptanceContract.model_validate(payload["acceptance"])
+                  if payload.get("acceptance") is not None else None)
     candidate_build_id = _uuid(payload, "candidate_build_id")
     manifest_id = _uuid(payload, "staging_manifest_id")
     step_key = str(payload["validation_step_key"])
@@ -36,6 +42,12 @@ async def agent_validate_geometry(payload: dict[str, Any], *, backend: Execution
         ).items()
     }
     dimension_tolerance = float(payload.get("dimension_tolerance", 0.05))
+    expected_solid_count = payload.get("expected_solid_count")
+    guarded = acceptance is not None or expected_solid_count is not None
+    request_digest = geometry_request_digest(
+        expected_dimensions_mm=expected_dimensions, dimension_tolerance=dimension_tolerance,
+        expected_solid_count=expected_solid_count,
+        acceptance=acceptance.model_dump(mode="json") if acceptance else None)
     async with tenant_transaction(
         request.tenant_id,
         request.principal_id,
@@ -48,6 +60,15 @@ async def agent_validate_geometry(payload: dict[str, Any], *, backend: Execution
             staging_manifest_id=manifest_id,
             gate="geometry",
         )
+        if replay is not None and guarded:
+            try:
+                cached = dict(replay["evidence"])
+                cached.pop("runtime_provenance", None)
+                verify_geometry_evidence(DurableGeometryReport.model_validate(cached),
+                    request_sha256=request_digest, acceptance=acceptance,
+                    expected_solid_count=expected_solid_count)
+            except ValueError:
+                replay = None
         if replay is not None:
             return {
                 "status": "completed",
@@ -105,7 +126,7 @@ async def agent_validate_geometry(payload: dict[str, Any], *, backend: Execution
             payload,
             temporal_attempt=info.attempt,
             step_key=step_key,
-            step_index=step_index,
+            step_index=None if payload.get("checkpoint_enabled") else step_index,
             step_kind="agent_geometry_validation",
         )
     )
@@ -175,6 +196,9 @@ async def agent_validate_geometry(payload: dict[str, Any], *, backend: Execution
                     "artifacts": task_artifacts,
                     "expected_dimensions_mm": expected_dimensions,
                     "dimension_tolerance": dimension_tolerance,
+                    **({"expected_solid_count": payload["expected_solid_count"]}
+                       if "expected_solid_count" in payload else {}),
+                    **({"acceptance": acceptance.model_dump(mode="json")} if acceptance else {}),
                     "output": "geometry-report.json",
                 },
                 "inputs": task_inputs,
@@ -227,7 +251,7 @@ async def agent_validate_geometry(payload: dict[str, Any], *, backend: Execution
                     platform=snapshot.platform,
                     sandbox_tier="ephemeral-job",
                 ),
-                limits=ResourceLimits(timeout_seconds=120),
+                limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit, timeout_seconds=execution_timeout(payload, 120)),
                 metadata={
                     "candidate_build_id": str(candidate_build_id),
                     "staging_manifest_id": str(manifest_id),
@@ -264,6 +288,13 @@ async def agent_validate_geometry(payload: dict[str, Any], *, backend: Execution
                         report = DurableGeometryReport.model_validate_json(
                             report_path.read_text(encoding="utf-8")
                         )
+                        if guarded:
+                            verify_geometry_evidence(report, request_sha256=request_digest,
+                                acceptance=acceptance, expected_solid_count=expected_solid_count)
+                            expected_artifacts = {(f"artifact-{n:02d}", i['format'], i['sha256'], i['size_bytes']) for n, i in enumerate(model_outputs)}
+                            measured_artifacts = {(i.role, i.format, i.sha256, i.size_bytes) for i in report.artifacts}
+                            if measured_artifacts != expected_artifacts or len(report.artifacts) != len(model_outputs):
+                                raise ValueError("geometry evidence does not describe the supplied artifacts")
                     except Exception as exc:
                         report = indeterminate_geometry_report(
                             outputs=model_outputs,

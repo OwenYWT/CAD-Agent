@@ -1,0 +1,71 @@
+WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+Importing project files......
+						(100 %)									Postprocessing......
+						(100 %)									Recompute......
+						(33 %)							(66 %)							(100 %)									Recompute......
+						(33 %)							(66 %)							(100 %)									[32;1m
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******[0m
+[32;1m
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******[0m
+[32;1m******        Transferring Shape, ShapeType = 0                      ******[0m
+[32;1m** WorkSession : Sending all data[0m
+[32;1m Step File Name : /tmp/tmpj_hmna92/output/model.step(170 ents)  Write  Done[0m
+Importing project files......
+						(100 %)									Postprocessing......
+						(100 %)									Importing project files......
+						(100 %)									Postprocessing......
+						(100 %)									Recompute......
+						(33 %)							(66 %)							(100 %)									Importing project files......
+						(100 %)									Postprocessing......
+						(100 %)									Recompute......
+						(33 %)							(66 %)							(100 %)									Recompute......
+						(33 %)							(66 %)							(100 %)									[32;1m
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******[0m
+[32;1m
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******[0m
+[32;1m******        Transferring Shape, ShapeType = 0                      ******[0m
+[32;1m** WorkSession : Sending all data[0m
+[32;1m Step File Name : /tmp/tmpj_hmna92/output/model.step(170 ents)  Write  Done[0m
+Importing project files......
+						(100 %)									Postprocessing......
+						(100 %)									Importing project files......
+						(100 %)									Postprocessing......
+						(100 %)									Recompute......
+						(33 %)							(66 %)							(100 %)									Importing project files......
+						(25 %)							(50 %)							(75 %)							(100 %)									Postprocessing......
+						(100 %)									Recompute......
+						(25 %)							(50 %)							(75 %)							(100 %)									Recompute......
+						(25 %)							(50 %)							(75 %)							(100 %)									[32;1m
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******[0m
+[32;1m
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******[0m
+[32;1m******        Transferring Shape, ShapeType = 0                      ******[0m
+[32;1m** WorkSession : Sending all data[0m
+[32;1m Step File Name : /tmp/tmpj_hmna92/output/model.step(209 ents)  Write  Done[0m
+Importing project files......
+						(25 %)							(50 %)							(75 %)							(100 %)									Postprocessing......
+						(100 %)									Importing project files......
+						(25 %)							(50 %)							(75 %)							(100 %)									Postprocessing......
+						(100 %)									Importing project files......
+						(100 %)									Postprocessing......
+						(100 %)									Recompute......
+						(50 %)							(100 %)									Recompute......
+						(50 %)							(100 %)									[32;1m
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******[0m
+[32;1m
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******[0m
+[32;1m******        Transferring Shape, ShapeType = 0                      ******[0m
+[32;1m** WorkSession : Sending all data[0m
+[32;1m Step File Name : /tmp/tmpj_hmna92/output/model.step(170 ents)  Write  Done[0m
+CAD_API_CONTRACT={"spreadsheet_expression_variants": 2, "gui_workbench": true, "failed_programs_rejected": 2}
+Importing project files......
+						(100 %)									Postprocessing......
+						(100 %)									

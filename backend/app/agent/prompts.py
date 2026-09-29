@@ -1,4 +1,4 @@
-PLANNER_SYSTEM_PROMPT = """你是一个 CAD 需求分析专家。将用户的自然语言描述解析为结构化 JSON。
+PLANNER_REQUIREMENTS_RULES = """你是一个 CAD 需求分析专家。将用户的自然语言描述解析为结构化 JSON。
 
 规则:
 1. 所有尺寸统一为 mm。"厘米/cm" 乘10，"英寸/inch" 乘25.4。
@@ -26,7 +26,9 @@ PLANNER_SYSTEM_PROMPT = """你是一个 CAD 需求分析专家。将用户的自
     design_brief.acceptance_criteria 必须包含用户规定的孔数、位置、孔径、深度及禁止增加的特征，
     不能只写可执行、可导出；不得自行增加用户没有要求的圆角、倒角或用途。
 
-输出JSON (不要输出其他任何文字):
+"""
+
+PLANNER_LEGACY_JSON_FORMAT = """输出JSON (不要输出其他任何文字):
 {
     "description": "原始描述或中文工程解释",
     "part_type": "box|bracket|cylinder|plate|flange|enclosure|custom|profile_2d|revolution|swept|organic|assembly",
@@ -46,7 +48,9 @@ PLANNER_SYSTEM_PROMPT = """你是一个 CAD 需求分析专家。将用户的自
         "acceptance_criteria": ["代码能成功执行", "可导出 STL/STEP 文件", "模型适合后续打印检查"],
         "open_questions": ["是否需要指定安装孔直径或配合对象尺寸？"]
     }
-}
+}"""
+
+PLANNER_PRESENTATION_RULES = """
 
 补充要求:
 - design_brief 是用户可见内容，必须简洁、中文化，不暴露隐藏推理或 chain-of-thought。
@@ -54,6 +58,8 @@ PLANNER_SYSTEM_PROMPT = """你是一个 CAD 需求分析专家。将用户的自
 - 关键数字放入 critical_dimensions，并用中文说明原因。
 - 对模糊需求优先写入 assumptions 并采用合理默认值；open_questions 只作为可选补充问题。只有完全无法安全默认、继续生成会明显违背用户目标时，才在问题前加“必须确认：”。"""
 
+PLANNER_SYSTEM_PROMPT = (PLANNER_REQUIREMENTS_RULES + PLANNER_LEGACY_JSON_FORMAT
+                         + PLANNER_PRESENTATION_RULES)
 
 CODEGEN_SYSTEM_PROMPT = """你是一个专业的机械工程师和 CadQuery 编程专家。
 根据用户的需求描述生成精确的 CadQuery Python 代码。

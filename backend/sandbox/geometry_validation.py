@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from pathlib import Path
 from typing import Any, Iterable
@@ -200,7 +201,13 @@ def validate_geometry_files(
     *,
     expected_dimensions: dict[str, float] | None = None,
     dimension_tolerance: float = 0.05,
+    expected_solid_count: int | None = None,
+    acceptance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if expected_solid_count is not None and (
+        type(expected_solid_count) is not int or expected_solid_count < 1
+    ):
+        raise ValueError("expected_solid_count must be a positive integer")
     expected = dict(expected_dimensions or {})
     reports: list[dict[str, Any]] = []
     issues: list[str] = []
@@ -211,6 +218,10 @@ def validate_geometry_files(
         path = Path(item["path"])
         try:
             report = supported[artifact_format](path, role=role)
+            if expected_solid_count is not None and artifact_format in {"step", "stl"}:
+                if report["solid_count"] != expected_solid_count:
+                    report["valid"] = False
+                    report["issues"].append("solid_count_mismatch")
             error = _dimension_error(tuple(report["dimensions_mm"]), expected)
             report["max_dimension_error"] = error
             if error is not None and error > dimension_tolerance:
@@ -229,7 +240,7 @@ def validate_geometry_files(
         if reports and all(item["valid"] for item in reports)
         else "failed"
     )
-    return {
+    result = {
         "schema_version": "durable-geometry-report.v1",
         "outcome": outcome,
         "artifact_kind": "profile"
@@ -240,3 +251,42 @@ def validate_geometry_files(
         "artifacts": reports,
         "issues": issues,
     }
+    if acceptance is not None or expected_solid_count is not None:
+        try:
+            from geometry_request import geometry_request_digest
+        except ModuleNotFoundError:
+            from app.contracts.geometry_request import geometry_request_digest
+        result['request_sha256'] = geometry_request_digest(
+            expected_dimensions_mm=expected, dimension_tolerance=dimension_tolerance,
+            expected_solid_count=expected_solid_count, acceptance=acceptance)
+    if acceptance is not None:
+        try:
+            from feature_verification import measure_checks
+        except ModuleNotFoundError:
+            from sandbox.feature_verification import measure_checks
+        steps = [item for item in artifacts if item['format'].lower() == 'step']
+        evidence = []
+        if len(steps) == 1 and all(item['parseable'] for item in reports):
+            import cadquery as cq
+            shape = cq.importers.importStep(steps[0]['path']).val()
+            evidence = measure_checks(shape, acceptance['checks'])
+        else:
+            evidence = [{'check_id':c['check_id'], 'outcome':'indeterminate',
+                'method':'final_step_brep', 'measured':[],
+                'issues':['measurement_requires_one_parseable_step'], 'details':{}}
+                for c in acceptance['checks']]
+        digest = hashlib.sha256(json.dumps(acceptance, ensure_ascii=False, sort_keys=True,
+                                           separators=(',', ':')).encode()).hexdigest()
+        result['acceptance'] = {'contract_sha256':digest, 'evidence':evidence}
+        by_id = {e['check_id']:e for e in evidence}
+        outcomes = [by_id[c['check_id']]['outcome'] for c in acceptance['checks'] if c['required']]
+        issues.extend('acceptance:'+c['check_id']+':'+by_id[c['check_id']]['outcome']
+                      for c in acceptance['checks'] if c['required'] and by_id[c['check_id']]['outcome']!='passed')
+        if acceptance.get('unresolved'):
+            outcomes.append('indeterminate');issues.append('acceptance:unresolved_requirements')
+        if acceptance.get('verification_limits'):
+            outcomes.append('indeterminate');issues.append('acceptance:verification_unavailable')
+        if result['outcome'] != 'failed':
+            if 'failed' in outcomes:result['outcome']='failed'
+            elif 'indeterminate' in outcomes:result['outcome']='indeterminate'
+    return result

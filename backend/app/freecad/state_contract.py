@@ -24,6 +24,7 @@ _PROPERTY_UNITS = {
     "App::PropertyAngle": "deg",
     "App::PropertyFloat": None,
     "App::PropertyInteger": None,
+    "App::PropertyIntegerConstraint": None,
 }
 
 
@@ -48,6 +49,7 @@ class FreeCADStateParameterV2(BaseModel):
         "App::PropertyAngle",
         "App::PropertyFloat",
         "App::PropertyInteger",
+        "App::PropertyIntegerConstraint",
     ]
     value: int | float
     unit: Literal["mm", "deg"] | None
@@ -78,7 +80,7 @@ class FreeCADStateParameterV2(BaseModel):
             raise ValueError("parameter id does not match object/property")
         if self.unit != _PROPERTY_UNITS[self.property_type]:
             raise ValueError("parameter unit does not match property type")
-        if self.property_type == "App::PropertyInteger" and float(self.value) % 1:
+        if self.property_type in {"App::PropertyInteger", "App::PropertyIntegerConstraint"} and float(self.value) % 1:
             raise ValueError("integer parameter value must be integral")
         if self.minimum is not None and self.maximum is not None:
             if float(self.minimum) > float(self.maximum):
@@ -233,7 +235,7 @@ def compile_parameter_operation_plan(
                 f"parameter value is invalid: {identifier}",
             )
         numeric = float(value)
-        if parameter.property_type == "App::PropertyInteger" and (
+        if parameter.property_type in {"App::PropertyInteger", "App::PropertyIntegerConstraint"} and (
             not numeric.is_integer() or not -(2**31) <= numeric < 2**31
         ):
             raise ParameterStateError(
@@ -258,7 +260,7 @@ def compile_parameter_operation_plan(
                 "object": parameter.object_name,
                 "property": parameter.property_name,
                 "value": int(numeric)
-                if parameter.property_type == "App::PropertyInteger"
+                if parameter.property_type in {"App::PropertyInteger", "App::PropertyIntegerConstraint"}
                 else numeric,
                 "expected_property_type": parameter.property_type,
                 "unit": parameter.unit,

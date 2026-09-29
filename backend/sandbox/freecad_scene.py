@@ -31,7 +31,13 @@ def component_shapes(document, *, visible_only=False):
     """Body tips, standalone solids and links, without intermediate features."""
     body_children = {o.Name for b in document.Objects if b.TypeId == 'PartDesign::Body' for o in b.Group}
     result = []
+    ledger=document.getObject('CADAgentLedger')
+    selected=set(getattr(ledger,'ExportObjects',()) or ()) if ledger is not None else set()
+    if selected and not selected <= {o.Name for o in document.Objects}:
+        raise ValueError('declared final export object is missing')
     for obj in document.Objects:
+        if selected and obj.Name not in selected:
+            continue
         if obj.Name in body_children or obj.TypeId == 'App::Part':
             continue
         shape = getattr(obj, 'Shape', None)

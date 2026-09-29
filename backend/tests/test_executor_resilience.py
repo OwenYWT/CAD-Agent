@@ -8,6 +8,21 @@ from app.config import settings
 from app.sandbox.executor import CadQueryExecutor
 
 
+def test_unbounded_wait_and_daemon_failure_are_not_a_fake_timeout():
+    from unittest.mock import MagicMock
+    from app.execution.contracts import ResourceLimits
+    ex=CadQueryExecutor(runtime_name='docker')
+    container=MagicMock()
+    container.wait.side_effect=RuntimeError('daemon connection lost')
+    ex._client=MagicMock()
+    ex._client.containers.run.return_value=container
+    result=ex._execute_sync('code', resource_limits=ResourceLimits(timeout_seconds=None))
+    container.wait.assert_called_once_with(timeout=None)
+    assert result.error_type=='DockerError'
+    assert 'daemon connection lost' in result.error_message
+    container.remove.assert_called_once_with(force=True)
+
+
 @pytest.mark.asyncio
 async def test_execute_returns_clean_result_when_docker_unavailable(monkeypatch):
     """client property raising (daemon down / image missing) → SandboxUnavailable result,

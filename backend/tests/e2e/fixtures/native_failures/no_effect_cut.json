@@ -1,0 +1,877 @@
+{
+  "source_sha": "af0a090",
+  "model": "moonshot/kimi-k2.7-code",
+  "evaluation_date": "2026-09-25",
+  "original_case": "P18",
+  "source_sha256": "01da1e87d36a010152d9c6487680fa2377e8f04f0e0bafca19e776f6c642d40f",
+  "plan": {
+    "schema_version": "freecad-operation-plan.v1",
+    "document_name": "Model",
+    "operations": [
+      {
+        "op_id": "sketch_base_create",
+        "action": "sketch.create",
+        "args": {
+          "name": "base_profile",
+          "body": "Body",
+          "plane": "xy",
+          "offset_mm": 0.0,
+          "reversed": false
+        }
+      },
+      {
+        "op_id": "sketch_base_geom",
+        "action": "sketch.add_geometry",
+        "args": {
+          "sketch": "base_profile",
+          "geometry": {
+            "kind": "rectangle",
+            "corner": {
+              "x": 10.0,
+              "y": 10.0
+            },
+            "width_mm": 100.0,
+            "height_mm": 70.0,
+            "construction": false
+          }
+        }
+      },
+      {
+        "op_id": "sketch_base_h0",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "base_profile",
+          "kind": "horizontal",
+          "first": {
+            "geometry_index": 0,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_base_h2",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "base_profile",
+          "kind": "horizontal",
+          "first": {
+            "geometry_index": 2,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_base_v1",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "base_profile",
+          "kind": "vertical",
+          "first": {
+            "geometry_index": 1,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_base_v3",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "base_profile",
+          "kind": "vertical",
+          "first": {
+            "geometry_index": 3,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_base_coin_0_1",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "base_profile",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 0,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 1,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_base_coin_1_2",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "base_profile",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 1,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 2,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_base_coin_2_3",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "base_profile",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 2,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 3,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_base_coin_3_0",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "base_profile",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 3,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 0,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_base_w",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "base_profile",
+          "kind": "distance",
+          "first": {
+            "geometry_index": 0,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": 100.0
+        }
+      },
+      {
+        "op_id": "sketch_base_h",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "base_profile",
+          "kind": "distance",
+          "first": {
+            "geometry_index": 1,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": 70.0
+        }
+      },
+      {
+        "op_id": "sketch_base_x",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "base_profile",
+          "kind": "distance_x",
+          "first": {
+            "geometry_index": 0,
+            "point_position": 1
+          },
+          "second": null,
+          "value_mm": 10.0
+        }
+      },
+      {
+        "op_id": "sketch_base_y",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "base_profile",
+          "kind": "distance_y",
+          "first": {
+            "geometry_index": 0,
+            "point_position": 1
+          },
+          "second": null,
+          "value_mm": 10.0
+        }
+      },
+      {
+        "op_id": "pad_base",
+        "action": "feature.pad",
+        "args": {
+          "name": "base_block",
+          "profile": "base_profile",
+          "length_mm": 40.0,
+          "reversed": false
+        }
+      },
+      {
+        "op_id": "sketch_cavity_create",
+        "action": "sketch.create",
+        "args": {
+          "name": "cavity_profile",
+          "body": "Body",
+          "plane": "xy",
+          "offset_mm": 40.0,
+          "reversed": false
+        }
+      },
+      {
+        "op_id": "sketch_cavity_geom",
+        "action": "sketch.add_geometry",
+        "args": {
+          "sketch": "cavity_profile",
+          "geometry": {
+            "kind": "rectangle",
+            "corner": {
+              "x": 12.0,
+              "y": 12.0
+            },
+            "width_mm": 96.0,
+            "height_mm": 66.0,
+            "construction": false
+          }
+        }
+      },
+      {
+        "op_id": "sketch_cavity_h0",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "cavity_profile",
+          "kind": "horizontal",
+          "first": {
+            "geometry_index": 0,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_cavity_h2",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "cavity_profile",
+          "kind": "horizontal",
+          "first": {
+            "geometry_index": 2,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_cavity_v1",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "cavity_profile",
+          "kind": "vertical",
+          "first": {
+            "geometry_index": 1,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_cavity_v3",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "cavity_profile",
+          "kind": "vertical",
+          "first": {
+            "geometry_index": 3,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_cavity_coin_0_1",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "cavity_profile",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 0,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 1,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_cavity_coin_1_2",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "cavity_profile",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 1,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 2,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_cavity_coin_2_3",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "cavity_profile",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 2,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 3,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_cavity_coin_3_0",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "cavity_profile",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 3,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 0,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_cavity_w",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "cavity_profile",
+          "kind": "distance",
+          "first": {
+            "geometry_index": 0,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": 96.0
+        }
+      },
+      {
+        "op_id": "sketch_cavity_h",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "cavity_profile",
+          "kind": "distance",
+          "first": {
+            "geometry_index": 1,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": 66.0
+        }
+      },
+      {
+        "op_id": "sketch_cavity_x",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "cavity_profile",
+          "kind": "distance_x",
+          "first": {
+            "geometry_index": 0,
+            "point_position": 1
+          },
+          "second": null,
+          "value_mm": 12.0
+        }
+      },
+      {
+        "op_id": "sketch_cavity_y",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "cavity_profile",
+          "kind": "distance_y",
+          "first": {
+            "geometry_index": 0,
+            "point_position": 1
+          },
+          "second": null,
+          "value_mm": 12.0
+        }
+      },
+      {
+        "op_id": "pocket_cavity",
+        "action": "feature.pocket",
+        "args": {
+          "name": "hollow",
+          "profile": "cavity_profile",
+          "length_mm": 38.0,
+          "through_all": false,
+          "reversed": true
+        }
+      },
+      {
+        "op_id": "sketch_lip_create",
+        "action": "sketch.create",
+        "args": {
+          "name": "lip_profile",
+          "body": "Body",
+          "plane": "xy",
+          "offset_mm": 40.0,
+          "reversed": false
+        }
+      },
+      {
+        "op_id": "sketch_lip_geom_outer",
+        "action": "sketch.add_geometry",
+        "args": {
+          "sketch": "lip_profile",
+          "geometry": {
+            "kind": "rectangle",
+            "corner": {
+              "x": 7.0,
+              "y": 7.0
+            },
+            "width_mm": 106.0,
+            "height_mm": 76.0,
+            "construction": false
+          }
+        }
+      },
+      {
+        "op_id": "sketch_lip_geom_inner",
+        "action": "sketch.add_geometry",
+        "args": {
+          "sketch": "lip_profile",
+          "geometry": {
+            "kind": "rectangle",
+            "corner": {
+              "x": 10.0,
+              "y": 10.0
+            },
+            "width_mm": 100.0,
+            "height_mm": 70.0,
+            "construction": false
+          }
+        }
+      },
+      {
+        "op_id": "sketch_lip_h0",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "horizontal",
+          "first": {
+            "geometry_index": 0,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_lip_h2",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "horizontal",
+          "first": {
+            "geometry_index": 2,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_lip_v1",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "vertical",
+          "first": {
+            "geometry_index": 1,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_lip_v3",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "vertical",
+          "first": {
+            "geometry_index": 3,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_lip_coin_0_1",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 0,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 1,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_lip_coin_1_2",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 1,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 2,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_lip_coin_2_3",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 2,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 3,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_lip_coin_3_0",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 3,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 0,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_lip_outer_w",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "distance",
+          "first": {
+            "geometry_index": 0,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": 106.0
+        }
+      },
+      {
+        "op_id": "sketch_lip_outer_h",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "distance",
+          "first": {
+            "geometry_index": 1,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": 76.0
+        }
+      },
+      {
+        "op_id": "sketch_lip_outer_x",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "distance_x",
+          "first": {
+            "geometry_index": 0,
+            "point_position": 1
+          },
+          "second": null,
+          "value_mm": 7.0
+        }
+      },
+      {
+        "op_id": "sketch_lip_outer_y",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "distance_y",
+          "first": {
+            "geometry_index": 0,
+            "point_position": 1
+          },
+          "second": null,
+          "value_mm": 7.0
+        }
+      },
+      {
+        "op_id": "sketch_lip_inner_h0",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "horizontal",
+          "first": {
+            "geometry_index": 4,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_lip_inner_h2",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "horizontal",
+          "first": {
+            "geometry_index": 6,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_lip_inner_v1",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "vertical",
+          "first": {
+            "geometry_index": 5,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_lip_inner_v3",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "vertical",
+          "first": {
+            "geometry_index": 7,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_lip_inner_coin_4_5",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 4,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 5,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_lip_inner_coin_5_6",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 5,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 6,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_lip_inner_coin_6_7",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 6,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 7,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_lip_inner_coin_7_4",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 7,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 4,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "sketch_lip_inner_w",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "distance",
+          "first": {
+            "geometry_index": 4,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": 100.0
+        }
+      },
+      {
+        "op_id": "sketch_lip_inner_h",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "distance",
+          "first": {
+            "geometry_index": 5,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": 70.0
+        }
+      },
+      {
+        "op_id": "sketch_lip_inner_x",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "distance_x",
+          "first": {
+            "geometry_index": 4,
+            "point_position": 1
+          },
+          "second": null,
+          "value_mm": 10.0
+        }
+      },
+      {
+        "op_id": "sketch_lip_inner_y",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "lip_profile",
+          "kind": "distance_y",
+          "first": {
+            "geometry_index": 4,
+            "point_position": 1
+          },
+          "second": null,
+          "value_mm": 10.0
+        }
+      },
+      {
+        "op_id": "pad_lip",
+        "action": "feature.pad",
+        "args": {
+          "name": "lip",
+          "profile": "lip_profile",
+          "length_mm": 2.0,
+          "reversed": true
+        }
+      },
+      {
+        "op_id": "export_model",
+        "action": "document.export",
+        "args": {
+          "formats": [
+            "fcstd",
+            "step",
+            "stl"
+          ],
+          "basename": "stackable_box"
+        }
+      }
+    ]
+  }
+}

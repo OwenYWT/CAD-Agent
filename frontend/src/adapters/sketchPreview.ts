@@ -1,11 +1,11 @@
-import type { SketchConstraint, SketchGeometry, SketchDimensionType } from "../types/sketch";
+import type { SketchConstraint, SketchGeometry, SketchDimensionType, SketchDimensionEdit } from "../types/sketch";
 
-export const dimensionTypes = new Set<string>(["DistanceX","DistanceY","Distance","Radius","Diameter"]);
-export const dimensionLabels: Record<SketchDimensionType,string> = {DistanceX:"X 距离",DistanceY:"Y 距离",Distance:"长度",Radius:"半径",Diameter:"直径"};
+export const dimensionTypes = new Set<string>(["DistanceX","DistanceY","Distance","Radius","Diameter","Angle"]);
+export const dimensionLabels: Record<SketchDimensionType,string> = {DistanceX:"X 距离",DistanceY:"Y 距离",Distance:"长度",Radius:"半径",Diameter:"直径",Angle:"角度"};
 export function editableDimension(c: SketchConstraint) { return dimensionTypes.has(c.type) && c.driving !== false; }
 export function validDimension(c: SketchConstraint, value: number) {
   return Number.isFinite(value) && Math.abs(value)<=1_000_000 &&
-    (["DistanceX","DistanceY"].includes(c.type) || value>0);
+    (["DistanceX","DistanceY","Angle"].includes(c.type) || value>0);
 }
 export function previewSketch(geometry: SketchGeometry[], constraints: SketchConstraint[], values: Record<number,string>): SketchGeometry[] {
   const result=structuredClone(geometry);
@@ -40,4 +40,10 @@ export function sketchBounds(geometry: SketchGeometry[]): [number,number,number,
   const width=Math.max(10,Math.max(...points.map(p=>p[0]))-x),height=Math.max(10,Math.max(...points.map(p=>p[1]))-y);
   const pad=Math.max(width,height)*0.5;
   return [x-pad,-y-height-pad,width+2*pad,height+2*pad];
+}
+
+export function displayDimension(c: SketchConstraint) { return c.type==="Angle" ? c.value*180/Math.PI : c.value; }
+export function dimensionEdit(c: SketchConstraint,value: number): SketchDimensionEdit {
+  return {constraint_index:c.index,expected_type:c.type as SketchDimensionType,
+    ...(c.type==="Angle" ? {value_deg:value} : {value_mm:value})};
 }

@@ -1,0 +1,154 @@
+[
+  {
+    "script": "chamfer_scope_geometry",
+    "log_sha256": "cc1178cf5787c73e253b4427df1f1900dfe3f5ef93afd36d8de134c82c59be90",
+    "traceback": false,
+    "markers": [
+      "CAD_CHAMFER_SCOPE=[{\"scope\": \"outer\", \"radius\": 4, \"target_body\": false, \"measurements\": {\"body_tip\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [8.0, 8.0], \"straight_hole_depth_mm\": 10.0}, \"step\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [8.0, 8.0], \"straight_hole_depth_mm\": 10.0}}}, {\"scope\": \"outer\", \"radius\": 5.5, \"target_body\": false, \"measurements\": {\"body_tip\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [11.0, 11.0], \"straight_hole_depth_mm\": 14.0}, \"step\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [11.0, 11.0], \"straight_hole_depth_mm\": 14.0}}}, {\"scope\": \"hole_mouths\", \"radius\": 4, \"target_body\": false, \"measurements\": {\"body_tip\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [10.0, 10.0], \"straight_hole_depth_mm\": 8.0}, \"step\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [10.0, 10.0], \"straight_hole_depth_mm\": 8.0}}}, {\"scope\": \"hole_mouths\", \"radius\": 5.5, \"target_body\": false, \"measurements\": {\"body_tip\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [13.0, 13.0], \"straight_hole_depth_mm\": 12.0}, \"step\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [13.0, 13.0], \"straight_hole_depth_mm\": 12.0}}}, {\"scope\": \"all\", \"radius\": 4, \"target_body\": false, \"measurements\": {\"body_tip\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [10.0, 10.0], \"straight_hole_depth_mm\": 8.0}, \"step\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [10.0, 10.0], \"straight_hole_depth_mm\": 8.0}}}, {\"scope\": \"all\", \"radius\": 5.5, \"target_body\": false, \"measurements\": {\"body_tip\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [13.0, 13.0], \"straight_hole_depth_mm\": 12.0}, \"step\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [13.0, 13.0], \"straight_hole_depth_mm\": 12.0}}}, {\"scope\": \"outer\", \"radius\": 4, \"target_body\": true, \"measurements\": {\"body_tip\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [8.0, 8.0], \"straight_hole_depth_mm\": 10.0}, \"step\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [8.0, 8.0], \"straight_hole_depth_mm\": 10.0}}}, {\"scope\": \"hole_mouths\", \"radius\": 4, \"target_body\": true, \"measurements\": {\"body_tip\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [10.0, 10.0], \"straight_hole_depth_mm\": 8.0}, \"step\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [10.0, 10.0], \"straight_hole_depth_mm\": 8.0}}}, {\"scope\": \"all\", \"radius\": 4, \"target_body\": true, \"measurements\": {\"body_tip\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [10.0, 10.0], \"straight_hole_depth_mm\": 8.0}, \"step\": {\"symmetric_difference_mm3\": 0.0, \"mouth_diameters_mm\": [10.0, 10.0], \"straight_hole_depth_mm\": 8.0}}}, {\"body_fillet_tip_reference\": true, \"non_default_body\": true, \"ambiguous_body_selector_rejected\": true, \"empty_body_rejected\": true}, {\"rotated_multi_bore\": true, \"unsupported_shapes_rejected\": 3}]"
+    ]
+  },
+  {
+    "script": "curved-surfaces",
+    "log_sha256": "a27f6a6ae2f9bc6a2719503321de746b7acfba08f4e71054267c83b5d67453fc",
+    "traceback": false,
+    "markers": [
+      "CURVED_SURFACE_CONTRACT={\"status\": \"passed\", \"evidence\": [{\"check_id\": \"surfaces\", \"outcome\": \"passed\", \"method\": \"occt_trimmed_face_global_minimum_distance\", \"measured\": [1.9999999999999984], \"issues\": [], \"details\": {\"numerical_tolerance_mm\": 1e-07, \"scope\": \"minimum Euclidean distance over the two complete trimmed faces\", \"normal_wall_thickness\": \"unverified\", \"other_faces\": \"unverified\", \"face_indices\": [0, 1], \"face_geometry\": [\"SPHERE\", \"SPHERE\"], \"face_area_mm2\": [1256.6370614359168, 804.247719318987], \"closest_points_mm\": [[6.123233995736766e-16, 0.0, -10.0], [4.898587196589413e-16, 0.0, -8.0]], \"extremum_solutions\": 3}}, {\"check_id\": \"surfaces\", \"outcome\": \"passed\", \"method\": \"occt_trimmed_face_global_minimum_distance\", \"measured\": [1.5], \"issues\": [], \"details\": {\"numerical_tolerance_mm\": 1e-07, \"scope\": \"minimum Euclidean distance over the two complete trimmed faces\", \"normal_wall_thickness\": \"unverified\", \"other_faces\": \"unverified\", \"face_indices\": [0, 1], \"face_geometry\": [\"SPHERE\", \"SPHERE\"], \"face_area_mm2\": [1256.6370614359168, 804.247719318987], \"closest_points_mm\": [[10.0, 0.0, 0.0], [8.5, 0.0, 0.0]], \"extremum_solutions\": 2}}, {\"check_id\": \"surfaces\", \"outcome\": \"passed\", \"method\": \"occt_trimmed_face_global_minimum_distance\", \"measured\": [2.0], \"issues\": [], \"details\": {\"numerical_tolerance_mm\": 1e-07, \"scope\": \"minimum Euclidean distance over the two complete trimmed faces\", \"normal_wall_thickness\": \"unverified\", \"other_faces\": \"unverified\", \"face_indices\": [0, 1], \"face_geometry\": [\"BSPLINE\", \"BSPLINE\"], \"face_area_mm2\": [2798.7126568911476, 1791.1761004103464], \"closest_points_mm\": [[10.0, 0.0, 0.0], [8.0, 0.0, 0.0]], \"extremum_solutions\": 2}}, {\"check_id\": \"wall\", \"outcome\": \"passed\", \"method\": \"analytic_normal_offset_and_whole_material_layer\", \"measured\": [2.0], \"issues\": [], \"details\": {\"numerical_tolerance_mm\": 1e-07, \"scope\": \"entire selected closed analytic surface\", \"certified_area_mm2\": 1256.6370614359168, \"surface_geometry\": \"SPHERE\", \"missing_material_mm3\": 0.0, \"boolean_volume_tolerance_mm3\": 0.00020608847807549035}}, {\"check_id\": \"entire-wall\", \"outcome\": \"passed\", \"method\": \"whole_part_certified_normal_layer_coverage\", \"measured\": [2.0], \"issues\": [], \"details\": {\"numerical_tolerance_mm\": 1e-07, \"scope\": \"entire part material covered by nonoverlapping certified normal-offset layers\", \"uncovered_material_mm3\": 0.0, \"extra_material_mm3\": 0.0, \"boolean_volume_tolerance_mm3\": 0.0004121769561509807, \"layers\": [{\"thickness_mm\": 2.0, \"solid_index\": 0, \"face_index\": 0, \"certificate\": {\"scope\": \"entire selected closed analytic surface\", \"certified_area_mm2\": 1256.6370614359168, \"surface_geometry\": \"SPHERE\", \"missing_material_mm3\": 0.0, \"boolean_volume_tolerance_mm3\": 0.00020608847807549035}}], \"unusable_face_certificates\": [], \"inference\": \"interior witnesses determine candidate depths; whole-boundary and whole-material proofs determine coverage\"}}, {\"check_id\": \"wall\", \"outcome\": \"passed\", \"method\": \"analytic_normal_offset_and_whole_material_layer\", \"measured\": [2.0], \"issues\": [], \"details\": {\"numerical_tolerance_mm\": 1e-07, \"scope\": \"entire selected closed analytic surface\", \"certified_area_mm2\": 3947.841760435744, \"surface_geometry\": \"TORUS\", \"missing_material_mm3\": 0.0, \"boolean_volume_tolerance_mm3\": 0.0006316546816697189}}, {\"check_id\": \"entire-wall\", \"outcome\": \"passed\", \"method\": \"whole_part_certified_normal_layer_coverage\", \"measured\": [2.0], \"issues\": [], \"details\": {\"numerical_tolerance_mm\": 1e-07, \"scope\": \"entire part material covered by nonoverlapping certified normal-offset layers\", \"uncovered_material_mm3\": 0.0, \"extra_material_mm3\": 0.0, \"boolean_volume_tolerance_mm3\": 0.0012633093633394377, \"layers\": [{\"thickness_mm\": 2.0, \"solid_index\": 0, \"face_index\": 0, \"certificate\": {\"scope\": \"entire selected closed analytic surface\", \"certified_area_mm2\": 3947.841760435744, \"surface_geometry\": \"TORUS\", \"missing_material_mm3\": 0.0, \"boolean_volume_tolerance_mm3\": 0.0006316546816697189}}], \"unusable_face_certificates\": [], \"inference\": \"interior witnesses determine candidate depths; whole-boundary and whole-material proofs determine coverage\"}}, {\"check_id\": \"wall\", \"outcome\": \"passed\", \"method\": \"whole_curved_face_offset_boundary_and_material_layer\", \"measured\": [1.5], \"issues\": [], \"details\": {\"numerical_tolerance_mm\": 1e-07, \"scope\": \"entire selected trimmed curved face\", \"surface_geometry\": \"BSPLINE\", \"certified_area_mm2\": 420.5995755992012, \"normal_witness_point_mm\": [0.0, 0.0, 0.0], \"normal_witness_interval_mm\": [-1.5, 0.0], \"offset_boundary_area_mm2\": 467.6107630920304, \"uncovered_boundary_area_mm2\": 0.0, \"boundary_area_tolerance_mm2\": 8.633882714461108e-06, \"missing_material_mm3\": 0.0, \"boolean_volume_tolerance_mm3\": 0.00010145279378119429, \"self_intersections_checked\": true}}, {\"check_id\": \"entire-wall\", \"outcome\": \"passed\", \"method\": \"whole_part_certified_normal_layer_coverage\", \"measured\": [1.5], \"issues\": [], \"details\": {\"numerical_tolerance_mm\": 1e-07, \"scope\": \"entire part material covered by nonoverlapping certified normal-offset layers\", \"uncovered_material_mm3\": 0.0, \"extra_material_mm3\": 0.0, \"boolean_volume_tolerance_mm3\": 0.00020290558756237587, \"layers\": [{\"thickness_mm\": 1.5, \"solid_index\": 0, \"face_index\": 0, \"certificate\": {\"scope\": \"entire selected trimmed curved face\", \"surface_geometry\": \"BSPLINE\", \"certified_area_mm2\": 420.5995755992012, \"normal_witness_point_mm\": [0.0, 0.0, 0.0], \"normal_witness_interval_mm\": [-1.5, 0.0], \"offset_boundary_area_mm2\": 467.6107630920304, \"uncovered_boundary_area_mm2\": 0.0, \"boundary_area_tolerance_mm2\": 8.633882714461108e-06, \"missing_material_mm3\": 0.0, \"boolean_volume_tolerance_mm3\": 0.00010145279378119429, \"self_intersections_checked\": true}}], \"unusable_face_certificates\": [{\"solid_index\": 0, \"face_index\": 1, \"reason\": \"whole curved-face normal wall not certified: offset_boundary_or_entire_material_layer_not_matched; offset_layer_invalid_or_self_intersecting\"}, {\"solid_index\": 0, \"face_index\": 3, \"reason\": \"whole curved-face normal wall not certified: offset_boundary_or_entire_material_layer_not_matched; offset_layer_invalid_or_self_intersecting\"}, {\"solid_index\": 0, \"face_index\": 4, \"reason\": \"whole curved-face normal wall not certified: offset_boundary_or_entire_material_layer_not_matched; offset_layer_invalid_or_self_intersecting\"}, {\"solid_index\": 0, \"face_index\": 5, \"reason\": \"whole curved-face normal wall not certified: offset_boundary_or_entire_material_layer_not_matched; offset_layer_invalid_or_self_intersecting\"}], \"inference\": \"interior witnesses determine candidate depths; whole-boundary and whole-material proofs determine coverage\"}}, {\"check_id\": \"wall\", \"outcome\": \"passed\", \"method\": \"whole_curved_face_offset_boundary_and_material_layer\", \"measured\": [2.0], \"issues\": [], \"details\": {\"numerical_tolerance_mm\": 1e-07, \"scope\": \"entire selected trimmed curved face\", \"surface_geometry\": \"BSPLINE\", \"certified_area_mm2\": 420.5995755992012, \"normal_witness_point_mm\": [0.0, 0.0, 0.0], \"normal_witness_interval_mm\": [-2.0, 0.0], \"offset_boundary_area_mm2\": 483.8346476325287, \"uncovered_boundary_area_mm2\": 0.0, \"boundary_area_tolerance_mm2\": 8.775709189672132e-06, \"missing_material_mm3\": 0.0, \"boolean_volume_tolerance_mm3\": 0.0001074275796861118, \"self_intersections_checked\": true}}, {\"check_id\": \"entire-wall\", \"outcome\": \"passed\", \"method\": \"whole_part_certified_normal_layer_coverage\", \"measured\": [2.0], \"issues\": [], \"details\": {\"numerical_tolerance_mm\": 1e-07, \"scope\": \"entire part material covered by nonoverlapping certified normal-offset layers\", \"uncovered_material_mm3\": 0.0, \"extra_material_mm3\": 0.0, \"boolean_volume_tolerance_mm3\": 0.00021485515937221783, \"layers\": [{\"thickness_mm\": 2.0, \"solid_index\": 0, \"face_index\": 0, \"certificate\": {\"scope\": \"entire selected trimmed curved face\", \"surface_geometry\": \"BSPLINE\", \"certified_area_mm2\": 420.5995755992012, \"normal_witness_point_mm\": [0.0, 0.0, 0.0], \"normal_witness_interval_mm\": [-2.0, 0.0], \"offset_boundary_area_mm2\": 483.8346476325287, \"uncovered_boundary_area_mm2\": 0.0, \"boundary_area_tolerance_mm2\": 8.775709189672132e-06, \"missing_material_mm3\": 0.0, \"boolean_volume_tolerance_mm3\": 0.0001074275796861118, \"self_intersections_checked\": true}}], \"unusable_face_certificates\": [{\"solid_index\": 0, \"face_index\": 1, \"reason\": \"whole curved-face normal wall not certified: offset_boundary_or_entire_material_layer_not_matched; offset_layer_invalid_or_self_intersecting\"}, {\"solid_index\": 0, \"face_index\": 3, \"reason\": \"whole curved-face normal wall not certified: offset_boundary_or_entire_material_layer_not_matched; offset_layer_invalid_or_self_intersecting\"}, {\"solid_index\": 0, \"face_index\": 4, \"reason\": \"whole curved-face normal wall not certified: offset_boundary_or_entire_material_layer_not_matched; offset_layer_invalid_or_self_intersecting\"}, {\"solid_index\": 0, \"face_index\": 5, \"reason\": \"whole curved-face normal wall not certified: offset_boundary_or_entire_material_layer_not_matched; offset_layer_invalid_or_self_intersecting\"}], \"inference\": \"interior witnesses determine candidate depths; whole-boundary and whole-material proofs determine coverage\"}}, {\"check_id\": \"wall\", \"outcome\": \"passed\", \"method\": \"whole_curved_face_offset_boundary_and_material_layer\", \"measured\": [3.0], \"issues\": [], \"details\": {\"numerical_tolerance_mm\": 1e-07, \"scope\": \"entire selected trimmed curved face\", \"surface_geometry\": \"BSPLINE\", \"certified_area_mm2\": 420.5995755992012, \"normal_witness_point_mm\": [0.0, 0.0, 0.0], \"normal_witness_interval_mm\": [-3.0, 0.0], \"offset_boundary_area_mm2\": 517.1126497778364, \"uncovered_boundary_area_mm2\": 0.0, \"boundary_area_tolerance_mm2\": 9.059399349130229e-06, \"missing_material_mm3\": 0.0, \"boolean_volume_tolerance_mm3\": 0.00011967293008547321, \"self_intersections_checked\": true}}, {\"check_id\": \"entire-wall\", \"outcome\": \"passed\", \"method\": \"whole_part_certified_normal_layer_coverage\", \"measured\": [3.0], \"issues\": [], \"details\": {\"numerical_tolerance_mm\": 1e-07, \"scope\": \"entire part material covered by nonoverlapping certified normal-offset layers\", \"uncovered_material_mm3\": 0.0, \"extra_material_mm3\": 0.0, \"boolean_volume_tolerance_mm3\": 0.0002393458601709357, \"layers\": [{\"thickness_mm\": 3.0, \"solid_index\": 0, \"face_index\": 0, \"certificate\": {\"scope\": \"entire selected trimmed curved face\", \"surface_geometry\": \"BSPLINE\", \"certified_area_mm2\": 420.5995755992012, \"normal_witness_point_mm\": [0.0, 0.0, 0.0], \"normal_witness_interval_mm\": [-3.0, 0.0], \"offset_boundary_area_mm2\": 517.1126497778364, \"uncovered_boundary_area_mm2\": 0.0, \"boundary_area_tolerance_mm2\": 9.059399349130229e-06, \"missing_material_mm3\": 0.0, \"boolean_volume_tolerance_mm3\": 0.00011967293008547321, \"self_intersections_checked\": true}}], \"unusable_face_certificates\": [{\"solid_index\": 0, \"face_index\": 1, \"reason\": \"whole curved-face normal wall not certified: offset_boundary_or_entire_material_layer_not_matched; offset_layer_invalid_or_self_intersecting\"}, {\"solid_index\": 0, \"face_index\": 3, \"reason\": \"whole curved-face normal wall not certified: offset_boundary_or_entire_material_layer_not_matched; offset_layer_invalid_or_self_intersecting\"}, {\"solid_index\": 0, \"face_index\": 4, \"reason\": \"whole curved-face normal wall not certified: offset_boundary_or_entire_material_layer_not_matched; offset_layer_invalid_or_self_intersecting\"}, {\"solid_index\": 0, \"face_index\": 5, \"reason\": \"whole curved-face normal wall not certified: offset_boundary_or_entire_material_layer_not_matched; offset_layer_invalid_or_self_intersecting\"}], \"inference\": \"interior witnesses determine candidate depths; whole-boundary and whole-material proofs determine coverage\"}}]}"
+    ]
+  },
+  {
+    "script": "engineering",
+    "log_sha256": "9bf6493c97edcf80ad0ef7871481c47b4c9e3d3d32cd22c8150f323ffb6249f4",
+    "traceback": false,
+    "markers": [
+      "CAD_ENGINEERING_RESULT_CHANNEL=[{\"kind\": \"linear_static\", \"schema\": \"freecad-engineering-result.v1\", \"roles\": [\"engineering_report\", \"engineering_field\", \"engineering_bundle\"], \"source_unchanged\": true}, {\"kind\": \"contour_milling\", \"schema\": \"freecad-engineering-result.v1\", \"roles\": [\"engineering_report\", \"engineering_field\", \"engineering_bundle\", \"cam_program\"], \"source_unchanged\": true}, {\"kind\": \"release_package\", \"schema\": \"freecad-engineering-result.v1\", \"roles\": [\"engineering_report\", \"engineering_bundle\", \"release_manifest\", \"release_bom_json\", \"release_bom_csv\", \"release_step\", \"release_stl\"], \"source_unchanged\": true}]"
+    ]
+  },
+  {
+    "script": "feature-measurements",
+    "log_sha256": "76a393686cdc592aecea15bcf582bbf81d9051a23fc30cdea207feb4f5a88953",
+    "traceback": false,
+    "markers": [
+      "FEATURE_MEASUREMENT_CONTRACT_PASSED"
+    ]
+  },
+  {
+    "script": "freecad_api_contract",
+    "log_sha256": "5d853997ba1485138edb40dd2f776124b5858455b040a3bf86d7826c35d3bd75",
+    "traceback": false,
+    "markers": [
+      "CAD_API_CONTRACT={\"spreadsheet_expression_variants\": 2, \"gui_workbench\": true, \"failed_programs_rejected\": 2}"
+    ]
+  },
+  {
+    "script": "freecad_checkpoint_replay_contract",
+    "log_sha256": "65e87b913244a3d52f835755421ba0334f946c7f005902034445726c279233dd",
+    "traceback": false,
+    "markers": [
+      "CAD_CHECKPOINT_REPLAY_CONTRACT={\"passed\": true, \"source_sha256\": \"22b6aa8dc23af302491e36b7d04a05de94d5b3780abebb17b41d9a08a86485b7\", \"executed_turns\": 2, \"checkpoint_sha256\": [\"98da7f80c1d92b2663984754f15c87a2847ccfe01b163721d264aa76ed6364b1\"], \"native_and_step\": true, \"symmetric_difference_mm3\": 0.0, \"hole_count\": 1, \"hole_diameter_mm\": 6, \"hole_depth_mm\": 8, \"centered\": true}"
+    ]
+  },
+  {
+    "script": "freecad_constraint_diagnostics",
+    "log_sha256": "a8a8e8eecd1548203a051305645930d7dbbee4f509bca61ef324b44f408f8c63",
+    "traceback": false,
+    "markers": [
+      "CAD_CONSTRAINT_DIAGNOSTICS=[{\"case\": \"normal\", \"radius\": 3.5, \"status\": \"valid\"}, {\"case\": \"under\", \"radius\": 3.5, \"code\": \"sketch_under_constrained\", \"details\": {\"object\": \"ArbitraryProfile\", \"solver_status\": 0, \"fully_constrained\": false, \"constraint_status\": \"under_constrained\", \"degrees_of_freedom\": 3, \"redundant_constraint_numbers\": [], \"partially_redundant_constraint_numbers\": [], \"conflicting_constraint_numbers\": [], \"constraint_numbering\": \"one_based\", \"native_status\": \"Valid\"}}, {\"case\": \"redundant\", \"radius\": 3.5, \"code\": \"sketch_redundant_constraints\", \"details\": {\"object\": \"ArbitraryProfile\", \"solver_status\": -2, \"fully_constrained\": true, \"constraint_status\": \"redundant\", \"degrees_of_freedom\": 0, \"redundant_constraint_numbers\": [4], \"partially_redundant_constraint_numbers\": [], \"conflicting_constraint_numbers\": [], \"constraint_numbering\": \"one_based\", \"native_status\": \"Sketch with redundant constraints\\nRemove the following redundant constraint:\\n4\\n\\n\"}}, {\"case\": \"conflicting\", \"radius\": 3.5, \"code\": \"sketch_conflicting_constraints\", \"details\": {\"object\": \"ArbitraryProfile\", \"solver_status\": -4, \"fully_constrained\": true, \"constraint_status\": \"conflicting\", \"degrees_of_freedom\": -1, \"redundant_constraint_numbers\": [], \"partially_redundant_constraint_numbers\": [], \"conflicting_constraint_numbers\": [3, 4], \"constraint_numbering\": \"one_based\", \"native_status\": \"Over-constrained sketch\\nRemove at least one of the following conflicting constraints:3\\n, 4\\n\"}}, {\"case\": \"normal\", \"radius\": 8.0, \"status\": \"valid\"}, {\"case\": \"under\", \"radius\": 8.0, \"code\": \"sketch_under_constrained\", \"details\": {\"object\": \"ArbitraryProfile\", \"solver_status\": 0, \"fully_constrained\": false, \"constraint_status\": \"under_constrained\", \"degrees_of_freedom\": 3, \"redundant_constraint_numbers\": [], \"partially_redundant_constraint_numbers\": [], \"conflicting_constraint_numbers\": [], \"constraint_numbering\": \"one_based\", \"native_status\": \"Valid\"}}, {\"case\": \"redundant\", \"radius\": 8.0, \"code\": \"sketch_redundant_constraints\", \"details\": {\"object\": \"ArbitraryProfile\", \"solver_status\": -2, \"fully_constrained\": true, \"constraint_status\": \"redundant\", \"degrees_of_freedom\": 0, \"redundant_constraint_numbers\": [4], \"partially_redundant_constraint_numbers\": [], \"conflicting_constraint_numbers\": [], \"constraint_numbering\": \"one_based\", \"native_status\": \"Sketch with redundant constraints\\nRemove the following redundant constraint:\\n4\\n\\n\"}}, {\"case\": \"conflicting\", \"radius\": 8.0, \"code\": \"sketch_conflicting_constraints\", \"details\": {\"object\": \"ArbitraryProfile\", \"solver_status\": -4, \"fully_constrained\": true, \"constraint_status\": \"conflicting\", \"degrees_of_freedom\": -1, \"redundant_constraint_numbers\": [], \"partially_redundant_constraint_numbers\": [], \"conflicting_constraint_numbers\": [3, 4], \"constraint_numbering\": \"one_based\", \"native_status\": \"Over-constrained sketch\\nRemove at least one of the following conflicting constraints:3\\n, 4\\n\"}}]"
+    ]
+  },
+  {
+    "script": "freecad_coordinate_contract",
+    "log_sha256": "b109a4576745ced1b1852bdaf5d0e74c555aac49b64474588474999e5927c740",
+    "traceback": false,
+    "markers": [
+      "CAD_COORDINATE_CONTRACT={\"explicit_frames\": 9, \"legacy_preserved\": 3, \"body_transform_verified\": true, \"signed_coordinates_cut_export_reopen\": 6, \"through_cut_thickness_edits\": 3}"
+    ]
+  },
+  {
+    "script": "freecad_curve_profile_contract",
+    "log_sha256": "854f198969eec3e3ee22ed19b9963dd1fa65a5897aff3de722a3a1e26b696f39",
+    "traceback": false,
+    "markers": [
+      "CAD_CURVE_PROFILE_CONTRACT={\"constrained_editable_profiles\": [\"arc\", \"arc\", \"regular_polygon\", \"regular_polygon\"], \"angle_edits\": 4}"
+    ]
+  },
+  {
+    "script": "freecad_hole_cut_contract",
+    "log_sha256": "e118ee82d8f7c7d63a48e73fcf921f161356898b7be3704b1155d825c54e855e",
+    "traceback": false,
+    "markers": [
+      "CAD_HOLE_CUT_CONTRACT={\"final_step_forms_verified\": [\"counterbore\", \"counterbore\", \"countersink\", \"countersink\"], \"opposite_entrances_preserved\": 4, \"head_diameter_edits\": 4, \"invalid_edits_rejected\": 4}"
+    ]
+  },
+  {
+    "script": "freecad_loft_contract",
+    "log_sha256": "b0c71519830a5899397ed030dda6e3044064e04d48c196e28fc709f21804fde5",
+    "traceback": false,
+    "markers": [
+      "CAD_LOFT_CONTRACT={\"analytic_open_transitions\": [[30, 20, 50, 2], [24, 16, 33, 3]], \"native_dependency_edit\": true}"
+    ]
+  },
+  {
+    "script": "freecad_pattern_contract",
+    "log_sha256": "537b8895935b02d9deb00c9e7cd11c4a7ed0cf34b8596855895dd7ab7d546239",
+    "traceback": false,
+    "markers": [
+      "CAD_PATTERN_CONTRACT={\"pattern_types\": [\"polar\", \"linear\"], \"counts_and_material_verified\": true, \"native_count_edits\": 2, \"clamped_values_rejected_and_rolled_back\": 2}"
+    ]
+  },
+  {
+    "script": "freecad_profile_contract",
+    "log_sha256": "759092b39db17fdd900d27276ba6d31c858f9d3ab4d8f9717f1e7689da569515",
+    "traceback": false,
+    "markers": [
+      "CAD_PROFILE_CONTRACT={\"translations\": 3, \"profiles_solved\": 9, \"exact_volumes\": 3}"
+    ]
+  },
+  {
+    "script": "freecad_reference_fixture",
+    "log_sha256": "0ed49b7e64e2bd586f997fbe80e52ba027a5e35e5217b4b304e8efcca38cb5e2",
+    "traceback": false,
+    "markers": [
+      "CAD_REFERENCE_GEOMETRY={\"references\": 6, \"physical_measurements\": {\"Body\": [19200.0, 60.0, 40.0, 8.0]}, \"source_sha256\": \"026405e1508821aa6af912f5736cabb892f732e394b073dd9fbf68a02563e475\"}"
+    ]
+  },
+  {
+    "script": "freecad_repair_replay_contract",
+    "log_sha256": "12d3e6e4bf6193da595543816fb7022384f72d88d1905ca3829c4c41f4442645",
+    "traceback": false,
+    "markers": [
+      "CAD_REPAIR_REPLAY_CONTRACT={\"retained_failure\": \"subtractive_feature_no_effect\", \"only_direction_changed\": true, \"final_step_valid\": true}"
+    ]
+  },
+  {
+    "script": "freecad_revolve_contract",
+    "log_sha256": "87f72b15c53c7c5bc160fbdf2bf2772bbaed5272d093eb5bf4c1b4a059fc27a0",
+    "traceback": false,
+    "markers": [
+      "CAD_REVOLVE_CONTRACT={\"angles\": [90, 240], \"analytic_volume_and_angle_edits\": true}"
+    ]
+  },
+  {
+    "script": "freecad_sweep_contract",
+    "log_sha256": "0a0f0362e6a8a4963ac498d8c88d1d94878c21525431c0001de4026f3d37c034",
+    "traceback": false,
+    "markers": [
+      "CAD_SWEEP_CONTRACT={\"analytic_open_sweeps\": 2, \"native_dependency_edits\": 2, \"straight_end_sections\": 4}"
+    ]
+  },
+  {
+    "script": "freecad_tangency_contract",
+    "log_sha256": "b777616852fa9b89487fb412fec79f0d67fa064b148b912ffcb700feedbb2b2d",
+    "traceback": false,
+    "markers": [
+      "CAD_TANGENCY_CONTRACT={\"native_and_direct_occt\": \"SelfIntersect\", \"invalid_candidate_not_exported\": true}"
+    ]
+  },
+  {
+    "script": "freecad_tool_replay_contract",
+    "log_sha256": "9b0b9aca7e43f0bbf65f5fe88bbcea7b1d353a30b829ca13f5ad0f2426e74ae8",
+    "traceback": false,
+    "markers": [
+      "CAD_TOOL_REPLAY_CONTRACT={\"passed\": true, \"source_sha256\": \"4cc80d3165f09bdabe02e5d383733bbd50c80ce1dc739c557fa12cb7fb84a142\", \"executed_turns\": 1, \"checkpoint_sha256\": [], \"native_and_step\": true, \"symmetric_difference_mm3\": 0.0, \"hole_count\": 1, \"hole_diameter_mm\": 6, \"hole_depth_mm\": 8, \"centered\": true}"
+    ]
+  }
+]

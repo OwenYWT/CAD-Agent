@@ -73,6 +73,7 @@
         "app.execution.errors",
         "app.workflows.inputs",
         "app.workflows.revision_inputs",
+        "app.workflows.checkpoint_inputs",
         "app.workflows.logical_steps",
         "app.workflows.execution_support",
         "app.workflows.validation_support",
@@ -281,6 +282,7 @@
         "app.storage",
         "app.storage.*",
         "app.runtime",
+        "app.model_job_context",
         "app"
       ],
       "allowed_dependencies": [
@@ -777,6 +779,7 @@
     "backend/app/workflows/model_job_policy.py": "M03",
     "backend/app/workflows/modeling.py": "M03",
     "backend/app/workflows/revision_inputs.py": "M03",
+    "backend/app/workflows/checkpoint_inputs.py": "M03",
     "backend/app/workflows/scene_activities.py": "M03",
     "backend/app/workflows/source_preparation.py": "M03",
     "backend/app/workflows/temporal.py": "M03",
@@ -902,9 +905,18 @@
     "frontend/src/utils/parameterMapping.ts": "P04",
     "frontend/src/utils/parameterValidation.ts": "P04",
     "frontend/src/utils/suggestions.ts": "P04",
-    "backend/app/models/workflow_requests.py": "P00"
+    "backend/app/models/workflow_requests.py": "P00",
+    "backend/app/contracts/acceptance.py": "P00",
+    "backend/app/contracts/geometry_request.py": "P00",
+    "backend/app/freecad/api_catalog.py": "M04",
+    "backend/app/freecad/agent_tools.py": "M04",
+    "backend/app/contracts/cad_tools.py": "P00"
   },
   "required_runtime_reports": {
+    "native-parameters/kernel.log": {
+      "kind": "marker",
+      "marker": "CAD_NATIVE_PARAMETER_MEASUREMENTS="
+    },
     "durable-core.xml": {
       "kind": "junit"
     },
@@ -1011,6 +1023,58 @@
     },
     "release-source-drill/current-monitor.xml": {
       "kind": "junit"
+    },
+    "native/freecad_coordinate_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_COORDINATE_CONTRACT="
+    },
+    "native/freecad_profile_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_PROFILE_CONTRACT="
+    },
+    "native/freecad_curve_profile_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_CURVE_PROFILE_CONTRACT="
+    },
+    "native/freecad_hole_cut_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_HOLE_CUT_CONTRACT="
+    },
+    "native/freecad_loft_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_LOFT_CONTRACT="
+    },
+    "native/freecad_sweep_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_SWEEP_CONTRACT="
+    },
+    "native/freecad_revolve_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_REVOLVE_CONTRACT="
+    },
+    "native/freecad_pattern_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_PATTERN_CONTRACT="
+    },
+    "native/freecad_tangency_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_TANGENCY_CONTRACT="
+    },
+    "native/freecad_repair_replay_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_REPAIR_REPLAY_CONTRACT="
+    },
+    "native/freecad_tool_replay_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_TOOL_REPLAY_CONTRACT="
+    },
+    "native/freecad_checkpoint_replay_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_CHECKPOINT_REPLAY_CONTRACT="
+    },
+    "native/curved-surfaces.log": {
+      "kind": "marker",
+      "marker": "CURVED_SURFACE_CONTRACT="
     }
   }
 }

@@ -1,5 +1,6 @@
 """Engineering use cases; Temporal names live in the adapter."""
 from __future__ import annotations
+from app.config import settings
 from functools import partial
 from app.workflows.handlers.legacy_modeling import execute
 import asyncio
@@ -313,7 +314,7 @@ async def check(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[s
                 platform=snapshot.platform,
                 sandbox_tier="ephemeral-job",
             ),
-            limits=ResourceLimits(
+            limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit,
                 timeout_seconds=int(
                     payload.get("timeout_seconds", 120)
                 )
@@ -336,7 +337,7 @@ async def check(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[s
             materialized_inputs=materialized,
         )
 
-        if activity.is_cancelled():
+        if activity.in_activity() and activity.is_cancelled():
             raise asyncio.CancelledError
         async with tenant_transaction(
             tenant_id,

@@ -102,3 +102,56 @@ async def test_stream_does_not_impose_an_application_character_cap():
     content = "x" * 1_000_001
     response = await adapter_response([chunk(content), chunk(finish="stop"), chunk(usage=True)])
     assert response.choices[0].message.content == content
+
+
+def tool_chunk(calls=(), finish=None):
+    return ChatCompletionChunk(id="completion-1", object="chat.completion.chunk", created=1,
+        model="actual-model", choices=[{"index": 0, "delta": {"tool_calls": list(calls)},
+                                        "finish_reason": finish}])
+
+
+@pytest.mark.asyncio
+async def test_stream_reassembles_interleaved_tools_and_hashes_arguments():
+    async def response(value):
+        return await adapter_response([
+            tool_chunk([{"index": 0, "id": "call_a", "type": "function",
+                         "function": {"name": "freecad_inspect", "arguments": '{"objects":['}},
+                        {"index": 1, "id": "call_b", "type": "function",
+                         "function": {"name": "freecad_discover", "arguments": "{"}}]),
+            tool_chunk([{"index": 1, "function": {"arguments": '"module":"Part"}'}},
+                        {"index": 0, "function": {"arguments": '"' + value + '"]}'}}]),
+            tool_chunk(finish="tool_calls"), chunk(usage=True)])
+    result = await response("Pad")
+    calls = result.choices[0].message.tool_calls
+    assert [(c.id, c.function.name, c.function.arguments) for c in calls] == [
+        ("call_a", "freecad_inspect", '{"objects":["Pad"]}'),
+        ("call_b", "freecad_discover", '{"module":"Part"}')]
+    first_hash = get_last_chat_completion_provenance()["response_hash"]
+    await response("Hole")
+    assert first_hash != get_last_chat_completion_provenance()["response_hash"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("parts", [
+    [tool_chunk(finish="tool_calls")],
+    [tool_chunk([{"index": 0, "function": {"arguments": "{}"}}], "tool_calls")],
+    [tool_chunk([{"index": 0, "id": "a", "type": "function", "function": {"name": "f", "arguments": "{}"}}], "stop")],
+    [tool_chunk([{"index": 0, "id": "a", "type": "function", "function": {"name": "f", "arguments": "{"}}]),
+     tool_chunk([{"index": 0, "id": "b", "function": {"arguments": "}"}}], "tool_calls")],
+])
+async def test_malformed_tool_stream_fails_closed(parts):
+    with pytest.raises(ValueError, match="stream"):
+        await adapter_response(parts)
+    assert get_last_chat_completion_provenance() is None
+
+
+@pytest.mark.asyncio
+async def test_thinking_tool_protocol_retains_context_for_next_provider_turn():
+    first = chunk()
+    first.choices[0].delta.reasoning_content = "synthetic protocol "
+    second = chunk()
+    second.choices[0].delta.reasoning_content = "context"
+    response = await adapter_response([first, second, tool_chunk([
+        {"index": 0, "id": "read", "type": "function", "function": {
+            "name": "freecad_discover", "arguments": '{"module":"Part"}'}}], "tool_calls")])
+    assert response.choices[0].message.reasoning_content == "synthetic protocol context"

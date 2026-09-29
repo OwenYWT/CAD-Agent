@@ -1,0 +1,72 @@
+[
+  {
+    "case_id": "M01",
+    "scope": "offline saved response parsing, no model calls",
+    "status": "validated_contract",
+    "required": 8,
+    "assumptions": 0
+  },
+  {
+    "case_id": "P01",
+    "scope": "offline saved response parsing, no model calls",
+    "status": "validated_contract",
+    "required": 3,
+    "assumptions": 1
+  },
+  {
+    "case_id": "P03",
+    "scope": "offline saved response parsing, no model calls",
+    "status": "validated_contract",
+    "required": 6,
+    "assumptions": 1
+  },
+  {
+    "case_id": "P08",
+    "scope": "offline saved response parsing, no model calls",
+    "status": "validated_contract",
+    "required": 5,
+    "assumptions": 0
+  },
+  {
+    "case_id": "P17",
+    "scope": "offline saved response parsing, no model calls",
+    "status": "validated_contract",
+    "required": 6,
+    "assumptions": 1
+  },
+  {
+    "case_id": "P18",
+    "scope": "offline saved response parsing, no model calls",
+    "status": "validated_contract",
+    "required": 7,
+    "assumptions": 0
+  },
+  {
+    "case_id": "P32",
+    "scope": "offline saved response parsing, no model calls",
+    "status": "validated_contract",
+    "required": 11,
+    "assumptions": 0
+  },
+  {
+    "case_id": "P35",
+    "scope": "offline saved response parsing, no model calls",
+    "status": "validated_contract",
+    "required": 3,
+    "assumptions": 1
+  },
+  {
+    "case_id": "X04",
+    "scope": "offline saved response parsing, no model calls",
+    "status": "validated_contract",
+    "required": 4,
+    "assumptions": 0
+  },
+  {
+    "case_id": "X05",
+    "scope": "offline saved response parsing, no model calls",
+    "status": "validated_contract",
+    "required": 5,
+    "assumptions": 1
+  }
+]

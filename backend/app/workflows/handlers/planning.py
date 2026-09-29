@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from typing import Any
+from temporalio.exceptions import ApplicationError
 from app.agent.durable_plan import AgentPlan, normalize_agent_plan_backend, enforce_design_validation
 from app.agent.durable_planner import DurableAgentPlanner
 from app.db import tenant_transaction
@@ -52,7 +53,8 @@ async def agent_requirements(payload: dict[str, Any], *, durable_planner: Durabl
                 request.objective + (
                     "\n\n" + request.operation_context.requirement_basis.planning_context()
                     if request.operation_context and request.operation_context.requirement_basis else ""
-                )
+                ),
+                **({"require_acceptance": True} if payload.get("engineering_acceptance_v1") else {}),
             )
         else:
             if request.modeling_backend == "freecad":
@@ -118,7 +120,15 @@ async def agent_requirements(payload: dict[str, Any], *, durable_planner: Durabl
             requirements = await durable_planner.requirements_modification(
                 model_context,
                 request.objective,
+                **({'require_acceptance':True} if payload.get('engineering_acceptance_v1') and request.modeling_backend=='freecad' else {}),
             )
+        acceptance = (requirements.design_brief.acceptance
+            if isinstance(requirements, CADPlan) and requirements.design_brief
+            else getattr(requirements, 'acceptance', None))
+        if acceptance and acceptance.verification_limits:
+            raise ApplicationError(
+                '当前尚不能核验以下必需工程条件：' + '；'.join(acceptance.verification_limits),
+                type='engineering_verification_unavailable', non_retryable=True)
         result = {
             "step_key": step_key,
             "operation": request.operation,

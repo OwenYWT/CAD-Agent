@@ -1,5 +1,6 @@
 """Visual validation use cases; Temporal names live in the adapter."""
 from __future__ import annotations
+from app.config import settings
 import asyncio
 import hashlib
 import json
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from sqlalchemy import text
 from temporalio import activity
+from app.workflows.execution_support import execution_identity, execution_timeout
 from temporalio.exceptions import ApplicationError
 from app.db import tenant_transaction
 from app.domain.runs import StepStatus
@@ -18,7 +20,7 @@ from app.object_store import download_object, put_file
 from app.repositories.agent_candidates import get_generated_source_for_step, get_validation_evidence_for_manifest, record_generated_source, record_validation_evidence
 from app.repositories.runs import append_workflow_event
 from app.services.run_state import complete_attempt, transition_step
-from app.validation.durable_visual import DurableVisualValidator, VisualRenderEvidence, indeterminate_visual_report
+from app.validation.durable_visual import DurableVisualValidator, VisualRenderEvidence, indeterminate_visual_report, brief_with_verified_geometry
 from app.workflows.logical_steps import _start_agent_logical_step, _fail_agent_logical_step
 from app.workflows.inputs import _uuid, _agent_v2_request
 from app.workflows.execution_support import _prepare_agent_validation_attempt
@@ -29,7 +31,7 @@ from app.workflows.validation_support import _record_agent_validation_outcome
 from app.workflows.revision_inputs import _agent_validation_input
 
 async def agent_render_visual(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[str, Any]:
-    info = activity.info()
+    info = execution_identity()
     request = _agent_v2_request(payload)
     candidate_build_id = _uuid(payload, "candidate_build_id")
     manifest_id = _uuid(payload, "staging_manifest_id")
@@ -67,7 +69,7 @@ async def agent_render_visual(payload: dict[str, Any], *, backend: ExecutionBack
             payload,
             temporal_attempt=info.attempt,
             step_key=step_key,
-            step_index=int(payload["step_index"]),
+            step_index=None if payload.get("checkpoint_enabled") else int(payload["step_index"]),
             step_kind="agent_visual_render",
         )
     )
@@ -158,8 +160,8 @@ async def agent_render_visual(payload: dict[str, Any], *, backend: ExecutionBack
                 platform=snapshot.platform,
                 sandbox_tier="ephemeral-job",
             ),
-            limits=ResourceLimits(
-                timeout_seconds=120,
+            limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit,
+                timeout_seconds=execution_timeout(payload, 120),
                 memory_bytes=1536 * 1024 * 1024,
                 pids=512,
             ),
@@ -313,6 +315,10 @@ async def agent_judge_visual(payload: dict[str, Any], *, durable_visual: Durable
                 "attempt_id": str(replay["execution_attempt_id"]),
                 "replayed": True,
             }
+        geometry_record = await get_validation_evidence_for_manifest(
+            connection,tenant_id=request.tenant_id,candidate_build_id=candidate_build_id,
+            workflow_id=request.workflow_run_id,staging_manifest_id=manifest_id,gate='geometry')
+        visual_brief = brief_with_verified_geometry(dict(payload['design_brief']),geometry_record,manifest_id)
     temp_dir = Path(tempfile.mkdtemp(prefix="agent_vision_provider_"))
     render_models = tuple(
         VisualRenderEvidence.model_validate(item)
@@ -331,7 +337,7 @@ async def agent_judge_visual(payload: dict[str, Any], *, durable_visual: Durable
             paths.append(path)
         report = await durable_visual.report(
             objective=str(payload["objective"]),
-            design_brief=dict(payload["design_brief"]),
+            design_brief=visual_brief,
             render_paths=tuple(paths),
             renders=render_models,
             runtime_provenance=dict(payload["runtime_provenance"]),
@@ -417,7 +423,7 @@ async def agent_repair_visual(payload: dict[str, Any], *, durable_visual: Durabl
             tenant_id=request.tenant_id,
             workflow_id=request.workflow_run_id,
             step_key=step_key,
-            step_index=int(payload["step_index"]),
+            step_index=None if payload.get("checkpoint_enabled") else int(payload["step_index"]),
             kind="agent_visual_repair",
         )
     try:

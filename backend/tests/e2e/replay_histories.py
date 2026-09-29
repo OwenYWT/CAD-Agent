@@ -12,7 +12,8 @@ from app.workflows.model_job import ModelJobWorkflow
 
 async def main(output):
     types = {cls.__name__: cls for cls in (McadAgentWorkflowV2, McadDurableWorkflow, McadCheckWorkflow, ModelJobWorkflow)}
-    client = await Client.connect(os.environ['TEMPORAL_TARGET'])
+    client = await Client.connect(os.environ['TEMPORAL_TARGET'],
+                                  namespace=os.getenv('TEMPORAL_NAMESPACE', 'default'))
     seen = set(); report = []
     for name in types:
         count = 0

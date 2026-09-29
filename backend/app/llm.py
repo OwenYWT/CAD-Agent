@@ -52,6 +52,12 @@ def _completion_provenance(
     first = choices[0] if choices else None
     message = getattr(first, "message", None)
     content = str(getattr(message, "content", "") or "")
+    tool_calls = getattr(message, "tool_calls", None)
+    response_bytes = content.encode("utf-8")
+    if tool_calls:
+        response_bytes = json.dumps({"content": content, "tool_calls": [
+            call.model_dump(mode="json", exclude_none=True) for call in tool_calls
+        ]}, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     usage = getattr(response, "usage", None)
     if usage is None:
         usage_payload: dict[str, Any] = {}
@@ -74,7 +80,7 @@ def _completion_provenance(
             str(getattr(response, "id", "") or "") or None
         ),
         "request_hash": hashlib.sha256(request_payload).hexdigest(),
-        "response_hash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "response_hash": hashlib.sha256(response_bytes).hexdigest(),
         "finish_reason": (
             str(getattr(first, "finish_reason", "") or "") or None
         ),
@@ -222,7 +228,8 @@ async def _complete_stream(stream) -> ChatCompletion:
     activity; cancellation closes the stream in the finally block below.
     """
     identity = None
-    content, refusal = [], []
+    content, refusal, reasoning = [], [], []
+    calls: dict[int, dict[str, Any]] = {}
     finish = None
     usage = None
     try:
@@ -244,22 +251,59 @@ async def _complete_stream(stream) -> ChatCompletion:
             if chunk.usage is not None:
                 usage = chunk.usage
             for choice in chunk.choices:
-                if choice.index != 0 or choice.delta.tool_calls or choice.delta.function_call:
-                    raise ValueError("model stream contains unsupported choices or tool calls")
+                if choice.index != 0 or choice.delta.function_call:
+                    raise ValueError("model stream contains unsupported choices or legacy function calls")
                 if finish is not None:
                     raise ValueError("model stream continued after its terminal choice")
                 delta = choice.delta.content or ""
                 content.append(delta)
                 if choice.delta.refusal:
                     refusal.append(choice.delta.refusal)
+                # Provider-owned context is round-tripped only to the model.
+                # Kimi thinking tool conversations require this field on the
+                # next assistant message; it is not user-facing task progress.
+                reasoning_delta = getattr(choice.delta, "reasoning_content", None)
+                if reasoning_delta is not None:
+                    if not isinstance(reasoning_delta, str):
+                        raise ValueError("model stream contains invalid reasoning context")
+                    reasoning.append(reasoning_delta)
+                for part in choice.delta.tool_calls or ():
+                    if part.index < 0:
+                        raise ValueError("model stream contains a negative tool index")
+                    call = calls.setdefault(part.index, {"id": None, "type": None,
+                        "function": {"name": "", "arguments": ""}})
+                    for key in ("id", "type"):
+                        value = getattr(part, key)
+                        if value is not None:
+                            if call[key] is not None and call[key] != value:
+                                raise ValueError("model stream mixed tool identities")
+                            call[key] = value
+                    if part.function:
+                        for key in ("name", "arguments"):
+                            call["function"][key] += getattr(part.function, key) or ""
                 finish = choice.finish_reason
     finally:
         await stream.close()
     if identity is None or finish is None:
         raise ValueError("model stream ended without a terminal provider response")
+    ordered_calls = [calls[index] for index in sorted(calls)]
+    if finish == "tool_calls" or calls:
+        if finish not in {"tool_calls", "length", "content_filter"} or not calls:
+            raise ValueError("model stream tool calls disagree with terminal reason")
+        if finish == "tool_calls" and (
+            sorted(calls) != list(range(len(calls)))
+            or len({call["id"] for call in ordered_calls}) != len(calls)
+            or any(not call["id"] or call["type"] != "function"
+                   or not call["function"]["name"] for call in ordered_calls)
+        ):
+            raise ValueError("model stream ended with incomplete tool identities")
+    # Truncated calls are not executable; preserve the reason for caller diagnostics.
+    completed_calls = ordered_calls if finish == "tool_calls" else None
     return ChatCompletion(id=identity[0], model=identity[1], created=identity[2], object="chat.completion",
         choices=[{"index": 0, "finish_reason": finish,
-                  "message": {"role": "assistant", "content": "".join(content), "refusal": "".join(refusal) or None}}],
+                  "message": {"role": "assistant", "content": "".join(content),
+                              "tool_calls": completed_calls, "refusal": "".join(refusal) or None,
+                              **({"reasoning_content": "".join(reasoning)} if reasoning else {})}}],
         usage=usage)
 
 

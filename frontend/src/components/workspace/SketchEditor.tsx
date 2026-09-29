@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { CloudDocument, SemanticFeature } from "../../types/document";
 import type { SketchConstraint, SketchDetails, SketchDimensionType } from "../../types/sketch";
-import { dimensionLabels, editableDimension, previewSketch, sketchBounds, validDimension } from "../../adapters/sketchPreview";
+import { dimensionLabels, displayDimension, dimensionEdit, editableDimension, previewSketch, sketchBounds, validDimension } from "../../adapters/sketchPreview";
 import { readDocumentSketch, updateSketchDimensions } from "../../services/clients/documents";
 import { EngineeringApiError } from "../../services/clients/http";
 import { useFeatureLease } from "../../hooks/useFeatureLease";
@@ -36,8 +36,8 @@ export default function SketchEditor({document,feature,onSubmitted}: {
   const stale=base.head_revision_id!==document.head_revision_id || base.state_version!==document.state_version;
   const canEdit=document.can_edit && !!onSubmitted && !pending && !stale && !submittedId && !uncertain;
   const constraints=details?.constraints || [];
-  const updates=constraints.filter(c=>editableDimension(c) && values[c.index]!==undefined && Number(values[c.index])!==c.value)
-    .map(c=>({constraint_index:c.index,expected_type:c.type as SketchDimensionType,value_mm:Number(values[c.index])}));
+  const updates=constraints.filter(c=>editableDimension(c) && values[c.index]!==undefined && Number(values[c.index])!==displayDimension(c))
+    .map(c=>dimensionEdit(c,Number(values[c.index])));
   const valid=updates.length>0 && updates.length<=20 && constraints.every(c=>values[c.index]===undefined ||
     (!!values[c.index].trim() && validDimension(c,Number(values[c.index]))));
   const change=(updates:Record<number,string>)=>{setValues(v=>({...v,...updates}));setKey(crypto.randomUUID());};
@@ -88,13 +88,13 @@ export default function SketchEditor({document,feature,onSubmitted}: {
   const refresh=()=>{setValues({});setDetails(null);setFitted(null);setKey(crypto.randomUUID());setBase(document);setSubmittedId(null);setAttemptToken(null);setUncertain(false);void lease.release().catch(()=>{});};
   useDraftGuard((Object.keys(values).length > 0 && !submittedId) || pending, `${feature.label} 草图约束`, refresh);
   const dimensionStep=(c:SketchConstraint,delta:number)=>{
-    const value=Number(values[c.index] ?? c.value)+delta;
+    const value=Number(values[c.index] ?? displayDimension(c))+delta;
     if (canEdit && validDimension(c,value)) change({[c.index]:String(Number(value.toFixed(3)))});
   };
   const unsupported=geometry.filter(g=>!['Part::GeomCircle','Part::GeomLineSegment'].includes(g.type)).length;
   return <section className="ww-inspector-section" aria-label="草图编辑" data-testid="sketch-editor">
     <h3>{feature.label} · 草图尺寸</h3>
-    <p className="type-caption">蓝色控制点可拖动圆心和半径，也可输入尺寸。预览只更新本地草稿，提交后由云端求解并审核。</p>
+    <p className="type-caption">蓝色控制点可拖动圆心和半径，也可输入尺寸。预览只更新本地草稿；角度与关联几何在提交后由云端求解并审核。</p>
     {!details ? <p role="status" className="mt-2 type-caption">正在读取草图检查点…</p> : <>
       <svg role="group" aria-label="草图本地预览" data-testid="sketch-preview" data-revision={base.head_revision_id}
         className="my-3 h-64 w-full touch-none rounded border border-[var(--line)] bg-[var(--surface)]" viewBox={bounds.join(' ')}
@@ -123,7 +123,7 @@ export default function SketchEditor({document,feature,onSubmitted}: {
       {constraints.map(c=><label key={c.index} className="my-2 flex items-center gap-2 type-caption"><span className="min-w-0 flex-1">
         {c.name || dimensionLabels[c.type as SketchDimensionType] || c.type} · #{c.index}{c.driving===false ? "（测量）" : ""}</span>
         {editableDimension(c) ? <><input aria-label={`草图约束 ${c.index} ${c.type}`} className="w-24 rounded border border-[var(--line)] p-2" type="number" step="any"
-          value={values[c.index] ?? c.value} disabled={!canEdit} onFocus={()=>{void lease.ensure().catch(()=>{});}} onChange={e=>change({[c.index]:e.target.value})} /><span>mm</span></>
+          value={values[c.index] ?? displayDimension(c)} disabled={!canEdit} onFocus={()=>{void lease.ensure().catch(()=>{});}} onChange={e=>change({[c.index]:e.target.value})} /><span>{c.type==="Angle" ? "°" : "mm"}</span></>
           : <span>{c.value}</span>}
       </label>)}
       {document.can_edit && onSubmitted ? <button className="workspace-button" type="button" disabled={(!canEdit && !uncertain) || pending || !valid || !!submittedId} onClick={()=>void submit()}>{uncertain ? "核对并重试同一草图请求" : submittedId ? "已提交候选计算" : "提交草图约束"}</button> : null}

@@ -50,22 +50,28 @@ with httpx.Client(base_url=API,timeout=60) as client,sync_playwright() as pw:
     tree.get_by_role('button',name='查看变更 / 应用修改',exact=True).click()
     dialog=p.get_by_role('dialog',name='变更审查',exact=True)
     dialog.get_by_role('textbox',name='审查意见',exact=True).fill('验收拒绝路径：保留原始 6.5 mm 孔径。')
-    # Observe every guard request, including one that only flashes between frames.
-    p.evaluate('''async () => {
-      const {useDraftGuardStore} = await import('/src/stores/draftGuard.ts');
+    # Observe the public UI, including dialogs added and removed between frames.
+    # This must work against the packaged frontend, without Vite/private stores.
+    p.evaluate('''() => {
       window.__unexpectedDraftGuards = 0;
-      window.__draftState = () => useDraftGuardStore.getState();
-      window.__stopDraftObserver = useDraftGuardStore.subscribe((state, previous) => {
-        if (state.pending && state.pending !== previous.pending) window.__unexpectedDraftGuards++;
+      const selector = '[role="dialog"][aria-label="保留编辑草稿"]';
+      const observer = new MutationObserver(records => {
+        for (const record of records) for (const node of record.addedNodes) {
+          if (node instanceof Element && (node.matches(selector) || node.querySelector(selector))) {
+            window.__unexpectedDraftGuards++;
+          }
+        }
       });
+      observer.observe(document.body, {childList: true, subtree: true});
+      window.__stopDraftObserver = () => observer.disconnect();
     }''')
     hold_collaboration=action=='reject-before-draft'
     refreshes=[]
     def refresh(route):
      response=route.fetch()  # Real response; delay delivery only to exercise ordering.
      if action=='reject-after-draft':
-      p.wait_for_function('Object.keys(window.__draftState().drafts).length > 0')
       expect(field).to_be_enabled();expect(field).to_have_value(diameter)
+      expect(tree.get_by_text('我的未提交修改',exact=True)).to_be_visible()
      refreshes.append(True)
      route.fulfill(response=response)
     url=WEB.rstrip('/')+'/api/documents/'+fixture['document_id']
@@ -76,24 +82,31 @@ with httpx.Client(base_url=API,timeout=60) as client,sync_playwright() as pw:
     # The review action remains restoring until refresh and its callback finish.
     expect(dialog.get_by_role('button',name='关闭',exact=True).last).to_be_enabled()
     if action=='reject-before-draft':
-     assert p.evaluate('Object.keys(window.__draftState().drafts).length')==0
+     expect(field).to_be_disabled()
+     expect(tree.get_by_text('我的未提交修改',exact=True)).not_to_be_visible()
+     until=time.monotonic()+30
+     while not delayed and time.monotonic()<until:p.wait_for_timeout(50)
      assert delayed, 'no actual collaboration messages were delayed'
      hold_collaboration=False
      for route,message in delayed:route.send(message)
      delayed.clear()
-    p.wait_for_function('Object.keys(window.__draftState().drafts).length > 0')
+    expect(field).to_be_enabled(timeout=30000)
+    expect(tree.get_by_text('我的未提交修改',exact=True)).to_be_visible()
     p.wait_for_function('document.querySelector("[role=dialog]") !== null')
     assert refreshes, 'review did not refresh the actual document'
     # Flush React effects after the actual document response has been consumed.
     p.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     assert p.evaluate('window.__unexpectedDraftGuards')==0, 'background refresh opened the draft navigation guard'
-    p.unroute(url,refresh)
+    # A review can trigger more than one real refresh. Finish all active
+    # response-delay handlers before removing interception or changing action.
+    p.unroute_all(behavior='wait')
     p.evaluate('window.__stopDraftObserver()')
     dialog.get_by_role('button',name='关闭',exact=True).last.click()
     expect(field).to_be_enabled(timeout=30000);expect(field).to_have_value(diameter)
     expect(tree.get_by_role('alert').filter(has_text='输入已保留')).to_be_visible()
    current=read(client,'/api/documents/'+fixture['document_id']);assert current['head_revision_id']==before['head_revision_id']
    p.screenshot(path=str(out/(action+'.png')))
+  p.unroute_all(behavior='wait')
   # Same-version navigation is a no-op, but genuine history navigation must
   # still ask before leaving the restored dirty parameter draft.
   original=read(client,'/api/change-sets/'+fixture['change_set_id'])['candidate_revision_id']

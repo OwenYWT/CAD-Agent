@@ -1,0 +1,190 @@
+{
+  "status": "passed",
+  "workflow_id": "bab960b9-74ce-418c-be73-9266bb49e5d6",
+  "model_tool_provider": "live",
+  "requirements_provider": "controlled_frozen_contract",
+  "vision_provider": "controlled_passing_fixture",
+  "runtime": "real_FreeCAD_Temporal_PostgreSQL_S3",
+  "tool_calls": [
+    {
+      "status": "pending_execution",
+      "step_key": "model-main",
+      "source_id": "d0526b2b-9913-48ae-8b7a-f6006cb85779",
+      "tool_name": "freecad_execute",
+      "source_hash": "4cc80d3165f09bdabe02e5d383733bbd50c80ce1dc739c557fa12cb7fb84a142",
+      "tool_call_id": "freecad_execute_2_034b4782",
+      "arguments_sha256": "f2238a076a45e11f6b196c9fd69edccdab415cdaed90fd7382867b42f9c2166b",
+      "provider_response_id": "chatcmpl-6ab9d871f7deb9522b931986"
+    }
+  ],
+  "sources": [
+    {
+      "provider": "moonshot",
+      "model": "kimi-k2.7-code",
+      "provider_response_id": "chatcmpl-6ab9d871f7deb9522b931986",
+      "request_hash": "fea937e32781b1aa4b7cd37954be43506d26233870b442a5e1e01839eab9705a",
+      "response_hash": "bc232ad053eb00db51ce64273ef1ebe1330b74fadc97056dd55e49f451ea147e",
+      "finish_reason": "tool_calls",
+      "usage": {
+        "total_tokens": 7170,
+        "cached_tokens": 5376,
+        "prompt_tokens": 6355,
+        "completion_tokens": 815,
+        "prompt_tokens_details": {
+          "cached_tokens": 5376
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 328
+        }
+      },
+      "source_hash": "4cc80d3165f09bdabe02e5d383733bbd50c80ce1dc739c557fa12cb7fb84a142"
+    }
+  ],
+  "geometry": {
+    "issues": [],
+    "outcome": "passed",
+    "artifacts": [
+      {
+        "role": "artifact-00",
+        "valid": true,
+        "format": "step",
+        "issues": [],
+        "sha256": "84a22462e4b65e9f5e7b72e2d0abe797f2cf552bfc5d5573fffd0107380a3831",
+        "filename": "geometry-00.step",
+        "bounds_mm": {
+          "x_max": 30.0,
+          "x_min": -30.0,
+          "y_max": 20.0,
+          "y_min": -20.0,
+          "z_max": 8.0,
+          "z_min": 0.0
+        },
+        "parseable": true,
+        "face_count": null,
+        "size_bytes": 8357,
+        "volume_mm3": 18973.805328941533,
+        "solid_count": 1,
+        "dimensions_mm": [
+          60.0,
+          40.0,
+          8.0
+        ],
+        "is_watertight": null,
+        "max_dimension_error": 0.0
+      },
+      {
+        "role": "artifact-01",
+        "valid": true,
+        "format": "stl",
+        "issues": [],
+        "sha256": "f6c6ba6bbf8e57e1d754877a8c15586e0a541a80eee59428eab975d6dd331e88",
+        "filename": "geometry-01.stl",
+        "bounds_mm": {
+          "x_max": 30.0,
+          "x_min": -30.0,
+          "y_max": 20.0,
+          "y_min": -20.0,
+          "z_max": 8.0,
+          "z_min": 0.0
+        },
+        "parseable": true,
+        "face_count": 932,
+        "size_bytes": 235812,
+        "volume_mm3": 18973.833707759903,
+        "solid_count": 1,
+        "dimensions_mm": [
+          60.0,
+          40.0,
+          8.0
+        ],
+        "is_watertight": true,
+        "max_dimension_error": 0.0
+      }
+    ],
+    "acceptance": {
+      "evidence": [
+        {
+          "issues": [],
+          "method": "concave_cylindrical_passages",
+          "details": {
+            "scope": "complete cylindrical passages only",
+            "numerical_tolerance_mm": 1e-07
+          },
+          "outcome": "passed",
+          "check_id": "hole-count",
+          "measured": [
+            1.0
+          ]
+        },
+        {
+          "issues": [],
+          "method": "concave_cylindrical_passages",
+          "details": {
+            "scope": "complete cylindrical passages only",
+            "quantity": "diameter",
+            "numerical_tolerance_mm": 1e-07
+          },
+          "outcome": "passed",
+          "check_id": "hole-diameter",
+          "measured": [
+            6.0
+          ]
+        },
+        {
+          "issues": [],
+          "method": "concave_cylindrical_passages",
+          "details": {
+            "scope": "complete cylindrical passages only",
+            "quantity": "depth",
+            "numerical_tolerance_mm": 1e-07
+          },
+          "outcome": "passed",
+          "check_id": "hole-depth",
+          "measured": [
+            8.0
+          ]
+        },
+        {
+          "issues": [],
+          "method": "hole_axes_transverse_locations",
+          "details": {
+            "scope": "complete cylindrical passages only",
+            "numerical_tolerance_mm": 1e-07,
+            "resolved_frame_origin_mm": [
+              0.0,
+              0.0,
+              4.0
+            ]
+          },
+          "outcome": "passed",
+          "check_id": "hole-position",
+          "measured": [
+            0.0
+          ]
+        }
+      ],
+      "contract_sha256": "35f343ee802870b49116c998c07402090d42baa14d09d1d3c8b6f5e30e578947"
+    },
+    "artifact_kind": "solid",
+    "request_sha256": "f41c60819d96a8d1537ea962faa5c1a0db20373a01b318aa7bf57750b3f19262",
+    "schema_version": "durable-geometry-report.v1",
+    "runtime_provenance": {
+      "platform": "linux/amd64",
+      "versions": {
+        "freecad": "1.1.3"
+      },
+      "code_hash": "f67bfa5871eaae570bcad9a8cd83c64e77c82891817469dcf3a93fc51f3c3d2d",
+      "input_hash": "1f3fc7a8e69603ed2a5e7ff8a80420132aa951923dbff9daafb03c42046a7b3c",
+      "image_digest": "sha256:48f954eacbdf258c34d7b15670a02afb84aeb3c62541792b99f0895c59bceff1",
+      "sandbox_tier": "ephemeral-job"
+    },
+    "dimension_tolerance": 0.05,
+    "expected_dimensions_mm": {
+      "width": 40.0,
+      "length": 60.0,
+      "thickness": 8.0
+    }
+  },
+  "commit_status": "committed",
+  "scope": "tool protocol integration only; not end-user model success rate"
+}

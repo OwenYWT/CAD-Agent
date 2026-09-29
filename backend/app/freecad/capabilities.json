@@ -1,0 +1,1991 @@
+{
+  "actions": {
+    "api.execute": {
+      "additionalProperties": false,
+      "description": "Native API program, run in a separate isolated FreeCAD process.",
+      "properties": {
+        "environment": {
+          "default": "headless",
+          "enum": [
+            "headless",
+            "gui"
+          ],
+          "title": "Environment",
+          "type": "string"
+        },
+        "modules": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Modules",
+          "type": "array"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "FreeCADAPIArgs",
+      "type": "object"
+    },
+    "assembly.instance": {
+      "additionalProperties": false,
+      "properties": {
+        "object": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Object",
+          "type": "string"
+        },
+        "rotation_axis": {
+          "default": [
+            0,
+            0,
+            1
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "type": "number"
+            },
+            {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "type": "number"
+            },
+            {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "type": "number"
+            }
+          ],
+          "title": "Rotation Axis",
+          "type": "array"
+        },
+        "rotation_deg": {
+          "default": 0,
+          "maximum": 360,
+          "minimum": -360,
+          "title": "Rotation Deg",
+          "type": "number"
+        },
+        "source": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Source",
+          "type": "string"
+        },
+        "translation_mm": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "type": "number"
+            },
+            {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "type": "number"
+            },
+            {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "type": "number"
+            }
+          ],
+          "title": "Translation Mm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "object",
+        "translation_mm",
+        "source"
+      ],
+      "title": "InstanceCreateArgs",
+      "type": "object"
+    },
+    "assembly.place": {
+      "additionalProperties": false,
+      "properties": {
+        "object": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Object",
+          "type": "string"
+        },
+        "rotation_axis": {
+          "default": [
+            0,
+            0,
+            1
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "type": "number"
+            },
+            {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "type": "number"
+            },
+            {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "type": "number"
+            }
+          ],
+          "title": "Rotation Axis",
+          "type": "array"
+        },
+        "rotation_deg": {
+          "default": 0,
+          "maximum": 360,
+          "minimum": -360,
+          "title": "Rotation Deg",
+          "type": "number"
+        },
+        "translation_mm": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "type": "number"
+            },
+            {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "type": "number"
+            },
+            {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "type": "number"
+            }
+          ],
+          "title": "Translation Mm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "object",
+        "translation_mm"
+      ],
+      "title": "InstancePlacementArgs",
+      "type": "object"
+    },
+    "document.export": {
+      "additionalProperties": false,
+      "properties": {
+        "basename": {
+          "default": "model",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Basename",
+          "type": "string"
+        },
+        "formats": {
+          "default": [
+            "fcstd",
+            "step"
+          ],
+          "items": {
+            "enum": [
+              "fcstd",
+              "step",
+              "stl",
+              "dxf"
+            ],
+            "type": "string"
+          },
+          "title": "Formats",
+          "type": "array"
+        },
+        "objects": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 80,
+                "minLength": 1,
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Objects"
+        }
+      },
+      "title": "DocumentExportArgs",
+      "type": "object"
+    },
+    "document.inspect": {
+      "additionalProperties": false,
+      "properties": {},
+      "title": "DocumentInspectArgs",
+      "type": "object"
+    },
+    "feature.chamfer": {
+      "$defs": {
+        "FreeCADTopologySelector": {
+          "additionalProperties": false,
+          "description": "Persistable native selector, never a raw FaceN/EdgeN reference.",
+          "properties": {
+            "axis": {
+              "enum": [
+                "x",
+                "y",
+                "z"
+              ],
+              "title": "Axis",
+              "type": "string"
+            },
+            "backend": {
+              "const": "freecad",
+              "default": "freecad",
+              "title": "Backend",
+              "type": "string"
+            },
+            "center": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SelectorPoint3D"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "extreme": {
+              "enum": [
+                "min",
+                "max"
+              ],
+              "title": "Extreme",
+              "type": "string"
+            },
+            "geometry": {
+              "enum": [
+                "planar",
+                "circular"
+              ],
+              "title": "Geometry",
+              "type": "string"
+            },
+            "normal_sign": {
+              "anyOf": [
+                {
+                  "enum": [
+                    -1,
+                    1
+                  ],
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Normal Sign"
+            },
+            "object_name": {
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "title": "Object Name",
+              "type": "string"
+            },
+            "radius_mm": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "maximum": 1000000,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Radius Mm"
+            },
+            "revision_id": {
+              "format": "uuid",
+              "title": "Revision Id",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "topology-selector.v1",
+              "default": "topology-selector.v1",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "subelement_kind": {
+              "enum": [
+                "face",
+                "edge"
+              ],
+              "title": "Subelement Kind",
+              "type": "string"
+            },
+            "tolerance_mm": {
+              "default": 1e-05,
+              "exclusiveMinimum": 0,
+              "maximum": 10,
+              "title": "Tolerance Mm",
+              "type": "number"
+            }
+          },
+          "required": [
+            "revision_id",
+            "object_name",
+            "subelement_kind",
+            "geometry",
+            "axis",
+            "extreme"
+          ],
+          "title": "FreeCADTopologySelector",
+          "type": "object"
+        },
+        "SelectorPoint3D": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "title": "X",
+              "type": "number"
+            },
+            "y": {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "title": "Y",
+              "type": "number"
+            },
+            "z": {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "title": "Z",
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "SelectorPoint3D",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "edge_scope": {
+              "type": "null"
+            },
+            "selector": {
+              "type": "null"
+            },
+            "use_all_edges": {
+              "const": true
+            }
+          },
+          "required": []
+        },
+        {
+          "properties": {
+            "edge_scope": {
+              "type": "null"
+            },
+            "selector": {
+              "not": {
+                "type": "null"
+              }
+            },
+            "use_all_edges": {
+              "const": false
+            }
+          },
+          "required": [
+            "use_all_edges",
+            "selector"
+          ]
+        },
+        {
+          "properties": {
+            "edge_scope": {
+              "not": {
+                "type": "null"
+              }
+            },
+            "selector": {
+              "type": "null"
+            },
+            "use_all_edges": {
+              "const": false
+            }
+          },
+          "required": [
+            "use_all_edges",
+            "edge_scope"
+          ]
+        }
+      ],
+      "properties": {
+        "edge_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "outer",
+                "hole_mouths",
+                "all"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Edge Scope"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "selector": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FreeCADTopologySelector"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "size_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
+          "title": "Size Mm",
+          "type": "number"
+        },
+        "target": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Target",
+          "type": "string"
+        },
+        "use_all_edges": {
+          "default": true,
+          "title": "Use All Edges",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "target",
+        "size_mm"
+      ],
+      "title": "FeatureChamferArgs",
+      "type": "object"
+    },
+    "feature.fillet": {
+      "$defs": {
+        "FreeCADTopologySelector": {
+          "additionalProperties": false,
+          "description": "Persistable native selector, never a raw FaceN/EdgeN reference.",
+          "properties": {
+            "axis": {
+              "enum": [
+                "x",
+                "y",
+                "z"
+              ],
+              "title": "Axis",
+              "type": "string"
+            },
+            "backend": {
+              "const": "freecad",
+              "default": "freecad",
+              "title": "Backend",
+              "type": "string"
+            },
+            "center": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SelectorPoint3D"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "extreme": {
+              "enum": [
+                "min",
+                "max"
+              ],
+              "title": "Extreme",
+              "type": "string"
+            },
+            "geometry": {
+              "enum": [
+                "planar",
+                "circular"
+              ],
+              "title": "Geometry",
+              "type": "string"
+            },
+            "normal_sign": {
+              "anyOf": [
+                {
+                  "enum": [
+                    -1,
+                    1
+                  ],
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Normal Sign"
+            },
+            "object_name": {
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "title": "Object Name",
+              "type": "string"
+            },
+            "radius_mm": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "maximum": 1000000,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Radius Mm"
+            },
+            "revision_id": {
+              "format": "uuid",
+              "title": "Revision Id",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "topology-selector.v1",
+              "default": "topology-selector.v1",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "subelement_kind": {
+              "enum": [
+                "face",
+                "edge"
+              ],
+              "title": "Subelement Kind",
+              "type": "string"
+            },
+            "tolerance_mm": {
+              "default": 1e-05,
+              "exclusiveMinimum": 0,
+              "maximum": 10,
+              "title": "Tolerance Mm",
+              "type": "number"
+            }
+          },
+          "required": [
+            "revision_id",
+            "object_name",
+            "subelement_kind",
+            "geometry",
+            "axis",
+            "extreme"
+          ],
+          "title": "FreeCADTopologySelector",
+          "type": "object"
+        },
+        "SelectorPoint3D": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "title": "X",
+              "type": "number"
+            },
+            "y": {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "title": "Y",
+              "type": "number"
+            },
+            "z": {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "title": "Z",
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "SelectorPoint3D",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "selector": {
+              "type": "null"
+            },
+            "use_all_edges": {
+              "const": true
+            }
+          },
+          "required": []
+        },
+        {
+          "properties": {
+            "selector": {
+              "not": {
+                "type": "null"
+              }
+            },
+            "use_all_edges": {
+              "const": false
+            }
+          },
+          "required": [
+            "use_all_edges",
+            "selector"
+          ]
+        }
+      ],
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "radius_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
+          "title": "Radius Mm",
+          "type": "number"
+        },
+        "selector": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FreeCADTopologySelector"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "target": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Target",
+          "type": "string"
+        },
+        "use_all_edges": {
+          "default": true,
+          "title": "Use All Edges",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "target",
+        "radius_mm"
+      ],
+      "title": "FeatureFilletArgs",
+      "type": "object"
+    },
+    "feature.hole": {
+      "$defs": {
+        "Counterbore": {
+          "additionalProperties": false,
+          "properties": {
+            "depth_mm": {
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "title": "Depth Mm",
+              "type": "number"
+            },
+            "diameter_mm": {
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "title": "Diameter Mm",
+              "type": "number"
+            },
+            "kind": {
+              "const": "counterbore",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "diameter_mm",
+            "depth_mm"
+          ],
+          "title": "Counterbore",
+          "type": "object"
+        },
+        "Countersink": {
+          "additionalProperties": false,
+          "properties": {
+            "angle_deg": {
+              "exclusiveMaximum": 180,
+              "exclusiveMinimum": 0,
+              "title": "Angle Deg",
+              "type": "number"
+            },
+            "diameter_mm": {
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "title": "Diameter Mm",
+              "type": "number"
+            },
+            "kind": {
+              "const": "countersink",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "diameter_mm",
+            "angle_deg"
+          ],
+          "title": "Countersink",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "cut": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "counterbore": "#/$defs/Counterbore",
+                  "countersink": "#/$defs/Countersink"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/Counterbore"
+                },
+                {
+                  "$ref": "#/$defs/Countersink"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cut"
+        },
+        "depth_mm": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth Mm"
+        },
+        "diameter_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
+          "title": "Diameter Mm",
+          "type": "number"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "profile": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Profile",
+          "type": "string"
+        },
+        "reversed": {
+          "default": false,
+          "title": "Reversed",
+          "type": "boolean"
+        },
+        "through_all": {
+          "default": false,
+          "title": "Through All",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "profile",
+        "diameter_mm"
+      ],
+      "title": "FeatureHoleArgs",
+      "type": "object"
+    },
+    "feature.linear_pattern": {
+      "additionalProperties": false,
+      "properties": {
+        "axis": {
+          "enum": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Axis",
+          "type": "string"
+        },
+        "length_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
+          "title": "Length Mm",
+          "type": "number"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "occurrences": {
+          "minimum": 2,
+          "title": "Occurrences",
+          "type": "integer"
+        },
+        "originals": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Originals",
+          "type": "array"
+        },
+        "reversed": {
+          "default": false,
+          "title": "Reversed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "originals",
+        "axis",
+        "occurrences",
+        "length_mm"
+      ],
+      "title": "FeatureLinearPatternArgs",
+      "type": "object"
+    },
+    "feature.loft": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "profiles": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "type": "string"
+          },
+          "minItems": 2,
+          "title": "Profiles",
+          "type": "array"
+        },
+        "ruled": {
+          "default": false,
+          "title": "Ruled",
+          "type": "boolean"
+        },
+        "subtractive": {
+          "default": false,
+          "title": "Subtractive",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "profiles"
+      ],
+      "title": "FeatureLoftArgs",
+      "type": "object"
+    },
+    "feature.pad": {
+      "additionalProperties": false,
+      "properties": {
+        "length_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
+          "title": "Length Mm",
+          "type": "number"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "profile": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Profile",
+          "type": "string"
+        },
+        "reversed": {
+          "default": false,
+          "title": "Reversed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "profile",
+        "length_mm"
+      ],
+      "title": "FeaturePadArgs",
+      "type": "object"
+    },
+    "feature.pocket": {
+      "additionalProperties": false,
+      "properties": {
+        "length_mm": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Length Mm"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "profile": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Profile",
+          "type": "string"
+        },
+        "reversed": {
+          "default": false,
+          "title": "Reversed",
+          "type": "boolean"
+        },
+        "through_all": {
+          "default": false,
+          "title": "Through All",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "profile"
+      ],
+      "title": "FeaturePocketArgs",
+      "type": "object"
+    },
+    "feature.polar_pattern": {
+      "additionalProperties": false,
+      "properties": {
+        "angle_deg": {
+          "exclusiveMinimum": 0,
+          "maximum": 360,
+          "title": "Angle Deg",
+          "type": "number"
+        },
+        "axis": {
+          "enum": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Axis",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "occurrences": {
+          "minimum": 2,
+          "title": "Occurrences",
+          "type": "integer"
+        },
+        "originals": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Originals",
+          "type": "array"
+        },
+        "reversed": {
+          "default": false,
+          "title": "Reversed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "originals",
+        "axis",
+        "occurrences",
+        "angle_deg"
+      ],
+      "title": "FeaturePolarPatternArgs",
+      "type": "object"
+    },
+    "feature.revolve": {
+      "additionalProperties": false,
+      "properties": {
+        "angle_deg": {
+          "exclusiveMinimum": 0,
+          "maximum": 360,
+          "title": "Angle Deg",
+          "type": "number"
+        },
+        "axis": {
+          "enum": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Axis",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "profile": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Profile",
+          "type": "string"
+        },
+        "reversed": {
+          "default": false,
+          "title": "Reversed",
+          "type": "boolean"
+        },
+        "subtractive": {
+          "default": false,
+          "title": "Subtractive",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "profile",
+        "axis",
+        "angle_deg"
+      ],
+      "title": "FeatureRevolveArgs",
+      "type": "object"
+    },
+    "feature.sweep": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Path",
+          "type": "string"
+        },
+        "profile": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Profile",
+          "type": "string"
+        },
+        "subtractive": {
+          "default": false,
+          "title": "Subtractive",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "profile",
+        "path"
+      ],
+      "title": "FeatureSweepArgs",
+      "type": "object"
+    },
+    "property.set": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_property_type": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Property Type"
+        },
+        "object": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Object",
+          "type": "string"
+        },
+        "property": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Property",
+          "type": "string"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "enum": [
+                "mm",
+                "deg"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "object",
+        "property",
+        "value"
+      ],
+      "title": "PropertySetArgs",
+      "type": "object"
+    },
+    "sketch.add_constraint": {
+      "$defs": {
+        "ConstraintReference": {
+          "additionalProperties": false,
+          "properties": {
+            "geometry_index": {
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Geometry Index",
+              "type": "integer"
+            },
+            "point_position": {
+              "anyOf": [
+                {
+                  "enum": [
+                    1,
+                    2,
+                    3
+                  ],
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Point Position"
+            }
+          },
+          "required": [
+            "geometry_index"
+          ],
+          "title": "ConstraintReference",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "first": {
+          "$ref": "#/$defs/ConstraintReference"
+        },
+        "kind": {
+          "enum": [
+            "horizontal",
+            "vertical",
+            "distance_x",
+            "distance_y",
+            "distance",
+            "radius",
+            "diameter",
+            "coincident",
+            "equal"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "second": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConstraintReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sketch": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Sketch",
+          "type": "string"
+        },
+        "value_mm": {
+          "anyOf": [
+            {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value Mm"
+        }
+      },
+      "required": [
+        "sketch",
+        "kind",
+        "first"
+      ],
+      "title": "SketchAddConstraintArgs",
+      "type": "object"
+    },
+    "sketch.add_geometry": {
+      "$defs": {
+        "CircleGeometry": {
+          "additionalProperties": false,
+          "properties": {
+            "center": {
+              "$ref": "#/$defs/Point2D"
+            },
+            "construction": {
+              "default": false,
+              "title": "Construction",
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "circle",
+              "title": "Kind",
+              "type": "string"
+            },
+            "radius_mm": {
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "title": "Radius Mm",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "center",
+            "radius_mm"
+          ],
+          "title": "CircleGeometry",
+          "type": "object"
+        },
+        "LineGeometry": {
+          "additionalProperties": false,
+          "properties": {
+            "construction": {
+              "default": false,
+              "title": "Construction",
+              "type": "boolean"
+            },
+            "end": {
+              "$ref": "#/$defs/Point2D"
+            },
+            "kind": {
+              "const": "line",
+              "title": "Kind",
+              "type": "string"
+            },
+            "start": {
+              "$ref": "#/$defs/Point2D"
+            }
+          },
+          "required": [
+            "kind",
+            "start",
+            "end"
+          ],
+          "title": "LineGeometry",
+          "type": "object"
+        },
+        "Point2D": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "title": "X",
+              "type": "number"
+            },
+            "y": {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "title": "Y",
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "title": "Point2D",
+          "type": "object"
+        },
+        "RectangleGeometry": {
+          "additionalProperties": false,
+          "properties": {
+            "construction": {
+              "default": false,
+              "title": "Construction",
+              "type": "boolean"
+            },
+            "corner": {
+              "$ref": "#/$defs/Point2D"
+            },
+            "height_mm": {
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "title": "Height Mm",
+              "type": "number"
+            },
+            "kind": {
+              "const": "rectangle",
+              "title": "Kind",
+              "type": "string"
+            },
+            "width_mm": {
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "title": "Width Mm",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "corner",
+            "width_mm",
+            "height_mm"
+          ],
+          "title": "RectangleGeometry",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "geometry": {
+          "discriminator": {
+            "mapping": {
+              "circle": "#/$defs/CircleGeometry",
+              "line": "#/$defs/LineGeometry",
+              "rectangle": "#/$defs/RectangleGeometry"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/LineGeometry"
+            },
+            {
+              "$ref": "#/$defs/CircleGeometry"
+            },
+            {
+              "$ref": "#/$defs/RectangleGeometry"
+            }
+          ],
+          "title": "Geometry"
+        },
+        "sketch": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Sketch",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sketch",
+        "geometry"
+      ],
+      "title": "SketchAddGeometryArgs",
+      "type": "object"
+    },
+    "sketch.add_profile": {
+      "$defs": {
+        "ArcGeometry": {
+          "additionalProperties": false,
+          "properties": {
+            "center": {
+              "$ref": "#/$defs/Point2D"
+            },
+            "end_angle_deg": {
+              "title": "End Angle Deg",
+              "type": "number"
+            },
+            "kind": {
+              "const": "arc",
+              "title": "Kind",
+              "type": "string"
+            },
+            "radius_mm": {
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "title": "Radius Mm",
+              "type": "number"
+            },
+            "start_angle_deg": {
+              "title": "Start Angle Deg",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "center",
+            "radius_mm",
+            "start_angle_deg",
+            "end_angle_deg"
+          ],
+          "title": "ArcGeometry",
+          "type": "object"
+        },
+        "CircleGeometry": {
+          "additionalProperties": false,
+          "properties": {
+            "center": {
+              "$ref": "#/$defs/Point2D"
+            },
+            "construction": {
+              "default": false,
+              "title": "Construction",
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "circle",
+              "title": "Kind",
+              "type": "string"
+            },
+            "radius_mm": {
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "title": "Radius Mm",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "center",
+            "radius_mm"
+          ],
+          "title": "CircleGeometry",
+          "type": "object"
+        },
+        "Point2D": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "title": "X",
+              "type": "number"
+            },
+            "y": {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "title": "Y",
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "title": "Point2D",
+          "type": "object"
+        },
+        "RectangleGeometry": {
+          "additionalProperties": false,
+          "properties": {
+            "construction": {
+              "default": false,
+              "title": "Construction",
+              "type": "boolean"
+            },
+            "corner": {
+              "$ref": "#/$defs/Point2D"
+            },
+            "height_mm": {
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "title": "Height Mm",
+              "type": "number"
+            },
+            "kind": {
+              "const": "rectangle",
+              "title": "Kind",
+              "type": "string"
+            },
+            "width_mm": {
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "title": "Width Mm",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "corner",
+            "width_mm",
+            "height_mm"
+          ],
+          "title": "RectangleGeometry",
+          "type": "object"
+        },
+        "RegularPolygonGeometry": {
+          "additionalProperties": false,
+          "properties": {
+            "center": {
+              "$ref": "#/$defs/Point2D"
+            },
+            "kind": {
+              "const": "regular_polygon",
+              "title": "Kind",
+              "type": "string"
+            },
+            "radius_mm": {
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "title": "Radius Mm",
+              "type": "number"
+            },
+            "rotation_deg": {
+              "default": 0,
+              "title": "Rotation Deg",
+              "type": "number"
+            },
+            "sides": {
+              "minimum": 3,
+              "title": "Sides",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "center",
+            "radius_mm",
+            "sides"
+          ],
+          "title": "RegularPolygonGeometry",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "geometry": {
+          "discriminator": {
+            "mapping": {
+              "arc": "#/$defs/ArcGeometry",
+              "circle": "#/$defs/CircleGeometry",
+              "rectangle": "#/$defs/RectangleGeometry",
+              "regular_polygon": "#/$defs/RegularPolygonGeometry"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CircleGeometry"
+            },
+            {
+              "$ref": "#/$defs/RectangleGeometry"
+            },
+            {
+              "$ref": "#/$defs/ArcGeometry"
+            },
+            {
+              "$ref": "#/$defs/RegularPolygonGeometry"
+            }
+          ],
+          "title": "Geometry"
+        },
+        "sketch": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Sketch",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sketch",
+        "geometry"
+      ],
+      "title": "SketchAddProfileArgs",
+      "type": "object"
+    },
+    "sketch.create": {
+      "$defs": {
+        "Point3D": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "title": "X",
+              "type": "number"
+            },
+            "y": {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "title": "Y",
+              "type": "number"
+            },
+            "z": {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "title": "Z",
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Point3D",
+          "type": "object"
+        },
+        "SketchFrame": {
+          "additionalProperties": false,
+          "description": "An orthogonal sketch frame expressed in its owning Body's coordinates.",
+          "properties": {
+            "normal": {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "maximum": 1000000,
+                  "minimum": -1000000,
+                  "type": "number"
+                },
+                {
+                  "maximum": 1000000,
+                  "minimum": -1000000,
+                  "type": "number"
+                },
+                {
+                  "maximum": 1000000,
+                  "minimum": -1000000,
+                  "type": "number"
+                }
+              ],
+              "title": "Normal",
+              "type": "array"
+            },
+            "origin": {
+              "$ref": "#/$defs/Point3D"
+            },
+            "schema_version": {
+              "const": "body-frame.v1",
+              "default": "body-frame.v1",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "x_axis": {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "maximum": 1000000,
+                  "minimum": -1000000,
+                  "type": "number"
+                },
+                {
+                  "maximum": 1000000,
+                  "minimum": -1000000,
+                  "type": "number"
+                },
+                {
+                  "maximum": 1000000,
+                  "minimum": -1000000,
+                  "type": "number"
+                }
+              ],
+              "title": "X Axis",
+              "type": "array"
+            }
+          },
+          "required": [
+            "origin",
+            "normal",
+            "x_axis"
+          ],
+          "title": "SketchFrame",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "default": "Body",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Body",
+          "type": "string"
+        },
+        "frame": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SketchFrame"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "offset_mm": {
+          "default": 0.0,
+          "maximum": 1000000,
+          "minimum": -1000000,
+          "title": "Offset Mm",
+          "type": "number"
+        },
+        "plane": {
+          "default": "xy",
+          "enum": [
+            "xy",
+            "xz",
+            "yz"
+          ],
+          "title": "Plane",
+          "type": "string"
+        },
+        "reversed": {
+          "default": false,
+          "title": "Reversed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "SketchCreateArgs",
+      "type": "object"
+    },
+    "sketch.set_constraint": {
+      "additionalProperties": false,
+      "properties": {
+        "constraint_index": {
+          "maximum": 100000,
+          "minimum": 0,
+          "title": "Constraint Index",
+          "type": "integer"
+        },
+        "expected_type": {
+          "enum": [
+            "DistanceX",
+            "DistanceY",
+            "Distance",
+            "Radius",
+            "Diameter",
+            "Angle"
+          ],
+          "title": "Expected Type",
+          "type": "string"
+        },
+        "sketch": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Sketch",
+          "type": "string"
+        },
+        "value_deg": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value Deg"
+        },
+        "value_mm": {
+          "anyOf": [
+            {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value Mm"
+        }
+      },
+      "required": [
+        "sketch",
+        "constraint_index",
+        "expected_type"
+      ],
+      "title": "SketchSetConstraintArgs",
+      "type": "object"
+    }
+  },
+  "schema_version": "freecad-capabilities.v1"
+}

@@ -23,3 +23,11 @@ test('linked two-geometry dimensions are not misrepresented as absolute position
   const linked={...constraint(0,'DistanceX'),second:1,second_position:3};
   assert.deepEqual(previewSketch([circle],[linked],{0:'12'})[0].center,[5,5,0]);
 });
+
+test('angle edits display degrees and never submit angular values as millimetres', async()=>{
+  const {displayDimension,dimensionEdit}=await import('../src/adapters/sketchPreview.ts');
+  const angle={...constraint(4,'Angle'),value:Math.PI/3};
+  assert.ok(Math.abs(displayDimension(angle)-60)<1e-10);
+  assert.equal(editableDimension(angle),true);
+  assert.deepEqual(dimensionEdit(angle,75),{constraint_index:4,expected_type:'Angle',value_deg:75});
+});

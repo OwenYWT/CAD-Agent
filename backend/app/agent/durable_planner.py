@@ -95,11 +95,18 @@ class DurableAgentPlanner:
             output_formats=output_formats,
         )
 
-    async def requirements_generation(self, objective: str) -> CADPlan:
+    async def requirements_generation(self, objective: str, *, require_acceptance: bool = False) -> CADPlan:
         """Run only requirements interpretation; never generate CAD source."""
-        return await self.planner.plan_new(
-            [{"role": "user", "content": objective}]
+        result = await self.planner.plan_new(
+            [{"role": "user", "content": objective}],
+            **({"require_acceptance": True} if require_acceptance else {}),
         )
+        if require_acceptance and result.part_type != 'profile_2d':
+            if result.design_brief is None or result.design_brief.acceptance is None:
+                raise ValueError('new solid requirements must retain their acceptance contract')
+            if result.design_brief.acceptance.objective != objective:
+                raise ValueError('acceptance contract objective differs from the submitted requirement')
+        return result
 
     async def decompose_generation(
         self,
@@ -365,12 +372,17 @@ class DurableAgentPlanner:
         self,
         existing_code: str,
         objective: str,
+        *, require_acceptance: bool = False,
     ) -> ModificationPlan:
         """Interpret a modification without generating or executing source."""
-        return await self.planner.plan_modification(
+        result = await self.planner.plan_modification(
             [{"role": "user", "content": objective}],
             existing_code,
+            **({'require_acceptance':True} if require_acceptance else {}),
         )
+        if require_acceptance and (result.acceptance is None or result.acceptance.objective != objective):
+            raise ValueError('modification must retain its submitted acceptance contract')
+        return result
 
     def compose_modification(
         self,
@@ -391,6 +403,8 @@ class DurableAgentPlanner:
                 ),
             ],
             acceptance_criteria=["修改后代码可执行并导出请求的工程文件"],
+            acceptance=modification.acceptance,
+            open_questions=['必须确认：'+item for item in modification.acceptance.unresolved] if modification.acceptance else [],
         )
         return AgentPlan(
             objective=objective,

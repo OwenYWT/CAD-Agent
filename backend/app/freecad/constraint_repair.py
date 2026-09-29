@@ -10,6 +10,48 @@ SKETCH_FAILURES = frozenset({
 })
 
 
+def validate_subtractive_repair(before: FreeCADOperationPlan, after: FreeCADOperationPlan,
+                                failure: dict) -> None:
+    """Preserve feature dimensions; placement repair needs independent acceptance."""
+    if failure.get('error_code') != 'subtractive_feature_no_effect':
+        return
+    from app.contracts.acceptance import AcceptanceContract
+    acceptance = failure.get('engineering_acceptance')
+    contract = AcceptanceContract.model_validate(acceptance) if acceptance else None
+    target = failure.get('operation_id')
+    if not target or before.document_name != after.document_name or len(before.operations) != len(after.operations):
+        raise ValueError('cut repair must preserve document and every operation')
+    found = False
+    failed = next((op for op in before.operations if op.op_id == target), None)
+    profile = failed.args.get('profile') if failed is not None else None
+    # A shared sketch is not a local repair target: moving it would also change
+    # another feature's placement. A base-document sketch is equally unowned.
+    shared = any(op.op_id != target and (op.args.get('profile')==profile
+        or profile in (op.args.get('profiles') or ())) for op in before.operations)
+    for old, new in zip(before.operations, after.operations):
+        if old.op_id != target:
+            if old != new:
+                placement = (old.action == new.action == 'sketch.create' and old.op_id==new.op_id
+                    and old.args.get('name')==profile and not shared and contract is not None
+                    and not contract.unresolved and any(c.required for c in contract.checks))
+                fields={'frame','plane','offset_mm','reversed'}
+                if not placement or ({k:v for k,v in old.args.items() if k not in fields}
+                    != {k:v for k,v in new.args.items() if k not in fields}):
+                    raise ValueError('cut repair cannot change other operations without scoped acceptance')
+            continue
+        found = True
+        if old.action not in {'feature.pocket', 'feature.hole'} or old.op_id != new.op_id or old.action != new.action:
+            raise ValueError('cut repair must target the failed subtractive feature')
+        protected_old = {k: v for k, v in old.args.items() if k != 'reversed'}
+        protected_new = {k: v for k, v in new.args.items() if k != 'reversed'}
+        if protected_old != protected_new:
+            raise ValueError('cut repair cannot change dimensions, profile, hole type or target')
+        if (failure.get('details') or {}).get('direction_locked') and old.args.get('reversed') != new.args.get('reversed'):
+            raise ValueError('cut direction is explicitly locked; request clarification')
+    if not found:
+        raise ValueError('failed operation is absent from repair source')
+
+
 def validate_constraint_repair(before: FreeCADOperationPlan, after: FreeCADOperationPlan,
                                failure: dict) -> None:
     code = failure.get('error_code')

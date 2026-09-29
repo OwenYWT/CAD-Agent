@@ -131,6 +131,7 @@ async def test_generator_preserves_rejection_reason_after_exhausting_repairs():
         await generator.generate(plan=_plan(),requirements={'description':'继续'},
             base_state=None,output_formats=('step','stl'))
     assert str(caught.value.__cause__)==reason
+    assert generator.client.completions.calls == 1
 
 
 def _plate_state() -> dict:
@@ -161,8 +162,21 @@ def _plate_state() -> dict:
 
 
 @pytest.mark.asyncio
+async def test_native_api_lookup_is_recorded_before_program_generation():
+    api={'operations':[
+        {'op_id':'program','action':'api.execute','args':{'source':"document.addObject('Part::Box','Box')"}},
+        {'op_id':'export','action':'document.export','args':{'formats':['fcstd','step','stl'],'objects':['Box']}}]}
+    client=_client([{'capability_query':{'module':'Part','symbol':'makeHelix'}},api])
+    generator=FreeCADOperationGenerator(client=client,provenance_reader=_provenance)
+    result=await generator.generate(plan=_plan(),requirements={'description':'native API shape'},base_state=None,output_formats=('step','stl'))
+    assert result.operation_plan.operations[0].action=='api.execute'
+    assert result.provenance['capability_calls'][0]['result']['entries'][0]['name']=='Part.makeHelix'
+    assert client.completions.calls==2
+
+
+@pytest.mark.asyncio
 async def test_generator_retries_contract_error_and_returns_typed_plan() -> None:
-    client = _client([{"error": "unsupported"}, _valid_plan()])
+    client = _client([{"schema_version": "invalid"}, _valid_plan()])
     generator = FreeCADOperationGenerator(
         client=client,
         provenance_reader=_provenance,

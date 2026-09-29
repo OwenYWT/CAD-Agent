@@ -17,6 +17,7 @@ export CAD_LAYOUT_REPORT_DIR="$report_root/browser-layout"
 export CAD_LAYOUT_FIXTURE="$CAD_TASK_STATE_REPORT_DIR/fixture.json"
 export CAD_BROWSER_FAULT_CONTRACTS=1
 export CAD_MONITOR_E2E_REPORT="$report_root/browser-monitor"
+export CAD_NATIVE_PARAMETER_REPORT="$report_root/native-parameters"
 export CAD_MONITOR_E2E_URL="http://127.0.0.1:${CAD_BROWSER_MONITOR_PORT:-18092}/"
 export TEMPORAL_TASK_QUEUE="browser-contract-${GITHUB_RUN_ID:-local}"
 export TEMPORAL_AGENT_V2_TASK_QUEUE="browser-contract-v2-${GITHUB_RUN_ID:-local}"
@@ -67,3 +68,13 @@ python tests/e2e/task_state_browser.py candidate
 python tests/e2e/parameter_rejection_browser.py
 python tests/e2e/workspace_layout_browser.py
 python tests/e2e/monitoring_permissions_browser.py
+python tests/e2e/native_parameter_contract.py
+"${SANDBOX_COMMAND:-docker}" run --rm --network none --read-only \
+  --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,size=2g \
+  -v "$CAD_NATIVE_PARAMETER_REPORT:/measurements:ro" \
+  -v "$root/backend/tests/e2e:/tests:ro" --entrypoint /opt/freecad/bin/FreeCADCmd \
+  "${SANDBOX_IMAGE:?SANDBOX_IMAGE required}" \
+  -c "exec(compile(open('/tests/native_parameter_measurements.py').read(), '/tests/native_parameter_measurements.py', 'exec'))" \
+  > "$CAD_NATIVE_PARAMETER_REPORT/kernel.log" 2>&1
+grep -F 'CAD_NATIVE_PARAMETER_MEASUREMENTS=' "$CAD_NATIVE_PARAMETER_REPORT/kernel.log"
+if grep -Fq 'Traceback (most recent call last)' "$CAD_NATIVE_PARAMETER_REPORT/kernel.log"; then exit 1; fi

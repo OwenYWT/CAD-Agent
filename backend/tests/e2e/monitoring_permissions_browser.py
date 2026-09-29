@@ -29,10 +29,19 @@ with sync_playwright() as pw:
         for role in ('owner','editor'):
             page.get_by_role('button',name=private[role]['phone'],exact=True).click()
             expect(page.locator('#details-title')).to_contain_text(private[role]['phone'])
-            page.get_by_role('button',name='模型调用',exact=True).click()
+            with page.expect_response(lambda response:'/api/monitor/calls?' in response.url) as calls_response:
+                page.get_by_role('button',name='模型调用',exact=True).click()
             expect(page.locator('#detail-head')).to_contain_text('总 Token')
-            # This suite makes no Provider calls and must not fabricate usage.
-            expect(page.locator('#details')).to_contain_text('此范围内没有记录')
+            # Use the actual filtered response. A configured stack may already
+            # contain real visual checks from the native parameter regression.
+            calls=calls_response.value.json()['items']
+            assert all(item['account']=='user:'+private[role]['user']['id'] for item in calls)
+            if calls:
+                expect(page.locator('#details > tr')).to_have_count(len(calls))
+                for item in calls:
+                    expect(page.locator('#details')).to_contain_text(item['id'])
+            else:
+                expect(page.locator('#details')).to_contain_text('此范围内没有记录')
         page.reload()
         expect(page.get_by_role('heading',name='各账号使用情况')).to_be_visible()
         page.get_by_role('button',name='退出登录').click()

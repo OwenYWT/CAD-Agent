@@ -1,0 +1,124 @@
+{
+  "scope": "requirements-only; not modeling success",
+  "results": [
+    {
+      "case_id": "M01",
+      "status": "failed",
+      "error_type": "ValueError",
+      "error_message": "planner model did not return a valid CAD plan: [{\"field\": \"design_brief.acceptance\", \"type\": \"value_error\", \"message\": \"Value error, user requirement quote is absent from the objective\"}]",
+      "calls": 2,
+      "tokens": 14114,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": []
+    },
+    {
+      "case_id": "P01",
+      "status": "validated_contract",
+      "error_type": null,
+      "error_message": null,
+      "calls": 2,
+      "tokens": 11150,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": []
+    },
+    {
+      "case_id": "P03",
+      "status": "validated_contract",
+      "error_type": null,
+      "error_message": null,
+      "calls": 2,
+      "tokens": 18019,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": []
+    },
+    {
+      "case_id": "P08",
+      "status": "validated_contract",
+      "error_type": null,
+      "error_message": null,
+      "calls": 2,
+      "tokens": 13992,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": []
+    },
+    {
+      "case_id": "P17",
+      "status": "validated_contract",
+      "error_type": null,
+      "error_message": null,
+      "calls": 1,
+      "tokens": 12423,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": []
+    },
+    {
+      "case_id": "P18",
+      "status": "validated_contract",
+      "error_type": null,
+      "error_message": null,
+      "calls": 1,
+      "tokens": 6902,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": [
+        "顶口外翻 3 mm 唇边的宽度与截面形状无法由当前测量器自动验证"
+      ]
+    },
+    {
+      "case_id": "P32",
+      "status": "validated_contract",
+      "error_type": null,
+      "error_message": null,
+      "calls": 2,
+      "tokens": 28294,
+      "usage_complete": true,
+      "unresolved": [
+        "16×8mm 接口开窗所在侧面、距底高度及水平位置未指定，默认居中于 95mm 长侧面"
+      ],
+      "verification_limits": []
+    },
+    {
+      "case_id": "P35",
+      "status": "validated_contract",
+      "error_type": null,
+      "error_message": null,
+      "calls": 2,
+      "tokens": 13061,
+      "usage_complete": true,
+      "unresolved": [
+        "六边形蜂窝镂空的具体边长、间距、阵列数量未指定，暂按合理默认值建模，不作为强制几何验收项。"
+      ],
+      "verification_limits": []
+    },
+    {
+      "case_id": "X04",
+      "status": "failed",
+      "error_type": "ValueError",
+      "error_message": "planner model did not return a valid CAD plan: [{\"field\": \"design_brief.acceptance.checks.3\", \"type\": \"value_error\", \"message\": \"Value error, void connectivity requires expected 0/1, interior probes and an explicit region\"}]",
+      "calls": 2,
+      "tokens": 44861,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": []
+    },
+    {
+      "case_id": "X05",
+      "status": "failed",
+      "error_type": "ValueError",
+      "error_message": "planner model did not return a valid CAD plan: [{\"field\": \"design_brief.acceptance.checks.4\", \"type\": \"value_error\", \"message\": \"Value error, continuous_normal covers the whole part; point/region selectors require an explicitly local measurement mode\"}, {\"field\": \"design_brief.acceptance.checks.5\", \"type\": \"value_error\", \"message\": \"Value error, measurement requires a nonnegative nominal\"}]",
+      "calls": 2,
+      "tokens": 30676,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": []
+    }
+  ],
+  "calls": 18,
+  "total_tokens": 193492,
+  "valid_contracts": 7
+}

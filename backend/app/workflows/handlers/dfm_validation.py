@@ -1,5 +1,6 @@
 """Dfm validation use cases; Temporal names live in the adapter."""
 from __future__ import annotations
+from app.config import settings
 import asyncio
 import hashlib
 import json
@@ -8,6 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 from temporalio import activity
+from app.workflows.execution_support import execution_identity, execution_timeout
 from app.db import tenant_transaction
 from app.execution.backend import ExecutionBackend, MaterializedExecutionOutcome
 from app.execution.contracts import ArtifactInput, ExecutionSource, ExecutionSpec, ExecutionStatus, OutputDeclaration, ResourceLimits, RuntimeRequirement
@@ -23,7 +25,7 @@ from app.workflows.validation_support import _record_agent_validation_outcome
 from app.workflows.revision_inputs import _agent_validation_input
 
 async def agent_validate_dfm(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[str, Any]:
-    info = activity.info()
+    info = execution_identity()
     request = _agent_v2_request(payload)
     candidate_build_id = _uuid(payload, "candidate_build_id")
     manifest_id = _uuid(payload, "staging_manifest_id")
@@ -64,7 +66,7 @@ async def agent_validate_dfm(payload: dict[str, Any], *, backend: ExecutionBacke
             payload,
             temporal_attempt=info.attempt,
             step_key=step_key,
-            step_index=int(payload["step_index"]),
+            step_index=None if payload.get("checkpoint_enabled") else int(payload["step_index"]),
             step_kind="agent_dfm_validation",
         )
     )
@@ -140,7 +142,7 @@ async def agent_validate_dfm(payload: dict[str, Any], *, backend: ExecutionBacke
                 platform=snapshot.platform,
                 sandbox_tier="ephemeral-job",
             ),
-            limits=ResourceLimits(timeout_seconds=120),
+            limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit, timeout_seconds=execution_timeout(payload, 120)),
             metadata={
                 "candidate_build_id": str(candidate_build_id),
                 "staging_manifest_id": str(manifest_id),

@@ -132,3 +132,20 @@ def test_typed_parameter_request_rejects_boolean_and_string_values(value):
 
     with pytest.raises(ValidationError):
         FreeCADParameterUpdateV1(parameter_id="Pad.Length", value=value)
+
+
+def test_integer_constraint_parameter_compiles_without_loss():
+    state = _state()
+    state["parameters"] = [{"id":"Pattern.Occurrences", "object_name":"Pattern",
+        "property_name":"Occurrences", "label":"Occurrences", "group":"Pattern",
+        "property_type":"App::PropertyIntegerConstraint", "value":6, "unit":None,
+        "editable":True, "minimum":2}]
+    plan = compile_parameter_operation_plan(state,
+        {"parameter_updates":[{"parameter_id":"Pattern.Occurrences", "value":7}]},
+        output_formats=("step",))
+    assert plan.operations[0].args["value"] == 7
+    assert isinstance(plan.operations[0].args["value"], int)
+    with pytest.raises(ParameterStateError):
+        compile_parameter_operation_plan(state,
+            {"parameter_updates":[{"parameter_id":"Pattern.Occurrences", "value":2.5}]},
+            output_formats=("step",))

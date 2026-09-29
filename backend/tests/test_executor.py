@@ -162,7 +162,8 @@ class TestContainerCleanup:
     def test_container_removed_on_timeout(self):
         executor = CadQueryExecutor()
         mock_container = MagicMock()
-        mock_container.wait.side_effect = Exception("timeout")
+        from requests.exceptions import ReadTimeout
+        mock_container.wait.side_effect = ReadTimeout("timeout")
 
         executor._client = MagicMock()
         executor._client.containers.run.return_value = mock_container

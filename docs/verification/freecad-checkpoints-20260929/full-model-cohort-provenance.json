@@ -1,0 +1,9 @@
+{
+  "source_files_sha256": "af3d2f1c7872ccee25d5d2878aaeb1434d05915f3e793cece155ab46cf47e455",
+  "cases_sha256": "173f4b9badf7e06f00c492ed519eb5f926a5d1d9759a32a704ab9389023d418c",
+  "model": "kimi-k2.7-code",
+  "attempts_per_case": 1,
+  "provider": "moonshot",
+  "scope": "real HTTP/WebSocket -> planner -> FreeCAD tools -> independent geometry -> candidate -> commit; one frozen cohort, not a statistical reliability claim",
+  "no_task_deadline": true
+}

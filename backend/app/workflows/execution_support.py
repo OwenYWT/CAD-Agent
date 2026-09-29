@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import socket
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -18,6 +19,32 @@ from app.execution.contracts import ExecutionError, ExecutionSpec, ExecutionStat
 from app.services.run_state import create_attempt, create_step, heartbeat_attempt, lease_attempt, start_attempt, transition_attempt, transition_step
 from app.workflows.logical_steps import _step_row
 from app.workflows.inputs import _uuid
+from app.model_job_context import model_job_context
+
+
+@dataclass(frozen=True)
+class ExecutionIdentity:
+    activity_id: str
+    attempt: int
+
+
+def execution_identity():
+    """Use the real executor's retry/fencing identity, without an activity shim."""
+    if activity.in_activity():
+        return activity.info()
+    job = model_job_context.get()
+    if job is None:
+        raise RuntimeError("CAD execution requires an activity or a leased durable job")
+    return ExecutionIdentity(f"durable-job:{job.job_id}", job.generation)
+
+
+def execution_timeout(payload, default):
+    # Leased jobs have no wall-clock deadline. Lease renewal and explicit user
+    # cancellation govern their lifetime. Retained activity executions keep
+    # their historical timeout semantics.
+    if model_job_context.get() is not None:
+        return None
+    return int(payload.get("timeout_seconds") or default)
 
 def _worker_id() -> str:
     return f"temporal:{socket.gethostname()}:{os.getpid()}"
@@ -179,7 +206,7 @@ async def _prepare_execution_attempt(
 
         execution_payload = {
             "schema_version": "temporal-mcad-execution.v1",
-            "temporal_activity_id": activity.info().activity_id,
+            "temporal_activity_id": execution_identity().activity_id,
             "temporal_attempt": temporal_attempt,
             "execution": execution,
             "revision_id": str(payload["revision_id"]),
@@ -237,7 +264,7 @@ async def _prepare_agent_execution_attempt(
                 type="agent_modeling_step_missing",
                 non_retryable=True,
             )
-        if int(row["step_index"]) != step_index or row["kind"] != step_kind:
+        if (not payload.get("checkpoint_enabled") and int(row["step_index"]) != step_index) or row["kind"] != step_kind:
             raise ApplicationError(
                 f"modeling step {step_key} identity does not match its plan",
                 type="agent_modeling_step_conflict",
@@ -254,7 +281,8 @@ async def _prepare_agent_execution_attempt(
                 {"tenant_id": tenant_id, "source_id": source_id},
             )
         ).mappings().one_or_none()
-        if source is None or source["step_run_id"] != row["id"]:
+        if (source is None or source["step_run_id"] != row["id"]
+                or str(source["source_hash"]) != str(payload["source_hash"])):
             raise ApplicationError(
                 "execution source does not belong to the planned modeling step",
                 type="agent_source_step_mismatch",
@@ -318,7 +346,7 @@ async def _prepare_agent_execution_attempt(
 
         execution_payload = {
             "schema_version": "durable-agent-execution.v1",
-            "temporal_activity_id": activity.info().activity_id,
+            "temporal_activity_id": execution_identity().activity_id,
             "temporal_attempt": temporal_attempt,
             "candidate_build_id": str(payload["candidate_build_id"]),
             "source_id": str(source_id),
@@ -467,7 +495,7 @@ async def _prepare_agent_validation_attempt(
             )
         execution_payload = {
             "schema_version": "durable-agent-validation.v1",
-            "temporal_activity_id": activity.info().activity_id,
+            "temporal_activity_id": execution_identity().activity_id,
             "temporal_attempt": temporal_attempt,
             "candidate_build_id": str(candidate_build_id),
             "staging_manifest_id": str(manifest_id),
@@ -560,12 +588,9 @@ async def _heartbeat_loop(
     lease_generation: int,
 ) -> None:
     while True:
-        activity.heartbeat(
-            {
-                "execution_attempt_id": str(attempt_id),
-                "lease_generation": lease_generation,
-            }
-        )
+        if activity.in_activity():
+            activity.heartbeat({"execution_attempt_id": str(attempt_id),
+                                "lease_generation": lease_generation})
         async with tenant_transaction(tenant_id, principal_id) as connection:
             await heartbeat_attempt(
                 connection,
@@ -664,6 +689,13 @@ async def _mark_execution_failure(
         if status is not ExecutionStatus.CANCELLED:
             error_code = "temporal_activity_timed_out" if status is ExecutionStatus.TIMED_OUT else "temporal_activity_interrupted"
             error_message = f"Temporal interrupted this attempt: {details}"
+    elif status is ExecutionStatus.CANCELLED and model_job_context.get() is not None:
+        # A healthy lease interrupted by worker shutdown is recoverable. User
+        # cancellation or lease loss is rejected by the transaction fence below
+        # and remains owned by the workflow cancellation/recovery service.
+        status = ExecutionStatus.FAILED
+        error_code = "durable_worker_interrupted"
+        error_message = "Worker interrupted this execution; the durable job may resume from its checkpoint."
     target_attempt = (
         AttemptStatus.TIMED_OUT
         if status == ExecutionStatus.TIMED_OUT

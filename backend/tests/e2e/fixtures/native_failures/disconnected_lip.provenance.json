@@ -1,0 +1,7 @@
+{
+  "source": "fixed-eval-funded-20260927/P18",
+  "source_fingerprint": "f91b503b62829f8241289194c2bbedf9d5ab1a5e99e129fb3965e95e1c307c48",
+  "sha256": "52feac335834e1d272b1adc9f5a2f80d4b44368d52d52e69c55a8b81c338f20d",
+  "historical_result": "saved; old offline scorer passed; disconnected final solid",
+  "purpose": "retained real false positive, independent of generated labels"
+}

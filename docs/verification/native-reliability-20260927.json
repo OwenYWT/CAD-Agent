@@ -1,0 +1,120 @@
+{
+  "date": "2026-09-27",
+  "base_commit": "09c3ccbd97d77f9b07cb56639ad105098ba4bc21",
+  "application_source_sha256": "f91b503b62829f8241289194c2bbedf9d5ab1a5e99e129fb3965e95e1c307c48",
+  "images": {
+    "cad-native-sandbox:reliability": "sha256:ef222a6d9f3022797556e3c32fe7c14717cd937ac30577559a3b8cc8ce1f6f4a",
+    "cad-native-backend:reliability": "sha256:c10cb52c2069eeccf94bf682addb9b011ac711994625346912dc017d6c330283"
+  },
+  "runtime_identity_matched": true,
+  "mandatory_local_reports_passed": 26,
+  "excluded_release_reports": [
+    "release-source-drill/summary.json",
+    "release-source-drill/old-monitor.xml",
+    "release-source-drill/current-monitor.xml"
+  ],
+  "tests": {
+    "backend-final.xml": {
+      "passed": 1639,
+      "skipped": 181,
+      "failed_or_error": 0
+    },
+    "durable-core.xml": {
+      "passed": 30,
+      "skipped": 0,
+      "failed_or_error": 0
+    },
+    "transactions.xml": {
+      "passed": 80,
+      "skipped": 0,
+      "failed_or_error": 0
+    },
+    "model-lifecycle-db.xml": {
+      "passed": 12,
+      "skipped": 0,
+      "failed_or_error": 0
+    },
+    "usage-monitoring.xml": {
+      "passed": 6,
+      "skipped": 0,
+      "failed_or_error": 0
+    },
+    "schema-upgrade.xml": {
+      "passed": 1,
+      "skipped": 0,
+      "failed_or_error": 0
+    }
+  },
+  "frontend_tests_passed": 155,
+  "native_contract_suites": 14,
+  "frozen_release_histories": 12,
+  "dynamic_workflow_histories": 6,
+  "native_parameter_measurements": [
+    {
+      "kind": "pattern",
+      "parameter": "Pattern.Occurrences",
+      "before": 6,
+      "after": 7,
+      "expected_volume": 93192.20447608762,
+      "state_version": 2,
+      "stable_feature_ids": true,
+      "unrelated_parameters_preserved": true,
+      "idempotency_and_stale_base": true,
+      "measured_volume": 93192.20447608765,
+      "measured_solids": 1
+    },
+    {
+      "kind": "revolve",
+      "parameter": "Ring.Angle",
+      "before": 90,
+      "after": 120,
+      "expected_volume": 3158.273408348594,
+      "state_version": 2,
+      "stable_feature_ids": true,
+      "unrelated_parameters_preserved": true,
+      "idempotency_and_stale_base": true,
+      "measured_volume": 3158.2734083485348,
+      "measured_solids": 1
+    },
+    {
+      "kind": "counterbore",
+      "parameter": "Hole.HoleCutDiameter",
+      "before": 8,
+      "after": 9,
+      "expected_volume": 93943.83051845898,
+      "state_version": 2,
+      "stable_feature_ids": true,
+      "unrelated_parameters_preserved": true,
+      "idempotency_and_stale_base": true,
+      "measured_volume": 93943.830518459,
+      "measured_solids": 1
+    }
+  ],
+  "browser_rejection_ssh_consecutive_passes": 2,
+  "live_evaluation": {
+    "model": "moonshot/kimi-k2.7-code",
+    "status": "partial_provider_quota",
+    "saved": [
+      "P01",
+      "P03",
+      "P08"
+    ],
+    "failed": [
+      "P17"
+    ],
+    "not_run": [
+      "P18",
+      "P32",
+      "P35",
+      "M01",
+      "X04",
+      "X05"
+    ],
+    "known_eval_tokens": 58724,
+    "unknown_usage_calls": 1,
+    "other_visual_check_tokens": 35378,
+    "note": "Final tagged-schema follow-up was verified without provider; do not pool cross-version scores."
+  },
+  "deployed": false,
+  "pushed": false
+}

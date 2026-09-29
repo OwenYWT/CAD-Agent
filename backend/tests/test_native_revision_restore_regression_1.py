@@ -331,7 +331,7 @@ async def test_restore_corrupt_bytes_never_reach_execution_backend(monkeypatch):
     monkeypatch.setattr(cad_execution, "get_staging_manifest_for_step", no_replay)
     monkeypatch.setattr(revision_inputs, "committed_artifact_for_revision", artifact)
     monkeypatch.setattr(cad_execution, "download_object", corrupt)
-    monkeypatch.setattr(activities.activity, "info", lambda: SimpleNamespace(activity_id="test", attempt=1))
+    from temporalio.testing import ActivityEnvironment
     operation_plan = activities._revision_restore_operation_plan(request)
     source_code = operation_plan.model_dump_json()
     import hashlib
@@ -342,7 +342,7 @@ async def test_restore_corrupt_bytes_never_reach_execution_backend(monkeypatch):
         expected_base_revision_id=request.expected_base_revision_id,
     )
     with pytest.raises(Exception, match="integrity verification"):
-        await activities.McadWorkflowActivities(backend=object()).agent_execute_freecad({
+        await ActivityEnvironment().run(activities.McadWorkflowActivities(backend=object()).agent_execute_freecad, {
             **request.temporal_payload(), "plan": plan.temporal_payload(),
             "step": plan.steps[0].model_dump(mode="json"), "candidate_build_id": str(uuid4()),
             "source_code": source_code, "source_hash": hashlib.sha256(source_code.encode()).hexdigest(),

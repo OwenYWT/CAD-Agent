@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, model_serializer
+from app.contracts.acceptance import AcceptanceContract, AcceptanceMeasurements, acceptance_outcome
 
 
 class GeometryBounds(BaseModel):
@@ -53,6 +54,17 @@ class DurableGeometryReport(BaseModel):
     dimension_tolerance: float = Field(ge=0, le=1)
     artifacts: tuple[GeometryArtifactEvidence, ...]
     issues: tuple[str, ...] = ()
+    acceptance: AcceptanceMeasurements | None = None
+    request_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_wire(self, handler):
+        result = handler(self)
+        if self.acceptance is None:
+            result.pop("acceptance", None)
+        if self.request_sha256 is None:
+            result.pop("request_sha256", None)
+        return result
 
     @model_validator(mode="after")
     def outcome_matches_artifact_evidence(self):
@@ -64,7 +76,7 @@ class DurableGeometryReport(BaseModel):
             raise ValueError("passed geometry cannot contain failed evidence")
         if self.outcome == "indeterminate" and all(
             item.parseable for item in self.artifacts
-        ):
+        ) and self.acceptance is None:
             raise ValueError("indeterminate geometry requires an unparseable artifact")
         return self
 
@@ -73,6 +85,21 @@ class DurableGeometryReport(BaseModel):
             **self.model_dump(mode="json"),
             "runtime_provenance": runtime_provenance,
         }
+
+
+def verify_geometry_evidence(report, *, request_sha256, acceptance, expected_solid_count):
+    """Reject stale workers and stale cached evidence before authorizing a gate."""
+    if report.request_sha256 != request_sha256:
+        raise ValueError("geometry evidence belongs to a different measurement request")
+    if acceptance is not None:
+        if report.acceptance is None or report.acceptance.contract_sha256 != acceptance.digest():
+            raise ValueError("geometry evidence is not bound to the acceptance contract")
+        if report.outcome == "passed" and acceptance_outcome(acceptance, report.acceptance.evidence) != "passed":
+            raise ValueError("required acceptance evidence did not pass")
+    if expected_solid_count is not None and report.outcome == "passed":
+        solids = [a for a in report.artifacts if a.format in {"step", "stl"}]
+        if not solids or any(a.solid_count != expected_solid_count for a in solids):
+            raise ValueError("final solid count did not pass")
 
 
 def geometry_failure(report: DurableGeometryReport) -> dict[str, str | None]:
