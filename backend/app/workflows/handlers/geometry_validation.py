@@ -115,6 +115,12 @@ async def agent_validate_geometry(payload: dict[str, Any], *, backend: Execution
         for item in manifest.get("outputs") or ()
         if str(item.get("format") or "").lower() in {"step", "stl", "dxf"}
     )
+    # Delivery choice is not an input policy for independent BRep measurements.
+    # Internal inputs are in the same immutable execution manifest, but are not
+    # published as requested exports or added to the document's download list.
+    if acceptance is not None and not any(item['format'] == 'step' for item in model_outputs):
+        model_outputs += tuple(dict(item) for item in manifest.get('verification_outputs', ())
+                               if item.get('format') == 'step')
     if not model_outputs:
         raise ApplicationError(
             "geometry validation requires STEP, STL, or DXF output",

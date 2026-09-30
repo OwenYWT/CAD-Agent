@@ -1,0 +1,266 @@
+{
+  "passed": true,
+  "fixture": {
+    "id": "e7e8acf2-035d-489b-bfee-1d1ff3d313c7",
+    "workflow_run_id": "c58c805d-b98f-4004-a233-0bd2395fcd7b",
+    "document_id": "63029f88-fa1b-4653-8e7a-e494034bbf70"
+  },
+  "evidence": {
+    "evidence_id": "e7e8acf2-035d-489b-bfee-1d1ff3d313c7",
+    "evidence_hash": "3c29231cd146bd52315940521e25d1fb6509453a6a86bb31bf54159dfac77084",
+    "workflow_run_id": "c58c805d-b98f-4004-a233-0bd2395fcd7b",
+    "staging_manifest_id": "655474d4-7073-477f-b85d-197e9d362b8d",
+    "revision_id": "564a4ad2-5b1d-4276-a70e-ee7600dcda89",
+    "selected_for_revision": true,
+    "gate": "geometry",
+    "mode": "required",
+    "outcome": "passed",
+    "report": {
+      "issues": [],
+      "outcome": "passed",
+      "artifacts": [
+        {
+          "role": "artifact-00",
+          "valid": true,
+          "format": "stl",
+          "issues": [],
+          "sha256": "fd46bafa926dfd2eb029d24c8439dc3438ffa8ee0247f2d5cc59fe93847ac562",
+          "filename": "geometry-00.stl",
+          "bounds_mm": {
+            "x_max": 60.0,
+            "x_min": 0.0,
+            "y_max": 40.0,
+            "y_min": 0.0,
+            "z_max": 8.0,
+            "z_min": 0.0
+          },
+          "parseable": true,
+          "face_count": 932,
+          "size_bytes": 235812,
+          "volume_mm3": 18973.8337114416,
+          "solid_count": 1,
+          "dimensions_mm": [
+            60.0,
+            40.0,
+            8.0
+          ],
+          "is_watertight": true,
+          "max_dimension_error": 0.0
+        },
+        {
+          "role": "artifact-01",
+          "valid": true,
+          "format": "step",
+          "issues": [],
+          "sha256": "77fc28ac7244e5ccaf62c92b5620f14027b8fbffc89d87e5e0142e5ca04a5c93",
+          "filename": "geometry-01.step",
+          "bounds_mm": {
+            "x_max": 60.0,
+            "x_min": 0.0,
+            "y_max": 40.0,
+            "y_min": 0.0,
+            "z_max": 8.0,
+            "z_min": 0.0
+          },
+          "parseable": true,
+          "face_count": null,
+          "size_bytes": 8325,
+          "volume_mm3": 18973.805328941533,
+          "solid_count": 1,
+          "dimensions_mm": [
+            60.0,
+            40.0,
+            8.0
+          ],
+          "is_watertight": null,
+          "max_dimension_error": 0.0
+        }
+      ],
+      "acceptance": {
+        "evidence": [
+          {
+            "issues": [],
+            "method": "concave_cylindrical_passages",
+            "details": {
+              "scope": "complete cylindrical passages only",
+              "numerical_tolerance_mm": 1e-07
+            },
+            "outcome": "passed",
+            "check_id": "hole-count",
+            "measured": [
+              1.0
+            ]
+          },
+          {
+            "issues": [],
+            "method": "concave_cylindrical_passages",
+            "details": {
+              "scope": "complete cylindrical passages only",
+              "quantity": "diameter",
+              "numerical_tolerance_mm": 1e-07
+            },
+            "outcome": "passed",
+            "check_id": "hole-diameter",
+            "measured": [
+              6.0
+            ]
+          },
+          {
+            "issues": [],
+            "method": "concave_cylindrical_passages",
+            "details": {
+              "scope": "complete cylindrical passages only",
+              "quantity": "depth",
+              "numerical_tolerance_mm": 1e-07
+            },
+            "outcome": "passed",
+            "check_id": "hole-depth",
+            "measured": [
+              8.0
+            ]
+          },
+          {
+            "issues": [],
+            "method": "hole_axes_transverse_locations",
+            "details": {
+              "scope": "complete cylindrical passages only",
+              "numerical_tolerance_mm": 1e-07,
+              "resolved_frame_origin_mm": [
+                30.0,
+                20.0,
+                4.0
+              ]
+            },
+            "outcome": "passed",
+            "check_id": "hole-position",
+            "measured": [
+              0.0
+            ]
+          }
+        ],
+        "contract_sha256": "35f343ee802870b49116c998c07402090d42baa14d09d1d3c8b6f5e30e578947"
+      },
+      "artifact_kind": "solid",
+      "request_sha256": "f41c60819d96a8d1537ea962faa5c1a0db20373a01b318aa7bf57750b3f19262",
+      "schema_version": "durable-geometry-report.v1",
+      "acceptance_contract": {
+        "checks": [
+          {
+            "kind": "hole_count",
+            "scope": {
+              "axis": null,
+              "frame": "world",
+              "point_mm": null,
+              "wall_mode": "continuous_normal",
+              "centers_mm": [],
+              "region_max_mm": null,
+              "region_min_mm": null,
+              "hole_depth_mode": "total_recess",
+              "hole_diameter_mode": "shaft"
+            },
+            "nominal": 1.0,
+            "check_id": "hole-count",
+            "required": true,
+            "description": "round hole count",
+            "source_kind": "user",
+            "source_quote": "Create a 60x40x8 mm plate with one centered 6 mm through hole.",
+            "tolerance_mm": null,
+            "tolerance_mm3": null
+          },
+          {
+            "kind": "hole_diameter",
+            "scope": {
+              "axis": null,
+              "frame": "world",
+              "point_mm": null,
+              "wall_mode": "continuous_normal",
+              "centers_mm": [],
+              "region_max_mm": null,
+              "region_min_mm": null,
+              "hole_depth_mode": "total_recess",
+              "hole_diameter_mode": "shaft"
+            },
+            "nominal": 6.0,
+            "check_id": "hole-diameter",
+            "required": true,
+            "description": "round shaft diameter",
+            "source_kind": "user",
+            "source_quote": "Create a 60x40x8 mm plate with one centered 6 mm through hole.",
+            "tolerance_mm": null,
+            "tolerance_mm3": null
+          },
+          {
+            "kind": "hole_depth",
+            "scope": {
+              "axis": null,
+              "frame": "world",
+              "point_mm": null,
+              "wall_mode": "continuous_normal",
+              "centers_mm": [],
+              "region_max_mm": null,
+              "region_min_mm": null,
+              "hole_depth_mode": "total_recess",
+              "hole_diameter_mode": "shaft"
+            },
+            "nominal": 8.0,
+            "check_id": "hole-depth",
+            "required": true,
+            "description": "through depth",
+            "source_kind": "user",
+            "source_quote": "Create a 60x40x8 mm plate with one centered 6 mm through hole.",
+            "tolerance_mm": null,
+            "tolerance_mm3": null
+          },
+          {
+            "kind": "hole_position",
+            "scope": {
+              "axis": [
+                0.0,
+                0.0,
+                1.0
+              ],
+              "frame": "bounds_center",
+              "point_mm": null,
+              "wall_mode": "continuous_normal",
+              "centers_mm": [
+                [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              ],
+              "region_max_mm": null,
+              "region_min_mm": null,
+              "hole_depth_mode": "total_recess",
+              "hole_diameter_mode": "shaft"
+            },
+            "nominal": null,
+            "check_id": "hole-position",
+            "required": true,
+            "description": "centered hole",
+            "source_kind": "user",
+            "source_quote": "Create a 60x40x8 mm plate with one centered 6 mm through hole.",
+            "tolerance_mm": null,
+            "tolerance_mm3": null
+          }
+        ],
+        "objective": "Create a 60x40x8 mm plate with one centered 6 mm through hole.",
+        "unresolved": [],
+        "schema_version": "engineering-acceptance.v1"
+      },
+      "dimension_tolerance": 0.05,
+      "expected_dimensions_mm": {
+        "width": 40.0,
+        "length": 60.0,
+        "thickness": 8.0
+      }
+    }
+  },
+  "visible_measurements": [
+    "round hole count · 通过目标：1；实测：1量测方法：concave_cylindrical_passages",
+    "round shaft diameter · 通过目标：6 mm；实测：6 mm量测方法：concave_cylindrical_passages",
+    "through depth · 通过目标：8 mm；实测：8 mm量测方法：concave_cylindrical_passages",
+    "centered hole · 通过目标：[[0,0,0]] mm；孔轴位置偏差：0 mm量测方法：hole_axes_transverse_locations"
+  ],
+  "page_errors": []
+}

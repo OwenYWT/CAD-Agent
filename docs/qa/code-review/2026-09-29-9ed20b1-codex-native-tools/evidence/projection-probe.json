@@ -1,0 +1,32 @@
+{
+  "stored_report_keys": [
+    "acceptance",
+    "artifact_kind",
+    "artifacts",
+    "dimension_tolerance",
+    "expected_dimensions_mm",
+    "issues",
+    "outcome",
+    "request_sha256",
+    "schema_version"
+  ],
+  "public_report_keys": [
+    "artifact_kind",
+    "artifacts",
+    "dimension_tolerance",
+    "expected_dimensions_mm",
+    "issues",
+    "outcome",
+    "schema_version"
+  ],
+  "dropped_report_keys": [
+    "acceptance",
+    "request_sha256"
+  ],
+  "selected_for_revision": true,
+  "stl_request_accepted": true,
+  "stl_generated_formats": [
+    "fcstd",
+    "stl"
+  ]
+}

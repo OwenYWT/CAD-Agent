@@ -63,3 +63,19 @@ def test_legacy_wire_does_not_gain_new_fields(tmp_path):
     import json
     report=validate_geometry_files(exported_solids(tmp_path,False))
     assert DurableGeometryReport.model_validate(report).model_dump(mode="json")==json.loads(json.dumps(report))
+
+
+def test_displayed_criteria_are_bound_to_the_measured_contract(tmp_path):
+    from app.contracts.acceptance import AcceptanceContract
+    from app.validation.durable_geometry import verify_geometry_evidence
+    contract=AcceptanceContract.model_validate({'objective':'one solid','checks':[
+        {'check_id':'one','kind':'solid_count','nominal':1,'description':'one','source_quote':'one solid'}]})
+    # STL alone is not sufficient; even an indeterminate report must faithfully
+    # expose the exact criteria, not unrelated or later edited requirements.
+    raw=validate_geometry_files(exported_solids(tmp_path,False),acceptance=contract.model_dump(mode='json'))
+    report=DurableGeometryReport.model_validate(raw)
+    verify_geometry_evidence(report,request_sha256=raw['request_sha256'],acceptance=contract,expected_solid_count=None)
+    raw['acceptance_contract']['checks'][0]['nominal']=2
+    altered=DurableGeometryReport.model_validate(raw)
+    with pytest.raises(ValueError,match='displayed measurement criteria'):
+        verify_geometry_evidence(altered,request_sha256=raw['request_sha256'],acceptance=contract,expected_solid_count=None)

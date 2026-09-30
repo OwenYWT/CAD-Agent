@@ -1599,7 +1599,7 @@ async def cleanup_artifact_orphans(
             manifest = dict(row["manifest"] or {})
             keys.update(
                 str(item["object_key"])
-                for item in manifest.get("outputs") or ()
+                for item in [*(manifest.get("outputs") or ()), *(manifest.get("verification_outputs") or ())]
                 if item.get("object_key")
             )
             evidence = dict(row["evidence"] or {})

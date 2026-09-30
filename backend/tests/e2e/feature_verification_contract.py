@@ -1,9 +1,17 @@
 """Independent analytic BRep oracles, executed in the actual kernel image."""
 import json
+import tempfile
 from pathlib import Path
 import cadquery as cq
 
 from feature_verification import measure_checks
+
+
+def roundtrip(shape):
+    with tempfile.TemporaryDirectory() as directory:
+        path=Path(directory)/'final.step'
+        cq.exporters.export(shape,str(path))
+        return cq.importers.importStep(str(path)).val()
 
 
 def check(kind, nominal=None, **scope):
@@ -54,6 +62,30 @@ for wall in [1.5,3,5]:
     measured=measure_checks(tube,[check('wall_thickness',wall,axis=[0,0,1],wall_mode='radial')])
     assert measured[0]['outcome']=='passed',measured
     assert measure_checks(tube,[check('wall_thickness',wall+1,axis=[0,0,1],wall_mode='radial')])[0]['outcome']=='failed'
+    # The radius difference is not a material certificate. Neither a hidden
+    # cavity nor a cross-drilled wall may retain a passing radial certificate.
+    cavity=cq.Solid.makeSphere(wall/4,cq.Vector(20-wall/2,0,15),angleDegrees1=-90)
+    drill=cq.Solid.makeCylinder(wall/3,50,cq.Vector(-25,0,15),cq.Vector(1,0,0))
+    for broken in [tube.cut(cavity),tube.cut(drill)]:
+        assert broken.isValid() and len(broken.Solids())==1
+        assert tube.cut(broken).Volume()>0
+        for final in [broken,roundtrip(broken)]:
+            assert measure_checks(final,[check('wall_thickness',wall,axis=[0,0,1],wall_mode='radial')])[0]['outcome']!='passed'
+    rotated=tube.rotate((0,0,0),(0,1,0),63).translate((8,-11,6))
+    import math
+    axis=[math.sin(math.radians(63)),0,math.cos(math.radians(63))]
+    assert measure_checks(rotated,[check('wall_thickness',wall,axis=axis,wall_mode='radial')])[0]['outcome']=='passed'
+
+# Intersections may inflate a conservative bounding box; nominal extents must
+# use geometric extrema and their numerical uncertainty, not a design offset.
+for radius,height in [(10,20),(17,31),(6,9)]:
+    tube=cq.Workplane('XY').circle(radius).circle(radius-2).extrude(height).val()
+    drill=cq.Solid.makeCylinder(0.6,4*radius,cq.Vector(-2*radius,0,height/2),cq.Vector(1,0,0))
+    drilled=roundtrip(tube.cut(drill))
+    for axis,extent in [([1,0,0],2*radius),([0,1,0],2*radius),([0,0,1],height)]:
+        measured=measure_checks(drilled,[check('overall_dimension',extent,axis=axis)])[0]
+        assert measured['outcome']=='passed',(radius,height,axis,measured)
+        assert measure_checks(drilled,[check('overall_dimension',extent+0.001,axis=axis)])[0]['outcome']=='failed'
 slab=cq.Workplane('XY').box(24,16,3).val()
 local=measure_checks(slab,[check('wall_thickness',3,point_mm=[0,0,0],axis=[0,0,1],wall_mode='local_probe')])
 assert local[0]['outcome']=='passed',local

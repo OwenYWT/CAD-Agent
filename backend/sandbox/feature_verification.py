@@ -32,6 +32,20 @@ def _distance(a, b):
     return math.hypot(*_sub(a, b))
 
 
+def _geometric_bounds(shape):
+    """Underlying BRep extrema, without triangulation or shape-tolerance padding."""
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+    box = Bnd_Box()
+    BRepBndLib.AddOptimal_s(shape.wrapped, box, False, False)
+    if box.IsVoid() or box.IsOpen():
+        raise ValueError('geometric bounds are empty or unbounded')
+    bounds = box.Get()
+    if not all(math.isfinite(v) for v in bounds):
+        raise ValueError('geometric bounds are not finite')
+    return bounds
+
+
 def _surface_clearance(shape, scope, tolerance):
     """OCCT extremum of full trimmed faces, rather than selected-point distance.
 
@@ -410,9 +424,9 @@ def measure_checks(shape, checks):
         try:
             frame=scope.get('frame','world')
             if frame!='world':
-                box=shape.BoundingBox()
-                origin=((box.xmin,box.ymin,box.zmin) if frame=='bounds_min'
-                        else ((box.xmin+box.xmax)/2,(box.ymin+box.ymax)/2,(box.zmin+box.zmax)/2))
+                bounds=_geometric_bounds(shape)
+                origin=(bounds[:3] if frame=='bounds_min'
+                        else tuple((lo+hi)/2 for lo,hi in zip(bounds[:3],bounds[3:])))
                 scope=dict(scope)
                 for field in ['point_mm','region_min_mm','region_max_mm']:
                     if scope.get(field) is not None:scope[field]=[v+o for v,o in zip(scope[field],origin)]
@@ -461,7 +475,13 @@ def measure_checks(shape, checks):
                     angle = math.degrees(math.acos(max(-1,min(1,_dot(axis,(0,0,1))))))
                     transformed = shape.rotate((0,0,0),cross.toTuple(),angle)
                 row['method'] = 'brep_extent_on_explicit_axis'
-                row['measured'] = [transformed.BoundingBox().zlen]
+                bounds = _geometric_bounds(transformed)
+                row['measured'] = [bounds[5]-bounds[2]]
+                # AddOptimal uses Confusion for each extremum. A span is the
+                # difference of two extrema; propagate both numerical errors.
+                row['details']['numerical_tolerance_mm'] = 2*tolerance + sum(
+                    math.ulp(v) for v in (bounds[2],bounds[5],bounds[5]-bounds[2]))
+                row['details']['bounds_method'] = 'occt_add_optimal_without_triangulation_or_shape_tolerance_padding'
             elif kind.startswith('hole_'):
                 if passages is None:
                     passages = _cylindrical_voids(shape,tolerance)
@@ -557,10 +577,28 @@ def measure_checks(shape, checks):
                             if abs(surface.LastUParameter()-surface.FirstUParameter()-2*math.pi)>tolerance:continue
                             if hole['complete'] and all(s['radius'] is not None for s in hole['segments']) and len({round(s['radius']/tolerance) for s in hole['segments']})==1:
                                 thickness=cyl.Radius()-hole['diameter']/2
-                                if thickness>tolerance:candidates.append(thickness)
-                        if len(candidates)==1:row['measured'].extend(candidates)
+                                if thickness<=tolerance:continue
+                                start=cq.Vector(*(o+a*hole['start'] for o,a in zip(hole['origin'],hole['axis'])))
+                                direction=cq.Vector(*hole['axis'])
+                                height=hole['end']-hole['start']
+                                layer=cq.Solid.makeCylinder(cyl.Radius(),height,start,direction).cut(
+                                    cq.Solid.makeCylinder(hole['diameter']/2,height,start,direction))
+                                missing=layer.cut(shape)
+                                if not layer.isValid() or len(layer.Solids())!=1 or not missing.isValid():
+                                    raise ValueError('radial material-layer Boolean is invalid')
+                                volume_error=layer.Area()*tolerance
+                                missing_volume=sum(abs(s.Volume()) for s in missing.Solids())
+                                if missing_volume>volume_error:
+                                    row['issues'].append('radial_wall_material_missing')
+                                candidates.append((thickness,{'missing_material_mm3':missing_volume,
+                                    'boolean_volume_tolerance_mm3':volume_error,
+                                    'axial_interval_mm':[hole['start'],hole['end']]}))
+                        if len(candidates)==1:
+                            thickness,certificate=candidates[0]
+                            row['measured'].append(thickness)
+                            row['details'].setdefault('material_layers',[]).append(certificate)
                         else:row['issues'].append('radial_wall_boundary_ambiguous_or_incomplete')
-                    row['method']='coaxial_complete_cylinder_radius_difference'
+                    row['method']='coaxial_cylinders_and_complete_radial_material_layer'
                     row['details']['scope']='radial cylindrical side wall; excludes end caps'
                 else:
                     row['issues'].append('continuous_normal_wall_not_certified_by_analytic_measurements')
@@ -568,7 +606,7 @@ def measure_checks(shape, checks):
                 row['issues'].append('measurement_kind_not_supported')
             if row['measured'] and not row['issues']:
                 wanted = 0 if kind=='hole_position' else check['nominal']
-                allowed = 0 if kind in {'solid_count','hole_count','void_connected'} else (check.get('tolerance_mm') or 0)+tolerance
+                allowed = 0 if kind in {'solid_count','hole_count','void_connected'} else (check.get('tolerance_mm') or 0)+row['details']['numerical_tolerance_mm']
                 if kind == 'volume':
                     allowed = (check.get('tolerance_mm3') or 0)+row['details']['numerical_tolerance_mm3']
                 row['outcome'] = 'passed' if all(abs(v-wanted)<=allowed for v in row['measured']) else 'failed'

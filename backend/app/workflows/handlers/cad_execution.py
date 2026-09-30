@@ -457,14 +457,16 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
         }
         if request.revision_restore is not None:
             task["params"]["expected_revision_id"] = str(request.revision_restore.source_revision_id)
+        export_formats = tuple(operation_plan.operations[-1].typed_args().formats)
+        measurement_step = (operation_plan.execution_mode == 'final'
+            and plan.design_brief.acceptance is not None and 'step' not in export_formats)
+        if measurement_step:
+            task['params']['measurement_formats'] = ['step']
         task_source = json.dumps(
             task,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
-        )
-        export_formats = tuple(
-            operation_plan.operations[-1].typed_args().formats
         )
         outputs = tuple(
             [
@@ -475,6 +477,8 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                 )
                 for name in (*export_formats, "state")
             ]
+            + ([OutputDeclaration(name='verification_step', media_type=_MODELING_MEDIA_TYPES['step'],
+                max_size_bytes=128 * 1024 * 1024)] if measurement_step else [])
             + [
                 OutputDeclaration(
                     name="capability-result",
@@ -599,6 +603,7 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                 )
             )
             staged_outputs: list[dict[str, Any]] = []
+            verification_outputs: list[dict[str, Any]] = []
             for output_name, path in outcome.files.items():
                 declared = next(
                     item
@@ -625,9 +630,9 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                         type="agent_staging_integrity_failed",
                         non_retryable=True,
                     )
-                staged_outputs.append(
+                (verification_outputs if output_name == 'verification_step' else staged_outputs).append(
                     {
-                        "format": output_name,
+                        "format": 'step' if output_name == 'verification_step' else output_name,
                         "filename": Path(declared.name).name,
                         "object_key": object_key,
                         "sha256": declared.sha256,
@@ -662,6 +667,8 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
             }
             if request.revision_restore is not None:
                 manifest["revision_restore"] = request.revision_restore.model_dump(mode="json")
+            if verification_outputs:
+                manifest['verification_outputs'] = verification_outputs
             if payload.get("checkpoint_enabled"):
                 manifest["execution_mode"] = operation_plan.execution_mode
                 manifest["predecessor_checkpoint_id"] = payload.get("checkpoint_manifest_id")

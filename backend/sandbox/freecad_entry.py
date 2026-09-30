@@ -1261,7 +1261,7 @@ def _open_document(task: dict[str, Any], plan: dict[str, Any]) -> Any:
     return document
 
 
-def _export_document(document: Any, args: dict[str, Any]) -> dict[str, str]:
+def _export_document(document: Any, args: dict[str, Any], *, measurement_formats=()) -> dict[str, str]:
     formats = list(args["formats"])
     basename = _name(args.get("basename", "model"), "export basename")
     files: dict[str, str] = {}
@@ -1271,13 +1271,17 @@ def _export_document(document: Any, args: dict[str, Any]) -> dict[str, str]:
 
     components = component_shapes(document)
     target_shape = Part.makeCompound([shape for _, shape in components]) if components else None
-    derivative_formats = set(formats) - {"fcstd"}
+    derivative_formats = (set(formats) | set(measurement_formats)) - {"fcstd"}
     if derivative_formats and target_shape is None:
         raise FreeCADRunnerError("export_shape_missing", "document contains no solid shape to export")
     if "step" in formats:
         path = OUTPUT_ROOT / f"{basename}.step"
         target_shape.exportStep(str(path))
         files["step"] = str(path)
+    elif "step" in measurement_formats:
+        path = OUTPUT_ROOT / f"{basename}.verification.step"
+        target_shape.exportStep(str(path))
+        files["verification_step"] = str(path)
     if "stl" in formats:
         path = OUTPUT_ROOT / f"{basename}.stl"
         target_shape.exportStl(str(path))
@@ -1314,7 +1318,7 @@ def _validate_plan(task: dict[str, Any]) -> dict[str, Any]:
     inputs = task.get("inputs")
     if not isinstance(params, dict) or not isinstance(inputs, dict):
         raise FreeCADRunnerError("invalid_task", "task params and inputs must be objects")
-    if set(params) - {"plan", "expected_revision_id"} or not isinstance(
+    if set(params) - {"plan", "expected_revision_id", "measurement_formats"} or not isinstance(
         params.get("plan"), dict
     ):
         raise FreeCADRunnerError(
@@ -1328,6 +1332,10 @@ def _validate_plan(task: dict[str, Any]) -> dict[str, Any]:
     ):
         raise FreeCADRunnerError("invalid_task", "expected revision is invalid")
     plan = params["plan"]
+    if params.get('measurement_formats', []) not in ([], ['step']):
+        raise FreeCADRunnerError('invalid_task', 'unsupported internal measurement formats')
+    if params.get('measurement_formats') and plan.get('execution_mode', 'final') != 'final':
+        raise FreeCADRunnerError('invalid_task', 'checkpoint cannot request final measurement artifacts')
     if plan.get("schema_version") != "freecad-operation-plan.v1":
         raise FreeCADRunnerError("invalid_plan", "unsupported FreeCAD operation plan schema")
     if plan.get('execution_mode', 'final') not in {'final', 'checkpoint'}:
@@ -1473,7 +1481,8 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
             validations.append(validation)
 
         export_args = plan["operations"][-1]["args"]
-        files = _export_document(document, export_args)
+        files = _export_document(document, export_args,
+            measurement_formats=task['params'].get('measurement_formats', ()))
         return {
             "schema_version": "freecad-operation-result.v1",
             "status": "succeeded",

@@ -153,6 +153,9 @@ async def _agent_validation_input(*, request: McadAgentWorkflowV2Request, candid
         for item in manifest.get("outputs") or ()
         if str(item.get("format") or "").lower() in {"stl", "step"}
     ]
+    if not any(item['format'] == preferred_format for item in candidates):
+        candidates.extend(dict(item) for item in manifest.get('verification_outputs', ())
+                          if item.get('format') == preferred_format)
     if not candidates:
         raise ApplicationError(
             "visual/DFM validation requires an STL or STEP output",

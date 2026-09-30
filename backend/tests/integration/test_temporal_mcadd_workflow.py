@@ -242,7 +242,8 @@ async def clean_control_plane():
                             """
                             SELECT output->>'object_key'
                             FROM agent_staging_manifests,
-                                 jsonb_array_elements(manifest->'outputs') output
+                                 jsonb_array_elements(COALESCE(manifest->'outputs','[]'::jsonb)
+                                     || COALESCE(manifest->'verification_outputs','[]'::jsonb)) output
                             """
                         )
                     )
@@ -3913,7 +3914,7 @@ async def test_agent_v2_live_freecad_checkpoint_contract():
 @pytest.mark.asyncio(loop_scope='module')
 @pytest.mark.parametrize('required_diameter',[6,7])
 @pytest.mark.parametrize('execution_path',['typed','api','tools','tool_repair','checkpoint','checkpoint_repair','requirements_tool'])
-async def test_native_engineering_acceptance_gates_commit(required_diameter,execution_path):
+async def test_native_engineering_acceptance_gates_commit(required_diameter,execution_path,output_formats=('step','stl')):
     """Real Temporal→FreeCAD→STEP→S3→DB→seal/commit, controlled requirements/vision.
 
     The negative deliberately plans a 6 mm hole while the frozen criterion asks
@@ -3925,10 +3926,13 @@ async def test_native_engineering_acceptance_gates_commit(required_diameter,exec
     async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
         created=await create_document_workflow(conn,tenant_id=owner.tenant_id,project_id=project_id,
             requested_by_principal_id=owner.principal_id,kind='mcad.agent.v2.generate',
-            idempotency_key=f'engineering-{project_id}',request_payload={'objective':objective})
+            idempotency_key=f'engineering-{project_id}',request_payload={'objective':objective,
+                'branch_id':str(initial.branch_id),'expected_base_revision_id':str(initial.revision_id),
+                'output_formats':list(output_formats)})
     request=McadAgentWorkflowV2Request(workflow_run_id=created.workflow_id,tenant_id=owner.tenant_id,
         project_id=project_id,principal_id=owner.principal_id,branch_id=initial.branch_id,
-        expected_base_revision_id=initial.revision_id,operation='generate',modeling_backend='freecad',objective=objective)
+        expected_base_revision_id=initial.revision_id,operation='generate',modeling_backend='freecad',objective=objective,
+        output_formats=output_formats)
     client=await get_temporal_client()
     operation_generator = (_LiveCheckpointProvider() if execution_path=='live_checkpoints' else
         _LiveToolProvider() if execution_path=='live_tools' else
@@ -3960,11 +3964,18 @@ async def test_native_engineering_acceptance_gates_commit(required_diameter,exec
     if requirements_provider:
         assert requirements_provider.calls==2
     async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
-        rows=(await conn.execute(text("SELECT outcome,evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"),{'id':created.workflow_id})).mappings().all()
+        rows=(await conn.execute(text("SELECT id,outcome,evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"),{'id':created.workflow_id})).mappings().all()
         assert len(rows)==1
         report=rows[0]['evidence'];assert report['request_sha256']
         measured={e['check_id']:e for e in report['acceptance']['evidence']}
         assert measured['hole-diameter']['measured']==[6]
+        criteria={c['check_id']:c for c in report['acceptance_contract']['checks']}
+        assert criteria['hole-diameter']['nominal']==required_diameter
+        if output_formats==('stl',):
+            manifest=await conn.scalar(text('SELECT manifest FROM agent_staging_manifests WHERE workflow_run_id=:id'),{'id':created.workflow_id})
+            assert 'step' not in {a['format'] for a in manifest['outputs']}
+            assert [a['format'] for a in manifest['verification_outputs']]==['step']
+            assert any(a['sha256']==manifest['verification_outputs'][0]['sha256'] for a in report['artifacts'])
         if execution_path=='live_checkpoints':
             staged=(await conn.execute(text('SELECT manifest FROM agent_staging_manifests WHERE workflow_run_id=:id ORDER BY created_at'),{'id':created.workflow_id})).scalars().all()
             assert len(staged)>=2
@@ -4013,11 +4024,20 @@ async def test_native_engineering_acceptance_gates_commit(required_diameter,exec
             assert rows[0]['outcome']=='failed' and measured['hole-diameter']['outcome']=='failed'
             assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'),{'id':created.workflow_id})==0
             assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'),{'id':initial.branch_id})==initial.revision_id
+    from app.services.task_evidence import get_validation_evidence
+    public=await get_validation_evidence(owner,created.workflow_id,rows[0]['id'])
+    assert public['report']['acceptance']==report['acceptance']
+    assert public['report']['acceptance_contract']==report['acceptance_contract']
+    assert public['report']['request_sha256']==report['request_sha256']
     if required_diameter==6:
         change_set=UUID(result['change_set_id'])
         await accept_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,change_set_id=change_set)
         committed=await commit_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,change_set_id=change_set)
         assert committed.status=='committed'
+        if output_formats==('stl',):
+            async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+                exports=(await conn.execute(text('SELECT artifact_kind FROM artifacts WHERE workflow_run_id=:id'),{'id':created.workflow_id})).scalars().all()
+                assert 'stl' in exports and 'step' not in exports and 'verification_step' not in exports
         if execution_path=='tools':
             from functools import partial
             from temporalio.testing import ActivityEnvironment
@@ -4043,3 +4063,9 @@ async def test_native_engineering_acceptance_gates_commit(required_diameter,exec
                 'sources':[dict(row) for row in sources],'geometry':report,'commit_status':committed.status,
                 'scope':'tool protocol integration only; not end-user model success rate',
                 'execution_path':execution_path},ensure_ascii=False,indent=2))
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('required_diameter',[6,7])
+async def test_native_stl_only_delivery_keeps_exact_acceptance(required_diameter):
+    await test_native_engineering_acceptance_gates_commit(required_diameter,'typed',output_formats=('stl',))

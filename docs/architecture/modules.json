@@ -792,6 +792,7 @@
     "frontend/src/adapters/documentView.ts": "P00",
     "frontend/src/adapters/durableTaskAdapter.ts": "P00",
     "frontend/src/adapters/engineeringField.ts": "P00",
+    "frontend/src/adapters/engineeringMeasurements.ts": "P00",
     "frontend/src/adapters/featureTree.ts": "P00",
     "frontend/src/adapters/parameterSubmission.ts": "P00",
     "frontend/src/adapters/projectAdapter.ts": "P00",

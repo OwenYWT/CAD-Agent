@@ -55,6 +55,7 @@ class DurableGeometryReport(BaseModel):
     artifacts: tuple[GeometryArtifactEvidence, ...]
     issues: tuple[str, ...] = ()
     acceptance: AcceptanceMeasurements | None = None
+    acceptance_contract: AcceptanceContract | None = None
     request_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
     @model_serializer(mode="wrap")
@@ -62,6 +63,8 @@ class DurableGeometryReport(BaseModel):
         result = handler(self)
         if self.acceptance is None:
             result.pop("acceptance", None)
+        if self.acceptance_contract is None:
+            result.pop("acceptance_contract", None)
         if self.request_sha256 is None:
             result.pop("request_sha256", None)
         return result
@@ -92,6 +95,8 @@ def verify_geometry_evidence(report, *, request_sha256, acceptance, expected_sol
     if report.request_sha256 != request_sha256:
         raise ValueError("geometry evidence belongs to a different measurement request")
     if acceptance is not None:
+        if report.acceptance_contract is not None and report.acceptance_contract.digest() != acceptance.digest():
+            raise ValueError("displayed measurement criteria differ from the acceptance contract")
         if report.acceptance is None or report.acceptance.contract_sha256 != acceptance.digest():
             raise ValueError("geometry evidence is not bound to the acceptance contract")
         if report.outcome == "passed" and acceptance_outcome(acceptance, report.acceptance.evidence) != "passed":

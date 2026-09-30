@@ -14,6 +14,7 @@ _REPORT_FIELDS = frozenset({
     'dimension_tolerance', 'artifacts', 'process', 'material', 'metrics',
     'evaluated_rule_ids', 'unevaluated_rule_ids', 'policy_hash', 'policy_object',
     'violations', 'issues', 'judgment',
+    'acceptance', 'acceptance_contract', 'request_sha256',
 })
 
 

@@ -49,6 +49,20 @@ cut=document.addObject('Part::Cut','Final');cut.Base=base;cut.Tool=tool
     assert [obj.Name for obj,shape in component_shapes(document)]==['Final']
     assert document.getObject('Base') and document.getObject('Tool')
     App.closeDocument(document.Name)
+    # Delivery selection does not disable exact BRep engineering measurements.
+    internal_task=task("box=document.addObject('Part::Box','Box');box.Length=20;box.Width=20;box.Height=20")
+    internal_task['params']['plan']['operations'][-1]['args']['formats']=['fcstd','stl']
+    internal_task['params']['measurement_formats']=['step']
+    internal=runner.run_task(internal_task)
+    assert 'step' not in internal['files'] and 'stl' in internal['files']
+    assert abs(runner.Part.read(internal['files']['verification_step']).Volume-8000)<1e-6
+    internal_task['params']['plan']['execution_mode']='checkpoint'
+    try:
+        runner.run_task(internal_task)
+    except runner.FreeCADRunnerError as exc:
+        assert exc.code=='invalid_task'
+    else:
+        raise AssertionError('checkpoint accepted final measurement export')
     gui=runner.run_task(task("""Gui.activateWorkbench('PartWorkbench')
 box=document.addObject('Part::Box','GuiBox')
 box.Length=17;box.Width=9;box.Height=5

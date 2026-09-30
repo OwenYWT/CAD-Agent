@@ -278,6 +278,7 @@ def validate_geometry_files(
         digest = hashlib.sha256(json.dumps(acceptance, ensure_ascii=False, sort_keys=True,
                                            separators=(',', ':')).encode()).hexdigest()
         result['acceptance'] = {'contract_sha256':digest, 'evidence':evidence}
+        result['acceptance_contract'] = acceptance
         by_id = {e['check_id']:e for e in evidence}
         outcomes = [by_id[c['check_id']]['outcome'] for c in acceptance['checks'] if c['required']]
         issues.extend('acceptance:'+c['check_id']+':'+by_id[c['check_id']]['outcome']

@@ -1,0 +1,27 @@
+{
+  "reviewed_at": "2026-09-29T21:15:38.394115+08:00",
+  "head": "9ed20b1b22a3c6d55172ef5da58669564aab6d99",
+  "merge_base": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+  "latest_change_base": "09c3ccb",
+  "source_files_verified": 666,
+  "source_mismatches": [],
+  "risk_leads": 130,
+  "risk_categories": {
+    "placeholder-language": 3,
+    "mock-or-fixture-language": 52,
+    "unimplemented": 18,
+    "empty-production-branch": 45,
+    "static-success": 12
+  },
+  "conclusion": "FAIL",
+  "findings": [
+    "R01 radial wall false positive",
+    "R02 nominal extent numerical false negative",
+    "R03 engineering measurements removed by evidence projection",
+    "R04 STL-only request lacks required STEP measurement input"
+  ],
+  "runtime_image": "sha256:4003a8e12d80286a1ea8415d5c93b59115d500153cd77fcf767f818464e969ee",
+  "business_code_modified": false,
+  "live_model_calls": 0,
+  "fresh_service_or_browser_e2e": false
+}

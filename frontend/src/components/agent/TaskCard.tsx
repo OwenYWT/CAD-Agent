@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { taskState } from "../../adapters/taskState";
 import { engineeringTaskEventLabel } from "../../utils/engineeringLabels";
 import { getTaskValidationEvidence, type TaskValidationEvidence } from "../../services/clients/tasks";
+import { engineeringMeasurements } from "../../adapters/engineeringMeasurements";
 
 const STEP_NAMES:Record<string,string>={agent_requirements:'确认需求依据',agent_decompose:'拆解建模步骤',agent_plan:'制定执行计划',agent_freecad_operations:'构建原生特征',agent_geometry:'校验几何',agent_visual:'检查外观',agent_dfm:'检查制造条件',agent_seal:'准备候选版本'};
 const STATUS:Record<string,string>={pending:'等待执行',ready:'等待执行',running:'正在执行',succeeded:'已完成',failed:'失败',cancelled:'已取消',timed_out:'超时',skipped:'未执行'};
@@ -22,6 +23,12 @@ function ValidationEvidenceDetails({taskId,evidenceId}:{taskId:string;evidenceId
     {!evidence ? <button className="workspace-button" type="button" disabled={pending} onClick={()=>void load()}>{pending?'正在核对检查证据…':'查看检查对象、版本与规则'}</button> : <div data-testid="validation-evidence">
       <p>{evidence.selected_for_revision ? `检查已绑定版本：${evidence.revision_id}` : '检查对象：执行中的中间产物，未作为最终版本的检查证据。'}</p>
       <p>对象清单：{evidence.staging_manifest_id}</p>
+      {engineeringMeasurements(evidence.report).map(check => <div key={check.id} className="my-2 border-l-2 pl-2" data-testid="engineering-measurement">
+        <strong>{check.description} · {check.outcome}</strong>
+        <p>目标：{check.expected}；{check.measuredLabel}：{check.measured}</p>
+        {typeof check.tolerance === 'number' ? <p>允许偏差：±{check.tolerance}</p> : null}
+        <p>量测方法：{check.method}</p>
+      </div>)}
       {evidence.report.expected_dimensions_mm ? <p>检查采用的尺寸：{JSON.stringify(evidence.report.expected_dimensions_mm)} mm</p> : null}
       {Array.isArray(evidence.report.evaluated_rule_ids) ? <p>已执行规则：{evidence.report.evaluated_rule_ids.join('、') || '未提供'}</p> : null}
       {Array.isArray(evidence.report.unevaluated_rule_ids) && evidence.report.unevaluated_rule_ids.length ? <p>未验证规则：{evidence.report.unevaluated_rule_ids.join('、')}</p> : null}
