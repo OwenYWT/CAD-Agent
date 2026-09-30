@@ -418,7 +418,7 @@
   "backend/sandbox/runtime-requirements.txt": "3b611abbd92f477ff4aaa46471900b6bc6f4f1c4af1bcf0b45b23785331d7647",
   "backend/sandbox/runtime_probe.py": "b2e6820ab0028d6166f948a7ecd1373919a5b96f7ea5ea0e450126893d69bfa6",
   "backend/sandbox/visual_render.py": "f46951d4b5db27137e72f6403fcfcdaf5a5be6f2a0f919eba677ec09ea7101a6",
-  "deploy/tencent/compose.yml": "92e73ecf6b951d5ab613d7aca3051fdddd5111e38c7dc0049233f76892100e7a",
+  "deploy/tencent/compose.yml": "cacf3a269a2c9acca39ec0184185a687551f51a1276c7ad920b1d23b374bef90",
   "frontend/dist/assets/DocumentSceneViewer-IUuR3v_L.js": "c263bcfe087bb81648925f26cba99bdb358f10d64f2f9b9cfca81bcdd3f5c0ed",
   "frontend/dist/assets/Icon-CN3tT-Zl.js": "c64a4093f9e14b0b9fb7af6d58de0fa19d8c99d9cc21cdc44a5555749fffe92f",
   "frontend/dist/assets/OrbitControls-BMlwkpAp.js": "26e2bd333a3adeb2d1afb32d1432ddf282611edcab0537105d5820a15569e9e8",

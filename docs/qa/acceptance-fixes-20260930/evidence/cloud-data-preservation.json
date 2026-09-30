@@ -1,0 +1,18 @@
+{
+  "before": {
+    "auth_users": 8,
+    "projects": 20,
+    "revisions": 53
+  },
+  "after": {
+    "auth_users": 8,
+    "projects": 21,
+    "revisions": 55,
+    "schema": "0030_model_job_json_numbers"
+  },
+  "added_by_acceptance": {
+    "projects": 1,
+    "revisions": 2
+  },
+  "passed": true
+}

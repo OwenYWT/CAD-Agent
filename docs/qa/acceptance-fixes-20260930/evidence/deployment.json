@@ -1,0 +1,63 @@
+{
+  "source_commit": "f1cf4d8ef4c2bfb97882f70b1a8669fb904e7724",
+  "release": "/www/releases/cad-20260930-acceptance-fixes",
+  "backup": "/www/backups/cad-20260930-acceptance-fixes",
+  "previous": {
+    "backend": {
+      "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+      "compose_dir": "/www/releases/cad-20260922-acceptance-af0a090/deploy/tencent"
+    },
+    "workflow-worker": {
+      "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+      "compose_dir": "/www/releases/cad-20260922-acceptance-af0a090/deploy/tencent"
+    },
+    "monitoring": {
+      "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+      "compose_dir": "/www/releases/cad-20260922-acceptance-af0a090/deploy/tencent"
+    },
+    "frontend": {
+      "image": "sha256:704569d3f918ef21c07e7a7c6d10a3b777cfe243cfc74e2b67739fbac1df2092",
+      "compose_dir": "/www/releases/cad-20260922-acceptance-af0a090/deploy/tencent"
+    }
+  },
+  "images": {
+    "backend": "sha256:397bf217e03125300581897fb5141ab058414612a4c271102a72b526ea9c041b",
+    "sandbox": "sha256:a326718c3ef3b3be1a9ca3974106fe3f3e64e78db752b6d8873a2d4641152685",
+    "frontend": "sha256:3fd4b5f63c43ec9197c8987b4daafb17ab77434b5adb4ea501a0db5cbf5e3ad4",
+    "monitoring": "sha256:397bf217e03125300581897fb5141ab058414612a4c271102a72b526ea9c041b"
+  },
+  "schema": "0030_model_job_json_numbers",
+  "schema_changed": false,
+  "tests": {
+    "cloud_native_contract_suites": 19,
+    "cloud_native_workflow_commit": true,
+    "monitor_reader_isolated": true,
+    "monitor_admin_api": true,
+    "image_source_hashes": "matched"
+  },
+  "application_commit": "f1cf4d8ef4c2bfb97882f70b1a8669fb904e7724",
+  "readiness": "passed",
+  "monitor_reader_login": "cad_monitor_reader_20260922",
+  "services": {
+    "backend": {
+      "image": "sha256:397bf217e03125300581897fb5141ab058414612a4c271102a72b526ea9c041b",
+      "running": true,
+      "health": "healthy"
+    },
+    "workflow-worker": {
+      "image": "sha256:397bf217e03125300581897fb5141ab058414612a4c271102a72b526ea9c041b",
+      "running": true,
+      "health": null
+    },
+    "monitoring": {
+      "image": "sha256:397bf217e03125300581897fb5141ab058414612a4c271102a72b526ea9c041b",
+      "running": true,
+      "health": "healthy"
+    },
+    "frontend": {
+      "image": "sha256:3fd4b5f63c43ec9197c8987b4daafb17ab77434b5adb4ea501a0db5cbf5e3ad4",
+      "running": true,
+      "health": null
+    }
+  }
+}

@@ -1,5 +1,5 @@
 # Separate deployment: never attach this release to an existing application's DB.
-# Run from this directory with a private .env and backend.env (both mode 0600).
+# Run here with private .env, backend.env and monitor.env files (mode 0600).
 name: cad-native
 
 x-app: &app
@@ -143,7 +143,7 @@ services:
 
   monitoring:
     image: ${MONITORING_IMAGE:-${BACKEND_IMAGE}}
-    env_file: ./backend.env
+    env_file: ./monitor.env
     command: [uvicorn, app.monitoring:app, --host, 0.0.0.0, --port, '8000']
     depends_on:
       migrate:
