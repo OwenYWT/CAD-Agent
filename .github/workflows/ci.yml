@@ -206,6 +206,8 @@ jobs:
           SANDBOX_COMMAND: docker
           SANDBOX_IMAGE: cad-agent-sandbox:ci
         run: |
+          # Live Provider cases require separately configured credentials. Their
+          # controlled-provider counterparts below still execute real CAD/DB/S3.
           python -m pytest -q \
             tests/integration/test_temporal_mcadd_workflow.py \
             tests/integration/test_websocket_replay.py \
@@ -213,7 +215,7 @@ jobs:
             tests/integration/test_postgres_project_files.py \
             tests/integration/test_postgres_history.py \
             tests/integration/test_api_compatibility_matrix.py \
-            -k 'not real_freecad_generation_validation and not real_visual_provider and not real_repair_provider and not real_planner_retriever and not real_generate_runs_llm' \
+            -k 'not real_freecad_generation_validation and not real_visual_provider and not real_repair_provider and not real_planner_retriever and not real_generate_runs_llm and not live_freecad_tools_contract and not live_freecad_checkpoint_contract' \
             --junitxml=../reports/durable-core.xml
           python ../scripts/ci/require_test_report.py ../reports/durable-core.xml
 
