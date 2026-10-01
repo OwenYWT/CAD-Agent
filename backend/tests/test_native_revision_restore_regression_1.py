@@ -5,7 +5,8 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from app.workflows import activities, temporal
+from app.workflows import activities, temporal, revision_inputs
+from app.workflows.handlers import planning, native_generation, cad_execution
 from app.workflows.agent_v2 import McadAgentWorkflowV2
 from app.services import durable_submission as submission
 
@@ -67,7 +68,7 @@ async def test_exact_parameter_failure_cannot_authorize_provider_redesign(monkey
             "error_code":"shape_check_failed", "error_message":"Self-intersecting wire"})
     def forbidden_transaction(*_args):
         pytest.fail("an exact parameter request must stop before preparing provider repair")
-    monkeypatch.setattr(activities, "tenant_transaction", forbidden_transaction)
+    monkeypatch.setattr(native_generation, "tenant_transaction", forbidden_transaction)
     with pytest.raises(ApplicationError) as caught:
         await activities.McadWorkflowActivities(backend=object()).agent_repair_operations(payload)
     assert caught.value.type == "native_edit_repair_forbidden"
@@ -87,10 +88,17 @@ def logical_activities(monkeypatch):
         return uuid4()
     async def complete(*_args, **kwargs):
         return kwargs["result"]
-    monkeypatch.setattr(activities, "tenant_transaction", lambda *_: Transaction())
-    monkeypatch.setattr(activities, "_stored_agent_step_result", no_replay)
-    monkeypatch.setattr(activities, "_start_agent_logical_step", start)
-    monkeypatch.setattr(activities, "_complete_agent_logical_step", complete)
+    monkeypatch.setattr(revision_inputs, "tenant_transaction", lambda *_: Transaction())
+    monkeypatch.setattr(cad_execution, "tenant_transaction", lambda *_: Transaction())
+    monkeypatch.setattr(planning, "tenant_transaction", lambda *_: Transaction())
+    monkeypatch.setattr(planning, "_stored_agent_step_result", no_replay)
+    monkeypatch.setattr(planning, "_start_agent_logical_step", start)
+    monkeypatch.setattr(planning, "_complete_agent_logical_step", complete)
+    from app.workflows.handlers import decomposition
+    monkeypatch.setattr(decomposition, "tenant_transaction", lambda *_: Transaction())
+    monkeypatch.setattr(decomposition, "_stored_agent_step_result", no_replay)
+    monkeypatch.setattr(decomposition, "_start_agent_logical_step", start)
+    monkeypatch.setattr(decomposition, "_complete_agent_logical_step", complete)
     return activities.McadWorkflowActivities(backend=object())
 
 
@@ -145,7 +153,7 @@ async def test_activity_reads_historical_artifact_not_current_head(logical_activ
     async def resolve(_connection, **kwargs):
         seen.append(kwargs)
         return artifact
-    monkeypatch.setattr(activities, "committed_artifact_for_revision", resolve)
+    monkeypatch.setattr(revision_inputs, "committed_artifact_for_revision", resolve)
     assert await logical_activities._freecad_revision_artifact(request, "fcstd") == artifact
     assert seen[0]["revision_id"] == request.revision_restore.source_revision_id
 
@@ -155,7 +163,7 @@ async def test_activity_rejects_artifact_identity_drift(logical_activities, monk
     request = temporal.McadAgentWorkflowV2Request.model_validate(request_payload())
     async def resolve(_connection, **_kwargs):
         return {"id": uuid4(), "sha256": "a" * 64}
-    monkeypatch.setattr(activities, "committed_artifact_for_revision", resolve)
+    monkeypatch.setattr(revision_inputs, "committed_artifact_for_revision", resolve)
     with pytest.raises(Exception, match="identity"):
         await logical_activities._freecad_revision_artifact(request, "fcstd")
 
@@ -317,11 +325,13 @@ async def test_restore_corrupt_bytes_never_reach_execution_backend(monkeypatch):
         return {"id": request.revision_restore.source_artifact_id, "sha256": "a" * 64,
                 "object_key": "test/historical.FCStd", "size_bytes": 40}
     async def corrupt(*_args, **_kwargs): return {"sha256": "b" * 64, "size_bytes": 40}
-    monkeypatch.setattr(activities, "tenant_transaction", lambda *_: Transaction())
-    monkeypatch.setattr(activities, "get_staging_manifest_for_step", no_replay)
-    monkeypatch.setattr(activities, "committed_artifact_for_revision", artifact)
-    monkeypatch.setattr(activities, "download_object", corrupt)
-    monkeypatch.setattr(activities.activity, "info", lambda: SimpleNamespace(activity_id="test", attempt=1))
+    monkeypatch.setattr(revision_inputs, "tenant_transaction", lambda *_: Transaction())
+    monkeypatch.setattr(cad_execution, "tenant_transaction", lambda *_: Transaction())
+    monkeypatch.setattr(planning, "tenant_transaction", lambda *_: Transaction())
+    monkeypatch.setattr(cad_execution, "get_staging_manifest_for_step", no_replay)
+    monkeypatch.setattr(revision_inputs, "committed_artifact_for_revision", artifact)
+    monkeypatch.setattr(cad_execution, "download_object", corrupt)
+    from temporalio.testing import ActivityEnvironment
     operation_plan = activities._revision_restore_operation_plan(request)
     source_code = operation_plan.model_dump_json()
     import hashlib
@@ -332,7 +342,7 @@ async def test_restore_corrupt_bytes_never_reach_execution_backend(monkeypatch):
         expected_base_revision_id=request.expected_base_revision_id,
     )
     with pytest.raises(Exception, match="integrity verification"):
-        await activities.McadWorkflowActivities(backend=object()).agent_execute_freecad({
+        await ActivityEnvironment().run(activities.McadWorkflowActivities(backend=object()).agent_execute_freecad, {
             **request.temporal_payload(), "plan": plan.temporal_payload(),
             "step": plan.steps[0].model_dump(mode="json"), "candidate_build_id": str(uuid4()),
             "source_code": source_code, "source_hash": hashlib.sha256(source_code.encode()).hexdigest(),

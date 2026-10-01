@@ -97,6 +97,8 @@ def validate_selected_operations(plan, base_state: dict) -> None:
 
     for operation in plan.operations:
         action, args = operation.action, operation.args
+        if action=='document.export' and args.get('objects') is not None:
+            raise SelectionError('选中特征修改不能同时改变文档导出范围')
         if action in {"document.inspect", "document.export"}:
             continue
         if selection.get("topology_selector") and action not in {"feature.fillet", "feature.chamfer"}:
@@ -109,6 +111,15 @@ def validate_selected_operations(plan, base_state: dict) -> None:
             require_target(args["profile"])
             if args["profile"] not in new_sketches and not bodies:
                 raise SelectionError("新增实体特征需要明确选择所属 Body，不能借助依赖改变未选择的实体")
+            allow_created(args["name"])
+        elif action in {"feature.loft", "feature.sweep", "feature.revolve", "feature.polar_pattern", "feature.linear_pattern"}:
+            if not bodies:
+                raise SelectionError("新增原生特征需要选择所属 Body，不能扩展对单个特征的修改授权")
+            targets = args.get("profiles") or args.get("originals") or [args["profile"]]
+            if action == "feature.sweep":
+                targets = [*targets, args["path"]]
+            for target in targets:
+                require_target(target)
             allow_created(args["name"])
         elif action in {"feature.fillet", "feature.chamfer"}:
             require_target(args["target"]); allow_created(args["name"])

@@ -4,7 +4,7 @@ from uuid import UUID
 from app.domain.projects import Permission
 from app.services.event_relay import get_task_snapshot, workflow_project_id
 from app.services.durable_submission import submit_durable_workflow
-from app.workflows.temporal import OperationContextV1
+from app.models.workflow_requests import (OperationContextV1)
 
 
 def retry_input(snapshot: dict) -> dict:

@@ -9,6 +9,8 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import settings
 from app.db import close_database, tenant_transaction
@@ -17,6 +19,35 @@ from app.monitoring import app, reader
 from app.repositories.identity import reconcile_principal, reconcile_authenticated_user
 from app.services.llm_usage import UsageContext, usage_context, start_call, finish_call
 from app.storage import auth
+
+
+@pytest.mark.asyncio
+async def test_separate_monitor_login_cannot_become_runtime_or_read_credentials(monitor, monkeypatch):
+    from app.services.monitor_queries import close_monitor_database
+    role = 'monitor_contract_' + uuid4().hex
+    password = secrets.token_hex(24)
+    admin_engine = create_async_engine(os.environ['CAD_MONITOR_TEST_DATABASE_URL'])
+    async with admin_engine.begin() as conn:
+        await conn.execute(text(f"CREATE ROLE {role} LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS PASSWORD '{password}'"))
+        await conn.execute(text(f'GRANT cad_agent_monitor TO {role}'))
+    url = make_url(os.environ['CAD_MONITOR_TEST_DATABASE_URL']).set(username=role, password=password)
+    await close_monitor_database()
+    monkeypatch.setattr(settings, 'monitor_database_url', url.render_as_string(hide_password=False))
+    try:
+        async with reader() as conn:
+            assert await conn.scalar(text('SELECT session_user')) == role
+            assert await conn.scalar(text('SELECT current_user')) == 'cad_agent_monitor'
+            await conn.execute(text('SELECT id FROM llm_calls LIMIT 1'))
+        for sql in ('SET LOCAL ROLE cad_agent_runtime', 'SELECT password_hash FROM auth_users',
+                    'SELECT request_payload FROM workflow_runs', 'DELETE FROM llm_calls'):
+            with pytest.raises(DBAPIError):
+                async with reader() as conn:
+                    await conn.execute(text(sql))
+    finally:
+        await close_monitor_database()
+        async with admin_engine.begin() as conn:
+            await conn.execute(text(f'DROP ROLE {role}'))
+        await admin_engine.dispose()
 
 pytestmark = [pytest.mark.auth, pytest.mark.skipif(not os.getenv("CAD_MONITOR_TEST_DATABASE_URL"), reason="requires migrated isolated PostgreSQL")]
 

@@ -1,0 +1,338 @@
+{
+  "project": "cad-acceptance-20260923",
+  "execution_host": "independent Lima VM; AMD64 images on ARM64 host via Rosetta",
+  "steps": [
+    {
+      "target": "new",
+      "workflow_id": "d5558abd-c510-4546-ad4e-b634df205fa6",
+      "interrupted_job": {
+        "id": "abc558af-1853-58dc-a67b-63870154a010",
+        "tenant_id": "3c563e5e-9fe6-55a0-ba47-ebb7f5726aa9",
+        "principal_id": "085963dc-8199-5eb2-874d-f871995a1b69",
+        "workflow_run_id": "d5558abd-c510-4546-ad4e-b634df205fa6",
+        "operation": "agent_v2.requirements",
+        "payload_hash": "5c628daaec402243483251d67c8b4ce5e3962b3ff9aac39b86c7e7cfb5b923f2",
+        "generation": 1,
+        "status": "running"
+      },
+      "status": "passed",
+      "recovered_job": {
+        "id": "abc558af-1853-58dc-a67b-63870154a010",
+        "tenant_id": "3c563e5e-9fe6-55a0-ba47-ebb7f5726aa9",
+        "principal_id": "085963dc-8199-5eb2-874d-f871995a1b69",
+        "workflow_run_id": "d5558abd-c510-4546-ad4e-b634df205fa6",
+        "operation": "agent_v2.requirements",
+        "payload_hash": "5c628daaec402243483251d67c8b4ce5e3962b3ff9aac39b86c7e7cfb5b923f2",
+        "generation": 2,
+        "status": "succeeded"
+      },
+      "change_set_id": "92d75afe-ae4e-486f-a0d8-1c9d147d5496",
+      "result": {
+        "document_id": "e8e00220-facc-4ec5-a511-80622498f72e",
+        "revision_id": "6eb96b1b-5b88-45cb-b239-d49722bd9538",
+        "artifacts": {
+          "fcstd": "990d155e9c1280085239a5c31fc1f748def48bb09b268c474484193b89b7957a",
+          "mesh": "72d4386afe0a179bf31868836b02c62b31bae2e6e41eef1b48a1ba2911f74920",
+          "state": "1f2e76eee8291d84cd8b78849ef14ec49acd2d6e7e825c0cca91281b10d2eede"
+        },
+        "state_version": 1
+      },
+      "stack_recreated": {
+        "from": {
+          "backend": {
+            "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+            "id": "7ee5da15e8760d0c4207279edf1391dd0a7ce34052c222d6d9657db92c7a1d36"
+          },
+          "frontend": {
+            "image": "sha256:704569d3f918ef21c07e7a7c6d10a3b777cfe243cfc74e2b67739fbac1df2092",
+            "id": "3ed9295762c69fa04d6c9b05aec8a0475983621a428655e0f2438a4dbc405923"
+          },
+          "migrate": {
+            "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+            "id": "abe695163c7417b34577d5010c15cffa46340b0673814d5a047b078fcdef35f7"
+          },
+          "minio": {
+            "image": "sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+            "id": "be4e7a2fe3d1c48931eb6c033db2e041c26963eff268ce003a3a06d117348562"
+          },
+          "minio-init": {
+            "image": "sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727",
+            "id": "bca726bbfb7ab0403233708a7a1565c298868c64ead4f0db4bea78bf2d086097"
+          },
+          "monitoring": {
+            "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+            "id": "e98cf6cb840dcd7a467ef2772794ead94c33870cd42318789b73e00ae633f9a4"
+          },
+          "postgres": {
+            "image": "sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777",
+            "id": "0baae25be517bb106568856205c8e27f7b306018693bba92e40fff2250c2e5b8"
+          },
+          "temporal": {
+            "image": "sha256:f14912b699cf73015ad5c4fc18d522d4b014db90e794039214dfb7c022c2644f",
+            "id": "63f969bdd539c2266f7e374e589f5f8a2e6b7a58b65530d07b791391213aa759"
+          },
+          "workflow-worker": {
+            "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+            "id": "514a2cc758c70c8e1e70520d65100e59fb64f0ee6885b536bb18dc84429c63bb"
+          }
+        },
+        "to": {
+          "backend": {
+            "image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+            "id": "e5855fb0bc02e3d9c826f2f7ff8950b11f54d37af0bace27efc1a7f193cdc3d7"
+          },
+          "frontend": {
+            "image": "sha256:fef4ee231cfa992907ecbc1738b5fc4d86e1198e15157b858829724e19e44539",
+            "id": "886795789b9de0e523ddff3c2ea875d4bda94499f008c2203d914fdec76e0d5c"
+          },
+          "migrate": {
+            "image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+            "id": "1be638773d91c4f820a2bb929303c79a4cf881994cb997ea9ef5417359212d10"
+          },
+          "minio": {
+            "image": "sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+            "id": "c7a190447e6e66e82a7a4fa3959cf714cc43bfb03f6f2e1c572e47c32dc2200b"
+          },
+          "minio-init": {
+            "image": "sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727",
+            "id": "5eaf19d1895fc872763b312c0e84f3034c198abe5e78c814cb393bc72e11c87e"
+          },
+          "monitoring": {
+            "image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+            "id": "08ccf5943fcd5f21bacc817726170e8f946129e6575abfcae47a4011767c8f65"
+          },
+          "postgres": {
+            "image": "sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777",
+            "id": "d7db9b0b596b31f7d3872dda1b05855d7c5f94751d4a431f373b2f39f18cdbb2"
+          },
+          "temporal": {
+            "image": "sha256:f14912b699cf73015ad5c4fc18d522d4b014db90e794039214dfb7c022c2644f",
+            "id": "1af2a09a560db4a2c51ae1daea3727f2fcb61c8f9289bf7e07d52310443b1682"
+          },
+          "workflow-worker": {
+            "image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+            "id": "471d0ad9dc4bf3dae4ad098c3aac885c38cdb13a28748e1c521b4579767aff20"
+          }
+        },
+        "schema": "0030_model_job_json_numbers"
+      }
+    },
+    {
+      "target": "old",
+      "workflow_id": "6bb0a2ea-d5f2-41e9-8a7c-895ae5a14d9f",
+      "interrupted_job": {
+        "id": "3eed543e-d81e-529f-b089-23a753235af8",
+        "tenant_id": "3c563e5e-9fe6-55a0-ba47-ebb7f5726aa9",
+        "principal_id": "085963dc-8199-5eb2-874d-f871995a1b69",
+        "workflow_run_id": "6bb0a2ea-d5f2-41e9-8a7c-895ae5a14d9f",
+        "operation": "agent_v2.requirements",
+        "payload_hash": "fdd0eb6c5ffbfabb5c7f6bcbfbe19538739517807c7a0cc17aff47867a39d387",
+        "generation": 1,
+        "status": "running"
+      },
+      "status": "passed",
+      "recovered_job": {
+        "id": "3eed543e-d81e-529f-b089-23a753235af8",
+        "tenant_id": "3c563e5e-9fe6-55a0-ba47-ebb7f5726aa9",
+        "principal_id": "085963dc-8199-5eb2-874d-f871995a1b69",
+        "workflow_run_id": "6bb0a2ea-d5f2-41e9-8a7c-895ae5a14d9f",
+        "operation": "agent_v2.requirements",
+        "payload_hash": "fdd0eb6c5ffbfabb5c7f6bcbfbe19538739517807c7a0cc17aff47867a39d387",
+        "generation": 2,
+        "status": "succeeded"
+      },
+      "change_set_id": "545c2396-f4fa-4113-9b0a-881a3cba5711",
+      "result": {
+        "document_id": "9ce1ed96-89a4-47fa-be86-89e7b87e8129",
+        "revision_id": "9bf442e6-fb3b-4fb7-aaed-7f9cb64e9d97",
+        "artifacts": {
+          "fcstd": "45a42963a59991a5a1d8353ca5025d1eb4bc8f27f8445e51efbfb862c117fdbc",
+          "mesh": "72d4386afe0a179bf31868836b02c62b31bae2e6e41eef1b48a1ba2911f74920",
+          "state": "2c805639cb33042e3a8cb7fc2dbbea8fe2a717010ca1abbb5c48019d2769311a"
+        },
+        "state_version": 1
+      },
+      "stack_recreated": {
+        "from": {
+          "backend": {
+            "image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+            "id": "e5855fb0bc02e3d9c826f2f7ff8950b11f54d37af0bace27efc1a7f193cdc3d7"
+          },
+          "frontend": {
+            "image": "sha256:fef4ee231cfa992907ecbc1738b5fc4d86e1198e15157b858829724e19e44539",
+            "id": "886795789b9de0e523ddff3c2ea875d4bda94499f008c2203d914fdec76e0d5c"
+          },
+          "migrate": {
+            "image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+            "id": "1be638773d91c4f820a2bb929303c79a4cf881994cb997ea9ef5417359212d10"
+          },
+          "minio": {
+            "image": "sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+            "id": "c7a190447e6e66e82a7a4fa3959cf714cc43bfb03f6f2e1c572e47c32dc2200b"
+          },
+          "minio-init": {
+            "image": "sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727",
+            "id": "5eaf19d1895fc872763b312c0e84f3034c198abe5e78c814cb393bc72e11c87e"
+          },
+          "monitoring": {
+            "image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+            "id": "08ccf5943fcd5f21bacc817726170e8f946129e6575abfcae47a4011767c8f65"
+          },
+          "postgres": {
+            "image": "sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777",
+            "id": "d7db9b0b596b31f7d3872dda1b05855d7c5f94751d4a431f373b2f39f18cdbb2"
+          },
+          "temporal": {
+            "image": "sha256:f14912b699cf73015ad5c4fc18d522d4b014db90e794039214dfb7c022c2644f",
+            "id": "1af2a09a560db4a2c51ae1daea3727f2fcb61c8f9289bf7e07d52310443b1682"
+          },
+          "workflow-worker": {
+            "image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+            "id": "471d0ad9dc4bf3dae4ad098c3aac885c38cdb13a28748e1c521b4579767aff20"
+          }
+        },
+        "to": {
+          "backend": {
+            "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+            "id": "8fd1a9e05007ec1c0bd8b07e4e2b9ff577a9de6c7e4ab79f9fbf010fbe68de2c"
+          },
+          "frontend": {
+            "image": "sha256:704569d3f918ef21c07e7a7c6d10a3b777cfe243cfc74e2b67739fbac1df2092",
+            "id": "bb062d6c8c778626d07300c7bc0f49aadc5a8ac0c7fdf18fa0e2abb7ab466f77"
+          },
+          "migrate": {
+            "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+            "id": "908766e6e03a78d4b66c37abe2cc4c585358f3338d0da4328b48dacfe7bc876d"
+          },
+          "minio": {
+            "image": "sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+            "id": "2ab71cc7e87c0bae0698953fa8f7549cef0808ee0a1f019073d124b36cd3a291"
+          },
+          "minio-init": {
+            "image": "sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727",
+            "id": "d11fc361346a260086db3e6149b002bd98fa456dcc97d4acc5c2160223e82167"
+          },
+          "monitoring": {
+            "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+            "id": "3b041660ab9bf69180769dee1b90fa3eadd9cb292b2cc894809c26b667a1991c"
+          },
+          "postgres": {
+            "image": "sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777",
+            "id": "6f32d18f5447839fc452fcdfb5b74e173667e3164fc5bd71bc68babcdc2c323a"
+          },
+          "temporal": {
+            "image": "sha256:f14912b699cf73015ad5c4fc18d522d4b014db90e794039214dfb7c022c2644f",
+            "id": "b439928dbf57355c1ba15a41f4925152cf351b2fb3a36e9a8909ac1554077e5c"
+          },
+          "workflow-worker": {
+            "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+            "id": "0af02991efd2c2d2bba9d57b63687899e1a6bc2fba91baf9928717d165901645"
+          }
+        },
+        "schema": "0030_model_job_json_numbers"
+      }
+    }
+  ],
+  "old_monitor": {
+    "anonymous": 401,
+    "ordinary_user": 403,
+    "admin": 200
+  },
+  "new_monitor": {
+    "anonymous": 401,
+    "ordinary_user": 403,
+    "admin": 200
+  },
+  "rollback_monitor": {
+    "anonymous": 401,
+    "ordinary_user": 403,
+    "admin": 200
+  },
+  "final_upgrade": {
+    "from": {
+      "backend": {
+        "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+        "id": "8fd1a9e05007ec1c0bd8b07e4e2b9ff577a9de6c7e4ab79f9fbf010fbe68de2c"
+      },
+      "frontend": {
+        "image": "sha256:704569d3f918ef21c07e7a7c6d10a3b777cfe243cfc74e2b67739fbac1df2092",
+        "id": "bb062d6c8c778626d07300c7bc0f49aadc5a8ac0c7fdf18fa0e2abb7ab466f77"
+      },
+      "migrate": {
+        "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+        "id": "908766e6e03a78d4b66c37abe2cc4c585358f3338d0da4328b48dacfe7bc876d"
+      },
+      "minio": {
+        "image": "sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+        "id": "2ab71cc7e87c0bae0698953fa8f7549cef0808ee0a1f019073d124b36cd3a291"
+      },
+      "minio-init": {
+        "image": "sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727",
+        "id": "d11fc361346a260086db3e6149b002bd98fa456dcc97d4acc5c2160223e82167"
+      },
+      "monitoring": {
+        "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+        "id": "3b041660ab9bf69180769dee1b90fa3eadd9cb292b2cc894809c26b667a1991c"
+      },
+      "postgres": {
+        "image": "sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777",
+        "id": "6f32d18f5447839fc452fcdfb5b74e173667e3164fc5bd71bc68babcdc2c323a"
+      },
+      "temporal": {
+        "image": "sha256:f14912b699cf73015ad5c4fc18d522d4b014db90e794039214dfb7c022c2644f",
+        "id": "b439928dbf57355c1ba15a41f4925152cf351b2fb3a36e9a8909ac1554077e5c"
+      },
+      "workflow-worker": {
+        "image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+        "id": "0af02991efd2c2d2bba9d57b63687899e1a6bc2fba91baf9928717d165901645"
+      }
+    },
+    "to": {
+      "backend": {
+        "image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+        "id": "c75dafea019ea480804c59682f05d6458543bb9845ad2b68daec009b4cde99cc"
+      },
+      "frontend": {
+        "image": "sha256:fef4ee231cfa992907ecbc1738b5fc4d86e1198e15157b858829724e19e44539",
+        "id": "8743ef2b227fe1ba1a0793d39a2952cdf972f8f3da9321af321a7b450fe87440"
+      },
+      "migrate": {
+        "image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+        "id": "c058648467cf64cf4449cf68f678d6c9bcd51c051fc131ef385b96bef1af352e"
+      },
+      "minio": {
+        "image": "sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+        "id": "6931d1305ca8debdf88192221d1c0861b905cf43d114f8fbe9be567a5381a83b"
+      },
+      "minio-init": {
+        "image": "sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727",
+        "id": "af997c8dc9b9c363894582b3e2886d9b7221058c3b865b488d768a0775e5f7de"
+      },
+      "monitoring": {
+        "image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+        "id": "1ebe572f96bebb91e2359ec21c55b8a153a16a77d5c570742db30be20cdbe92c"
+      },
+      "postgres": {
+        "image": "sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777",
+        "id": "7ae827e779b1ad653ccb36578ac8f9297fdc17f16400222c5b8f755c221fbc0e"
+      },
+      "temporal": {
+        "image": "sha256:f14912b699cf73015ad5c4fc18d522d4b014db90e794039214dfb7c022c2644f",
+        "id": "4577f7b1a3cd0156e11b5b12f86995f06b90ae4cadc8f2fd8b330783803b4897"
+      },
+      "workflow-worker": {
+        "image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+        "id": "3e3cf1f6b796499ff36210e9c184ca706c4fe35460b20f191f3c212793c9a351"
+      }
+    },
+    "schema": "0030_model_job_json_numbers"
+  },
+  "final_monitor": {
+    "anonymous": 401,
+    "ordinary_user": 403,
+    "admin": 200
+  },
+  "passed": true,
+  "source_commit": "62859fa42ba75bffd3186550a25c0ec903b5854e",
+  "resource_difference": "Dedicated AMD64 emulation containers were updated to 3 GiB, including validation containers requesting 512 MiB; application images/specifications unchanged. Not native Tencent resource acceptance."
+}

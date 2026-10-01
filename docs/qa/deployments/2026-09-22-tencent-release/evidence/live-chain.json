@@ -1,0 +1,29 @@
+{
+  "public_url": "http://127.0.0.1:8000",
+  "password_login": true,
+  "is_admin": false,
+  "workflow_id": "e0a4d5ab-d7b2-48a0-8cee-0cc77d5b123b",
+  "document_id": "7765e788-b122-44b8-9f9e-53c85494f37f",
+  "revision_id": "ca0eee8f-a1c3-4c02-a6a9-fcb32f5b0950",
+  "state_version": 1,
+  "feature_count": 15,
+  "change_set_id": "634de9ea-010b-40c3-ad4a-1970e5e91e8b",
+  "artifacts": {
+    "fcstd": {
+      "sha256": "f3fe9085ec334c26f1ee1ca0fffff99571919e797f520466420a2c772c35279c",
+      "size": 25044
+    },
+    "mesh": {
+      "sha256": "341293b29ebd9db7b1d72a5b5922af173181131dbe47962da27c2e272d202b5f",
+      "size": 243908
+    },
+    "state": {
+      "sha256": "d9148d1efb551512cc15147a28e9c44ca9f4e058b854ab16340a83f08f4e2b79",
+      "size": 59534
+    },
+    "step": {
+      "sha256": "d6345351640e03149f703ed6c6e1fe31574ca3b971492329ecdb031f12f3b183",
+      "size": 26581
+    }
+  }
+}

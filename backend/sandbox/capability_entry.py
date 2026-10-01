@@ -174,7 +174,7 @@ def _freecad(task: dict[str, Any]) -> tuple[dict[str, Path], dict[str, Any]]:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        timeout=300,
+        timeout=None,
         check=False,
     )
     stdout = completed.stdout[:512 * 1024]
@@ -482,6 +482,8 @@ def _geometry_validate(task: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
         artifacts,
         expected_dimensions=dict(params.get("expected_dimensions_mm") or {}),
         dimension_tolerance=float(params.get("dimension_tolerance", 0.05)),
+        expected_solid_count=params.get("expected_solid_count"),
+        acceptance=params.get("acceptance"),
     )
     output = _output(params)
     output.write_text(

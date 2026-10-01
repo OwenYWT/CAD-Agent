@@ -1,7 +1,6 @@
+import { useParameterEditor } from "../../controllers/useParameterEditor";
+import type { DurablePanelContext } from "../../stores/sessionStore";
 import { useEffect, useRef, useState } from "react";
-import { parameterSubmissionState } from "../../adapters/parameterSubmission";
-import { useSessionStore } from "../../stores/sessionStore";
-import { useDraftGuard } from "../../hooks/useDraftGuard";
 import { guardDraft } from "../../stores/draftGuard";
 import { featureTreeRows } from "../../adapters/featureTree";
 import FeatureInspection from "./FeatureInspection";
@@ -12,11 +11,10 @@ import SketchEditor from "./SketchEditor";
 import EngineeringTasks from './EngineeringTasks';
 import DocumentReleases from './DocumentReleases';
 import LocalBridgePanel from './LocalBridgePanel';
-import { useFeatureLease } from "../../hooks/useFeatureLease";
 import type { CloudDocumentConnection } from "../../hooks/useCloudDocument";
 import type { CloudDocument, DocumentOperation, SemanticFeature } from "../../types/document";
 import type { EngineeringTaskSummary } from "../../types/engineeringTask";
-import { confirmDurableTask, commentOnDocument, updateDocumentParameters, createDocumentReviewLink, annotateDocumentFeature, EngineeringApiError } from "../../services/engineeringService";
+import { commentOnDocument, createDocumentReviewLink, annotateDocumentFeature } from "../../services/clients/documents";
 
 const STATUS: Record<string, string> = { queued: "排队中", running: "运行中", reviewable: "等待审核",
   committed: "已提交", rejected: "已拒绝", failed: "失败", cancelled: "已取消", rolled_back: "已回退" };
@@ -46,69 +44,12 @@ function FeatureMeaning({ feature, document }: { feature: SemanticFeature; docum
   </div>;
 }
 
-function FeatureProperties({ feature, document, onSubmitted, onReview, operations = [] }: {
+function FeatureProperties({ feature, document, onSubmitted, onReview, operations = [], durable }: {
   feature: SemanticFeature; document: CloudDocument; onSubmitted: (id: string, document: CloudDocument) => void; operations?:DocumentOperation[];
+  durable?: DurablePanelContext;
   onReview?: (id: string) => void;
 }) {
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [editBase, setEditBase] = useState<CloudDocument | null>(null);
-  const lease = useFeatureLease(document, feature.id);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
-  const [submittedId, setSubmittedId] = useState<string | null>(null);
-  const [attemptToken, setAttemptToken] = useState<string | null>(null);
-  const [uncertain, setUncertain] = useState(false);
-  const durable = useSessionStore(state=>state.getActivePanel().durable);
-  const confirmation = durable?.workflowRunId === submittedId && durable.taskStatus === 'waiting_confirmation' ? durable.confirmation : null;
-  const [confirming, setConfirming] = useState(false);
-  const confirm = async (accepted:boolean) => {
-    if (!confirmation || confirming) return;
-    setConfirming(true); setError("");
-    try { await confirmDurableTask(confirmation.workflow_run_id, accepted, accepted ? '' : '用户拒绝当前参数执行计划'); }
-    catch(e){ setError(e instanceof Error ? e.message : "执行计划确认失败"); }
-    finally {setConfirming(false);}
-  };
-  const [savedMessage, setSavedMessage] = useState("");
-  const {operation: submittedOperation, saved, failed} = parameterSubmissionState(submittedId, operations, document);
-  // Update only from this request's authoritative operation + corresponding head,
-  // never from a different task succeeding or from a changed parameter value.
-  if (submittedId && (saved || failed)) {
-    setSubmittedId(null); setAttemptToken(null); setUncertain(false); setIdempotencyKey(crypto.randomUUID());
-    if (saved) {
-      setValues({}); setEditBase(null); setError(""); setSavedMessage(`已保存 · v${document.state_version}，可继续编辑`);
-    } else {
-      setError(`本次参数修改${STATUS[submittedOperation!.status] || submittedOperation!.status}，输入已保留，可修正后重新提交。${submittedOperation?.error_code || ""}`);
-    }
-  }
-  const originalFeature = editBase?.features.find((f) => f.id === feature.id) || feature;
-  const stale = Boolean(editBase && (editBase.head_revision_id !== document.head_revision_id || editBase.state_version !== document.state_version));
-  const updates = originalFeature.parameters.filter((p) => p.editable && values[p.id] !== undefined && Number(values[p.id]) !== p.value)
-    .map((p) => ({ parameter_id: p.id, value: Number(values[p.id]) }));
-  const valid = updates.length > 0 && originalFeature.parameters.every(p => values[p.id] === undefined || (
-    !!values[p.id].trim() && Number.isFinite(Number(values[p.id]))
-    && (p.minimum === null || Number(values[p.id]) >= p.minimum)
-    && (p.maximum === null || Number(values[p.id]) <= p.maximum)));
-  const dirty = Object.keys(values).length > 0 && !submittedId;
-  const reset = () => { setValues({}); setEditBase(null); setSubmittedId(null); setAttemptToken(null); setUncertain(false); setError(""); setIdempotencyKey(crypto.randomUUID()); void lease.release().catch(() => {}); };
-  useDraftGuard(dirty || pending, `${feature.label} 参数`, reset);
-  const submit = async () => {
-    if (!valid || (stale && !uncertain) || submittedId || !document.can_edit) return;
-    setPending(true); setError(""); setSavedMessage("");
-    try {
-      const token = attemptToken || await lease.ensure();
-      setAttemptToken(token);
-      const task = await updateDocumentParameters(editBase || document, updates, idempotencyKey, token);
-      setSubmittedId(task.workflow_run_id); setUncertain(false);
-      onSubmitted(task.workflow_run_id, editBase || document);
-      void lease.release().catch(() => {});
-    } catch (e) {
-      const definitive = e instanceof EngineeringApiError && e.httpStatus !== undefined && e.httpStatus < 500;
-      if (definitive) setAttemptToken(null);
-      setUncertain(!definitive); setError(e instanceof Error ? e.message : "修改提交失败");
-    }
-    finally { setPending(false); }
-  };
+  const { values, setValues, editBase, setEditBase, lease, pending, error, setError, setIdempotencyKey, submittedId, uncertain, confirmation, confirming, confirm, savedMessage, setSavedMessage, submittedOperation, originalFeature, stale, valid, dirty, reset, submit } = useParameterEditor({feature, document, onSubmitted, operations, durable});
   return <div className="ww-inspector-section" data-i18n-skip data-feature-properties={feature.id}>
     <h3>{feature.label}</h3><p className="type-caption text-[var(--muted)]">{feature.type}</p><details className="type-caption"><summary>对象详情</summary><p>{feature.kernel_name} · {feature.id}</p></details>
     <p className="type-caption">{feature.is_valid === true ? "几何对象有效" : feature.is_valid === false ? "几何对象无效" : "未提供几何检查"}</p>
@@ -145,9 +86,10 @@ function FeatureProperties({ feature, document, onSubmitted, onReview, operation
 
 export type DocumentSection = "features" | "activity" | "sharing" | "versions" | "engineering";
 
-export default function CloudDocumentPanel({ connection, onSubmitted, onReview, onTask, onEngineeringTasksChange, section }: {
+export default function CloudDocumentPanel({ connection, onSubmitted, onReview, onTask, onEngineeringTasksChange, section, durable }: {
   section?: DocumentSection;
   connection: CloudDocumentConnection; onSubmitted?: (id: string, document: CloudDocument) => void;
+  durable?: DurablePanelContext;
   onReview?: (id: string) => void;
   onTask?: (id: string) => void;
   onEngineeringTasksChange?: (documentId: string, tasks: EngineeringTaskSummary[]) => void;
@@ -208,7 +150,7 @@ export default function CloudDocumentPanel({ connection, onSubmitted, onReview, 
       {!document.features.length ? <p className="type-caption text-[var(--muted)]">{document.modeling_backend ? "当前模型没有原生特征状态。" : "提交首个模型后显示特征树。"}</p> : null}
     </div>
     {!selected ? <p className="ww-inspector-section type-caption">选择模型对象或特征，查看参数与约束。</p> : null}
-    {selected && onSubmitted ? <FeatureProperties key={`${document.document_id}:${selected.id}`} feature={selected} document={document} operations={collaboration?.operations} onSubmitted={onSubmitted} onReview={onReview} /> : selected ? <div className="ww-inspector-section" data-i18n-skip><h3>{selected.label}</h3><p className="type-caption">{selected.type}</p>{selected.parameters.map((p) => <p key={p.id} className="type-caption">{p.property_name}: {p.value} {p.unit}</p>)}</div> : null}
+    {selected && onSubmitted ? <FeatureProperties key={`${document.document_id}:${selected.id}`} feature={selected} document={document} operations={collaboration?.operations} durable={durable} onSubmitted={onSubmitted} onReview={onReview} /> : selected ? <div className="ww-inspector-section" data-i18n-skip><h3>{selected.label}</h3><p className="type-caption">{selected.type}</p>{selected.parameters.map((p) => <p key={p.id} className="type-caption">{p.property_name}: {p.value} {p.unit}</p>)}</div> : null}
     {collaboration?.leases?.length ? <div className="ww-inspector-section"><h3>正在编辑</h3>{collaboration.leases.map((l) => <p className="type-caption" key={l.feature_id}>{document.features.find((f) => f.id === l.feature_id)?.label || l.feature_id} · {l.display_name || "项目成员"}</p>)}</div> : null}
     {selected ? <details><summary className="ww-inspector-section">特征说明</summary><FeatureMeaning key={`meaning:${document.head_revision_id}:${selected.id}:${selected.annotation_version || 0}`} feature={selected} document={document} /></details> : null}
     {selected?.type === 'Sketcher::SketchObject' ? <SketchEditor key={`sketch:${document.document_id}:${selected.id}`} document={document} feature={selected} onSubmitted={onSubmitted} /> : null}

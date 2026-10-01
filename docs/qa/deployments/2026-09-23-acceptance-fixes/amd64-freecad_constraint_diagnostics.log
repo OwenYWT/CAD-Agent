@@ -1,0 +1,213 @@
+WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+ArbitraryProfile: Sketch with redundant constraints
+Remove the following redundant constraint:
+4
+
+
+ArbitraryProfile: Sketch with redundant constraints
+Remove the following redundant constraint:
+4
+
+
+ArbitraryProfile: Over-constrained sketch
+Remove at least one of the following conflicting constraints:3
+, 4
+
+ArbitraryProfile: Over-constrained sketch
+Remove at least one of the following conflicting constraints:3
+, 4
+
+ArbitraryProfile: Sketch with redundant constraints
+Remove the following redundant constraint:
+4
+
+
+ArbitraryProfile: Sketch with redundant constraints
+Remove the following redundant constraint:
+4
+
+
+ArbitraryProfile: Over-constrained sketch
+Remove at least one of the following conflicting constraints:3
+, 4
+
+ArbitraryProfile: Over-constrained sketch
+Remove at least one of the following conflicting constraints:3
+, 4
+
+CAD_CONSTRAINT_DIAGNOSTICS=[{"case": "normal", "radius": 3.5, "status": "valid"}, {"case": "under", "radius": 3.5, "code": "sketch_under_constrained", "details": {"object": "ArbitraryProfile", "solver_status": 0, "fully_constrained": false, "constraint_status": "under_constrained", "degrees_of_freedom": 3, "redundant_constraint_numbers": [], "partially_redundant_constraint_numbers": [], "conflicting_constraint_numbers": [], "constraint_numbering": "one_based", "native_status": "Valid"}}, {"case": "redundant", "radius": 3.5, "code": "sketch_redundant_constraints", "details": {"object": "ArbitraryProfile", "solver_status": -2, "fully_constrained": true, "constraint_status": "redundant", "degrees_of_freedom": 0, "redundant_constraint_numbers": [4], "partially_redundant_constraint_numbers": [], "conflicting_constraint_numbers": [], "constraint_numbering": "one_based", "native_status": "Sketch with redundant constraints\nRemove the following redundant constraint:\n4\n\n"}}, {"case": "conflicting", "radius": 3.5, "code": "sketch_conflicting_constraints", "details": {"object": "ArbitraryProfile", "solver_status": -4, "fully_constrained": true, "constraint_status": "conflicting", "degrees_of_freedom": -1, "redundant_constraint_numbers": [], "partially_redundant_constraint_numbers": [], "conflicting_constraint_numbers": [3, 4], "constraint_numbering": "one_based", "native_status": "Over-constrained sketch\nRemove at least one of the following conflicting constraints:3\n, 4\n"}}, {"case": "normal", "radius": 8.0, "status": "valid"}, {"case": "under", "radius": 8.0, "code": "sketch_under_constrained", "details": {"object": "ArbitraryProfile", "solver_status": 0, "fully_constrained": false, "constraint_status": "under_constrained", "degrees_of_freedom": 3, "redundant_constraint_numbers": [], "partially_redundant_constraint_numbers": [], "conflicting_constraint_numbers": [], "constraint_numbering": "one_based", "native_status": "Valid"}}, {"case": "redundant", "radius": 8.0, "code": "sketch_redundant_constraints", "details": {"object": "ArbitraryProfile", "solver_status": -2, "fully_constrained": true, "constraint_status": "redundant", "degrees_of_freedom": 0, "redundant_constraint_numbers": [4], "partially_redundant_constraint_numbers": [], "conflicting_constraint_numbers": [], "constraint_numbering": "one_based", "native_status": "Sketch with redundant constraints\nRemove the following redundant constraint:\n4\n\n"}}, {"case": "conflicting", "radius": 8.0, "code": "sketch_conflicting_constraints", "details": {"object": "ArbitraryProfile", "solver_status": -4, "fully_constrained": true, "constraint_status": "conflicting", "degrees_of_freedom": -1, "redundant_constraint_numbers": [], "partially_redundant_constraint_numbers": [], "conflicting_constraint_numbers": [3, 4], "constraint_numbering": "one_based", "native_status": "Over-constrained sketch\nRemove at least one of the following conflicting constraints:3\n, 4\n"}}]
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)

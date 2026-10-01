@@ -1,0 +1,4 @@
+/cad-native-backend-1 sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117 running
+/cad-native-workflow-worker-1 sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117 running
+/cad-native-frontend-1 sha256:704569d3f918ef21c07e7a7c6d10a3b777cfe243cfc74e2b67739fbac1df2092 running
+/cad-native-monitoring-1 sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117 running

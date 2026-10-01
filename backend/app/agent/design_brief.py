@@ -146,6 +146,11 @@ def ensure_design_brief(plan: CADPlan) -> DesignBrief:
         fallback=_DEFAULT_ACCEPTANCE_CRITERIA,
     )
     open_questions = _localized_questions(existing.open_questions or plan.ambiguities)
+    if existing.acceptance is not None:
+        for unresolved in existing.acceptance.unresolved:
+            question = "必须确认：" + unresolved
+            if question not in open_questions:
+                open_questions.append(question)
 
     raw_artifact_type = plan.part_type if existing.artifact_type == "custom" else existing.artifact_type
     brief = DesignBrief(
@@ -158,6 +163,7 @@ def ensure_design_brief(plan: CADPlan) -> DesignBrief:
         printability_targets=printability_targets,
         acceptance_criteria=acceptance_criteria,
         open_questions=open_questions,
+        acceptance=existing.acceptance,
     )
     plan.design_brief = brief
     return brief

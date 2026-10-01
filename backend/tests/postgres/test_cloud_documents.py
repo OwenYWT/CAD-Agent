@@ -16,7 +16,7 @@ from app.domain.identity import user_principal
 from app.repositories.identity import ensure_principal
 from app.repositories.projects import create_project
 from app.repositories.revisions import create_initial_branch, create_candidate_change_set, compare_and_swap_branch_head
-from app.services.run_state import create_workflow
+from app.services.workflow_admission import create_document_workflow as create_workflow
 from app.services.cloud_documents import (DocumentConflict, acquire_operation, add_comment,
     document_snapshot, document_events, touch_presence, collaboration_snapshot)
 from app.services.document_sharing import create_review_invite, accept_review_invite, workspace_principal, change_project_member, project_members
@@ -62,6 +62,45 @@ async def enqueue(owner, project, branch, *, key=None, version=0):
             idempotency_key=key or str(uuid4()), request_payload={"branch_id": str(branch.branch_id),
                 "expected_base_revision_id": str(branch.revision_id), "expected_state_version": version,
                 "operation": "generate", "objective": "test transaction"})
+
+
+async def test_document_admission_and_event_roll_back_together(monkeypatch):
+    """A failure after queue insertion must leave no accepted half-task."""
+    from app.services import workflow_admission
+    owner, project, branch = await seed()
+    key = f"rollback-{uuid4()}"
+    real_enqueue = workflow_admission.enqueue_operation
+
+    async def fail_after_enqueue(connection, **kwargs):
+        await real_enqueue(connection, **kwargs)
+        assert await connection.scalar(text("SELECT count(*) FROM cad_operations WHERE id=:id"),
+                                       {"id": kwargs["workflow_id"]}) == 1
+        raise RuntimeError("injected crash before transaction commit")
+
+    monkeypatch.setattr(workflow_admission, "enqueue_operation", fail_after_enqueue)
+    with pytest.raises(RuntimeError, match="injected crash"):
+        await enqueue(owner, project, branch, key=key)
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        assert await conn.scalar(text("SELECT count(*) FROM workflow_runs WHERE idempotency_key=:key"), {"key": key}) == 0
+        assert await conn.scalar(text("SELECT count(*) FROM cad_operations WHERE idempotency_key=:key"), {"key": key}) == 0
+        assert await conn.scalar(text("SELECT count(*) FROM task_events WHERE tenant_id=:tenant"), {"tenant": owner.tenant_id}) == 0
+        assert await conn.scalar(text("SELECT head_revision_id FROM cloud_documents WHERE id=:id"), {"id": branch.branch_id}) == branch.revision_id
+    monkeypatch.setattr(workflow_admission, "enqueue_operation", real_enqueue)
+    created = await enqueue(owner, project, branch, key=key)
+    replayed = await enqueue(owner, project, branch, key=key)
+    assert replayed.replayed and replayed.workflow_id == created.workflow_id
+
+
+async def test_generic_workflow_does_not_implicitly_enqueue_document():
+    from app.services.run_state import create_workflow as create_run
+    owner, project, branch = await seed()
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        created = await create_run(conn, tenant_id=owner.tenant_id, project_id=project,
+            requested_by_principal_id=owner.principal_id, kind="read-only-contract",
+            idempotency_key=str(uuid4()), request_payload={"branch_id": str(branch.branch_id),
+                "expected_base_revision_id": str(branch.revision_id), "operation": "generate"})
+        assert await conn.scalar(text("SELECT count(*) FROM cad_operations WHERE id=:id"), {"id": created.workflow_id}) == 0
+        assert await conn.scalar(text("SELECT count(*) FROM task_events WHERE workflow_run_id=:id"), {"id": created.workflow_id}) == 1
 
 
 async def test_real_queue_serializes_and_replays_without_duplicate_mutations():

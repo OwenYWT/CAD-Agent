@@ -1,0 +1,14 @@
+{
+  "workflow_id": "bab960b9-74ce-418c-be73-9266bb49e5d6",
+  "source": "completed Temporal child workflow results",
+  "sources": [
+    {
+      "sha256": "4cc80d3165f09bdabe02e5d383733bbd50c80ce1dc739c557fa12cb7fb84a142",
+      "source_code": "{\"schema_version\":\"freecad-operation-plan.v1\",\"document_name\":\"Model\",\"operations\":[{\"op_id\":\"sketch-plate-profile\",\"action\":\"sketch.create\",\"args\":{\"name\":\"PlateProfile\",\"body\":\"Body\",\"plane\":\"xy\",\"offset_mm\":0.0,\"reversed\":false,\"frame\":{\"schema_version\":\"body-frame.v1\",\"origin\":{\"x\":0.0,\"y\":0.0,\"z\":0.0},\"normal\":[0.0,0.0,1.0],\"x_axis\":[1.0,0.0,0.0]}}},{\"op_id\":\"profile-plate-rectangle\",\"action\":\"sketch.add_profile\",\"args\":{\"sketch\":\"PlateProfile\",\"geometry\":{\"kind\":\"rectangle\",\"corner\":{\"x\":-30.0,\"y\":-20.0},\"width_mm\":60.0,\"height_mm\":40.0,\"construction\":false}}},{\"op_id\":\"pad-plate\",\"action\":\"feature.pad\",\"args\":{\"name\":\"PlatePad\",\"profile\":\"PlateProfile\",\"length_mm\":8.0,\"reversed\":false}},{\"op_id\":\"sketch-hole-profile\",\"action\":\"sketch.create\",\"args\":{\"name\":\"HoleProfile\",\"body\":\"Body\",\"plane\":\"xy\",\"offset_mm\":0.0,\"reversed\":false,\"frame\":{\"schema_version\":\"body-frame.v1\",\"origin\":{\"x\":0.0,\"y\":0.0,\"z\":8.0},\"normal\":[0.0,0.0,1.0],\"x_axis\":[1.0,0.0,0.0]}}},{\"op_id\":\"profile-hole-circle\",\"action\":\"sketch.add_profile\",\"args\":{\"sketch\":\"HoleProfile\",\"geometry\":{\"kind\":\"circle\",\"center\":{\"x\":0.0,\"y\":0.0},\"radius_mm\":3.0,\"construction\":false}}},{\"op_id\":\"hole-plate-through\",\"action\":\"feature.hole\",\"args\":{\"name\":\"PlateHole\",\"profile\":\"HoleProfile\",\"diameter_mm\":6.0,\"depth_mm\":null,\"through_all\":true,\"reversed\":false}},{\"op_id\":\"export-final\",\"action\":\"document.export\",\"args\":{\"formats\":[\"fcstd\",\"step\",\"stl\"],\"basename\":\"plate_60x40x8_hole6\",\"objects\":[\"Body\"]}}]}"
+    }
+  ],
+  "schema_version": "cad-tool-live-fixture.v1",
+  "model": "kimi-k2.7-code",
+  "captured_on": "2026-09-28",
+  "purpose": "fixed protocol regression, not success-rate evaluation"
+}

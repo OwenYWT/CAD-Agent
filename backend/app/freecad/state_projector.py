@@ -38,13 +38,18 @@ _EDITABLE_PROPERTY_TYPES = {
     "App::PropertyAngle": "deg",
     "App::PropertyFloat": None,
     "App::PropertyInteger": None,
+    "App::PropertyIntegerConstraint": None,
 }
 _FEATURE_PARAMETER_PROPERTIES = {
     "PartDesign::Pad": frozenset({"Length"}),
     "PartDesign::Pocket": frozenset({"Length"}),
-    "PartDesign::Hole": frozenset({"Diameter", "Depth"}),
+    "PartDesign::Hole": frozenset({"Diameter", "Depth", "HoleCutDiameter", "HoleCutDepth", "HoleCutCountersinkAngle"}),
     "PartDesign::Fillet": frozenset({"Radius"}),
     "PartDesign::Chamfer": frozenset({"Size"}),
+    "PartDesign::Revolution": frozenset({"Angle"}),
+    "PartDesign::Groove": frozenset({"Angle"}),
+    "PartDesign::PolarPattern": frozenset({"Angle", "Occurrences"}),
+    "PartDesign::LinearPattern": frozenset({"Length", "Occurrences"}),
 }
 
 
@@ -109,7 +114,7 @@ def _has_expression(obj: Any, name: str) -> bool:
 
 
 def _numeric_parameter_value(value: Any, property_type: str) -> int | float | None:
-    if property_type == "App::PropertyInteger":
+    if property_type in {"App::PropertyInteger", "App::PropertyIntegerConstraint"}:
         if isinstance(value, bool):
             return None
         numeric = int(value)
@@ -140,6 +145,16 @@ def project_parameters(obj: Any) -> list[dict[str, Any]]:
     allowed = set(
         _FEATURE_PARAMETER_PROPERTIES.get(str(getattr(obj, "TypeId", "")), ())
     )
+    if str(getattr(obj, "TypeId", "")) == "PartDesign::Hole":
+        kind = str(getattr(obj, "HoleCutType", "None"))
+        if kind not in {"Counterbore", "Countersink"} or not getattr(obj, "HoleCutCustomValues", False):
+            allowed.difference_update({"HoleCutDiameter", "HoleCutDepth", "HoleCutCountersinkAngle"})
+        elif kind == "Counterbore":
+            allowed.discard("HoleCutCountersinkAngle")
+        else:
+            # Recessing the head is a different design change; this contract
+            # controls mouth diameter and cone angle, preserving the entrance plane.
+            allowed.discard("HoleCutDepth")
     # A through-all cut has no user-controlled finite depth even though
     # FreeCAD retains an internal numeric Depth/Length value on the feature.
     if str(getattr(obj, "TypeId", "")) == "PartDesign::Hole" and not (
@@ -202,7 +217,7 @@ def _inspection(obj):
                 "first":int(c.First),"first_position":int(c.FirstPos),
                 "second":int(c.Second),"second_position":int(c.SecondPos),
                 "value":float(c.Value),"name":str(getattr(c,"Name",""))}
-            if str(c.Type) in {'DistanceX','DistanceY','Distance','Radius','Diameter'} and callable(getattr(obj,'getDriving',None)):
+            if str(c.Type) in {'DistanceX','DistanceY','Distance','Radius','Diameter','Angle'} and callable(getattr(obj,'getDriving',None)):
                 item['driving'] = bool(obj.getDriving(index))
             items.append(item)
         result["constraints"] = {"total":len(constraints),"items":items}

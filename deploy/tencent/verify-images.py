@@ -44,7 +44,7 @@ def main():
             backend["/app/" + path] = digest
     sandbox = {}
     names = (
-        "executor_entry.py", "capability_entry.py", "freecad_entry.py", "freecad_bom.py",
+        "executor_entry.py", "capability_entry.py", "freecad_entry.py", "freecad_edge_scope.py", "freecad_bom.py",
         "freecad_scene.py", "freecad_engineering.py", "freecad_cam.py", "freecad_release.py", "freecad_result_channel.py",
         "geometry_validation.py", "mesh_normalization.py", "visual_render.py", "dfm_brep.py", "dfm_validation.py",
         "runtime_probe.py", "freecad_runtime_probe.py", "runtime-lock.json",

@@ -1,0 +1,28 @@
+{
+  "project": "cad-acceptance-20260923",
+  "execution_host": "independent Lima VM; AMD64 images on ARM64 host via Rosetta",
+  "steps": [
+    {
+      "target": "new",
+      "workflow_id": "58c19fd8-7c79-42c8-9a1e-fb0f34c2bc61",
+      "interrupted_job": {
+        "id": "d4079ef8-ecde-5c7f-bbce-49b1dd3d2ef9",
+        "tenant_id": "e2a5b4bf-74c3-5aff-8043-f1a38cebc11c",
+        "principal_id": "5a18dc34-9b31-5d11-87ec-b057c144c6e0",
+        "workflow_run_id": "58c19fd8-7c79-42c8-9a1e-fb0f34c2bc61",
+        "operation": "agent_v2.requirements",
+        "payload_hash": "e1ce0d4273f519b784ef4546d25de11f3092a2c4d8f7deaea2d56274d5200adc",
+        "generation": 1,
+        "status": "running"
+      },
+      "status": "interrupted"
+    }
+  ],
+  "old_monitor": {
+    "anonymous": 401,
+    "ordinary_user": 403,
+    "admin": 200
+  },
+  "passed": false,
+  "error": "{'id': '58c19fd8-7c79-42c8-9a1e-fb0f34c2bc61', 'status': 'failed', 'error_code': 'agent_geometry_validation_failed', 'error_message': 'agent_geometry_validation_failed: Required geometry validation did not pass.', 'error': {'category': 'internal', 'code': 'agent_geometry_validation_failed', 'message': 'agent_geometry_validation_failed: Required geometry validation did not pass.', 'operation_id': None, 'action': None, 'details': {}, 'retryable': False, 'evidence': {}}}"
+}

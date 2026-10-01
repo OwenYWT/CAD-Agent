@@ -181,7 +181,7 @@ class CompatibilityExecutor:
                 image_digest=snapshot.image_digest,
                 platform=snapshot.platform,
             ),
-            limits=ResourceLimits(timeout_seconds=settings.sandbox_timeout_s),
+            limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit, timeout_seconds=settings.sandbox_timeout_s),
         )
         outcome = await self.backend.execute(
             spec,

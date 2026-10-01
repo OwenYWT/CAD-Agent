@@ -1,0 +1,56 @@
+{
+  "source_commit": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+  "vectors": [
+    {
+      "name": "numbers",
+      "value": {
+        "large": 4e+100,
+        "tiny": 5e-324,
+        "precise": 1.2345678901234567,
+        "negative_zero": -0.0,
+        "safe_int": 9007199254740991,
+        "decimal_text": "9007199254740992",
+        "unicode": "é"
+      },
+      "canonical_utf8": "{\"decimal_text\":\"9007199254740992\",\"large\":4e+100,\"negative_zero\":0,\"precise\":1.2345678901234567,\"safe_int\":9007199254740991,\"tiny\":5e-324,\"unicode\":\"é\"}",
+      "sha256": "bd20bc0ba2f597b4f1df4c93c9a6e8e1aed9eba8ebd19287069a2a1232581a3c"
+    },
+    {
+      "name": "model-job",
+      "value": {
+        "operation": "agent_v2.requirements",
+        "payload": {
+          "workflow_run_id": "00000000-0000-4000-8000-000000000001",
+          "tenant_id": "00000000-0000-4000-8000-000000000002",
+          "principal_id": "00000000-0000-4000-8000-000000000003",
+          "objective": "100×60×3 mm 板"
+        }
+      },
+      "canonical_utf8": "{\"operation\":\"agent_v2.requirements\",\"payload\":{\"objective\":\"100×60×3 mm 板\",\"principal_id\":\"00000000-0000-4000-8000-000000000003\",\"tenant_id\":\"00000000-0000-4000-8000-000000000002\",\"workflow_run_id\":\"00000000-0000-4000-8000-000000000001\"}}",
+      "sha256": "4ca8d45d5e78e2ec6756d3a77b9ff9ba08f2a41b6e24b5745714d44f6c85e8cf"
+    },
+    {
+      "name": "native-error",
+      "value": {
+        "schema_version": "freecad-runner-envelope.v1",
+        "invocation_id": "golden-invocation",
+        "result": {
+          "schema_version": "freecad-operation-result.v1",
+          "status": "failed",
+          "files": {},
+          "error": {
+            "code": "sketch_redundant_constraints",
+            "op_id": "cavity-profile",
+            "message": "redundant constraints",
+            "details": {
+              "object": "Profile",
+              "solver_status": -2
+            }
+          }
+        }
+      },
+      "canonical_utf8": "{\"invocation_id\":\"golden-invocation\",\"result\":{\"error\":{\"code\":\"sketch_redundant_constraints\",\"details\":{\"object\":\"Profile\",\"solver_status\":-2},\"message\":\"redundant constraints\",\"op_id\":\"cavity-profile\"},\"files\":{},\"schema_version\":\"freecad-operation-result.v1\",\"status\":\"failed\"},\"schema_version\":\"freecad-runner-envelope.v1\"}",
+      "sha256": "8fa93e044961346b9a0aa1c7b6da51ab84f93e771322ad7460fef9444b216fba"
+    }
+  ]
+}

@@ -112,6 +112,7 @@ def decide_repair(
             "sketch_redundant_constraints",
             "sketch_conflicting_constraints",
             "sketch_under_constrained",
+            "subtractive_feature_no_effect",
         }
     )
     expected_fix_path = (

@@ -147,7 +147,7 @@ def _plan(objective: str = "创建支架") -> AgentPlan:
     )
 
 
-async def _seed_selection(*, two_outputs: bool = True, visual_outcome: str = "indeterminate"):
+async def _seed_selection(*, two_outputs: bool = True, visual_outcome: str = "indeterminate", verification_output: bool = False):
     owner = user_principal(f"seal-owner-{uuid4()}")
     project_id = uuid4()
     plan = _plan()
@@ -294,6 +294,10 @@ async def _seed_selection(*, two_outputs: bool = True, visual_outcome: str = "in
             "outputs": outputs,
             "runtime_provenance": {"image_digest": "sha256:" + "c" * 64},
         }
+        if verification_output:
+            internal={**outputs[0], 'object_key':outputs[0]['object_key']+'.verification'}
+            await put_object(internal['object_key'],await get_object(outputs[0]['object_key']),content_type=internal['content_type'])
+            manifest['verification_outputs']=[internal]
         accepted = await accept_staging_manifest(
             connection,
             tenant_id=owner.tenant_id,
@@ -735,3 +739,25 @@ async def test_cleanup_crash_reconciles_committed_seal():
     for output in context["outputs"]:
         with pytest.raises(Exception):
             await get_object(output["object_key"])
+
+
+@pytest.mark.asyncio(loop_scope='module')
+async def test_internal_verification_inputs_survive_active_cleanup_and_expire_after_seal():
+    context=await _seed_selection(verification_output=True)
+    owner=context['owner']
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+        manifest=await conn.scalar(text('SELECT manifest FROM agent_staging_manifests WHERE candidate_build_id=:id'),{'id':context['candidate_id']})
+    internal=manifest['verification_outputs'][0]
+    before=await get_object(internal['object_key'])
+    await cleanup_artifact_orphans(tenant_id=owner.tenant_id,principal_id=owner.principal_id,grace_seconds=0)
+    assert await get_object(internal['object_key'])==before
+    await _seal(context)
+    await cleanup_artifact_orphans(tenant_id=owner.tenant_id,principal_id=owner.principal_id,grace_seconds=0)
+    with pytest.raises(Exception):
+        await get_object(internal['object_key'])
+    # Internal artifacts must never become a user's deliverable.
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+        published=(await conn.execute(text('SELECT object_key FROM artifacts WHERE workflow_run_id=:id'),{'id':context['workflow_id']})).scalars().all()
+    assert published and internal['object_key'] not in published
+    for key in published:
+        assert await get_object(key)

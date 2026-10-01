@@ -69,7 +69,7 @@ def auth_env(tmp_path, monkeypatch):
     asyncio.run(history_store.close_db())
     # Reset the per-process ephemeral secret + login throttle so tests don't bleed.
     auth_store._EPHEMERAL_SECRET = None
-    login_mod._failed_logins.clear()
+    __import__("app.services.authentication", fromlist=["reset_login_throttle"]).reset_login_throttle()
     yield tmp_path
     asyncio.run(auth_store.close_db())
     asyncio.run(history_store.close_db())

@@ -1,0 +1,51 @@
+.......................F......................                           [100%]
+=================================== FAILURES ===================================
+_ test_treatment_and_protection_have_distinct_polarity[Chamfer the outer edge by 1 mm; leave the hole mouth unchamfered.-outer] _
+
+text = 'Chamfer the outer edge by 1 mm; leave the hole mouth unchamfered.'
+expected = 'outer'
+
+    @pytest.mark.parametrize('text,expected', [
+        ('Chamfer only outer edges, not hole mouths.', 'outer'),
+        ('Chamfer outer edges but do not chamfer hole mouths.', 'outer'),
+        ('Do not chamfer hole mouths; chamfer external edges.', 'outer'),
+        ('Chamfer outer edges without touching hole rims.', 'outer'),
+        ('Chamfer outer edges only, excluding hole mouths.', 'outer'),
+        ('Keep hole mouths unchanged; chamfer outer edges.', 'outer'),
+        ('Chamfer the outer edge by 1 mm; leave the hole mouth unchamfered.', 'outer'),
+        ('Chamfer outer edges. Hole mouths must not be chamfered.', 'outer'),
+        ('仅外边倒角，孔口不要倒角。', 'outer'),
+        ('所有外边缘添加 1 mm 倒角，不倒孔口。', 'outer'),
+        ('Chamfer only the outer edge while keeping the hole openings unchanged.', 'outer'),
+        ('孔口不处理；外部棱倒角。', 'outer'),
+        ('外边倒角，不要对孔口倒角。', 'outer'),
+        ('外边倒角，孔口维持原样。', 'outer'),
+        ('Chamfer hole mouths; leave outer edges unchanged.', 'hole_mouths'),
+        ('仅孔口倒角，外边保持不变。', 'hole_mouths'),
+        ('Do not chamfer hole mouths or outer edges.', None),
+        ('Leave outer edges and hole mouths unchanged.', None),
+    ])
+    def test_treatment_and_protection_have_distinct_polarity(text, expected):
+>       assert requested_edge_scope(text) == expected
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_chamfer_scope_contract.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+app/freecad/edge_intent.py:76: in requested_edge_scope
+    intent = _intent(text)
+             ^^^^^^^^^^^^^
+app/freecad/edge_intent.py:71: in _intent
+    intent.scope()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = EdgeIntent(treated=frozenset({'outer', 'hole_mouths'}), protected=frozenset())
+
+    def scope(self) -> str | None:
+        if len(self.treated) > 1 or self.treated & self.protected:
+>           raise ValueError('ambiguous chamfer scope: confirm outer edges, hole mouths or all edges')
+E           ValueError: ambiguous chamfer scope: confirm outer edges, hole mouths or all edges
+
+app/freecad/edge_intent.py:39: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_chamfer_scope_contract.py::test_treatment_and_protection_have_distinct_polarity[Chamfer the outer edge by 1 mm; leave the hole mouth unchamfered.-outer]
+1 failed, 45 passed in 0.32s

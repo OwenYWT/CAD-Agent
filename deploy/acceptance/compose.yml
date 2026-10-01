@@ -1,0 +1,110 @@
+# A complete, disposable stack. All volumes/network belong to the chosen project.
+# Use a fresh project; never point RELEASE_ENV_FILE at a production database.
+x-app: &app
+  image: ${BACKEND_IMAGE:?immutable backend image required}
+  platform: linux/amd64
+  env_file: ${RELEASE_ENV_FILE:?private isolated environment required}
+  environment:
+    TMPDIR: ${WORK_ROOT:?dedicated shared sandbox work directory required}
+  volumes:
+    - ${DOCKER_SOCKET:?Docker daemon socket required}:/var/run/docker.sock
+    - ${WORK_ROOT}:${WORK_ROOT}
+    - cad_data:/app/data
+  restart: "no"
+services:
+  postgres:
+    image: postgres:16.14-alpine3.24
+    platform: linux/amd64
+    environment:
+      POSTGRES_DB: cad_acceptance
+      POSTGRES_USER: cad_acceptance
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?private test password required}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U cad_acceptance -d cad_acceptance']
+      interval: 3s
+      timeout: 3s
+      retries: 60
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    platform: linux/amd64
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?test object-store login required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?private test password required}
+    volumes: [minio_data:/data]
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:9000/minio/health/live]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    platform: linux/amd64
+    depends_on:
+      minio: {condition: service_healthy}
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - 'mc alias set test http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null; mc mb --ignore-existing test/cad-release-acceptance; mc version enable test/cad-release-acceptance'
+  temporal:
+    image: temporalio/auto-setup:1.29.7
+    platform: linux/amd64
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_SEEDS: postgres
+      POSTGRES_USER: cad_acceptance
+      POSTGRES_PWD: ${POSTGRES_PASSWORD}
+      DEFAULT_NAMESPACE: cad-release-acceptance
+    healthcheck:
+      test: [CMD-SHELL, 'temporal operator cluster health --address temporal:7233']
+      interval: 5s
+      timeout: 5s
+      retries: 90
+  migrate:
+    <<: *app
+    command: [alembic, upgrade, head]
+    depends_on:
+      postgres: {condition: service_healthy}
+  backend:
+    <<: *app
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      minio-init: {condition: service_completed_successfully}
+      temporal: {condition: service_healthy}
+    ports: [127.0.0.1:18060:8000]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready')"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+  workflow-worker:
+    <<: *app
+    command: [python, -m, app.workers.workflow_worker]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      minio-init: {condition: service_completed_successfully}
+      temporal: {condition: service_healthy}
+  frontend:
+    image: ${FRONTEND_IMAGE:?immutable frontend image required}
+    platform: linux/amd64
+    depends_on:
+      backend: {condition: service_healthy}
+    ports: [127.0.0.1:18160:80]
+  monitoring:
+    image: ${MONITORING_IMAGE:?immutable monitoring image required}
+    platform: linux/amd64
+    env_file: ${MONITOR_ENV_FILE:?private isolated monitor environment required}
+    command: [uvicorn, app.monitoring:app, --host, 0.0.0.0, --port, '8000']
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    ports: [127.0.0.1:18061:8000]
+volumes:
+  postgres_data:
+  minio_data:
+  cad_data:

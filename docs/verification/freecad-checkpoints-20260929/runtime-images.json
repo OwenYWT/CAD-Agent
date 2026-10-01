@@ -1,0 +1,17 @@
+{
+  "architecture": "amd64 on ARM VM",
+  "images": {
+    "backend": "sha256:9e430be453cd74bcb6c13d7166c24daa207e2222a00d82a53ae392b1990431b6",
+    "checkpoint_sandbox": "sha256:0394f37f4d6b0c93497622692eb03deaa2f8c6ba563df2c27bbb233e93ade77b",
+    "requirements_sandbox": "sha256:3763e2697df00ecd39aa7a2aafa12792104db5137bb27167246044177b5ca3dd",
+    "final_sandbox": "sha256:4003a8e12d80286a1ea8415d5c93b59115d500153cd77fcf767f818464e969ee",
+    "backend_with_test_dependencies": "sha256:5c55cbadf40dab0776f4203511066c6c53f8f05521542f4c012615c460b30f24"
+  },
+  "construction": "overlay on existing runtime, not a verified clean AppImage build",
+  "app_mount": "read-only frozen source; see app-version-manifests.json",
+  "runtime_dependencies": {
+    "python": "3.11",
+    "pydantic": "2.7.0",
+    "jsonschema": "4.26.0"
+  }
+}

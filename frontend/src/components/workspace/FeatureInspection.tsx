@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { inspectDocumentFeature } from "../../services/engineeringService";
+import { inspectDocumentFeature } from "../../services/clients/documents";
 import type { CloudDocument, SemanticFeature, InspectionFieldName, InspectionPage } from "../../types/document";
 
 const FIELDS: Record<InspectionFieldName, string> = {

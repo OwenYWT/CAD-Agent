@@ -18,7 +18,9 @@ Compose 文件及私密配置位于该目录的 `deploy/tencent/`。
 实际来源与固定镜像摘要记录在 `deploy/tencent/release.json`；备份位置见下文回退说明。
 `source-manifest.json` 记录源文件和前端产物的 SHA-256。
 
-运行需要两个仅由部署方持有、权限为 `0600` 的文件：
+以下旧发布路径是历史记录；当前发布及验收结果见 [2026-09-30 报告](../../docs/qa/acceptance-fixes-20260930/README.md)。
+
+运行需要三个仅由部署方持有、权限为 `0600` 的文件：
 
 - `.env`：`POSTGRES_PASSWORD`、`MINIO_ROOT_USER`、`MINIO_ROOT_PASSWORD`、
   `BACKEND_IMAGE` 和 `FRONTEND_IMAGE`；镜像使用已经验证的 OCI 摘要。
@@ -26,6 +28,10 @@ Compose 文件及私密配置位于该目录的 `deploy/tencent/`。
   使用真实模型凭据、独立 PostgreSQL URL、HTTPS S3 入口和独立 Temporal 队列。
   `SANDBOX_IMAGE` 必须是已通过真实探测的 `repository@sha256:digest`，
   不能使用裸 `sha256:digest` 或可变标签；生产启动会拒绝不完整引用。
+- `monitor.env`：监控服务独立配置，包含认证所需连接及 `MONITOR_DATABASE_URL`。
+  查询 URL 使用只被授予 `cad_agent_monitor` 的独立登录，不授予超级用户、
+  BYPASSRLS、`cad_agent_runtime` 或 `cad_agent_auth`。升级时必须保留此文件，
+  不能用 `backend.env` 替代；验收应核对 `current_user`、`session_user` 和越权拒绝。
 
 服务器上执行：
 

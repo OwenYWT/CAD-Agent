@@ -10,6 +10,8 @@ from typing import Any, Callable, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.config import make_llm_client, settings
+from app.contracts.acceptance import AcceptanceContract, acceptance_outcome
+from app.validation.durable_geometry import DurableGeometryReport
 from app.llm import (
     get_last_chat_completion_provenance,
     reset_chat_completion_provenance,
@@ -91,6 +93,25 @@ class DurableVisualReport(BaseModel):
         return self.model_dump(mode="json")
 
 
+def brief_with_verified_geometry(brief, geometry_record, manifest_id):
+    """Only same-manifest, same-contract measured facts may inform the vision gate."""
+    result=dict(brief)
+    result.pop('verified_geometry',None)
+    if not geometry_record or not brief.get('acceptance'):
+        return result
+    if str(geometry_record['staging_manifest_id']) != str(manifest_id):
+        raise ValueError('visual geometry evidence belongs to another candidate artifact')
+    raw=dict(geometry_record['evidence']);raw.pop('runtime_provenance',None)
+    report=DurableGeometryReport.model_validate(raw)
+    contract=AcceptanceContract.model_validate(brief['acceptance'])
+    if report.acceptance is None or report.acceptance.contract_sha256 != contract.digest():
+        raise ValueError('visual geometry evidence belongs to another requirement contract')
+    if report.outcome=='passed' and acceptance_outcome(contract,report.acceptance.evidence)=='passed':
+        result['verified_geometry']={'evidence_id':str(geometry_record['id']),
+            'staging_manifest_id':str(manifest_id),**report.acceptance.model_dump(mode='json')}
+    return result
+
+
 _SYSTEM_PROMPT = """You are a mechanical CAD visual validation system.
 Compare the four orthographic/isometric renders with the supplied design brief.
 Check overall form, proportions, requested holes/features, cavities, and disconnected
@@ -100,6 +121,16 @@ Judge visible design agreement. Exact millimeter dimensions, named property valu
 solver validity, and whether files were exported belong to kernel/artifact checks;
 do not infer them from unscaled pictures or mark a visual mismatch because pictures
 lack dimensions or export evidence. A visual pass does not certify those facts.
+The user objective and confirmed requirements are authoritative. Design-brief
+assumptions are not additional requirements: never fail a model because it differs
+from an unconfirmed assumption (for example, which side an unspecified bottom hole
+opens onto). Report genuinely ambiguous requirements as uncertainty, without
+inventing a preferred interpretation and treating it as an observed defect.
+verified_geometry, when present, contains independently measured facts for these
+exact rendered artifacts. Use only the scope and quantity each check actually
+certifies. An occluded feature with matching certified measurements is not missing
+merely because the image cannot reveal it. Check remaining visible form; do not
+reinterpret a local wall probe as global thickness, or shaft diameter as mouth size.
 Reject observable contradictions such as four requested visible corner holes being
 replaced by one central hole. Never excuse a visible missing or extra feature.
 If the requested visible feature cannot be assessed because views are occluded or

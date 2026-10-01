@@ -1,0 +1,14 @@
+[
+  {
+    "job_id": "abc558af-1853-58dc-a67b-63870154a010",
+    "stale_generation": 1,
+    "live_generation": 2,
+    "stale_renew_rejected": true
+  },
+  {
+    "job_id": "3eed543e-d81e-529f-b089-23a753235af8",
+    "stale_generation": 1,
+    "live_generation": 2,
+    "stale_renew_rejected": true
+  }
+]

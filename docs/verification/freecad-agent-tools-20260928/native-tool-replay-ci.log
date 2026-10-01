@@ -1,0 +1,28 @@
+WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+Looking for thread definitions in: /opt/freecad/usr/share/Mod/PartDesign/Resources/Hole /tmp/.local/share/FreeCAD/v1-1/PartDesign/Hole 
+Recompute......
+						(9 %)							(18 %)							(27 %)							(36 %)							(45 %)							(54 %)							(63 %)							(72 %)							(81 %)							(90 %)							(100 %)									Recompute......
+						(9 %)							(18 %)							(27 %)							(36 %)							(45 %)							(54 %)							(63 %)							(72 %)							(81 %)							(90 %)							(100 %)									Recompute......
+						(8 %)							(16 %)							(25 %)							(33 %)							(41 %)							(50 %)							(58 %)							(66 %)							(75 %)							(83 %)							(91 %)							(100 %)									Recompute......
+						(7 %)							(15 %)							(23 %)							(30 %)							(38 %)							(46 %)							(53 %)							(61 %)							(69 %)							(76 %)							(84 %)							(92 %)							(100 %)									Recompute......
+						(7 %)							(15 %)							(23 %)							(30 %)							(38 %)							(46 %)							(53 %)							(61 %)							(69 %)							(76 %)							(84 %)							(92 %)							(100 %)									Recompute......
+						(7 %)							(15 %)							(23 %)							(30 %)							(38 %)							(46 %)							(53 %)							(61 %)							(69 %)							(76 %)							(84 %)							(92 %)							(100 %)									Recompute......
+						(7 %)							(14 %)							(21 %)							(28 %)							(35 %)							(42 %)							(50 %)							(57 %)							(64 %)							(71 %)							(78 %)							(85 %)							(92 %)							(100 %)									Recompute......
+						(7 %)							(14 %)							(21 %)							(28 %)							(35 %)							(42 %)							(50 %)							(57 %)							(64 %)							(71 %)							(78 %)							(85 %)							(92 %)							(100 %)									Recompute......
+						(7 %)							(14 %)							(21 %)							(28 %)							(35 %)							(42 %)							(50 %)							(57 %)							(64 %)							(71 %)							(78 %)							(85 %)							(92 %)							(100 %)									[32;1m
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******[0m
+[32;1m
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******[0m
+[32;1m******        Transferring Shape, ShapeType = 0                      ******[0m
+[32;1m** WorkSession : Sending all data[0m
+[32;1m Step File Name : /tmp/tmpazf9w3ms/output/plate_60x40x8_hole6.step(209 ents)  Write  Done[0m
+Looking for thread definitions in: /opt/freecad/usr/share/Mod/PartDesign/Resources/Hole /tmp/.local/share/FreeCAD/v1-1/PartDesign/Hole 
+Looking for thread definitions in: /opt/freecad/usr/share/Mod/PartDesign/Resources/Hole /tmp/.local/share/FreeCAD/v1-1/PartDesign/Hole 
+CAD_TOOL_REPLAY_CONTRACT={"passed": true, "source_sha256": "4cc80d3165f09bdabe02e5d383733bbd50c80ce1dc739c557fa12cb7fb84a142", "native_and_step": true, "symmetric_difference_mm3": 0.0, "hole_count": 1, "hole_diameter_mm": 6, "hole_depth_mm": 8, "centered": true}
+Importing project files......
+						(5 %)							(10 %)							(15 %)							(21 %)							(26 %)							(31 %)							(36 %)							(42 %)							(47 %)							(52 %)							(57 %)							(63 %)							(68 %)							(73 %)							(78 %)							(84 %)							(89 %)							(94 %)							(100 %)									Postprocessing......
+						(100 %)									Importing project files......
+						(5 %)							(10 %)							(15 %)							(21 %)							(26 %)							(31 %)							(36 %)							(42 %)							(47 %)							(52 %)							(57 %)							(63 %)							(68 %)							(73 %)							(78 %)							(84 %)							(89 %)							(94 %)							(100 %)									Postprocessing......
+						(100 %)									

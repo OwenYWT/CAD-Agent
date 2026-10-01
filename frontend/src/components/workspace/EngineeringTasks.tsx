@@ -1,7 +1,9 @@
+import { cancelEngineeringTask } from "../../services/clients/tasks";
+import { downloadEngineeringArtifact } from "../../services/clients/downloads";
 import { useEffect, useState } from 'react';
 import type { CloudDocument } from '../../types/document';
 import type { BoundaryPlane, EngineeringTaskSummary, EngineeringResult, EngineeringField, LinearStaticTask, CamToolpath } from '../../types/engineeringTask';
-import { listEngineeringTasks, submitEngineeringTask, readEngineeringResult, readEngineeringField, readCamToolpath, cancelEngineeringTask, downloadEngineeringArtifact } from '../../services/engineeringService';
+import { listEngineeringTasks, submitEngineeringTask, readEngineeringResult, readEngineeringField, readCamToolpath } from '../../services/clients/engineering';
 import EngineeringFieldViewer from '../viewer/EngineeringFieldViewer';
 import CamToolpathViewer from '../viewer/CamToolpathViewer';
 import ContourMillingForm from './ContourMillingForm';

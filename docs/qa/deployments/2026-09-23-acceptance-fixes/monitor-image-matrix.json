@@ -1,0 +1,26 @@
+{
+  "passed": true,
+  "combinations": [
+    {
+      "backend_image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+      "monitoring_image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+      "anonymous": 401,
+      "ordinary": 403,
+      "admin": 200
+    },
+    {
+      "backend_image": "sha256:f7f59817f49bddbbc631b3a411215f69fd44cbeadc0e4b4d9b25da6bcbeab117",
+      "monitoring_image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+      "anonymous": 401,
+      "ordinary": 403,
+      "admin": 200
+    },
+    {
+      "backend_image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+      "monitoring_image": "sha256:d87c48b17f59e96a4cf09d7b9a1aa3cc48125b9cee9a0a295e98535db0190439",
+      "anonymous": 401,
+      "ordinary": 403,
+      "admin": 200
+    }
+  ]
+}

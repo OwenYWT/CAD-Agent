@@ -3,7 +3,7 @@ import { getAuthToken } from "../auth";
 import { webSocketAuthProtocol } from "../adapters/durableTaskAdapter";
 import { applyDocumentEvent } from "../adapters/documentAdapter";
 import { observeDocument, forgetDocument } from "../stores/documentHeads";
-import { getCloudDocument, updateDocumentPresence } from "../services/engineeringService";
+import { getCloudDocument, updateDocumentPresence } from "../services/clients/documents";
 import { guardDraft } from "../stores/draftGuard";
 import type { CloudDocument, DocumentCollaboration, DocumentEvent, SelectionContext } from "../types/document";
 

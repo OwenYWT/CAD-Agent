@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { CloudDocument } from '../../types/document';
 import type { ContourMillingTask } from '../../types/engineeringTask';
-import { submitEngineeringTask } from '../../services/engineeringService';
+import { submitEngineeringTask } from "../../services/clients/engineering";
 
 const fields=[['diameter','刀具直径 / mm'],['cuttingLength','有效刃长 / mm'],['stepdown','每层切深 / mm'],
   ['feed','轮廓进给 / mm/min'],['plunge','垂直进给 / mm/min'],['spindle','主轴转速 / rpm'],['safe','安全高度 / mm'],

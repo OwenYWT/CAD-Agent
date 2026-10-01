@@ -1,0 +1,1081 @@
+{
+  "modules": {
+    "M01": {
+      "owner": "identity",
+      "writes": [
+        "auth_users",
+        "auth_sessions",
+        "project_memberships"
+      ],
+      "public": [
+        "app.services.authentication",
+        "app.domain.identity"
+      ],
+      "allowed_dependencies": [
+        "P00",
+        "P01"
+      ]
+    },
+    "M02": {
+      "owner": "documents",
+      "writes": [
+        "cloud_documents",
+        "project_branches",
+        "project_revisions",
+        "cad_operations",
+        "change_sets"
+      ],
+      "public": [
+        "app.services.document_operations",
+        "app.services.cloud_documents",
+        "app.services.change_sets",
+        "app.services.workflow_admission",
+        "app.workflows.handlers.candidates",
+        "app.workflows.handlers.review",
+        "frontend/src/services/clients/artifacts",
+        "frontend/src/services/clients/branches",
+        "frontend/src/services/clients/changes",
+        "frontend/src/services/clients/documents",
+        "frontend/src/services/clients/downloads",
+        "frontend/src/services/clients/history",
+        "frontend/src/services/clients/revisions",
+        "app.workflows.handlers.candidates",
+        "app.workflows.handlers.review"
+      ],
+      "allowed_dependencies": [
+        "P00",
+        "P01",
+        "M01",
+        "M03",
+        "M04",
+        "M06"
+      ]
+    },
+    "M03": {
+      "owner": "execution",
+      "writes": [
+        "workflow_runs",
+        "step_runs",
+        "execution_attempts",
+        "model_jobs",
+        "workflow_dispatches"
+      ],
+      "public": [
+        "app.services.run_state",
+        "app.services.model_jobs",
+        "app.execution.backend",
+        "app.workflows.handlers.cad_execution",
+        "app.workflows.handlers.legacy_modeling",
+        "app.workflows.handlers.lifecycle",
+        "frontend/src/services/clients/tasks",
+        "app.llm",
+        "app.execution.contracts",
+        "app.execution.errors",
+        "app.workflows.inputs",
+        "app.workflows.revision_inputs",
+        "app.workflows.checkpoint_inputs",
+        "app.workflows.logical_steps",
+        "app.workflows.execution_support",
+        "app.workflows.validation_support",
+        "app.workflows.handlers.cad_execution",
+        "app.workflows.handlers.legacy_modeling",
+        "app.workflows.handlers.lifecycle",
+        "app.llm",
+        "app.execution.contracts",
+        "app.execution.errors",
+        "app.workflows.inputs",
+        "app.workflows.revision_inputs",
+        "app.workflows.logical_steps",
+        "app.workflows.execution_support",
+        "app.workflows.validation_support",
+        "app.workflows.source_preparation",
+        "app.workflows.modeling",
+        "app.workflows.errors",
+        "app.repositories.runs",
+        "app.repositories.artifacts",
+        "app.repositories.audit",
+        "app.execution.composition"
+      ],
+      "allowed_dependencies": [
+        "P00",
+        "P01"
+      ]
+    },
+    "M04": {
+      "owner": "cad",
+      "public": [
+        "app.freecad.contracts",
+        "app.freecad.reference_geometry",
+        "app.freecad.constraint_repair",
+        "app.freecad.edge_intent",
+        "app.freecad.operation_generator",
+        "app.freecad.operation_compiler",
+        "app.freecad.selection",
+        "app.freecad.inspection",
+        "app.topology.contracts",
+        "app.freecad.edge_intent",
+        "app.freecad.operation_generator",
+        "app.freecad.operation_compiler",
+        "app.freecad.selection",
+        "app.freecad.inspection",
+        "app.topology.contracts"
+      ],
+      "allowed_dependencies": [
+        "P00",
+        "P01",
+        "M03"
+      ]
+    },
+    "M05": {
+      "owner": "agent",
+      "public": [
+        "app.agent.durable_plan",
+        "app.agent.durable_planner",
+        "app.workflows.handlers.decomposition",
+        "app.workflows.handlers.native_generation",
+        "app.workflows.handlers.planning",
+        "app.workflows.handlers.source_generation",
+        "app.workflows.handlers.decomposition",
+        "app.workflows.handlers.native_generation",
+        "app.workflows.handlers.planning",
+        "app.workflows.handlers.source_generation"
+      ],
+      "allowed_dependencies": [
+        "P00",
+        "P01",
+        "M02",
+        "M03",
+        "M04",
+        "M06"
+      ]
+    },
+    "M06": {
+      "owner": "validation",
+      "public": [
+        "app.validation.durable_geometry",
+        "app.validation.durable_visual",
+        "app.validation.durable_dfm",
+        "app.workflows.handlers.dfm_validation",
+        "app.workflows.handlers.geometry_validation",
+        "app.workflows.handlers.visual_validation",
+        "frontend/src/services/clients/checks",
+        "app.workflows.handlers.dfm_validation",
+        "app.workflows.handlers.geometry_validation",
+        "app.workflows.handlers.visual_validation"
+      ],
+      "allowed_dependencies": [
+        "P00",
+        "P01",
+        "M03",
+        "M04"
+      ]
+    },
+    "M07": {
+      "owner": "scene",
+      "public": [
+        "app.services.scene_jobs",
+        "app.services.document_geometry",
+        "frontend/src/hooks/useDocumentView"
+      ],
+      "allowed_dependencies": [
+        "P00",
+        "P01",
+        "M02",
+        "M03",
+        "M04"
+      ]
+    },
+    "M08": {
+      "owner": "engineering",
+      "public": [
+        "app.services.document_engineering",
+        "app.freecad.engineering_contracts",
+        "app.workflows.handlers.engineering",
+        "frontend/src/services/clients/engineering",
+        "app.workflows.handlers.engineering"
+      ],
+      "allowed_dependencies": [
+        "P00",
+        "P01",
+        "M02",
+        "M03",
+        "M04",
+        "M06"
+      ]
+    },
+    "M09": {
+      "owner": "delivery",
+      "public": [
+        "app.services.document_releases",
+        "app.freecad.release_contracts",
+        "app.workflows.handlers.bom",
+        "frontend/src/services/clients/delivery",
+        "app.workflows.handlers.bom"
+      ],
+      "allowed_dependencies": [
+        "P00",
+        "P01",
+        "M02",
+        "M03",
+        "M04",
+        "M08"
+      ]
+    },
+    "M10": {
+      "owner": "connectors",
+      "public": [
+        "app.fusion360",
+        "app.onshape",
+        "app.tools",
+        "frontend/src/services/clients/onshape"
+      ],
+      "allowed_dependencies": [
+        "P00",
+        "P01",
+        "M03",
+        "M04"
+      ]
+    },
+    "M11": {
+      "owner": "observability",
+      "writes": [
+        "llm_calls"
+      ],
+      "public": [
+        "app.services.llm_usage",
+        "app.services.monitor_queries"
+      ],
+      "allowed_dependencies": [
+        "P00",
+        "P01",
+        "M01"
+      ]
+    },
+    "P00": {
+      "owner": "shared contracts",
+      "public": [
+        "app.domain.*",
+        "app.models.*",
+        "app.contracts.*",
+        "app.services.public_errors",
+        "app.services",
+        "frontend/src/types/*",
+        "frontend/src/lib/*",
+        "frontend/src/adapters/*",
+        "frontend/src/services/clients/http",
+        "app.freecad.contracts",
+        "app.freecad.bom_contracts",
+        "app.freecad.engineering_contracts",
+        "app.freecad.release_contracts",
+        "app.topology.contracts",
+        "app.geometry_ir.contracts",
+        "app.workflows"
+      ],
+      "allowed_dependencies": []
+    },
+    "P01": {
+      "owner": "runtime infrastructure",
+      "public": [
+        "app.config",
+        "app.db",
+        "app.object_store",
+        "app.storage",
+        "app.storage.*",
+        "app.runtime",
+        "app.model_job_context",
+        "app"
+      ],
+      "allowed_dependencies": [
+        "P00",
+        "M03"
+      ]
+    },
+    "P02": {
+      "owner": "application composition",
+      "public": [
+        "app.llm_composition",
+        "frontend/src/services/engineeringService",
+        "app.workflows.activities"
+      ],
+      "allowed_dependencies": [
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M10",
+        "M11",
+        "P00",
+        "P01",
+        "P03",
+        "P04"
+      ]
+    },
+    "P03": {
+      "owner": "HTTP transport",
+      "public": [
+        "app.api.auth"
+      ],
+      "allowed_dependencies": [
+        "P00",
+        "P01",
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M10"
+      ]
+    },
+    "P04": {
+      "owner": "frontend presentation",
+      "public": [
+        "frontend/src/auth"
+      ],
+      "allowed_dependencies": [
+        "P00",
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M10"
+      ]
+    }
+  },
+  "import_rules": [
+    {
+      "id": "business-no-http",
+      "sources": [
+        "backend/app/services/*.py",
+        "backend/app/workflows/*.py",
+        "backend/app/agent/*.py",
+        "backend/app/execution/*.py",
+        "backend/app/validation/*.py",
+        "backend/app/freecad/*.py"
+      ],
+      "forbidden": [
+        "app.api",
+        "app.api.*"
+      ]
+    },
+    {
+      "id": "domain-no-adapters",
+      "sources": [
+        "backend/app/domain/*.py",
+        "backend/app/contracts/*.py"
+      ],
+      "forbidden": [
+        "app.api*",
+        "app.services*",
+        "app.workflows*",
+        "app.workers*",
+        "app.db",
+        "app.llm",
+        "sqlalchemy*",
+        "fastapi*",
+        "temporalio*"
+      ]
+    },
+    {
+      "id": "provider-no-storage",
+      "sources": [
+        "backend/app/llm.py",
+        "backend/app/providers/*.py"
+      ],
+      "forbidden": [
+        "app.services*",
+        "app.db",
+        "app.monitoring",
+        "sqlalchemy*",
+        "app.llm_composition*",
+        "app.config.make_llm_client"
+      ]
+    },
+    {
+      "id": "model-runner-no-business",
+      "sources": [
+        "backend/app/services/model_jobs.py",
+        "backend/app/workers/model_job_worker.py"
+      ],
+      "forbidden": [
+        "app.agent*",
+        "app.workflows.activities*",
+        "app.validation*",
+        "app.freecad*",
+        "app.api*"
+      ]
+    },
+    {
+      "id": "clients-no-ui",
+      "sources": [
+        "frontend/src/services/clients/*"
+      ],
+      "forbidden": [
+        "frontend/src/components/*",
+        "frontend/src/hooks/*",
+        "frontend/src/stores/*",
+        "frontend/src/services/engineeringService",
+        "react",
+        "zustand"
+      ]
+    },
+    {
+      "id": "handlers-no-legacy",
+      "sources": [
+        "backend/app/workflows/handlers/*.py"
+      ],
+      "forbidden": [
+        "app.workflows.activities",
+        "app.api*"
+      ]
+    },
+    {
+      "id": "frontend-no-legacy-facade",
+      "sources": [
+        "frontend/src/components/*",
+        "frontend/src/hooks/*",
+        "frontend/src/controllers/*"
+      ],
+      "forbidden": [
+        "frontend/src/services/engineeringService"
+      ]
+    },
+    {
+      "id": "run-state-no-document-policy",
+      "sources": [
+        "backend/app/services/run_state.py"
+      ],
+      "forbidden": [
+        "app.services.cloud_documents",
+        "app.services.workflow_admission",
+        "app.freecad*"
+      ]
+    },
+    {
+      "id": "shared-inputs-no-orchestration",
+      "sources": [
+        "backend/app/models/authentication.py",
+        "backend/app/models/document_requests.py",
+        "backend/app/models/native_modification.py",
+        "backend/app/models/workflow_requests.py"
+      ],
+      "forbidden": [
+        "app.api*",
+        "app.services*",
+        "app.workflows*",
+        "app.workers*",
+        "app.db"
+      ]
+    }
+  ],
+  "fence_bypass": {
+    "backend/app/services/llm_usage.py": "Finish telemetry after cancellation; tenant role remains enforced."
+  },
+  "mandatory_suites": [
+    "backend",
+    "frontend",
+    "mcad-runtime",
+    "architecture-contract",
+    "model-lifecycle-db",
+    "usage-monitoring"
+  ],
+  "runtime_contracts": [
+    "Job ID/generation and cancellation",
+    "Workflow patch/activity names",
+    "JSON numeric representation and canonical hashes",
+    "native invocation envelope",
+    "atomic admission/head/terminal transitions",
+    "scoped draft/task/view identity"
+  ],
+  "file_owners": {
+    "backend/app/__init__.py": "P01",
+    "backend/app/agent/__init__.py": "M05",
+    "backend/app/agent/assembly_manifest.py": "M05",
+    "backend/app/agent/assembly_planner.py": "M05",
+    "backend/app/agent/code_cache.py": "M05",
+    "backend/app/agent/code_gen.py": "M05",
+    "backend/app/agent/conversation.py": "M05",
+    "backend/app/agent/design_brief.py": "M05",
+    "backend/app/agent/durable_plan.py": "M05",
+    "backend/app/agent/durable_planner.py": "M05",
+    "backend/app/agent/durable_repair.py": "M05",
+    "backend/app/agent/failure_taxonomy.py": "M05",
+    "backend/app/agent/multi_step.py": "M05",
+    "backend/app/agent/orchestrator.py": "M05",
+    "backend/app/agent/planner.py": "M05",
+    "backend/app/agent/prompts.py": "M05",
+    "backend/app/agent/recovery.py": "M05",
+    "backend/app/agent/recovery_actions.py": "M05",
+    "backend/app/agent/run_steps.py": "M05",
+    "backend/app/agent/run_store.py": "M05",
+    "backend/app/agent/state_machine.py": "M05",
+    "backend/app/agent/step_runner.py": "M05",
+    "backend/app/api/__init__.py": "P03",
+    "backend/app/api/agent_tools.py": "P03",
+    "backend/app/api/analyze.py": "P03",
+    "backend/app/api/auth.py": "P03",
+    "backend/app/api/batch.py": "P03",
+    "backend/app/api/capabilities.py": "P03",
+    "backend/app/api/capability_actions.py": "P03",
+    "backend/app/api/changes.py": "P03",
+    "backend/app/api/dfm_rules.py": "P03",
+    "backend/app/api/documents.py": "P03",
+    "backend/app/api/error_messages.py": "P03",
+    "backend/app/api/execute.py": "P03",
+    "backend/app/api/feedback.py": "P03",
+    "backend/app/api/files.py": "P03",
+    "backend/app/api/generate.py": "P03",
+    "backend/app/api/history.py": "P03",
+    "backend/app/api/knowledge.py": "P03",
+    "backend/app/api/local_bridge.py": "P03",
+    "backend/app/api/login.py": "P03",
+    "backend/app/api/onshape.py": "P03",
+    "backend/app/api/parts.py": "P03",
+    "backend/app/api/revisions.py": "P03",
+    "backend/app/api/tasks.py": "P03",
+    "backend/app/api/websocket.py": "P03",
+    "backend/app/capabilities/__init__.py": "P01",
+    "backend/app/capabilities/artifacts.py": "P01",
+    "backend/app/capabilities/models.py": "P01",
+    "backend/app/capabilities/registry.py": "P01",
+    "backend/app/capabilities/runtime.py": "P01",
+    "backend/app/config.py": "P01",
+    "backend/app/contracts/__init__.py": "P00",
+    "backend/app/contracts/model_operations.py": "P00",
+    "backend/app/contracts/usage.py": "P00",
+    "backend/app/db.py": "P01",
+    "backend/app/dfm/__init__.py": "P01",
+    "backend/app/dfm/dfm_scoring.py": "P01",
+    "backend/app/dfm/knowledge_graph.py": "P01",
+    "backend/app/dfm/models.py": "P01",
+    "backend/app/dfm/postgres_store.py": "P01",
+    "backend/app/dfm/rule_engine.py": "P01",
+    "backend/app/dfm/rule_store.py": "P01",
+    "backend/app/dfm/step_analysis.py": "P01",
+    "backend/app/dfm/step_analyzer_script.py": "P01",
+    "backend/app/domain/__init__.py": "P00",
+    "backend/app/domain/artifacts.py": "P00",
+    "backend/app/domain/audit.py": "P00",
+    "backend/app/domain/identity.py": "P00",
+    "backend/app/domain/projects.py": "P00",
+    "backend/app/domain/requirement_basis.py": "P00",
+    "backend/app/domain/revisions.py": "P00",
+    "backend/app/domain/runs.py": "P00",
+    "backend/app/domain/selection.py": "P00",
+    "backend/app/domain/usage.py": "P00",
+    "backend/app/examples/__init__.py": "P01",
+    "backend/app/examples/retriever.py": "P01",
+    "backend/app/examples/vector_retriever.py": "P01",
+    "backend/app/execution/__init__.py": "M03",
+    "backend/app/execution/backend.py": "M03",
+    "backend/app/execution/canonical.py": "M03",
+    "backend/app/execution/capability_adapter.py": "M03",
+    "backend/app/execution/compat_executor.py": "M03",
+    "backend/app/execution/composition.py": "M03",
+    "backend/app/execution/contracts.py": "M03",
+    "backend/app/execution/host_process.py": "M03",
+    "backend/app/execution/model_fence.py": "M03",
+    "backend/app/execution/podman_backend.py": "M03",
+    "backend/app/freecad/__init__.py": "M04",
+    "backend/app/freecad/bom_contracts.py": "P00",
+    "backend/app/freecad/constraint_repair.py": "M04",
+    "backend/app/freecad/contracts.py": "P00",
+    "backend/app/freecad/edge_intent.py": "M04",
+    "backend/app/freecad/engineering_contracts.py": "P00",
+    "backend/app/freecad/inspection.py": "M04",
+    "backend/app/freecad/operation_compiler.py": "M04",
+    "backend/app/freecad/operation_generator.py": "M04",
+    "backend/app/freecad/operation_identity.py": "M04",
+    "backend/app/freecad/reference_geometry.py": "M04",
+    "backend/app/freecad/release_contracts.py": "P00",
+    "backend/app/freecad/selection.py": "M04",
+    "backend/app/freecad/semantic_state.py": "M04",
+    "backend/app/freecad/sketch_diagnostics.py": "M04",
+    "backend/app/freecad/state_contract.py": "M04",
+    "backend/app/freecad/state_projector.py": "M04",
+    "backend/app/freecad/topology.py": "M04",
+    "backend/app/fusion360/__init__.py": "M10",
+    "backend/app/fusion360/adapter.py": "M10",
+    "backend/app/fusion360/agent_api.py": "M10",
+    "backend/app/fusion360/agent_contract.py": "M10",
+    "backend/app/fusion360/agent_planner.py": "M10",
+    "backend/app/fusion360/agent_store.py": "M10",
+    "backend/app/fusion360/api.py": "M10",
+    "backend/app/fusion360/artifacts.py": "M10",
+    "backend/app/fusion360/cloud.py": "M10",
+    "backend/app/fusion360/contract.py": "M10",
+    "backend/app/fusion360/errors.py": "M10",
+    "backend/app/fusion360/policy.py": "M10",
+    "backend/app/fusion360/postgres_agent_store.py": "M10",
+    "backend/app/fusion360/postgres_token_store.py": "M10",
+    "backend/app/fusion360/runtime_app.py": "M10",
+    "backend/app/fusion360/runtime_service.py": "M10",
+    "backend/app/fusion360/runtime_store.py": "M10",
+    "backend/app/fusion360/token_store.py": "M10",
+    "backend/app/geometry_ir/__init__.py": "P01",
+    "backend/app/geometry_ir/contracts.py": "P00",
+    "backend/app/geometry_ir/identity.py": "P01",
+    "backend/app/geometry_ir/planner.py": "P01",
+    "backend/app/integrations/__init__.py": "P01",
+    "backend/app/integrations/bridge_contracts.py": "P01",
+    "backend/app/integrations/local_bridge_client.py": "P01",
+    "backend/app/integrations/onshape/__init__.py": "M10",
+    "backend/app/integrations/onshape/client.py": "M10",
+    "backend/app/integrations/onshape/service.py": "M10",
+    "backend/app/llm.py": "M03",
+    "backend/app/llm_composition.py": "P02",
+    "backend/app/logging_context.py": "P01",
+    "backend/app/main.py": "P02",
+    "backend/app/migrations/__init__.py": "P01",
+    "backend/app/migrations/legacy_import.py": "P01",
+    "backend/app/model_job_context.py": "P01",
+    "backend/app/models/__init__.py": "P00",
+    "backend/app/models/authentication.py": "P00",
+    "backend/app/models/document_requests.py": "P00",
+    "backend/app/models/native_modification.py": "P00",
+    "backend/app/models/schemas.py": "P00",
+    "backend/app/monitoring.py": "P02",
+    "backend/app/object_store.py": "P01",
+    "backend/app/parameters.py": "P01",
+    "backend/app/parts_library/__init__.py": "P01",
+    "backend/app/parts_library/data.py": "P01",
+    "backend/app/principal_context.py": "P01",
+    "backend/app/rendering/__init__.py": "P01",
+    "backend/app/rendering/dxf_renderer.py": "P01",
+    "backend/app/rendering/renderer.py": "P01",
+    "backend/app/repositories/__init__.py": "M02",
+    "backend/app/repositories/agent_candidates.py": "M02",
+    "backend/app/repositories/artifacts.py": "M03",
+    "backend/app/repositories/audit.py": "M03",
+    "backend/app/repositories/identity.py": "M01",
+    "backend/app/repositories/projects.py": "M02",
+    "backend/app/repositories/revisions.py": "M02",
+    "backend/app/repositories/runs.py": "M03",
+    "backend/app/repositories/usage.py": "M03",
+    "backend/app/sandbox/__init__.py": "P01",
+    "backend/app/sandbox/code_analyzer.py": "P01",
+    "backend/app/sandbox/code_filter.py": "P01",
+    "backend/app/sandbox/executor.py": "P01",
+    "backend/app/sandbox/output_files.py": "P01",
+    "backend/app/services/__init__.py": "P00",
+    "backend/app/services/artifact_commit.py": "M02",
+    "backend/app/services/authentication.py": "M01",
+    "backend/app/services/change_sets.py": "M02",
+    "backend/app/services/cloud_documents.py": "M02",
+    "backend/app/services/design_analysis.py": "M06",
+    "backend/app/services/document_branches.py": "M02",
+    "backend/app/services/document_diff.py": "M02",
+    "backend/app/services/document_engineering.py": "M08",
+    "backend/app/services/document_geometry.py": "M07",
+    "backend/app/services/document_operations.py": "M02",
+    "backend/app/services/document_rebase.py": "M02",
+    "backend/app/services/document_releases.py": "M09",
+    "backend/app/services/document_sharing.py": "M02",
+    "backend/app/services/durable_submission.py": "M03",
+    "backend/app/services/engineering_evidence.py": "M08",
+    "backend/app/services/event_relay.py": "M03",
+    "backend/app/services/feature_annotations.py": "M02",
+    "backend/app/services/feature_leases.py": "M02",
+    "backend/app/services/llm_usage.py": "M11",
+    "backend/app/services/local_bridge.py": "M09",
+    "backend/app/services/model_jobs.py": "M03",
+    "backend/app/services/monitor_queries.py": "M11",
+    "backend/app/services/operation_resolution.py": "M02",
+    "backend/app/services/public_errors.py": "P00",
+    "backend/app/services/revision_validation.py": "M06",
+    "backend/app/services/run_state.py": "M03",
+    "backend/app/services/scene_jobs.py": "M07",
+    "backend/app/services/sms.py": "M01",
+    "backend/app/services/task_evidence.py": "M03",
+    "backend/app/services/task_retry.py": "M03",
+    "backend/app/services/workflow_admission.py": "M02",
+    "backend/app/services/workflow_dispatch.py": "M03",
+    "backend/app/storage/__init__.py": "P01",
+    "backend/app/storage/auth.py": "M01",
+    "backend/app/storage/capability_artifacts.py": "P01",
+    "backend/app/storage/file_ownership.py": "P01",
+    "backend/app/storage/history.py": "P01",
+    "backend/app/storage/local_runs.py": "P01",
+    "backend/app/storage/postgres_auth.py": "P01",
+    "backend/app/storage/postgres_history.py": "P01",
+    "backend/app/storage/postgres_runs.py": "P01",
+    "backend/app/temporal_client.py": "P01",
+    "backend/app/tools/__init__.py": "M10",
+    "backend/app/tools/executor.py": "M10",
+    "backend/app/tools/loader.py": "M10",
+    "backend/app/tools/models.py": "M10",
+    "backend/app/tools/plugins/__init__.py": "M10",
+    "backend/app/tools/plugins/basic/__init__.py": "M10",
+    "backend/app/tools/plugins/basic/tool_time_math.py": "M10",
+    "backend/app/tools/plugins/business/__init__.py": "M10",
+    "backend/app/tools/plugins/business/tool_admin_ops.py": "M10",
+    "backend/app/tools/plugins/business/tool_onshape.py": "M10",
+    "backend/app/tools/plugins/capability/__init__.py": "M10",
+    "backend/app/tools/plugins/capability/tool_text_ops.py": "M10",
+    "backend/app/tools/registry.py": "M10",
+    "backend/app/tools/templates/__init__.py": "M10",
+    "backend/app/topology/__init__.py": "M04",
+    "backend/app/topology/contracts.py": "P00",
+    "backend/app/topology/resolver.py": "M04",
+    "backend/app/topology/step_resolver.py": "M04",
+    "backend/app/validation/__init__.py": "M06",
+    "backend/app/validation/design_analyzer.py": "M06",
+    "backend/app/validation/dfm_analyzer.py": "M06",
+    "backend/app/validation/dfm_policy_snapshot.py": "M06",
+    "backend/app/validation/durable_dfm.py": "M06",
+    "backend/app/validation/durable_geometry.py": "M06",
+    "backend/app/validation/durable_visual.py": "M06",
+    "backend/app/validation/feature_evidence.py": "M06",
+    "backend/app/validation/gate_policy.py": "M06",
+    "backend/app/validation/geometry_validator.py": "M06",
+    "backend/app/validation/inspect.py": "M06",
+    "backend/app/validation/verification/__init__.py": "M06",
+    "backend/app/validation/verification/contracts.py": "M06",
+    "backend/app/validation/verification/evaluator.py": "M06",
+    "backend/app/validation/vision_validator.py": "M06",
+    "backend/app/workers/__init__.py": "P02",
+    "backend/app/workers/model_job_worker.py": "P02",
+    "backend/app/workers/usage_interceptor.py": "P02",
+    "backend/app/workers/workflow_worker.py": "P02",
+    "backend/app/workflows/__init__.py": "P00",
+    "backend/app/workflows/activities.py": "P02",
+    "backend/app/workflows/agent_v2.py": "M03",
+    "backend/app/workflows/definitions.py": "M03",
+    "backend/app/workflows/document_queue.py": "M03",
+    "backend/app/workflows/engineering_activities.py": "M03",
+    "backend/app/workflows/errors.py": "M03",
+    "backend/app/workflows/execution_support.py": "M03",
+    "backend/app/workflows/handlers/__init__.py": "M05",
+    "backend/app/workflows/handlers/bom.py": "M09",
+    "backend/app/workflows/handlers/cad_execution.py": "M03",
+    "backend/app/workflows/handlers/candidates.py": "M02",
+    "backend/app/workflows/handlers/decomposition.py": "M05",
+    "backend/app/workflows/handlers/dfm_validation.py": "M06",
+    "backend/app/workflows/handlers/engineering.py": "M08",
+    "backend/app/workflows/handlers/geometry_validation.py": "M06",
+    "backend/app/workflows/handlers/legacy_modeling.py": "M03",
+    "backend/app/workflows/handlers/lifecycle.py": "M03",
+    "backend/app/workflows/handlers/native_generation.py": "M05",
+    "backend/app/workflows/handlers/planning.py": "M05",
+    "backend/app/workflows/handlers/review.py": "M02",
+    "backend/app/workflows/handlers/source_generation.py": "M05",
+    "backend/app/workflows/handlers/visual_validation.py": "M06",
+    "backend/app/workflows/inputs.py": "M03",
+    "backend/app/workflows/local.py": "M03",
+    "backend/app/workflows/logical_steps.py": "M03",
+    "backend/app/workflows/model_job.py": "M03",
+    "backend/app/workflows/model_job_policy.py": "M03",
+    "backend/app/workflows/modeling.py": "M03",
+    "backend/app/workflows/revision_inputs.py": "M03",
+    "backend/app/workflows/checkpoint_inputs.py": "M03",
+    "backend/app/workflows/scene_activities.py": "M03",
+    "backend/app/workflows/source_preparation.py": "M03",
+    "backend/app/workflows/temporal.py": "M03",
+    "backend/app/workflows/validation_support.py": "M03",
+    "frontend/src/App.tsx": "P04",
+    "frontend/src/adapters/branchView.ts": "P00",
+    "frontend/src/adapters/camToolpath.ts": "P00",
+    "frontend/src/adapters/changeSetAdapter.ts": "P00",
+    "frontend/src/adapters/documentAdapter.ts": "P00",
+    "frontend/src/adapters/documentView.ts": "P00",
+    "frontend/src/adapters/durableTaskAdapter.ts": "P00",
+    "frontend/src/adapters/engineeringField.ts": "P00",
+    "frontend/src/adapters/engineeringMeasurements.ts": "P00",
+    "frontend/src/adapters/featureTree.ts": "P00",
+    "frontend/src/adapters/parameterSubmission.ts": "P00",
+    "frontend/src/adapters/projectAdapter.ts": "P00",
+    "frontend/src/adapters/requirementIntake.ts": "P00",
+    "frontend/src/adapters/resultSnapshotAdapter.ts": "P00",
+    "frontend/src/adapters/sketchPreview.ts": "P00",
+    "frontend/src/adapters/taskState.ts": "P00",
+    "frontend/src/auth.ts": "P04",
+    "frontend/src/capabilities/manifest.ts": "P04",
+    "frontend/src/components/AccountPanel.tsx": "P04",
+    "frontend/src/components/AgentRunTimeline.tsx": "P04",
+    "frontend/src/components/CapabilityCatalog.tsx": "P04",
+    "frontend/src/components/CapabilityRunner.tsx": "P04",
+    "frontend/src/components/DFMRuleConfig.tsx": "P04",
+    "frontend/src/components/DesignBriefPanel.tsx": "P04",
+    "frontend/src/components/ErrorBoundary.tsx": "P04",
+    "frontend/src/components/InspectReportPanel.tsx": "P04",
+    "frontend/src/components/KnowledgeGraph.tsx": "P04",
+    "frontend/src/components/LoginPage.tsx": "P04",
+    "frontend/src/components/ModelAnnotations.tsx": "P04",
+    "frontend/src/components/PanelTabs.tsx": "P04",
+    "frontend/src/components/RepairHistory.tsx": "P04",
+    "frontend/src/components/SettingsDrawer.tsx": "P04",
+    "frontend/src/components/SuggestionPills.tsx": "P04",
+    "frontend/src/components/VersionHistoryPanel.tsx": "P04",
+    "frontend/src/components/Viewer2D.tsx": "P04",
+    "frontend/src/components/Viewer3D.tsx": "P04",
+    "frontend/src/components/agent/AgentDrawer.tsx": "P04",
+    "frontend/src/components/agent/AgentPanel.tsx": "P04",
+    "frontend/src/components/agent/RequirementCard.tsx": "P04",
+    "frontend/src/components/agent/TaskCard.tsx": "P04",
+    "frontend/src/components/agent/agentContext.ts": "P04",
+    "frontend/src/components/changes/ChangeSetDialog.tsx": "P04",
+    "frontend/src/components/common/BrandMark.tsx": "P04",
+    "frontend/src/components/common/DraftLeaveDialog.tsx": "P04",
+    "frontend/src/components/common/WorkspaceOverlay.tsx": "P04",
+    "frontend/src/components/export/ExportDialog.tsx": "P04",
+    "frontend/src/components/parameters/ParameterDrawer.tsx": "P04",
+    "frontend/src/components/project/ProjectFlow.tsx": "P04",
+    "frontend/src/components/project/ProjectSidebar.tsx": "P04",
+    "frontend/src/components/project/ProjectStart.tsx": "P04",
+    "frontend/src/components/project/WorkspaceHeader.tsx": "P04",
+    "frontend/src/components/ui/Icon.tsx": "P04",
+    "frontend/src/components/validation/ValidationDialog.tsx": "P04",
+    "frontend/src/components/viewer/CamToolpathViewer.tsx": "P04",
+    "frontend/src/components/viewer/CameraFit.tsx": "P04",
+    "frontend/src/components/viewer/DocumentSceneViewer.tsx": "P04",
+    "frontend/src/components/viewer/EngineeringFieldViewer.tsx": "P04",
+    "frontend/src/components/viewer/MechanicalWorkspace.tsx": "P04",
+    "frontend/src/components/viewer/canvasEvents.ts": "P04",
+    "frontend/src/components/workspace/CloudDocumentPanel.tsx": "P04",
+    "frontend/src/components/workspace/ContourMillingForm.tsx": "P04",
+    "frontend/src/components/workspace/DocumentBranches.tsx": "P04",
+    "frontend/src/components/workspace/DocumentReleases.tsx": "P04",
+    "frontend/src/components/workspace/DocumentTaskPanel.tsx": "P04",
+    "frontend/src/components/workspace/EngineeringTasks.tsx": "P04",
+    "frontend/src/components/workspace/EngineeringWorkspace.tsx": "P04",
+    "frontend/src/components/workspace/FeatureInspection.tsx": "P04",
+    "frontend/src/components/workspace/InstanceProperties.tsx": "P04",
+    "frontend/src/components/workspace/LocalBridgePanel.tsx": "P04",
+    "frontend/src/components/workspace/ProjectMembers.tsx": "P04",
+    "frontend/src/components/workspace/SharedDocumentWorkspace.tsx": "P04",
+    "frontend/src/components/workspace/SketchEditor.tsx": "P04",
+    "frontend/src/components/workspace/WorkspaceInspector.tsx": "P04",
+    "frontend/src/components/workspace/WorkspaceShell.tsx": "P04",
+    "frontend/src/controllers/sessionMessages.ts": "P04",
+    "frontend/src/controllers/useParameterEditor.ts": "P04",
+    "frontend/src/hooks/useCADModel.ts": "P04",
+    "frontend/src/hooks/useCapabilities.ts": "P04",
+    "frontend/src/hooks/useCloudDocument.ts": "P04",
+    "frontend/src/hooks/useDocumentView.ts": "P04",
+    "frontend/src/hooks/useDraftGuard.ts": "P04",
+    "frontend/src/hooks/useFeatureLease.ts": "P04",
+    "frontend/src/hooks/useWebSocket.ts": "P04",
+    "frontend/src/i18n/I18nContext.ts": "P04",
+    "frontend/src/i18n/I18nProvider.tsx": "P04",
+    "frontend/src/i18n/LanguageSwitch.tsx": "P04",
+    "frontend/src/lib/createId.ts": "P00",
+    "frontend/src/main.tsx": "P04",
+    "frontend/src/services/clients/artifacts.ts": "M02",
+    "frontend/src/services/clients/branches.ts": "M02",
+    "frontend/src/services/clients/changes.ts": "M02",
+    "frontend/src/services/clients/checks.ts": "M06",
+    "frontend/src/services/clients/delivery.ts": "M09",
+    "frontend/src/services/clients/documents.ts": "M02",
+    "frontend/src/services/clients/downloads.ts": "M02",
+    "frontend/src/services/clients/engineering.ts": "M08",
+    "frontend/src/services/clients/history.ts": "M02",
+    "frontend/src/services/clients/http.ts": "P00",
+    "frontend/src/services/clients/onshape.ts": "M10",
+    "frontend/src/services/clients/revisions.ts": "M02",
+    "frontend/src/services/clients/tasks.ts": "M03",
+    "frontend/src/services/engineeringService.ts": "P02",
+    "frontend/src/services/sceneService.ts": "M07",
+    "frontend/src/stores/documentHeads.ts": "P04",
+    "frontend/src/stores/draftGuard.ts": "P04",
+    "frontend/src/stores/pendingSubmissions.ts": "P04",
+    "frontend/src/stores/sessionStore.ts": "P04",
+    "frontend/src/types/branches.ts": "P00",
+    "frontend/src/types/document.ts": "P00",
+    "frontend/src/types/engineering.ts": "P00",
+    "frontend/src/types/engineeringTask.ts": "P00",
+    "frontend/src/types/index.ts": "P00",
+    "frontend/src/types/localBridge.ts": "P00",
+    "frontend/src/types/release.ts": "P00",
+    "frontend/src/types/requirements.ts": "P00",
+    "frontend/src/types/scene.ts": "P00",
+    "frontend/src/types/sketch.ts": "P00",
+    "frontend/src/utils/engineeringLabels.ts": "P04",
+    "frontend/src/utils/manufacturingProfiles.ts": "P04",
+    "frontend/src/utils/parameterMapping.ts": "P04",
+    "frontend/src/utils/parameterValidation.ts": "P04",
+    "frontend/src/utils/suggestions.ts": "P04",
+    "backend/app/models/workflow_requests.py": "P00",
+    "backend/app/contracts/acceptance.py": "P00",
+    "backend/app/contracts/geometry_request.py": "P00",
+    "backend/app/freecad/api_catalog.py": "M04",
+    "backend/app/freecad/agent_tools.py": "M04",
+    "backend/app/contracts/cad_tools.py": "P00"
+  },
+  "required_runtime_reports": {
+    "native-parameters/kernel.log": {
+      "kind": "marker",
+      "marker": "CAD_NATIVE_PARAMETER_MEASUREMENTS="
+    },
+    "durable-core.xml": {
+      "kind": "junit"
+    },
+    "transactions.xml": {
+      "kind": "junit"
+    },
+    "model-lifecycle-db.xml": {
+      "kind": "junit"
+    },
+    "usage-monitoring.xml": {
+      "kind": "junit"
+    },
+    "schema-upgrade.xml": {
+      "kind": "junit"
+    },
+    "browser-contract/report.json": {
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "same_canvas": true,
+        "real_kernel": true,
+        "real_auth": true
+      }
+    },
+    "browser-parameters/report.json": {
+      "kind": "json",
+      "fields": {
+        "status": "passed",
+        "unknown_acceptance_same_request": true,
+        "panel_scope_and_draft_guard": true,
+        "unchanged_other_parameters": true,
+        "draft_and_selection_survive_collapse": true,
+        "canvas_not_remounted": true
+      }
+    },
+    "browser-rejection/report.json": {
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "cancelled_input_preserved": true,
+        "rejected_input_preserved": true,
+        "saved_head_unchanged": true,
+        "mobile_candidate_action": true,
+        "no_extra_draft_prompt": true,
+        "same_revision_no_guard": true,
+        "real_history_navigation_guarded": true,
+        "rejection_refresh_orders": [
+          "refresh-before-draft",
+          "draft-before-refresh"
+        ]
+      }
+    },
+    "browser-layout/report.json": {
+      "kind": "json",
+      "fields": {
+        "status": "passed",
+        "same_canvas": true,
+        "camera_pixels_unchanged": true
+      }
+    },
+    "browser-monitor/report.json": {
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "non_admin_denied": true,
+        "two_accounts": true,
+        "persistent_reload": true,
+        "logout": true
+      }
+    },
+    "native/freecad_constraint_diagnostics.log": {
+      "kind": "marker",
+      "marker": "CAD_CONSTRAINT_DIAGNOSTICS="
+    },
+    "native/freecad_reference_fixture.log": {
+      "kind": "marker",
+      "marker": "CAD_REFERENCE_GEOMETRY="
+    },
+    "native/chamfer_scope_geometry.log": {
+      "kind": "marker",
+      "marker": "CAD_CHAMFER_SCOPE="
+    },
+    "native/engineering.log": {
+      "kind": "marker",
+      "marker": "CAD_ENGINEERING_RESULT_CHANNEL="
+    },
+    "released-workflow-replay.json": {
+      "kind": "json",
+      "fields": {
+        "passed": true
+      }
+    },
+    "release-source-drill/summary.json": {
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "upgrade_fencing": true,
+        "rollback_fencing": true,
+        "old_new_monitor_roles": true
+      }
+    },
+    "release-source-drill/old-monitor.xml": {
+      "kind": "junit"
+    },
+    "release-source-drill/current-monitor.xml": {
+      "kind": "junit"
+    },
+    "native/freecad_coordinate_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_COORDINATE_CONTRACT="
+    },
+    "native/freecad_profile_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_PROFILE_CONTRACT="
+    },
+    "native/freecad_curve_profile_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_CURVE_PROFILE_CONTRACT="
+    },
+    "native/freecad_hole_cut_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_HOLE_CUT_CONTRACT="
+    },
+    "native/freecad_loft_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_LOFT_CONTRACT="
+    },
+    "native/freecad_sweep_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_SWEEP_CONTRACT="
+    },
+    "native/freecad_revolve_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_REVOLVE_CONTRACT="
+    },
+    "native/freecad_pattern_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_PATTERN_CONTRACT="
+    },
+    "native/freecad_tangency_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_TANGENCY_CONTRACT="
+    },
+    "native/freecad_repair_replay_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_REPAIR_REPLAY_CONTRACT="
+    },
+    "native/freecad_tool_replay_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_TOOL_REPLAY_CONTRACT="
+    },
+    "native/freecad_checkpoint_replay_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_CHECKPOINT_REPLAY_CONTRACT="
+    },
+    "native/curved-surfaces.log": {
+      "kind": "marker",
+      "marker": "CURVED_SURFACE_CONTRACT="
+    }
+  }
+}

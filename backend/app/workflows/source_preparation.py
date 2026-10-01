@@ -11,11 +11,7 @@ from app.agent.orchestrator import (
     requires_design_confirmation,
 )
 from app.models.schemas import ManufacturingProfile
-from app.workflows.temporal import (
-    McadExecutionRequest,
-    McadOutputRequest,
-    McadSourcePreparationRequest,
-)
+from app.models.workflow_requests import (McadExecutionRequest, McadOutputRequest, McadSourcePreparationRequest)
 
 
 _MEDIA_TYPES = {

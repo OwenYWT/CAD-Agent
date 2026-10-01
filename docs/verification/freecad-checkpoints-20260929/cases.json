@@ -1,0 +1,109 @@
+[
+  {
+    "id": "P01",
+    "description": "一个圆柱形桌脚垫，直径 35mm、高 12mm，底面平整贴地",
+    "difficulty": "simple",
+    "path": "extrude_cut",
+    "expected_dims": {
+      "width": 35,
+      "height": 35,
+      "depth": 12
+    }
+  },
+  {
+    "id": "P03",
+    "description": "防滑橡胶脚的替代件，正方形 28x28mm 高 9mm，顶部中心一个 M4 沉孔",
+    "difficulty": "simple",
+    "path": "extrude_cut",
+    "expected_dims": {
+      "width": 28,
+      "height": 28,
+      "depth": 9
+    },
+    "expected_features": {
+      "holes": 1
+    }
+  },
+  {
+    "id": "P08",
+    "description": "门把手垫圈，外径 48mm 内径 26mm 厚 5mm 的环形件",
+    "difficulty": "simple",
+    "path": "extrude_cut",
+    "expected_dims": {
+      "width": 48,
+      "height": 48,
+      "depth": 5
+    },
+    "expected_features": {
+      "holes": 1
+    }
+  },
+  {
+    "id": "P17",
+    "description": "磁吸笔筒底座，外径 60mm 高 70mm 壁厚 2.5mm，底部内嵌三个直径 10mm 深 3mm 的磁铁孔",
+    "difficulty": "moderate",
+    "path": "extrude_cut",
+    "expected_features": {
+      "holes": 3
+    }
+  },
+  {
+    "id": "P18",
+    "description": "可堆叠收纳盒，外形 100x70x40mm 壁厚 2mm，顶口外翻 3mm 唇边便于叠放",
+    "difficulty": "moderate",
+    "path": "extrude_cut",
+    "expected_dims": {
+      "width": 100,
+      "height": 70,
+      "depth": 40
+    }
+  },
+  {
+    "id": "P32",
+    "description": "Raspberry Pi 风格外壳，95x65x30mm 壁厚 2mm，四角内置 M2.5 螺柱高 6mm，侧面一个 16x8mm 的接口开窗",
+    "difficulty": "complex",
+    "path": "extrude_cut",
+    "expected_dims": {
+      "width": 95,
+      "height": 65,
+      "depth": 30
+    },
+    "expected_features": {
+      "holes": 4
+    }
+  },
+  {
+    "id": "P35",
+    "description": "蜂窝镂空笔筒，外径 80mm 高 95mm 壁厚 3mm，侧壁六边形蜂窝镂空阵列，底部实心",
+    "difficulty": "complex",
+    "path": "extrude_cut"
+  },
+  {
+    "id": "M01",
+    "description": "方形法兰盘，外形 70x70mm 厚 8mm，中心孔直径 30mm，四角各一个 M6 螺栓孔边距 10mm",
+    "difficulty": "moderate",
+    "path": "extrude_cut",
+    "expected_dims": {
+      "width": 70,
+      "height": 70,
+      "depth": 8
+    },
+    "expected_features": {
+      "holes": 5
+    }
+  },
+  {
+    "id": "X04",
+    "description": "一个 90 度弯管，管外径 28mm 内径 22mm，弯曲半径 45mm，两端各有 20mm 直管段",
+    "difficulty": "complex",
+    "path": "sweep",
+    "expected_part_type": "swept"
+  },
+  {
+    "id": "X05",
+    "description": "一个方变圆的过渡接头，底部 60x60mm 方口，顶部直径 40mm 圆口，高 50mm，壁厚 2mm",
+    "difficulty": "complex",
+    "path": "loft",
+    "expected_part_type": "organic"
+  }
+]

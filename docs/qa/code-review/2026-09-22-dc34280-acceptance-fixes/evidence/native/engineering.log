@@ -1,0 +1,4 @@
+PASS linear_static
+PASS contour_milling
+PASS release_package
+CAD_ENGINEERING_RESULT_CHANNEL=[{"kind": "linear_static", "schema": "freecad-engineering-result.v1", "roles": ["engineering_report", "engineering_field", "engineering_bundle"], "source_unchanged": true}, {"kind": "contour_milling", "schema": "freecad-engineering-result.v1", "roles": ["engineering_report", "engineering_field", "engineering_bundle", "cam_program"], "source_unchanged": true}, {"kind": "release_package", "schema": "freecad-engineering-result.v1", "roles": ["engineering_report", "engineering_bundle", "release_manifest", "release_bom_json", "release_bom_csv", "release_step", "release_stl"], "source_unchanged": true}]

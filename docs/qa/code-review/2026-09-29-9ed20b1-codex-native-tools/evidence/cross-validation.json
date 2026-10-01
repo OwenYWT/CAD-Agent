@@ -1,0 +1,47 @@
+[
+  {
+    "probe": "probe_geometry.py",
+    "case": "baseline",
+    "kernel_outcome": "passed",
+    "server_required_check_outcome": "passed",
+    "evidence_verifier_accepted_report": true,
+    "contract_digest": "6283d464678d78670ee4510df12d31b830da4f86104b0d597fe4109bc00d8195",
+    "missing_material_mm3": 0.0
+  },
+  {
+    "probe": "probe_geometry.py",
+    "case": "hidden_cavity",
+    "kernel_outcome": "passed",
+    "server_required_check_outcome": "passed",
+    "evidence_verifier_accepted_report": true,
+    "contract_digest": "6283d464678d78670ee4510df12d31b830da4f86104b0d597fe4109bc00d8195",
+    "missing_material_mm3": 0.5235987755982989
+  },
+  {
+    "probe": "probe_geometry.py",
+    "case": "cross_drilled",
+    "kernel_outcome": "passed",
+    "server_required_check_outcome": "passed",
+    "evidence_verifier_accepted_report": true,
+    "contract_digest": "6283d464678d78670ee4510df12d31b830da4f86104b0d597fe4109bc00d8195",
+    "missing_material_mm3": 12.585299078394836
+  },
+  {
+    "probe": "probe_formats.py",
+    "case": "stl",
+    "kernel_outcome": "indeterminate",
+    "server_required_check_outcome": "indeterminate",
+    "evidence_verifier_accepted_report": true,
+    "contract_digest": "0699cc876de3113d3b9e00bbb6c5388a87991ed9116d3262fa15d374dc463dc3",
+    "missing_material_mm3": null
+  },
+  {
+    "probe": "probe_formats.py",
+    "case": "step",
+    "kernel_outcome": "passed",
+    "server_required_check_outcome": "passed",
+    "evidence_verifier_accepted_report": true,
+    "contract_digest": "0699cc876de3113d3b9e00bbb6c5388a87991ed9116d3262fa15d374dc463dc3",
+    "missing_material_mm3": null
+  }
+]

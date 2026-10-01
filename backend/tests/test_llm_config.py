@@ -1,5 +1,7 @@
 """Tests for LLM provider configuration."""
 
+from app.services import llm_usage
+
 from types import SimpleNamespace
 
 import httpx
@@ -82,7 +84,7 @@ def test_azure_client_type_is_selected():
         azure_openai_api_version="2025-03-01-preview",
     )
 
-    client = create_llm_client(settings)
+    client = create_llm_client(settings, sink=llm_usage)
 
     assert client.raw_client.__class__.__name__ == "AsyncAzureOpenAI"
 
@@ -90,7 +92,7 @@ def test_azure_client_type_is_selected():
 def test_moonshot_client_uses_async_openai():
     settings = Settings(_env_file=None, moonshot_api_key="moonshot-key")
 
-    client = create_llm_client(settings)
+    client = create_llm_client(settings, sink=llm_usage)
 
     assert client.raw_client.__class__.__name__ == "AsyncOpenAI"
     assert str(client.raw_client.base_url).startswith("https://api.moonshot.cn/v1")
@@ -163,7 +165,7 @@ async def test_chat_adapter_never_retries_quota_failure():
     adapter = ChatCompletionAdapter(
         raw,
         Settings(_env_file=None, llm_max_retries=2),
-    )
+    sink=llm_usage)
 
     with pytest.raises(RateLimitError):
         await adapter.create(
@@ -190,7 +192,7 @@ async def test_chat_adapter_retries_transient_connection_failure_with_bound():
     adapter = ChatCompletionAdapter(
         raw,
         Settings(_env_file=None, llm_max_retries=2),
-    )
+    sink=llm_usage)
 
     result = await adapter.create(
         model="qwen-plus",
@@ -225,7 +227,7 @@ async def test_chat_adapter_records_non_secret_completion_provenance():
     adapter = ChatCompletionAdapter(
         RecordedCompletions(),
         Settings(_env_file=None, llm_provider="openai_compatible"),
-    )
+    sink=llm_usage)
     await adapter.create(
         model="requested-model",
         messages=[{"role": "user", "content": "create"}],

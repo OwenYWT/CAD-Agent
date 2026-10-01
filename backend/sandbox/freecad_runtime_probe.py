@@ -197,6 +197,7 @@ def run_probe() -> dict:
     ]
     return {
         "schema_version": "mcad-runtime-probe.v2",
+        "freecad_capabilities_sha256": _sha256(Path("/opt/cad-agent/freecad-capabilities.json")),
         "runtime_lock_sha256": _sha256(
             Path("/opt/cad-agent/runtime-lock.json")
         ),

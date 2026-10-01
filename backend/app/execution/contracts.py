@@ -82,11 +82,30 @@ class RuntimeRequirement(FrozenContract):
 
 
 class ResourceLimits(FrozenContract):
-    timeout_seconds: int = Field(default=60, ge=1, le=3600)
+    timeout_seconds: int | None = Field(default=60, ge=1, le=3600)
     memory_bytes: int = Field(default=512 * 1024 * 1024, ge=64 * 1024 * 1024)
     cpu_millis: int = Field(default=1000, ge=100, le=64_000)
     pids: int = Field(default=128, ge=16, le=4096)
     output_bytes: int = Field(default=64 * 1024 * 1024, ge=1024)
+
+    @classmethod
+    def from_configured_memory(cls, memory_limit: str, **limits) -> "ResourceLimits":
+        """Resolve deployment memory; preserve existing operation-specific floors.
+
+        Wire defaults stay unchanged for retained specifications and replay.
+        Composition must explicitly pass the deployed configuration for new work.
+        """
+        from decimal import Decimal
+        import re
+        match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)([bkmg]?)", memory_limit.strip().lower())
+        if match is None:
+            raise ValueError("sandbox memory must be bytes or a b/k/m/g quantity")
+        multiplier = {"":1,"b":1,"k":1024,"m":1024**2,"g":1024**3}[match[2]]
+        amount = Decimal(match[1]) * multiplier
+        if amount != amount.to_integral_value() or amount < 64*1024**2:
+            raise ValueError("sandbox memory must be whole bytes and at least 64 MiB")
+        limits["memory_bytes"] = max(int(amount), limits.get("memory_bytes", 0))
+        return cls(**limits)
 
 
 class ExecutionSpec(FrozenContract):

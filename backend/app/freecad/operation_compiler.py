@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.freecad.edge_intent import requested_edge_scope
+
 import hashlib
 import json
 import math
@@ -399,6 +401,9 @@ def compile_common_modification(
     if unsupported_features or len(chamfer_features) > 1:
         return None
     if chamfer_features:
+        scope = requested_edge_scope(chamfer_features[0])
+        if scope is None:
+            return None
         size = _feature_size(chamfer_features, _CHAMFER) or _feature_size(
             chamfer_features,
             _LEADING_CHAMFER,
@@ -416,7 +421,8 @@ def compile_common_modification(
             "name": name,
             "target": target,
             "size_mm": size,
-            "use_all_edges": True,
+            "use_all_edges": False,
+            "edge_scope": scope,
         }
         operations.append(_op(_semantic_id("add-chamfer", args), "feature.chamfer", args))
 
@@ -485,7 +491,7 @@ def compile_common_generation(
                 unsupported.append(item)
         if unsupported or len(fillet_features) > 1:
             return None
-        offset = 10.0
+        offset = 0.0
         operations = [
             _op(
                 "create-base-sketch",
@@ -690,7 +696,7 @@ def compile_common_generation(
                     "sketch": "BaseSketch",
                     "geometry": {
                         "kind": "circle",
-                        "center": {"x": 10, "y": 10},
+                        "center": {"x": 0, "y": 0},
                         "radius_mm": radius,
                     },
                 },
@@ -700,14 +706,14 @@ def compile_common_generation(
                 "BaseSketch",
                 "distance_x",
                 {"geometry_index": 0, "point_position": 3},
-                value_mm=10,
+                value_mm=0,
             ),
             _constraint(
                 "base-center-y",
                 "BaseSketch",
                 "distance_y",
                 {"geometry_index": 0, "point_position": 3},
-                value_mm=10,
+                value_mm=0,
             ),
             _constraint(
                 "base-radius",

@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n, type Locale } from "../i18n/I18nContext";
-import {
-  diffModelSnapshots,
-  getModelSnapshot,
-  listModelSnapshots,
-} from "../services/engineeringService";
+import { diffModelSnapshots, getModelSnapshot, listModelSnapshots } from "../services/clients/revisions";
 import type {
   AssemblyPartInfo,
   ModelSnapshotDetail,
@@ -234,7 +230,7 @@ export default function VersionHistoryPanel({
               const cacheKey = activeSnapshotId ? `${activeSnapshotId}:${snapshot.id}` : "";
               const diff = cacheKey ? diffBySnapshotKey[cacheKey] : undefined;
               return (
-                <div key={snapshot.id} className={`rounded-lg border p-3 ${isActive ? "border-[var(--agent-border)] bg-[var(--agent-soft)]" : "border-[var(--line)] bg-[var(--surface-soft)]"}`}>
+                <div key={snapshot.id} data-revision-id={snapshot.id} className={`rounded-lg border p-3 ${isActive ? "border-[var(--agent-border)] bg-[var(--agent-soft)]" : "border-[var(--line)] bg-[var(--surface-soft)]"}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="type-body  text-[var(--ink)]">修订 #{snapshot.version} · {translate(engineeringSourceLabel(snapshot.source))}{snapshot.id === currentRevisionId ? " · 已提交当前版本" : ""}</div>
@@ -246,7 +242,7 @@ export default function VersionHistoryPanel({
                     <span>{formatTime(snapshot.created_at, locale)}</span>
                     <div className="flex flex-wrap items-center gap-2">
                       {activeSnapshotId && !isActive ? <button className="workspace-button !min-h-7 !px-2" disabled={diffLoadingKey === cacheKey} onClick={() => void loadDiff(snapshot.id)} type="button">{diffLoadingKey === cacheKey ? "对比中..." : "对比当前"}</button> : null}
-                      {onView ? <button className="workspace-button !min-h-7 !px-2" type="button" onClick={() => guardDraft(() => { void viewSnapshot(snapshot.id); })}>查看此版本</button> : null}
+                      {onView ? <button className="workspace-button !min-h-7 !px-2" type="button" onClick={() => { void viewSnapshot(snapshot.id); }}>查看此版本</button> : null}
                       <button className="workspace-button !min-h-7 !px-2 text-[var(--focus)]" disabled={restoringId !== null || snapshot.id === (currentRevisionId || activeSnapshotId)} onClick={() => guardDraft(() => { void restoreSnapshot(snapshot.id); })} type="button">{snapshot.id === (currentRevisionId || activeSnapshotId) ? "当前提交" : restoringId === snapshot.id ? "提交中..." : "从此版本生成恢复候选"}</button>
                     </div>
                   </div>

@@ -47,7 +47,7 @@ async def materialize_scene_input(payload, directory):
                          size_bytes=row['size_bytes'], media_type=row['content_type']),), {str(row['id']):path}
 
 
-async def compute_scene(activities, payload):
+async def compute_scene(payload, *, backend, execute):
     context = _context(payload)
     workflow_id, document_id, revision_id = (UUID(payload[key]) for key in ('workflow_run_id','document_id','source_revision_id'))
     try:
@@ -65,14 +65,14 @@ async def compute_scene(activities, payload):
                     await transition_workflow(conn,workflow_id,expected=before,target=after); status=after
             if status not in {WorkflowStatus.RUNNING,WorkflowStatus.SUCCEEDED}:
                 raise ApplicationError('场景计算已取消或终止',type='scene_terminal',non_retryable=True)
-        runtime = await asyncio.to_thread(activities.backend.runtime_snapshot)
+        runtime = await asyncio.to_thread(backend.runtime_snapshot)
         if runtime.image_digest != payload['scene_task']['runtime_digest']:
             raise ValueError('场景任务对应的内核版本已不可用，请按当前运行时重新请求')
 
         async def execute_scene(source, known, directory):
             if str(source['id']) != payload['source_artifact_id'] or source['sha256'] != payload['source_sha256']:
                 raise ValueError('场景检查点与冻结来源不一致')
-            result = await activities.execute({**payload, 'revision_id':str(revision_id), 'expected_base_revision_id':str(revision_id),
+            result = await execute({**payload, 'revision_id':str(revision_id), 'expected_base_revision_id':str(revision_id),
                 'step_index':0, 'input_artifacts':[{'artifact_id':payload['source_artifact_id'],'filename':'checkpoint.FCStd'}],
                 'execution':{'step_key':'scene_compute','kind':'scene_compute','capability':'mcad.freecad','operation':'scene',
                     'mode':'analysis','source_language':'json','timeout_seconds':120,

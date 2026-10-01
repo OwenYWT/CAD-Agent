@@ -1,0 +1,138 @@
+{
+  "all_attributed_to_authenticated_account": true,
+  "calls": 13,
+  "total_tokens": 194012,
+  "all_usage_present": true,
+  "records": [
+    {
+      "id": "b6594134-f4a1-4a7a-9fac-43ed3258a17e",
+      "principal_id": "beb91fce-bebf-543e-adb9-fe12b03320e4",
+      "provider": "moonshot",
+      "model": "kimi-k2.7-code",
+      "status": "succeeded",
+      "prompt_tokens": 8798,
+      "completion_tokens": 1502,
+      "total_tokens": 10300
+    },
+    {
+      "id": "29f8a480-29e7-48bd-9e70-7da7a0d2714b",
+      "principal_id": "beb91fce-bebf-543e-adb9-fe12b03320e4",
+      "provider": "moonshot",
+      "model": "kimi-k2.7-code",
+      "status": "succeeded",
+      "prompt_tokens": 10376,
+      "completion_tokens": 977,
+      "total_tokens": 11353
+    },
+    {
+      "id": "f156b8a2-8bbf-4b4d-9b62-24b164522863",
+      "principal_id": "beb91fce-bebf-543e-adb9-fe12b03320e4",
+      "provider": "moonshot",
+      "model": "kimi-k2.7-code",
+      "status": "succeeded",
+      "prompt_tokens": 8802,
+      "completion_tokens": 5620,
+      "total_tokens": 14422
+    },
+    {
+      "id": "62ee2b86-fdc4-4d76-bcff-92b740a1576e",
+      "principal_id": "beb91fce-bebf-543e-adb9-fe12b03320e4",
+      "provider": "moonshot",
+      "model": "kimi-k2.7-code",
+      "status": "succeeded",
+      "prompt_tokens": 8801,
+      "completion_tokens": 2850,
+      "total_tokens": 11651
+    },
+    {
+      "id": "85e03f51-ce42-4644-ac30-3d38c31c12ca",
+      "principal_id": "beb91fce-bebf-543e-adb9-fe12b03320e4",
+      "provider": "moonshot",
+      "model": "kimi-k2.7-code",
+      "status": "succeeded",
+      "prompt_tokens": 11756,
+      "completion_tokens": 1261,
+      "total_tokens": 13017
+    },
+    {
+      "id": "b44b4a3b-90ae-432a-8180-43c10fd478a6",
+      "principal_id": "beb91fce-bebf-543e-adb9-fe12b03320e4",
+      "provider": "moonshot",
+      "model": "kimi-k2.7-code",
+      "status": "succeeded",
+      "prompt_tokens": 8818,
+      "completion_tokens": 7944,
+      "total_tokens": 16762
+    },
+    {
+      "id": "4dfa62c0-f704-49b8-b7ff-f9ac870874f6",
+      "principal_id": "beb91fce-bebf-543e-adb9-fe12b03320e4",
+      "provider": "moonshot",
+      "model": "kimi-k2.7-code",
+      "status": "succeeded",
+      "prompt_tokens": 8809,
+      "completion_tokens": 2946,
+      "total_tokens": 11755
+    },
+    {
+      "id": "b92d15b4-c0f9-44e0-a34c-f6761e5df165",
+      "principal_id": "beb91fce-bebf-543e-adb9-fe12b03320e4",
+      "provider": "moonshot",
+      "model": "kimi-k2.7-code",
+      "status": "succeeded",
+      "prompt_tokens": 11831,
+      "completion_tokens": 1391,
+      "total_tokens": 13222
+    },
+    {
+      "id": "9fc708a9-a3ce-43f9-908b-2d8d468cbc8d",
+      "principal_id": "beb91fce-bebf-543e-adb9-fe12b03320e4",
+      "provider": "moonshot",
+      "model": "kimi-k2.7-code",
+      "status": "succeeded",
+      "prompt_tokens": 8821,
+      "completion_tokens": 12861,
+      "total_tokens": 21682
+    },
+    {
+      "id": "d888c928-ce9f-4085-861b-cd7fc8b2e1f9",
+      "principal_id": "beb91fce-bebf-543e-adb9-fe12b03320e4",
+      "provider": "moonshot",
+      "model": "kimi-k2.7-code",
+      "status": "succeeded",
+      "prompt_tokens": 8808,
+      "completion_tokens": 6916,
+      "total_tokens": 15724
+    },
+    {
+      "id": "0eb9c751-7d2c-4b9c-9c58-f73515830307",
+      "principal_id": "beb91fce-bebf-543e-adb9-fe12b03320e4",
+      "provider": "moonshot",
+      "model": "kimi-k2.7-code",
+      "status": "succeeded",
+      "prompt_tokens": 8812,
+      "completion_tokens": 6204,
+      "total_tokens": 15016
+    },
+    {
+      "id": "1dd5ad88-ee10-4523-8011-fa6dac775bc3",
+      "principal_id": "beb91fce-bebf-543e-adb9-fe12b03320e4",
+      "provider": "moonshot",
+      "model": "kimi-k2.7-code",
+      "status": "succeeded",
+      "prompt_tokens": 8812,
+      "completion_tokens": 12248,
+      "total_tokens": 21060
+    },
+    {
+      "id": "314667ca-2c2e-42c6-9478-1614bcf28df9",
+      "principal_id": "beb91fce-bebf-543e-adb9-fe12b03320e4",
+      "provider": "moonshot",
+      "model": "kimi-k2.7-code",
+      "status": "succeeded",
+      "prompt_tokens": 8812,
+      "completion_tokens": 9236,
+      "total_tokens": 18048
+    }
+  ]
+}

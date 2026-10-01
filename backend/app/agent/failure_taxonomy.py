@@ -36,6 +36,13 @@ class FailureClass:
 # substring classes in the legacy _ERROR_HINTS order; `unknown` is the catch-all.
 FAILURE_CLASSES: list[FailureClass] = [
     FailureClass(
+        key="subtractive_feature_no_effect", label="Subtractive feature has no effect",
+        cause="切除特征未与目标材料形成有效切除",
+        fix_hint="核对实际草图位置、法向、目标包围盒和切除方向；仅修正报错操作的生成方向，再验证实际切除",
+        fix_scope="保留所有尺寸、草图位置、孔型、目标、特征和其他操作；方向被用户锁定或需移动草图时停止并报告",
+        retry_budget=1, gates=("subtractive_feature_no_effect",),
+    ),
+    FailureClass(
         key="sketch_redundant_constraints", label="Sketch redundant constraints",
         cause="草图包含重复限制自由度的约束",
         fix_hint="依据求解器诊断移除多余几何关系，保留已有尺寸和其他建模操作，再由求解器验证",

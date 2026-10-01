@@ -54,7 +54,7 @@ class PodmanRuntime:
         self,
         input_dir: Path,
         output_dir: Path,
-        timeout_s: int,
+        timeout_s: int | None,
         resource_limits=None,
         cancel_event: threading.Event | None = None,
     ) -> tuple[int, str, str]:
@@ -163,6 +163,8 @@ class CadQueryExecutor:
         sandbox_command: str | None = None,
     ):
         self._client = None
+        self._active_containers = {}
+        self._active_lock = threading.Lock()
         self._semaphore: asyncio.Semaphore | None = None
         self._runtime_name = (runtime_name or settings.sandbox_runtime).strip().lower()
         self.image_ref = image_ref or settings.sandbox_image
@@ -211,7 +213,7 @@ class CadQueryExecutor:
     ) -> SandboxResult:
         async with self._get_semaphore():
             loop = asyncio.get_event_loop()
-            cancel_event = threading.Event() if self.runtime == "podman" else None
+            cancel_event = threading.Event() if self.runtime == "podman" or resource_limits is not None else None
             if (
                 cancel_event is None
                 and timeout_s is None
@@ -246,7 +248,7 @@ class CadQueryExecutor:
             except asyncio.CancelledError:
                 cancellation = loop.run_in_executor(
                     None,
-                    self.client.cancel,
+                    self._cancel_execution,
                     cancel_event,
                 )
                 try:
@@ -259,6 +261,19 @@ class CadQueryExecutor:
                     pass
                 raise
 
+    def _cancel_execution(self, cancel_event):
+        if self.runtime == "podman":
+            self.client.cancel(cancel_event)
+            return
+        cancel_event.set()
+        with self._active_lock:
+            container = self._active_containers.get(id(cancel_event))
+        if container is not None:
+            try:
+                container.remove(force=True)
+            except docker.errors.NotFound:
+                pass
+
     def _execute_sync(
         self,
         code: str,
@@ -269,7 +284,8 @@ class CadQueryExecutor:
         resource_limits=None,
         cancel_event: threading.Event | None = None,
     ) -> SandboxResult:
-        effective_timeout = timeout_s or settings.sandbox_timeout_s
+        effective_timeout = (None if resource_limits is not None and resource_limits.timeout_seconds is None
+                             else timeout_s or settings.sandbox_timeout_s)
         work_dir = Path(tempfile.mkdtemp(prefix="cad_"))
         input_dir = work_dir / "input"
         output_dir = work_dir / "output"
@@ -388,6 +404,8 @@ class CadQueryExecutor:
                     if resource_limits is not None
                     else 64 * 1024 * 1024
                 )
+                if cancel_event is not None and cancel_event.is_set():
+                    raise RuntimeError("execution cancelled before container creation")
                 container = client.containers.run(
                     image=self.image_ref,
                     detach=True,
@@ -429,6 +447,11 @@ class CadQueryExecutor:
                     work_dir=work_dir,
                 )
 
+            if cancel_event is not None:
+                with self._active_lock:
+                    self._active_containers[id(cancel_event)] = container
+                if cancel_event.is_set():
+                    self._cancel_execution(cancel_event)
             # Wait for completion
             try:
                 completion = container.wait(timeout=effective_timeout)
@@ -455,22 +478,26 @@ class CadQueryExecutor:
                     return SandboxResult(success=False, files={}, error_type="RuntimeError",
                         error_message=f"No result.json produced; sandbox exited ({exit_code}): {str(logs)[-2000:]}",
                         traceback=None, execution_time_ms=int((time.time()-start_time)*1000), work_dir=work_dir)
-            except Exception:
+            except Exception as exc:
                 try:
                     container.kill()
                 except Exception:
                     pass
-                elapsed = int((time.time() - start_time) * 1000)
+                from requests.exceptions import Timeout
+                cancelled = cancel_event is not None and cancel_event.is_set()
+                timed_out = effective_timeout is not None and isinstance(exc, (Timeout, subprocess.TimeoutExpired))
                 return SandboxResult(
-                    success=False,
-                    files={},
-                    error_type="TimeoutError",
-                    error_message=f"Execution timed out after {effective_timeout}s",
-                    traceback=None,
-                    execution_time_ms=elapsed,
-                    work_dir=work_dir,
+                    success=False, files={},
+                    error_type="CancelledError" if cancelled else "TimeoutError" if timed_out else "DockerError",
+                    error_message=("Execution cancelled" if cancelled else
+                        f"Execution timed out after {effective_timeout}s" if timed_out else
+                        f"Container wait failed: {type(exc).__name__}: {exc}"),
+                    traceback=None, execution_time_ms=int((time.time()-start_time)*1000), work_dir=work_dir,
                 )
         finally:
+            if cancel_event is not None:
+                with self._active_lock:
+                    self._active_containers.pop(id(cancel_event), None)
             if container:
                 try:
                     container.remove(force=True)

@@ -52,6 +52,12 @@ def _completion_provenance(
     first = choices[0] if choices else None
     message = getattr(first, "message", None)
     content = str(getattr(message, "content", "") or "")
+    tool_calls = getattr(message, "tool_calls", None)
+    response_bytes = content.encode("utf-8")
+    if tool_calls:
+        response_bytes = json.dumps({"content": content, "tool_calls": [
+            call.model_dump(mode="json", exclude_none=True) for call in tool_calls
+        ]}, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     usage = getattr(response, "usage", None)
     if usage is None:
         usage_payload: dict[str, Any] = {}
@@ -74,7 +80,7 @@ def _completion_provenance(
             str(getattr(response, "id", "") or "") or None
         ),
         "request_hash": hashlib.sha256(request_payload).hexdigest(),
-        "response_hash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "response_hash": hashlib.sha256(response_bytes).hexdigest(),
         "finish_reason": (
             str(getattr(first, "finish_reason", "") or "") or None
         ),
@@ -154,8 +160,12 @@ def build_chat_params(
     return params
 
 
+from app.contracts.usage import UsageSink
+
+
 class ChatCompletionAdapter:
-    def __init__(self, raw_completions: Any, llm_settings: Settings):
+    def __init__(self, raw_completions: Any, llm_settings: Settings, *, sink: UsageSink):
+        self._usage = sink
         self._raw_completions = raw_completions
         self._settings = llm_settings
 
@@ -170,7 +180,6 @@ class ChatCompletionAdapter:
             llm_settings=self._settings,
             **kwargs,
         )
-        from app.services.llm_usage import start_call, finish_call
         # Explicit None disables SDK/HTTP timeouts, including caller overrides.
         # Omitting this option would inherit the SDK or client default instead.
         params["timeout"] = None
@@ -179,7 +188,7 @@ class ChatCompletionAdapter:
         request_hash = hashlib.sha256(json.dumps(params, sort_keys=True, default=str).encode()).hexdigest()
         reset_chat_completion_provenance()
         for attempt in range(self._settings.llm_max_retries + 1):
-            handle = await start_call(provider=self._settings.normalized_llm_provider,
+            handle = await self._usage.start_call(provider=self._settings.normalized_llm_provider,
                                       model=params["model"], request_hash=request_hash, attempt=attempt + 1)
             started = time.perf_counter()
             provenance = None
@@ -208,7 +217,7 @@ class ChatCompletionAdapter:
                 error = exc
                 raise
             finally:
-                await finish_call(handle, duration_ms=round((time.perf_counter() - started) * 1000),
+                await self._usage.finish_call(handle, duration_ms=round((time.perf_counter() - started) * 1000),
                                   provenance=provenance, error=error)
 
 
@@ -219,7 +228,8 @@ async def _complete_stream(stream) -> ChatCompletion:
     activity; cancellation closes the stream in the finally block below.
     """
     identity = None
-    content, refusal = [], []
+    content, refusal, reasoning = [], [], []
+    calls: dict[int, dict[str, Any]] = {}
     finish = None
     usage = None
     try:
@@ -241,35 +251,72 @@ async def _complete_stream(stream) -> ChatCompletion:
             if chunk.usage is not None:
                 usage = chunk.usage
             for choice in chunk.choices:
-                if choice.index != 0 or choice.delta.tool_calls or choice.delta.function_call:
-                    raise ValueError("model stream contains unsupported choices or tool calls")
+                if choice.index != 0 or choice.delta.function_call:
+                    raise ValueError("model stream contains unsupported choices or legacy function calls")
                 if finish is not None:
                     raise ValueError("model stream continued after its terminal choice")
                 delta = choice.delta.content or ""
                 content.append(delta)
                 if choice.delta.refusal:
                     refusal.append(choice.delta.refusal)
+                # Provider-owned context is round-tripped only to the model.
+                # Kimi thinking tool conversations require this field on the
+                # next assistant message; it is not user-facing task progress.
+                reasoning_delta = getattr(choice.delta, "reasoning_content", None)
+                if reasoning_delta is not None:
+                    if not isinstance(reasoning_delta, str):
+                        raise ValueError("model stream contains invalid reasoning context")
+                    reasoning.append(reasoning_delta)
+                for part in choice.delta.tool_calls or ():
+                    if part.index < 0:
+                        raise ValueError("model stream contains a negative tool index")
+                    call = calls.setdefault(part.index, {"id": None, "type": None,
+                        "function": {"name": "", "arguments": ""}})
+                    for key in ("id", "type"):
+                        value = getattr(part, key)
+                        if value is not None:
+                            if call[key] is not None and call[key] != value:
+                                raise ValueError("model stream mixed tool identities")
+                            call[key] = value
+                    if part.function:
+                        for key in ("name", "arguments"):
+                            call["function"][key] += getattr(part.function, key) or ""
                 finish = choice.finish_reason
     finally:
         await stream.close()
     if identity is None or finish is None:
         raise ValueError("model stream ended without a terminal provider response")
+    ordered_calls = [calls[index] for index in sorted(calls)]
+    if finish == "tool_calls" or calls:
+        if finish not in {"tool_calls", "length", "content_filter"} or not calls:
+            raise ValueError("model stream tool calls disagree with terminal reason")
+        if finish == "tool_calls" and (
+            sorted(calls) != list(range(len(calls)))
+            or len({call["id"] for call in ordered_calls}) != len(calls)
+            or any(not call["id"] or call["type"] != "function"
+                   or not call["function"]["name"] for call in ordered_calls)
+        ):
+            raise ValueError("model stream ended with incomplete tool identities")
+    # Truncated calls are not executable; preserve the reason for caller diagnostics.
+    completed_calls = ordered_calls if finish == "tool_calls" else None
     return ChatCompletion(id=identity[0], model=identity[1], created=identity[2], object="chat.completion",
         choices=[{"index": 0, "finish_reason": finish,
-                  "message": {"role": "assistant", "content": "".join(content), "refusal": "".join(refusal) or None}}],
+                  "message": {"role": "assistant", "content": "".join(content),
+                              "tool_calls": completed_calls, "refusal": "".join(refusal) or None,
+                              **({"reasoning_content": "".join(reasoning)} if reasoning else {})}}],
         usage=usage)
 
 
 class ChatAdapter:
-    def __init__(self, raw_chat: Any, llm_settings: Settings):
-        self.completions = ChatCompletionAdapter(raw_chat.completions, llm_settings)
+    def __init__(self, raw_chat: Any, llm_settings: Settings, *, sink: UsageSink):
+        self.completions = ChatCompletionAdapter(raw_chat.completions, llm_settings, sink=sink)
 
 
 class LLMClientAdapter:
-    def __init__(self, raw_client: Any, llm_settings: Settings):
+    def __init__(self, raw_client: Any, llm_settings: Settings, *, sink: UsageSink):
         self.raw_client = raw_client
         self._settings = llm_settings
-        self.chat = ChatAdapter(raw_client.chat, llm_settings)
+        self.chat = ChatAdapter(raw_client.chat, llm_settings, sink=sink)
 
     @property
     def max_retries(self) -> int:
@@ -279,7 +326,7 @@ class LLMClientAdapter:
         return getattr(self.raw_client, name)
 
 
-def create_llm_client(llm_settings: Settings = settings):
+def create_llm_client(llm_settings: Settings = settings, *, sink: UsageSink):
     if not llm_settings.has_llm_credentials:
         raise RuntimeError(llm_settings.llm_credentials_error)
 
@@ -301,4 +348,4 @@ def create_llm_client(llm_settings: Settings = settings):
             max_retries=0,
         )
 
-    return LLMClientAdapter(raw_client, llm_settings)
+    return LLMClientAdapter(raw_client, llm_settings, sink=sink)

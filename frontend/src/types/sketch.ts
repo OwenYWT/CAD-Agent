@@ -1,4 +1,4 @@
-export type SketchDimensionType = "DistanceX" | "DistanceY" | "Distance" | "Radius" | "Diameter";
+export type SketchDimensionType = "DistanceX" | "DistanceY" | "Distance" | "Radius" | "Diameter" | "Angle";
 export type SketchPoint = [number,number,number];
 export interface SketchConstraint {
   index: number; type: string; name: string; value: number; driving?: boolean;
@@ -12,4 +12,4 @@ export interface SketchDetails {
   geometry: SketchGeometry[]; constraints: SketchConstraint[];
   omitted_geometry: number; omitted_constraints: number;
 }
-export interface SketchDimensionEdit { constraint_index: number; expected_type: SketchDimensionType; value_mm: number }
+export interface SketchDimensionEdit { constraint_index: number; expected_type: SketchDimensionType; value_mm?: number; value_deg?: number }

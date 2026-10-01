@@ -1,0 +1,30 @@
+CAD_CHAMFER_SCOPE={"body_tip": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [8.0, 8.0], "straight_hole_depth_mm": 10.0}, "step": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [8.0, 8.0], "straight_hole_depth_mm": 10.0}}
+Importing project files......
+						(4 %)
+						(8 %)
+						(13 %)
+						(17 %)
+						(21 %)
+						(26 %)
+						(30 %)
+						(34 %)
+						(39 %)
+						(43 %)
+						(47 %)
+						(52 %)
+						(56 %)
+						(60 %)
+						(65 %)
+						(69 %)
+						(73 %)
+						(78 %)
+						(82 %)
+						(86 %)
+						(91 %)
+						(95 %)
+						(100 %)
+
+Postprocessing......
+						(100 %)
+
+Looking for thread definitions in: /opt/freecad/usr/share/Mod/PartDesign/Resources/Hole /tmp/.local/share/FreeCAD/v1-1/PartDesign/Hole

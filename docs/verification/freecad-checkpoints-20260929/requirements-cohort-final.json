@@ -1,0 +1,128 @@
+{
+  "scope": "requirements-only; not modeling success",
+  "results": [
+    {
+      "case_id": "M01",
+      "status": "validated_contract",
+      "error_type": null,
+      "error_message": null,
+      "calls": 1,
+      "tokens": 15016,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": []
+    },
+    {
+      "case_id": "P01",
+      "status": "failed",
+      "error_type": "ValueError",
+      "error_message": "planner model did not return a valid CAD plan: [{\"field\": \"design_brief.acceptance.checks.3\", \"type\": \"value_error\", \"message\": \"Value error, an unconfirmed assumption cannot become a required check\"}]",
+      "calls": 2,
+      "tokens": 21653,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": []
+    },
+    {
+      "case_id": "P03",
+      "status": "validated_contract",
+      "error_type": null,
+      "error_message": null,
+      "calls": 1,
+      "tokens": 14422,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": [
+        "当前校验器不支持沉头锥孔直径与锥角测量"
+      ]
+    },
+    {
+      "case_id": "P08",
+      "status": "validated_contract",
+      "error_type": null,
+      "error_message": null,
+      "calls": 2,
+      "tokens": 24668,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": []
+    },
+    {
+      "case_id": "P17",
+      "status": "validated_contract",
+      "error_type": null,
+      "error_message": null,
+      "calls": 1,
+      "tokens": 16762,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": []
+    },
+    {
+      "case_id": "P18",
+      "status": "validated_contract",
+      "error_type": null,
+      "error_message": null,
+      "calls": 2,
+      "tokens": 24977,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": []
+    },
+    {
+      "case_id": "P32",
+      "status": "validated_contract",
+      "error_type": null,
+      "error_message": null,
+      "calls": 1,
+      "tokens": 21682,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": []
+    },
+    {
+      "case_id": "P35",
+      "status": "validated_contract",
+      "error_type": null,
+      "error_message": null,
+      "calls": 1,
+      "tokens": 15724,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": [
+        "当前检查器无法自动验证六边形蜂窝镂空阵列的具体孔形、孔数、单元尺寸、间距和在侧壁上的分布"
+      ]
+    },
+    {
+      "case_id": "X04",
+      "status": "validated_contract",
+      "error_type": null,
+      "error_message": null,
+      "calls": 1,
+      "tokens": 21060,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": [
+        "无法直接验证中心线弯曲半径 45mm",
+        "无法直接验证弯曲角度 90°",
+        "无法直接验证两端直管段长度 20mm"
+      ]
+    },
+    {
+      "case_id": "X05",
+      "status": "validated_contract",
+      "error_type": null,
+      "error_message": null,
+      "calls": 1,
+      "tokens": 18048,
+      "usage_complete": true,
+      "unresolved": [],
+      "verification_limits": [
+        "顶部圆口直径40mm对应的是方变圆空腔顶部的圆形开口，非完整圆柱孔，hole_diameter 检查可能依赖截面对开口直径的识别"
+      ]
+    }
+  ],
+  "calls": 13,
+  "total_tokens": 194012,
+  "valid_contracts": 9
+}

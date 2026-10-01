@@ -1,6 +1,9 @@
 """Temporal Worker process for durable MCAD workflows."""
 from __future__ import annotations
 
+from functools import partial
+from app.workflows.handlers import planning, decomposition, source_generation, native_generation, visual_validation
+from app.workflows.handlers import cad_execution, geometry_validation, dfm_validation, bom
 import asyncio
 
 from temporalio.client import Client
@@ -25,8 +28,7 @@ from app.services.workflow_dispatch import run_dispatcher, dispatcher_readiness
 from app.services.model_jobs import submit_activity, read_activity, cancel_activity
 from app.workers.model_job_worker import ModelJobWorker
 from app.workflows.model_job import ModelJobWorkflow
-from app.workflows.model_job_policy import MODEL_OPERATIONS
-from temporalio import activity
+from app.contracts.model_operations import DURABLE_OPERATIONS
 
 
 def build_workflow_worker(
@@ -63,9 +65,23 @@ def build_agent_v2_workflow_worker(
         durable_visual=durable_visual,
         freecad_operations=freecad_operations,
     )
-    operations = {activity._Definition.must_from_callable(fn).name:fn
-                  for fn in activities.registered_agent_v2()
-                  if activity._Definition.must_from_callable(fn).name in MODEL_OPERATIONS}
+    operations = {
+        'agent_v2.requirements': partial(planning.agent_requirements, durable_planner=activities.durable_planner),
+        'agent_v2.decompose': partial(decomposition.decompose, planner=activities.durable_planner),
+        'agent_v2.generate_source': partial(source_generation.agent_generate_source, durable_modeling=activities.durable_modeling),
+        'agent_v2.repair_source': partial(source_generation.agent_repair_source, durable_repair=activities.durable_repair),
+        'agent_v2.generate_operations': partial(native_generation.agent_generate_operations, freecad_operations=activities.freecad_operations),
+        'agent_v2.repair_operations': partial(native_generation.agent_repair_operations, freecad_operations=activities.freecad_operations),
+        'agent_v2.judge_visual': partial(visual_validation.agent_judge_visual, durable_visual=activities.durable_visual),
+        'agent_v2.repair_visual': partial(visual_validation.agent_repair_visual, durable_visual=activities.durable_visual),
+        'agent_v2.execute_freecad': partial(cad_execution.agent_execute_freecad, backend=activities.backend),
+        'agent_v2.validate_geometry': partial(geometry_validation.agent_validate_geometry, backend=activities.backend),
+        'agent_v2.render_visual': partial(visual_validation.agent_render_visual, backend=activities.backend),
+        'agent_v2.validate_dfm': partial(dfm_validation.agent_validate_dfm, backend=activities.backend),
+        'agent_v2.generate_bom': partial(bom.agent_generate_bom, backend=activities.backend),
+    }
+    if operations.keys() != DURABLE_OPERATIONS:
+        raise RuntimeError('Model operation registration differs from the durable contract')
     return ModelJobWorker(
         client,
         model_operations=operations,

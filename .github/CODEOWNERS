@@ -1,0 +1,8 @@
+# Effective only with required code-owner review in branch protection.
+/.github/ @OwenYWT
+/scripts/architecture/ @OwenYWT
+/scripts/ci/ @OwenYWT
+/scripts/release/ @OwenYWT
+/docs/architecture/ @OwenYWT
+/.agents/skills/cad-agent-review/ @OwenYWT
+/backend/tests/fixtures/released-histories/ @OwenYWT

@@ -125,12 +125,6 @@ async def create_workflow(
             )
         return WorkflowCreated(workflow_id=existing["id"], replayed=True)
 
-    from app.services.cloud_documents import enqueue_operation
-    await enqueue_operation(
-        connection, workflow_id=inserted_id, tenant_id=tenant_id,
-        principal_id=requested_by_principal_id, payload=request_payload,
-        idempotency_key=idempotency_key, request_hash=payload_hash,
-    )
     await append_workflow_event(
         connection,
         tenant_id=tenant_id,
@@ -138,11 +132,6 @@ async def create_workflow(
         event_type="workflow.created",
         payload={"kind": kind, "status": WorkflowStatus.PENDING.value},
     )
-    rebase = request_payload.get("operation_context") or {}
-    if rebase.get("rebased_from_revision_id"):
-        await append_workflow_event(connection, tenant_id=tenant_id, workflow_id=workflow_id,
-            event_type="document.operation_rebased", payload={k:rebase[k] for k in (
-                "rebased_from_revision_id","rebased_from_state_version","rebase_evidence_hash","base_revision_id")})
     return WorkflowCreated(workflow_id=inserted_id)
 
 
@@ -254,7 +243,7 @@ async def create_step(
     tenant_id: UUID,
     workflow_id: UUID,
     step_key: str,
-    step_index: int,
+    step_index: int | None,
     kind: str,
 ) -> StepCreated:
     # Serialize step-key allocation and its event sequence on the parent run.
@@ -287,12 +276,16 @@ async def create_step(
         )
     ).mappings().one_or_none()
     if existing:
-        if existing["step_index"] != step_index or existing["kind"] != kind:
+        if (step_index is not None and existing["step_index"] != step_index) or existing["kind"] != kind:
             raise IdempotencyConflict(
                 "step key was reused with a different index or kind"
             )
         return StepCreated(step_id=existing["id"], replayed=True)
 
+    if step_index is None:
+        step_index = await connection.scalar(text(
+            "SELECT COALESCE(MAX(step_index), -1)+1 FROM step_runs WHERE workflow_run_id=:id"
+        ), {"id": workflow_id})
     step_id = uuid4()
     await connection.execute(
         text(

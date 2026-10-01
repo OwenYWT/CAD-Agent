@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AuthUser } from "../../auth";
-import { deleteHistoryProject, listHistoryProjects, restoreHistoryProject } from "../../services/engineeringService";
+import { deleteHistoryProject } from "../../services/clients/documents";
+import { listHistoryProjects, restoreHistoryProject } from "../../services/clients/history";
 import { useSessionStore } from "../../stores/sessionStore";
 import type { AssemblyPartInfo } from "../../types";
 import type { HistoryProject } from "../../types/engineering";

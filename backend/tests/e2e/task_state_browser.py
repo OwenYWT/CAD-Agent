@@ -182,16 +182,21 @@ def geometry_intake(page, client):
 
 
 def candidate(page, client):
-    container = os.environ['CAD_NATIVE_E2E_API']
-    assert container.startswith('cad-coedit-') and container.endswith('-api')
+    faults = os.environ.get('CAD_BROWSER_FAULT_CONTRACTS') == '1'
     session, panel_id = str(uuid4()), str(uuid4())
     title = '五状态原生验收 ' + session[:8]
-    seed = subprocess.run([os.getenv('CAD_NATIVE_E2E_PODMAN','/opt/homebrew/bin/podman'),'exec','-i',container,'python','-',
-        PRIVATE['owner']['user']['id'],session,panel_id,title],input=SEED,text=True,capture_output=True,timeout=240)
+    from runtime_fixture import run_native_seed
+    seed = run_native_seed(SEED, [PRIVATE['owner']['user']['id'],session,panel_id,title])
     (OUT/'seed.log').write_text(seed.stdout + seed.stderr)
     assert seed.returncode == 0, 'real kernel seed failed; inspect seed.log'
     fixture = json.loads(next(line.split('=',1)[1] for line in seed.stdout.splitlines() if line.startswith('FIRST_CANDIDATE=')))
     fixture.update({'session_id':session,'panel_id':panel_id,'title':title})
+    other = None
+    if faults:
+        other_title = '隔离面板 ' + uuid4().hex[:8]
+        seeded = run_native_seed(SEED,[PRIVATE['owner']['user']['id'],str(uuid4()),str(uuid4()),other_title])
+        assert seeded.returncode == 0, seeded.stderr
+        other = json.loads(next(line.split('=',1)[1] for line in seeded.stdout.splitlines() if line.startswith('FIRST_CANDIDATE=')))
     (OUT/'fixture.json').write_text(json.dumps(fixture,indent=2))
     page.reload()
     page.get_by_role('button',name=title,exact=False).first.click()
@@ -227,10 +232,44 @@ def candidate(page, client):
     expect(selected).to_have_attribute('aria-selected','true')
     assert page.evaluate('window.__taskStateCanvas === document.querySelector("[data-testid=document-scene] canvas")')
     save(page,'05-saved-with-my-draft')
-    with page.expect_response(lambda r:r.url.endswith('/operations') and r.request.method=='POST') as response:
+    if faults:
+        page.get_by_role('button',name=other_title,exact=False).first.click()
+        leave = page.get_by_role('dialog',name='保留编辑草稿',exact=True)
+        leave.get_by_role('button',name='继续编辑',exact=True).click()
+        expect(field).to_have_value('6.5')
+        expect(scene).to_have_attribute('data-revision',saved['head_revision_id'])
+        attempts, receipts = [], []
+        def lost_acceptance(route):
+            if route.request.method != 'POST':
+                route.continue_(); return
+            attempts.append(route.request.post_data_json)
+            actual = route.fetch()
+            assert actual.status == 202, actual.text()
+            receipts.append(actual.json())
+            if len(attempts) == 1:
+                # Server really accepted this operation. Only delivery is lost.
+                route.abort('connectionreset')
+            else:
+                route.fulfill(response=actual)
+        page.route('**/api/documents/*/operations',lost_acceptance)
         tree.get_by_role('button',name='提交参数变更',exact=True).click()
-    assert response.value.status==202,response.value.text()
-    workflow=response.value.json()['workflow_run_id']
+        retry = tree.get_by_role('button',name='核对并重试同一请求',exact=True)
+        expect(retry).to_be_visible()
+        expect(field).to_have_value('6.5')
+        retry.click()
+        expect(tree.get_by_role('button',name='已提交候选计算',exact=True)).to_be_visible()
+        assert len(attempts) == len(receipts) == 2
+        assert attempts[0] == attempts[1], 'retry changed accepted payload or identity'
+        assert receipts[0]['workflow_run_id'] == receipts[1]['workflow_run_id']
+        workflow = receipts[1]['workflow_run_id']
+        page.unroute('**/api/documents/*/operations',lost_acceptance)
+    else:
+        workflow = None
+    if not faults:
+        with page.expect_response(lambda r:r.url.endswith('/operations') and r.request.method=='POST') as response:
+            tree.get_by_role('button',name='提交参数变更',exact=True).click()
+        assert response.value.status==202,response.value.text()
+        workflow=response.value.json()['workflow_run_id']
     result=terminal(client,page,workflow)
     if result['status']=='waiting_confirmation':
         save(page,'manual-plan-confirmation')
@@ -252,6 +291,10 @@ def candidate(page, client):
     expect(tree.get_by_text('已保存 · v2，可继续编辑',exact=True)).to_be_visible()
     assert page.evaluate('window.__taskStateCanvas === document.querySelector("[data-testid=document-scene] canvas")')
     final=read(client,'/api/documents/'+fixture['document_id'])
+    if faults:
+        other_current=read(client,'/api/documents/'+other['document_id'])
+        assert other_current['head_revision_id'] == other['base_revision_id']
+        assert other_current['state_version'] == 0
     params=lambda doc:{p['id']:p['value'] for f in doc['features'] for p in f['parameters']}
     assert params(final)=={**params(saved),'Hole.Diameter':6.5}
     assert final['state_version']==2
@@ -266,6 +309,7 @@ def candidate(page, client):
     expect(scene).to_have_attribute('data-revision',final['head_revision_id'],timeout=90000)
     save(page,'05-saved-final')
     return {'fixture':fixture,'manual_workflow_id':workflow,'original_diameter_mm':6,'final_diameter_mm':6.5,
+        'unknown_acceptance_same_request':faults,'panel_scope_and_draft_guard':faults,
         'unchanged_other_parameters':True,'draft_and_selection_survive_collapse':True,'canvas_not_remounted':True,
         'final_generation':final['state_version'],'artifact_sha256':hashes}
 

@@ -4,6 +4,7 @@
 ARG VERIFIED_SANDBOX_IMAGE
 FROM ${VERIFIED_SANDBOX_IMAGE}
 COPY backend/sandbox/freecad_entry.py /opt/cad-agent/freecad_entry.py
+COPY backend/sandbox/freecad_edge_scope.py /opt/cad-agent/freecad_edge_scope.py
 COPY backend/sandbox/capability_entry.py /opt/cad-agent/capability_entry.py
 COPY backend/sandbox/freecad_result_channel.py /opt/cad-agent/freecad_result_channel.py
 COPY backend/app/freecad/sketch_diagnostics.py /opt/cad-agent/freecad_sketch_diagnostics.py

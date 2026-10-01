@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "workflows": [
+    "e263f8aa-2979-4e05-b84e-6d46d48ebae9",
+    "7a03d065-d856-4747-95ab-a9397a50e538",
+    "99bb610c-2fd6-48b4-891a-17a6e3441534"
+  ],
+  "saved_head_unchanged": true,
+  "cancelled_input_preserved": true,
+  "rejected_input_preserved": true,
+  "mobile_candidate_action": true,
+  "rejection_refresh_orders": [
+    "refresh-before-draft",
+    "draft-before-refresh"
+  ],
+  "no_extra_draft_prompt": true,
+  "same_revision_no_guard": true,
+  "real_history_navigation_guarded": true,
+  "page_errors": []
+}

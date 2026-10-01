@@ -31,3 +31,18 @@ def test_unsealed_and_corrupt_checks_cannot_claim_saved_model_validation():
     assert project_evidence(row,None)['revision_id'] is None
     row['evidence']['expected_dimensions_mm']['length']=99
     with pytest.raises(ValueError,match='完整性'):project_evidence(row,None)
+
+
+def test_measurements_and_their_criteria_survive_public_projection():
+    row=evidence()
+    row['evidence'].update(acceptance={'contract_sha256':'a'*64,'evidence':[
+        {'check_id':'depth','outcome':'failed','method':'final_step_brep','measured':[8],
+         'issues':[],'details':{'quantity':'shaft_length'}}]},
+        acceptance_contract={'objective':'hole depth 10 mm','checks':[{
+            'check_id':'depth','kind':'hole_depth','nominal':10,'source_quote':'depth 10 mm'}]},
+        request_sha256='b'*64)
+    row['evidence_hash']=canonical_sha256(row['evidence'])
+    public=project_evidence(row,None)['report']
+    for key in ['acceptance','acceptance_contract','request_sha256']:
+        assert public[key]==row['evidence'][key]
+    assert 'runtime_provenance' not in public

@@ -1,0 +1,10 @@
+.                                                                        [100%]
+=============================== warnings summary ===============================
+../../usr/local/lib/python3.11/site-packages/pydantic/_internal/_fields.py:160
+  /usr/local/lib/python3.11/site-packages/pydantic/_internal/_fields.py:160: UserWarning: Field "model_kind" has conflict with protected namespace "model_".
+  
+  You may be able to resolve this warning by setting `model_config['protected_namespaces'] = ()`.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1 passed, 33 deselected, 1 warning in 53.24s

@@ -1,0 +1,71 @@
+[
+  {
+    "workflow_type": "McadAgentWorkflowV2",
+    "workflow_id": "mcad-agent-v2-workflow-98436443-721e-457b-9b0e-01576d83a6bb",
+    "run_id": "01a0f2a9-63e7-753f-9bd7-ac983aeefca2",
+    "events": 131,
+    "patches": [
+      "agent-v2-backend-policy-v1",
+      "agent-v2-cad-jobs-v1",
+      "agent-v2-engineering-acceptance-v1",
+      "agent-v2-final-solid-acceptance-v1",
+      "agent-v2-freecad-checkpoints-v1",
+      "agent-v2-model-jobs-v1",
+      "agent-v2-native-bom-v1",
+      "agent-v2-provider-streaming-v1",
+      "agent-v2-validation-repair-v2"
+    ],
+    "replay": "passed"
+  },
+  {
+    "workflow_type": "McadAgentWorkflowV2",
+    "workflow_id": "mcad-agent-v2-workflow-4ef7d141-ecb9-4fb8-b5a9-bcbb8119088d",
+    "run_id": "01a0f29a-f81a-77ff-8530-0dce8cb1d79d",
+    "events": 117,
+    "patches": [
+      "agent-v2-cad-jobs-v1",
+      "agent-v2-freecad-checkpoints-v1",
+      "agent-v2-model-jobs-v1",
+      "agent-v2-native-bom-v1",
+      "agent-v2-provider-streaming-v1"
+    ],
+    "replay": "passed"
+  },
+  {
+    "workflow_type": "McadAgentWorkflowV2",
+    "workflow_id": "mcad-agent-v2-workflow-3754acbd-e57f-4110-8f4b-4dfd4bb26808",
+    "run_id": "01a0f297-64a8-7324-9a08-21d1c78a3d7d",
+    "events": 106,
+    "patches": [
+      "agent-v2-cad-jobs-v1",
+      "agent-v2-freecad-checkpoints-v1",
+      "agent-v2-native-bom-v1",
+      "agent-v2-provider-streaming-v1"
+    ],
+    "replay": "passed"
+  },
+  {
+    "workflow_type": "McadDurableWorkflow",
+    "workflow_id": "mcad-workflow-a188d4b4-3856-4560-b302-95d3506d1f57",
+    "run_id": "01a0f29d-bd11-7ddb-a85a-b2fdb35dbc4a",
+    "events": 59,
+    "patches": [],
+    "replay": "passed"
+  },
+  {
+    "workflow_type": "McadCheckWorkflow",
+    "workflow_id": "mcad-check-workflow-b23ad3dc-1368-4838-8f9f-066c2f25964f",
+    "run_id": "01a0f296-2976-760d-99d5-b680f83e4f56",
+    "events": 11,
+    "patches": [],
+    "replay": "passed"
+  },
+  {
+    "workflow_type": "ModelJobWorkflow",
+    "workflow_id": "94863e04-2378-490e-bffe-0631b8311652:model:decompose",
+    "run_id": "01a0f2a9-ecb8-7666-a16b-2a77326dde98",
+    "events": 28,
+    "patches": [],
+    "replay": "passed"
+  }
+]

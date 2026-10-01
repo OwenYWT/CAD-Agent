@@ -1,0 +1,509 @@
+WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(9 %)
+						(18 %)
+						(27 %)
+						(36 %)
+						(45 %)
+						(54 %)
+						(63 %)
+						(72 %)
+						(81 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(9 %)
+						(18 %)
+						(27 %)
+						(36 %)
+						(45 %)
+						(54 %)
+						(63 %)
+						(72 %)
+						(81 %)
+						(90 %)
+						(100 %)
+
+[32;1m
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******[0m
+[32;1m
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******[0m
+[32;1m******        Transferring Shape, ShapeType = 0                      ******[0m
+[32;1m** WorkSession : Sending all data[0m
+[32;1m Step File Name : /sandbox/output/outer-4.step(653 ents)  Write  Done[0m
+Importing project files......
+						(12 %)
+						(25 %)
+						(37 %)
+						(50 %)
+						(62 %)
+						(75 %)
+						(87 %)
+						(100 %)
+
+Postprocessing......
+						(100 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(9 %)
+						(18 %)
+						(27 %)
+						(36 %)
+						(45 %)
+						(54 %)
+						(63 %)
+						(72 %)
+						(81 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(9 %)
+						(18 %)
+						(27 %)
+						(36 %)
+						(45 %)
+						(54 %)
+						(63 %)
+						(72 %)
+						(81 %)
+						(90 %)
+						(100 %)
+
+[32;1m
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******[0m
+[32;1m
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******[0m
+[32;1m******        Transferring Shape, ShapeType = 0                      ******[0m
+[32;1m** WorkSession : Sending all data[0m
+[32;1m Step File Name : /sandbox/output/outer-5.step(653 ents)  Write  Done[0m
+Importing project files......
+						(12 %)
+						(25 %)
+						(37 %)
+						(50 %)
+						(62 %)
+						(75 %)
+						(87 %)
+						(100 %)
+
+Postprocessing......
+						(100 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(9 %)
+						(18 %)
+						(27 %)
+						(36 %)
+						(45 %)
+						(54 %)
+						(63 %)
+						(72 %)
+						(81 %)
+						(90 %)
+						(100 %)
+
+[32;1m
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******[0m
+[32;1m
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******[0m
+[32;1m******        Transferring Shape, ShapeType = 0                      ******[0m
+[32;1m** WorkSession : Sending all data[0m
+[32;1m Step File Name : /sandbox/output/hole_mouths-4.step(259 ents)  Write  Done[0m
+Importing project files......
+						(12 %)
+						(25 %)
+						(37 %)
+						(50 %)
+						(62 %)
+						(75 %)
+						(87 %)
+						(100 %)
+
+Postprocessing......
+						(100 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(9 %)
+						(18 %)
+						(27 %)
+						(36 %)
+						(45 %)
+						(54 %)
+						(63 %)
+						(72 %)
+						(81 %)
+						(90 %)
+						(100 %)
+
+[32;1m
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******[0m
+[32;1m
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******[0m
+[32;1m******        Transferring Shape, ShapeType = 0                      ******[0m
+[32;1m** WorkSession : Sending all data[0m
+[32;1m Step File Name : /sandbox/output/hole_mouths-5.step(259 ents)  Write  Done[0m
+<PartDesign> FeatureDressUp.cpp(206): ScopeContract#EdgeTreatment: skip edge Edge15 that is not C0 continuous
+Importing project files......
+						(12 %)
+						(25 %)
+						(37 %)
+						(50 %)
+						(62 %)
+						(75 %)
+						(87 %)
+						(100 %)
+
+Postprocessing......
+						(100 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(9 %)
+						(18 %)
+						(27 %)
+						(36 %)
+						(45 %)
+						(54 %)
+						(63 %)
+						(72 %)
+						(81 %)
+						(90 %)
+						(100 %)
+
+[32;1m
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******[0m
+[32;1m
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******[0m
+[32;1m******        Transferring Shape, ShapeType = 0                      ******[0m
+[32;1m** WorkSession : Sending all data[0m
+[32;1m Step File Name : /sandbox/output/all-4.step(703 ents)  Write  Done[0m
+<PartDesign> FeatureDressUp.cpp(206): ScopeContract#EdgeTreatment: skip edge Edge15 that is not C0 continuous
+Importing project files......
+						(12 %)
+						(25 %)
+						(37 %)
+						(50 %)
+						(62 %)
+						(75 %)
+						(87 %)
+						(100 %)
+
+Postprocessing......
+						(100 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(9 %)
+						(18 %)
+						(27 %)
+						(36 %)
+						(45 %)
+						(54 %)
+						(63 %)
+						(72 %)
+						(81 %)
+						(90 %)
+						(100 %)
+
+[32;1m
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******[0m
+[32;1m
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******[0m
+[32;1m******        Transferring Shape, ShapeType = 0                      ******[0m
+[32;1m** WorkSession : Sending all data[0m
+[32;1m Step File Name : /sandbox/output/all-5.step(703 ents)  Write  Done[0m
+Importing project files......
+						(12 %)
+						(25 %)
+						(37 %)
+						(50 %)
+						(62 %)
+						(75 %)
+						(87 %)
+						(100 %)
+
+Postprocessing......
+						(100 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(9 %)
+						(18 %)
+						(27 %)
+						(36 %)
+						(45 %)
+						(54 %)
+						(63 %)
+						(72 %)
+						(81 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(9 %)
+						(18 %)
+						(27 %)
+						(36 %)
+						(45 %)
+						(54 %)
+						(63 %)
+						(72 %)
+						(81 %)
+						(90 %)
+						(100 %)
+
+[32;1m
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******[0m
+[32;1m
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******[0m
+[32;1m******        Transferring Shape, ShapeType = 0                      ******[0m
+[32;1m** WorkSession : Sending all data[0m
+[32;1m Step File Name : /sandbox/output/outer-4.step(653 ents)  Write  Done[0m
+Importing project files......
+						(12 %)
+						(25 %)
+						(37 %)
+						(50 %)
+						(62 %)
+						(75 %)
+						(87 %)
+						(100 %)
+
+Postprocessing......
+						(100 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(9 %)
+						(18 %)
+						(27 %)
+						(36 %)
+						(45 %)
+						(54 %)
+						(63 %)
+						(72 %)
+						(81 %)
+						(90 %)
+						(100 %)
+
+[32;1m
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******[0m
+[32;1m
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******[0m
+[32;1m******        Transferring Shape, ShapeType = 0                      ******[0m
+[32;1m** WorkSession : Sending all data[0m
+[32;1m Step File Name : /sandbox/output/hole_mouths-4.step(259 ents)  Write  Done[0m
+<PartDesign> FeatureDressUp.cpp(206): ScopeContract#EdgeTreatment: skip edge Edge15 that is not C0 continuous
+Importing project files......
+						(12 %)
+						(25 %)
+						(37 %)
+						(50 %)
+						(62 %)
+						(75 %)
+						(87 %)
+						(100 %)
+
+Postprocessing......
+						(100 %)
+
+Recompute......
+						(10 %)
+						(20 %)
+						(30 %)
+						(40 %)
+						(50 %)
+						(60 %)
+						(70 %)
+						(80 %)
+						(90 %)
+						(100 %)
+
+Recompute......
+						(9 %)
+						(18 %)
+						(27 %)
+						(36 %)
+						(45 %)
+						(54 %)
+						(63 %)
+						(72 %)
+						(81 %)
+						(90 %)
+						(100 %)
+
+[32;1m
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******[0m
+[32;1m
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******[0m
+[32;1m******        Transferring Shape, ShapeType = 0                      ******[0m
+[32;1m** WorkSession : Sending all data[0m
+[32;1m Step File Name : /sandbox/output/all-4.step(703 ents)  Write  Done[0m
+CAD_CHAMFER_SCOPE=[{"scope": "outer", "radius": 4, "target_body": false, "measurements": {"body_tip": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [8.0, 8.0], "straight_hole_depth_mm": 10.0}, "step": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [8.0, 8.0], "straight_hole_depth_mm": 10.0}}}, {"scope": "outer", "radius": 5.5, "target_body": false, "measurements": {"body_tip": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [11.0, 11.0], "straight_hole_depth_mm": 14.0}, "step": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [11.0, 11.0], "straight_hole_depth_mm": 14.0}}}, {"scope": "hole_mouths", "radius": 4, "target_body": false, "measurements": {"body_tip": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [10.0, 10.0], "straight_hole_depth_mm": 8.0}, "step": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [10.0, 10.0], "straight_hole_depth_mm": 8.0}}}, {"scope": "hole_mouths", "radius": 5.5, "target_body": false, "measurements": {"body_tip": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [13.0, 13.0], "straight_hole_depth_mm": 12.0}, "step": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [13.0, 13.0], "straight_hole_depth_mm": 12.0}}}, {"scope": "all", "radius": 4, "target_body": false, "measurements": {"body_tip": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [10.0, 10.0], "straight_hole_depth_mm": 8.0}, "step": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [10.0, 10.0], "straight_hole_depth_mm": 8.0}}}, {"scope": "all", "radius": 5.5, "target_body": false, "measurements": {"body_tip": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [13.0, 13.0], "straight_hole_depth_mm": 12.0}, "step": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [13.0, 13.0], "straight_hole_depth_mm": 12.0}}}, {"scope": "outer", "radius": 4, "target_body": true, "measurements": {"body_tip": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [8.0, 8.0], "straight_hole_depth_mm": 10.0}, "step": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [8.0, 8.0], "straight_hole_depth_mm": 10.0}}}, {"scope": "hole_mouths", "radius": 4, "target_body": true, "measurements": {"body_tip": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [10.0, 10.0], "straight_hole_depth_mm": 8.0}, "step": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [10.0, 10.0], "straight_hole_depth_mm": 8.0}}}, {"scope": "all", "radius": 4, "target_body": true, "measurements": {"body_tip": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [10.0, 10.0], "straight_hole_depth_mm": 8.0}, "step": {"symmetric_difference_mm3": 0.0, "mouth_diameters_mm": [10.0, 10.0], "straight_hole_depth_mm": 8.0}}}, {"body_fillet_tip_reference": true, "non_default_body": true, "ambiguous_body_selector_rejected": true, "empty_body_rejected": true}, {"rotated_multi_bore": true, "unsupported_shapes_rejected": 3}]
+Importing project files......
+						(12 %)
+						(25 %)
+						(37 %)
+						(50 %)
+						(62 %)
+						(75 %)
+						(87 %)
+						(100 %)
+
+Postprocessing......
+						(100 %)
+
+Recompute......
+						(5 %)
+						(10 %)
+						(15 %)
+						(21 %)
+						(26 %)
+						(31 %)
+						(36 %)
+						(42 %)
+						(47 %)
+						(52 %)
+						(57 %)
+						(63 %)
+						(68 %)
+						(73 %)
+						(78 %)
+						(84 %)
+						(89 %)
+						(94 %)
+						(100 %)
+
+Recompute......
+						(5 %)
+						(10 %)
+						(15 %)
+						(20 %)
+						(25 %)
+						(30 %)
+						(35 %)
+						(40 %)
+						(45 %)
+						(50 %)
+						(55 %)
+						(60 %)
+						(65 %)
+						(70 %)
+						(75 %)
+						(80 %)
+						(85 %)
+						(90 %)
+						(95 %)
+						(100 %)

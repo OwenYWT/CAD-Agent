@@ -1,4 +1,6 @@
 """Real loopback HTTP tests of SDK wait/cancellation, not CAD/provider validation."""
+
+from app.services import llm_usage
 import asyncio
 import json
 import os
@@ -19,7 +21,7 @@ async def test_all_provider_clients_ignore_legacy_wait_limit(monkeypatch, provid
         dashscope_api_key="test-only", azure_openai_api_key="test-only",
         azure_openai_endpoint="https://example.invalid",
     )
-    client = create_llm_client(settings)
+    client = create_llm_client(settings, sink=llm_usage)
     try:
         assert client.timeout is None
         assert client.raw_client._client.timeout.as_dict() == {
@@ -72,7 +74,7 @@ async def test_real_http_wait_survives_caller_timeout_override(stream):
     server = await asyncio.start_server(handle, "127.0.0.1", 0)
     port = server.sockets[0].getsockname()[1]
     client = create_llm_client(Settings(_env_file=None, moonshot_api_key="test-only",
-                                       llm_base_url=f"http://127.0.0.1:{port}/v1", llm_max_retries=0))
+                                       llm_base_url=f"http://127.0.0.1:{port}/v1", llm_max_retries=0), sink=llm_usage)
     started = time.monotonic()
     try:
         result = await asyncio.wait_for(client.chat.completions.create(
@@ -115,7 +117,7 @@ async def test_wait_without_deadline_is_cancellable_and_closes_connection(stream
     server = await asyncio.start_server(handle, "127.0.0.1", 0)
     port = server.sockets[0].getsockname()[1]
     client = create_llm_client(Settings(_env_file=None, moonshot_api_key="test-only",
-                                       llm_base_url=f"http://127.0.0.1:{port}/v1", llm_max_retries=1))
+                                       llm_base_url=f"http://127.0.0.1:{port}/v1", llm_max_retries=1), sink=llm_usage)
     task = asyncio.create_task(client.chat.completions.create(model="transport-test", messages=[], stream=stream))
     try:
         await asyncio.wait_for(received.wait(), 5)

@@ -12,15 +12,15 @@ from app.domain.projects import Permission
 from app.execution.canonical import canonical_sha256
 from app.repositories.revisions import create_initial_branch
 from app.services.cloud_documents import DocumentConflict, authorized_document, checkpoint
-from app.services.run_state import create_workflow, IdempotencyConflict
+from app.services.run_state import IdempotencyConflict
+from app.services.workflow_admission import create_document_workflow
 from app.services.workflow_dispatch import persist_dispatch
 from app.services.document_diff import common_ancestor, semantic_changes, parameter_merge_proposal
 from app.services.document_rebase import ParameterRebaseConflict
 from app.services.feature_annotations import annotation_context, annotate_projection
 from app.freecad.state_contract import read_verified_state_artifact, compile_parameter_operation_plan
-from app.workflows.temporal import (FreeCADRevisionRestoreV1, FreeCADStructuredModificationV1,
-    McadAgentWorkflowV2Request, OperationContextV1, mcad_agent_v2_request_payload,
-    temporal_agent_v2_workflow_id, _dispatch_after_commit)
+from app.models.workflow_requests import (FreeCADRevisionRestoreV1, McadAgentWorkflowV2Request, OperationContextV1)
+from app.workflows.temporal import (FreeCADStructuredModificationV1, mcad_agent_v2_request_payload, temporal_agent_v2_workflow_id, _dispatch_after_commit)
 
 
 async def _lineage(conn, document_id):
@@ -48,7 +48,7 @@ async def _queue(conn, context, doc, *, key, objective, rule, source, restore=No
         operation='modify',objective=objective,existing_code=None,manufacturing_profile=None,output_formats=('step','stl'),
         confirmation_timeout_seconds=3600,modeling_backend='freecad',operation_context=operation_context,
         structured_modification=modification,revision_restore=restore,expected_state_version=doc['state_version'])
-    created = await create_workflow(conn,tenant_id=context.tenant_id,project_id=doc['project_id'],
+    created = await create_document_workflow(conn,tenant_id=context.tenant_id,project_id=doc['project_id'],
         requested_by_principal_id=context.principal_id,kind='mcad.agent.v2.modify',idempotency_key=key,request_payload=payload)
     request = McadAgentWorkflowV2Request(workflow_run_id=created.workflow_id,tenant_id=context.tenant_id,
         project_id=doc['project_id'],principal_id=context.principal_id,branch_id=doc['id'],

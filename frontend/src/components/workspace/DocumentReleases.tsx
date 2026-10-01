@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import type { CloudDocument } from '../../types/document';
 import type { EngineeringTaskSummary } from '../../types/engineeringTask';
 import type { DocumentRelease, ReleaseBOM, ReleaseResult } from '../../types/release';
-import { cancelEngineeringTask, downloadReleaseArtifact, listDocumentReleases, listEngineeringTasks, readDocumentRelease, readReleaseBOM, submitDocumentRelease } from '../../services/engineeringService';
+import { cancelEngineeringTask } from "../../services/clients/tasks";
+import { downloadReleaseArtifact, listDocumentReleases, readDocumentRelease, readReleaseBOM, submitDocumentRelease } from "../../services/clients/delivery";
+import { listEngineeringTasks } from "../../services/clients/engineering";
 
 const active=(status:string)=>['pending','planning','running','cancelling'].includes(status);
 const statuses:Record<string,string>={pending:'排队中',planning:'准备发布',running:'正在打包',succeeded:'已发布',failed:'发布失败',cancelled:'已取消',cancelling:'正在取消',timed_out:'发布超时'};

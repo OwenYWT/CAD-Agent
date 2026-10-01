@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { adaptValidation } from "../../adapters/projectAdapter";
-import { analyzeEngineeringResult } from "../../services/engineeringService";
+import { analyzeEngineeringResult } from "../../services/clients/checks";
 import type { ArtifactHistoryEntry, StepHistoryEntry } from "../../stores/sessionStore";
 import type { DesignAnalysis, GenerationResult, ModelSnapshotDetail, RunCreatedEvent } from "../../types";
 import type { ValidationResult } from "../../types/engineering";

@@ -32,7 +32,7 @@ test("reference workspace content is backed by real task and artifact evidence",
 test("natural-language edits and durable confirmation use server-owned contracts", () => {
   const agent = read("src/components/agent/AgentPanel.tsx");
   const socket = read("src/hooks/useWebSocket.ts");
-  const service = read("src/services/engineeringService.ts");
+  const service = read("src/services/clients/tasks.ts");
 
   assert.match(socket, /operation_intent: operationIntentForPanel\(panel\)/);
   assert.match(socket, /panel\?\.result\?\.success \? "modify" : "generate"/);

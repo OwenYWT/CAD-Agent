@@ -10,15 +10,27 @@ class ModelJobWorker(Worker):
         super().__init__(*args, **kwargs)
         self.model_operations = model_operations
 
-    async def __aexit__(self, exc_type, *args):
-        # The base context manager cancels run() after Temporal shutdown.
-        # Our run() still has provider leases/connections to release, so join
-        # that cleanup instead of cancelling it and leaking cancellation into
-        # the caller after the context has already returned.
+    async def __aenter__(self):
+        self._owner_task = asyncio.current_task()
+        self._owned_run = asyncio.create_task(self.run())
+        self._run_failure = None
+
+        def report_failure(task):
+            if not task.cancelled() and task.exception() is not None:
+                self._run_failure = task.exception()
+                self._owner_task.cancel()
+
+        self._failure_callback = report_failure
+        self._owned_run.add_done_callback(report_failure)
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        self._owned_run.remove_done_callback(self._failure_callback)
         await self.shutdown()
-        await self._async_context_run_task
-        if self._async_context_run_exception is not None:
-            raise self._async_context_run_exception
+        await self._owned_run
+        if self._run_failure is not None:
+            raise self._run_failure
+        return False
 
     async def run(self):
         runner = asyncio.create_task(run_model_jobs(self.model_operations))

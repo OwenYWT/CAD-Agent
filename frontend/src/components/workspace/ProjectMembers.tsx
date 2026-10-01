@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { changeDocumentMember, getDocumentMembers } from "../../services/engineeringService";
-import type { ProjectMember } from "../../services/engineeringService";
+import { changeDocumentMember, getDocumentMembers } from "../../services/clients/documents";
+import type { ProjectMember } from "../../services/clients/documents";
 
 export default function ProjectMembers({ documentId }: { documentId: string }) {
   const [members, setMembers] = useState<ProjectMember[] | null>(null);

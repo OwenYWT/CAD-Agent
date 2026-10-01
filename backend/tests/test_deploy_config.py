@@ -405,3 +405,11 @@ def test_requirements_has_openai_not_anthropic():
     """The LLM client is built on the openai SDK (Qwen compatible-mode)."""
     text = REQUIREMENTS.read_text().lower()
     assert "openai" in text
+
+
+def test_tencent_monitor_preserves_dedicated_reader_configuration():
+    root=REPO_ROOT/'deploy/tencent'
+    services=yaml.safe_load((root/'compose.yml').read_text())['services']
+    assert services['monitoring']['env_file']=='./monitor.env'
+    assert services['monitoring']['env_file']!=services['backend']['env_file']
+    assert 'monitor.env' in (root/'.gitignore').read_text().splitlines()

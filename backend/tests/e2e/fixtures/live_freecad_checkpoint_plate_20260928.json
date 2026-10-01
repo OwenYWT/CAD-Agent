@@ -1,0 +1,20 @@
+{
+  "schema_version": "cad-tool-live-fixture.v1",
+  "workflow_id": "4a8da46f-40be-4635-bf43-38dee32892bb",
+  "source": "real Kimi tool operations retained before isolated DB cleanup",
+  "model": "kimi-k2.7-code",
+  "captured_on": "2026-09-28",
+  "purpose": "fixed two-turn checkpoint protocol regression, not success-rate evaluation",
+  "sources": [
+    {
+      "sha256": "f561ab0dde56e474c837ec5bc3bb0eeaaa11df9951f1afc1f939f78d16087819",
+      "source_code": "{\"schema_version\":\"freecad-operation-plan.v1\",\"document_name\":\"Model\",\"execution_mode\":\"checkpoint\",\"operations\":[{\"op_id\":\"create-base-sketch\",\"action\":\"sketch.create\",\"args\":{\"name\":\"BaseSketch\",\"body\":\"Body\",\"plane\":\"xy\",\"offset_mm\":0.0,\"reversed\":false,\"frame\":{\"schema_version\":\"body-frame.v1\",\"origin\":{\"x\":0.0,\"y\":0.0,\"z\":0.0},\"normal\":[0.0,0.0,1.0],\"x_axis\":[1.0,0.0,0.0]}}},{\"op_id\":\"add-rectangle-profile\",\"action\":\"sketch.add_profile\",\"args\":{\"sketch\":\"BaseSketch\",\"geometry\":{\"kind\":\"rectangle\",\"corner\":{\"x\":-30.0,\"y\":-20.0},\"width_mm\":60.0,\"height_mm\":40.0,\"construction\":false}}},{\"op_id\":\"pad-plate\",\"action\":\"feature.pad\",\"args\":{\"name\":\"Pad\",\"profile\":\"BaseSketch\",\"length_mm\":8.0,\"reversed\":false}},{\"op_id\":\"export-checkpoint\",\"action\":\"document.export\",\"args\":{\"formats\":[\"fcstd\"],\"basename\":\"plate_stock\",\"objects\":[\"Body\"]}}]}",
+      "provider_response_id": "chatcmpl-6aba886984c0fd27ee71842f"
+    },
+    {
+      "sha256": "22b6aa8dc23af302491e36b7d04a05de94d5b3780abebb17b41d9a08a86485b7",
+      "source_code": "{\"schema_version\":\"freecad-operation-plan.v1\",\"document_name\":\"Model\",\"execution_mode\":\"final\",\"operations\":[{\"op_id\":\"create-hole-sketch-18019fe824f4a49866e925c2\",\"action\":\"sketch.create\",\"args\":{\"name\":\"HoleSketch\",\"body\":\"Body\",\"plane\":\"xy\",\"offset_mm\":0.0,\"reversed\":false,\"frame\":{\"schema_version\":\"body-frame.v1\",\"origin\":{\"x\":0.0,\"y\":0.0,\"z\":8.0},\"normal\":[0.0,0.0,1.0],\"x_axis\":[1.0,0.0,0.0]}}},{\"op_id\":\"add-hole-circle-c6a5685e99a3c6d4cb370d85\",\"action\":\"sketch.add_geometry\",\"args\":{\"sketch\":\"HoleSketch\",\"geometry\":{\"kind\":\"circle\",\"center\":{\"x\":0.0,\"y\":0.0},\"radius_mm\":3.0,\"construction\":false}}},{\"op_id\":\"constrain-hole-center-x-552c32f2e130006a2d7811cd\",\"action\":\"sketch.add_constraint\",\"args\":{\"sketch\":\"HoleSketch\",\"kind\":\"distance_x\",\"first\":{\"geometry_index\":0,\"point_position\":3},\"second\":null,\"value_mm\":0.0}},{\"op_id\":\"constrain-hole-center-y-2d3962c95c99a20eb362a246\",\"action\":\"sketch.add_constraint\",\"args\":{\"sketch\":\"HoleSketch\",\"kind\":\"distance_y\",\"first\":{\"geometry_index\":0,\"point_position\":3},\"second\":null,\"value_mm\":0.0}},{\"op_id\":\"constrain-hole-radius-7b82824a54a2f1c72d0d12b7\",\"action\":\"sketch.add_constraint\",\"args\":{\"sketch\":\"HoleSketch\",\"kind\":\"radius\",\"first\":{\"geometry_index\":0,\"point_position\":null},\"second\":null,\"value_mm\":3.0}},{\"op_id\":\"create-hole-78b6ce6d1bc0fa8d852f415a\",\"action\":\"feature.hole\",\"args\":{\"name\":\"Hole\",\"profile\":\"HoleSketch\",\"diameter_mm\":6.0,\"depth_mm\":null,\"through_all\":true,\"reversed\":false}},{\"op_id\":\"export-final-f46fabec3e7b160f10c2bdb9\",\"action\":\"document.export\",\"args\":{\"formats\":[\"fcstd\",\"step\",\"stl\"],\"basename\":\"plate_60x40x8_hole6\",\"objects\":[\"Body\"]}}]}",
+      "provider_response_id": "chatcmpl-6aba887b84c0fd27ee718433"
+    }
+  ]
+}

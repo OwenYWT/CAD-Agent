@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "real_password_login": true,
+  "real_temporal_freecad_s3_commit": true,
+  "llm_provider_used": false,
+  "workflow_id": "2c85c125-2f17-48f8-b83f-12ba351ec0ae",
+  "document_id": "6b9ce859-afca-4966-9527-c90ff6f10d65",
+  "revision_id": "bd42dcf9-5aea-4615-b474-575de54838ab",
+  "feature_count": 14,
+  "artifacts": {
+    "fcstd": {
+      "sha256": "ca18ee4828256122e3bf386edaef7356b719279b1510b043e5094a17d92a041b",
+      "size_bytes": 13977
+    },
+    "mesh": {
+      "sha256": "fd46bafa926dfd2eb029d24c8439dc3438ffa8ee0247f2d5cc59fe93847ac562",
+      "size_bytes": 235812
+    },
+    "state": {
+      "sha256": "9fefc933eae158890a0d3c6ee6c98e25414a82c3615092a5e235517f59920212",
+      "size_bytes": 27232
+    }
+  }
+}

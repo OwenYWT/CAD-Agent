@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "built_frontend": true,
+  "restored_revisions": [
+    "9bf442e6-fb3b-4fb7-aaed-7f9cb64e9d97",
+    "6eb96b1b-5b88-45cb-b239-d49722bd9538"
+  ],
+  "real_webgl": true,
+  "same_canvas_for_drawers": true,
+  "refresh_retains_revision": true,
+  "monitor_admin_only": true,
+  "monitor_actual_calls_present": true,
+  "page_errors": []
+}

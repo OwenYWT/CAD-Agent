@@ -18,7 +18,7 @@ from app.domain.identity import PrincipalContext
 from app.domain.projects import Permission
 from app.object_store import sha256_object
 from app.repositories.projects import principal_has_permission
-from app.workflows.temporal import OperationContextV1
+from app.models.workflow_requests import (OperationContextV1)
 
 
 BaseSourceKind = Literal[

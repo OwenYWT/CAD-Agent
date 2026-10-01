@@ -62,7 +62,7 @@ async def materialize_engineering_input(payload, directory):
     return tuple(declarations),materialized
 
 
-async def compute_engineering(activities, payload):
+async def compute_engineering(payload, *, execute):
     context = SimpleNamespace(tenant_id=UUID(payload['tenant_id']), principal_id=UUID(payload['principal_id']))
     workflow_id = UUID(payload['workflow_run_id'])
     try:
@@ -98,7 +98,7 @@ async def compute_engineering(activities, payload):
                 'source_code': json.dumps({'schema_version': 'mcad-capability-task.v1', 'capability': 'freecad',
                     'operation': 'engineering', 'params': params, 'inputs': native_inputs}, sort_keys=True),
                 'outputs': [{'name': name, 'media_type': media, 'max_size_bytes': 100 * 1024 * 1024} for name, media in outputs.items()]}}
-        result = await activities.execute(execution_payload)
+        result = await execute(execution_payload)
         report_row = next(a for a in result['artifacts'] if a['artifact_kind'] == 'engineering_report')
         raw = await get_object(report_row['object_key'])
         if len(raw) != report_row['size_bytes'] or hashlib.sha256(raw).hexdigest() != report_row['sha256']:

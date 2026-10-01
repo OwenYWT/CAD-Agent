@@ -6,16 +6,8 @@ import {
   durableChangeSetCanCommit,
 } from "../../adapters/changeSetAdapter";
 import type { DurableChangeSetAcceptanceBlockReason } from "../../adapters/changeSetAdapter";
-import {
-  acceptDurableChangeSet,
-  commitDurableChangeSet,
-  getDurableChangeSet,
-  getModelSnapshot,
-  listModelSnapshots,
-  rejectDurableChangeSet,
-  requestDurableChangeSetModification,
-  rollbackDurableChangeSet,
-} from "../../services/engineeringService";
+import { acceptDurableChangeSet, commitDurableChangeSet, getDurableChangeSet, rejectDurableChangeSet, requestDurableChangeSetModification, rollbackDurableChangeSet } from "../../services/clients/changes";
+import { getModelSnapshot, listModelSnapshots } from "../../services/clients/revisions";
 import type { ModelSnapshotDetail } from "../../types";
 import type {
   ChangeSet,
@@ -34,7 +26,7 @@ interface ChangeSetDialogProps {
   onAskAgent?: (prompt: string) => void;
   onDurableChangeSet?: (detail: DurableChangeSetDetail) => void;
   canCommit?: boolean;
-  onApplied?: () => void | Promise<void>;
+  onReviewed?: (status: "committed" | "rolled_back" | "rejected" | "changes_requested") => void | Promise<void>;
 }
 
 function statusLabel(status: ChangeSet["geometry"]["status"]) {
@@ -87,7 +79,7 @@ export default function ChangeSetDialog({
   onAskAgent,
   onDurableChangeSet,
   canCommit = true,
-  onApplied,
+  onReviewed,
 }: ChangeSetDialogProps) {
   const [changeSet, setChangeSet] = useState<ChangeSet | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
@@ -214,7 +206,7 @@ export default function ChangeSetDialog({
         }
         if (generation.current !== actionGeneration) return;
         await load();
-        if (generation.current === actionGeneration) await onApplied?.();
+        if (generation.current === actionGeneration) await onReviewed?.(changeSet.reviewStatus === "committed" ? "rolled_back" : "rejected");
         return;
       }
       const restored = await getModelSnapshot(changeSet.baseRevisionId);
@@ -252,7 +244,7 @@ export default function ChangeSetDialog({
       if (generation.current !== actionGeneration) return;
       await load();
       if (generation.current !== actionGeneration) return;
-      await onApplied?.();
+      await onReviewed?.("changes_requested");
       if (!onAskAgent) return;
     }
     const parameterSummary = changeSet.parameterChanges.length
@@ -334,7 +326,7 @@ export default function ChangeSetDialog({
       }
       if (generation.current !== actionGeneration) return;
       if (current.status !== "committed") throw new Error("此候选当前不能应用，请检查审查状态和版本基线。");
-      await onApplied?.();
+      await onReviewed?.("committed");
     } catch (reason) {
       if (generation.current !== actionGeneration) return;
       // A successful accept is never undone locally when commit or its response

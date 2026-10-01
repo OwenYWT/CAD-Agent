@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  downloadEngineeringArtifact,
-  getOnshapeConfig,
-  listOnshapeLinks,
-  publishToOnshape,
-  refreshOnshapeLink,
-} from "../../services/engineeringService";
+import { downloadEngineeringArtifact } from "../../services/clients/downloads";
+import { getOnshapeConfig, listOnshapeLinks, publishToOnshape, refreshOnshapeLink } from "../../services/clients/onshape";
 import type { AsyncStatus, ExportJob, OnshapeConfig, OnshapeLink } from "../../types/engineering";
 import { InlineState, WorkspaceDialog } from "../common/WorkspaceOverlay";
 import { Icon } from "../ui/Icon";
