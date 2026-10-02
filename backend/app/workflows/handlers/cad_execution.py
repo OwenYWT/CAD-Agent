@@ -33,6 +33,8 @@ from app.workflows.execution_support import _run_backend_with_heartbeats
 from app.workflows.execution_support import _mark_execution_failure
 from app.workflows.revision_inputs import _freecad_revision_artifact
 from app.workflows.checkpoint_inputs import checkpoint_manifest, checkpoint_artifact
+from app.workflows.constraint_evidence import persist_failure_snapshot, load_repair_contract, persist_repair_verification
+from app.contracts.constraint_patch import ConstraintRepairValidation
 
 async def agent_execute_model(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[str, Any]:
     info = execution_identity()
@@ -322,7 +324,8 @@ async def agent_execute_model(payload: dict[str, Any], *, backend: ExecutionBack
             shutil.rmtree(outcome.work_dir, ignore_errors=True)
 
 
-async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[str, Any]:
+async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBackend,
+                              constraint_validation: ConstraintRepairValidation) -> dict[str, Any]:
     info = execution_identity()
     request = _agent_v2_request(payload)
     plan = AgentPlan.model_validate(payload["plan"])
@@ -445,6 +448,10 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
             materialized[artifact_id] = base_path
             task_inputs["base"] = base_path.name
 
+        repair_contract = await load_repair_contract(request,
+            source_id=payload['source_id'], source_hash=source_hash)
+        if repair_contract:
+            constraint_validation.verify_contract(operation_plan, repair_contract, plan.design_brief.acceptance)
         task = {
             "schema_version": "mcad-capability-task.v1",
             "capability": "freecad",
@@ -457,6 +464,13 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
         }
         if request.revision_restore is not None:
             task["params"]["expected_revision_id"] = str(request.revision_restore.source_revision_id)
+        if repair_contract:
+            checkpoint_hash = declarations[0].sha256 if declarations else None
+            if checkpoint_hash != repair_contract.get('execution_checkpoint_hash', repair_contract['checkpoint_hash']):
+                raise ApplicationError('constraint repair checkpoint changed before execution',
+                    type='constraint_patch_rejected', non_retryable=True)
+            task['params'].update(constraint_repair=repair_contract,
+                repair_acceptance_hash=repair_contract['acceptance_hash'])
         export_formats = tuple(operation_plan.operations[-1].typed_args().formats)
         measurement_step = (operation_plan.execution_mode == 'final'
             and plan.design_brief.acceptance is not None and 'step' not in export_formats)
@@ -558,6 +572,9 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                 raise asyncio.CancelledError
             if outcome.result.status is not ExecutionStatus.SUCCEEDED:
                 error = outcome.result.error
+                error = await persist_failure_snapshot(request, payload, attempt_id, error,
+                    operation_plan, declarations[0].sha256 if declarations else None,
+                    validate_snapshot=constraint_validation.validate_snapshot)
                 code = error.code if error else "freecad_execution_failed"
                 message = error.message if error else "FreeCAD execution failed"
                 await _mark_execution_failure(
@@ -593,6 +610,18 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                     non_retryable=not retryable,
                 )
 
+            if repair_contract:
+                metadata_path = outcome.files.get('capability-result')
+                if metadata_path is None:
+                    raise ApplicationError('constraint repair validation evidence is missing',
+                        type='constraint_repair_verification_failed', non_retryable=True)
+                try:
+                    native_report = constraint_validation.verify_receipt(json.loads(metadata_path.read_text(encoding='utf-8')), repair_contract)
+                except (ValueError, KeyError, TypeError) as exc:
+                    raise ApplicationError(str(exc), type='constraint_repair_verification_failed',
+                                           non_retryable=True) from exc
+                await persist_repair_verification(request, source_id=payload['source_id'], source_hash=source_hash,
+                    attempt_id=attempt_id, report=native_report)
             upload_heartbeat = asyncio.create_task(
                 _heartbeat_loop(
                     tenant_id=request.tenant_id,

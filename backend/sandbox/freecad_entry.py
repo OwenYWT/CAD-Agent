@@ -29,6 +29,14 @@ from freecad_scene import component_shapes, run_scene
 from freecad_engineering import EngineeringError, run_engineering
 from freecad_result_channel import publish_result
 from freecad_sketch_diagnostics import diagnose_sketch
+from freecad_failure_snapshot import (
+    attach_failure_snapshot, constraint_counts, record_created_constraints,
+    digest as constraint_digest,
+)
+from freecad_constraint_validation import (
+    ConstraintVerificationError, validate_baseline as validate_constraint_baseline,
+    before_feature as validate_constraint_profile, verify_document as verify_constraint_document,
+)
 from freecad_edge_scope import EdgeScopeError, resolve_edge_scope, verify_protected_faces
 from freecad_api import execute_program
 
@@ -47,7 +55,7 @@ ACTION_KEYS: dict[str, tuple[set[str], set[str]]] = {
     "sketch.add_geometry": ({"sketch", "geometry"}, {"sketch", "geometry"}),
     "sketch.add_profile": ({"sketch", "geometry"}, {"sketch", "geometry"}),
     "sketch.add_constraint": (
-        {"sketch", "kind", "first", "second", "value_mm"},
+        {"sketch", "kind", "first", "second", "value_mm", "driving", "logical_id"},
         {"sketch", "kind", "first"},
     ),
     "sketch.set_constraint": ({"sketch","constraint_index","expected_type","value_mm","value_deg"}, {"sketch","constraint_index","expected_type"}),
@@ -192,6 +200,8 @@ def _point(value: object, label: str) -> tuple[float, float]:
 
 
 def _reference(value: object, label: str) -> tuple[int, int | None]:
+    if value == {'datum': 'origin'}:
+        return -1, 1
     if not isinstance(value, dict) or not set(value) <= {"geometry_index", "point_position"}:
         raise FreeCADRunnerError("invalid_constraint", f"{label} is invalid")
     index = value.get("geometry_index")
@@ -455,6 +465,10 @@ def _sketch_add_constraint(document: Any, args: dict[str, Any]) -> dict[str, Any
         raise FreeCADRunnerError("sketch_malformed_constraint", f"unsupported constraint kind: {kind}")
     try:
         index = int(sketch.addConstraint(constraint))
+        if args.get('driving') is False:
+            if value is None:
+                raise ValueError('geometric relations cannot become reference dimensions')
+            sketch.setDriving(index, False)
     except (IndexError, ValueError, RuntimeError) as exc:
         raise FreeCADRunnerError("sketch_malformed_constraint", str(exc)) from exc
     return {"object": sketch.Name, "constraint_index": index}
@@ -1318,7 +1332,7 @@ def _validate_plan(task: dict[str, Any]) -> dict[str, Any]:
     inputs = task.get("inputs")
     if not isinstance(params, dict) or not isinstance(inputs, dict):
         raise FreeCADRunnerError("invalid_task", "task params and inputs must be objects")
-    if set(params) - {"plan", "expected_revision_id", "measurement_formats"} or not isinstance(
+    if set(params) - {"plan", "expected_revision_id", "measurement_formats", "constraint_repair", "repair_acceptance_hash"} or not isinstance(
         params.get("plan"), dict
     ):
         raise FreeCADRunnerError(
@@ -1373,9 +1387,17 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
     plan = _validate_plan(task)
     document = _open_document(task, plan)
     ledger = _ledger(document)
+    base_ledger = dict(_ledger_records(ledger))
+    checkpoint_hash = (hashlib.sha256((INPUT_ROOT / task['inputs']['base']).read_bytes()).hexdigest()
+                       if task.get('inputs', {}).get('base') else None)
+    plan_hash = constraint_digest(plan)
+    repair_contract = task['params'].get('constraint_repair')
     operation_results: list[dict[str, str | int | float | bool | None]] = []
     validations: list[dict[str, str | int | float | bool | None]] = []
     try:
+        if repair_contract:
+            validate_constraint_baseline(plan, repair_contract, checkpoint_hash,
+                                        task['params'].get('repair_acceptance_hash'))
         for operation in plan["operations"]:
             op_id = str(operation["op_id"])
             action = str(operation["action"])
@@ -1410,9 +1432,17 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
                 continue
 
             before_objects = {obj.Name for obj in document.Objects}
+            before_constraints = constraint_counts(document)
             document.openTransaction(f"CAD Agent {op_id}")
             try:
                 operation_args = _keys(action, operation["args"])
+                if repair_contract:
+                    if action.startswith('feature.'):
+                        for profile_name in ([operation_args['profile']] if operation_args.get('profile') else []) + list(operation_args.get('profiles') or []) + ([operation_args['path']] if operation_args.get('path') else []):
+                            profile = document.getObject(profile_name)
+                            if profile is not None and profile.TypeId == 'Sketcher::SketchObject':
+                                _require_fully_constrained(profile)
+                validate_constraint_profile(document, operation, repair_contract or {'sketches': {}})
                 subtractive_baseline = (
                     _subtractive_baseline(document, {**operation_args,
                         "profile": operation_args["profiles"][0]} if action == "feature.loft" else operation_args)
@@ -1429,6 +1459,7 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
                         ),
                     }
                 result = DISPATCH[action](document, operation_args)
+                record_created_constraints(document, operation, before_constraints, plan_hash)
                 validation = _validate_document(document, op_id=op_id, action=action)
                 if subtractive_baseline is not None:
                     _validate_subtractive_effect(
@@ -1446,6 +1477,14 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
                 ]
                 document.commitTransaction()
             except Exception as exc:
+                # A helper may add several constraints before failing. Capture their
+                # identities and the failing native state before aborting the transaction.
+                try:
+                    record_created_constraints(document, operation, before_constraints, plan_hash)
+                except Exception:
+                    pass
+                attach_failure_snapshot(exc, document, plan, operation, operation_results,
+                                        checkpoint_hash, base_ledger)
                 document.abortTransaction()
                 leaked = sorted(
                     obj.Name for obj in document.Objects if obj.Name not in before_objects
@@ -1463,6 +1502,9 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
                     if exc.action is None:
                         exc.action = action
                     raise
+                if isinstance(exc, ConstraintVerificationError):
+                    raise FreeCADRunnerError(exc.code, str(exc)[:4000], op_id=op_id,
+                                             action=action, details=exc.details) from exc
                 raise FreeCADRunnerError(
                     "operation_failed",
                     str(exc) or type(exc).__name__,
@@ -1480,6 +1522,26 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
             )
             validations.append(validation)
 
+        if repair_contract:
+            policy = repair_contract.get('resource_policy') or {}
+            try:
+                verification = verify_constraint_document(document, repair_contract, _validate_document,
+                    max_probes=policy.get('max_parameter_probes', 128),
+                    fraction=policy.get('perturbation_fraction', 0.01))
+            except ConstraintVerificationError as exc:
+                # No export has been written. This remains a failed execution,
+                # never a checkpoint, even when nominal recomputation succeeded.
+                export = plan['operations'][-1]
+                error = FreeCADRunnerError(exc.code, str(exc)[:4000],
+                    op_id=export['op_id'], action=export['action'], details=exc.details)
+                attach_failure_snapshot(error, document, plan, export,
+                    [row for row in operation_results if row['op_id'] != export['op_id']],
+                    checkpoint_hash, base_ledger)
+                raise error from exc
+            validations.append({'gate': 'constraint_repair', 'status': 'passed',
+                'contract_hash': verification['contract_hash'],
+                'parameter_probes': len(verification['parameter_probes']),
+                'evidence_json': json.dumps(verification, ensure_ascii=False, allow_nan=False)})
         export_args = plan["operations"][-1]["args"]
         files = _export_document(document, export_args,
             measurement_formats=task['params'].get('measurement_formats', ()))
@@ -1515,7 +1577,10 @@ def main() -> int:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         return 0
     except Exception as exc:
-        if isinstance(exc, EngineeringError):
+        if isinstance(exc, ConstraintVerificationError):
+            error = {'code': exc.code, 'message': str(exc)[:4000], 'op_id': None,
+                     'action': 'constraint.verify', 'details': {}}
+        elif isinstance(exc, EngineeringError):
             error = {'code':exc.code,'message':str(exc),'op_id':None,'action':'engineering','details':{}}
         elif isinstance(exc, BOMError):
             error = {

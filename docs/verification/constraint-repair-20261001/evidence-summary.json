@@ -1,0 +1,302 @@
+{
+  "schema_version": "constraint-repair-verification.v1",
+  "baseline_commit": "8a90d445425e2c0c1ce9cbc35c2ccc97264d6185",
+  "branch": "fix/constraint-repair-evidence",
+  "tests": {
+    "unit-complete": {
+      "tests": 1941,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 209,
+      "passed": 1732
+    },
+    "durable-core": {
+      "tests": 55,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 55
+    },
+    "transactions": {
+      "tests": 80,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 80
+    },
+    "model-lifecycle-db": {
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 12
+    },
+    "usage-monitoring": {
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 6
+    },
+    "schema-upgrade": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 1
+    },
+    "constraint-live-2": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 1
+    },
+    "frontend": {
+      "passed": 159,
+      "failed": 0,
+      "build": "passed"
+    },
+    "native": {
+      "reports": 22
+    },
+    "browser-contract": {
+      "passed": true
+    },
+    "browser-parameters": {
+      "passed": true
+    },
+    "browser-rejection": {
+      "passed": true
+    },
+    "browser-layout": {
+      "passed": true
+    },
+    "browser-monitor": {
+      "passed": true
+    },
+    "browser-constraint-repair": {
+      "passed": true
+    },
+    "native-parameter-exports": {
+      "cases": 3,
+      "passed": true
+    },
+    "live-kimi": {
+      "workflow_id": "1d16e30e-d8d9-4826-9d80-b884ceb12084",
+      "repairs": 4,
+      "diagnostics": 4,
+      "rejections": 0,
+      "committed": true,
+      "provider": "live",
+      "model": "kimi-k2.7-code",
+      "calls": 10,
+      "total_tokens": 114792,
+      "parameter_probes": 22,
+      "scope": "fixed valid input; actual provider repair chain; not free-form model success benchmark"
+    }
+  },
+  "artifacts": {
+    "unit-complete.xml": {
+      "sha256": "3e7246b665c1867f1ceca0d1407a1ed800b060c23cf2e4d8e8619a2efe3430ae",
+      "bytes": 311832
+    },
+    "durable-core.xml": {
+      "sha256": "8741532eae7a0a1961014ac104f427b757fb69ae7016c13cbb0ded982a13be31",
+      "bytes": 8922
+    },
+    "transactions.xml": {
+      "sha256": "93942fe516b62cfa0b32fcb91eac509c2a71fedd6942d5877b412829cbf74ef1",
+      "bytes": 11693
+    },
+    "model-lifecycle-db.xml": {
+      "sha256": "238379739501cd9044b86221dc71a7e47d6da0223d68e24ae84f06a8b54a47f0",
+      "bytes": 1771
+    },
+    "usage-monitoring.xml": {
+      "sha256": "939148e64e2b988495205a8955e9b27a6857f6a1106e56311251179b51d9a2e5",
+      "bytes": 1036
+    },
+    "schema-upgrade.xml": {
+      "sha256": "037407993fb501e4a2c2bce439e4cdf813b3bba7b373bba970c8747b74a6785e",
+      "bytes": 385
+    },
+    "constraint-live-2.xml": {
+      "sha256": "914e4e8944862ee500d8476185f99198efbf5778908a58d51cc562def6792261",
+      "bytes": 420
+    },
+    "native-final/engineering.log": {
+      "sha256": "9bf6493c97edcf80ad0ef7871481c47b4c9e3d3d32cd22c8150f323ffb6249f4",
+      "bytes": 849
+    },
+    "native-final/freecad_hole_cut_contract.log": {
+      "sha256": "9402902be680dfb1ce04a25821d19f87302473ab5546bb016a5f8a0a76350053",
+      "bytes": 19948
+    },
+    "native-final/freecad_coordinate_contract.log": {
+      "sha256": "2a9cb27ef3b49f83969482cfb6c37aa315582d29652f1e13fa451fe83a5f146b",
+      "bytes": 36887
+    },
+    "native-final/freecad_constraint_diagnostics.log": {
+      "sha256": "a8a8e8eecd1548203a051305645930d7dbbee4f509bca61ef324b44f408f8c63",
+      "bytes": 6374
+    },
+    "native-final/freecad_constraint_parameter_contract.log": {
+      "sha256": "135d2b1ff7340827958dd03e21eb838184a33272f4423390b095cb38276129ac",
+      "bytes": 8057
+    },
+    "native-final/freecad_sweep_contract.log": {
+      "sha256": "5807995b69c3337f85178fd2fa1a80d140e49c7de2d41bf473da207ed89101f1",
+      "bytes": 10435
+    },
+    "native-final/freecad_constraint_failure_snapshot.log": {
+      "sha256": "4b08852cf6e4aad6b1ab6a1239c0704a3e3c8f1d04938dc6dab989101e1c577e",
+      "bytes": 1819
+    },
+    "native-final/feature-measurements.log": {
+      "sha256": "76a393686cdc592aecea15bcf582bbf81d9051a23fc30cdea207feb4f5a88953",
+      "bytes": 188
+    },
+    "native-final/freecad_curve_profile_contract.log": {
+      "sha256": "854f198969eec3e3ee22ed19b9963dd1fa65a5897aff3de722a3a1e26b696f39",
+      "bytes": 2277
+    },
+    "native-final/curved-surfaces.log": {
+      "sha256": "a27f6a6ae2f9bc6a2719503321de746b7acfba08f4e71054267c83b5d67453fc",
+      "bytes": 11845
+    },
+    "native-final/freecad_tool_replay_contract.log": {
+      "sha256": "b6cd85a52de7cb5c3265f63f8208d2f8d445c207e626e36e2bfcfdad46fa5a67",
+      "bytes": 3925
+    },
+    "native-final/freecad_pattern_contract.log": {
+      "sha256": "f447472f5ff2fede28be239edb3b239ed568c1b9753c36f4ddace1a6729900c2",
+      "bytes": 7677
+    },
+    "native-final/chamfer_scope_geometry.log": {
+      "sha256": "cc1178cf5787c73e253b4427df1f1900dfe3f5ef93afd36d8de134c82c59be90",
+      "bytes": 13903
+    },
+    "native-final/freecad_reference_fixture.log": {
+      "sha256": "841cba49abadbe04fd0726c1e6447e54ffa6c46fdb638211565422233a631833",
+      "bytes": 789
+    },
+    "native-final/freecad_tangency_contract.log": {
+      "sha256": "b777616852fa9b89487fb412fec79f0d67fa064b148b912ffcb700feedbb2b2d",
+      "bytes": 2370
+    },
+    "native-final/freecad_checkpoint_replay_contract.log": {
+      "sha256": "2507cd5bf928de21820f5f73a9d1c91a49197a10f26228bad954e22a692670ec",
+      "bytes": 5525
+    },
+    "native-final/freecad_revolve_contract.log": {
+      "sha256": "ecaa40ae1db5b19053dfe586d6745b5d01dcace60dc363e2f0e00603996325e3",
+      "bytes": 4434
+    },
+    "native-final/freecad_repair_replay_contract.log": {
+      "sha256": "3ff7a69fbe60b4ea69f152f446692a89316560127499f76ae7b4098b2668e854",
+      "bytes": 20619
+    },
+    "native-final/freecad_constraint_profile_contract.log": {
+      "sha256": "4d21139cdfad4330bf3217254f2b59a7e894f74d676a38bc9ea5b8aa8f7ca7ac",
+      "bytes": 348
+    },
+    "native-final/freecad_api_contract.log": {
+      "sha256": "68e0d3664d14e0ea0af6930cb6a3f1af13710f71ba72ca34ba66de43f970e2ee",
+      "bytes": 5001
+    },
+    "native-final/freecad_profile_contract.log": {
+      "sha256": "d849200a7b060e0291834bdb7ac3d4bbeaedcd723bdedf57783486b777c89f71",
+      "bytes": 9985
+    },
+    "native-final/freecad_loft_contract.log": {
+      "sha256": "e1b0e7259c415629a0cb8a50c34054cacfc738989dd96e1e1dbf876ccb7ce284",
+      "bytes": 8698
+    },
+    "whole-reports/browser-contract/report.json": {
+      "sha256": "6e5f8012df51ca393de3667d55fb1d509c0a1d9d071854fcd7e713ad049b05a6",
+      "bytes": 545
+    },
+    "whole-reports/browser-parameters/report.json": {
+      "sha256": "7a720736cc1efac80373385ded4d4b320bb01aeb0a4b823e5f9556f74e4430ad",
+      "bytes": 1221
+    },
+    "whole-reports/browser-rejection/report.json": {
+      "sha256": "bdaf8df8b9ac03879b301da03c1a371b06c03f98487b678002336c68c53246ff",
+      "bytes": 536
+    },
+    "whole-reports/browser-layout/report.json": {
+      "sha256": "92c0dd02108a6896f7f30bb5a8aaa34bfa4d26a341c78ed70691d0cad257dfa9",
+      "bytes": 1118
+    },
+    "whole-reports/browser-monitor/report.json": {
+      "sha256": "cc33402baf24e10e27ee8d5fea0aae0036ba66f3a44ec86dfc82255f664af63e",
+      "bytes": 126
+    },
+    "whole-reports/browser-constraint-repair/report.json": {
+      "sha256": "58cdc8ea267cbec656be55dfd97bd0f468fc02e43c1414fbbe92d52f98ba3418",
+      "bytes": 397
+    },
+    "whole-reports/native-parameters/kernel.log": {
+      "sha256": "ed59f3f2e9337dfee0b77f0809791bef3583b59351edd212c5e4cf48353b9119",
+      "bytes": 1243
+    },
+    "released-replay-final.json": {
+      "sha256": "dd1407853a3197c0b1e74d68225164f87d4910f2d57843af76405652fb64d5f2",
+      "bytes": 3671
+    },
+    "workflow-replay.json": {
+      "sha256": "6b3d3cc432c21a5149c22e07d4104dfbbcdfaac9c769b8d3b9fac6adddaa84de",
+      "bytes": 2311
+    },
+    "constraint-live-replay.json": {
+      "sha256": "d4158bbe1687aa3bbe785ed1e2be63d76e04e0843468050a703ee089651cae85",
+      "bytes": 156
+    },
+    "constraint-final.positive.json": {
+      "sha256": "d085421342150f21ba7f3aca5cadd9a73ef85d67d1b7751bc38bfac107cc2603",
+      "bytes": 12688
+    },
+    "constraint-final.negative.json": {
+      "sha256": "050e9115a4f847907de54c32f305cdb42f56746ae43cdc9467858bab4a7fa880",
+      "bytes": 371
+    },
+    "constraint-live-2.positive.json": {
+      "sha256": "42f1d6b1119f51e4f1afefad8e18fd3e6f969a165fb567948b3bbadfe30e7b4f",
+      "bytes": 12672
+    }
+  },
+  "runtime_overlay": [
+    {
+      "source": "backend/sandbox/freecad_entry.py",
+      "sha256": "b66b4ec2a047f9d25b075dcc73d959cec7c5ec28f8f355af1fefd363a1fafef3"
+    },
+    {
+      "source": "backend/sandbox/freecad_constraint_validation.py",
+      "sha256": "3b3bbcc3b46c97e90c53e64b1570c695c8bbbccfdef752a846dbf7a51cda2b74"
+    },
+    {
+      "source": "backend/app/freecad/state_projector.py",
+      "sha256": "75f4c21c519e449a84673b55ad9fdf38ec13440f30e047cacea84b8c7feb054d"
+    },
+    {
+      "source": "backend/app/freecad/constraint_relationships.py",
+      "sha256": "b6e926a8686b4e9cddabf75b5c5b3f2c5931253add0ae97b2b502f07c75832ec"
+    },
+    {
+      "source": "backend/app/freecad/failure_snapshot.py",
+      "sha256": "91ffb3780f2bc341afce42854430ffc95fa812c50e5991286c5bfe0fdad338ef"
+    },
+    {
+      "source": "backend/app/freecad/capabilities.json",
+      "sha256": "1699ed7092df3def8e583e173408617dee172d86a4985cf523181348f9601f51"
+    }
+  ],
+  "sandbox_image_id": "sha256:19f0d082b1a1a1fbb0c39e3ee07be7ddf03bb8ff9570d929d9fc1a530d978a47",
+  "verification_limits": [
+    "Original self-intersecting design correctly rejected; no production task retry",
+    "No production deployment or GitHub push",
+    "No live Autodesk Fusion test",
+    "Perturbations are local checks, not proof over all parameter values; unsupported relationship proofs remain protected"
+  ]
+}

@@ -11,6 +11,24 @@ function snapshot(id: string, status: string): DurableTaskSnapshot {
     error_code:status==='failed'?'ProviderQuotaError':null, error_message:status==='failed'?'模型服务额度不足':null };
 }
 
+test('failed repair preserves the original modeling error on the same task', () => {
+  const p=panel(); const s=useSessionStore.getState();
+  s.applyDurableSnapshot({...snapshot('constraint-task','failed'), error_code:'constraint_patch_rejected',
+    error_message:'patch would lose required connectivity',steps:[
+      {id:'original',step_key:'model',kind:'agent_freecad_operations',status:'failed',attempt_count:1,
+        error_code:'sketch_redundant_constraints',error_message:'Profile contains redundant constraints'},
+      {id:'repair',step_key:'repair-model',kind:'agent_freecad_repair',status:'failed',attempt_count:1,
+        error_code:'constraint_patch_rejected',error_message:'patch would lose required connectivity'}]},p.id);
+  const state=taskState(s.getActivePanel());
+  assert.equal(state.originalModelFailure?.error_message,'Profile contains redundant constraints');
+  assert.equal(state.repairFailureMessage,'patch would lose required connectivity');
+  s.beginGeneration();
+  s.setDurableWorkflowStarted({workflow_run_id:'retry-task',project_id:'project',branch_id:'branch',expected_base_revision_id:'base',panel_id:p.id,status:'pending'});
+  s.applyDurableSnapshot(snapshot('retry-task','running'),p.id);
+  assert.equal(taskState(s.getActivePanel()).originalModelFailure,null);
+  assert.equal(taskState(s.getActivePanel()).repairFailureMessage,'');
+});
+
 test('legacy continuation tasks recover only a concrete user request from the current panel for confirmation', () => {
   const p=panel(); const s=useSessionStore.getState();
   const original='我想做一个手机壳，适配iphone 17 pro max';

@@ -91,6 +91,8 @@ def provider_credentials_are_scoped_to_live_cases(request, monkeypatch):
         "test_agent_v2_live_freecad_tools_contract",
         "test_agent_v2_live_freecad_checkpoint_contract",
     }
+    if REAL_FREECAD_AGENT and os.environ.get('CAD_CONSTRAINT_LIVE_REPAIR') == '1':
+        live.add('test_constraint_patch_incident_full_chain_and_owned_evidence')
     if request.node.originalname not in live:
         # The same invocation may include live-provider and controlled cases.
         # Credentials must not silently change assertions in controlled cases.
@@ -4043,6 +4045,7 @@ async def test_native_engineering_acceptance_gates_commit(required_diameter,exec
             from temporalio.testing import ActivityEnvironment
             from app.workflows.handlers.native_generation import agent_generate_operations
             from app.workflows.handlers.cad_execution import agent_execute_freecad
+            from app.freecad.constraint_patch import NativeConstraintRepairValidation
             async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
                 job_payload=await conn.scalar(text("SELECT payload FROM model_jobs WHERE workflow_run_id=:id AND operation='agent_v2.generate_operations'"),{'id':created.workflow_id})
             # Replay after commit must return persisted results, never call the
@@ -4050,7 +4053,8 @@ async def test_native_engineering_acceptance_gates_commit(required_diameter,exec
             replay=await agent_generate_operations(job_payload,freecad_operations=operation_generator)
             assert replay['replayed'] and operation_generator.calls==2
             replay_execution=await ActivityEnvironment().run(
-                partial(agent_execute_freecad,backend=get_execution_backend()),{**job_payload,**replay})
+                partial(agent_execute_freecad,backend=get_execution_backend(),
+                    constraint_validation=NativeConstraintRepairValidation()),{**job_payload,**replay})
             assert replay_execution['replayed']
             assert replay_execution['tool_result']==receipt
         if execution_path in {'live_tools','live_checkpoints'} and os.environ.get('CAD_NATIVE_TOOL_REPORT'):
@@ -4069,3 +4073,106 @@ async def test_native_engineering_acceptance_gates_commit(required_diameter,exec
 @pytest.mark.parametrize('required_diameter',[6,7])
 async def test_native_stl_only_delivery_keeps_exact_acceptance(required_diameter):
     await test_native_engineering_acceptance_gates_commit(required_diameter,'typed',output_formats=('stl',))
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('connected_fixture', [True, False], ids=['valid-baseline', 'original-self-intersecting-baseline'])
+async def test_constraint_patch_incident_full_chain_and_owned_evidence(connected_fixture):
+    from tests.constraint_incident import IncidentRequirements, IncidentGenerator
+    from app.services.workflow_admission import create_document_workflow
+    from app.workflows.constraint_evidence import load_repair_contract, load_failure_snapshot, evidence_key
+    from app.freecad.constraint_patch import verify_native_receipt
+    owner, project_id, initial = await _seed_project('constraint-repair')
+    objective = '设计一个可夹在 25 mm 桌板上的耳机挂钩，最终为一个连通实体'
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        created = await create_document_workflow(conn, tenant_id=owner.tenant_id, project_id=project_id,
+            requested_by_principal_id=owner.principal_id, kind='mcad.agent.v2.generate',
+            idempotency_key=f'constraint-{project_id}', request_payload={'objective': objective})
+    request = McadAgentWorkflowV2Request(workflow_run_id=created.workflow_id, tenant_id=owner.tenant_id,
+        project_id=project_id, principal_id=owner.principal_id, branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id, operation='generate', modeling_backend='freecad', objective=objective)
+    generator = IncidentGenerator(live_repair=os.environ.get('CAD_CONSTRAINT_LIVE_REPAIR') == '1',
+                                  connected_fixture=connected_fixture)
+    client = await get_temporal_client()
+    async with build_agent_v2_workflow_worker(client, backend=get_execution_backend(),
+            durable_planner=IncidentRequirements(), freecad_operations=generator):
+        handle = await client.start_workflow('McadAgentWorkflowV2', request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id), task_queue=settings.temporal_agent_v2_task_queue)
+        # Complete trusted dimensions need no interactive requirements gate.
+        if connected_fixture:
+            result = await handle.result()
+            assert result['status'] == 'succeeded'
+        else:
+            with pytest.raises(WorkflowFailureError) as error:
+                await handle.result()
+            from app.workflows.agent_v2 import McadAgentWorkflowV2
+            cause = McadAgentWorkflowV2._root_application_error(error.value)
+            assert cause is not None and cause.type == 'agent_freecad_repair_not_allowed'
+    if not generator.live_repair:
+        assert generator.repairs == (4 if connected_fixture else 2)
+    assert generator.generations == (3 if connected_fixture else 2)
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        events = (await conn.execute(text('SELECT event_type,payload FROM task_events WHERE workflow_run_id=:id ORDER BY sequence'),
+            {'id': created.workflow_id})).mappings().all()
+        sources = (await conn.execute(text('SELECT id,source_hash,source_code FROM agent_generated_sources WHERE workflow_run_id=:id ORDER BY created_at'),
+            {'id': created.workflow_id})).mappings().all()
+        manifests = (await conn.execute(text('SELECT manifest,execution_attempt_id FROM agent_staging_manifests WHERE workflow_run_id=:id ORDER BY created_at'),
+            {'id': created.workflow_id})).mappings().all()
+        failures = (await conn.execute(text("SELECT id FROM execution_attempts WHERE workflow_run_id=:id AND status='failed'"),
+            {'id': created.workflow_id})).scalars().all()
+        assert not set(failures) & {m['execution_attempt_id'] for m in manifests}
+        assert len(manifests) == (3 if connected_fixture else 1)
+        checks = (await conn.execute(text("SELECT evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"),
+            {'id': created.workflow_id})).scalars().all()
+        assert len(checks) == (1 if connected_fixture else 0)
+        if connected_fixture:
+            values = {item['check_id']: item for item in checks[0]['acceptance']['evidence']}
+            assert values['gap']['outcome'] == values['one-solid']['outcome'] == 'passed'
+        if not connected_fixture:
+            assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'),
+                                     {'id': created.workflow_id}) == 0
+            assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'),
+                                     {'id': initial.branch_id}) == initial.revision_id
+    diagnostics = [e['payload'] for e in events if e['event_type'] == 'agent.freecad.constraint_diagnostic']
+    assert len(diagnostics) == generator.repairs + (0 if connected_fixture else 1)
+    for observed in diagnostics:
+        failure = {'execution_attempt_id': observed['execution_attempt_id'],
+                   'details': {'constraint_diagnostic_sha256': observed['sha256']}}
+        evidence = await load_failure_snapshot(request, source_id=observed['source_id'],
+            source_hash=observed['source_hash'], failure=failure)
+        assert evidence['snapshot']['valid_checkpoint'] is False
+        with pytest.raises(ValueError, match='owned'):
+            await load_failure_snapshot(request.model_copy(update={'workflow_run_id': uuid4()}),
+                source_id=observed['source_id'], source_hash=observed['source_hash'], failure=failure)
+    rejected = [e['payload'] for e in events if e['event_type'] == 'agent.freecad.plan_rejected']
+    if not generator.live_repair:
+        assert len(rejected) == generator.repairs
+        for record in rejected:
+            details = json.loads(await get_object(record['evidence_object_key']))
+            assert details['differences'][0]['field'] == 'sketch'
+            assert details['differences'][0]['after'] == 'UnrelatedSketch'
+    final = sources[-1]
+    certificate = await load_repair_contract(request, source_id=final['id'], source_hash=final['source_hash'])
+    assert len(certificate['patches']) == generator.repairs
+    native = None
+    if connected_fixture:
+        from app.freecad.failure_snapshot import digest
+        verified = next(e['payload'] for e in events if e['event_type']=='agent.freecad.constraint_verified'
+                        and e['payload']['source_id']==str(final['id']))
+        saved = json.loads(await get_object(evidence_key(request, verified['sha256'])))
+        assert saved['execution_attempt_id'] == str(manifests[-1]['execution_attempt_id'])
+        assert saved['source_id'] == str(final['id'])
+        native = saved['report']
+        assert native['status'] == 'passed' and native['contract_hash'] == digest(certificate)
+        assert native['parameter_probes'] and all(p['downstream_recomputed'] for p in native['parameter_probes'])
+        change_set = UUID(result['change_set_id'])
+        await accept_change_set(tenant_id=owner.tenant_id, reviewer_principal_id=owner.principal_id, change_set_id=change_set,
+            review_note='本测试只确认原生尺寸、约束、联动和实体检查；知悉外观参考检查未验证')
+        committed = await commit_change_set(tenant_id=owner.tenant_id, reviewer_principal_id=owner.principal_id, change_set_id=change_set)
+        assert committed.status == 'committed'
+    if os.environ.get('CAD_CONSTRAINT_REPORT'):
+        Path(os.environ['CAD_CONSTRAINT_REPORT']).with_suffix('.positive.json' if connected_fixture else '.negative.json').write_text(json.dumps({'status': 'passed',
+            'workflow_id': str(created.workflow_id), 'repairs': generator.repairs, 'diagnostics': len(diagnostics),
+            'rejections': len(rejected), 'requirements': checks[0] if checks else None, 'native_verification': native,
+            'committed': connected_fixture, 'provider': 'live' if generator.live_repair else 'controlled_proposals',
+            'scope': 'real Temporal, PostgreSQL, S3 and FreeCAD; DFM disabled, advisory visual availability recorded separately'}, ensure_ascii=False, indent=2))

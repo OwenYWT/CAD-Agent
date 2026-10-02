@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     sandbox_timeout_s: int = 60
     sandbox_memory_limit: str = "512m"
     sandbox_max_concurrent: int = 4  # cap simultaneous container spawns (each = CPU+RAM)
+    constraint_repair_max_attempts: int = Field(default=6, ge=1, le=32)
+    constraint_repair_max_tool_calls: int = Field(default=8, ge=1, le=64)
+    constraint_repair_max_rejections: int = Field(default=3, ge=1, le=16)
+    constraint_repair_max_changes: int = Field(default=32, ge=1, le=64)
+    constraint_repair_max_parameter_probes: int = Field(default=128, ge=2, le=2048)
+    constraint_repair_perturbation_fraction: float = Field(default=0.01, gt=0, lt=1)
     # The interactive product has one durable write path.  The false value is
     # retained only so hermetic APP_ENVIRONMENT=test processes can opt out of
     # external services; every runnable environment fails closed below.

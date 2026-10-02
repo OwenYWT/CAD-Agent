@@ -428,7 +428,9 @@ class McadAgentWorkflowV2:
                     "validation",
                 }:
                     raise
-                if repair_count >= 2:
+                budget = (int((failure.get('details') or {}).get('constraint_repair_max_attempts', 2))
+                    if getattr(self, '_constraint_patches_v1', False) else 2)
+                if repair_count >= budget:
                     raise
                 failure["error_message"] = (
                     f"{failure['error_message']}\n"
@@ -1063,6 +1065,7 @@ class McadAgentWorkflowV2:
             self._model_jobs_v1 = workflow.patched("agent-v2-model-jobs-v1")
             self._freecad_checkpoints_v1 = workflow.patched("agent-v2-freecad-checkpoints-v1")
             self._cad_jobs_v1 = workflow.patched("agent-v2-cad-jobs-v1")
+            self._constraint_patches_v1 = workflow.patched("agent-v2-freecad-constraint-patches-v1")
             self._phase = "requirements"
             requirements = await self._activity(
                 "agent_v2.requirements",

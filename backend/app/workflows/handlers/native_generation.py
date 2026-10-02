@@ -6,7 +6,8 @@ from sqlalchemy import text
 from temporalio.exceptions import ApplicationError
 from app.agent.durable_plan import AgentPlan
 from app.agent.durable_plan import AgentPlanStep
-from app.agent.durable_repair import decide_repair
+from app.agent.durable_repair import decide_repair, RepairDecision
+from app.config import settings
 from app.db import tenant_transaction
 from app.execution.canonical import canonical_sha256
 from app.freecad.contracts import FreeCADOperationPlan
@@ -21,7 +22,10 @@ from app.workflows.execution_support import _await_provider_operation
 from app.workflows.validation_support import _record_freecad_inspections, record_freecad_rejection
 from app.workflows.revision_inputs import _revision_restore_operation_plan
 from app.workflows.errors import planning_error
-from app.workflows.checkpoint_inputs import checkpoint_context
+from app.workflows.checkpoint_inputs import checkpoint_context, checkpoint_manifest, checkpoint_artifact
+from app.workflows.constraint_evidence import load_failure_snapshot, load_repair_contract
+from app.freecad.constraint_patch import carry_contract, progress_fingerprint
+from app.freecad.constraint_repair import SKETCH_FAILURES
 
 
 def _provenance_reference(provenance):
@@ -148,6 +152,13 @@ async def agent_generate_operations(payload: dict[str, Any], *, freecad_operatio
             source_code = generated.source_code
             generator_kind = generated.generator_kind
             provenance = generated.provenance
+        if feedback:
+            retained = await load_repair_contract(request, source_id=feedback['source_id'], source_hash=feedback['source_hash'])
+            if retained:
+                checkpoint = await checkpoint_manifest(request, candidate_build_id, payload['checkpoint_manifest_id'])
+                provenance = {**provenance, 'constraint_repair': carry_contract(retained,
+                    FreeCADOperationPlan.model_validate_json(source_code), checkpoint_artifact(checkpoint, 'fcstd')['sha256'])}
+                generator_kind += ':constraint_patch_continuation'
         async with tenant_transaction(
             request.tenant_id,
             request.principal_id,
@@ -238,6 +249,26 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
             str(item) for item in payload.get("seen_signatures") or ()
         ),
     )
+    diagnostic = await load_failure_snapshot(request, source_id=source_id,
+        source_hash=str(payload['source_hash']), failure=failure)
+    prior_contract = await load_repair_contract(request, source_id=source_id,
+        source_hash=str(payload['source_hash']))
+    if failure['error_code'] in SKETCH_FAILURES and diagnostic is None:
+        raise ApplicationError('缺少可核验的失败草图现场，不能安全地修改约束。原始建模错误：'
+            + str(failure.get('error_message') or '')[:2500],
+            type='constraint_diagnostic_unavailable', non_retryable=True)
+    if diagnostic and failure['error_code'] in SKETCH_FAILURES:
+        signature = progress_fingerprint(diagnostic['snapshot'])
+        seen = {progress_fingerprint(entry['context']['snapshot'])
+                for entry in (prior_contract or {}).get('patches', [])}
+        seen.update(str(item) for item in payload.get('seen_signatures') or ())
+        budget = settings.constraint_repair_max_attempts
+        exhausted = max(repair_index - 1, len((prior_contract or {}).get('patches', []))) >= budget
+        repeated = signature in seen
+        decision = RepairDecision(not exhausted and not repeated, 'sketch_constraints',
+            'local_constraint_patch', budget, signature,
+            'constraint repair made no physical or execution progress' if repeated else
+            'constraint repair attempt budget exhausted' if exhausted else 'verified local constraint repair')
     if not decision.repairable:
         raise ApplicationError(
             decision.reason,
@@ -325,8 +356,14 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
             ),
             output_formats=request.output_formats,
             rejection_sink=rejection_sink,
+            **({'diagnostic': diagnostic['snapshot'], 'prior_contract': prior_contract} if diagnostic else {}),
         ))
         provenance = repaired.provenance
+        if prior_contract and not provenance.get('constraint_repair'):
+            # Geometry/visual repairs after a constraint repair inherit its frozen
+            # requirements. They cannot silently discard earlier proof obligations.
+            provenance = {**provenance, 'constraint_repair': carry_contract(prior_contract,
+                repaired.operation_plan, prior_contract.get('execution_checkpoint_hash', prior_contract['checkpoint_hash']))}
         async with tenant_transaction(
             request.tenant_id,
             request.principal_id,
@@ -339,7 +376,7 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
                 step_id=step_id,
                 predecessor_source_id=source_id,
                 source_code=repaired.source_code,
-                generator_kind=f"repair:{decision.failure_class}:freecad_operations",
+                generator_kind=f"repair:{decision.failure_class}:" + ('constraint_patch' if provenance.get('constraint_repair') else 'freecad_operations'),
                 provider=str(provenance["provider"]),
                 model=str(provenance["model"]),
                 provider_response_id=(

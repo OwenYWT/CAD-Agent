@@ -94,7 +94,8 @@
         "app.repositories.runs",
         "app.repositories.artifacts",
         "app.repositories.audit",
-        "app.execution.composition"
+        "app.execution.composition",
+        "app.workflows.constraint_evidence"
       ],
       "allowed_dependencies": [
         "P00",
@@ -118,7 +119,8 @@
         "app.freecad.operation_compiler",
         "app.freecad.selection",
         "app.freecad.inspection",
-        "app.topology.contracts"
+        "app.topology.contracts",
+        "app.freecad.constraint_patch"
       ],
       "allowed_dependencies": [
         "P00",
@@ -911,7 +913,12 @@
     "backend/app/contracts/geometry_request.py": "P00",
     "backend/app/freecad/api_catalog.py": "M04",
     "backend/app/freecad/agent_tools.py": "M04",
-    "backend/app/contracts/cad_tools.py": "P00"
+    "backend/app/contracts/cad_tools.py": "P00",
+    "backend/app/contracts/constraint_patch.py": "P00",
+    "backend/app/workflows/constraint_evidence.py": "M03",
+    "backend/app/freecad/constraint_patch.py": "M04",
+    "backend/app/freecad/failure_snapshot.py": "M04",
+    "backend/app/freecad/constraint_relationships.py": "M04"
   },
   "required_runtime_reports": {
     "native-parameters/kernel.log": {
@@ -1076,6 +1083,29 @@
     "native/curved-surfaces.log": {
       "kind": "marker",
       "marker": "CURVED_SURFACE_CONTRACT="
+    },
+    "native/freecad_constraint_failure_snapshot.log": {
+      "kind": "marker",
+      "marker": "CAD_CONSTRAINT_FAILURE_SNAPSHOT="
+    },
+    "native/freecad_constraint_profile_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_CONSTRAINT_PROFILE_CONTRACT="
+    },
+    "native/freecad_constraint_parameter_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_CONSTRAINT_PARAMETER_CONTRACT="
+    },
+    "browser-constraint-repair/report.json": {
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "real_failed_workflow": true,
+        "original_and_repair_error_visible": true,
+        "no_candidate": true,
+        "head_unchanged": true,
+        "reload_preserved": true
+      }
     }
   }
 }
