@@ -9,8 +9,8 @@ import pytest
 
 from app.config import Settings, settings
 from app.execution.compat_executor import CompatibilityExecutor
-from app.execution.podman_backend import PodmanExecutionBackend
 from app.sandbox.executor import CadQueryExecutor
+from tests.native_runtime import native_backend, native_executor
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -203,10 +203,7 @@ def test_production_accepts_immutable_runtime_digest() -> None:
     reason="set RUN_REAL_PODMAN=1 to exercise the actual sandbox image",
 )
 async def test_real_sandbox_build123d_exports_step_and_stl() -> None:
-    executor = CadQueryExecutor(
-        runtime_name="podman",
-        image_ref=os.environ["SANDBOX_IMAGE"],
-    )
+    executor = native_executor()
 
     result = await executor.execute(
         "from build123d import Box\n"
@@ -236,10 +233,7 @@ async def test_real_sandbox_blocks_file_network_and_process_access(
     code: str,
     expected_error: str,
 ) -> None:
-    executor = CadQueryExecutor(
-        runtime_name="podman",
-        image_ref=os.environ["SANDBOX_IMAGE"],
-    )
+    executor = native_executor()
 
     result = await executor.execute(code, timeout_s=30)
 
@@ -257,9 +251,7 @@ async def test_real_execution_failures_are_normalized_and_bounded(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(settings, "sandbox_timeout_s", 10)
-    executor = CompatibilityExecutor(
-        PodmanExecutionBackend(os.environ["SANDBOX_IMAGE"])
-    )
+    executor = CompatibilityExecutor(native_backend())
 
     invalid = await executor.execute("result =")
     assert invalid.success is False

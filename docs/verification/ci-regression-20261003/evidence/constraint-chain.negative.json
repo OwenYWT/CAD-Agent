@@ -1,0 +1,12 @@
+{
+  "status": "passed",
+  "workflow_id": "5c8e1c7c-4e30-42d7-a2a5-937c81ac2ced",
+  "repairs": 2,
+  "diagnostics": 3,
+  "rejections": 2,
+  "requirements": null,
+  "native_verification": null,
+  "committed": false,
+  "provider": "controlled_proposals",
+  "scope": "real Temporal, PostgreSQL, S3 and FreeCAD; DFM disabled, advisory visual availability recorded separately"
+}

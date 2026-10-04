@@ -10,7 +10,7 @@ import pytest
 
 from app.execution.capability_adapter import CapabilityExecutionAdapter
 from app.execution.contracts import ExecutionStatus
-from app.execution.podman_backend import PodmanExecutionBackend
+from tests.native_runtime import native_backend
 from app.freecad.contracts import FreeCADOperationPlan
 from app.freecad.operation_compiler import compile_common_generation
 
@@ -201,7 +201,7 @@ def test_compiled_plate_places_hole_profile_on_the_material_facing_side() -> Non
     reason="set RUN_REAL_FREECAD=1 to exercise the real FreeCAD sandbox",
 )
 async def test_real_subtractive_features_change_solid_or_fail_closed() -> None:
-    backend = PodmanExecutionBackend(os.environ["SANDBOX_IMAGE"])
+    backend = native_backend()
     adapter = CapabilityExecutionAdapter(backend)
     work_dirs: list[Path] = []
     try:
@@ -255,7 +255,7 @@ async def test_real_subtractive_features_change_solid_or_fail_closed() -> None:
 @pytest.mark.skipif(os.getenv("RUN_REAL_FREECAD") != "1", reason="requires real FreeCAD")
 async def test_real_through_hole_survives_thickness_changes_and_reopen() -> None:
     """Q01: a successful recompute must not cap a previously through-all hole."""
-    adapter = CapabilityExecutionAdapter(PodmanExecutionBackend(os.environ["SANDBOX_IMAGE"]))
+    adapter = CapabilityExecutionAdapter(native_backend())
     plan = compile_common_generation(
         {
             "part_type": "plate",

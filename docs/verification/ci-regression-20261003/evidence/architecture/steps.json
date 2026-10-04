@@ -1,0 +1,32 @@
+[
+  {
+    "step": "boundaries",
+    "exit_code": 0,
+    "command": [
+      "/private/tmp/cad-agent-ci-20261003.8WUgEd/tools/bin/python",
+      "scripts/architecture/check_boundaries.py"
+    ],
+    "log": "boundaries.log",
+    "sha256": "967b963ba3074df749276a889719760005f33d2bd558783d76ae03699446ffc0"
+  },
+  {
+    "step": "feature-map",
+    "exit_code": 0,
+    "command": [
+      "/private/tmp/cad-agent-ci-20261003.8WUgEd/tools/bin/python",
+      ".agents/skills/cad-agent-review/scripts/validate_feature_map.py"
+    ],
+    "log": "feature-map.log",
+    "sha256": "3560b394bf9941352d6fa8f3efad96a16efa185db57e3420956cf9c8f0db6301"
+  },
+  {
+    "step": "ci-policy",
+    "exit_code": 0,
+    "command": [
+      "/private/tmp/cad-agent-ci-20261003.8WUgEd/tools/bin/python",
+      "scripts/ci/check_policy.py"
+    ],
+    "log": "ci-policy.log",
+    "sha256": "29d875f70d5ae605fb3bab76933ecdf62ff9035a9bfeb9edc6f1d1b7a799e92f"
+  }
+]

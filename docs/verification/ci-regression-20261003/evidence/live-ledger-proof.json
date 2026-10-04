@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "actual_s3_conditional_writes": true,
+  "monthly_cap": true,
+  "owned_settlement": true,
+  "duplicate_settlement_denied": true,
+  "stale_write_denied": true,
+  "paid_model_calls": 0
+}

@@ -1,6 +1,6 @@
 # Build platform-independent assets with frontend/package-lock.json first.
 # Context: frontend/ (must contain the freshly verified dist/ directory).
-FROM nginx:alpine
+FROM nginx:alpine@sha256:72ba65eb42c10344912a84ff42408db7d34f2feb642204570ab8fc5ffd29f1d3
 ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 COPY dist/ /usr/share/nginx/html/
 COPY nginx.conf /etc/nginx/templates/default.conf.template

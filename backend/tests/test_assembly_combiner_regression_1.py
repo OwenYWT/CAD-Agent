@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.agent.code_gen import CodeGenerator
-from app.sandbox.executor import CadQueryExecutor
+from tests.native_runtime import native_executor
 
 
 class _ProviderMustNotRun:
@@ -200,11 +200,7 @@ async def test_touching_assembly_exports_a_watertight_preview_stl(lid_color) -> 
             "color": lid_color,
         },
     ])
-    executor = CadQueryExecutor(
-        runtime_name="podman",
-        image_ref=os.environ["SANDBOX_IMAGE"],
-        sandbox_command="podman",
-    )
+    executor = native_executor()
     outcome = await executor.execute(source, mode="3d", timeout_s=180)
     try:
         assert outcome.success, outcome.error_message

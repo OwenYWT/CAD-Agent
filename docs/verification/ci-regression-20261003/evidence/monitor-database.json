@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "current_user": "cad_agent_monitor",
+  "session_user": "cad_ci_monitor",
+  "superuser": false,
+  "bypass_rls": false,
+  "auth_or_runtime_member": false,
+  "denied_operations": [
+    "write",
+    "auth",
+    "runtime-role"
+  ]
+}

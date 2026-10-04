@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
-export PYTHONPATH="$root/backend"
+export PYTHONPATH="$root:$root/backend"
 api_port=${CAD_BROWSER_API_PORT:-18041}
 web_port=${CAD_BROWSER_WEB_PORT:-18111}
 export CAD_NATIVE_E2E_URL=http://127.0.0.1:$api_port
@@ -20,8 +20,8 @@ export CAD_MONITOR_E2E_REPORT="$report_root/browser-monitor"
 export CAD_CONSTRAINT_BROWSER_REPORT="$report_root/browser-constraint-repair"
 export CAD_NATIVE_PARAMETER_REPORT="$report_root/native-parameters"
 export CAD_MONITOR_E2E_URL="http://127.0.0.1:${CAD_BROWSER_MONITOR_PORT:-18092}/"
-export TEMPORAL_TASK_QUEUE="browser-contract-${GITHUB_RUN_ID:-local}"
-export TEMPORAL_AGENT_V2_TASK_QUEUE="browser-contract-v2-${GITHUB_RUN_ID:-local}"
+export TEMPORAL_TASK_QUEUE="${CAD_CI_SCOPE:-browser-contract-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}}-v1"
+export TEMPORAL_AGENT_V2_TASK_QUEUE="${CAD_CI_SCOPE:-browser-contract-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}}-v2"
 export APP_ENVIRONMENT=test DURABLE_CONTROL_PLANE_ENABLED=true AUTH_REQUIRED=true
 export AUTH_TOKEN_SECRET="$(python -c 'import secrets;print(secrets.token_hex(32))')"
 export ADMIN_PASSWORD="$(python -c 'import secrets;print(secrets.token_urlsafe(24))')"

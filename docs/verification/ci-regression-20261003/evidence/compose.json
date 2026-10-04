@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "source_sha": null,
+  "compose_sha256": "cacf3a269a2c9acca39ec0184185a687551f51a1276c7ad920b1d23b374bef90",
+  "application_image": "sha256:c9f47160e8376519810ee1fcbdf06a3d23723b51250999acb5cd3d773521caaa",
+  "source_mounts": false,
+  "project": "cad-ci-deploy-local-20261003g",
+  "provider_evaluation": false,
+  "monitor_has_separate_credentials": true
+}

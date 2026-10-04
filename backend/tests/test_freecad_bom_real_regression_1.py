@@ -11,9 +11,9 @@ import pytest
 from app.agent.code_gen import CodeGenerator
 from app.execution.capability_adapter import CapabilityExecutionAdapter
 from app.execution.contracts import ExecutionStatus
-from app.execution.podman_backend import PodmanExecutionBackend
 from app.freecad.bom_contracts import FreeCADBOMRequestV1
 from app.sandbox.executor import CadQueryExecutor
+from tests.native_runtime import native_backend, native_executor
 
 
 # Regression: FUSION-004 — the durable Assembly workflow could not reach a
@@ -34,13 +34,8 @@ async def _cadquery_step(executor: CadQueryExecutor, source: str) -> tuple[Path,
     reason="set RUN_REAL_FREECAD=1 to exercise native FreeCAD Assembly BOM",
 )
 async def test_real_cadquery_assembly_steps_generate_native_freecad_bom() -> None:
-    image = os.environ["SANDBOX_IMAGE"]
-    executor = CadQueryExecutor(
-        runtime_name="podman",
-        image_ref=image,
-        sandbox_command="podman",
-    )
-    backend = PodmanExecutionBackend(image)
+    executor = native_executor()
+    backend = native_backend()
     adapter = CapabilityExecutionAdapter(backend)
     work_dirs: list[Path] = []
     try:

@@ -4170,6 +4170,34 @@ async def test_constraint_patch_incident_full_chain_and_owned_evidence(connected
             review_note='本测试只确认原生尺寸、约束、联动和实体检查；知悉外观参考检查未验证')
         committed = await commit_change_set(tenant_id=owner.tenant_id, reviewer_principal_id=owner.principal_id, change_set_id=change_set)
         assert committed.status == 'committed'
+        # Check the artifact owned by the saved branch head, in a new restricted
+        # FreeCAD process. The original failed incident and its criteria remain
+        # unchanged; only the separate valid frozen baseline reaches this point.
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+            artifact = (await conn.execute(text("SELECT a.* FROM artifacts a JOIN project_branches b ON b.head_revision_id=a.revision_id WHERE b.id=:id AND a.artifact_kind='fcstd'"),
+                {'id': initial.branch_id})).mappings().one()
+        payload = await get_object(artifact['object_key'])
+        assert hashlib.sha256(payload).hexdigest() == artifact['sha256']
+        import tempfile
+        from tests.constraint_incident import acceptance
+        with tempfile.TemporaryDirectory(prefix='constraint-saved-') as directory:
+            Path(directory).chmod(0o755)
+            Path(directory, 'model.FCStd').write_bytes(payload)
+            Path(directory, 'acceptance.json').write_text(acceptance(objective).model_dump_json())
+            Path(directory, 'verify.py').write_bytes((Path(__file__).resolve().parents[1]/'e2e/constraint_saved_measurements.py').read_bytes())
+            process = await asyncio.create_subprocess_exec(settings.sandbox_command, 'run', '--rm',
+                '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+                '--tmpfs', '/tmp:rw,size=2g', '-v', f'{directory}:/sandbox/input:ro',
+                '--entrypoint', '/opt/freecad/bin/FreeCADCmd', settings.sandbox_image,
+                '-c', "exec(compile(open('/sandbox/input/verify.py').read(), '/sandbox/input/verify.py', 'exec'))",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+            measured, _ = await process.communicate()
+            assert process.returncode == 0 and b'CAD_CONSTRAINT_SAVED_MEASUREMENTS=' in measured and b'Traceback (most recent call last)' not in measured, measured.decode()
+            if os.environ.get('CAD_AGENT_TEST_EVIDENCE_DIR'):
+                retained = Path(os.environ['CAD_AGENT_TEST_EVIDENCE_DIR'])/str(created.workflow_id)
+                retained.mkdir(parents=True, exist_ok=True)
+                (retained/'saved.FCStd').write_bytes(payload)
+                (retained/'saved-measurements.log').write_bytes(measured)
     if os.environ.get('CAD_CONSTRAINT_REPORT'):
         Path(os.environ['CAD_CONSTRAINT_REPORT']).with_suffix('.positive.json' if connected_fixture else '.negative.json').write_text(json.dumps({'status': 'passed',
             'workflow_id': str(created.workflow_id), 'repairs': generator.repairs, 'diagnostics': len(diagnostics),

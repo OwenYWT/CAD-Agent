@@ -488,10 +488,12 @@
   "mandatory_suites": [
     "backend",
     "frontend",
-    "mcad-runtime",
     "architecture-contract",
-    "model-lifecycle-db",
-    "usage-monitoring"
+    "build-images",
+    "mcad-core",
+    "model-lifecycle",
+    "browser-e2e",
+    "deploy-smoke"
   ],
   "runtime_contracts": [
     "Job ID/generation and cancellation",
@@ -921,35 +923,47 @@
     "backend/app/freecad/constraint_relationships.py": "M04"
   },
   "required_runtime_reports": {
-    "native-parameters/kernel.log": {
+    "browser-e2e/native-parameters/kernel.log": {
       "kind": "marker",
-      "marker": "CAD_NATIVE_PARAMETER_MEASUREMENTS="
+      "marker": "CAD_NATIVE_PARAMETER_MEASUREMENTS=",
+      "job": "browser-e2e"
     },
-    "durable-core.xml": {
-      "kind": "junit"
+    "mcad-core/durable-core.xml": {
+      "kind": "junit",
+      "job": "mcad-core",
+      "suite": "durable-core"
     },
-    "transactions.xml": {
-      "kind": "junit"
+    "model-lifecycle/transactions.xml": {
+      "kind": "junit",
+      "job": "model-lifecycle",
+      "suite": "transactions"
     },
-    "model-lifecycle-db.xml": {
-      "kind": "junit"
+    "model-lifecycle/model-lifecycle-db.xml": {
+      "kind": "junit",
+      "job": "model-lifecycle",
+      "suite": "model-lifecycle"
     },
-    "usage-monitoring.xml": {
-      "kind": "junit"
+    "model-lifecycle/usage-monitoring.xml": {
+      "kind": "junit",
+      "job": "model-lifecycle",
+      "suite": "usage-monitoring"
     },
-    "schema-upgrade.xml": {
-      "kind": "junit"
+    "model-lifecycle/schema-upgrade.xml": {
+      "kind": "junit",
+      "job": "model-lifecycle",
+      "suite": "schema-upgrade"
     },
-    "browser-contract/report.json": {
+    "browser-e2e/browser-contract/report.json": {
       "kind": "json",
       "fields": {
         "passed": true,
         "same_canvas": true,
         "real_kernel": true,
         "real_auth": true
-      }
+      },
+      "job": "browser-e2e"
     },
-    "browser-parameters/report.json": {
+    "browser-e2e/browser-parameters/report.json": {
       "kind": "json",
       "fields": {
         "status": "passed",
@@ -958,9 +972,10 @@
         "unchanged_other_parameters": true,
         "draft_and_selection_survive_collapse": true,
         "canvas_not_remounted": true
-      }
+      },
+      "job": "browser-e2e"
     },
-    "browser-rejection/report.json": {
+    "browser-e2e/browser-rejection/report.json": {
       "kind": "json",
       "fields": {
         "passed": true,
@@ -975,17 +990,19 @@
           "refresh-before-draft",
           "draft-before-refresh"
         ]
-      }
+      },
+      "job": "browser-e2e"
     },
-    "browser-layout/report.json": {
+    "browser-e2e/browser-layout/report.json": {
       "kind": "json",
       "fields": {
         "status": "passed",
         "same_canvas": true,
         "camera_pixels_unchanged": true
-      }
+      },
+      "job": "browser-e2e"
     },
-    "browser-monitor/report.json": {
+    "browser-e2e/browser-monitor/report.json": {
       "kind": "json",
       "fields": {
         "passed": true,
@@ -993,110 +1010,133 @@
         "two_accounts": true,
         "persistent_reload": true,
         "logout": true
-      }
+      },
+      "job": "browser-e2e"
     },
-    "native/freecad_constraint_diagnostics.log": {
+    "mcad-core/native/freecad_constraint_diagnostics.log": {
       "kind": "marker",
-      "marker": "CAD_CONSTRAINT_DIAGNOSTICS="
+      "marker": "CAD_CONSTRAINT_DIAGNOSTICS=",
+      "job": "mcad-core"
     },
-    "native/freecad_reference_fixture.log": {
+    "mcad-core/native/freecad_reference_fixture.log": {
       "kind": "marker",
-      "marker": "CAD_REFERENCE_GEOMETRY="
+      "marker": "CAD_REFERENCE_GEOMETRY=",
+      "job": "mcad-core"
     },
-    "native/chamfer_scope_geometry.log": {
+    "mcad-core/native/chamfer_scope_geometry.log": {
       "kind": "marker",
-      "marker": "CAD_CHAMFER_SCOPE="
+      "marker": "CAD_CHAMFER_SCOPE=",
+      "job": "mcad-core"
     },
-    "native/engineering.log": {
+    "mcad-core/native/engineering.log": {
       "kind": "marker",
-      "marker": "CAD_ENGINEERING_RESULT_CHANNEL="
+      "marker": "CAD_ENGINEERING_RESULT_CHANNEL=",
+      "job": "mcad-core"
     },
-    "released-workflow-replay.json": {
-      "kind": "json",
-      "fields": {
-        "passed": true
-      }
+    "mcad-core/released-workflow-replay.json": {
+      "job": "mcad-core",
+      "kind": "released-replay",
+      "manifest": "backend/tests/fixtures/released-histories/manifest.json"
     },
-    "release-source-drill/summary.json": {
+    "model-lifecycle/release-source-drill/summary.json": {
       "kind": "json",
       "fields": {
         "passed": true,
         "upgrade_fencing": true,
         "rollback_fencing": true,
         "old_new_monitor_roles": true
-      }
+      },
+      "job": "model-lifecycle"
     },
-    "release-source-drill/old-monitor.xml": {
-      "kind": "junit"
+    "model-lifecycle/release-source-drill/old-monitor.xml": {
+      "kind": "junit",
+      "job": "model-lifecycle"
     },
-    "release-source-drill/current-monitor.xml": {
-      "kind": "junit"
+    "model-lifecycle/release-source-drill/current-monitor.xml": {
+      "kind": "junit",
+      "job": "model-lifecycle"
     },
-    "native/freecad_coordinate_contract.log": {
+    "mcad-core/native/freecad_coordinate_contract.log": {
       "kind": "marker",
-      "marker": "CAD_COORDINATE_CONTRACT="
+      "marker": "CAD_COORDINATE_CONTRACT=",
+      "job": "mcad-core"
     },
-    "native/freecad_profile_contract.log": {
+    "mcad-core/native/freecad_profile_contract.log": {
       "kind": "marker",
-      "marker": "CAD_PROFILE_CONTRACT="
+      "marker": "CAD_PROFILE_CONTRACT=",
+      "job": "mcad-core"
     },
-    "native/freecad_curve_profile_contract.log": {
+    "mcad-core/native/freecad_curve_profile_contract.log": {
       "kind": "marker",
-      "marker": "CAD_CURVE_PROFILE_CONTRACT="
+      "marker": "CAD_CURVE_PROFILE_CONTRACT=",
+      "job": "mcad-core"
     },
-    "native/freecad_hole_cut_contract.log": {
+    "mcad-core/native/freecad_hole_cut_contract.log": {
       "kind": "marker",
-      "marker": "CAD_HOLE_CUT_CONTRACT="
+      "marker": "CAD_HOLE_CUT_CONTRACT=",
+      "job": "mcad-core"
     },
-    "native/freecad_loft_contract.log": {
+    "mcad-core/native/freecad_loft_contract.log": {
       "kind": "marker",
-      "marker": "CAD_LOFT_CONTRACT="
+      "marker": "CAD_LOFT_CONTRACT=",
+      "job": "mcad-core"
     },
-    "native/freecad_sweep_contract.log": {
+    "mcad-core/native/freecad_sweep_contract.log": {
       "kind": "marker",
-      "marker": "CAD_SWEEP_CONTRACT="
+      "marker": "CAD_SWEEP_CONTRACT=",
+      "job": "mcad-core"
     },
-    "native/freecad_revolve_contract.log": {
+    "mcad-core/native/freecad_revolve_contract.log": {
       "kind": "marker",
-      "marker": "CAD_REVOLVE_CONTRACT="
+      "marker": "CAD_REVOLVE_CONTRACT=",
+      "job": "mcad-core"
     },
-    "native/freecad_pattern_contract.log": {
+    "mcad-core/native/freecad_pattern_contract.log": {
       "kind": "marker",
-      "marker": "CAD_PATTERN_CONTRACT="
+      "marker": "CAD_PATTERN_CONTRACT=",
+      "job": "mcad-core"
     },
-    "native/freecad_tangency_contract.log": {
+    "mcad-core/native/freecad_tangency_contract.log": {
       "kind": "marker",
-      "marker": "CAD_TANGENCY_CONTRACT="
+      "marker": "CAD_TANGENCY_CONTRACT=",
+      "job": "mcad-core"
     },
-    "native/freecad_repair_replay_contract.log": {
+    "mcad-core/native/freecad_repair_replay_contract.log": {
       "kind": "marker",
-      "marker": "CAD_REPAIR_REPLAY_CONTRACT="
+      "marker": "CAD_REPAIR_REPLAY_CONTRACT=",
+      "job": "mcad-core"
     },
-    "native/freecad_tool_replay_contract.log": {
+    "mcad-core/native/freecad_tool_replay_contract.log": {
       "kind": "marker",
-      "marker": "CAD_TOOL_REPLAY_CONTRACT="
+      "marker": "CAD_TOOL_REPLAY_CONTRACT=",
+      "job": "mcad-core"
     },
-    "native/freecad_checkpoint_replay_contract.log": {
+    "mcad-core/native/freecad_checkpoint_replay_contract.log": {
       "kind": "marker",
-      "marker": "CAD_CHECKPOINT_REPLAY_CONTRACT="
+      "marker": "CAD_CHECKPOINT_REPLAY_CONTRACT=",
+      "job": "mcad-core"
     },
-    "native/curved-surfaces.log": {
+    "mcad-core/native/curved-surfaces.log": {
       "kind": "marker",
-      "marker": "CURVED_SURFACE_CONTRACT="
+      "marker": "CURVED_SURFACE_CONTRACT=",
+      "job": "mcad-core"
     },
-    "native/freecad_constraint_failure_snapshot.log": {
+    "mcad-core/native/freecad_constraint_failure_snapshot.log": {
       "kind": "marker",
-      "marker": "CAD_CONSTRAINT_FAILURE_SNAPSHOT="
+      "marker": "CAD_CONSTRAINT_FAILURE_SNAPSHOT=",
+      "job": "mcad-core"
     },
-    "native/freecad_constraint_profile_contract.log": {
+    "mcad-core/native/freecad_constraint_profile_contract.log": {
       "kind": "marker",
-      "marker": "CAD_CONSTRAINT_PROFILE_CONTRACT="
+      "marker": "CAD_CONSTRAINT_PROFILE_CONTRACT=",
+      "job": "mcad-core"
     },
-    "native/freecad_constraint_parameter_contract.log": {
+    "mcad-core/native/freecad_constraint_parameter_contract.log": {
       "kind": "marker",
-      "marker": "CAD_CONSTRAINT_PARAMETER_CONTRACT="
+      "marker": "CAD_CONSTRAINT_PARAMETER_CONTRACT=",
+      "job": "mcad-core"
     },
-    "browser-constraint-repair/report.json": {
+    "browser-e2e/browser-constraint-repair/report.json": {
       "kind": "json",
       "fields": {
         "passed": true,
@@ -1105,7 +1145,249 @@
         "no_candidate": true,
         "head_unchanged": true,
         "reload_preserved": true
+      },
+      "job": "browser-e2e"
+    },
+    "mcad-core/workflow-replay.json": {
+      "job": "mcad-core",
+      "kind": "workflow-replay",
+      "families": [
+        "McadAgentWorkflowV2",
+        "McadDurableWorkflow",
+        "McadCheckWorkflow",
+        "ModelJobWorkflow"
+      ],
+      "pre_post_model_jobs": true
+    },
+    "mcad-core/native/freecad_api_contract.log": {
+      "job": "mcad-core",
+      "kind": "marker",
+      "marker": "CAD_API_CONTRACT="
+    },
+    "mcad-core/native/feature-measurements.log": {
+      "job": "mcad-core",
+      "kind": "marker",
+      "marker": "FEATURE_MEASUREMENT_CONTRACT_PASSED"
+    },
+    "backend/backend.xml": {
+      "job": "backend",
+      "kind": "junit",
+      "suite": "backend"
+    },
+    "backend/fusion.xml": {
+      "job": "backend",
+      "kind": "junit",
+      "suite": "fusion"
+    },
+    "backend/ci-contracts.xml": {
+      "job": "backend",
+      "kind": "junit",
+      "suite": "ci-contracts"
+    },
+    "frontend/frontend.xml": {
+      "job": "frontend",
+      "kind": "junit",
+      "suite": "frontend"
+    },
+    "model-lifecycle/data-integration.xml": {
+      "job": "model-lifecycle",
+      "kind": "junit",
+      "suite": "data-integration"
+    },
+    "build-images/images.json": {
+      "job": "build-images",
+      "kind": "images"
+    },
+    "build-images/runtime-probe.json": {
+      "job": "build-images",
+      "kind": "runtime-probe",
+      "freecad": "1.1.3",
+      "operations": [
+        "freecad.create_save_reopen_modify",
+        "freecad.transaction_abort",
+        "freecad.sketch_solve",
+        "freecad.shape_check",
+        "freecad.export_step_stl",
+        "freecad.assembly_bom"
+      ]
+    },
+    "backend/steps.json": {
+      "job": "backend",
+      "kind": "steps",
+      "steps": [
+        "backend-lint",
+        "backend-types",
+        "backend",
+        "fusion-schema",
+        "fusion-syntax",
+        "shell-syntax",
+        "fusion",
+        "ci-contracts"
+      ]
+    },
+    "frontend/steps.json": {
+      "job": "frontend",
+      "kind": "steps",
+      "steps": [
+        "frontend-lint",
+        "frontend-tests",
+        "frontend-types",
+        "frontend-build"
+      ]
+    },
+    "architecture-contract/steps.json": {
+      "job": "architecture-contract",
+      "kind": "steps",
+      "steps": [
+        "boundaries",
+        "feature-map",
+        "ci-policy"
+      ]
+    },
+    "mcad-core/steps.json": {
+      "job": "mcad-core",
+      "kind": "steps",
+      "steps": [
+        "durable-core",
+        "native-runtime",
+        "dynamic-replay",
+        "released-replay",
+        "native"
+      ]
+    },
+    "model-lifecycle/steps.json": {
+      "job": "model-lifecycle",
+      "kind": "steps",
+      "steps": [
+        "transactions",
+        "data-integration",
+        "model-lifecycle",
+        "usage-monitoring",
+        "schema-upgrade",
+        "cross-release"
+      ]
+    },
+    "browser-e2e/steps.json": {
+      "job": "browser-e2e",
+      "kind": "steps",
+      "steps": [
+        "browser"
+      ]
+    },
+    "deploy-smoke/steps.json": {
+      "job": "deploy-smoke",
+      "kind": "steps",
+      "steps": [
+        "deploy"
+      ]
+    },
+    "mcad-core/native/steps.json": {
+      "job": "mcad-core",
+      "kind": "steps",
+      "steps": [
+        "freecad_constraint_diagnostics",
+        "freecad_constraint_failure_snapshot",
+        "freecad_constraint_profile_contract",
+        "freecad_constraint_parameter_contract",
+        "freecad_reference_fixture",
+        "chamfer_scope_geometry",
+        "freecad_coordinate_contract",
+        "freecad_profile_contract",
+        "freecad_curve_profile_contract",
+        "freecad_hole_cut_contract",
+        "freecad_loft_contract",
+        "freecad_sweep_contract",
+        "freecad_revolve_contract",
+        "freecad_pattern_contract",
+        "freecad_tangency_contract",
+        "freecad_repair_replay_contract",
+        "freecad_api_contract",
+        "freecad_tool_replay_contract",
+        "freecad_checkpoint_replay_contract",
+        "feature-measurements",
+        "curved-surfaces",
+        "engineering"
+      ]
+    },
+    "deploy-smoke/packaged-browser/report.json": {
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "same_canvas": true,
+        "real_kernel": true,
+        "real_auth": true
+      },
+      "job": "deploy-smoke"
+    },
+    "deploy-smoke/compose.json": {
+      "job": "deploy-smoke",
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "source_mounts": false,
+        "provider_evaluation": false,
+        "monitor_has_separate_credentials": true
+      }
+    },
+    "deploy-smoke/delivery.json": {
+      "job": "deploy-smoke",
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "auth_required": true,
+        "revoked_invite_cannot_restore_access": true,
+        "head_unchanged": true,
+        "tls_rest": true,
+        "authenticated_websocket": true,
+        "anonymous_websocket_denied": true,
+        "private_s3_sigv4": true,
+        "monitor_permissions": {
+          "admin": 200,
+          "owner": 403,
+          "anonymous": 401
+        }
+      }
+    },
+    "browser-e2e/browser-contract/trace.zip": {
+      "job": "browser-e2e",
+      "kind": "browser-trace"
+    },
+    "deploy-smoke/packaged-browser/trace.zip": {
+      "job": "deploy-smoke",
+      "kind": "browser-trace"
+    },
+    "mcad-core/native-runtime.xml": {
+      "job": "mcad-core",
+      "kind": "junit",
+      "suite": "native-runtime"
+    },
+    "deploy-smoke/monitor-database.json": {
+      "job": "deploy-smoke",
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "current_user": "cad_agent_monitor",
+        "session_user": "cad_ci_monitor",
+        "superuser": false,
+        "bypass_rls": false,
+        "auth_or_runtime_member": false,
+        "denied_operations": [
+          "write",
+          "auth",
+          "runtime-role"
+        ]
       }
     }
-  }
+  },
+  "required_ci_jobs": [
+    "backend",
+    "frontend",
+    "architecture-contract",
+    "build-images",
+    "mcad-core",
+    "model-lifecycle",
+    "browser-e2e",
+    "deploy-smoke"
+  ],
+  "required_test_manifest": "docs/architecture/ci-tests.json"
 }

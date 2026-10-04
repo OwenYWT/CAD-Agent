@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="16" time="274.395" timestamp="2026-10-03T05:17:03.005102+00:00" hostname="localhost.localdomain"><testcase classname="tests.test_assembly_combiner_regression_1" name="test_touching_assembly_exports_a_watertight_preview_stl[steelblue]" time="5.886"><properties><property name="ci_nodeid" value="tests/test_assembly_combiner_regression_1.py::test_touching_assembly_exports_a_watertight_preview_stl[steelblue]" /></properties></testcase><testcase classname="tests.test_assembly_combiner_regression_1" name="test_touching_assembly_exports_a_watertight_preview_stl[silver]" time="4.827"><properties><property name="ci_nodeid" value="tests/test_assembly_combiner_regression_1.py::test_touching_assembly_exports_a_watertight_preview_stl[silver]" /></properties></testcase><testcase classname="tests.test_capability_runtime" name="test_real_backend_runs_all_local_capability_families" time="19.368"><properties><property name="ci_nodeid" value="tests/test_capability_runtime.py::test_real_backend_runs_all_local_capability_families" /></properties></testcase><testcase classname="tests.test_execution_backend" name="test_real_podman_backend_exports_step_and_stl" time="25.610"><properties><property name="ci_nodeid" value="tests/test_execution_backend.py::test_real_podman_backend_exports_step_and_stl" /></properties><failure message="AssertionError: assert &lt;ExecutionStatus.OOM: 'OOM'&gt; is &lt;ExecutionStatus.SUCCEEDED: 'SUCCEEDED'&gt;&#10; +  where &lt;ExecutionStatus.OOM: 'OOM'&gt; = ExecutionResult(schema_version='execution-result.v1', execution_attempt_id='attempt-backend-01', status=&lt;ExecutionStat...fo=datetime.timezone.utc), finished_at=datetime.datetime(2026, 10, 3, 5, 17, 59, 361789, tzinfo=datetime.timezone.utc)).status&#10; +    where ExecutionResult(schema_version='execution-result.v1', execution_attempt_id='attempt-backend-01', status=&lt;ExecutionStat...fo=datetime.timezone.utc), finished_at=datetime.datetime(2026, 10, 3, 5, 17, 59, 361789, tzinfo=datetime.timezone.utc)) = MaterializedExecutionOutcome(result=ExecutionResult(schema_version='execution-result.v1', execution_attempt_id='attemp...tzinfo=datetime.timezone.utc)), files={}, work_dir=PosixPath('/private/tmp/cad-agent-ci-20261003.8WUgEd/cad_q2vb617q')).result&#10; +  and   &lt;ExecutionStatus.SUCCEEDED: 'SUCCEEDED'&gt; = ExecutionStatus.SUCCEEDED">@pytest.mark.asyncio
+    @pytest.mark.skipif(
+        os.getenv("RUN_REAL_PODMAN") != "1",
+        reason="set RUN_REAL_PODMAN=1 to exercise the actual sandbox image",
+    )
+    async def test_real_podman_backend_exports_step_and_stl():
+        from tests.native_runtime import native_backend
+    
+        backend = native_backend()
+        snapshot = backend.runtime_snapshot()
+        spec = _spec(
+            runtime=RuntimeRequirement(
+                image_digest=snapshot.image_digest,
+                platform=snapshot.platform,
+            )
+        )
+        outcome = await backend.execute(spec)
+    
+&gt;       assert outcome.result.status is ExecutionStatus.SUCCEEDED
+E       AssertionError: assert &lt;ExecutionStatus.OOM: 'OOM'&gt; is &lt;ExecutionStatus.SUCCEEDED: 'SUCCEEDED'&gt;
+E        +  where &lt;ExecutionStatus.OOM: 'OOM'&gt; = ExecutionResult(schema_version='execution-result.v1', execution_attempt_id='attempt-backend-01', status=&lt;ExecutionStat...fo=datetime.timezone.utc), finished_at=datetime.datetime(2026, 10, 3, 5, 17, 59, 361789, tzinfo=datetime.timezone.utc)).status
+E        +    where ExecutionResult(schema_version='execution-result.v1', execution_attempt_id='attempt-backend-01', status=&lt;ExecutionStat...fo=datetime.timezone.utc), finished_at=datetime.datetime(2026, 10, 3, 5, 17, 59, 361789, tzinfo=datetime.timezone.utc)) = MaterializedExecutionOutcome(result=ExecutionResult(schema_version='execution-result.v1', execution_attempt_id='attemp...tzinfo=datetime.timezone.utc)), files={}, work_dir=PosixPath('/private/tmp/cad-agent-ci-20261003.8WUgEd/cad_q2vb617q')).result
+E        +  and   &lt;ExecutionStatus.SUCCEEDED: 'SUCCEEDED'&gt; = ExecutionStatus.SUCCEEDED
+
+tests/test_execution_backend.py:503: AssertionError</failure></testcase><testcase classname="tests.test_freecad_bom_real_regression_1" name="test_real_cadquery_assembly_steps_generate_native_freecad_bom" time="40.481"><properties><property name="ci_nodeid" value="tests/test_freecad_bom_real_regression_1.py::test_real_cadquery_assembly_steps_generate_native_freecad_bom" /></properties><failure message="AssertionError: Execution exceeded the sandbox memory limit&#10;assert False&#10; +  where False = SandboxResult(success=False, files={}, error_type='OOMError', error_message='Execution exceeded the sandbox memory lim...40146, work_dir=PosixPath('/private/tmp/cad-agent-ci-20261003.8WUgEd/cad_h8i4v52w'), error_code=None, error_details={}).success">@pytest.mark.asyncio
+    @pytest.mark.skipif(
+        os.getenv("RUN_REAL_FREECAD") != "1",
+        reason="set RUN_REAL_FREECAD=1 to exercise native FreeCAD Assembly BOM",
+    )
+    async def test_real_cadquery_assembly_steps_generate_native_freecad_bom() -&gt; None:
+        executor = native_executor()
+        backend = native_backend()
+        adapter = CapabilityExecutionAdapter(backend)
+        work_dirs: list[Path] = []
+        try:
+            base_source = "result = cq.Workplane('XY').box(30, 20, 4)\n"
+&gt;           base, base_dir = await _cadquery_step(
+                executor,
+                base_source,
+            )
+
+tests/test_freecad_bom_real_regression_1.py:43: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+executor = &lt;app.sandbox.executor.CadQueryExecutor object at 0xffff6e7b3950&gt;
+source = "result = cq.Workplane('XY').box(30, 20, 4)\n"
+
+    async def _cadquery_step(executor: CadQueryExecutor, source: str) -&gt; tuple[Path, Path]:
+        outcome = await executor.execute(source, mode="3d", timeout_s=180)
+&gt;       assert outcome.success, outcome.error_message
+E       AssertionError: Execution exceeded the sandbox memory limit
+E       assert False
+E        +  where False = SandboxResult(success=False, files={}, error_type='OOMError', error_message='Execution exceeded the sandbox memory lim...40146, work_dir=PosixPath('/private/tmp/cad-agent-ci-20261003.8WUgEd/cad_h8i4v52w'), error_code=None, error_details={}).success
+
+tests/test_freecad_bom_real_regression_1.py:27: AssertionError</failure></testcase><testcase classname="tests.test_freecad_runtime" name="test_real_freecad_generate_reopen_modify_replay_and_rollback" time="5.448"><properties><property name="ci_nodeid" value="tests/test_freecad_runtime.py::test_real_freecad_generate_reopen_modify_replay_and_rollback" /></properties></testcase><testcase classname="tests.test_freecad_runtime" name="test_real_structured_parameter_edits_revert_and_replay" time="5.929"><properties><property name="ci_nodeid" value="tests/test_freecad_runtime.py::test_real_structured_parameter_edits_revert_and_replay" /></properties></testcase><testcase classname="tests.test_freecad_runtime" name="test_real_freecad_hole_pocket_fillet_and_chamfer" time="9.096"><properties><property name="ci_nodeid" value="tests/test_freecad_runtime.py::test_real_freecad_hole_pocket_fillet_and_chamfer" /></properties></testcase><testcase classname="tests.test_freecad_runtime" name="test_real_freecad_semantic_selector_targets_current_circular_edge" time="9.582"><properties><property name="ci_nodeid" value="tests/test_freecad_runtime.py::test_real_freecad_semantic_selector_targets_current_circular_edge" /></properties></testcase><testcase classname="tests.test_freecad_subtractive_semantics_regression_1" name="test_real_subtractive_features_change_solid_or_fail_closed" time="87.977"><properties><property name="ci_nodeid" value="tests/test_freecad_subtractive_semantics_regression_1.py::test_real_subtractive_features_change_solid_or_fail_closed" /></properties></testcase><testcase classname="tests.test_freecad_subtractive_semantics_regression_1" name="test_real_through_hole_survives_thickness_changes_and_reopen" time="5.493"><properties><property name="ci_nodeid" value="tests/test_freecad_subtractive_semantics_regression_1.py::test_real_through_hole_survives_thickness_changes_and_reopen" /></properties></testcase><testcase classname="tests.test_runtime_manifest" name="test_real_sandbox_build123d_exports_step_and_stl" time="23.944"><properties><property name="ci_nodeid" value="tests/test_runtime_manifest.py::test_real_sandbox_build123d_exports_step_and_stl" /></properties><failure message="AssertionError: Execution exceeded the sandbox memory limit&#10;assert False&#10; +  where False = SandboxResult(success=False, files={}, error_type='OOMError', error_message='Execution exceeded the sandbox memory lim...23832, work_dir=PosixPath('/private/tmp/cad-agent-ci-20261003.8WUgEd/cad_rhewti1q'), error_code=None, error_details={}).success">@pytest.mark.asyncio
+    @pytest.mark.skipif(
+        os.getenv("RUN_REAL_PODMAN") != "1",
+        reason="set RUN_REAL_PODMAN=1 to exercise the actual sandbox image",
+    )
+    async def test_real_sandbox_build123d_exports_step_and_stl() -&gt; None:
+        executor = native_executor()
+    
+        result = await executor.execute(
+            "from build123d import Box\n"
+            "result = Box(12, 8, 4)\n",
+            timeout_s=60,
+        )
+    
+&gt;       assert result.success, result.error_message
+E       AssertionError: Execution exceeded the sandbox memory limit
+E       assert False
+E        +  where False = SandboxResult(success=False, files={}, error_type='OOMError', error_message='Execution exceeded the sandbox memory lim...23832, work_dir=PosixPath('/private/tmp/cad-agent-ci-20261003.8WUgEd/cad_rhewti1q'), error_code=None, error_details={}).success
+
+tests/test_runtime_manifest.py:214: AssertionError</failure></testcase><testcase classname="tests.test_runtime_manifest" name="test_real_sandbox_blocks_file_network_and_process_access[open('/etc/passwd').read()\n-open]" time="10.064"><properties><property name="ci_nodeid" value="tests/test_runtime_manifest.py::test_real_sandbox_blocks_file_network_and_process_access[open('/etc/passwd').read()\n-open]" /></properties></testcase><testcase classname="tests.test_runtime_manifest" name="test_real_sandbox_blocks_file_network_and_process_access[import socket\nsocket.socket()\n-not allowed]" time="4.829"><properties><property name="ci_nodeid" value="tests/test_runtime_manifest.py::test_real_sandbox_blocks_file_network_and_process_access[import socket\nsocket.socket()\n-not allowed]" /></properties></testcase><testcase classname="tests.test_runtime_manifest" name="test_real_sandbox_blocks_file_network_and_process_access[import subprocess\nsubprocess.run(['true'])\n-not allowed]" time="4.644"><properties><property name="ci_nodeid" value="tests/test_runtime_manifest.py::test_real_sandbox_blocks_file_network_and_process_access[import subprocess\nsubprocess.run(['true'])\n-not allowed]" /></properties></testcase><testcase classname="tests.test_runtime_manifest" name="test_real_execution_failures_are_normalized_and_bounded" time="9.757"><properties><property name="ci_nodeid" value="tests/test_runtime_manifest.py::test_real_execution_failures_are_normalized_and_bounded" /></properties><failure message="AssertionError: assert 'ContainerLaunchError' == 'ExecutionTimeout'&#10;  &#10;  - ExecutionTimeout&#10;  + ContainerLaunchError">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0xffff8dc4d210&gt;
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(
+        os.getenv("RUN_REAL_PODMAN") != "1",
+        reason="set RUN_REAL_PODMAN=1 to exercise normalized real failures",
+    )
+    async def test_real_execution_failures_are_normalized_and_bounded(
+        monkeypatch,
+    ) -&gt; None:
+        monkeypatch.setattr(settings, "sandbox_timeout_s", 10)
+        executor = CompatibilityExecutor(native_backend())
+    
+        invalid = await executor.execute("result =")
+        assert invalid.success is False
+        assert invalid.error_type == "InvalidCode"
+    
+        kernel = await executor.execute(
+            "result = cq.Workplane('XY').box(10, 10, 10).edges().fillet(100)"
+        )
+        assert kernel.success is False
+        assert kernel.error_type == "CADKernelError"
+    
+        monkeypatch.setattr(settings, "sandbox_timeout_s", 1)
+        timeout = await executor.execute("while True:\n    pass")
+        assert timeout.success is False
+&gt;       assert timeout.error_type == "ExecutionTimeout"
+E       AssertionError: assert 'ContainerLaunchError' == 'ExecutionTimeout'
+E         
+E         - ExecutionTimeout
+E         + ContainerLaunchError
+
+tests/test_runtime_manifest.py:269: AssertionError</failure></testcase></testsuite></testsuites>

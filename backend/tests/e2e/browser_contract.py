@@ -25,6 +25,7 @@ with httpx.Client(base_url=os.environ['CAD_NATIVE_E2E_URL'], headers={'Authoriza
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True, args=['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
         page = browser.new_page(viewport={'width':1440,'height':1000})
+        page.context.tracing.start(screenshots=True, snapshots=True)
         page.on('pageerror', lambda error: errors.append(str(error)))
         try:
             page.goto(os.environ['CAD_NATIVE_E2E_WEB'])
@@ -67,4 +68,5 @@ with httpx.Client(base_url=os.environ['CAD_NATIVE_E2E_URL'], headers={'Authoriza
             page.screenshot(path=str(out/'failure.png'))
             raise
         finally:
+            page.context.tracing.stop(path=str(out/'trace.zip'))
             browser.close()

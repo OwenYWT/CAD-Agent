@@ -11,7 +11,7 @@ import pytest
 
 from app.execution.capability_adapter import CapabilityExecutionAdapter
 from app.execution.contracts import ExecutionStatus
-from app.execution.podman_backend import PodmanExecutionBackend
+from tests.native_runtime import native_backend
 from app.freecad.contracts import FreeCADOperationPlan
 
 
@@ -141,7 +141,7 @@ async def _execute(
     reason="set RUN_REAL_FREECAD=1 to exercise the real FreeCAD sandbox",
 )
 async def test_real_freecad_generate_reopen_modify_replay_and_rollback() -> None:
-    backend = PodmanExecutionBackend(os.environ["SANDBOX_IMAGE"])
+    backend = native_backend()
     adapter = CapabilityExecutionAdapter(backend)
     work_dirs: list[Path] = []
     try:
@@ -246,7 +246,7 @@ async def test_real_freecad_generate_reopen_modify_replay_and_rollback() -> None
 async def test_real_structured_parameter_edits_revert_and_replay() -> None:
     from app.freecad.state_contract import compile_parameter_operation_plan
 
-    adapter = CapabilityExecutionAdapter(PodmanExecutionBackend(os.environ["SANDBOX_IMAGE"]))
+    adapter = CapabilityExecutionAdapter(native_backend())
     work_dirs = []
     try:
         current = await _execute(adapter, _cylinder_plan(), request_id="parameter-seed")
@@ -283,7 +283,7 @@ async def test_real_structured_parameter_edits_revert_and_replay() -> None:
     reason="set RUN_REAL_FREECAD=1 to exercise the real FreeCAD sandbox",
 )
 async def test_real_freecad_hole_pocket_fillet_and_chamfer() -> None:
-    backend = PodmanExecutionBackend(os.environ["SANDBOX_IMAGE"])
+    backend = native_backend()
     adapter = CapabilityExecutionAdapter(backend)
     work_dirs: list[Path] = []
     try:
@@ -502,7 +502,7 @@ async def test_real_freecad_hole_pocket_fillet_and_chamfer() -> None:
     reason="set RUN_REAL_FREECAD=1 to exercise the real FreeCAD sandbox",
 )
 async def test_real_freecad_semantic_selector_targets_current_circular_edge() -> None:
-    backend = PodmanExecutionBackend(os.environ["SANDBOX_IMAGE"])
+    backend = native_backend()
     adapter = CapabilityExecutionAdapter(backend)
     work_dirs: list[Path] = []
     try:
