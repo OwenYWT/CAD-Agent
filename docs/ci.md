@@ -13,7 +13,7 @@
 
 | 必需 job | 保留／新增的检查 |
 | --- | --- |
-| backend | 原后端离线集合：1,945 个测试 ID，209 个明确记录的隔离环境／付费依赖／向量回退跳过；另运行 Fusion 离线 189 项、CI 门禁与预算／资源保护 38 项、核心 lint 和类型基线 |
+| backend | 原后端离线集合：1,945 个测试 ID，209 个明确记录的隔离环境／付费依赖／向量回退跳过；另运行 Fusion 离线 189 项、CI 门禁与预算／资源保护 39 项、核心 lint 和类型基线 |
 | frontend | 原 lint、159 项测试、TypeScript、生产构建，交付镜像使用本次构建的 dist |
 | architecture-contract | 原架构边界和功能地图检查，新增必测集合、工作流权限及 Action SHA 检查 |
 | build-images | 构建并验证 sandbox、backend、frontend、object-store；记录源码 SHA、镜像 ID 和归档 SHA；执行真实运行时探针 |

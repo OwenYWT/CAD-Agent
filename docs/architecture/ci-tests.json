@@ -2764,7 +2764,8 @@
       "scripts/ci/tests/test_deploy_cleanup.py::DeployCleanup::test_foreign_owned_scratch_uses_only_its_work_mount",
       "scripts/ci/tests/test_deploy_cleanup.py::DeployCleanup::test_work_symlink_cannot_select_an_outside_cleanup_mount",
       "scripts/ci/tests/test_deploy_cleanup.py::DeployCleanup::test_writable_scratch_does_not_use_privileged_cleanup",
-      "scripts/ci/tests/test_regression_gate.py::RegressionGate::test_lifecycle_requires_its_own_successful_real_history"
+      "scripts/ci/tests/test_regression_gate.py::RegressionGate::test_lifecycle_requires_its_own_successful_real_history",
+      "scripts/ci/tests/test_image_contract.py::ImageArchiveContract::test_corrupt_or_truncated_archive_is_rejected_before_loading"
     ]
   },
   "native-runtime": {

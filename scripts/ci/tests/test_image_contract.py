@@ -5,11 +5,27 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from scripts.ci.image_manifest import IMAGES, create, digest
+from scripts.ci.image_manifest import IMAGES, create, digest, load
 
 
 class ImageArchiveContract(unittest.TestCase):
+    def test_corrupt_or_truncated_archive_is_rejected_before_loading(self):
+        for truncated in (False, True):
+            with self.subTest(truncated=truncated), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                for name in IMAGES:
+                    self.archive(root, name, 'a' * 40)
+                create(root, 'a' * 40)
+                archive = root / 'sandbox.tar'
+                data = archive.read_bytes()
+                archive.write_bytes(data[:len(data) // 2] if truncated else data + b'corruption')
+                with patch('scripts.ci.image_manifest.subprocess.run') as run:
+                    with self.assertRaisesRegex(ValueError, 'image archive changed: sandbox'):
+                        load(root, 'a' * 40, IMAGES, 'docker')
+                    run.assert_not_called()
+
     def archive(self, root, name, sha, label=None):
         contents = {'config.json': json.dumps({'config': {'Labels': {'org.opencontainers.image.revision': label or sha}}}).encode(),
             'manifest.json': json.dumps([{'Config': 'config.json', 'RepoTags': ['cad-agent-'+name+':ci-'+sha], 'Layers': []}]).encode()}

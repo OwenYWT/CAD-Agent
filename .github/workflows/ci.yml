@@ -145,7 +145,7 @@ jobs:
       run: |-
         python scripts/ci/job_metadata.py build-images reports/build-images
         mkdir -p "$RUNNER_TEMP/cad-ci-images"
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+    - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
       with:
         name: cad-ci-dist-${{ github.run_id }}-${{ github.run_attempt }}
         path: frontend/dist
@@ -412,7 +412,7 @@ jobs:
         cache: pip
         cache-dependency-path: backend/requirements-ci.lock
     - name: Download evidence from this exact workflow attempt
-      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
       if: always()
       with:
         pattern: cad-ci-evidence-*-${{ github.run_id }}-${{ github.run_attempt }}
