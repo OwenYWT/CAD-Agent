@@ -50,3 +50,9 @@ live 工作流的 11 项冻结用例、模型、费用、调用次数、上下�
 原始本轮产物目录：`/private/tmp/cad-agent-ci-20261003.8WUgEd`。关键无凭据证据在本目录的 `evidence/`；未修改原始失败／复验报告，也未将混合引擎结果写成可冒充单次完整 CI 的成功 JUnit。
 
 只有本轮随机 owner 标记／新 Compose scope 的容器、网络和持久卷被清理；既有本机应用与用户数据保持原状。未执行全局 prune 或生产 `down -v`。
+
+## 2026-10-04 GitHub 发布与首轮反馈
+
+已推送分支 `fix/ci-complete-regression` 并创建 [PR #12](https://github.com/OwenYWT/CAD-Agent/pull/12)，基于尚未合并的约束修复分支；没有合并 main。付费工作流只保留手动触发，本次没有模型调用。
+
+首轮 GitHub 后端执行为 1,734 passed、207 skipped、1 deselected，前端与架构检查通过。清单门禁发现 Fusion 权限测试四个参数化名称包含随机 UUID，因名称每次不同而拒绝通过；完整回归门禁也保持失败。将该组十二个参数实例按所验证字段命名，保持随机输入和全部断言，同步更新 backend／fusion 两份清单。两个独立 Python 3.11 进程采集得到完全一致的 35 个测试 ID，35 项权限测试实际通过，两份清单均匹配。此处不代表完整 GitHub 回归已经通过。

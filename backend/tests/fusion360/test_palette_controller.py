@@ -89,18 +89,21 @@ def _binding(now=100.0):
 @pytest.mark.parametrize(
     ("field", "changed"),
     [
-        ("credential_subject", "tenant:other"),
-        ("connector_instance_id", str(uuid.uuid4())),
-        ("document_id", "doc-2"),
-        ("intent_scheme", "some-other-canonicalization"),
-        ("intent_hash", "changed-action"),
-        ("context_fingerprint", "changed-context"),
-        ("proposal_id", str(uuid.uuid4())),
-        ("preview_id", str(uuid.uuid4())),
-        ("request_id", str(uuid.uuid4())),
-        ("risk", "high"),
-        ("purpose", "f3d_upload"),
-        ("expires_at", 999.0),
+        pytest.param(field, changed, id=field)
+        for field, changed in [
+            ("credential_subject", "tenant:other"),
+            ("connector_instance_id", str(uuid.uuid4())),
+            ("document_id", "doc-2"),
+            ("intent_scheme", "some-other-canonicalization"),
+            ("intent_hash", "changed-action"),
+            ("context_fingerprint", "changed-context"),
+            ("proposal_id", str(uuid.uuid4())),
+            ("preview_id", str(uuid.uuid4())),
+            ("request_id", str(uuid.uuid4())),
+            ("risk", "high"),
+            ("purpose", "f3d_upload"),
+            ("expires_at", 999.0),
+        ]
     ],
 )
 def test_approval_is_bound_to_every_security_dimension_and_mismatch_invalidates(field, changed):
