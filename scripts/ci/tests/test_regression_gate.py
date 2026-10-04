@@ -9,6 +9,18 @@ from scripts.ci.require_runtime_evidence import validate
 
 
 class RegressionGate(unittest.TestCase):
+    def test_lifecycle_requires_its_own_successful_real_history(self):
+        contract = {'history.json': {'kind': 'workflow-replay', 'families': ['ModelJobWorkflow']}}
+        row = {'workflow_type': 'ModelJobWorkflow', 'workflow_id': 'model-job', 'run_id': 'run', 'events': 12, 'patches': [], 'replay': 'passed'}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for invalid in ([], [{**row, 'workflow_type': 'McadDurableWorkflow'}], [{**row, 'replay': 'failed'}], [{**row, 'events': 1}], [{**row, 'run_id': ''}]):
+                (root / 'history.json').write_text(json.dumps(invalid))
+                with self.subTest(history=invalid), self.assertRaises(ValueError):
+                    validate(root, contract)
+            (root / 'history.json').write_text(json.dumps([row]))
+            self.assertEqual(validate(root, contract), 1)
+
     def test_every_job_must_succeed(self):
         validate_jobs({'core': {'result': 'success'}, 'browser': {'result': 'success'}}, ['core', 'browser'])
         for outcome in ('failure', 'skipped', 'cancelled', None):

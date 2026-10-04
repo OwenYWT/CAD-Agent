@@ -9,16 +9,16 @@
 - 两者按“工作流＋事件＋PR 或分支”分组取消旧运行，push 与 PR 不互相取消。没有路径跳过规则。
 - `ci-live.yml`：仅手动触发，只执行受信任的 main 提交。独立环境、凭据、费用上限，不参与 PR 门禁，不自动消耗模型 token。
 
-完整门禁始终运行，要求以下八个 job 全部成功，再核对同一提交、workflow run 和 attempt 的 61 份必需证据。失败、取消、跳过、缺少 job、旧报告均不能通过。
+完整门禁始终运行，要求以下八个 job 全部成功，再核对同一提交、workflow run 和 attempt 的 62 份必需证据。失败、取消、跳过、缺少 job、旧报告均不能通过。
 
 | 必需 job | 保留／新增的检查 |
 | --- | --- |
-| backend | 原后端离线集合：1,941 个测试 ID，209 个明确记录的隔离环境／付费依赖／向量回退跳过；另运行 Fusion 离线 189 项、CI 门禁与预算／资源保护 33 项、核心 lint 和类型基线 |
+| backend | 原后端离线集合：1,945 个测试 ID，209 个明确记录的隔离环境／付费依赖／向量回退跳过；另运行 Fusion 离线 189 项、CI 门禁与预算／资源保护 38 项、核心 lint 和类型基线 |
 | frontend | 原 lint、159 项测试、TypeScript、生产构建，交付镜像使用本次构建的 dist |
 | architecture-contract | 原架构边界和功能地图检查，新增必测集合、工作流权限及 Action SHA 检查 |
 | build-images | 构建并验证 sandbox、backend、frontend、object-store；记录源码 SHA、镜像 ID 和归档 SHA；执行真实运行时探针 |
 | mcad-core | 原持久化/API 55 项、原生运行时 16 项、动态历史重放四类工作流及 Model Job 补丁前后分支、12 份固定发布历史、原生脚本 22 项 |
-| model-lifecycle | 原 PostgreSQL 99 项拆为事务 80、Model Job 12、监控 6、迁移 1；补充原 CI 漏掉的集成 22 项；保留旧提交 `62084d5c84ead7bcd88030695fdfcd61112280ea` 的源码／数据库跨版本协议演练 |
+| model-lifecycle | 原 PostgreSQL 99 项拆为事务 80、Model Job 12 及其真实历史重放、监控 6、迁移 1；补充原 CI 漏掉的集成 22 项；保留旧提交 `62084d5c84ead7bcd88030695fdfcd61112280ea` 的源码／数据库跨版本协议演练 |
 | browser-e2e | 保留原生候选提交、参数联动、拒绝与刷新、布局、监控权限、约束失败反馈、保存后内核测量的全部浏览器检查 |
 | deploy-smoke | 实际交付 Compose、生产 Dockerfile 镜像、前端及 TLS Nginx；候选接受／提交／刷新；18 项鉴权权限断言、WebSocket、私有 S3 SigV4、监控 HTTP 与只读数据库权限 |
 
@@ -101,4 +101,4 @@ YAML 的汇总 job 不会自动启用保护。main 仍需设置：通过 PR 合�
 
 GitHub Free 的公开仓库支持保护；私有个人仓库需要 GitHub Pro 等支持套餐。改为公开后仍须配置规则，同时会公开源码和历史。本轮没有改变仓库可见性或远端保护设置。[GitHub 官方说明](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)。
 
-本轮验证范围和实际结果见 `docs/verification/ci-regression-20261003/implementation.md`。按用户要求验证流程与关键真实链路，未完整重跑全部回归，也未调用付费模型。
+本轮验证范围和实际结果见 `docs/verification/ci-regression-20261003/implementation.md`。GitHub 合入前结果以对应提交的 `Required regression gate` 为准，本轮没有调用付费模型。

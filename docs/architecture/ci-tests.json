@@ -1942,7 +1942,11 @@
       "tests/test_web_app.py::test_web_build_is_served_when_dist_exists",
       "tests/test_web_app.py::test_api_routes_still_take_precedence",
       "tests/test_worker_lifecycle.py::test_context_joins_work_and_propagates_real_error[False]",
-      "tests/test_worker_lifecycle.py::test_context_joins_work_and_propagates_real_error[True]"
+      "tests/test_worker_lifecycle.py::test_context_joins_work_and_propagates_real_error[True]",
+      "tests/test_executor_resilience.py::test_bounded_daemon_connection_failure_is_not_an_execution_timeout",
+      "tests/test_executor_resilience.py::test_private_inputs_are_readable_only_in_the_read_only_staging_mount",
+      "tests/test_executor_resilience.py::test_wrapped_docker_read_timeout_respects_execution_budget[bounded]",
+      "tests/test_executor_resilience.py::test_wrapped_docker_read_timeout_respects_execution_budget[unbounded]"
     ],
     "allowed_skips": {
       "tests/integration/test_agent_candidate_seal.py::test_late_workflow_failure_during_cancellation_reaches_a_terminal_state": "real PostgreSQL and MinIO are required",
@@ -2755,7 +2759,12 @@
       "scripts/ci/tests/test_test_report.py::TestReportGate::test_empty_report_fails",
       "scripts/ci/tests/test_test_report.py::TestReportGate::test_ambiguous_identity_fails",
       "scripts/ci/tests/test_runner_resources.py::HostedRunnerResources::test_local_preparation_cannot_delete_tools",
-      "scripts/ci/tests/test_runner_resources.py::HostedRunnerResources::test_self_hosted_preparation_cannot_delete_tools"
+      "scripts/ci/tests/test_runner_resources.py::HostedRunnerResources::test_self_hosted_preparation_cannot_delete_tools",
+      "scripts/ci/tests/test_deploy_cleanup.py::DeployCleanup::test_cleanup_failure_still_fails_the_job",
+      "scripts/ci/tests/test_deploy_cleanup.py::DeployCleanup::test_foreign_owned_scratch_uses_only_its_work_mount",
+      "scripts/ci/tests/test_deploy_cleanup.py::DeployCleanup::test_work_symlink_cannot_select_an_outside_cleanup_mount",
+      "scripts/ci/tests/test_deploy_cleanup.py::DeployCleanup::test_writable_scratch_does_not_use_privileged_cleanup",
+      "scripts/ci/tests/test_regression_gate.py::RegressionGate::test_lifecycle_requires_its_own_successful_real_history"
     ]
   },
   "native-runtime": {

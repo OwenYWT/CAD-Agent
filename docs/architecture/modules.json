@@ -1262,6 +1262,7 @@
         "transactions",
         "data-integration",
         "model-lifecycle",
+        "lifecycle-replay",
         "usage-monitoring",
         "schema-upgrade",
         "cross-release"
@@ -1377,6 +1378,13 @@
           "runtime-role"
         ]
       }
+    },
+    "model-lifecycle/workflow-replay.json": {
+      "job": "model-lifecycle",
+      "kind": "workflow-replay",
+      "families": [
+        "ModelJobWorkflow"
+      ]
     }
   },
   "required_ci_jobs": [

@@ -1,11 +1,80 @@
 """Executor resilience: clean failure on Docker problems + concurrency cap (#24).
 Hermetic — no real Docker daemon."""
 import asyncio
+import json
+import os
+from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
 from app.config import settings
 from app.sandbox.executor import CadQueryExecutor
+
+
+def test_private_inputs_are_readable_only_in_the_read_only_staging_mount(tmp_path):
+    source = tmp_path / 'private.step'
+    source.write_bytes(b'private artifact')
+    source.chmod(0o600)
+    executor = CadQueryExecutor(runtime_name='docker')
+    container = MagicMock()
+    container.wait.return_value = {'StatusCode': 0}
+
+    def run(*, volumes, **kwargs):
+        inputs = next(Path(path) for path, spec in volumes.items() if spec['bind'] == '/sandbox/input')
+        outputs = next(Path(path) for path, spec in volumes.items() if spec['bind'] == '/sandbox/output')
+        assert volumes[str(inputs)]['mode'] == 'ro'
+        assert inputs.parent.stat().st_mode & 0o777 == 0o700
+        assert inputs.stat().st_mode & 0o777 == 0o755
+        assert {path.name for path in inputs.iterdir()} == {'input.py', 'mode.txt', 'task.json', 'model.step'}
+        for path in inputs.iterdir():
+            assert path.stat().st_mode & 0o777 == 0o444
+        assert (inputs / 'model.step').read_bytes() == source.read_bytes()
+        outputs.joinpath('result.json').write_text(json.dumps({'status': 'success', 'files': {}}))
+        return container
+
+    executor._client = MagicMock()
+    executor._client.containers.run = run
+    old_umask = os.umask(0o077)
+    try:
+        result = executor._execute_sync('code', extra_files={'model.step': source}, task={'operation': 'inspect'})
+    finally:
+        os.umask(old_umask)
+    assert result.success
+    assert source.stat().st_mode & 0o777 == 0o600
+    assert source.read_bytes() == b'private artifact'
+
+
+@pytest.mark.parametrize('bounded', [True, False], ids=['bounded', 'unbounded'])
+def test_wrapped_docker_read_timeout_respects_execution_budget(bounded):
+    from requests.exceptions import ConnectionError
+    from urllib3.exceptions import ReadTimeoutError
+    from app.execution.contracts import ResourceLimits
+
+    executor = CadQueryExecutor(runtime_name='docker')
+    container = MagicMock()
+    container.wait.side_effect = ConnectionError(ReadTimeoutError(None, '/containers/test/wait', 'read deadline'))
+    executor._client = MagicMock()
+    executor._client.containers.run.return_value = container
+    result = executor._execute_sync('code', resource_limits=ResourceLimits(timeout_seconds=1 if bounded else None), timeout_s=1)
+    assert result.error_type == ('TimeoutError' if bounded else 'DockerError')
+    container.wait.assert_called_once_with(timeout=1 if bounded else None)
+    container.kill.assert_called_once()
+    container.remove.assert_called_once_with(force=True)
+
+
+def test_bounded_daemon_connection_failure_is_not_an_execution_timeout():
+    from requests.exceptions import ConnectionError
+
+    executor = CadQueryExecutor(runtime_name='docker')
+    container = MagicMock()
+    container.wait.side_effect = ConnectionError('daemon disconnected')
+    executor._client = MagicMock()
+    executor._client.containers.run.return_value = container
+    result = executor._execute_sync('code', timeout_s=1)
+    assert result.error_type == 'DockerError'
+    assert 'daemon disconnected' in result.error_message
+    container.remove.assert_called_once_with(force=True)
 
 
 def test_unbounded_wait_and_daemon_failure_are_not_a_fake_timeout():

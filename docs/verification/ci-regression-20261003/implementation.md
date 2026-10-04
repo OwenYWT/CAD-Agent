@@ -58,3 +58,17 @@ live 工作流的 11 项冻结用例、模型、费用、调用次数、上下�
 首轮 GitHub 后端执行为 1,734 passed、207 skipped、1 deselected，前端与架构检查通过。清单门禁发现 Fusion 权限测试四个参数化名称包含随机 UUID，因名称每次不同而拒绝通过；完整回归门禁也保持失败。将该组十二个参数实例按所验证字段命名，保持随机输入和全部断言，同步更新 backend／fusion 两份清单。两个独立 Python 3.11 进程采集得到完全一致的 35 个测试 ID，35 项权限测试实际通过，两份清单均匹配。此处不代表完整 GitHub 回归已经通过。
 
 `42e72fb` 的快速 CI 与完整 CI 的后端／前端／架构检查通过。首次完整镜像构建时，runner 报告 `No space left on device` 并崩溃；构建日志未上传，不能据此声称已定位到某个具体 Dockerfile 层。该流程同时保留构建层和完整镜像归档，比原流程需要更多峰值磁盘空间。新增一次性 GitHub Linux runner 的 SDK 空间回收和 24 GiB 空间预检，归档完成后回收自身 builder，测试 job 验证加载后删除归档副本；两项本机／self-hosted 拒绝清理的测试加入冻结清单，门禁测试集合增为 33 项。main 在完整门禁通过前保持原提交。
+
+## 2026-10-04 合入 main 前的真实回归与修复
+
+`1ae9e55` 的 [完整运行 37174733486](https://github.com/OwenYWT/CAD-Agent/actions/runs/37174733486) 实际完成全部 AMD64 镜像构建及 FreeCAD 1.1.3 运行时探针，浏览器和生命周期 job 通过。原始 55 项持久化/API 回归通过；新增原生运行时集合为 14 passed、2 failed。交付 job 完成产品检查后，清理沙箱 UID 1000 的私有缓存时失败。完整门禁正确失败，main 未被合并；原报告没有修改。
+
+真实 Docker 与异 UID Linux 复现定位了两条调用链：`ArtifactStore.write_bytes` 以 0600 保存文件，`copy2` 将该权限带入 UID 不同的沙箱，导致 STEP 分析失败；Docker SDK 的 wait 将 urllib3 `ReadTimeoutError` 包装成 requests `ConnectionError`，原分类只检查外层类型。修复只调整私有暂存副本的读权限，保持原文件 0600、父目录 0700 和只读挂载；按异常类型及真实因果链识别有预算的超时，守护进程连接错误仍为基础设施错误，无预算等待不会被冒充为执行超时。
+
+部署清理只为本次新建的 work 目录启动无网络、只读根文件系统、仅有 DAC_OVERRIDE 的清理容器，不挂 Docker socket、不跟随 work 目录符号链接，清理失败仍使 job 失败。独立 Linux 复现验证删除异 UID 缓存后，挂载外部的哨兵文件保持原样。
+
+新增回归先复现两处错误；执行器 20 项测试修复后通过。相同 Linux 客户端以 UID 1001、真实沙箱 UID 1000、Docker 兼容接口执行全部 16 项原生回归，16 passed、0 skipped，包含原 STEP 分析、超时和 OOM 断言；报告为 `evidence/native-runtime-docker-compatible-20261004.xml`。这些本地验证不能替代修复后实际 Docker GitHub 回归。
+
+拆分后生命周期 job 也必须重放自己生成的 ModelJobWorkflow 历史，使用原重放器的显式工作流选择；核心四类及补丁前后检查保持原状。生命周期重放纳入必需产物和步骤，完整门禁现要求 62 份证据。后端冻结清单新增 4 项执行器回归，共 1,945 项；CI 清理与生命周期漏测保护纳入冻结清单，38 passed、15 subtests passed。隔离 CI 服务凭据在 GitHub 日志中注册掩码。
+
+PR #12 已改为直接面向 main，包含原 PR #11 的约束修复依赖和 CI 更新。下一次更新将针对 main 的实际合并结果运行全部确定性回归；没有改可见性、保护规则、生产发布或付费模型配置。

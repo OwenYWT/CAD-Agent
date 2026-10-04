@@ -31,6 +31,7 @@ for name in postgres minio temporal; do
   fi
 done
 secret=$("$python" -c 'import secrets;print(secrets.token_hex(24))')
+if [[ ${GITHUB_ACTIONS:-} == true ]]; then printf '::add-mask::%s\n' "$secret"; fi
 owner=$("$python" -c 'import secrets;print(secrets.token_hex(24))')
 bucket="$scope-artifacts"
 [[ ${#bucket} -le 63 ]] || { printf 'CI object-store scope is too long\n' >&2; exit 2; }

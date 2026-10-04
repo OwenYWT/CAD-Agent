@@ -1,0 +1,30 @@
+{
+  "schema_version": "cad-ci-images.v1",
+  "source_sha": "e7c1535702420deb44627cfb1464d40437fb98b3",
+  "images": {
+    "sandbox": {
+      "file": "sandbox.tar",
+      "sha256": "620e1fb07128e6379fbb11efc1bb89dee2aae19431bcbb1bd9431934a9f02505",
+      "image_id": "sha256:0f7d060e26753fb685bf4ebfba6025dbf9b8d28c70b9de2249abbb6ecbbadcad",
+      "tag": "cad-agent-sandbox:ci-e7c1535702420deb44627cfb1464d40437fb98b3"
+    },
+    "object-store": {
+      "file": "object-store.tar",
+      "sha256": "762dae8e86cc9c4547347ca9f066f0b50223ec6acd27e4b974935d3ace7d175b",
+      "image_id": "sha256:f04d12d9eb51cb8fc169751e687239b30c316a9567b421b3a52d93f06b21da19",
+      "tag": "cad-agent-object-store:ci-e7c1535702420deb44627cfb1464d40437fb98b3"
+    },
+    "backend": {
+      "file": "backend.tar",
+      "sha256": "01691b9635006259f8d98ccf3de4a52b59b27f03a8210509f1855e3374c0ad27",
+      "image_id": "sha256:1263280d1083aa86c05c8897793dc4d28e356de6a647497adcd6ad13ac74e6b6",
+      "tag": "cad-agent-backend:ci-e7c1535702420deb44627cfb1464d40437fb98b3"
+    },
+    "frontend": {
+      "file": "frontend.tar",
+      "sha256": "c5b043788d248acf9efab278f7788d9de9d6441f506acd55870d974758317dcc",
+      "image_id": "sha256:d89fbe49cc2bf68f32156b23dfd61114800fbcc8d6edd007496d72d61c42b690",
+      "tag": "cad-agent-frontend:ci-e7c1535702420deb44627cfb1464d40437fb98b3"
+    }
+  }
+}

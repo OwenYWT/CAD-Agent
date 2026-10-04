@@ -117,6 +117,7 @@ case "$command" in
       --ignore=tests/integration/test_change_set_api.py --ignore=tests/integration/test_postgres_project_files.py \
       --ignore=tests/integration/test_postgres_history.py --ignore=tests/integration/test_api_compatibility_matrix.py
     suite model-lifecycle model-lifecycle-db.xml tests/postgres/test_model_jobs.py
+    stage lifecycle-replay "$python" tests/e2e/replay_histories.py --workflow-types ModelJobWorkflow --output "$report/workflow-replay.json"
     suite usage-monitoring usage-monitoring.xml tests/postgres/test_monitoring.py
     suite schema-upgrade schema-upgrade.xml tests/postgres/test_upgrade_contract.py
     cd "$root"

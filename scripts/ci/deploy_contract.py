@@ -20,6 +20,34 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def remove_private_directory(private: Path, runtime: str, image: str) -> None:
+    try:
+        shutil.rmtree(private)
+    except PermissionError:
+        # Real Docker keeps sandbox UID 1000 ownership on the host; a hosted
+        # runner cannot unlink a sandbox-owned mode-0700 Matplotlib cache.
+        # Only this invocation's work mount is exposed to the cleanup helper.
+        work = private / 'work'
+        if private.is_symlink() or work.is_symlink() or not work.is_dir():
+            raise
+        cleanup = """import os, shutil
+for entry in os.scandir('/ci-work'):
+    if entry.is_dir(follow_symlinks=False):
+        shutil.rmtree(entry.path)
+    else:
+        os.unlink(entry.path)
+"""
+        subprocess.run([runtime, 'run', '--rm', '--network', 'none', '--read-only',
+            '--cap-drop', 'ALL', '--cap-add', 'DAC_OVERRIDE',
+            '--security-opt', 'no-new-privileges:true', '--pids-limit', '32',
+            '--memory', '64m', '--cpus', '1', '--user', '0:0',
+            '--volume', str(work) + ':/ci-work:rw', '--entrypoint', 'python',
+            image, '-c', cleanup], check=True, text=True)
+        # The mount itself belongs to the runner, so ordinary cleanup now
+        # removes it and the private config. Failures still fail the CI job.
+        shutil.rmtree(private)
+
+
 def main():
     scope = os.environ['CAD_CI_SCOPE']
     if not scope.startswith('cad-ci-') or any(c not in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in scope):
@@ -160,7 +188,7 @@ def main():
             run([*compose, 'down', '--remove-orphans'])
             for volume in volumes:
                 run([runtime, 'volume', 'rm', volume])
-        shutil.rmtree(private)
+        remove_private_directory(private, runtime, env['BACKEND_IMAGE'])
 
 
 if __name__ == '__main__':
