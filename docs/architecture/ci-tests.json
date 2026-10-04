@@ -2753,7 +2753,9 @@
       "scripts/ci/tests/test_test_report.py::TestReportGate::test_duplicate_receipts_fail",
       "scripts/ci/tests/test_test_report.py::TestReportGate::test_only_declared_skip_reason_is_allowed",
       "scripts/ci/tests/test_test_report.py::TestReportGate::test_empty_report_fails",
-      "scripts/ci/tests/test_test_report.py::TestReportGate::test_ambiguous_identity_fails"
+      "scripts/ci/tests/test_test_report.py::TestReportGate::test_ambiguous_identity_fails",
+      "scripts/ci/tests/test_runner_resources.py::HostedRunnerResources::test_local_preparation_cannot_delete_tools",
+      "scripts/ci/tests/test_runner_resources.py::HostedRunnerResources::test_self_hosted_preparation_cannot_delete_tools"
     ]
   },
   "native-runtime": {

@@ -56,3 +56,5 @@ live 工作流的 11 项冻结用例、模型、费用、调用次数、上下�
 已推送分支 `fix/ci-complete-regression` 并创建 [PR #12](https://github.com/OwenYWT/CAD-Agent/pull/12)，基于尚未合并的约束修复分支；没有合并 main。付费工作流只保留手动触发，本次没有模型调用。
 
 首轮 GitHub 后端执行为 1,734 passed、207 skipped、1 deselected，前端与架构检查通过。清单门禁发现 Fusion 权限测试四个参数化名称包含随机 UUID，因名称每次不同而拒绝通过；完整回归门禁也保持失败。将该组十二个参数实例按所验证字段命名，保持随机输入和全部断言，同步更新 backend／fusion 两份清单。两个独立 Python 3.11 进程采集得到完全一致的 35 个测试 ID，35 项权限测试实际通过，两份清单均匹配。此处不代表完整 GitHub 回归已经通过。
+
+`42e72fb` 的快速 CI 与完整 CI 的后端／前端／架构检查通过。首次完整镜像构建时，runner 报告 `No space left on device` 并崩溃；构建日志未上传，不能据此声称已定位到某个具体 Dockerfile 层。该流程同时保留构建层和完整镜像归档，比原流程需要更多峰值磁盘空间。新增一次性 GitHub Linux runner 的 SDK 空间回收和 24 GiB 空间预检，归档完成后回收自身 builder，测试 job 验证加载后删除归档副本；两项本机／self-hosted 拒绝清理的测试加入冻结清单，门禁测试集合增为 33 项。main 在完整门禁通过前保持原提交。

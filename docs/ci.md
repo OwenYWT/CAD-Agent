@@ -13,7 +13,7 @@
 
 | 必需 job | 保留／新增的检查 |
 | --- | --- |
-| backend | 原后端离线集合：1,941 个测试 ID，209 个明确记录的隔离环境／付费依赖／向量回退跳过；另运行 Fusion 离线 189 项、CI 门禁与预算 31 项、核心 lint 和类型基线 |
+| backend | 原后端离线集合：1,941 个测试 ID，209 个明确记录的隔离环境／付费依赖／向量回退跳过；另运行 Fusion 离线 189 项、CI 门禁与预算／资源保护 33 项、核心 lint 和类型基线 |
 | frontend | 原 lint、159 项测试、TypeScript、生产构建，交付镜像使用本次构建的 dist |
 | architecture-contract | 原架构边界和功能地图检查，新增必测集合、工作流权限及 Action SHA 检查 |
 | build-images | 构建并验证 sandbox、backend、frontend、object-store；记录源码 SHA、镜像 ID 和归档 SHA；执行真实运行时探针 |
@@ -63,6 +63,8 @@ Actions 负责安装环境、构建镜像、创建服务和上传证据；测试
 lint 首先覆盖约束修复核心七个模块的语法及未定义名称检查，严格类型检查覆盖 identity／projects 两个已有类型域。Pydantic 动态约束模型中的两个字段名字符串有 Ruff `F821` 基线例外，范围仅限该文件。没有宣称全仓严格 lint／类型检查已经完成。
 
 Python／npm 缓存按锁文件失效；BuildKit 分镜像缓存，缓存写入故障不会隐藏构建故障。各重测试 job 下载同次运行构建的镜像归档并核对源码及字节身份。缓存不作为成功证据；首次无缓存的完整 AMD64 构建仍须由 GitHub 运行证明。
+
+原生镜像和重测试准备阶段只在 `RUNNER_ENVIRONMENT=github-hosted` 的一次性 Linux runner 上释放未使用的 .NET／Android／Haskell／CodeQL SDK，并要求至少 24 GiB 空闲磁盘。本机与 self-hosted 调用会直接拒绝清理。镜像归档完成后只回收本 job 的独立 Buildx builder；各测试 job 校验并加载归档后删除下载副本。没有扩大超时、修改运行时依赖或减少必测项。
 
 ## 必测集合与失败证据
 

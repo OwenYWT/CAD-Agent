@@ -3,6 +3,9 @@ description: Install locked dependencies and verify images from this workflow at
 runs:
   using: composite
   steps:
+  - name: Reserve disk for native images and test services
+    shell: bash
+    run: bash scripts/ci/prepare_hosted_runner.sh
   - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
     with:
       python-version-file: .python-version
@@ -18,3 +21,10 @@ runs:
   - name: Load only source-verified CAD images
     shell: bash
     run: python scripts/ci/image_manifest.py load "$RUNNER_TEMP/cad-ci-images"
+  - name: Remove verified archive copies after loading
+    shell: bash
+    run: |-
+      for image in sandbox object-store backend frontend; do
+        rm "$RUNNER_TEMP/cad-ci-images/$image.tar"
+      done
+      df -h /
