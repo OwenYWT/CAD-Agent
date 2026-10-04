@@ -488,16 +488,19 @@ async def test_compatibility_executor_preserves_sandbox_result_shape(tmp_path):
     reason="set RUN_REAL_PODMAN=1 to exercise the actual sandbox image",
 )
 async def test_real_podman_backend_exports_step_and_stl():
-    image_ref = os.environ["SANDBOX_IMAGE"]
-    snapshot = inspect_container_runtime("podman", image_ref)
+    from tests.native_runtime import native_backend
+
+    backend = native_backend()
+    snapshot = backend.runtime_snapshot()
     spec = _spec(
         runtime=RuntimeRequirement(
             image_digest=snapshot.image_digest,
             platform=snapshot.platform,
-        )
+        ),
+        limits=ResourceLimits.from_configured_memory(
+            os.environ.get("SANDBOX_MEMORY_LIMIT", "512m"), timeout_seconds=60,
+        ),
     )
-    backend = PodmanExecutionBackend(image_ref=image_ref)
-
     outcome = await backend.execute(spec)
 
     assert outcome.result.status is ExecutionStatus.SUCCEEDED

@@ -12,6 +12,7 @@ from app.repositories.runs import append_workflow_event
 from app.services.run_state import complete_attempt, transition_attempt, transition_step, transition_workflow
 from app.workflows.logical_steps import _step_row, _workflow_status
 from app.workflows.inputs import _uuid
+from app.workflows.constraint_evidence import persist_repair_contract
 
 async def _record_agent_validation_outcome(
     payload: dict[str, Any],
@@ -265,6 +266,9 @@ async def _complete_check_workflow(
 
 
 async def _record_freecad_inspections(connection, request, step_key, provenance, *, source_id=None, source_hash=None):
+    if provenance.get('constraint_repair'):
+        await persist_repair_contract(connection, request, source_id=source_id,
+            source_hash=source_hash, contract=provenance['constraint_repair'])
     for index, call in enumerate(provenance.get("tool_calls", [])):
         await append_workflow_event(connection, tenant_id=request.tenant_id,
             workflow_id=request.workflow_run_id, event_type="agent.freecad.tool_read",

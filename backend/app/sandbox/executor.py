@@ -13,6 +13,27 @@ import docker
 from app.config import settings
 
 
+def _is_timeout_exception(error: BaseException) -> bool:
+    """Docker's streaming wait wraps urllib3 read deadlines in ConnectionError."""
+    from requests.exceptions import Timeout
+    from urllib3.exceptions import ReadTimeoutError
+
+    pending = [error]
+    seen = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, (Timeout, ReadTimeoutError, subprocess.TimeoutExpired)):
+            return True
+        pending.extend(
+            child for child in (current.__cause__, current.__context__, *current.args)
+            if isinstance(child, BaseException)
+        )
+    return False
+
+
 @dataclass
 class SandboxResult:
     success: bool
@@ -320,6 +341,13 @@ class CadQueryExecutor:
                 if src_path.exists():
                     shutil.copy2(str(src_path), str(input_dir / name))
 
+        # Private artifacts are commonly 0600 and owned by the host worker.
+        # Normalize only these staged copies for the sandbox UID; originals
+        # and the private parent retain their permissions. The mount is read-only.
+        for staged_file in input_dir.iterdir():
+            staged_file.chmod(0o444)
+        input_dir.chmod(0o755)
+
         container = None
         start_time = time.time()
 
@@ -483,9 +511,8 @@ class CadQueryExecutor:
                     container.kill()
                 except Exception:
                     pass
-                from requests.exceptions import Timeout
                 cancelled = cancel_event is not None and cancel_event.is_set()
-                timed_out = effective_timeout is not None and isinstance(exc, (Timeout, subprocess.TimeoutExpired))
+                timed_out = effective_timeout is not None and _is_timeout_exception(exc)
                 return SandboxResult(
                     success=False, files={},
                     error_type="CancelledError" if cancelled else "TimeoutError" if timed_out else "DockerError",

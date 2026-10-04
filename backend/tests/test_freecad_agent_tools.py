@@ -118,3 +118,88 @@ def test_receipt_does_not_claim_independent_validation_or_saved_version():
     result = execution_receipt(source_id="s", source_hash="h", attempt_id="a", outputs=[{"format": "fcstd"}])
     assert result["status"] == "executed" and result["engineering_validation"] == "pending"
     assert result["saved_revision"] is None
+
+
+@pytest.mark.asyncio
+async def test_constraint_patch_rejection_is_recorded_and_corrected_inside_the_tool_loop():
+    from tests.test_constraint_patch import context_and_patch
+    before, context, patch = context_and_patch()
+    bad = copy.deepcopy(patch); bad['sketch'] = 'UnrelatedSketch'
+    provider = ProviderTurns(
+        [call('freecad_inspect_failure', {'fields': ['constraints', 'construction', 'planned_constraints', 'solver'], 'limit': 64}, 'diagnose')],
+        [call('freecad_patch_constraints', bad, 'bad')],
+        [call('freecad_patch_constraints', patch, 'fixed')])
+    rejected = []
+    async def record(evidence): rejected.append(evidence)
+    failure = {'operation_id': context['snapshot']['failed_operation_id'],
+        'error_code': 'sketch_redundant_constraints', 'details': {'object': context['sketch']},
+        'engineering_acceptance': context['acceptance']}
+    result = await FreeCADOperationGenerator(client=provider, provenance_reader=_provenance).repair(
+        source_code=before.model_dump_json(), failure=failure, base_state=None,
+        output_formats=('step','stl'), diagnostic=context['snapshot'], rejection_sink=record)
+    assert len(rejected) == 1
+    assert rejected[0]['differences'][0]['field'] == 'sketch'
+    assert rejected[0]['differences'][0]['after'] == 'UnrelatedSketch'
+    assert 'UnrelatedSketch' in rejected[0]['response']
+    assert result.provenance['constraint_repair']['acceptance_hash'] == context['acceptance_hash']
+    assert all(op in result.operation_plan.operations for op in before.operations
+               if op.action != 'sketch.add_constraint' or op.args['sketch'] != context['sketch'])
+    replies=[m for m in provider.requests[-1]['messages'] if m['role']=='tool']
+    feedback=json.loads(next(m['content'] for m in replies if m['tool_call_id']=='bad'))
+    assert feedback['executed'] is False and feedback['differences'][0]['before'] == context['sketch']
+    assert all('max_tokens' not in request and 'timeout' not in request for request in provider.requests)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('budget', ['tool_calls', 'rejections'])
+async def test_constraint_feedback_terminates_on_resources_without_time_or_token_limits(monkeypatch, budget):
+    from app.config import settings
+    from app.freecad.contracts import FreeCADPlanningError
+    from tests.test_constraint_patch import context_and_patch
+    before, context, patch = context_and_patch()
+    bad = copy.deepcopy(patch); bad['sketch'] = 'UnrelatedSketch'
+    turns = [[call('freecad_inspect_failure', {'fields': ['solver']}, 'read')]]
+    if budget == 'tool_calls':
+        monkeypatch.setattr(settings, 'constraint_repair_max_tool_calls', 1)
+        code, expected_calls = 'constraint_repair_budget_exhausted', 1
+    else:
+        monkeypatch.setattr(settings, 'constraint_repair_max_rejections', 2)
+        turns += [[call('freecad_patch_constraints', bad, f'bad-{i}')] for i in range(2)]
+        code, expected_calls = 'constraint_patch_rejected', 3
+    provider = ProviderTurns(*turns)
+    rejected = []
+    async def record(evidence): rejected.append(evidence)
+    failure = {'operation_id': context['snapshot']['failed_operation_id'],
+        'error_code': 'sketch_redundant_constraints', 'details': {'object': context['sketch']},
+        'engineering_acceptance': context['acceptance']}
+    with pytest.raises(FreeCADPlanningError) as error:
+        await FreeCADOperationGenerator(client=provider, provenance_reader=_provenance).repair(
+            source_code=before.model_dump_json(), failure=failure, base_state=None,
+            output_formats=('step','stl'), diagnostic=context['snapshot'], rejection_sink=record)
+    assert error.value.code == code
+    assert len(provider.requests) == expected_calls
+    assert len(rejected) == (0 if budget == 'tool_calls' else 2)
+    assert all('max_tokens' not in request and 'timeout' not in request for request in provider.requests)
+
+
+@pytest.mark.asyncio
+async def test_constraint_patch_requires_all_observed_and_pending_constraint_pages():
+    from tests.test_constraint_patch import context_and_patch
+    before, context, patch = context_and_patch()
+    fields = ['constraints', 'construction', 'planned_constraints', 'solver']
+    provider = ProviderTurns(
+        [call('freecad_inspect_failure', {'fields': fields, 'limit': 1}, 'partial')],
+        [call('freecad_patch_constraints', patch, 'premature')],
+        [call('freecad_inspect_failure', {'fields': fields, 'offset': 1, 'limit': 64}, 'remaining')],
+        [call('freecad_patch_constraints', patch, 'complete')])
+    rejected = []
+    async def record(evidence): rejected.append(evidence)
+    failure = {'operation_id': context['snapshot']['failed_operation_id'],
+        'error_code': 'sketch_redundant_constraints', 'details': {'object': context['sketch']},
+        'engineering_acceptance': context['acceptance']}
+    result = await FreeCADOperationGenerator(client=provider, provenance_reader=_provenance).repair(
+        source_code=before.model_dump_json(), failure=failure, base_state=None,
+        output_formats=('step','stl'), diagnostic=context['snapshot'], rejection_sink=record)
+    assert result.generator_kind == 'freecad_constraint_patch'
+    assert len(rejected) == 1 and rejected[0]['differences'][0]['field'] == 'inspection'
+    assert rejected[0]['inspection_calls'][0]['result']['planned_constraints']['next_offset'] == 1

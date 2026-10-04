@@ -1,0 +1,4 @@
+# Keep generated verification evidence byte-for-byte (pytest tracebacks and
+# FreeCAD progress output contain significant whitespace/control characters).
+docs/verification/**/evidence/*.xml -whitespace
+docs/verification/**/evidence/*.log -whitespace

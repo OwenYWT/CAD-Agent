@@ -1,0 +1,16 @@
+{
+  "scope": "Real planning/generation/tool/checkpoint/repair/vision provenance; independent from deterministic PR gate. Not an overall natural-language success rate.",
+  "node_ids": [
+    "tests/test_freecad_agent_real.py::test_real_natural_language_to_freecad_plate_with_hole",
+    "tests/test_freecad_agent_real.py::test_real_provider_requests_l2_measurement_then_modifies_native_model",
+    "tests/integration/test_api_compatibility_matrix.py::test_real_generate_runs_llm_inside_temporal_before_podman",
+    "tests/integration/test_temporal_mcadd_workflow.py::test_agent_v2_real_freecad_generation_validation_seal_and_commit[en-protected-mouths]",
+    "tests/integration/test_temporal_mcadd_workflow.py::test_agent_v2_real_freecad_generation_validation_seal_and_commit[zh-protected-mouths]",
+    "tests/integration/test_temporal_mcadd_workflow.py::test_agent_v2_real_visual_provider_persists_provenance",
+    "tests/integration/test_temporal_mcadd_workflow.py::test_agent_v2_real_repair_provider_persists_provenance_and_attempt",
+    "tests/integration/test_temporal_mcadd_workflow.py::test_agent_v2_real_planner_retriever_codegen_and_execution_provenance",
+    "tests/integration/test_temporal_mcadd_workflow.py::test_agent_v2_live_freecad_tools_contract",
+    "tests/integration/test_temporal_mcadd_workflow.py::test_agent_v2_live_freecad_checkpoint_contract",
+    "tests/integration/test_temporal_mcadd_workflow.py::test_constraint_patch_incident_full_chain_and_owned_evidence[valid-baseline]"
+  ]
+}

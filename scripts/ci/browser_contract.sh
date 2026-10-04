@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
-export PYTHONPATH="$root/backend"
+export PYTHONPATH="$root:$root/backend"
 api_port=${CAD_BROWSER_API_PORT:-18041}
 web_port=${CAD_BROWSER_WEB_PORT:-18111}
 export CAD_NATIVE_E2E_URL=http://127.0.0.1:$api_port
@@ -17,10 +17,11 @@ export CAD_LAYOUT_REPORT_DIR="$report_root/browser-layout"
 export CAD_LAYOUT_FIXTURE="$CAD_TASK_STATE_REPORT_DIR/fixture.json"
 export CAD_BROWSER_FAULT_CONTRACTS=1
 export CAD_MONITOR_E2E_REPORT="$report_root/browser-monitor"
+export CAD_CONSTRAINT_BROWSER_REPORT="$report_root/browser-constraint-repair"
 export CAD_NATIVE_PARAMETER_REPORT="$report_root/native-parameters"
 export CAD_MONITOR_E2E_URL="http://127.0.0.1:${CAD_BROWSER_MONITOR_PORT:-18092}/"
-export TEMPORAL_TASK_QUEUE="browser-contract-${GITHUB_RUN_ID:-local}"
-export TEMPORAL_AGENT_V2_TASK_QUEUE="browser-contract-v2-${GITHUB_RUN_ID:-local}"
+export TEMPORAL_TASK_QUEUE="${CAD_CI_SCOPE:-browser-contract-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}}-v1"
+export TEMPORAL_AGENT_V2_TASK_QUEUE="${CAD_CI_SCOPE:-browser-contract-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}}-v2"
 export APP_ENVIRONMENT=test DURABLE_CONTROL_PLANE_ENABLED=true AUTH_REQUIRED=true
 export AUTH_TOKEN_SECRET="$(python -c 'import secrets;print(secrets.token_hex(32))')"
 export ADMIN_PASSWORD="$(python -c 'import secrets;print(secrets.token_urlsafe(24))')"
@@ -68,6 +69,13 @@ python tests/e2e/task_state_browser.py candidate
 python tests/e2e/parameter_rejection_browser.py
 python tests/e2e/workspace_layout_browser.py
 python tests/e2e/monitoring_permissions_browser.py
+# The incident fixture owns a worker with controlled provider proposals. Model
+# jobs are claimed from this database, so no second provider runner may compete.
+kill "$worker_pid"
+wait "$worker_pid" || true
+python tests/e2e/constraint_failure_browser.py
+python -m app.workers.workflow_worker >> "$report_root/browser-worker.log" 2>&1 &
+worker_pid=$!
 python tests/e2e/native_parameter_contract.py
 "${SANDBOX_COMMAND:-docker}" run --rm --network none --read-only \
   --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,size=2g \

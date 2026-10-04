@@ -17,6 +17,7 @@ from app.db import database_readiness
 from app.execution.backend import ExecutionBackend
 from app.execution.composition import get_execution_backend
 from app.freecad.operation_generator import FreeCADOperationGenerator
+from app.freecad.constraint_patch import NativeConstraintRepairValidation
 from app.object_store import object_store_readiness
 from app.temporal_client import get_temporal_client
 from app.workflows.activities import McadWorkflowActivities
@@ -74,7 +75,8 @@ def build_agent_v2_workflow_worker(
         'agent_v2.repair_operations': partial(native_generation.agent_repair_operations, freecad_operations=activities.freecad_operations),
         'agent_v2.judge_visual': partial(visual_validation.agent_judge_visual, durable_visual=activities.durable_visual),
         'agent_v2.repair_visual': partial(visual_validation.agent_repair_visual, durable_visual=activities.durable_visual),
-        'agent_v2.execute_freecad': partial(cad_execution.agent_execute_freecad, backend=activities.backend),
+        'agent_v2.execute_freecad': partial(cad_execution.agent_execute_freecad, backend=activities.backend,
+            constraint_validation=NativeConstraintRepairValidation()),
         'agent_v2.validate_geometry': partial(geometry_validation.agent_validate_geometry, backend=activities.backend),
         'agent_v2.render_visual': partial(visual_validation.agent_render_visual, backend=activities.backend),
         'agent_v2.validate_dfm': partial(dfm_validation.agent_validate_dfm, backend=activities.backend),

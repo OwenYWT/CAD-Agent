@@ -5,7 +5,11 @@ from __future__ import annotations
 from app.freecad.semantic_state import bounded_agent_context
 from app.freecad.inspection import InspectionRequest, inspect_state
 from app.freecad.api_catalog import CapabilityQuery, query_capabilities
-from app.freecad.agent_tools import EXECUTE_TOOL, read_tool, tool_schemas
+from app.freecad.agent_tools import (
+    EXECUTE_TOOL, CONSTRAINT_PATCH_TOOL, FAILURE_INSPECTION_TOOL, read_tool, read_failure, tool_schemas,
+    missing_failure_inspection,
+)
+from app.freecad.constraint_patch import PatchRejected, build_patch_context, compile_patch
 
 from dataclasses import dataclass, replace
 import hashlib
@@ -364,8 +368,43 @@ class FreeCADOperationGenerator:
         base_state: dict[str, Any] | None,
         output_formats: tuple[str, ...],
         rejection_sink: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        diagnostic: dict[str, Any] | None = None,
+        prior_contract: dict[str, Any] | None = None,
     ) -> FreeCADOperationGenerationResult:
         current = FreeCADOperationPlan.model_validate_json(source_code)
+        if diagnostic is not None:
+            context = build_patch_context(current, diagnostic, failure, base_state, prior_contract)
+            context['resource_policy'] = {
+                'max_tool_calls': settings.constraint_repair_max_tool_calls,
+                'max_rejections': settings.constraint_repair_max_rejections,
+                'max_changes': settings.constraint_repair_max_changes,
+                'max_parameter_probes': settings.constraint_repair_max_parameter_probes,
+                'perturbation_fraction': settings.constraint_repair_perturbation_fraction,
+            }
+            return await self._complete(user_payload={
+                'task': 'constraint_patch', 'checkpoint_enabled': current.execution_mode == 'checkpoint',
+                'baseline': {k: context[k] for k in ('sketch', 'plan_hash', 'checkpoint_hash', 'diagnostic_hash')},
+                'execution_failure': {k: v for k, v in failure.items() if k != 'engineering_acceptance'},
+                'frozen_requirements': context['acceptance'], 'resource_policy': context['resource_policy'],
+                'instruction': 'Inspect the failure and planned constraints before proposing a patch. '
+                    'Only use logical constraint IDs. Preserve geometry, dimensions and necessary connections. '
+                    'For redundancy, a derived numerical expression may be removed only with a backend-verifiable '
+                    'relationship proof; explicit user/confirmed drivers stay protected. For missing relations, '
+                    'use the frozen construction geometry and requirements, never arbitrary coordinates or Block. '
+                    'Compare planned endpoint references to construction geometry. Inspect all constraints on this '
+                    'sketch, including not-yet-executed operations. Read every page using next_offset; constraints '
+                    'that have not executed are still in the plan and will execute after repair. Do not add them again '
+                    'or submit unchanged replacements. Prefer the established geometric relationships (such as '
+                    'equal spans) over extra independent dimensions that break parameter coupling. '
+                    'Do not rewrite other sketches, features or exports. '
+                    'For a point explicitly based at the sketch origin, coincidence to second={"datum":"origin"} '
+                    'expresses that datum relationship without exposing an independent zero-length offset driver. '
+                    'Do not replace actual user dimensions with datum constraints. '
+                    'A patch must fix both redundant/conflicting and missing constraints. If the facts do not establish '
+                    'a valid repair, request clarification through an explicit error.'},
+                generator_kind='freecad_constraint_patch', output_formats=output_formats,
+                base_state=base_state, rejection_sink=rejection_sink,
+                constraint_context=context, constraint_source=current)
         from app.freecad.constraint_repair import SKETCH_FAILURES, validate_constraint_repair, validate_subtractive_repair
         # Reject an unsupported repair scope before paying for a provider call.
         try:
@@ -434,13 +473,17 @@ class FreeCADOperationGenerator:
         output_formats: tuple[str, ...],
         base_state: dict[str, Any] | None = None,
         rejection_sink: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        constraint_context: dict[str, Any] | None = None,
+        constraint_source: FreeCADOperationPlan | None = None,
     ) -> FreeCADOperationGenerationResult:
         async def record_rejection(content, error, attempt):
             if rejection_sink is not None:
                 await rejection_sink({"schema_version":"freecad-planner-rejection.v1",
                     "attempt":attempt, "generator_kind":generator_kind,
                     "response":content, "error_type":getattr(error,'code',type(error).__name__),
-                    "error_message":str(error), "provider":self.provenance_reader()})
+                    "error_message":str(error), "provider":self.provenance_reader(),
+                    **({'inspection_calls': inspections} if constraint_context else {}),
+                    **({'differences': error.differences} if hasattr(error, 'differences') else {})})
 
         last_error: Exception | None = None
         inspections = []
@@ -452,11 +495,21 @@ class FreeCADOperationGenerator:
         pending_call = None
         invalid_attempts = 0
         messages = [
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": (
+                'You repair one diagnosed FreeCAD sketch through scoped constraint tools. '
+                'Read the failure evidence, construction geometry and planned logical constraints. '
+                'Native constraint numbers are diagnostic observations, not edit identities. '
+                'Return sequential function calls. Never claim success; actual execution, parameter '
+                'perturbations and frozen engineering acceptance happen after the proposal. '
+                'Use freecad_inspect_failure then freecad_patch_constraints. '
+                'No tool can change engineering requirements or geometry. '
+                'If necessary design facts are unavailable, return {"error":"needs_clarification: <missing facts>"}. '
+                'Every added relation needs a frozen construction basis.'
+                if constraint_context else _SYSTEM_PROMPT)},
             {
                 "role": "user",
                 "content": json.dumps(
-                    {**user_payload, "next_response": _INSPECTION_NEXT if base_state is not None
+                    {**user_payload, "next_response": 'Call freecad_inspect_failure to inspect solver, constraints, planned_constraints and construction.' if constraint_context else _INSPECTION_NEXT if base_state is not None
                      else "Use lookup tools if needed, then call freecad_execute with complete operation-plan arguments."},
                     ensure_ascii=False,
                     sort_keys=True,
@@ -465,10 +518,13 @@ class FreeCADOperationGenerator:
             },
         ]
         for attempt in itertools.count():
+            if constraint_context and attempt >= constraint_context['resource_policy']['max_tool_calls']:
+                raise FreeCADPlanningError('constraint_repair_budget_exhausted',
+                    'constraint repair exhausted its configured tool-call resource budget')
             reset_chat_completion_provenance()
             if attempt and last_error is not None:
                 invalid_attempts += 1
-                if invalid_attempts >= 2:
+                if invalid_attempts >= (constraint_context['resource_policy']['max_rejections'] if constraint_context else 2):
                     break
                 messages.append(
                     {
@@ -476,7 +532,8 @@ class FreeCADOperationGenerator:
                         "content": (
                             "The prior JSON was rejected by the strict contract: "
                             f"{last_error}. "
-                            + (_INSPECTION_NEXT if base_state is not None and not inspections
+                            + ('Call freecad_patch_constraints with a corrected local patch. ' + json.dumps(getattr(last_error, 'differences', []), ensure_ascii=False)
+                               if constraint_context else _INSPECTION_NEXT if base_state is not None and not inspections
                                else "Call freecad_execute with corrected complete arguments using the measured facts already supplied.")
                         ),
                     }
@@ -486,7 +543,7 @@ class FreeCADOperationGenerator:
                 model=settings.llm_model,
                 temperature=0.0,
                 messages=messages,
-                tools=tool_schemas(has_document=base_state is not None),
+                tools=tool_schemas(has_document=base_state is not None, constraint_repair=constraint_context is not None),
                 tool_choice="auto",
                 parallel_tool_calls=False,
                 stream=True,
@@ -515,6 +572,7 @@ class FreeCADOperationGenerator:
                 await record_rejection(content, last_error, attempt)
                 continue
             try:
+                compiled_contract = None
                 if calls:
                     if len(calls) != 1:
                         raise ValueError("FreeCAD tool calls must be sequential; no calls were executed")
@@ -523,7 +581,32 @@ class FreeCADOperationGenerator:
                     if not isinstance(arguments, dict):
                         raise ValueError("FreeCAD tool arguments must be an object")
                     name = pending_call["function"]["name"]
-                    if name == EXECUTE_TOOL:
+                    if constraint_context and name not in {CONSTRAINT_PATCH_TOOL, FAILURE_INSPECTION_TOOL}:
+                        raise PatchRejected('only failure inspection and a scoped constraint patch are allowed',
+                                            sketch=constraint_context['sketch'], field='tool', after=name)
+                    if name == FAILURE_INSPECTION_TOOL and constraint_context:
+                        evidence = read_failure(arguments, constraint_context)
+                        identity = json.dumps(arguments, sort_keys=True)
+                        if identity in inspection_queries:
+                            raise PatchRejected('inspection repeated without new information')
+                        inspection_queries.add(identity)
+                        inspections.append({'request': arguments, 'result': evidence, 'provider': self.provenance_reader()})
+                        tool_evidence.append({'call': pending_call, 'result': evidence})
+                        messages.extend([assistant_message, {'role': 'tool', 'tool_call_id': pending_call['id'],
+                            'content': json.dumps(evidence, ensure_ascii=False)}])
+                        continue
+                    if name == CONSTRAINT_PATCH_TOOL and constraint_context:
+                        if not inspections:
+                            raise PatchRejected('inspect the actual failure before proposing a patch')
+                        missing = missing_failure_inspection(constraint_context, inspections)
+                        if missing:
+                            raise PatchRejected('failure inspection is incomplete; read the remaining pages before proposing a patch: '
+                                + json.dumps(missing), sketch=constraint_context['sketch'], field='inspection',
+                                before=missing, after=arguments)
+                        compiled, compiled_contract = compile_patch(constraint_source, arguments, constraint_context,
+                            max_changes=constraint_context['resource_policy']['max_changes'])
+                        raw = compiled.model_dump(mode='json')
+                    elif name == EXECUTE_TOOL:
                         raw = arguments
                     elif name == "freecad_discover":
                         raw = {"capability_query": arguments}
@@ -541,6 +624,8 @@ class FreeCADOperationGenerator:
                         continue
                 else:
                     raw = decode_planner_response(content)
+                    if constraint_context:
+                        raise PatchRejected('constraint repair requires the scoped patch tool, not a replacement plan')
                 if isinstance(raw,dict) and set(raw)=={'capability_query'}:
                     query=CapabilityQuery.model_validate(raw['capability_query'])
                     if query in capability_queries:
@@ -579,12 +664,14 @@ class FreeCADOperationGenerator:
                          "content":json.dumps({"inspection_result":evidence,
                             "next_response":"Call freecad_execute using these measured facts, or inspect missing details. Do not repeat unchanged queries."},ensure_ascii=False)}])
                     continue
-                if base_state is not None and not inspections:
+                if base_state is not None and not inspections and not constraint_context:
                     raise ValueError("inspect relevant existing objects before planning their modification")
                 operation_plan = FreeCADOperationPlan.model_validate(raw)
                 if operation_plan.execution_mode == "checkpoint" and not user_payload.get("checkpoint_enabled"):
                     raise ValueError("checkpoint execution is not enabled for this turn")
-                if user_payload.get('task') == 'repair':
+                if constraint_context:
+                    pass  # Compiler constructs an immutable copy of every unrelated operation.
+                elif user_payload.get('task') == 'repair':
                     validate_chamfer_repair(
                         FreeCADOperationPlan.model_validate(user_payload['current_operation_plan']),
                         operation_plan,
@@ -605,7 +692,15 @@ class FreeCADOperationGenerator:
                     )
             except FreeCADPlanningError as exc:
                 await record_rejection(content, exc, attempt)
-                raise
+                if not constraint_context or not isinstance(exc, PatchRejected):
+                    raise
+                messages.append(assistant_message)
+                for call in calls:
+                    messages.append({'role': 'tool', 'tool_call_id': call.id,
+                        'content': json.dumps({'status': 'rejected', 'executed': False,
+                            'error': str(exc), 'differences': exc.differences}, ensure_ascii=False)})
+                last_error = exc
+                continue
             except Exception as exc:
                 await record_rejection(content, exc, attempt)
                 messages.append(assistant_message)
@@ -621,11 +716,15 @@ class FreeCADOperationGenerator:
                     "FreeCAD operation generation completed without provider provenance"
                 )
             source_code = operation_plan.model_dump_json()
+            if compiled_contract is not None:
+                compiled_contract['resource_policy'] = constraint_context['resource_policy']
+                compiled_contract['model_calls'] = (constraint_context.get('prior_contract') or {}).get('model_calls', 0) + attempt + 1
             return FreeCADOperationGenerationResult(
                 operation_plan=operation_plan,
                 source_code=source_code,
                 generator_kind=generator_kind,
                 provenance={**provenance, "inspection_calls": inspections,
+                    **({'constraint_repair': compiled_contract} if compiled_contract else {}),
                     **({"tool_calls": tool_evidence} if tool_evidence else {}),
                     **({"execution_tool_call": pending_call} if pending_call else {}),
                     **({'capability_calls':capability_evidence} if capability_evidence else {}),
@@ -633,7 +732,8 @@ class FreeCADOperationGenerator:
                         if base_state and base_state.get('engineering_evidence') else {})},
             )
         reason = str(last_error)[:1000] if last_error is not None else "inspection query budget exhausted before a plan was returned"
-        raise FreeCADPlanningError("operation_plan_invalid", f"operation generator did not return a valid plan: {reason}") from last_error
+        raise FreeCADPlanningError('constraint_patch_rejected' if constraint_context else "operation_plan_invalid",
+            f"constraint patch was not accepted: {reason}" if constraint_context else f"operation generator did not return a valid plan: {reason}") from last_error
 
     @staticmethod
     def _required_formats(output_formats: tuple[str, ...]) -> tuple[str, ...]:

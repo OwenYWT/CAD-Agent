@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="4" time="29.735" timestamp="2026-10-03T05:24:23.335830+00:00" hostname="localhost.localdomain"><testcase classname="tests.test_execution_backend" name="test_real_podman_backend_exports_step_and_stl" time="4.956"><properties><property name="ci_nodeid" value="tests/test_execution_backend.py::test_real_podman_backend_exports_step_and_stl" /></properties></testcase><testcase classname="tests.test_freecad_bom_real_regression_1" name="test_real_cadquery_assembly_steps_generate_native_freecad_bom" time="11.791"><properties><property name="ci_nodeid" value="tests/test_freecad_bom_real_regression_1.py::test_real_cadquery_assembly_steps_generate_native_freecad_bom" /></properties></testcase><testcase classname="tests.test_runtime_manifest" name="test_real_sandbox_build123d_exports_step_and_stl" time="3.436"><properties><property name="ci_nodeid" value="tests/test_runtime_manifest.py::test_real_sandbox_build123d_exports_step_and_stl" /></properties></testcase><testcase classname="tests.test_runtime_manifest" name="test_real_execution_failures_are_normalized_and_bounded" time="8.867"><properties><property name="ci_nodeid" value="tests/test_runtime_manifest.py::test_real_execution_failures_are_normalized_and_bounded" /></properties><failure message="AssertionError: assert 'ContainerLaunchError' == 'ExecutionTimeout'&#10;  &#10;  - ExecutionTimeout&#10;  + ContainerLaunchError">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0xffff7efd6050&gt;
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(
+        os.getenv("RUN_REAL_PODMAN") != "1",
+        reason="set RUN_REAL_PODMAN=1 to exercise normalized real failures",
+    )
+    async def test_real_execution_failures_are_normalized_and_bounded(
+        monkeypatch,
+    ) -&gt; None:
+        monkeypatch.setattr(settings, "sandbox_timeout_s", 10)
+        executor = CompatibilityExecutor(native_backend())
+    
+        invalid = await executor.execute("result =")
+        assert invalid.success is False
+        assert invalid.error_type == "InvalidCode"
+    
+        kernel = await executor.execute(
+            "result = cq.Workplane('XY').box(10, 10, 10).edges().fillet(100)"
+        )
+        assert kernel.success is False
+        assert kernel.error_type == "CADKernelError"
+    
+        monkeypatch.setattr(settings, "sandbox_timeout_s", 1)
+        timeout = await executor.execute("while True:\n    pass")
+        assert timeout.success is False
+&gt;       assert timeout.error_type == "ExecutionTimeout"
+E       AssertionError: assert 'ContainerLaunchError' == 'ExecutionTimeout'
+E         
+E         - ExecutionTimeout
+E         + ContainerLaunchError
+
+tests/test_runtime_manifest.py:269: AssertionError</failure></testcase></testsuite></testsuites>

@@ -1,0 +1,7 @@
+{
+  "schema_version": "cad-ci-job.v1",
+  "job": "architecture-contract",
+  "source_sha": "7bee03b47791012d6df4a48049a335d6fab72e31",
+  "run_id": "local",
+  "run_attempt": "1"
+}

@@ -14,7 +14,7 @@ from app.capabilities.registry import list_capabilities
 from app.execution.backend import MaterializedExecutionOutcome
 from app.execution.contracts import ExecutionResult, ExecutionStatus
 from app.execution.podman_backend import RuntimeSnapshot
-from app.execution.podman_backend import PodmanExecutionBackend
+from tests.native_runtime import native_backend
 from app.dfm.step_analysis import StepAnalyzer
 
 
@@ -222,7 +222,7 @@ async def test_cad_inspect_uses_execution_backend_and_materializes_real_result(
 async def test_real_backend_runs_all_local_capability_families(
     workspace: Path,
 ) -> None:
-    backend = PodmanExecutionBackend(os.environ["SANDBOX_IMAGE"])
+    backend = native_backend()
     runtime = make_runtime(
         workspace,
         execution_backend=backend,

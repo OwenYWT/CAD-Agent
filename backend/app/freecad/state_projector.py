@@ -104,6 +104,10 @@ def _editor_mode(obj: Any, name: str) -> int:
 
 
 def _has_expression(obj: Any, name: str) -> bool:
+    # FreeCAD 1.1 exposes ExpressionEngine without a getExpression method.
+    # Treat these dependencies as authoritative across both native API shapes.
+    if any(str(path) == name and expression for path, expression in getattr(obj, 'ExpressionEngine', ())):
+        return True
     getter = getattr(obj, "getExpression", None)
     if not callable(getter):
         return False

@@ -11,6 +11,7 @@ from app.execution.backend import ExecutionBackend
 from app.execution.composition import get_execution_backend
 from app.execution.contracts import ArtifactInput
 from app.freecad.operation_generator import FreeCADOperationGenerator
+from app.freecad.constraint_patch import NativeConstraintRepairValidation
 from app.validation.durable_visual import DurableVisualValidator
 from app.workflows.source_preparation import SourcePreparer
 from app.workflows.modeling import DurableModelingSourceGenerator
@@ -130,7 +131,8 @@ class McadWorkflowActivities:
 
     @activity.defn(name='agent_v2.execute_freecad')
     async def agent_execute_freecad(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await cad_execution.agent_execute_freecad(payload, backend=self.backend)
+        return await cad_execution.agent_execute_freecad(payload, backend=self.backend,
+            constraint_validation=NativeConstraintRepairValidation())
 
 
     @activity.defn(name='agent_v2.validate_geometry')

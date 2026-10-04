@@ -1329,10 +1329,31 @@
           ],
           "title": "ConstraintReference",
           "type": "object"
+        },
+        "SketchOriginReference": {
+          "additionalProperties": false,
+          "description": "Stable sketch datum; native negative geometry indices stay internal.",
+          "properties": {
+            "datum": {
+              "const": "origin",
+              "title": "Datum",
+              "type": "string"
+            }
+          },
+          "required": [
+            "datum"
+          ],
+          "title": "SketchOriginReference",
+          "type": "object"
         }
       },
       "additionalProperties": false,
       "properties": {
+        "driving": {
+          "default": true,
+          "title": "Driving",
+          "type": "boolean"
+        },
         "first": {
           "$ref": "#/$defs/ConstraintReference"
         },
@@ -1351,16 +1372,35 @@
           "title": "Kind",
           "type": "string"
         },
+        "logical_id": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Logical Id"
+        },
         "second": {
           "anyOf": [
             {
               "$ref": "#/$defs/ConstraintReference"
             },
             {
+              "$ref": "#/$defs/SketchOriginReference"
+            },
+            {
               "type": "null"
             }
           ],
-          "default": null
+          "default": null,
+          "title": "Second"
         },
         "sketch": {
           "maxLength": 80,

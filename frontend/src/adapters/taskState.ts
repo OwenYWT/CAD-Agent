@@ -56,7 +56,12 @@ export function taskState(panel: PanelState, document?: CloudDocument | null) {
     : phase==='running' ? panel.submissionPending ? '正在提交需求' : status==='cancelling' ? '正在取消任务' : operationLabel
     : phase==='candidate' ? '模型已生成，候选待确认'
     : phase==='saved' ? '模型已保存为当前版本' : unconfirmed ? '等待确认任务是否受理' : snapshot?.confirmation ? '执行计划等待确认' : '等待补充需求';
+  const failedSteps=(snapshot?.steps || []).filter(step=>['failed','timed_out'].includes(step.status) && step.error_message);
+  const originalModelFailure=failedSteps.find(step=>['agent_freecad_operations','agent_model','agent_modeling'].includes(step.kind)) || null;
+  const repairFailure=failedSteps.filter(step=>step.kind.includes('repair')).at(-1) || null;
+  const repairFailureMessage=repairFailure?.error_message || (originalModelFailure &&
+    /constraint_|repair_/.test(errorCode) && errorMessage!==originalModelFailure.error_message ? errorMessage : '');
   return {phase,label:TASK_PHASE_LABELS[phase],title,taskId,status,operationLabel,hasSaved,quota,errorCode,errorMessage,error,snapshot,recovery,continuationOnly,recoveryObjective,
     running:phase==='running',changeSetId:durable?.changeSetId || null,changeStatus,
-    objective};
+    objective,originalModelFailure,repairFailureMessage};
 }

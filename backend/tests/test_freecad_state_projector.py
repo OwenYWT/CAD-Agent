@@ -96,6 +96,16 @@ def test_state_projector_emits_bounded_feature_tree_and_shape_facts() -> None:
     }]
 
 
+def test_expression_engine_without_get_expression_never_exposes_a_dependent_driver():
+    from app.freecad.state_projector import project_parameters
+    feature = Feature()
+    feature.getExpression = None  # Actual FreeCAD 1.1.3 public API shape.
+    feature.ExpressionEngine = [('Length', 'Source.Length / 2')]
+    assert project_parameters(feature) == []
+    feature.ExpressionEngine = []
+    assert [p['id'] for p in project_parameters(feature)] == ['Pad.Length']
+
+
 def test_body_membership_order_is_independent_of_dependencies_and_tip():
     from app.freecad.state_projector import project_object
     first, second = Feature(), Feature()

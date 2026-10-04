@@ -1,0 +1,24 @@
+{
+  "native_cases_with_actual_passing_evidence": 16,
+  "invocations": [
+    {
+      "report": "native-runtime2.xml",
+      "passed": 12,
+      "failed": 4,
+      "engine": "Podman Docker compatibility API"
+    },
+    {
+      "report": "native-runtime3.xml",
+      "passed": 3,
+      "failed": 1,
+      "engine": "Podman Docker compatibility API"
+    },
+    {
+      "report": "native-runtime-podman.xml",
+      "passed": 1,
+      "failed": 0,
+      "engine": "native Podman 5.8.1"
+    }
+  ],
+  "does_not_assert_a_complete_docker_ci_run": true
+}

@@ -6,7 +6,7 @@ from .contracts import FreeCADOperationPlan
 
 SKETCH_FAILURES = frozenset({
     'sketch_redundant_constraints', 'sketch_conflicting_constraints',
-    'sketch_under_constrained',
+    'sketch_under_constrained', 'sketch_solver_failed', 'sketch_parameter_dependency_failed',
 })
 
 

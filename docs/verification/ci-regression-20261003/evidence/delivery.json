@@ -1,0 +1,135 @@
+{
+  "passed": true,
+  "auth_required": true,
+  "permissions": [
+    {
+      "role": "owner",
+      "method": "GET",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966",
+      "status": 200
+    },
+    {
+      "role": "editor",
+      "method": "GET",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966",
+      "status": 200
+    },
+    {
+      "role": "viewer",
+      "method": "GET",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966",
+      "status": 200
+    },
+    {
+      "role": "anonymous",
+      "method": "GET",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966",
+      "status": 401
+    },
+    {
+      "role": "invalid-token",
+      "method": "GET",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966",
+      "status": 401
+    },
+    {
+      "role": "outsider",
+      "method": "GET",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966",
+      "status": 404
+    },
+    {
+      "role": "outsider",
+      "method": "GET",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966",
+      "status": 403
+    },
+    {
+      "role": "owner",
+      "method": "POST",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966/leases",
+      "status": 200
+    },
+    {
+      "role": "owner",
+      "method": "DELETE",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966/leases/fd2257b6-6a16-4e61-9298-fb99123b1aea",
+      "status": 204
+    },
+    {
+      "role": "editor",
+      "method": "POST",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966/leases",
+      "status": 200
+    },
+    {
+      "role": "editor",
+      "method": "DELETE",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966/leases/b8d8b1da-753f-4e33-80c5-a7dbd2f92b4f",
+      "status": 204
+    },
+    {
+      "role": "editor",
+      "method": "GET",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966/members",
+      "status": 403
+    },
+    {
+      "role": "viewer",
+      "method": "POST",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966/leases",
+      "status": 403
+    },
+    {
+      "role": "viewer",
+      "method": "GET",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966/members",
+      "status": 403
+    },
+    {
+      "role": "owner",
+      "method": "GET",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966/members",
+      "status": 200
+    },
+    {
+      "role": "owner",
+      "method": "DELETE",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966/members/d1d251cf-5ab7-54a4-a1ab-fb26f02cd291",
+      "status": 204
+    },
+    {
+      "role": "editor",
+      "method": "GET",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966",
+      "status": 403
+    },
+    {
+      "role": "editor",
+      "method": "POST",
+      "endpoint": "/api/documents/590a408f-86bc-4707-882f-7481a205a966/invitations/accept",
+      "status": 403
+    }
+  ],
+  "roles": [
+    "owner",
+    "editor",
+    "viewer",
+    "outsider",
+    "anonymous",
+    "invalid-token",
+    "revoked-editor"
+  ],
+  "revoked_invite_cannot_restore_access": true,
+  "head_unchanged": true,
+  "tls_rest": true,
+  "authenticated_websocket": true,
+  "anonymous_websocket_denied": true,
+  "private_s3_sigv4": true,
+  "self_signed_ci_certificate": true,
+  "monitor_permissions": {
+    "admin": 200,
+    "owner": 403,
+    "anonymous": 401
+  }
+}

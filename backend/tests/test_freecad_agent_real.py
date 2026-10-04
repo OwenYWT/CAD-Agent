@@ -9,7 +9,7 @@ import pytest
 from app.agent.durable_planner import DurableAgentPlanner
 from app.execution.capability_adapter import CapabilityExecutionAdapter
 from app.execution.contracts import ExecutionStatus
-from app.execution.podman_backend import PodmanExecutionBackend
+from tests.native_runtime import native_backend
 from app.freecad.operation_generator import FreeCADOperationGenerator
 
 
@@ -42,7 +42,7 @@ async def test_real_natural_language_to_freecad_plate_with_hole() -> None:
             json.dumps(requirements.model_dump(mode="json"), ensure_ascii=False)
         ) from exc
 
-    backend = PodmanExecutionBackend(os.environ["SANDBOX_IMAGE"])
+    backend = native_backend()
     outcome = await CapabilityExecutionAdapter(backend).execute(
         capability="freecad",
         operation="execute",

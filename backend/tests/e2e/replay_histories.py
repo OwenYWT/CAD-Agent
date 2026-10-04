@@ -10,8 +10,10 @@ from app.workflows.agent_v2 import McadAgentWorkflowV2
 from app.workflows.definitions import McadDurableWorkflow, McadCheckWorkflow
 from app.workflows.model_job import ModelJobWorkflow
 
-async def main(output):
-    types = {cls.__name__: cls for cls in (McadAgentWorkflowV2, McadDurableWorkflow, McadCheckWorkflow, ModelJobWorkflow)}
+WORKFLOW_TYPES = {cls.__name__: cls for cls in (McadAgentWorkflowV2, McadDurableWorkflow, McadCheckWorkflow, ModelJobWorkflow)}
+
+async def main(output, workflow_types=None):
+    types = {name: WORKFLOW_TYPES[name] for name in (workflow_types or WORKFLOW_TYPES)}
     client = await Client.connect(os.environ['TEMPORAL_TARGET'],
                                   namespace=os.getenv('TEMPORAL_NAMESPACE', 'default'))
     seen = set(); report = []
@@ -45,11 +47,14 @@ async def main(output):
             if name != 'McadAgentWorkflowV2' or count >= 3:
                 break
     assert set(types) == {row['workflow_type'] for row in report}, 'missing workflow family'
-    v2 = [row for row in report if row['workflow_type'] == 'McadAgentWorkflowV2']
-    assert {('agent-v2-model-jobs-v1' in row['patches']) for row in v2} == {False, True}, 'missing pre/post model-job history'
+    if 'McadAgentWorkflowV2' in types:
+        v2 = [row for row in report if row['workflow_type'] == 'McadAgentWorkflowV2']
+        assert {('agent-v2-model-jobs-v1' in row['patches']) for row in v2} == {False, True}, 'missing pre/post model-job history'
     Path(output).write_text(json.dumps(report, indent=2))
     print(f'REPLAY PASSED: {len(report)} real histories across {len(types)} workflow families')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(); parser.add_argument('--output', required=True)
-    asyncio.run(main(parser.parse_args().output))
+    parser.add_argument('--workflow-types', nargs='+', choices=WORKFLOW_TYPES)
+    args = parser.parse_args()
+    asyncio.run(main(args.output, args.workflow_types))

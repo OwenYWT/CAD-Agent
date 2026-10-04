@@ -1,0 +1,7 @@
+{
+  "schema_version": "cad-ci-job.v1",
+  "job": "build-images",
+  "source_sha": "e7c1535702420deb44627cfb1464d40437fb98b3",
+  "run_id": "37174733486",
+  "run_attempt": "1"
+}

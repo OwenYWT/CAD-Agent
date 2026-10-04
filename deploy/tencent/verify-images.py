@@ -44,9 +44,10 @@ def main():
             backend["/app/" + path] = digest
     sandbox = {}
     names = (
-        "executor_entry.py", "capability_entry.py", "freecad_entry.py", "freecad_edge_scope.py", "freecad_bom.py",
+        "executor_entry.py", "capability_entry.py", "freecad_entry.py", "freecad_api.py", "freecad_catalog.py",
+        "freecad_edge_scope.py", "freecad_bom.py", "freecad_constraint_validation.py",
         "freecad_scene.py", "freecad_engineering.py", "freecad_cam.py", "freecad_release.py", "freecad_result_channel.py",
-        "geometry_validation.py", "mesh_normalization.py", "visual_render.py", "dfm_brep.py", "dfm_validation.py",
+        "geometry_validation.py", "feature_verification.py", "mesh_normalization.py", "visual_render.py", "dfm_brep.py", "dfm_validation.py",
         "runtime_probe.py", "freecad_runtime_probe.py", "runtime-lock.json",
         "runtime-requirements.txt", "patch_build123d.py",
     )
@@ -54,9 +55,13 @@ def main():
         sandbox["/opt/cad-agent/" + name] = sources["backend/sandbox/" + name]
     for source, target in (("state_projector.py", "freecad_state_projector.py"),
                            ("sketch_diagnostics.py", "freecad_sketch_diagnostics.py"),
+                           ("failure_snapshot.py", "freecad_failure_snapshot.py"),
+                           ("constraint_relationships.py", "freecad_constraint_relationships.py"),
                            ("reference_geometry.py", "freecad_reference_geometry.py"),
-                           ("topology.py", "freecad_topology.py")):
+                           ("topology.py", "freecad_topology.py"),
+                           ("capabilities.json", "freecad-capabilities.json")):
         sandbox["/opt/cad-agent/" + target] = sources["backend/app/freecad/" + source]
+    sandbox["/opt/cad-agent/geometry_request.py"] = sources["backend/app/contracts/geometry_request.py"]
     for path, digest in sources.items():
         if path.startswith("third_party/cadskills/skills/"):
             sandbox[path.replace("third_party/cadskills/", "/opt/cadskills/", 1)] = digest

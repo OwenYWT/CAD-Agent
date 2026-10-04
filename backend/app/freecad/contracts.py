@@ -129,6 +129,11 @@ class ConstraintReference(FrozenContract):
     point_position: Literal[1, 2, 3] | None = None
 
 
+class SketchOriginReference(FrozenContract):
+    """Stable sketch datum; native negative geometry indices stay internal."""
+    datum: Literal['origin']
+
+
 class DocumentInspectArgs(FrozenContract):
     pass
 
@@ -191,8 +196,10 @@ class SketchAddConstraintArgs(FrozenContract):
         "equal",
     ]
     first: ConstraintReference
-    second: ConstraintReference | None = None
+    second: ConstraintReference | SketchOriginReference | None = None
     value_mm: Coordinate | None = None
+    driving: bool = True
+    logical_id: Annotated[str, Field(min_length=1, max_length=160, pattern=r'^[a-z0-9][a-z0-9_-]*$')] | None = None
 
     @model_validator(mode="after")
     def valid_signature(self) -> "SketchAddConstraintArgs":
@@ -205,14 +212,18 @@ class SketchAddConstraintArgs(FrozenContract):
         }
         if requires_value != (self.value_mm is not None):
             raise ValueError(f"{self.kind} value_mm requirement is not satisfied")
+        if not self.driving and not requires_value:
+            raise ValueError('only dimensional constraints support reference mode')
         if self.kind in {"distance", "radius", "diameter"} and self.value_mm is not None and self.value_mm <= 0:
             raise ValueError(f"{self.kind} requires a positive physical length")
         requires_second = self.kind in {"coincident", "equal"}
         if requires_second != (self.second is not None):
             raise ValueError(f"{self.kind} second reference requirement is not satisfied")
+        if isinstance(self.second, SketchOriginReference) and self.kind != 'coincident':
+            raise ValueError('the sketch origin datum supports point coincidence')
         if self.kind in {"distance_x", "distance_y", "coincident"}:
             references = (self.first,) if self.second is None else (self.first, self.second)
-            if any(reference.point_position is None for reference in references):
+            if any(isinstance(reference, ConstraintReference) and reference.point_position is None for reference in references):
                 raise ValueError(f"{self.kind} requires point_position")
         return self
 
@@ -524,6 +535,12 @@ class FreeCADOperation(FrozenContract):
             payload.pop("cut", None)
         if self.action == "sketch.set_constraint":
             payload = {k:v for k,v in payload.items() if v is not None}
+        if self.action == 'sketch.add_constraint':
+            # Existing v1 source hashes and checkpoint ledgers must remain unchanged.
+            if payload.get('driving') is True:
+                payload.pop('driving', None)
+            if payload.get('logical_id') is None:
+                payload.pop('logical_id', None)
         # Additive scope support must not change hashes of retained v1 plans.
         if self.action == "feature.chamfer" and payload.get("edge_scope") is None:
             payload.pop("edge_scope", None)
