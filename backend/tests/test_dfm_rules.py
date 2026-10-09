@@ -117,7 +117,9 @@ async def test_analyzer_end_to_end_no_llm():
     analyzer = DFMAnalyzer()
     result = await analyzer.analyze(Path(f.name), process="FDM")
 
-    assert isinstance(result.design_score, int) and 0 <= result.design_score <= 100
+    assert result.design_score is None
+    assert result.evaluation_status == "failed"
+    assert any(check["status"] == "indeterminate" for check in result.evaluated_rules)
     assert result.design_summary  # template summary, non-empty
     assert result.rule_violations  # at least the wall-thickness violation
     assert result.structural_issues == []   # subjective VLM fields removed

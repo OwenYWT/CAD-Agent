@@ -583,7 +583,7 @@ async def submit_durable_workflow(
         expected_base_revision_id=expected_base_revision_id,
     )
     if operation == "modify" and modeling_backend == "freecad" and not structured_modification and not revision_restore:
-        if selection_context is None and needs_selection(normalized_objective):
+        if selection_context is None and not operation_context.source_candidate_revision_id and needs_selection(normalized_objective):
             raise SelectionError("请先选择目标特征；这条指令的指代无法唯一确认")
         if selection_context is not None:
             from app.services.cloud_documents import checkpoint, authorized_document

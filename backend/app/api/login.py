@@ -253,6 +253,15 @@ async def disable_invite(code: str, _user=Depends(require_admin)):
     return {"ok": True}
 
 
+@router.get("/invites/{code}")
+async def read_invite(code: str, _user=Depends(require_admin)):
+    """Read one authoritative result, including entries outside the list page."""
+    try:
+        return await auth_store.get_invite_code(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="邀请码不存在") from exc
+
+
 @router.delete("/account")
 async def delete_account(user=Depends(get_current_user), bearer: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme)):
     try:

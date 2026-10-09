@@ -141,6 +141,25 @@ class TaskRetryRequest(BaseModel):
     idempotency_key: str = Field(min_length=1, max_length=500)
 
 
+@router.get("/{workflow_run_id}/diagnostic")
+async def task_diagnostic(workflow_run_id: UUID, principal: PrincipalContext = Depends(get_durable_principal)):
+    from app.services.task_diagnostics import failure_diagnostic
+    from app.freecad.constraint_patch import describe_failure_protection
+    try:
+        return await failure_diagnostic(principal, workflow_run_id,describe_requirements=describe_failure_protection)
+    except (ValueError, KeyError, PermissionError) as exc:
+        raise _read_error(exc) from exc
+
+
+@router.get("/{workflow_run_id}/takeover-baseline")
+async def task_takeover_baseline(workflow_run_id: UUID, principal: PrincipalContext = Depends(get_durable_principal)):
+    from app.services.candidate_continuation import takeover_baseline
+    try:
+        return await takeover_baseline(principal, workflow_run_id)
+    except (ValueError, KeyError, PermissionError) as exc:
+        raise _read_error(exc) from exc
+
+
 @router.post("/{workflow_run_id}/retry", status_code=202)
 async def retry_failed_task(
     workflow_run_id: UUID,

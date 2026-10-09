@@ -150,6 +150,9 @@ def build_design_analysis_response(result: Any) -> DesignAnalysisResponse:
         )
     return DesignAnalysisResponse(
         design_score=result.design_score,
+        evaluation_status=getattr(result, "evaluation_status", "indeterminate"),
+        evaluated_rules=getattr(result, "evaluated_rules", []),
+        analysis_errors=getattr(result, "analysis_errors", []),
         design_summary=result.design_summary,
         structural_issues=result.structural_issues,
         functional_notes=result.functional_notes,

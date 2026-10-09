@@ -1,4 +1,6 @@
-import { useEffect, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { useModalFocus } from "../../hooks/useModalFocus";
 import { Icon } from "../ui/Icon";
 
 interface OverlayProps {
@@ -11,29 +13,19 @@ interface OverlayProps {
   footer?: ReactNode;
 }
 
-function useEscape(open: boolean, onClose: () => void) {
-  useEffect(() => {
-    if (!open) return;
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose]);
-}
-
 export function WorkspaceDrawer({ open, title, description, onClose, children, footer, embedded = false }: OverlayProps) {
-  useEscape(open && !embedded, onClose);
+  const ref = useRef<HTMLElement>(null);
+  useModalFocus(open && !embedded, ref, onClose);
   if (!open) return null;
   if (embedded) return <section aria-label={title} className="ww-embedded-panel">
     <header className="ww-embedded-panel__header"><h2>{title}</h2>{description ? <p>{description}</p> : null}</header>
     <div className="ww-embedded-panel__body">{children}</div>
     {footer ? <footer>{footer}</footer> : null}
   </section>;
-  return (
-    <div className="fixed inset-0 z-[70]" role="presentation">
-      <button aria-label={`关闭${title}`} className="absolute inset-0 bg-[rgba(23,23,20,0.2)] backdrop-blur-[1px]" onClick={onClose} type="button" />
-      <aside aria-label={title} aria-modal="true" className="absolute inset-y-0 right-0 flex w-full max-w-[440px] flex-col border-l border-[var(--line)] bg-white shadow-2xl" role="dialog">
+  return createPortal(
+    <div className="ww-modal-layer fixed inset-0" role="presentation">
+      <button tabIndex={-1} aria-label={`关闭${title}`} className="absolute inset-0 bg-[rgba(23,23,20,0.2)] backdrop-blur-[1px]" onClick={onClose} type="button" />
+      <aside ref={ref} tabIndex={-1} aria-label={title} aria-modal="true" className="absolute inset-y-0 right-0 flex w-full max-w-[440px] flex-col border-l border-[var(--line)] bg-white shadow-2xl" role="dialog">
         <header className="flex min-h-[64px] items-start gap-3 border-b border-[var(--line)] px-5 py-4">
           <div className="min-w-0 flex-1">
             <h2 className="type-section-heading  text-[var(--ink)]">{title}</h2>
@@ -44,22 +36,23 @@ export function WorkspaceDrawer({ open, title, description, onClose, children, f
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
         {footer ? <footer className="border-t border-[var(--line)] bg-white px-5 py-3">{footer}</footer> : null}
       </aside>
-    </div>
+    </div>, document.body
   );
 }
 
 export function WorkspaceDialog({ open, title, description, onClose, children, footer, embedded = false }: OverlayProps) {
-  useEscape(open && !embedded, onClose);
+  const ref = useRef<HTMLElement>(null);
+  useModalFocus(open && !embedded, ref, onClose);
   if (!open) return null;
   if (embedded) return <section aria-label={title} className="ww-embedded-panel">
     <header className="ww-embedded-panel__header"><h2>{title}</h2>{description ? <p>{description}</p> : null}</header>
     <div className="ww-embedded-panel__body">{children}</div>
     {footer ? <footer>{footer}</footer> : null}
   </section>;
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8">
-      <button aria-label={`关闭${title}`} className="absolute inset-0 bg-[rgba(23,23,20,0.25)] backdrop-blur-[1px]" onClick={onClose} type="button" />
-      <section aria-label={title} aria-modal="true" className="relative flex max-h-[88dvh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-[var(--line)] bg-white shadow-2xl" role="dialog">
+  return createPortal(
+    <div className="ww-modal-layer fixed inset-0 flex items-center justify-center p-4 sm:p-8">
+      <button tabIndex={-1} aria-label={`关闭${title}`} className="absolute inset-0 bg-[rgba(23,23,20,0.25)] backdrop-blur-[1px]" onClick={onClose} type="button" />
+      <section ref={ref} tabIndex={-1} aria-label={title} aria-modal="true" className="relative flex max-h-[88dvh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-[var(--line)] bg-white shadow-2xl" role="dialog">
         <header className="flex min-h-[64px] items-start gap-3 border-b border-[var(--line)] px-5 py-4">
           <div className="min-w-0 flex-1">
             <h2 className="type-section-heading  text-[var(--ink)]">{title}</h2>
@@ -70,7 +63,7 @@ export function WorkspaceDialog({ open, title, description, onClose, children, f
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
         {footer ? <footer className="border-t border-[var(--line)] bg-white px-5 py-3">{footer}</footer> : null}
       </section>
-    </div>
+    </div>, document.body
   );
 }
 

@@ -9,7 +9,7 @@ from app.db import tenant_transaction
 from app.domain.identity import PrincipalContext
 from app.domain.projects import Permission
 from app.freecad.state_contract import compile_parameter_operation_plan, read_verified_state_artifact
-from app.services.cloud_documents import DocumentConflict, authorized_document, checkpoint
+from app.services.cloud_documents import DocumentConflict, authorized_document, checkpoint, revision_design_context
 from app.services.durable_submission import submit_durable_workflow
 from app.services.operation_resolution import load_revision_source_inventory, resolve_rest_generate_submission, resolve_rest_modify_submission
 from app.services.run_state import IdempotencyConflict
@@ -89,17 +89,22 @@ async def submit_document_operation(document_id: UUID, body: OperationRequest, p
         objective = '修改原生特征：' + ', '.join(f"{edit.action} {edit.args.get('object') or edit.args.get('sketch')}" for edit in body.modification.native_edits)
 
     operation_context = resolution.operation_context
+    design_context = {}
 
     if not legacy_replay:
+        async with tenant_transaction(principal.tenant_id, principal.principal_id) as conn:
+            design_context = await revision_design_context(conn, principal.tenant_id, doc['project_id'], body.expected_base_revision_id)
         operation_context = operation_context.model_copy(update={"client_request_hash":client_hash,
-            "feature_lease_token":body.lease_token, **(rebase or {})})
+            "feature_lease_token":body.lease_token, **(rebase or {}),
+            **({'requirement_basis':design_context['requirement_basis']} if design_context.get('requirement_basis') else {})})
+        operation_context = type(operation_context).model_validate(operation_context.model_dump())
 
     submission = await submit_durable_workflow(principal, project_id=doc["project_id"], branch_id=document_id,
         expected_base_revision_id=body.expected_base_revision_id, expected_state_version=body.expected_state_version,
         idempotency_key=body.idempotency_key, operation=resolution.operation, objective=objective,
         output_formats=["step", "stl"], code=resolution.existing_code, modeling_backend=resolution.modeling_backend,
         operation_context=operation_context, structured_modification=body.modification,
-        selection_context=body.selection_context)
+        selection_context=body.selection_context, manufacturing_profile=design_context.get('manufacturing_profile'))
 
     return {"operation_id": str(submission.workflow_run_id), "workflow_run_id": str(submission.workflow_run_id),
             "document_id": str(document_id), "task_url": f"/api/tasks/{submission.workflow_run_id}/snapshot",

@@ -175,6 +175,7 @@ _STRUCTURED_ERROR_POLICY: dict[str, tuple[ExecutionErrorCategory, bool]] = {
     "sketch_solver_failed": (ExecutionErrorCategory.CAD_KERNEL, False),
     "sketch_parameter_dependency_failed": (ExecutionErrorCategory.VALIDATION, False),
     "constraint_repair_verification_failed": (ExecutionErrorCategory.VALIDATION, False),
+    "profile_geometry_invalid": (ExecutionErrorCategory.VALIDATION, False),
     "shape_check_failed": (ExecutionErrorCategory.CAD_KERNEL, False),
     "invalid_document_object": (ExecutionErrorCategory.CAD_KERNEL, False),
     "parameter_state_stale": (ExecutionErrorCategory.VALIDATION, False),

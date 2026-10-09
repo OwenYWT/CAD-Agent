@@ -35,6 +35,7 @@ const panel: PanelState = {
 
 const analysis: DesignAnalysis = {
   design_score: 82,
+  evaluation_status: "warning",
   design_summary: "检查完成",
   structural_issues: [],
   functional_notes: [],
@@ -56,7 +57,7 @@ test("real analysis evidence with warnings requires review in the manufacturing-
   const model = adaptEngineeringProject("session-1", panel, analysis);
   const manufacturing = model.stages.find((stage) => stage.id === "manufacturing");
 
-  assert.equal(model.validation.length, 1);
+  assert.equal(model.validation.length, 2);
   assert.equal(manufacturing?.status, "awaiting_confirmation");
-  assert.equal(manufacturing?.summary, "已有 1 项真实检查结果。仍有风险或未能判定项。");
+  assert.equal(manufacturing?.summary, "已有 2 项真实检查结果。仍有风险或未能判定项。");
 });

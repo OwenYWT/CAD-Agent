@@ -33,6 +33,8 @@ with sync_playwright() as pw:
   viewport=p.locator('.ww-primary-pane').bounding_box()
   for name in ['属性','检查','版本','导出','更多工具']:
    p.get_by_role('button',name=name,exact=True).click()
+   if name=='更多工具':
+    p.locator('#workspace-actions').get_by_role('button',name='更多工具',exact=True).click()
    expect(p.locator('.ww-inspector-pane:visible')).to_have_count(1);expect(p.locator('.ww-agent-panel:visible')).to_have_count(0)
    expect(p.get_by_test_id('drawer-task-state')).to_have_attribute('data-task-phase','saved')
    assert viewport==p.locator('.ww-primary-pane').bounding_box(),name
@@ -104,12 +106,16 @@ with sync_playwright() as pw:
    p.set_viewport_size({'width':w,'height':900});p.wait_for_timeout(350)
    assert p.evaluate('document.documentElement.scrollWidth <= innerWidth'),w
    for label in ['属性','检查','版本','导出']:
+    if w<=760:
+     p.get_by_role('button',name='更多工具',exact=True).first.click()
     control=p.get_by_role('button',name=label,exact=True);expect(control).to_be_visible();rect=control.bounding_box();assert 0<=rect['x'] and rect['x']+rect['width']<=w+.5,(w,label,rect)
+    if w<=760:
+     control.click();p.keyboard.press('Escape')
    if w>760:
     composer=p.locator('.ww-agent-composer-wrap').bounding_box();assert composer['y']+composer['height']<=901,(w,composer)
    p.screenshot(path=str(out/f'width-{w}.png'))
    rows.append({'width':w,'model':p.locator('.ww-primary-pane').bounding_box()})
-  p.get_by_role('button',name='属性',exact=True).click();expect(p.get_by_role('dialog',name='工程信息',exact=True)).to_be_visible();p.keyboard.press('Escape');expect(p.get_by_role('dialog',name='工程信息',exact=True)).not_to_be_visible()
+  p.get_by_role('button',name='更多工具',exact=True).first.click();p.get_by_role('button',name='属性',exact=True).click();expect(p.get_by_role('dialog',name='工程信息',exact=True)).to_be_visible();p.keyboard.press('Escape');expect(p.get_by_role('dialog',name='工程信息',exact=True)).not_to_be_visible()
   assert not errs,errs
   (out/'report.json').write_text(json.dumps({'status':'passed','widths':rows,'mesh_tree_and_agent_selection':selected_label,'same_canvas':True,'camera_pixels_unchanged':True,'page_errors':errs},ensure_ascii=False,indent=2));print('LAYOUT PASSED',flush=True)
  except BaseException:

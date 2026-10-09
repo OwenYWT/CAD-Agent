@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -38,6 +38,14 @@ class DFMPolicySnapshot(BaseModel):
     rules: tuple[FrozenDFMRule, ...]
     knowledge_constraints: dict[str, Any]
     source: Literal["tenant-postgres", "builtin-default"]
+    threshold_precedence: Literal["configured_rules"] | None = None
+
+    @model_serializer(mode="wrap")
+    def historical_identity(self, handler):
+        payload = handler(self)
+        if self.threshold_precedence is None:
+            payload.pop("threshold_precedence", None)
+        return payload
 
     def canonical_bytes(self) -> bytes:
         return json.dumps(
@@ -110,7 +118,6 @@ async def resolve_dfm_policy_snapshot(
                 JOIN dfm_rule_sets s
                   ON s.tenant_id=r.tenant_id AND s.id=r.rule_set_id
                 WHERE r.tenant_id=:tenant_id AND r.process=:process
-                  AND r.enabled=true
                 ORDER BY r.id
                 """
             ),
@@ -119,7 +126,7 @@ async def resolve_dfm_policy_snapshot(
     ).mappings().all()
     source = "tenant-postgres"
     if rows:
-        raw_rules = [dict(row) for row in rows]
+        raw_rules = [dict(row) for row in rows if row["enabled"]]
         versions = {
             str(row["rule_set_id"]): str(row["rule_set_version"])
             for row in rows
@@ -208,4 +215,5 @@ async def resolve_dfm_policy_snapshot(
         rules=rules,
         knowledge_constraints=constraints,
         source=source,
+        threshold_precedence="configured_rules",
     )

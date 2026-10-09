@@ -19,6 +19,8 @@ export CAD_BROWSER_FAULT_CONTRACTS=1
 export CAD_MONITOR_E2E_REPORT="$report_root/browser-monitor"
 export CAD_CONSTRAINT_BROWSER_REPORT="$report_root/browser-constraint-repair"
 export CAD_NATIVE_PARAMETER_REPORT="$report_root/native-parameters"
+export CAD_PRODUCT_BROWSER_REPORT="$report_root/browser-product"
+export CAD_ACCEPTANCE_FOLLOWUP_REPORT="$report_root/browser-acceptance-followup"
 export CAD_MONITOR_E2E_URL="http://127.0.0.1:${CAD_BROWSER_MONITOR_PORT:-18092}/"
 export TEMPORAL_TASK_QUEUE="${CAD_CI_SCOPE:-browser-contract-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}}-v1"
 export TEMPORAL_AGENT_V2_TASK_QUEUE="${CAD_CI_SCOPE:-browser-contract-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}}-v2"
@@ -86,3 +88,9 @@ python tests/e2e/native_parameter_contract.py
   > "$CAD_NATIVE_PARAMETER_REPORT/kernel.log" 2>&1
 grep -F 'CAD_NATIVE_PARAMETER_MEASUREMENTS=' "$CAD_NATIVE_PARAMETER_REPORT/kernel.log"
 if grep -Fq 'Traceback (most recent call last)' "$CAD_NATIVE_PARAMETER_REPORT/kernel.log"; then exit 1; fi
+python tests/e2e/product_acceptance_browser.py
+export CAD_BROWSER_WORKER_PID="$worker_pid"
+python tests/e2e/acceptance_rule_contract.py
+python tests/e2e/acceptance_followup_browser.py
+export CAD_DRAFT_RECONCILIATION_REPORT="$report_root/draft-reconciliation"
+python tests/e2e/dfm_draft_reconciliation_browser.py

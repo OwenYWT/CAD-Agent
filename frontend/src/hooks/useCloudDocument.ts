@@ -6,13 +6,16 @@ import { observeDocument, forgetDocument } from "../stores/documentHeads";
 import { getCloudDocument, updateDocumentPresence } from "../services/clients/documents";
 import { guardDraft } from "../stores/draftGuard";
 import type { CloudDocument, DocumentCollaboration, DocumentEvent, SelectionContext } from "../types/document";
+import type { DocumentSyncStatus } from '../adapters/workspaceStatus';
 
 export interface CloudDocumentConnection {
   document: CloudDocument | null; collaboration: DocumentCollaboration | null;
   selectedId: string | null; select: (id: string | null) => void;
   connected: boolean; error: string | null;
+  syncStatus?: DocumentSyncStatus;
   selectionContext?: SelectionContext | null;
   clearSelection?: () => void;
+  selectTopology?: (id: string, selector: NonNullable<SelectionContext["topology_selector"]>) => void;
   refresh?: () => Promise<CloudDocument | null>;
 }
 
@@ -23,17 +26,23 @@ export function useCloudDocument(documentId: string | null): CloudDocumentConnec
   const [selectedContext, setSelectedContext] = useState<(SelectionContext & { documentId: string }) | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sync, setSync] = useState<{ documentId: string | null; status: DocumentSyncStatus }>({ documentId, status: 'syncing' });
   const current = useRef<CloudDocument | null>(null);
   const selection = useRef<string | null>(null);
   const refresh = useCallback(async () => {
     if (!documentId) return null;
-    const doc = await getCloudDocument(documentId);
+    let doc: CloudDocument;
+    try { doc = await getCloudDocument(documentId); }
+    catch (reason) {
+      if (current.current?.document_id === documentId) { setError(reason instanceof Error ? reason.message : '文档同步失败'); setSync({ documentId, status: 'failed' }); }
+      throw reason;
+    }
     if (current.current?.document_id !== documentId) return null;
     if (doc.event_sequence >= current.current.event_sequence) {
-      current.current = doc; observeDocument(doc); setSnapshot(doc);
+      current.current = doc; observeDocument(doc); setSnapshot(doc); setError(null); setSync({ documentId, status: connected ? 'synced' : 'disconnected' });
     }
     return current.current;
-  }, [documentId]);
+  }, [documentId, connected]);
   useEffect(() => { selection.current = selectedId; }, [selectedId]);
 
   useEffect(() => {
@@ -51,15 +60,19 @@ export function useCloudDocument(documentId: string | null): CloudDocumentConnec
     };
     const open = () => {
       if (closed) return;
+      if (!navigator.onLine) {
+        setConnected(false); setSync({ documentId, status: 'disconnected' }); return;
+      }
       const base = new URL(import.meta.env.VITE_API_BASE || window.location.origin);
       base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
       base.pathname = `/api/documents/${encodeURIComponent(documentId)}/stream`;
       const workspace = new URLSearchParams(window.location.search).get("workspace");
       if (workspace) base.searchParams.set("workspace", workspace);
       const auth = webSocketAuthProtocol(getAuthToken() || import.meta.env.VITE_API_TOKEN);
-      socket = new WebSocket(base.toString(), auth ? [auth] : undefined);
-      socket.onmessage = (message) => {
-        if (closed) return;
+      const stream = new WebSocket(base.toString(), auth ? [auth] : undefined);
+      socket = stream;
+      stream.onmessage = (message) => {
+        if (closed || socket !== stream) return;
         try {
           const event = JSON.parse(message.data) as { type: string; data: unknown };
           if (event.type === "document_snapshot") {
@@ -67,7 +80,7 @@ export function useCloudDocument(documentId: string | null): CloudDocumentConnec
             if (doc.document_id !== documentId) throw new Error("文档身份不匹配");
             current.current = doc;
             observeDocument(doc);
-            setSnapshot(doc); setError(null); setConnected(true);
+            setSnapshot(doc); setError(null); setConnected(true); setSync({ documentId, status: 'synced' });
             heartbeat();
           } else if (event.type === "document_event" && current.current?.document_id === documentId) {
             const doc = applyDocumentEvent(current.current, event.data as DocumentEvent);
@@ -78,23 +91,37 @@ export function useCloudDocument(documentId: string | null): CloudDocumentConnec
           }
         } catch (e) {
           setError(e instanceof Error ? e.message : "文档同步失败");
-          socket?.close();
+          setSync({ documentId, status: 'failed' });
+          stream.close();
         }
       };
-      socket.onerror = () => { if (!closed) setError("文档连接失败，正在重连"); };
-      socket.onclose = (event) => {
-        if (closed) return;
+      stream.onerror = () => { if (!closed && socket === stream) { setError("文档连接失败，正在重连"); setSync({ documentId, status: 'disconnected' }); } };
+      stream.onclose = (event) => {
+        if (closed || socket !== stream) return;
         setConnected(false);
+        setSync(previous => ({ documentId, status: previous.documentId === documentId && previous.status === 'failed' ? 'failed' : 'disconnected' }));
         if (event.code === 4003) {
           current.current = null; setSnapshot(null); setCollaboration(null); setSelectedId(null); setSelectedContext(null);
-          forgetDocument(documentId); setError("文档访问权限已失效"); return;
+          forgetDocument(documentId); setError("文档访问权限已失效"); setSync({ documentId, status: 'failed' }); return;
         }
-        timer = setTimeout(open, 2000);
+        if (navigator.onLine) timer = setTimeout(open, 2000);
       };
     };
+    const offline = () => {
+      clearTimeout(timer); socket?.close();
+      setConnected(false); setSync({ documentId, status: 'disconnected' });
+    };
+    const online = () => {
+      clearTimeout(timer);
+      if (socket?.readyState !== WebSocket.OPEN && socket?.readyState !== WebSocket.CONNECTING) open();
+    };
+    window.addEventListener('offline', offline); window.addEventListener('online', online);
     open();
     const interval = setInterval(heartbeat, 15000);
-    return () => { closed = true; clearTimeout(timer); clearInterval(interval); socket?.close(); forgetDocument(documentId); };
+    return () => {
+      closed = true; clearTimeout(timer); clearInterval(interval); socket?.close(); forgetDocument(documentId);
+      window.removeEventListener('offline', offline); window.removeEventListener('online', online);
+    };
   }, [documentId]);
 
   const document = snapshot?.document_id === documentId ? snapshot : null;
@@ -106,10 +133,16 @@ export function useCloudDocument(documentId: string | null): CloudDocumentConnec
         state_version: document.state_version, feature_ids: [id] } : null);
     });
   };
+  const selectTopology = (id: string, selector: NonNullable<SelectionContext["topology_selector"]>) => {
+    const feature = document?.features.find(item => item.id === id);
+    if (!document || selector.revision_id !== document.head_revision_id || !feature?.topology_bindings?.some(binding => JSON.stringify(binding) === JSON.stringify(selector))) return;
+    guardDraft(() => { setSelectedId(id); setSelectedContext({ documentId: document.document_id, revision_id: document.head_revision_id, state_version: document.state_version, feature_ids: [id], topology_selector: selector }); });
+  };
   const selectionContext = document && selectedContext?.documentId === document.document_id
     && selectedContext.revision_id === document.head_revision_id && selectedContext.state_version === document.state_version
-    ? { revision_id: selectedContext.revision_id, state_version: selectedContext.state_version, feature_ids: selectedContext.feature_ids } : null;
+    ? { revision_id: selectedContext.revision_id, state_version: selectedContext.state_version, feature_ids: selectedContext.feature_ids, ...(selectedContext.topology_selector ? { topology_selector: selectedContext.topology_selector } : {}) } : null;
   return { document, collaboration: document ? collaboration : null,
     selectedId: document?.features.some((f) => f.id === selectedId) ? selectedId : null,
-    select, selectionContext, clearSelection: () => setSelectedContext(null), refresh, connected: Boolean(document && connected), error };
+    select, selectTopology, selectionContext, clearSelection: () => setSelectedContext(null), refresh, connected: Boolean(document && connected),
+    syncStatus: sync.documentId === documentId ? sync.status : 'syncing', error };
 }

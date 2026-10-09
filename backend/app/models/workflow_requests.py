@@ -7,6 +7,18 @@ from app.models.native_modification import FreeCADStructuredModificationV1
 from app.domain.requirement_basis import RequirementBasisV1
 from app.domain.selection import SelectionContextV1
 
+class NativeImportV1(BaseModel):
+    model_config = ConfigDict(extra='forbid', frozen=True)
+    format: Literal['fcstd', 'step']
+    artifact_id: UUID
+    sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    size_bytes: int = Field(ge=1, le=64*1024*1024, strict=True)
+    filename: str = Field(min_length=1, max_length=240)
+
+    def object_key(self, tenant_id: UUID, document_id: UUID) -> str:
+        return f'tenants/{tenant_id}/document-imports/{document_id}/{self.sha256}.{self.format}'
+
+
 class OperationContextV1(BaseModel):
     """Frozen record of how a public request became a durable CAD operation."""
 
@@ -20,6 +32,7 @@ class OperationContextV1(BaseModel):
         "explicit_modify_part",
         "explicit_parameter_edit",
         "explicit_history_restore",
+        "explicit_native_import",
         "explicit_branch_fork",
         "explicit_branch_merge",
         "explicit_ui_intent",
@@ -41,6 +54,7 @@ class OperationContextV1(BaseModel):
         "revision_manifest_source",
         "request_code",
         "none",
+        "native_import_artifact",
     ]
     base_source_id: UUID | None = None
     base_source_sha256: str | None = Field(
@@ -54,19 +68,27 @@ class OperationContextV1(BaseModel):
     rebase_evidence_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     selection_context: SelectionContextV1 | None = None
     requirement_basis: RequirementBasisV1 | None = None
+    source_candidate_revision_id: UUID | None = None
+    native_import: NativeImportV1 | None = None
 
     @model_serializer(mode="wrap")
     def preserve_historical_wire_identity(self, handler):
         payload = handler(self)
         # New optional context must not change hashes of existing durable inputs.
         for key in ('feature_lease_token','client_request_hash','rebased_from_revision_id',
-                    'rebased_from_state_version','rebase_evidence_hash','selection_context','requirement_basis'):
+                    'rebased_from_state_version','rebase_evidence_hash','selection_context','requirement_basis','source_candidate_revision_id','native_import'):
             if payload.get(key) is None:
                 payload.pop(key, None)
         return payload
 
     @model_validator(mode="after")
     def validate_source_and_channel(self) -> "OperationContextV1":
+        if self.native_import is not None and self.base_source_kind != 'native_import_artifact':
+            raise ValueError('导入来源必须明确绑定到原生导入输入')
+        if self.source_candidate_revision_id and (self.resolved_operation != "modify"
+                or self.submission_modeling_backend != "freecad"
+                or self.base_source_kind != "fcstd_artifact" or self.selection_context):
+            raise ValueError("候选续改必须使用明确的原生来源，不能混用已保存版本的选择")
         if self.selection_context and (self.resolved_operation != "modify"
                 or self.submission_modeling_backend != "freecad"
                 or self.selection_context.revision_id != self.base_revision_id):
@@ -107,6 +129,11 @@ class OperationContextV1(BaseModel):
                 raise ValueError("request code requires CadQuery")
             if self.base_source_id is not None or self.base_source_sha256 is None:
                 raise ValueError("request code requires only SHA-256 identity")
+        elif self.base_source_kind == 'native_import_artifact':
+            if (self.native_import is None or self.source_channel != 'rest' or self.rule != 'explicit_native_import'
+                    or self.resolved_operation != 'generate' or self.submission_modeling_backend != 'freecad'
+                    or self.base_source_id != self.native_import.artifact_id or self.base_source_sha256 != self.native_import.sha256):
+                raise ValueError('原生导入仅接受服务端冻结的文件身份')
         elif self.base_source_kind == "none":
             if self.resolved_operation != "generate":
                 raise ValueError("missing source is valid only for generate")
@@ -343,7 +370,12 @@ class McadCheckRequest(BaseModel):
     description: str = Field(default="", max_length=5_000)
     process: str | None = Field(default=None, max_length=200)
     material: str | None = Field(default=None, max_length=200)
+    rule_configuration: dict | None = None
     timeout_seconds: int = Field(default=120, ge=1, le=3600)
 
     def temporal_payload(self) -> dict:
-        return self.model_dump(mode="json")
+        # Old queued dispatches are content addressed without this new field.
+        payload = self.model_dump(mode="json")
+        if self.rule_configuration is None:
+            payload.pop("rule_configuration")
+        return payload

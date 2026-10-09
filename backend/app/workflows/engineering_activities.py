@@ -43,7 +43,7 @@ async def materialize_engineering_input(payload, directory):
                 artifact=(await conn.execute(text('''SELECT a.* FROM artifacts a JOIN document_engineering_tasks t ON t.workflow_run_id=a.workflow_run_id
                     JOIN workflow_runs w ON w.id=t.workflow_run_id AND w.status='succeeded'
                     WHERE a.id=:id AND a.project_id=:project AND a.revision_id=:revision AND t.document_id=:doc
-                    AND t.source_sha256=:source_sha AND t.task_kind IN ('linear_static','contour_milling')'''),
+                    AND t.source_sha256=:source_sha AND t.task_kind IN ('linear_static','contour_milling','native_measure')'''),
                     {'id':reference.artifact_id,'project':UUID(payload['project_id']),'revision':UUID(payload['revision_id']),
                      'doc':row['document_id'],'source_sha':row['sha256']})).mappings().one_or_none()
                 if artifact is None or artifact['sha256']!=reference.sha256 or artifact['size_bytes']!=reference.size_bytes or artifact['workflow_run_id']!=reference.workflow_run_id or artifact['artifact_kind']!=reference.artifact_kind:
@@ -96,7 +96,9 @@ async def compute_engineering(payload, *, execute):
             'execution': {'step_key': 'engineering_compute', 'kind': 'engineering_compute', 'capability': 'mcad.freecad',
                 'operation': 'engineering', 'mode': 'analysis', 'source_language': 'json', 'timeout_seconds': 300,
                 'source_code': json.dumps({'schema_version': 'mcad-capability-task.v1', 'capability': 'freecad',
-                    'operation': 'engineering', 'params': params, 'inputs': native_inputs}, sort_keys=True),
+                    'operation': 'engineering', 'params': {**params,
+                        **({'expected_revision_id':payload['source_revision_id']} if params['kind']=='native_measure' else {})},
+                    'inputs': native_inputs}, sort_keys=True),
                 'outputs': [{'name': name, 'media_type': media, 'max_size_bytes': 100 * 1024 * 1024} for name, media in outputs.items()]}}
         result = await execute(execution_payload)
         report_row = next(a for a in result['artifacts'] if a['artifact_kind'] == 'engineering_report')
@@ -107,6 +109,8 @@ async def compute_engineering(payload, *, execute):
         if report.get('source_fcstd_sha256') != payload['source_sha256'] or report.get('kind') != params['kind'] or (
             params['kind']!='release_package' and report.get('component_name') != params['component_name']):
             raise ValueError('工程结果没有绑定正确的来源部件')
+        if params['kind']=='native_measure' and report.get('source_revision_id')!=payload['source_revision_id']:
+            raise ValueError('测量结果没有绑定正确的来源修订')
         async with tenant_transaction(context.tenant_id, context.principal_id) as conn:
             for permission in engineering_permissions(params['kind']):
                 await authorized_document(conn, context, UUID(payload['document_id']), permission)

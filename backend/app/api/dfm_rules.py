@@ -1,7 +1,8 @@
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.api.auth import verify_api_key
 from app.dfm import rule_store
@@ -11,9 +12,10 @@ router = APIRouter()
 
 
 class RuleUpdateBody(BaseModel):
+    model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
     threshold_min: float | None = None
     threshold_max: float | None = None
-    severity: str | None = None
+    severity: Literal['critical', 'warning', 'info'] | None = None
     enabled: bool | None = None
     description: str | None = None
     suggestion_template: str | None = None
@@ -44,7 +46,10 @@ async def update_rule(rule_id: str, body: RuleUpdateBody, _=Depends(verify_api_k
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(400, "No fields to update")
-    rule = await rule_store.update_rule(rule_id, updates)
+    try:
+        rule = await rule_store.update_rule(rule_id, updates)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     if not rule:
         raise HTTPException(404, f"Rule not found: {rule_id}")
     return rule.model_dump()

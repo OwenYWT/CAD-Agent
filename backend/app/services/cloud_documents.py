@@ -233,13 +233,31 @@ async def document_snapshot(context: PrincipalContext, document_id: UUID) -> dic
             "can_commit":can_commit, **capabilities, **projection}
 
 
+async def revision_design_context(conn, tenant_id: UUID, project_id: UUID, revision_id: UUID) -> dict:
+    """Read the design inputs of an immutable source, without current preferences."""
+    payload = await conn.scalar(text('''SELECT w.request_payload
+        FROM project_revisions r
+        LEFT JOIN change_sets c ON c.tenant_id=r.tenant_id AND c.candidate_revision_id=r.id
+        JOIN workflow_runs w ON w.tenant_id=r.tenant_id
+          AND w.id=COALESCE(r.source_workflow_run_id,c.source_workflow_run_id)
+        WHERE r.tenant_id=:tenant AND r.project_id=:project AND r.id=:revision'''),
+        {'tenant':tenant_id,'project':project_id,'revision':revision_id})
+    return {'manufacturing_profile':(payload or {}).get('manufacturing_profile'),
+            'requirement_basis':((payload or {}).get('operation_context') or {}).get('requirement_basis')}
+
+
 async def document_revision_view(context: PrincipalContext, document_id: UUID, revision_id: UUID) -> dict:
     """One immutable view projection, with current head metadata kept explicit."""
     async with tenant_transaction(context.tenant_id, context.principal_id) as conn:
         doc = await authorized_document(conn, context, document_id)
         revision = (await conn.execute(text("""SELECT r.revision_number, c.id AS change_set_id,
-            c.status AS review_status, c.validation_summary, c.base_state_version, c.source_workflow_run_id
+            c.status AS review_status, c.validation_summary, c.base_state_version,
+            COALESCE(r.source_workflow_run_id,c.source_workflow_run_id) AS source_workflow_run_id,
+            w.request_payload->'manufacturing_profile' AS manufacturing_profile,
+            w.request_payload->>'objective' AS objective,
+            w.request_payload->'operation_context'->'requirement_basis' AS requirement_basis
             FROM project_revisions r LEFT JOIN change_sets c ON c.candidate_revision_id=r.id
+            LEFT JOIN workflow_runs w ON w.tenant_id=r.tenant_id AND w.id=COALESCE(r.source_workflow_run_id,c.source_workflow_run_id)
             WHERE r.branch_id=:doc AND r.id=:revision"""),
             {"doc": document_id, "revision": revision_id})).mappings().one_or_none()
         if revision is None:
@@ -264,6 +282,8 @@ async def document_revision_view(context: PrincipalContext, document_id: UUID, r
         if revision["source_workflow_run_id"]:
             result.update(request_id=str(revision["source_workflow_run_id"]),
                           workflow_run_id=str(revision["source_workflow_run_id"]))
+        if revision['manufacturing_profile'] is not None:
+            result['manufacturing_profile']=revision['manufacturing_profile']
         if revision["validation_summary"]:
             result["validation"] = {**(result.get("validation") or {}), **dict(revision["validation_summary"])}
         snapshot = {**snapshot, "files": files, "result": result}

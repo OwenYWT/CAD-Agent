@@ -346,6 +346,7 @@ async def start_mcad_check_workflow(
     process: str | None = None,
     material: str | None = None,
     timeout_seconds: int = 120,
+    configuration_scoped_idempotency: bool = False,
 ) -> tuple[UUID, WorkflowHandle | None]:
     """Persist and idempotently start a read-only engineering-check run."""
     idempotency_key = idempotency_key.strip()
@@ -362,7 +363,36 @@ async def start_mcad_check_workflow(
         "material": material,
         "timeout_seconds": timeout_seconds,
     }
+    from app.dfm.configuration import capture_configuration
+    from app.services.run_state import IdempotencyConflict
+
     async with tenant_transaction(tenant_id, principal_id) as connection:
+        # Serialize same-key admissions so an acknowledgement-loss retry can
+        # reuse its original configuration even if settings changed meanwhile.
+        await connection.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"check:{tenant_id}:{idempotency_key}"})
+        configuration = None
+        if configuration_scoped_idempotency:
+            configuration = await capture_configuration(connection, tenant_id=tenant_id,
+                principal_id=principal_id, process=process)
+            idempotency_key = f"{idempotency_key}:{configuration['sha256']}"
+        previous = (await connection.execute(text("""
+            SELECT project_id, requested_by_principal_id, kind, request_payload
+            FROM workflow_runs WHERE tenant_id=:tenant AND idempotency_key=:key
+        """), {"tenant": tenant_id, "key": idempotency_key})).mappings().one_or_none()
+        if previous is not None:
+            saved = previous["request_payload"]
+            if (previous["project_id"] != project_id
+                    or previous["requested_by_principal_id"] != principal_id
+                    or previous["kind"] != "mcad.check"
+                    or any(saved.get(key) != value for key, value in request_payload.items())):
+                raise IdempotencyConflict("Engineering check key was reused with different inputs")
+            request_payload = saved
+        else:
+            if configuration is None:
+                configuration = await capture_configuration(connection, tenant_id=tenant_id,
+                    principal_id=principal_id, process=process)
+            request_payload["rule_configuration"] = configuration
         created = await create_workflow(
             connection,
             tenant_id=tenant_id,
@@ -383,6 +413,7 @@ async def start_mcad_check_workflow(
             description=description,
             process=process,
             material=material,
+            rule_configuration=request_payload.get("rule_configuration"),
             timeout_seconds=timeout_seconds,
         )
         dispatch = await persist_dispatch(connection, tenant_id=tenant_id, principal_id=principal_id,

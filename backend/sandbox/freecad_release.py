@@ -14,7 +14,7 @@ import Part
 
 from freecad_bom import _cell, spreadsheet_literal
 from freecad_engineering import EngineeringError
-from freecad_scene import component_shapes
+from freecad_scene import component_shapes, LOD
 
 MAX_RELEASE_BYTES=128*1024*1024
 
@@ -27,7 +27,7 @@ def _file(path,role):
     return {'path':path.name,'role':role,'size_bytes':path.stat().st_size,'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
-def _native_bom(components,directory,source):
+def _native_bom(components,directory,source,*,selected_scope=False):
     document=App.newDocument('ReleaseBOM')
     inventory=[]
     try:
@@ -65,7 +65,7 @@ def _native_bom(components,directory,source):
             'generator':{'native_type':str(bom.TypeId),'freecad_version':'.'.join(App.Version()[:3])},
             'columns':actual,'rows':rows,'instances':inventory,
             'instance_count':len(inventory),'definition_count':len({i['definition_name'] for i in inventory}),
-            'inclusion_policy':'all_final_solid_components_including_hidden'}
+            'inclusion_policy':'selected_final_solid_components_including_hidden' if selected_scope else 'all_final_solid_components_including_hidden'}
         json_path=directory/'bom.json';csv_path=directory/'bom.csv'
         json_path.write_text(json.dumps(payload,ensure_ascii=False,allow_nan=False))
         with csv_path.open('w',encoding='utf-8',newline='') as stream:
@@ -92,20 +92,46 @@ def run_release(task,input_root,output_root):
     document=App.openDocument(str(base))
     try:
         components=component_shapes(document)
+        options = params.get('options') or {}
+        selected_names = options.get('component_names') or []
+        precision = options.get('mesh_precision', 'medium')
+        if precision not in LOD or options.get('units', 'mm') != 'mm' or len(selected_names) != len(set(selected_names)):
+            raise EngineeringError('release_options_invalid', '发布范围、单位或精度无效')
+        if selected_names:
+            if not set(selected_names) <= {obj.Name for obj, _ in components}:
+                raise EngineeringError('release_scope_invalid', '发布范围包含非最终实体或已不存在的部件')
+            components = [(obj, shape) for obj, shape in components if obj.Name in selected_names]
         if not components or len(components)>1000 or any(not s.isValid() or s.Volume<=0 for _,s in components):
             raise EngineeringError('release_geometry_invalid','发布需要 1 至 1000 个有效实体部件/实例')
+        export_names = [obj.Name for obj, _ in components]
         combined=Part.makeCompound([s for _,s in components])
         combined.exportStep(str(directory/'design.step'))
-        mesh=MeshPart.meshFromShape(Shape=combined,LinearDeflection=0.15,AngularDeflection=0.35,Relative=False)
+        mesh=MeshPart.meshFromShape(Shape=combined,LinearDeflection=LOD[precision][0],AngularDeflection=LOD[precision][1],Relative=False)
         if not 1<=mesh.CountFacets<=2000000:
             raise EngineeringError('release_mesh_budget','发布 STL 网格为空或超过预算')
         mesh.write(str(directory/'design.stl'))
-        bom,bom_json,bom_csv=_native_bom(components,directory,source)
+        bom,bom_json,bom_csv=_native_bom(components,directory,source,selected_scope=bool(selected_names))
         volume=sum(s.Volume for _,s in components)
+        dimensions = []
+        for obj, shape in components:
+            bounds = shape.BoundBox
+            dimensions.append({'kernel_name': obj.Name, 'label': obj.Label, 'units': 'mm',
+                'bounds_min_mm': [bounds.XMin, bounds.YMin, bounds.ZMin],
+                'bounds_max_mm': [bounds.XMax, bounds.YMax, bounds.ZMax],
+                'dimensions_mm': [bounds.XLength, bounds.YLength, bounds.ZLength],
+                'volume_mm3': shape.Volume, 'solid_count': len(shape.Solids),
+                'placement': list(shape.Placement.toMatrix().A),
+                'native_dimensions': {property: {'value': float(getattr(obj, property).Value), 'unit': str(getattr(obj, property).Unit)}
+                    for property in ('Length','Width','Height','Depth','Diameter','Radius','Angle') if property in obj.PropertiesList and hasattr(getattr(obj, property), 'Value')}})
+        handoff = {'schema_version': 'cad-engineering-handoff.v1', 'source': source, 'dimensions': dimensions,
+            'manufacturing_profile': params.get('manufacturing_profile'), 'requirements': params.get('requirements'),
+            'method': 'FreeCAD / OpenCASCADE native geometry',
+            'scope': '原生文件、实体尺寸和制造上下文；不包含已关联三维的工程图或实物制造认证。'}
+        (directory/'engineering-handoff.json').write_text(json.dumps(handoff, ensure_ascii=False, allow_nan=False))
     finally:
         App.closeDocument(document.Name)
     files=[_file(directory/name,role) for name,role in [('design.FCStd','fcstd'),('design.step','step'),('design.stl','stl'),
-        ('bom.json','bom_json'),('bom.csv','bom_csv'),('bom-source.FCStd','bom_source')]]
+        ('bom.json','bom_json'),('bom.csv','bom_csv'),('bom-source.FCStd','bom_source'),('engineering-handoff.json','dimension_handoff')]]
     engineering=[]
     for index,reference in enumerate(params.get('engineering_artifacts',[])):
         input_name=task['inputs'].get(f'evidence_{index}')
@@ -128,8 +154,10 @@ def run_release(task,input_root,output_root):
     manifest={'schema_version':'cad-engineering-release.v1','release_name':params['release_name'],'source':source,
         'files':files,'engineering_artifacts':engineering,'annotations':params.get('annotations',[]),
         'bom':{'native_type':bom['generator']['native_type'],'instance_count':bom['instance_count'],'definition_count':bom['definition_count']},
-        'units':'mm','total_component_volume_mm3':volume,'mesh_triangles':mesh.CountFacets,
-        'scope':'原生 CAD、全部最终实体/实例的 BOM、STEP/STL 与同一修订的已选工程证据；此发布不代表实机制造验收。'}
+        'units':'mm','export_scope': export_names,
+        'mesh_settings': {'precision': precision, 'linear_deflection_mm': LOD[precision][0], 'angular_deflection_rad': LOD[precision][1]},
+        'fcstd_scope': 'complete immutable source document', 'total_component_volume_mm3':volume,'mesh_triangles':mesh.CountFacets,
+        'scope':'原生 CAD、所选最终实体/实例的 BOM、STEP/STL 与同一修订的已选工程证据；此发布不代表实机制造验收。'}
     report_path=output_root/'engineering-report.json'
     report_path.write_text(json.dumps({**manifest,'kind':'release_package','source_fcstd_sha256':digest},ensure_ascii=False,allow_nan=False))
     manifest_path=directory/'manifest.json';manifest_path.write_text(json.dumps(manifest,ensure_ascii=False,allow_nan=False))

@@ -1,6 +1,7 @@
 """Real authentication, role, TLS/WebSocket and private S3 delivery checks."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -15,8 +16,8 @@ from uuid import uuid4
 import boto3
 from botocore.config import Config
 import httpx
-from websockets.sync.client import connect
-from websockets.exceptions import InvalidStatus
+from websockets.client import connect
+from websockets.exceptions import InvalidStatusCode
 
 
 def main(mode):
@@ -100,14 +101,18 @@ def main(mode):
         assert request(edge, 'GET', path)['head_revision_id'] == saved['head_revision_id']
     protocol = 'cad-agent-auth.' + base64.urlsafe_b64encode(people['owner']['token'].encode()).decode().rstrip('=')
     ws = tls.replace('https://', 'wss://') + path + '/stream'
-    with connect(ws, ssl_context=context, subprotocols=[protocol], open_timeout=30) as socket:
-        event = json.loads(socket.recv(timeout=30))
-        assert event['type'] == 'document_snapshot' and event['data']['head_revision_id'] == saved['head_revision_id']
-    try:
-        with connect(ws, ssl_context=context, open_timeout=30):
-            raise AssertionError('anonymous document WebSocket was accepted')
-    except InvalidStatus as error:
-        assert error.response.status_code == 403
+    async def verify_websockets():
+        # Keep TLS I/O and cleanup on the event loop instead of a blocking SSL
+        # receive thread. Both checks traverse the shipping TLS/Nginx proxies.
+        async with connect(ws, ssl=context, subprotocols=[protocol], open_timeout=30) as socket:
+            event = json.loads(await asyncio.wait_for(socket.recv(), timeout=30))
+            assert event['type'] == 'document_snapshot' and event['data']['head_revision_id'] == saved['head_revision_id']
+        try:
+            async with connect(ws, ssl=context, open_timeout=30):
+                raise AssertionError('anonymous document WebSocket was accepted')
+        except InvalidStatusCode as error:
+            assert error.status_code == 403
+    asyncio.run(verify_websockets())
     # Host Nginx preserves the port and URI needed by S3 SigV4. Use real MinIO,
     # verify signatures and ensure the unsigned bucket remains inaccessible.
     s3 = boto3.client('s3', endpoint_url=tls, region_name='us-east-1', verify=ca,

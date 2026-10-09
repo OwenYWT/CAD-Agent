@@ -30,3 +30,17 @@ export async function readEngineeringField(ref: EngineeringResult['artifacts']['
 export async function readCamToolpath(ref: EngineeringResult['artifacts']['engineering_field'], signal?: AbortSignal): Promise<CamToolpath> {
   return validateCamToolpath(await readEngineeringFieldData(ref,signal) as CamToolpath);
 }
+
+export interface NativeMeasurementRequest {
+  kind: 'native_measure'; component_name: string; measurement: 'volume' | 'solid_count' | 'face_distance' | 'circle_diameter'|'component_clearance'|'intersection_volume';other_component_name?:string;
+  selectors: NonNullable<import('../../types/document').SelectionContext['topology_selector']>[];
+}
+export async function submitNativeMeasurement(document: CloudDocument, task: NativeMeasurementRequest, idempotencyKey: string) {
+  return readJson<{workflow_run_id: string}>(await authFetch(`${API_BASE}/api/documents/${document.document_id}/engineering`, {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ task, idempotency_key: idempotencyKey,
+      expected_revision_id: document.revision_id, expected_state_version: document.state_version }),
+  }), '原生测量提交失败');
+}
+export async function readNativeMeasurement(documentId: string, taskId: string, signal?: AbortSignal) {
+  return readJson<{ source_revision_id: string; report: { status: 'measured'; value: number; unit: string; method: string } }>(await authFetch(`${API_BASE}/api/documents/${documentId}/engineering/${taskId}`, { signal }), '原生测量读取失败');
+}

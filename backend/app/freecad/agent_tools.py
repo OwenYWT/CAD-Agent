@@ -7,26 +7,78 @@ execution result, and model arguments cannot select tenants, storage or approval
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.freecad.api_catalog import CapabilityQuery, query_capabilities
-from app.freecad.contracts import FreeCADOperation, FreeCADOperationPlan, capability_schemas
+from app.freecad.contracts import (
+    DocumentExportArgs, FreeCADAPIArgs, FreeCADOperation, FreeCADOperationPlan,
+    FrozenContract, ObjectName, OperationId, capability_schemas,
+)
 from app.freecad.inspection import InspectionRequest, inspect_state
 from app.contracts.constraint_patch import ConstraintPatch
-from typing import Literal
-from pydantic import Field
+
+
+OperationAction = FreeCADOperation.model_fields["action"].annotation
 
 
 class OperationQuery(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: FreeCADOperation.model_fields["action"].annotation
+    action: OperationAction
 
 
 EXECUTE_TOOL = "freecad_execute"
+API_EXECUTE_TOOL = "freecad_execute_api"
 CONSTRAINT_PATCH_TOOL = 'freecad_patch_constraints'
 FAILURE_INSPECTION_TOOL = 'freecad_inspect_failure'
+
+
+class NativeProgram(FrozenContract):
+    op_id: OperationId
+    args: FreeCADAPIArgs
+
+
+class NativeExportArgs(DocumentExportArgs):
+    objects: tuple[ObjectName, ...] = Field(min_length=1)
+
+
+class NativeExport(FrozenContract):
+    op_id: OperationId
+    args: NativeExportArgs
+
+
+class NativeExecutionRequest(FrozenContract):
+    """One native program and its explicit export, never a mixed operation list."""
+    document_name: ObjectName = "Model"
+    execution_mode: Literal["final", "checkpoint"] = "final"
+    execute: NativeProgram
+    export: NativeExport
+
+
+def execution_plan(name: str, arguments: dict) -> FreeCADOperationPlan:
+    """Compile tool envelopes into the unchanged, fenced runtime plan contract."""
+    if name == EXECUTE_TOOL:
+        operations = arguments.get('operations')
+        if isinstance(operations, (list, tuple)) and any(
+            isinstance(op, dict) and op.get('action') == 'api.execute' for op in operations
+        ):
+            raise ValueError(
+                'freecad_execute accepts typed operations only. sketch.create creates its Body '
+                'when absent. For a native program use freecad_execute_api with execute and '
+                'export fields; do not mix Python and typed operations in one transaction.'
+            )
+        return FreeCADOperationPlan.model_validate(arguments)
+    if name == API_EXECUTE_TOOL:
+        request = NativeExecutionRequest.model_validate(arguments)
+        return FreeCADOperationPlan.model_validate({
+            'document_name': request.document_name, 'execution_mode': request.execution_mode,
+            'operations': [
+                {**request.execute.model_dump(mode='json'), 'action': 'api.execute'},
+                {**request.export.model_dump(mode='json'), 'action': 'document.export'},
+            ],
+        })
+    raise ValueError(f'unknown FreeCAD execution tool: {name}')
 
 
 class FailureInspection(BaseModel):
@@ -90,12 +142,30 @@ def tool_schemas(*, has_document: bool, constraint_repair: bool = False) -> list
         (name, model, description) for name, (model, description) in _READS.items()
         if has_document or name != "freecad_inspect"
     ]
-    specs.append((EXECUTE_TOOL, FreeCADOperationPlan,
-        "Build a candidate with FreeCAD using typed operations or api.execute for native capabilities. "
+    deferred = (
         "The durable workflow executes this call after persisting its arguments, then independently "
-        "checks the artifacts. This does not approve, commit, or certify fit. No user confirmation fields are accepted."))
-    return [{"type": "function", "function": {"name": name, "description": description,
-            "parameters": model.model_json_schema()}} for name, model, description in specs]
+        "checks the artifacts. This does not approve, commit, or certify fit. No user confirmation fields are accepted.")
+    specs.extend([
+        (EXECUTE_TOOL, FreeCADOperationPlan,
+         "Build a candidate using typed operations only, ending with document.export. "
+         "sketch.create creates the named PartDesign::Body if absent. "
+         "api.execute is not accepted here; use freecad_execute_api for native programs. " + deferred),
+        (API_EXECUTE_TOOL, NativeExecutionRequest,
+         "Use when typed operations cannot express the required native capability. "
+         "Submit one Python program in execute.args.source and explicitly select export.args.objects. "
+         "This compiles to exactly api.execute followed by document.export; typed operations cannot be mixed in. "
+         "Selected-feature edits require scoped typed operations. " + deferred),
+    ])
+    tools = []
+    for name, model, description in specs:
+        schema = model.model_json_schema()
+        if name == EXECUTE_TOOL:
+            # The persisted/runtime v1 contract still accepts retained native plans.
+            # Only this Agent tool's public action set is narrowed.
+            schema['$defs']['FreeCADOperation']['properties']['action']['enum'].remove('api.execute')
+        tools.append({'type': 'function', 'function': {
+            'name': name, 'description': description, 'parameters': schema}})
+    return tools
 
 
 def read_tool(name: str, arguments: dict, *, state: dict | None) -> dict:

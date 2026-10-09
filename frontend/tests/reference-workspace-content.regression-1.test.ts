@@ -34,7 +34,7 @@ test("natural-language edits and durable confirmation use server-owned contracts
   const socket = read("src/hooks/useWebSocket.ts");
   const service = read("src/services/clients/tasks.ts");
 
-  assert.match(socket, /operation_intent: operationIntentForPanel\(panel\)/);
+  assert.match(socket, /operation_intent: sourceCandidateRevisionId \? "modify" : operationIntentForPanel\(panel\)/);
   assert.match(socket, /panel\?\.result\?\.success \? "modify" : "generate"/);
   assert.match(agent, /panel\.durable\?\.confirmation/);
   assert.match(agent, /confirmDurableTask/);

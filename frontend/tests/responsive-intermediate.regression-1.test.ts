@@ -16,14 +16,17 @@ test("intermediate desktop widths share Agent and inspector space", () => {
 test("mobile header retains four engineering entry points", () => {
   const css = readFileSync(join(import.meta.dirname, "..", "src", "index.css"), "utf8");
   const header = readFileSync(join(import.meta.dirname, "..", "src", "components", "project", "WorkspaceHeader.tsx"), "utf8");
-  for (const label of ["属性", "检查", "版本", "导出"]) assert.ok(header.includes(`aria-label="${label}"`));
+  for (const label of ["属性", "检查", "版本"]) assert.ok(header.includes(`label: "${label}"`));
+  assert.match(header, /aria-label="导出"/);
+  assert.match(header, /aria-label="更多工具"[\s\S]*aria-expanded=\{menuOpen\}/);
+  assert.match(header, /actions.map\(item => <button[\s\S]*onClick=\{\(\) => action\(item.run\)\}/);
   const narrow = css.match(/@media \(max-width: 479px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
   assert.doesNotMatch(narrow, /workspace-header__export-action/);
 });
 
 test("fixed mobile sidebar no longer reserves an empty grid track", () => {
   const css = readFileSync(join(import.meta.dirname, "..", "src", "index.css"), "utf8");
-  const tablet = css.match(/@media \(max-width: 1023px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+  const tablet = css.match(/@media \(max-width: 1279px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
 
   assert.match(tablet, /\.ww-app-shell\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)/);
 });

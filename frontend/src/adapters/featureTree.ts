@@ -1,4 +1,14 @@
 import type { SemanticFeature } from "../types/document";
+export function visibleFeatureRows<T extends {feature:SemanticFeature;level:number}>(rows:T[],collapsed:Set<string>,query:string):T[] {
+  const search=query.trim().toLocaleLowerCase();
+  let hiddenDepth:number|null=null;
+  return rows.filter(row=>{
+    if (search) return `${row.feature.label} ${row.feature.kernel_name} ${row.feature.type || ''}`.toLocaleLowerCase().includes(search);
+    if (hiddenDepth!==null && row.level>hiddenDepth) return false;
+    hiddenDepth=collapsed.has(row.feature.id)?row.level:null;
+    return true;
+  });
+}
 
 export function featureTreeRows(features: SemanticFeature[], status?: string, rootOrder: string[] = []) {
   const visible = features.filter(f => f.kernel_name !== "CADAgentLedger");

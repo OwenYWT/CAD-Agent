@@ -322,7 +322,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             inventory = await load_revision_source_inventory(
                 principal_context,
                 project_id=project_id,
-                revision_id=expected_base_revision_id,
+                revision_id=UUID(str(data["source_candidate_revision_id"])) if data.get("source_candidate_revision_id") else expected_base_revision_id,
             )
             if msg_type == "modify_parameters":
                 requested_operation = "modify"
@@ -354,6 +354,16 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     else "auto"
                 ),
             )
+            if data.get("source_candidate_revision_id"):
+                if msg_type != "user_message" or operation_resolution.modeling_backend != "freecad":
+                    raise ValueError("候选续改只支持明确的原生建模请求")
+                source_revision = UUID(str(data["source_candidate_revision_id"]))
+                context = operation_resolution.operation_context.model_copy(update={
+                    "source_candidate_revision_id": source_revision,
+                })
+                operation_resolution = operation_resolution.__class__(operation=operation_resolution.operation,
+                    modeling_backend=operation_resolution.modeling_backend, existing_code=operation_resolution.existing_code,
+                    operation_context=context)
             if msg_type == "modify_parameters":
                 if operation_resolution.modeling_backend != "freecad":
                     raise ParameterStateError(

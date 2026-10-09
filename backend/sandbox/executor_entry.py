@@ -262,6 +262,15 @@ def main():
                     cq.exporters.export(obj, stl_path, exportType="STL")
                     files[f"{name}.stl"] = stl_path
 
+        # Explicit SVG exports use the same verified output contract as STEP
+        # and DXF. Do not advertise an absent or malformed preview as success.
+        svg_path = "/sandbox/output/result.svg"
+        if os.path.isfile(svg_path):
+            import xml.etree.ElementTree as ET
+            if ET.parse(svg_path).getroot().tag not in {"svg", "{http://www.w3.org/2000/svg}svg"}:
+                raise ValueError("SVG output must contain an SVG document root")
+            files["result.svg"] = svg_path
+
         # Write success result
         result = {"status": "success", "files": files}
         with open("/sandbox/output/result.json", "w") as f:

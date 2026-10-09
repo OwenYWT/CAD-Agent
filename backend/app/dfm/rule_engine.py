@@ -6,11 +6,12 @@ parting line) are surfaced as advisory INFO notes for the user to confirm manual
 rather than fabricating an unreliable pass/fail (which is what the old LLM path did).
 """
 
+import math
 import logging
 from typing import TYPE_CHECKING
 
 
-from app.dfm.models import DFMRule, RuleViolation
+from app.dfm.models import DFMRule, RuleViolation, rule_process
 from app.dfm import rule_store
 from app.validation.design_analyzer import DFMGeometryResult
 
@@ -93,43 +94,60 @@ class DFMRuleEngine:
         step_data: "StepAnalysisResult | None" = None,
         material: str | None = None,
     ) -> list[RuleViolation]:
-        """Evaluate all enabled rules against geometry data."""
-        if process:
-            rules = await rule_store.get_rules_by_process(process)
-        else:
-            rules = await rule_store.get_all_enabled_rules()
-
-        if not rules:
-            return []
-
-        # Enrich thresholds from knowledge graph if material is specified
-        if material:
-            rules = await self._enrich_from_knowledge_graph(rules, material)
-
-        violations: list[RuleViolation] = []
-
-        # Split into geometric and heuristic
-        geometric_rules = [r for r in rules if r.check_type == "geometric" and r.enabled]
-        heuristic_rules = [r for r in rules if r.check_type == "heuristic" and r.enabled]
-
-        # Evaluate geometric rules (deterministic)
-        for rule in geometric_rules:
-            v = self._eval_geometric(rule, geometry, step_data)
-            if v:
-                violations.append(v)
-
-        # Evaluate heuristic rules deterministically (geometric signal where available,
-        # advisory info notes otherwise). No LLM.
-        for rule in heuristic_rules:
-            v = self._eval_heuristic(rule, geometry, step_data)
-            if v:
-                violations.append(v)
-
-        # Sort by severity
-        severity_order = {"critical": 0, "warning": 1, "info": 2}
-        violations.sort(key=lambda v: severity_order.get(v.severity, 9))
-
+        violations, _ = await self.evaluate_with_evidence(geometry, process, code, step_data, material)
         return violations
+
+    async def evaluate_with_evidence(
+        self, geometry: DFMGeometryResult, process: str | None = None,
+        code: str = "", step_data: "StepAnalysisResult | None" = None,
+        material: str | None = None,
+        rule_configuration: dict | None = None,
+    ) -> tuple[list[RuleViolation], list[dict]]:
+        """Distinguish measured passes from missing measurements and advisories."""
+        process = rule_process(process)
+        if rule_configuration is not None:
+            from app.dfm.configuration import configuration_rules
+            rules = configuration_rules(rule_configuration, process=process)
+        else:
+            rules = await rule_store.get_rules_by_process(process) if process else await rule_store.get_all_enabled_rules()
+        # Saved thresholds are authoritative. Knowledge-graph recommendations
+        # must not silently override them at execution time.
+        violations: list[RuleViolation] = []
+        evidence: list[dict] = []
+        for rule in rules:
+            item = {"rule_id": rule.id, "process": rule.process, "category": rule.category,
+                    "method": rule.check_type, "unit": rule.unit,
+                    "threshold_min": rule.threshold_min, "threshold_max": rule.threshold_max,
+                    "actual_value": None, "status": "indeterminate"}
+            if not rule.enabled:
+                item.update(status="disabled", reason="Disabled in the frozen rule configuration.")
+                evidence.append(item)
+                continue
+            try:
+                if rule.check_type == "geometric":
+                    actual = self._get_actual_value(rule, geometry, step_data)
+                    item["actual_value"] = actual
+                    if actual is None or not math.isfinite(actual):
+                        item["reason"] = f"Verified {rule.category} measurement in {rule.unit} is unavailable."
+                        evidence.append(item)
+                        continue
+                    violation = self._eval_geometric(rule, geometry, step_data)
+                    item["status"] = "violated" if violation else "passed"
+                elif rule.check_type == "heuristic":
+                    violation = self._eval_heuristic(rule, geometry, step_data)
+                    item["status"] = "advisory"
+                    item["reason"] = "Deterministic heuristic; not a proof of manufacturing suitability."
+                else:
+                    violation = None
+                    item["reason"] = "Unsupported rule method."
+                if violation:
+                    violations.append(violation)
+            except Exception as exc:
+                logger.exception("Rule %s evaluation failed", rule.id)
+                item["reason"] = f"Rule evaluation failed: {type(exc).__name__}"
+            evidence.append(item)
+        violations.sort(key=lambda item: {"critical": 0, "warning": 1, "info": 2}.get(item.severity, 9))
+        return violations, evidence
 
     def _eval_geometric(
         self,
@@ -182,6 +200,16 @@ class DFMRuleEngine:
         """
         cat = rule.category
         dm = step_data.derived_metrics if step_data and not step_data.error else None
+
+        # A category alone does not identify a physical quantity. In particular,
+        # hole diameter (mm) cannot prove depth/diameter (ratio), and minimum
+        # wall thickness cannot prove wall-thickness uniformity. Unsupported
+        # quantities remain indeterminate until their own measurements exist.
+        supported_units = {"wall_thickness": "mm", "overhang": "ratio",
+                           "size": "mm", "fillet": "mm", "hole": "mm",
+                           "draft_angle": "degree"}
+        if supported_units.get(cat) != rule.unit:
+            return None
 
         if cat == "wall_thickness":
             # STEP precision > trimesh approximation

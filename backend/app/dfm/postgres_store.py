@@ -32,10 +32,10 @@ def _rule(row) -> DFMRule:
     )
 
 
-async def _seed_rules(connection, context) -> None:
+async def _seed_rules(connection, tenant_id) -> None:
     count = await connection.scalar(
         text("SELECT count(*) FROM dfm_rule_sets WHERE tenant_id=:tenant"),
-        {"tenant": context.tenant_id},
+        {"tenant": tenant_id},
     )
     if int(count or 0):
         return
@@ -58,7 +58,7 @@ async def _seed_rules(connection, context) -> None:
                 """
             ),
             {
-                "tenant": context.tenant_id,
+                "tenant": tenant_id,
                 "id": set_id,
                 "name": f"{process} 默认规则",
                 "process": process,
@@ -80,7 +80,7 @@ async def _seed_rules(connection, context) -> None:
                     """
                 ),
                 {
-                    "tenant": context.tenant_id,
+                    "tenant": tenant_id,
                     "id": rule["id"],
                     "set_id": set_id,
                     "process": rule["process"],
@@ -109,7 +109,7 @@ async def list_rule_sets() -> list[DFMRuleSet]:
     context, transaction = await _rules_transaction()
     async with transaction as connection:
         await ensure_principal(connection, context)
-        await _seed_rules(connection, context)
+        await _seed_rules(connection, context.tenant_id)
         sets = (
             await connection.execute(
                 text(
@@ -150,7 +150,7 @@ async def _query_rules(where: str, params: dict) -> list[DFMRule]:
     context, transaction = await _rules_transaction()
     async with transaction as connection:
         await ensure_principal(connection, context)
-        await _seed_rules(connection, context)
+        await _seed_rules(connection, context.tenant_id)
         rows = (
             await connection.execute(
                 text(
@@ -180,6 +180,18 @@ async def get_all_enabled_rules() -> list[DFMRule]:
     return await _query_rules("enabled=true", {})
 
 
+async def configured_rules(connection, *, tenant_id, process: str | None) -> list[DFMRule]:
+    """Read enabled and disabled rules inside the caller's authorized transaction."""
+    from app.dfm.models import rule_process
+    await _seed_rules(connection, tenant_id)
+    rows = (await connection.execute(text("""
+        SELECT * FROM dfm_rules WHERE tenant_id=:tenant
+          AND (CAST(:process AS text) IS NULL OR process=:process)
+        ORDER BY id
+    """), {"tenant": tenant_id, "process": rule_process(process)})).mappings().all()
+    return [_rule(row) for row in rows]
+
+
 async def update_rule(rule_id: str, updates: dict) -> DFMRule | None:
     allowed = {
         "threshold_min",
@@ -194,7 +206,13 @@ async def update_rule(rule_id: str, updates: dict) -> DFMRule | None:
         return None
     context, transaction = await _rules_transaction()
     async with transaction as connection:
-        await _seed_rules(connection, context)
+        await _seed_rules(connection, context.tenant_id)
+        existing = (await connection.execute(text('SELECT * FROM dfm_rules WHERE tenant_id=:tenant AND id=:id FOR UPDATE'),
+            {'tenant': context.tenant_id, 'id': rule_id})).mappings().one_or_none()
+        if existing is None:
+            return None
+        from app.dfm.models import validate_rule_thresholds
+        validate_rule_thresholds({**dict(existing), **filtered})
         assignments = ", ".join(f"{key}=:{key}" for key in filtered)
         row = (
             await connection.execute(
@@ -222,7 +240,7 @@ async def clone_rule_set(
 ) -> DFMRuleSet | None:
     context, transaction = await _rules_transaction()
     async with transaction as connection:
-        await _seed_rules(connection, context)
+        await _seed_rules(connection, context.tenant_id)
         source = (
             await connection.execute(
                 text(

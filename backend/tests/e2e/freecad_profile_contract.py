@@ -31,6 +31,8 @@ with tempfile.TemporaryDirectory() as root:
             'operation': 'execute', 'inputs': {}, 'params': {'plan': {
                 'schema_version': 'freecad-operation-plan.v1', 'document_name': 'Profiles', 'operations': operations}}})
         doc = App.openDocument(result['files']['fcstd'])
+        assert [o.Name for o in doc.Objects if o.TypeId == 'PartDesign::Body'] == ['Body']
+        assert doc.Base.getParentGeoFeatureGroup() == doc.Body == doc.Holes.getParentGeoFeatureGroup()
         assert doc.Base.FullyConstrained and doc.Holes.FullyConstrained
         assert doc.Holes.GeometryCount == 2 and doc.Holes.ConstraintCount == 6
         expected = (600 - 13 * math.pi) * 4

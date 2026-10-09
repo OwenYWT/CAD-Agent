@@ -159,7 +159,11 @@ class FreeCADAPIArgs(FrozenContract):
 
 class SketchCreateArgs(FrozenContract):
     name: ObjectName
-    body: ObjectName = "Body"
+    body: ObjectName = Field(default="Body", description=(
+        "Owning PartDesign::Body name. sketch.create creates this Body if absent, "
+        "reuses it if present, and rejects an existing object of another type. "
+        "No separate Body creation or api.execute operation is needed."
+    ))
     plane: Literal["xy", "xz", "yz"] = "xy"
     offset_mm: Coordinate = 0.0
     reversed: bool = False
@@ -225,6 +229,32 @@ class SketchAddConstraintArgs(FrozenContract):
             references = (self.first,) if self.second is None else (self.first, self.second)
             if any(isinstance(reference, ConstraintReference) and reference.point_position is None for reference in references):
                 raise ValueError(f"{self.kind} requires point_position")
+        return self
+
+
+class SketchRelationChange(FrozenContract):
+    action: Literal['add','delete','replace']
+    logical_id: str = Field(pattern=r'^relation_[0-9a-f]{32}$')
+    constraint: SketchAddConstraintArgs | None = None
+
+    @model_validator(mode='after')
+    def relation_change(self):
+        if (self.action=='delete') != (self.constraint is None):
+            raise ValueError('新增和替换需要关系内容，删除不能带替代关系')
+        if self.constraint and (self.constraint.kind not in {'horizontal','vertical','coincident','equal'} or self.constraint.value_mm is not None):
+            raise ValueError('此入口仅开放可证明的线性几何关系')
+        return self
+
+
+class SketchPatchRelationsArgs(FrozenContract):
+    sketch: ObjectName
+    expected_constraints_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    changes: tuple[SketchRelationChange,...] = Field(min_length=1,max_length=32)
+
+    @model_validator(mode='after')
+    def target_identity(self):
+        if any(c.constraint and c.constraint.sketch != self.sketch for c in self.changes):
+            raise ValueError('关系内容必须属于同一草图')
         return self
 
 
@@ -456,6 +486,7 @@ OperationArgs = (
     | SketchAddProfileArgs
     | SketchAddConstraintArgs
     | SketchSetConstraintArgs
+    | SketchPatchRelationsArgs
     | FeaturePadArgs
     | FeatureLoftArgs
     | FeatureSweepArgs
@@ -481,6 +512,7 @@ _ACTION_ARG_TYPES: dict[str, type[FrozenContract]] = {
     "sketch.add_profile": SketchAddProfileArgs,
     "sketch.add_constraint": SketchAddConstraintArgs,
     "sketch.set_constraint": SketchSetConstraintArgs,
+    "sketch.patch_relations": SketchPatchRelationsArgs,
     "feature.pad": FeaturePadArgs,
     "feature.loft": FeatureLoftArgs,
     "feature.sweep": FeatureSweepArgs,
@@ -508,6 +540,7 @@ class FreeCADOperation(FrozenContract):
         "sketch.add_profile",
         "sketch.add_constraint",
         "sketch.set_constraint",
+        "sketch.patch_relations",
         "feature.pad",
         "feature.loft",
         "feature.sweep",

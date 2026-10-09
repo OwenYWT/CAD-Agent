@@ -8,13 +8,17 @@ import { EngineeringApiError } from "../../services/clients/http";
 import { useFeatureLease } from "../../hooks/useFeatureLease";
 import { useDraftGuard } from "../../hooks/useDraftGuard";
 import { guardDraft } from "../../stores/draftGuard";
+import { useDraftHistory } from '../../hooks/useDraftHistory';
+import { WorkspaceDialog } from '../common/WorkspaceOverlay';
+import SketchRelations from './SketchRelations';
 
 export default function SketchEditor({document,feature,onSubmitted}: {
   document: CloudDocument; feature: SemanticFeature; onSubmitted?: (taskId:string,document:CloudDocument)=>void;
 }) {
   const [base,setBase]=useState(document);
   const [details,setDetails]=useState<SketchDetails | null>(null);
-  const [values,setValues]=useState<Record<number,string>>({});
+  const history=useDraftHistory<Record<number,string>>({}),values=history.value,setValues=history.set;
+  const [expanded,setExpanded]=useState(false),[selectedGeometry,setSelectedGeometry]=useState<number[]>([]);
   const [key,setKey]=useState(()=>crypto.randomUUID());
   const [pending,setPending]=useState(false);
   const [error,setError]=useState("");
@@ -85,29 +89,32 @@ export default function SketchEditor({document,feature,onSubmitted}: {
     }
     finally {setPending(false);}
   };
-  const refresh=()=>{setValues({});setDetails(null);setFitted(null);setKey(crypto.randomUUID());setBase(document);setSubmittedId(null);setAttemptToken(null);setUncertain(false);void lease.release().catch(()=>{});};
+  const refresh=()=>{history.reset({});setDetails(null);setFitted(null);setKey(crypto.randomUUID());setBase(document);setSubmittedId(null);setAttemptToken(null);setUncertain(false);void lease.release().catch(()=>{});};
   useDraftGuard((Object.keys(values).length > 0 && !submittedId) || pending, `${feature.label} 草图约束`, refresh);
   const dimensionStep=(c:SketchConstraint,delta:number)=>{
     const value=Number(values[c.index] ?? displayDimension(c))+delta;
     if (canEdit && validDimension(c,value)) change({[c.index]:String(Number(value.toFixed(3)))});
   };
   const unsupported=geometry.filter(g=>!['Part::GeomCircle','Part::GeomLineSegment'].includes(g.type)).length;
-  return <section className="ww-inspector-section" aria-label="草图编辑" data-testid="sketch-editor">
+  const content=<section className="ww-inspector-section" aria-label="草图编辑" data-testid="sketch-editor">
     <h3>{feature.label} · 草图尺寸</h3>
+    <div className="my-2 flex flex-wrap gap-2"><button type="button" className="workspace-button" onClick={()=>{drag.current=null;setExpanded(v=>!v);}}>{expanded?'返回属性栏':'打开大画布草图'}</button>
+      <button type="button" className="workspace-button" disabled={!canEdit || !history.canUndo} onClick={()=>{history.undo();setKey(crypto.randomUUID());}}>撤销草图草稿</button><button type="button" className="workspace-button" disabled={!canEdit || !history.canRedo} onClick={()=>{history.redo();setKey(crypto.randomUUID());}}>重做草图草稿</button></div>
+    <p role="status" className="type-caption">保存基线：{feature.sketch?.fully_constrained ? '完全约束' : '约束状态见求解诊断'} · 本地草稿尚未求解；提交后由真实 FreeCAD 验证。</p>
     <p className="type-caption">蓝色控制点可拖动圆心和半径，也可输入尺寸。预览只更新本地草稿；角度与关联几何在提交后由云端求解并审核。</p>
     {!details ? <p role="status" className="mt-2 type-caption">正在读取草图检查点…</p> : <>
       <svg role="group" aria-label="草图本地预览" data-testid="sketch-preview" data-revision={base.head_revision_id}
-        className="my-3 h-64 w-full touch-none rounded border border-[var(--line)] bg-[var(--surface)]" viewBox={bounds.join(' ')}
+        className={`my-3 ${expanded?'h-[min(60vh,600px)]':'h-64'} w-full touch-none rounded border border-[var(--line)] bg-[var(--surface)]`} viewBox={bounds.join(' ')}
         onPointerMove={move} onPointerUp={stop} onPointerCancel={stop}>
         <line x1={bounds[0]} x2={bounds[0]+bounds[2]} y1={0} y2={0} stroke="#a8b1b9" strokeWidth={bounds[2]*0.002} />
         <line x1={0} x2={0} y1={bounds[1]} y2={bounds[1]+bounds[3]} stroke="#a8b1b9" strokeWidth={bounds[2]*0.002} />
         {geometry.map(item=>{
           if (item.type==='Part::GeomLineSegment' && item.start && item.end) return <line key={item.index} x1={item.start[0]} y1={-item.start[1]} x2={item.end[0]} y2={-item.end[1]}
-            stroke="#263c50" strokeWidth={bounds[2]*0.006} strokeDasharray={item.construction ? `${handleSize} ${handleSize}` : undefined} />;
+            stroke={selectedGeometry.includes(item.index)?'#7653bd':'#263c50'} strokeWidth={bounds[2]*0.006} strokeDasharray={item.construction ? `${handleSize} ${handleSize}` : undefined} role="button" tabIndex={0} aria-label={`选择草图线 ${item.index}`} onClick={()=>setSelectedGeometry([item.index])} onKeyDown={e=>{if(e.key==='Enter' || e.key===' ') {e.preventDefault();setSelectedGeometry([item.index]);}}}/>;
           if (item.type!=='Part::GeomCircle' || !item.center || !item.radius_mm) return null;
           const [x,y]=item.center, radius=direct(item.index,'Radius') || direct(item.index,'Diameter');
           return <g key={item.index}>
-            <circle data-testid={`sketch-circle-${item.index}`} cx={x} cy={-y} r={item.radius_mm} fill="none" stroke="#263c50" strokeWidth={bounds[2]*0.006}
+            <circle data-testid={`sketch-circle-${item.index}`} cx={x} cy={-y} r={item.radius_mm} fill="none" stroke={selectedGeometry.includes(item.index)?'#7653bd':'#263c50'} strokeWidth={bounds[2]*0.006} role="button" tabIndex={0} aria-label={`选择草图圆 ${item.index}`} onClick={()=>setSelectedGeometry([item.index])} onKeyDown={e=>{if(e.key==='Enter' || e.key===' ') {e.preventDefault();setSelectedGeometry([item.index]);}}}
               strokeDasharray={item.construction ? `${handleSize} ${handleSize}` : undefined} />
             {canEdit && radius ? <circle data-testid={`sketch-radius-handle-${item.index}`} role="slider" tabIndex={0} aria-label={`圆 ${item.index} 半径`}
               aria-valuenow={item.radius_mm} aria-valuemin={0.01} aria-valuemax={1000000} cx={x+item.radius_mm} cy={-y} r={handleSize} fill="#2563eb" className="cursor-ew-resize"
@@ -120,14 +127,14 @@ export default function SketchEditor({document,feature,onSubmitted}: {
       <button className="workspace-button" type="button" onClick={()=>setFitted(sketchBounds(geometry))}>适配预览</button>
       <p className="my-2 type-caption text-[var(--muted)]">本地预览支持圆和线段的直接尺寸；关联约束及其他几何以云端求解结果为准。</p>
       {unsupported || details.omitted_geometry || details.omitted_constraints ? <p role="status" className="type-caption">未绘制 {unsupported+details.omitted_geometry} 项几何；未记录 {details.omitted_constraints} 项约束。</p> : null}
-      {constraints.map(c=><label key={c.index} className="my-2 flex items-center gap-2 type-caption"><span className="min-w-0 flex-1">
+      {constraints.map(c=><label key={c.index} data-linked={selectedGeometry.includes(c.first) || selectedGeometry.includes(c.second)} onFocus={()=>setSelectedGeometry([c.first,c.second].filter(index=>index>=0))} className="ww-sketch-constraint my-2 flex flex-wrap items-center gap-2 type-caption"><button type="button" className="workspace-icon-button" aria-label={`定位草图约束 ${c.index}`} onClick={()=>setSelectedGeometry([c.first,c.second].filter(index=>index>=0))}>#{c.index}</button><span className="min-w-0 flex-1">
         {c.name || dimensionLabels[c.type as SketchDimensionType] || c.type} · #{c.index}{c.driving===false ? "（测量）" : ""}</span>
         {editableDimension(c) ? <><input aria-label={`草图约束 ${c.index} ${c.type}`} className="w-24 rounded border border-[var(--line)] p-2" type="number" step="any"
           value={values[c.index] ?? displayDimension(c)} disabled={!canEdit} onFocus={()=>{void lease.ensure().catch(()=>{});}} onChange={e=>change({[c.index]:e.target.value})} /><span>{c.type==="Angle" ? "°" : "mm"}</span></>
           : <span>{c.value}</span>}
       </label>)}
       {document.can_edit && onSubmitted ? <button className="workspace-button" type="button" disabled={(!canEdit && !uncertain) || pending || !valid || !!submittedId} onClick={()=>void submit()}>{uncertain ? "核对并重试同一草图请求" : submittedId ? "已提交候选计算" : "提交草图约束"}</button> : null}
-      {updates.length ? <p role="status" className="mt-2 type-caption">{submittedId ? `请求 ${submittedId.slice(0,8)} 已受理；保留本次提交值，等待候选审核。` : `${updates.length} 项草稿尺寸尚未更新已提交模型。`} 基线 v{base.state_version} · {base.head_revision_id.slice(0,8)}</p> : null}
+      {updates.length ? <p role="status" className="mt-2 type-caption">{submittedId ? `请求 ${submittedId.slice(0,8)} 已受理；保留本次提交值，等待候选审核。` : `${updates.length} 项草稿尺寸尚未更新已提交模型。`} 编辑代次 {base.state_version} · {base.head_revision_id.slice(0,8)}</p> : null}
       {submittedId ? <button className="workspace-button mt-2" type="button" onClick={refresh}>结束本次草图查看</button> : null}
     </>}
     {stale ? <p role="status" className="mt-2 type-caption">文档已有新版本，请读取最新草图；当前草稿不会自动覆盖新约束。
@@ -135,4 +142,6 @@ export default function SketchEditor({document,feature,onSubmitted}: {
     {lease.error ? <p role="alert" className="mt-2 type-caption text-red-700">{lease.error}</p> : null}
     {error ? <p role="alert" className="mt-2 type-caption text-red-700">{error}</p> : null}
   </section>;
+  return <>{expanded ? <WorkspaceDialog open title="原生草图画布" onClose={()=>setExpanded(false)}>{content}</WorkspaceDialog> : content}
+    {details && onSubmitted ? <SketchRelations key={`${base.head_revision_id}:${feature.id}`} document={document} feature={feature} details={details} onSubmitted={onSubmitted}/> : null}</>;
 }

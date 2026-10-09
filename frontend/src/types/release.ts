@@ -1,6 +1,7 @@
 import type { DocumentArtifact } from './document';
 
 export interface ReleaseArtifact extends DocumentArtifact { filename: string }
+export interface ReleaseOptions { component_names:string[]; mesh_precision:'coarse'|'medium'|'fine'; units:'mm' }
 export interface DocumentRelease {
   release_id:string; release_name:string; source_revision_id:string; source_state_version:number;
   created_at:string; status:string; error_code:string | null; error_message:string | null;
@@ -14,6 +15,8 @@ export interface ReleaseManifest {
   engineering_artifacts:Array<{workflow_run_id:string;artifact_kind:string;package_filename:string;sha256:string}>;
   bom:{native_type:string;instance_count:number;definition_count:number};
   units:'mm'; total_component_volume_mm3:number; mesh_triangles:number; scope:string;
+  export_scope?:string[]; mesh_settings?:{precision:string;linear_deflection_mm:number;angular_deflection_rad:number};
+  fcstd_scope?:string;
 }
 export interface ReleaseResult {
   workflow_run_id:string; source_revision_id:string; source_state_version:number;

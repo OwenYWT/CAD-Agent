@@ -3,13 +3,18 @@
 # runtime and vendored source bytes against the release manifest before use.
 ARG VERIFIED_SANDBOX_IMAGE
 FROM ${VERIFIED_SANDBOX_IMAGE}
+COPY backend/sandbox/executor_entry.py /opt/cad-agent/executor_entry.py
 COPY backend/sandbox/freecad_entry.py /opt/cad-agent/freecad_entry.py
 COPY backend/sandbox/freecad_edge_scope.py /opt/cad-agent/freecad_edge_scope.py
 COPY backend/sandbox/capability_entry.py /opt/cad-agent/capability_entry.py
 COPY backend/sandbox/freecad_result_channel.py /opt/cad-agent/freecad_result_channel.py
+COPY backend/sandbox/freecad_engineering.py /opt/cad-agent/freecad_engineering.py
+COPY backend/sandbox/freecad_scene.py /opt/cad-agent/freecad_scene.py
+COPY backend/sandbox/freecad_release.py /opt/cad-agent/freecad_release.py
 COPY backend/app/freecad/sketch_diagnostics.py /opt/cad-agent/freecad_sketch_diagnostics.py
 COPY backend/app/freecad/failure_snapshot.py /opt/cad-agent/freecad_failure_snapshot.py
 COPY backend/app/freecad/constraint_relationships.py /opt/cad-agent/freecad_constraint_relationships.py
+COPY backend/app/freecad/sketch_relations.py /opt/cad-agent/freecad_sketch_relations.py
 COPY backend/sandbox/freecad_constraint_validation.py /opt/cad-agent/freecad_constraint_validation.py
 COPY backend/app/freecad/capabilities.json /opt/cad-agent/freecad-capabilities.json
 COPY backend/app/freecad/reference_geometry.py /opt/cad-agent/freecad_reference_geometry.py

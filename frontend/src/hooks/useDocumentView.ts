@@ -27,9 +27,10 @@ export function useDocumentView(head: CloudDocument | null, connected: boolean, 
     return () => controller.abort();
   }, [documentId, revisionId, key]);
   const evidence = loaded?.key === key ? loaded.evidence || null : null;
-  const identity = requestedIdentity && evidence && requestedIdentity.mode !== "committed" && evidence.review_status
-    ? {...requestedIdentity, mode: (["committed", "rolled_back", "rejected", "changes_requested"].includes(evidence.review_status) ? "history" : "candidate") as DocumentViewMode}
-    : requestedIdentity;
+  const numberedIdentity = requestedIdentity && evidence ? { ...requestedIdentity, viewedRevisionNumber: evidence.revision_number } : requestedIdentity;
+  const identity = numberedIdentity && evidence && numberedIdentity.mode !== "committed" && evidence.review_status
+    ? {...numberedIdentity, mode: (["committed", "rolled_back", "rejected", "changes_requested"].includes(evidence.review_status) ? "history" : "candidate") as DocumentViewMode}
+    : numberedIdentity;
   const document = head && identity ? projectViewedDocument(head, identity, evidence, connected) : null;
   const snapshot = evidence?.snapshot && Object.keys(evidence.snapshot.files || {}).length ? evidence.snapshot : null;
   const result = snapshot ? { ...snapshot.result, snapshot_id: snapshot.id, revision_id: snapshot.revision_id || snapshot.id,

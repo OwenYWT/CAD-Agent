@@ -372,6 +372,7 @@ class McadAgentWorkflowV2:
         base_state: dict[str, Any] | None,
         turn_index: int | None = None,
     ) -> dict[str, Any]:
+        profile_repair_count = 0
         generation_step = ({**step, "step_key": f"tool-{turn_index}-{step['step_key'][:80]}"}
                            if turn_index is not None else step)
         generated = await self._activity(
@@ -419,7 +420,7 @@ class McadAgentWorkflowV2:
                 )
                 break
             except Exception as exc:
-                if request.get("revision_restore") is not None:
+                if request.get("revision_restore") is not None or (request.get('operation_context') or {}).get('native_import'):
                     raise
                 failure = self._execution_failure(exc)
                 if failure is None or failure["category"] not in {
@@ -430,7 +431,11 @@ class McadAgentWorkflowV2:
                     raise
                 budget = (int((failure.get('details') or {}).get('constraint_repair_max_attempts', 2))
                     if getattr(self, '_constraint_patches_v1', False) else 2)
-                if repair_count >= budget:
+                profile_failure = (request.get('profile_replanning_v1')
+                    and failure['error_code'] == 'profile_geometry_invalid')
+                if profile_failure:
+                    budget = int((failure.get('details') or {}).get('profile_replan_max_attempts', 2))
+                if (profile_repair_count if profile_failure else repair_count) >= budget:
                     raise
                 failure["error_message"] = (
                     f"{failure['error_message']}\n"
@@ -453,6 +458,7 @@ class McadAgentWorkflowV2:
                         "step_index": repair_step_index,
                         "seen_signatures": seen_signatures,
                         "base_state": base_state,
+                        **({'profile_repair_index': profile_repair_count + 1} if profile_failure else {}),
                     },
                     suffix=f"repair-operations-{generation_step['step_key']}-{repair_index:02d}",
                 )
@@ -462,6 +468,8 @@ class McadAgentWorkflowV2:
                 run_step_kind = "agent_freecad_repair"
                 run_step_index = repair_step_index
                 repair_count = repair_index
+                if profile_failure:
+                    profile_repair_count += 1
         return {
             "step": step,
             "generated": generated,
@@ -509,6 +517,14 @@ class McadAgentWorkflowV2:
         step = modeled["step"]
         generated = dict(modeled["generated"])
         executed = dict(modeled["executed"])
+        source_solid_count = None
+        if getattr(self, '_native_source_solid_count_v1', False) and (
+            (request.get('operation_context') or {}).get('native_import')
+            or request.get('structured_modification') and not request['structured_modification'].get('native_edits')
+        ):
+            source_solid_count = executed.get('source_solid_count')
+            if type(source_solid_count) is not int or source_solid_count < 1:
+                raise ApplicationError('缺少可验证的原生输入实体数量',type='native_source_geometry_missing',non_retryable=True)
         repair_count = int(modeled.get("repair_count") or 0)
         seen_signatures = list(modeled.get("seen_signatures") or [])
         geometry_budget = int(geometry_policy["repair_budget"])
@@ -538,7 +554,7 @@ class McadAgentWorkflowV2:
                     ),
                     "expected_dimensions_mm": expected_dimensions,
                     "dimension_tolerance": 0.05,
-                    **({"expected_solid_count": 1}
+                    **({'expected_solid_count': source_solid_count} if source_solid_count is not None else {"expected_solid_count": 1}
                        if getattr(self, "_final_solid_acceptance_v1", False)
                        and request.get("operation") == "generate"
                        and plan.get("model_kind") != "profile_2d"
@@ -1059,6 +1075,7 @@ class McadAgentWorkflowV2:
             )
             native_bom_v1 = workflow.patched("agent-v2-native-bom-v1")
             self._final_solid_acceptance_v1 = workflow.patched("agent-v2-final-solid-acceptance-v1")
+            self._native_source_solid_count_v1 = workflow.patched('agent-v2-native-source-solid-count-v1')
             self._engineering_acceptance_v1 = workflow.patched("agent-v2-engineering-acceptance-v1")
             self._validation_repair_v2 = workflow.patched("agent-v2-validation-repair-v2")
             self._provider_streaming_v1 = workflow.patched("agent-v2-provider-streaming-v1")
@@ -1066,6 +1083,7 @@ class McadAgentWorkflowV2:
             self._freecad_checkpoints_v1 = workflow.patched("agent-v2-freecad-checkpoints-v1")
             self._cad_jobs_v1 = workflow.patched("agent-v2-cad-jobs-v1")
             self._constraint_patches_v1 = workflow.patched("agent-v2-freecad-constraint-patches-v1")
+            profile_replanning_v1 = workflow.patched('agent-v2-profile-replanning-v1')
             self._phase = "requirements"
             requirements = await self._activity(
                 "agent_v2.requirements",
@@ -1193,6 +1211,8 @@ class McadAgentWorkflowV2:
             modeling_offset = 3 if request["operation"] == "generate" else 2
             modeled: list[dict[str, Any]] = []
             if use_freecad:
+                if profile_replanning_v1:
+                    request = {**request, 'profile_replanning_v1': True}
                 if self._freecad_checkpoints_v1:
                     request = {**request, "checkpoint_enabled": True}
                 plan_step_index, step = next(

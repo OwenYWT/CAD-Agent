@@ -122,6 +122,7 @@ COPY backend/app/freecad/state_projector.py /opt/cad-agent/freecad_state_project
 COPY backend/app/freecad/sketch_diagnostics.py /opt/cad-agent/freecad_sketch_diagnostics.py
 COPY backend/app/freecad/failure_snapshot.py /opt/cad-agent/freecad_failure_snapshot.py
 COPY backend/app/freecad/constraint_relationships.py /opt/cad-agent/freecad_constraint_relationships.py
+COPY backend/app/freecad/sketch_relations.py /opt/cad-agent/freecad_sketch_relations.py
 COPY backend/sandbox/freecad_constraint_validation.py /opt/cad-agent/freecad_constraint_validation.py
 COPY backend/app/freecad/reference_geometry.py /opt/cad-agent/freecad_reference_geometry.py
 COPY backend/app/freecad/topology.py /opt/cad-agent/freecad_topology.py

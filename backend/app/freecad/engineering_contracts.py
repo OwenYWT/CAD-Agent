@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel,ConfigDict,Field,TypeAdapter,model_validator
 
 from app.freecad.contracts import ObjectName
+from app.topology.contracts import FreeCADTopologySelector
 
 
 class EngineeringContract(BaseModel):
@@ -73,7 +74,32 @@ class ContourMillingTask(EngineeringContract):
         return self
 
 
-EngineeringTask=Annotated[LinearStaticTask | ContourMillingTask,Field(discriminator='kind')]
+class NativeMeasurementTask(EngineeringContract):
+    kind: Literal['native_measure'] = 'native_measure'
+    component_name: ObjectName
+    measurement: Literal['volume', 'solid_count', 'face_distance', 'circle_diameter', 'component_clearance', 'intersection_volume']
+    other_component_name: ObjectName | None = None
+    selectors: tuple[FreeCADTopologySelector, ...] = Field(default=(), max_length=2)
+
+    @model_validator(mode='after')
+    def selection_contract(self):
+        from app.topology.contracts import FreeCADTopologySelector
+        parsed = tuple(FreeCADTopologySelector.model_validate(value) for value in self.selectors)
+        count = 2 if self.measurement == 'face_distance' else 1 if self.measurement == 'circle_diameter' else 0
+        if len(parsed) != count or any(value.subelement_kind != ('edge' if self.measurement == 'circle_diameter' else 'face') for value in parsed):
+            raise ValueError('测量方式与选择对象不一致')
+        if parsed and parsed[0].object_name != self.component_name:
+            raise ValueError('第一个测量子元素必须属于当前对象')
+        if self.measurement == 'face_distance' and parsed[0] == parsed[1]:
+            raise ValueError('两面距离需要两个不同的子元素')
+        if (self.measurement in {'component_clearance','intersection_volume'}) != (self.other_component_name is not None):
+            raise ValueError('部件间检查需要第二个实体；其他测量不能带额外对象')
+        if self.other_component_name==self.component_name:
+            raise ValueError('请选择两个不同的部件或实例')
+        return self
+
+
+EngineeringTask=Annotated[LinearStaticTask | ContourMillingTask | NativeMeasurementTask,Field(discriminator='kind')]
 ENGINEERING_TASK=TypeAdapter(EngineeringTask)
 
 

@@ -2,8 +2,21 @@
 from typing import Literal
 from uuid import UUID
 import json
-from pydantic import Field,model_validator
+from pydantic import Field,model_validator,model_serializer
 from app.freecad.engineering_contracts import EngineeringContract
+from app.freecad.contracts import ObjectName
+
+
+class ReleaseOptions(EngineeringContract):
+    component_names: tuple[ObjectName, ...] = Field(default=(), max_length=1000)
+    mesh_precision: Literal['coarse','medium','fine'] = 'medium'
+    units: Literal['mm'] = 'mm'
+
+    @model_validator(mode='after')
+    def unique_scope(self):
+        if len(self.component_names) != len(set(self.component_names)):
+            raise ValueError('发布范围不能包含重复部件')
+        return self
 
 
 class ReleaseSubmission(EngineeringContract):
@@ -12,6 +25,7 @@ class ReleaseSubmission(EngineeringContract):
     expected_state_version:int=Field(ge=0,strict=True)
     engineering_workflow_ids:tuple[UUID,...]=Field(default=(),max_length=8)
     idempotency_key:str=Field(min_length=1,max_length=120)
+    options: ReleaseOptions = Field(default_factory=ReleaseOptions)
 
     @model_validator(mode='after')
     def valid_release(self):
@@ -45,6 +59,20 @@ class ReleaseTask(EngineeringContract):
     source:ReleaseSource
     engineering_artifacts:tuple[ReleaseEngineeringArtifact,...]=Field(default=(),max_length=32)
     annotations:tuple[dict,...]=Field(default=(),max_length=1000)
+    options: ReleaseOptions = Field(default_factory=ReleaseOptions)
+    manufacturing_profile: dict | None = None
+    requirements: dict | None = None
+
+    @model_serializer(mode='wrap')
+    def historical_identity(self, handler):
+        payload = handler(self)
+        if self.options == ReleaseOptions():
+            payload.pop('options', None)
+        if self.manufacturing_profile is None:
+            payload.pop('manufacturing_profile', None)
+        if self.requirements is None:
+            payload.pop('requirements', None)
+        return payload
 
     @model_validator(mode='after')
     def bounded_source_evidence(self):

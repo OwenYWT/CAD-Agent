@@ -288,9 +288,9 @@ def candidate(page, client):
     dialog.get_by_role('button',name='关闭',exact=True).last.click()
     expect(field).to_be_enabled(timeout=30000)
     expect(field).to_have_value('6.5')
-    expect(tree.get_by_text('已保存 · v2，可继续编辑',exact=True)).to_be_visible()
-    assert page.evaluate('window.__taskStateCanvas === document.querySelector("[data-testid=document-scene] canvas")')
     final=read(client,'/api/documents/'+fixture['document_id'])
+    expect(tree.get_by_text(f'已保存修订 {final["head_revision_id"][:8]}，可继续编辑',exact=True)).to_be_visible()
+    assert page.evaluate('window.__taskStateCanvas === document.querySelector("[data-testid=document-scene] canvas")')
     if faults:
         other_current=read(client,'/api/documents/'+other['document_id'])
         assert other_current['head_revision_id'] == other['base_revision_id']

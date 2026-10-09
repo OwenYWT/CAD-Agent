@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     sandbox_timeout_s: int = 60
     sandbox_memory_limit: str = "512m"
     sandbox_max_concurrent: int = 4  # cap simultaneous container spawns (each = CPU+RAM)
+    profile_replan_max_attempts: int = Field(default=2, ge=1, le=4)
+    profile_replan_max_tool_calls: int = Field(default=8, ge=1, le=32)
+    profile_replan_max_rejections: int = Field(default=3, ge=1, le=8)
     constraint_repair_max_attempts: int = Field(default=6, ge=1, le=32)
     constraint_repair_max_tool_calls: int = Field(default=8, ge=1, le=64)
     constraint_repair_max_rejections: int = Field(default=3, ge=1, le=16)

@@ -11,7 +11,7 @@ async def engineering_references(connection, document_id, revision_id):
         a.id,a.sha256,a.size_bytes,t.workflow_run_id,t.source_revision_id,t.source_sha256
         FROM document_engineering_tasks t JOIN workflow_runs w ON w.id=t.workflow_run_id AND w.status='succeeded'
         JOIN artifacts a ON a.workflow_run_id=t.workflow_run_id AND a.revision_id=t.source_revision_id AND a.artifact_kind='engineering_report'
-        WHERE t.document_id=:doc AND t.source_revision_id=:revision AND t.task_kind IN ('linear_static','contour_milling')
+        WHERE t.document_id=:doc AND t.source_revision_id=:revision AND t.task_kind IN ('linear_static','contour_milling','native_measure')
         ORDER BY t.task_kind,w.request_payload->'engineering_task'->>'component_name',t.created_at DESC,t.workflow_run_id DESC LIMIT 4'''),
         {'doc':document_id,'revision':revision_id})).mappings().all()
     return [{'artifact_id':str(r['id']),'sha256':r['sha256'],'size_bytes':r['size_bytes'],
@@ -40,7 +40,8 @@ async def verified_engineering_context(connection, references, document_id, revi
         keys=('kind','component_name','material','units','mesh_size_mm','nodes','elements','force_n','reaction_n',
               'force_balance_relative_error','fixed_face','loaded_face','maximum','solver','mesher','scope',
               'tool','postprocessor','work_origin_mm','passes','stepdown_mm','feed_mm_min','plunge_mm_min','spindle_rpm',
-              'minimum_target_clearance_mm','radial_allowance_mm','internal_loops_not_machined')
+              'minimum_target_clearance_mm','radial_allowance_mm','internal_loops_not_machined',
+              'measurement','value','unit','method','selectors','native_resolution','status')
         summary={key:report[key] for key in keys if key in report}
         if len(json.dumps(summary,ensure_ascii=False))>8000:
             raise ValueError('Agent 工程参考超过单报告上下文预算')

@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
+from sqlalchemy import text
 
 from app.domain.runs import WorkflowCreated
 from app.execution.canonical import canonical_sha256
@@ -33,6 +34,19 @@ async def create_document_workflow(
         principal_id=requested_by_principal_id, payload=request_payload,
         idempotency_key=idempotency_key, request_hash=canonical_sha256(request_payload),
     )
+    context = request_payload.get('operation_context') or {}
+    if context.get('source_candidate_revision_id'):
+        source = (await connection.execute(text('''SELECT c.base_revision_id,c.base_state_version,c.status,a.id,a.sha256
+            FROM change_sets c JOIN artifacts a ON a.revision_id=c.candidate_revision_id AND a.tenant_id=c.tenant_id
+            WHERE c.tenant_id=:tenant AND c.project_id=:project AND c.branch_id=:branch
+              AND c.candidate_revision_id=:source AND a.artifact_kind='fcstd'
+            FOR UPDATE OF c'''), {'tenant':tenant_id,'project':project_id,
+                'branch':UUID(request_payload['branch_id']), 'source':UUID(context['source_candidate_revision_id'])})).mappings().one_or_none()
+        if (source is None or source['status'] != 'changes_requested'
+            or str(source['base_revision_id']) != request_payload['expected_base_revision_id']
+            or source['base_state_version'] != request_payload.get('expected_state_version')
+            or str(source['id']) != context['base_source_id'] or source['sha256'] != context['base_source_sha256']):
+            raise ValueError('候选续改来源、原始基线或检查点身份不匹配')
     rebase = request_payload.get("operation_context") or {}
     if rebase.get("rebased_from_revision_id"):
         await append_workflow_event(

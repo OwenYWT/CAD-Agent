@@ -6,10 +6,11 @@ from app.freecad.semantic_state import bounded_agent_context
 from app.freecad.inspection import InspectionRequest, inspect_state
 from app.freecad.api_catalog import CapabilityQuery, query_capabilities
 from app.freecad.agent_tools import (
-    EXECUTE_TOOL, CONSTRAINT_PATCH_TOOL, FAILURE_INSPECTION_TOOL, read_tool, read_failure, tool_schemas,
-    missing_failure_inspection,
+    EXECUTE_TOOL, API_EXECUTE_TOOL, CONSTRAINT_PATCH_TOOL, FAILURE_INSPECTION_TOOL,
+    execution_plan, read_tool, read_failure, tool_schemas, missing_failure_inspection,
 )
 from app.freecad.constraint_patch import PatchRejected, build_patch_context, compile_patch
+import app.freecad.profile_replan as profile_replan
 
 from dataclasses import dataclass, replace
 import hashlib
@@ -35,8 +36,9 @@ from app.llm import (
 _SYSTEM_PROMPT = """You are the operation planner for a headless FreeCAD 1.1.3 runtime.
 Use the supplied function tools, one call at a time. Use freecad_discover to find
 native capabilities, freecad_describe_operation for exact typed argument schemas,
-and freecad_inspect before modifying an existing object. Call freecad_execute
-with the next coherent operation transaction when ready. When checkpoint_enabled,
+and freecad_inspect before modifying an existing object. Call freecad_execute for
+typed operations or freecad_execute_api for a native Python program when ready.
+Never mix the two execution modes within one transaction. When checkpoint_enabled,
 execution_mode=checkpoint returns the real intermediate document to another tool
 turn; execution_mode=final requests the final independent gates. Without checkpoint
 support, the transaction must contain the complete operation plan. Execution happens in the durable
@@ -45,13 +47,20 @@ checks. Never claim success or submit an approval. Runtime failures and independ
 geometry checks are supplied to repair turns as execution_failure.
 Use function calls for lookups and modeling, not a JSON plan in assistant content.
 For an existing model, call freecad_inspect first. After receiving inspection_result,
-call freecad_execute or inspect additional missing facts. Never return standalone Python,
-markdown, prose, or unsupported fields. Python belongs only inside api.execute.source. A document.inspect
+call the appropriate execution tool or inspect additional missing facts. Never return standalone Python,
+markdown, prose, or unsupported fields. Python belongs only inside freecad_execute_api's execute.args.source. A document.inspect
 operation inside a plan does not perform the required pre-planning query.
 
 The exact freecad_execute arguments are {"schema_version":"freecad-operation-plan.v1",
 "document_name":"Model","operations":[{"op_id":"unique-id","action":"allowed.action","args":{}}]}.
 The envelope also allows execution_mode="final"|"checkpoint" (default final).
+api.execute is excluded from this typed tool. sketch.create creates the requested
+PartDesign::Body when absent and reuses it when present; no separate Body creation is needed.
+If typed operations cannot express the required native capability, use freecad_execute_api:
+{"document_name":"Model","execute":{"op_id":"program","args":{"source":"<native Python>",
+"environment":"headless","modules":[]}},"export":{"op_id":"export","args":{"objects":["Result"],
+"formats":["fcstd","step"],"basename":"model"}}}. It also accepts execution_mode.
+This envelope compiles to exactly api.execute followed by document.export; it accepts no operations array.
 Use only these envelope and operation fields. Do not add units, backend, reasoning,
 comments, descriptions or unrelated metadata. Keep tool arguments compact.
 
@@ -71,6 +80,10 @@ Do not combine frame with legacy plane/offset_mm/reversed. Legacy placement fiel
 exist only to replay retained plans; they are not the coordinate interface for new plans.
 Use sketch.add_profile for rectangles and circles: it creates the geometry AND its
 complete native dimensional constraints. Do not constrain that profile again.
+Fully constrained does not mean a valid feature profile. Inner closed loops must
+not overlap or touch an outer boundary. An opening that reaches the outside must
+be expressed as the actual material boundary, or a separately planned cut.
+Closed profiles and open sweep paths are checked by the native kernel before use.
 Derive each feature coordinate from the actual outer sketch bounds: a centered
 partition of thickness t across a body spanning y0..y0+D starts at y0+(D-t)/2,
 not (D-t)/2. For equally spaced cavities, subtract both exterior walls and ALL
@@ -92,7 +105,7 @@ reversed=true reverses that direction. Do not change explicit dimensions to obta
 feature.hole applies its diameter_mm to every profile circle. Use feature.pocket to
 preserve different circle diameters or create flat-bottom blind holes of exact depth.
 
-Allowed actions and args:
+Native program (freecad_execute_api's execute.args):
 - api.execute: {source:string, environment:headless|gui, modules:[Python_module_names]}.
   Use only when typed operations cannot represent a required native capability.
   The plan must contain exactly api.execute followed by document.export. source is
@@ -104,6 +117,8 @@ Allowed actions and args:
   Do not export, fabricate evidence, access network, or change acceptance criteria.
   A separate process reopens the FCStd and validates/exports the final result.
   Selected-feature edits still require typed operations with enforceable scope.
+
+Typed actions and args (freecad_execute only):
 - document.inspect: {}
 - sketch.create: {name, body?, frame:{schema_version:"body-frame.v1",origin:{x,y,z},normal:[x,y,z],x_axis:[x,y,z]}}
 - sketch.add_profile: {sketch, geometry}; geometry is circle(center/radius_mm) or
@@ -151,6 +166,7 @@ Allowed actions and args:
 - assembly.place: {object, translation_mm:[x,y,z], rotation_axis?:[x,y,z], rotation_deg?:number};
   object is an existing App::Link. Translation is millimetres; rotation is axis-angle in degrees.
 - sketch.set_constraint: {sketch, constraint_index, expected_type, value_mm? , value_deg?}; expected_type is DistanceX, DistanceY, Distance, Radius, Diameter or Angle. Angle uses value_deg only; lengths use value_mm only. Inspection Angle values are native radians, convert them to degrees for edits. Inspect the actual constraint index/type first. Signed DistanceX/Y allow zero; other dimensions must be positive. Reference dimensions cannot be changed.
+- sketch.patch_relations: {sketch, expected_constraints_sha256, changes:[{action:add|delete|replace,logical_id:relation_<32 lowercase hex>,constraint?:{sketch,kind:horizontal|vertical|coincident|equal,first,second?}}]}. Requires a complete current sketch inspection. Unknown origins, original relationships, dimensional constraints, external references and expression references remain protected. Deletion/replacement only applies to explicitly recorded user relations and must preserve all required relationships under native parameter probes; failed snapshots cannot be used as a saved base.
 - document.export: {formats, basename, objects?:[final_object_names]}; this must be the single final operation.
   API programs MUST explicitly list final objects, excluding Boolean operands and other intermediate shapes.
   For PartDesign select the Body, not an intermediate feature. Existing explicit export roots are retained
@@ -370,9 +386,39 @@ class FreeCADOperationGenerator:
         rejection_sink: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         diagnostic: dict[str, Any] | None = None,
         prior_contract: dict[str, Any] | None = None,
+        profile_context: dict[str, Any] | None = None,
     ) -> FreeCADOperationGenerationResult:
         current = FreeCADOperationPlan.model_validate_json(source_code)
-        if diagnostic is not None:
+        if profile_context is not None:
+            policy = {'max_tool_calls': settings.profile_replan_max_tool_calls,
+                'max_rejections': settings.profile_replan_max_rejections,
+                'max_parameter_probes': settings.constraint_repair_max_parameter_probes,
+                'perturbation_fraction': settings.constraint_repair_perturbation_fraction}
+            target = next(s for s in profile_context['snapshot']['sketches'] if s['name'] == profile_context['sketch'])
+            result = await self._complete(user_payload={
+                'task': 'profile_replan', 'checkpoint_enabled': current.execution_mode == 'checkpoint',
+                'current_operation_plan': current.model_dump(mode='json'),
+                'execution_failure': profile_context['snapshot']['failure'], 'failed_sketch': target,
+                'frozen_acceptance': profile_context['acceptance'], 'construction_bounds': profile_context['bounds'],
+                'instruction': 'Replan only the diagnosed uncommitted sketch boundary and its constraints. '
+                    'Preserve its frame, original outer bounds, all other operations, feature dimensions, '
+                    'operation IDs for unchanged operations and exports. Do not use native Python. '
+                    'Use a valid material boundary instead of touching/overlapping nested loops. '
+                    'Preserve the frozen requirements. Use connected endpoints and dependent geometric '
+                    'relations, not independent dimensions on every endpoint. Each editable parameter '
+                    'will be perturbed in both directions and downstream features recomputed. '
+                    'The failure snapshot is diagnostic only; execution restarts from the verified baseline. '
+                    'If the scope cannot satisfy the requirements, return an explicit clarification error.'},
+                generator_kind='freecad_profile_replan', output_formats=output_formats, base_state=base_state,
+                rejection_sink=rejection_sink, profile_context=profile_context, resource_policy=policy)
+            # Existing operations already carry durable scoped IDs. Re-scoping
+            # a repair would change the immutable identities we just checked.
+            contract = profile_replan.make_contract(result.operation_plan, profile_context, policy)
+            return replace(result, provenance={**result.provenance, 'profile_replan': contract})
+        from app.freecad.constraint_repair import SKETCH_FAILURES, validate_constraint_repair, validate_subtractive_repair
+        if failure.get('error_code') == profile_replan.PROFILE_ERROR:
+            raise profile_replan.rejected('verified backend profile replan context is required')
+        if diagnostic is not None and failure.get('error_code') in SKETCH_FAILURES:
             context = build_patch_context(current, diagnostic, failure, base_state, prior_contract)
             context['resource_policy'] = {
                 'max_tool_calls': settings.constraint_repair_max_tool_calls,
@@ -405,7 +451,6 @@ class FreeCADOperationGenerator:
                 generator_kind='freecad_constraint_patch', output_formats=output_formats,
                 base_state=base_state, rejection_sink=rejection_sink,
                 constraint_context=context, constraint_source=current)
-        from app.freecad.constraint_repair import SKETCH_FAILURES, validate_constraint_repair, validate_subtractive_repair
         # Reject an unsupported repair scope before paying for a provider call.
         try:
             validate_subtractive_repair(current, current, failure)
@@ -475,6 +520,8 @@ class FreeCADOperationGenerator:
         rejection_sink: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         constraint_context: dict[str, Any] | None = None,
         constraint_source: FreeCADOperationPlan | None = None,
+        profile_context: dict[str, Any] | None = None,
+        resource_policy: dict[str, Any] | None = None,
     ) -> FreeCADOperationGenerationResult:
         async def record_rejection(content, error, attempt):
             if rejection_sink is not None:
@@ -510,7 +557,7 @@ class FreeCADOperationGenerator:
                 "role": "user",
                 "content": json.dumps(
                     {**user_payload, "next_response": 'Call freecad_inspect_failure to inspect solver, constraints, planned_constraints and construction.' if constraint_context else _INSPECTION_NEXT if base_state is not None
-                     else "Use lookup tools if needed, then call freecad_execute with complete operation-plan arguments."},
+                     else "Use lookup tools if needed, then call freecad_execute for typed operations or freecad_execute_api for a native program."},
                     ensure_ascii=False,
                     sort_keys=True,
                     separators=(",", ":"),
@@ -518,13 +565,16 @@ class FreeCADOperationGenerator:
             },
         ]
         for attempt in itertools.count():
+            if resource_policy and attempt >= resource_policy['max_tool_calls']:
+                raise FreeCADPlanningError('profile_replan_budget_exhausted', 'profile replan tool-call budget exhausted')
             if constraint_context and attempt >= constraint_context['resource_policy']['max_tool_calls']:
                 raise FreeCADPlanningError('constraint_repair_budget_exhausted',
                     'constraint repair exhausted its configured tool-call resource budget')
             reset_chat_completion_provenance()
             if attempt and last_error is not None:
                 invalid_attempts += 1
-                if invalid_attempts >= (constraint_context['resource_policy']['max_rejections'] if constraint_context else 2):
+                if invalid_attempts >= (constraint_context['resource_policy']['max_rejections'] if constraint_context
+                        else resource_policy['max_rejections'] if resource_policy else 2):
                     break
                 messages.append(
                     {
@@ -534,7 +584,7 @@ class FreeCADOperationGenerator:
                             f"{last_error}. "
                             + ('Call freecad_patch_constraints with a corrected local patch. ' + json.dumps(getattr(last_error, 'differences', []), ensure_ascii=False)
                                if constraint_context else _INSPECTION_NEXT if base_state is not None and not inspections
-                               else "Call freecad_execute with corrected complete arguments using the measured facts already supplied.")
+                               else "Call freecad_execute for typed operations or freecad_execute_api for a native program, with corrected arguments using the measured facts already supplied.")
                         ),
                     }
                 )
@@ -543,7 +593,9 @@ class FreeCADOperationGenerator:
                 model=settings.llm_model,
                 temperature=0.0,
                 messages=messages,
-                tools=tool_schemas(has_document=base_state is not None, constraint_repair=constraint_context is not None),
+                tools=[tool for tool in tool_schemas(has_document=base_state is not None,
+                    constraint_repair=constraint_context is not None)
+                    if not profile_context or tool['function']['name'] != API_EXECUTE_TOOL],
                 tool_choice="auto",
                 parallel_tool_calls=False,
                 stream=True,
@@ -606,8 +658,8 @@ class FreeCADOperationGenerator:
                         compiled, compiled_contract = compile_patch(constraint_source, arguments, constraint_context,
                             max_changes=constraint_context['resource_policy']['max_changes'])
                         raw = compiled.model_dump(mode='json')
-                    elif name == EXECUTE_TOOL:
-                        raw = arguments
+                    elif name in {EXECUTE_TOOL, API_EXECUTE_TOOL}:
+                        raw = execution_plan(name, arguments).model_dump(mode='json')
                     elif name == "freecad_discover":
                         raw = {"capability_query": arguments}
                     elif name == "freecad_inspect":
@@ -662,11 +714,13 @@ class FreeCADOperationGenerator:
                     messages.extend([assistant_message,
                         {**({'role':'tool','tool_call_id':pending_call['id']} if pending_call else {'role':'user'}),
                          "content":json.dumps({"inspection_result":evidence,
-                            "next_response":"Call freecad_execute using these measured facts, or inspect missing details. Do not repeat unchanged queries."},ensure_ascii=False)}])
+                            "next_response":"Call freecad_execute for typed operations or freecad_execute_api for a native program using these measured facts, or inspect missing details. Do not repeat unchanged queries."},ensure_ascii=False)}])
                     continue
                 if base_state is not None and not inspections and not constraint_context:
                     raise ValueError("inspect relevant existing objects before planning their modification")
                 operation_plan = FreeCADOperationPlan.model_validate(raw)
+                if profile_context:
+                    profile_replan.validate_proposal(operation_plan, profile_context)
                 if operation_plan.execution_mode == "checkpoint" and not user_payload.get("checkpoint_enabled"):
                     raise ValueError("checkpoint execution is not enabled for this turn")
                 if constraint_context:
@@ -692,13 +746,14 @@ class FreeCADOperationGenerator:
                     )
             except FreeCADPlanningError as exc:
                 await record_rejection(content, exc, attempt)
-                if not constraint_context or not isinstance(exc, PatchRejected):
+                if not ((constraint_context and isinstance(exc, PatchRejected))
+                        or (profile_context and exc.code == 'profile_replan_rejected')):
                     raise
                 messages.append(assistant_message)
                 for call in calls:
                     messages.append({'role': 'tool', 'tool_call_id': call.id,
                         'content': json.dumps({'status': 'rejected', 'executed': False,
-                            'error': str(exc), 'differences': exc.differences}, ensure_ascii=False)})
+                            'error': str(exc), 'differences': getattr(exc, 'differences', [])}, ensure_ascii=False)})
                 last_error = exc
                 continue
             except Exception as exc:

@@ -227,6 +227,24 @@ def run_engineering(task, input_root, output_root):
     params=task['params'];name=params.get('component_name')
     if not isinstance(name,str) or re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,79}',name) is None:
         raise EngineeringError('engineering_component_invalid','请选择当前版本中的实体部件')
+    if params.get('kind')=='native_measure':
+        mode=params.get('measurement');selectors=params.get('selectors')
+        counts={'volume':0,'solid_count':0,'face_distance':2,'circle_diameter':1,
+            'component_clearance':0,'intersection_volume':0}
+        if mode not in counts or not isinstance(selectors,(list,tuple)) or len(selectors)!=counts[mode]:
+            raise EngineeringError('measurement_selection_invalid','测量方式与子元素数量不一致')
+        revision=params.get('expected_revision_id')
+        if not isinstance(revision,str) or not revision:
+            raise EngineeringError('measurement_selection_invalid','测量需要明确的来源修订')
+        expected_kind='edge' if mode=='circle_diameter' else 'face'
+        if any(not isinstance(s,dict) or s.get('subelement_kind')!=expected_kind or not revision
+            or s.get('revision_id')!=revision for s in selectors):
+            raise EngineeringError('measurement_selection_invalid','测量子元素必须属于当前修订且具有正确类型')
+        if selectors and selectors[0].get('object_name')!=name:
+            raise EngineeringError('measurement_selection_invalid','第一个测量子元素必须属于当前对象')
+        other=params.get('other_component_name')
+        if (mode in {'component_clearance','intersection_volume'})!=(other is not None) or other==name:
+            raise EngineeringError('measurement_selection_invalid','部件间检查需要两个不同的有效对象')
     base_name=task['inputs'].get('base')
     if not isinstance(base_name,str) or Path(base_name).name!=base_name:
         raise EngineeringError('engineering_source_invalid','需要有效的原生检查点输入')
@@ -238,7 +256,43 @@ def run_engineering(task, input_root, output_root):
     extra_files={}
     try:
         selected=next((shape for obj,shape in component_shapes(document) if obj.Name==name),None)
-        if selected is None or len(selected.Solids)!=1 or not selected.isValid():
+        if params['kind'] == 'native_measure':
+            from freecad_topology import resolve_topology_selector
+            obj = document.getObject(name)
+            if obj is None or not hasattr(obj, 'Shape') or obj.Shape.isNull() or not obj.Shape.isValid():
+                raise EngineeringError('measurement_object_invalid', '所选对象没有有效的原生几何')
+            resolved = [resolve_topology_selector(document, selector, expected_revision_id=params['expected_revision_id']) for selector in params['selectors']]
+            if params['measurement']=='face_distance' and len({(r['object_name'],r['subelement_name']) for r in resolved})!=2:
+                raise EngineeringError('measurement_selection_invalid','两面距离需要两个不同的原生子元素')
+            elements = []
+            for selector, result in zip(params['selectors'], resolved):
+                target = document.getObject(result['object_name'])
+                element = target.getSubObject(result['subelement_name'])
+                if element is None:
+                    raise EngineeringError('measurement_topology_unavailable', '原生子元素无法读取')
+                element = element.copy()
+                from freecad_scene import _parent_placement
+                element.Placement = _parent_placement(document, target).multiply(element.Placement)
+                elements.append(element)
+            mode = params['measurement']
+            if mode in {'component_clearance','intersection_volume'}:
+                shapes={component.Name:shape for component,shape in component_shapes(document)}
+                first,second=shapes.get(name),shapes.get(params['other_component_name'])
+                if first is None or second is None or not first.isValid() or not second.isValid():
+                    raise EngineeringError('measurement_component_invalid','部件间检查只接受两个最终有效实体或实例')
+                value=first.distToShape(second)[0] if mode=='component_clearance' else first.common(second).Volume
+            else:
+                value = obj.Shape.Volume if mode == 'volume' else len(obj.Shape.Solids) if mode == 'solid_count' else elements[0].distToShape(elements[1])[0] if mode == 'face_distance' else 2 * elements[0].Curve.Radius
+            if not math.isfinite(value) or value<0:
+                raise EngineeringError('measurement_invalid','原生测量没有返回有效数值')
+            report = {'schema_version': 'cad-native-measurement.v1', 'kind': 'native_measure',
+                'measurement': mode, 'value': value, 'unit': 'mm3' if mode in {'volume','intersection_volume'} else 'count' if mode == 'solid_count' else 'mm',
+                'component_name':name,'other_component_name':params.get('other_component_name'),
+                'source_revision_id':params['expected_revision_id'],
+                'selectors': params['selectors'], 'resolved': resolved, 'status': 'measured',
+                'method': 'OpenCASCADE B-rep geometry', 'scope': '所选修订中的原生对象；圆边直径不代表已验证为孔。'}
+            data = {'schema_version': 'cad-native-measurement.v1', 'measurement': report}
+        elif selected is None or len(selected.Solids)!=1 or not selected.isValid():
             raise EngineeringError('engineering_component_invalid','当前工程计算需要一个有效的单实体部件')
         if params['kind']=='linear_static':
             report,data=linear_static(selected,params,work)
@@ -248,7 +302,7 @@ def run_engineering(task, input_root, output_root):
             destination=output_root/program.name
             shutil.copyfile(program,destination)
             extra_files['cam_program']=str(destination)
-        else:
+        elif params['kind'] != 'native_measure':
             raise EngineeringError('engineering_operation_unsupported','此工程计算类型尚未实现')
     finally:
         App.closeDocument(document.Name)

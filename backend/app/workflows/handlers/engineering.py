@@ -125,6 +125,18 @@ async def check(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[s
             )
         report_document = json.loads(report_bytes)
         analysis = dict(report_document["analysis"])
+        if (report_document.get("source_revision_id") != str(source_revision_id)
+                or report_document.get("workflow_run_id") != str(workflow_id)):
+            raise ValueError("Persisted engineering report source mismatch")
+        if payload.get("rule_configuration") is not None:
+            from app.services.engineering_checks import execution_rule_configuration
+            async with tenant_transaction(tenant_id, principal_id) as connection:
+                configuration = await execution_rule_configuration(connection,
+                    tenant_id=tenant_id, principal_id=principal_id, workflow_id=workflow_id,
+                    process=payload.get("process"), supplied=payload["rule_configuration"])
+            if (report_document.get("rule_configuration") != configuration
+                    or analysis.get("rule_configuration") != configuration):
+                raise ValueError("Persisted engineering report configuration mismatch")
         return await _complete_check_workflow(
             payload,
             report_artifact={
@@ -392,6 +404,11 @@ async def check(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[s
             )
         )
         analyzer = DFMAnalyzer()
+        from app.services.engineering_checks import execution_rule_configuration
+        async with tenant_transaction(tenant_id, principal_id) as connection:
+            rule_configuration = await execution_rule_configuration(connection,
+                tenant_id=tenant_id, principal_id=principal_id, workflow_id=workflow_id,
+                process=payload.get("process"), supplied=payload.get("rule_configuration"))
         design_analysis = await analyzer.analyze(
             stl_path=source_artifacts["stl"]["local_path"],
             code=str(payload.get("code") or ""),
@@ -399,9 +416,12 @@ async def check(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[s
             process=payload.get("process"),
             material=payload.get("material"),
             precomputed_step_data=step_data,
+            rule_configuration=rule_configuration,
         )
         response = build_design_analysis_response(design_analysis)
         analysis = response.model_dump(mode="json")
+        analysis.update(source_revision_id=str(source_revision_id), process=payload.get("process"), material=payload.get("material"))
+        analysis["rule_configuration"] = rule_configuration
         report_document = {
             "schema_version": "dfm-report.v1",
             "workflow_run_id": str(workflow_id),
@@ -409,6 +429,7 @@ async def check(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[s
             "source_revision_id": str(source_revision_id),
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "step_analysis_error": step_analysis_error,
+            "rule_configuration": rule_configuration,
             "analysis": analysis,
         }
         report_path = temp_dir / (

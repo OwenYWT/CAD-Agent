@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useModalFocus } from "../hooks/useModalFocus";
+import { guardDraft } from "../stores/draftGuard";
+import { useRef, useState } from "react";
 import DFMRuleConfig from "./DFMRuleConfig";
 import KnowledgeGraph from "./KnowledgeGraph";
 import CapabilityCatalog from "./CapabilityCatalog";
@@ -15,57 +18,29 @@ type SettingsTab = "rules" | "knowledge" | "capabilities" | "runner";
 
 export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
   const [tab, setTab] = useState<SettingsTab>("rules");
+  const [visited, setVisited] = useState<Set<SettingsTab>>(() => new Set(["rules"]));
+  const [recommendationDraft, setRecommendationDraft] = useState({ dimension: "", material: "" });
+  const selectTab = (next: SettingsTab) => guardDraft(() => {
+    setVisited(previous => new Set([...previous, next])); setTab(next);
+  });
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    closeButtonRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const drawer = drawerRef.current;
-      if (!drawer) return;
-      const focusable = Array.from(
-        drawer.querySelectorAll<HTMLElement>(
-          "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex='-1'])",
-        ),
-      ).filter((element) => element.getAttribute("aria-hidden") !== "true");
-      const first = focusable[0];
-      const last = focusable.at(-1);
-      if (!first || !last) return;
-      if (event.shiftKey && (document.activeElement === first || !drawer.contains(document.activeElement))) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && (document.activeElement === last || !drawer.contains(document.activeElement))) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      previouslyFocused?.focus();
-    };
-  }, [onClose, open]);
+  useModalFocus(open, drawerRef, () => { guardDraft(onClose); });
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <>
       <button
         aria-label="关闭设置"
         className="ww-settings-backdrop"
-        onClick={onClose}
+        onClick={() => guardDraft(onClose)}
         tabIndex={-1}
         type="button"
       />
 
-      <aside aria-labelledby="settings-title" aria-modal="true" className="ww-settings-drawer" ref={drawerRef} role="dialog">
+      <aside aria-labelledby="settings-title" aria-modal="true" className="ww-settings-drawer" ref={drawerRef} role="dialog" tabIndex={-1}>
         <div className="ww-settings-header">
           <div>
             <p className="ww-pane-eyebrow">Workspace</p>
@@ -75,7 +50,7 @@ export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
             <LanguageSwitch className="workspace-button ww-language-switch" />
             <button
               aria-label="关闭设置"
-              onClick={onClose}
+              onClick={() => guardDraft(onClose)}
               className="workspace-icon-button"
               title="关闭"
               type="button"
@@ -90,7 +65,7 @@ export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
           <button
             aria-controls="settings-panel-rules"
             aria-selected={tab === "rules"}
-            onClick={() => setTab("rules")}
+            onClick={() => selectTab("rules")}
             className={`ww-settings-tab ${tab === "rules" ? "is-active" : ""}`}
             id="settings-tab-rules"
             role="tab"
@@ -101,7 +76,7 @@ export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
           <button
             aria-controls="settings-panel-knowledge"
             aria-selected={tab === "knowledge"}
-            onClick={() => setTab("knowledge")}
+            onClick={() => selectTab("knowledge")}
             className={`ww-settings-tab ${tab === "knowledge" ? "is-active" : ""}`}
             id="settings-tab-knowledge"
             role="tab"
@@ -114,7 +89,7 @@ export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
             aria-selected={tab === "capabilities"}
             className={`ww-settings-tab ${tab === "capabilities" ? "is-active" : ""}`}
             id="settings-tab-capabilities"
-            onClick={() => setTab("capabilities")}
+            onClick={() => selectTab("capabilities")}
             role="tab"
             type="button"
           >
@@ -125,7 +100,7 @@ export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
             aria-selected={tab === "runner"}
             className={`ww-settings-tab ${tab === "runner" ? "is-active" : ""}`}
             id="settings-tab-runner"
-            onClick={() => setTab("runner")}
+            onClick={() => selectTab("runner")}
             role="tab"
             type="button"
           >
@@ -134,38 +109,12 @@ export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
         </div>
 
         <div className="ww-settings-content">
-          {tab === "rules" && <div aria-labelledby="settings-tab-rules" id="settings-panel-rules" role="tabpanel"><DFMRuleConfigInline /></div>}
-          {tab === "knowledge" && <div aria-labelledby="settings-tab-knowledge" id="settings-panel-knowledge" role="tabpanel"><KnowledgeGraphInline /></div>}
-          {tab === "capabilities" && <div aria-labelledby="settings-tab-capabilities" id="settings-panel-capabilities" role="tabpanel"><CapabilityCatalog /></div>}
-          {tab === "runner" && <div aria-labelledby="settings-tab-runner" id="settings-panel-runner" role="tabpanel"><CapabilityRunner /></div>}
+          {visited.has("rules") && <div hidden={tab !== "rules"} aria-labelledby="settings-tab-rules" id="settings-panel-rules" role="tabpanel"><DFMRuleConfig embedded /></div>}
+          {visited.has("knowledge") && <div hidden={tab !== "knowledge"} aria-labelledby="settings-tab-knowledge" id="settings-panel-knowledge" role="tabpanel"><KnowledgeGraph embedded recommendationDraft={recommendationDraft} onRecommendationDraft={setRecommendationDraft} /></div>}
+          {visited.has("capabilities") && <div hidden={tab !== "capabilities"} aria-labelledby="settings-tab-capabilities" id="settings-panel-capabilities" role="tabpanel"><CapabilityCatalog /></div>}
+          {visited.has("runner") && <div hidden={tab !== "runner"} aria-labelledby="settings-tab-runner" id="settings-panel-runner" role="tabpanel"><CapabilityRunner /></div>}
         </div>
       </aside>
-    </>
+    </>, document.body
   );
-}
-
-/** DFMRuleConfig always-open variant for settings drawer */
-function DFMRuleConfigInline() {
-  return (
-    <div className="p-0">
-      <DFMRuleConfigAlwaysOpen />
-    </div>
-  );
-}
-
-/** KnowledgeGraph always-open variant for settings drawer */
-function KnowledgeGraphInline() {
-  return (
-    <div className="p-0">
-      <KnowledgeGraphAlwaysOpen />
-    </div>
-  );
-}
-
-function DFMRuleConfigAlwaysOpen() {
-  return <DFMRuleConfig />;
-}
-
-function KnowledgeGraphAlwaysOpen() {
-  return <KnowledgeGraph />;
 }

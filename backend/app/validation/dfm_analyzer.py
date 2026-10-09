@@ -2,8 +2,13 @@
 
 import asyncio
 import logging
+from app.dfm.models import rule_process
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.dfm.models import StepAnalysisResult
 
 
 from app.validation.design_analyzer import DesignGeometryAnalyzer, DFMGeometryResult
@@ -22,7 +27,10 @@ class DFMIssue:
 
 @dataclass
 class DesignAnalysis:
-    design_score: int = 0
+    design_score: int | None = None
+    evaluation_status: str = "indeterminate"
+    evaluated_rules: list[dict] = field(default_factory=list)
+    analysis_errors: list[str] = field(default_factory=list)
     design_summary: str = ""
     structural_issues: list[str] = field(default_factory=list)
     functional_notes: list[str] = field(default_factory=list)
@@ -66,7 +74,9 @@ class DFMAnalyzer:
         step_path: Path | None = None,
         material: str | None = None,
         precomputed_step_data: object | None = None,
+        rule_configuration: dict | None = None,
     ) -> DesignAnalysis:
+        process = rule_process(process)
         # Step 1: Geometry analysis
         # Use STEP-based precise analysis if available, fall back to trimesh
         step_result = precomputed_step_data
@@ -96,22 +106,38 @@ class DFMAnalyzer:
             geo_result = self._merge_step_data(geo_result, step_result)
 
         # Step 2: Rule engine evaluation (deterministic + heuristic)
+        evaluation_errors = []
+        evaluations = []
         try:
-            violations = await self.rule_engine.evaluate(
+            violations, evaluations = await self.rule_engine.evaluate_with_evidence(
                 geo_result, process=process, code=code,
                 step_data=step_result, material=material,
+                rule_configuration=rule_configuration,
             )
         except Exception as e:
             logger.warning(f"Rule engine evaluation failed: {e}")
             violations = []
+            evaluation_errors.append(f"Rule engine evaluation failed: {type(e).__name__}")
 
         # Step 3: Deterministic scoring derived from rule violations (no LLM/VLM).
         from app.dfm import dfm_scoring
 
-        score = dfm_scoring.compute_design_score(violations)
+        incomplete = bool(evaluation_errors) or not evaluations or any(item["status"] == "indeterminate" for item in evaluations)
+        if not any(item["status"] in {"passed", "violated"} for item in evaluations):
+            incomplete = True
+        score = None if incomplete else dfm_scoring.compute_design_score(violations)
         compat = dfm_scoring.compute_process_compatibility(violations)
-        summary = dfm_scoring.build_summary(score, violations)
-        recommended = dfm_scoring.recommend_process(compat, default=process)
+        for evaluated_process in {item['process'] for item in evaluations} | ({process} if process else set()):
+            rows = [item for item in evaluations if item['process'] == evaluated_process]
+            if compat.get(evaluated_process) == '不适合':
+                continue
+            if not any(item['status'] in {'passed', 'violated'} for item in rows) or any(item['status'] == 'indeterminate' for item in rows):
+                compat[evaluated_process] = '未验证'
+            elif evaluated_process not in compat:
+                compat[evaluated_process] = '需人工确认' if any(item['status'] == 'advisory' for item in rows) else '适合'
+        summary = "检查证据不完整，无法确认可制造性。" if incomplete else dfm_scoring.build_summary(score, violations)
+        evaluation_status = "failed" if any(v.severity == "critical" for v in violations) else "indeterminate" if incomplete else "warning" if any(v.severity == "warning" for v in violations) else "passed"
+        recommended = process or next((name for name, outcome in compat.items() if outcome == '适合'), '')
 
         n_crit = sum(1 for v in violations if v.severity == "critical")
         n_warn = sum(1 for v in violations if v.severity == "warning")
@@ -130,6 +156,9 @@ class DFMAnalyzer:
 
         return DesignAnalysis(
             design_score=score,
+            evaluation_status=evaluation_status,
+            evaluated_rules=evaluations,
+            analysis_errors=evaluation_errors,
             design_summary=summary,
             structural_issues=[],   # structural/functional review was subjective VLM output — removed
             functional_notes=[],

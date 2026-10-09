@@ -3,12 +3,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 from fractions import Fraction
-import json
 from pathlib import Path
 import shutil
 import tempfile
 
-from freecad_failure_snapshot import canonical, constraint_records, digest, geometry_snapshot
+from freecad_failure_snapshot import constraint_records, digest, geometry_snapshot, sketch_snapshot
 from freecad_constraint_relationships import (
     TOLERANCE, deserialize_row, measured, relation_rows, satisfies, native_args,
 )
@@ -119,16 +118,20 @@ def validate_sketch(sketch, specification, *, nominal):
             'checked_constraints': len(rules), 'derived_relationships': len(specification['derivations'])}
 
 
-def validate_profile(sketch, *, closed):
+def validate_profile(sketch, *, closed, shape=None):
     import Part
-    shape = sketch.Shape
+    def invalid(reason, message):
+        return ConstraintVerificationError(message, code='profile_geometry_invalid', details={
+            'object': sketch.Name, 'stage': 'profile_topology', 'reason': reason,
+            'closed_profile': closed})
+    shape = sketch.Shape if shape is None else shape
     if shape.isNull() or not shape.isValid() or not shape.Edges:
-        raise ConstraintVerificationError(f'{sketch.Name} has no valid downstream profile')
+        raise invalid('invalid_shape', f'{sketch.Name} has no valid downstream profile')
     wires = list(shape.Wires)
     if not wires or sum(len(w.Edges) for w in wires) != len(shape.Edges):
-        raise ConstraintVerificationError(f'{sketch.Name} profile contains disconnected edges')
+        raise invalid('disconnected_edges', f'{sketch.Name} profile contains disconnected edges')
     if closed and any(not wire.isClosed() for wire in wires):
-        raise ConstraintVerificationError(f'{sketch.Name} requires closed profile wires')
+        raise invalid('open_profile', f'{sketch.Name} requires closed profile wires')
     if closed:
         # A closed Sketcher wire can still cross itself. Pad may silently split
         # it into multiple solids; validate the actual planar region first.
@@ -141,11 +144,16 @@ def validate_profile(sketch, *, closed):
                 if face.check(True):
                     raise ValueError('planar region failed native topology checks')
         except Exception as exc:
-            raise ConstraintVerificationError(
-                f'{sketch.Name} profile cannot support a valid downstream feature: {exc}; '
-                'constraint patches cannot change the frozen geometry', details={'object': sketch.Name}) from exc
+            raise invalid('invalid_planar_region',
+                f'{sketch.Name} profile cannot support a valid downstream feature: {exc}') from exc
     if not closed and len(wires) != 1:
-        raise ConstraintVerificationError(f'{sketch.Name} sweep path must be connected')
+        raise invalid('disconnected_path', f'{sketch.Name} sweep path must be connected')
+    if not closed:
+        try:
+            if shape.check(True):
+                raise ValueError('path failed native topology checks')
+        except Exception as exc:
+            raise invalid('invalid_path', f'{sketch.Name} has an invalid sweep path: {exc}') from exc
 
 
 def before_feature(document, operation, contract):
@@ -160,6 +168,46 @@ def before_feature(document, operation, contract):
         if name in contract['sketches']:
             validate_sketch(sketch, contract['sketches'][name], nominal=True)
         validate_profile(sketch, closed=name != args.get('path'))
+
+
+def validate_consumed_profiles(document):
+    """Revalidate native dependencies after edits, API execution and reopening.
+
+    A solved sketch can self-intersect while its dependent feature still reports
+    a valid solid. Only consumed profiles are checked: construction sketches may
+    legitimately be incomplete between operations.
+    """
+    import Part
+    consumers = {'PartDesign::Pad', 'PartDesign::Pocket', 'PartDesign::Hole',
+        'PartDesign::AdditiveLoft', 'PartDesign::SubtractiveLoft',
+        'PartDesign::AdditivePipe', 'PartDesign::SubtractivePipe',
+        'PartDesign::Revolution', 'PartDesign::Groove'}
+    checked = set()
+    def links(value):
+        if getattr(value, 'TypeId', '') == 'Sketcher::SketchObject':
+            yield value, ()
+        elif isinstance(value, (tuple, list)):
+            if len(value) == 2 and getattr(value[0], 'TypeId', '') == 'Sketcher::SketchObject':
+                yield value[0], tuple(name for name in value[1] if name)
+            else:
+                for item in value:
+                    yield from links(item)
+    for feature in document.Objects:
+        if feature.TypeId not in consumers:
+            continue
+        for property_name in ('Profile', 'Sections', 'Spine'):
+            closed = property_name != 'Spine'
+            for sketch, subnames in links(getattr(feature, property_name, None)):
+                key = (sketch.Name, subnames, closed)
+                if key in checked:
+                    continue
+                # LinkSub may select only part of a path. Check exactly the
+                # consumed edges, not unrelated geometry in the same sketch.
+                shape = Part.makeCompound([sketch.getSubObject(name) for name in subnames]) if subnames else None
+                if shape is not None:
+                    shape = Part.makeCompound([Part.Wire(edges) for edges in Part.sortEdges(shape.Edges)])
+                validate_profile(sketch, closed=closed, shape=shape)
+                checked.add(key)
 
 
 def _bodies(document):
@@ -274,3 +322,47 @@ def verify_document(document, contract, validate_document, *, max_probes=128, fr
     for name, specification in contract['sketches'].items():
         validate_sketch(document.getObject(name), specification, nominal=True)
     return report
+
+
+def verify_replanned_profile(document, contract, validate_document):
+    """Use real constraints and isolated parameter probes on the new boundary."""
+    import FreeCAD as App
+    name = contract['sketch']
+    sketch = document.getObject(name)
+    if sketch is None or sketch.TypeId != 'Sketcher::SketchObject':
+        raise ConstraintVerificationError('replanned profile is missing')
+    native = sketch_snapshot(sketch, contract['execution_checkpoint_hash'])
+    rules = []
+    for row in native['constraints']:
+        args = native_args(row)
+        if args is None or row['origin'] == 'unknown':
+            raise ConstraintVerificationError('replanned profile has unsupported constraint provenance')
+        rules.append({'logical_id': row['logical_id'], 'native_index': row['index'],
+                      'args': {**args, 'driving': row['driving']}})
+    specification = {'construction_geometry': contract['construction_geometry'], 'constraints': rules, 'derivations': []}
+    probe_contract = {'sketches': {name: specification}}
+    validate_sketch(sketch, specification, nominal=True)
+    validate_profile(sketch, closed=contract['closed_profile'])
+    policy = contract['resource_policy']
+    result = verify_document(document, probe_contract, validate_document,
+        max_probes=policy['max_parameter_probes'], fraction=policy['perturbation_fraction'])
+    if not result['parameter_probes']:
+        raise ConstraintVerificationError('replanned profile has no verifiable editable parameters')
+    # Export/serialization is a separate boundary from a successful recompute.
+    with tempfile.TemporaryDirectory(prefix='profile-reopen-') as folder:
+        saved = Path(folder) / 'saved.FCStd'
+        reopened = Path(folder) / 'reopened.FCStd'
+        document.saveAs(str(saved))
+        shutil.copyfile(saved, reopened)
+        probe = App.openDocument(str(reopened))
+        try:
+            probe.recompute()
+            validate_document(probe, op_id='profile-reopen', action='profile.verify')
+            validate_sketch(probe.getObject(name), specification, nominal=True)
+            validate_profile(probe.getObject(name), closed=contract['closed_profile'])
+            if _bodies(probe) != _bodies(document):
+                raise ConstraintVerificationError('reopening changed downstream solid connectivity')
+        finally:
+            App.closeDocument(probe.Name)
+    return {**result, 'schema_version': 'profile-replan-validation.v1',
+            'contract_hash': digest(contract), 'sketch': name, 'saved_reopened': True}

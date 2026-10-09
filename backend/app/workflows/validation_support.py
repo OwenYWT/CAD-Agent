@@ -12,7 +12,7 @@ from app.repositories.runs import append_workflow_event
 from app.services.run_state import complete_attempt, transition_attempt, transition_step, transition_workflow
 from app.workflows.logical_steps import _step_row, _workflow_status
 from app.workflows.inputs import _uuid
-from app.workflows.constraint_evidence import persist_repair_contract
+from app.workflows.constraint_evidence import persist_repair_contract, persist_profile_contract
 
 async def _record_agent_validation_outcome(
     payload: dict[str, Any],
@@ -150,6 +150,7 @@ async def _complete_check_workflow(
         for item in analysis.get("rule_violations") or []
     }
     validation_status = (
+        "indeterminate" if analysis.get("evaluation_status") == "indeterminate" else
         "failed"
         if "critical" in violation_severities
         else "warning"
@@ -266,6 +267,9 @@ async def _complete_check_workflow(
 
 
 async def _record_freecad_inspections(connection, request, step_key, provenance, *, source_id=None, source_hash=None):
+    if provenance.get('profile_replan'):
+        await persist_profile_contract(connection, request, source_id=source_id,
+            source_hash=source_hash, contract=provenance['profile_replan'])
     if provenance.get('constraint_repair'):
         await persist_repair_contract(connection, request, source_id=source_id,
             source_hash=source_hash, contract=provenance['constraint_repair'])

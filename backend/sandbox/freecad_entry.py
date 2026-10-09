@@ -14,6 +14,8 @@ import math
 import re
 import sys
 import traceback
+import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,8 @@ import Part
 import Sketcher
 
 from freecad_state_projector import project_saved_document
+from freecad_state_projector import project_object
+from freecad_sketch_relations import relation_certificate
 from freecad_topology import TopologyResolutionError, resolve_topology_selector
 from freecad_bom import BOMError, run_bom
 from freecad_scene import component_shapes, run_scene
@@ -31,11 +35,13 @@ from freecad_result_channel import publish_result
 from freecad_sketch_diagnostics import diagnose_sketch
 from freecad_failure_snapshot import (
     attach_failure_snapshot, constraint_counts, record_created_constraints,
+    constraint_records, write_constraint_records, MAP_PROPERTY,
     digest as constraint_digest,
 )
 from freecad_constraint_validation import (
     ConstraintVerificationError, validate_baseline as validate_constraint_baseline,
     before_feature as validate_constraint_profile, verify_document as verify_constraint_document,
+    verify_replanned_profile, validate_consumed_profiles,
 )
 from freecad_edge_scope import EdgeScopeError, resolve_edge_scope, verify_protected_faces
 from freecad_api import execute_program
@@ -59,6 +65,7 @@ ACTION_KEYS: dict[str, tuple[set[str], set[str]]] = {
         {"sketch", "kind", "first"},
     ),
     "sketch.set_constraint": ({"sketch","constraint_index","expected_type","value_mm","value_deg"}, {"sketch","constraint_index","expected_type"}),
+    "sketch.patch_relations": ({'sketch','expected_constraints_sha256','changes'}, {'sketch','expected_constraints_sha256','changes'}),
     "feature.pad": ({"name", "profile", "length_mm", "reversed"}, {"name", "profile", "length_mm"}),
     "feature.loft": ({"name", "profiles", "subtractive", "ruled"}, {"name", "profiles"}),
     "feature.sweep": ({"name", "profile", "path", "subtractive"}, {"name", "profile", "path"}),
@@ -472,6 +479,49 @@ def _sketch_add_constraint(document: Any, args: dict[str, Any]) -> dict[str, Any
     except (IndexError, ValueError, RuntimeError) as exc:
         raise FreeCADRunnerError("sketch_malformed_constraint", str(exc)) from exc
     return {"object": sketch.Name, "constraint_index": index}
+
+
+def _sketch_patch_relations(document, args):
+    sketch=_object(document,args['sketch'],'sketch')
+    original=project_object(sketch)
+    certificate=relation_certificate(original,args,[project_object(obj) for obj in document.Objects])
+    if not hasattr(sketch,'CADAgentRelationOrigins'):
+        sketch.addProperty('App::PropertyStringList','CADAgentRelationOrigins','CAD Agent')
+    origins=list(sketch.CADAgentRelationOrigins)
+    original_records=constraint_records(sketch)
+    deleted=sorted([c['index'] for c in original['inspection']['constraints']['items']
+        if any(change['logical_id']==c.get('logical_id') and change['action']!='add' for change in args['changes'])],reverse=True)
+    for index in deleted:
+        old_name=sketch.Constraints[index].Name
+        origins=[name for name in origins if name!=old_name]
+        sketch.delConstraint(index)
+    for change in args['changes']:
+        if change['action']=='delete':
+            continue
+        index=sketch.ConstraintCount
+        relation={**change['constraint'],'sketch':sketch.Name,'logical_id':change['logical_id']}
+        _sketch_add_constraint(document,relation)
+        if sketch.ConstraintCount!=index+1:
+            raise FreeCADRunnerError('sketch_relation_invalid','关系创建数量与计划不一致')
+        sketch.renameConstraint(index,change['logical_id'])
+        origins.append(change['logical_id'])
+    sketch.CADAgentRelationOrigins=list(dict.fromkeys(origins))
+    write_constraint_records(sketch,[{**record,'index':record['index']-sum(index<record['index'] for index in deleted)}
+        for record in original_records if record['index'] not in deleted])
+    document.recompute()
+    rules=certificate['sketches'][sketch.Name]['constraints']
+    by_name={c.Name:index for index,c in enumerate(sketch.Constraints) if c.Name}
+    for rule in rules:
+        if rule['logical_id'] in by_name:
+            rule['native_index']=by_name[rule['logical_id']]
+        elif 'native_index' in rule:
+            rule['native_index']-=sum(index<rule['native_index'] for index in deleted)
+    report=verify_constraint_document(document,certificate,_validate_document,max_probes=128)
+    report['input_identity']={'sketch':sketch.Name,'source_constraints_sha256':args['expected_constraints_sha256'],
+        'changes_hash':certificate['changes_hash']}
+    return {'object':sketch.Name,'relation_changes':len(args['changes']),
+        'relationship_verified':True,'parameter_probes':len(report['parameter_probes']),
+        'certificate_hash':report['contract_hash'],'verification_report_json':json.dumps(report,ensure_ascii=False,allow_nan=False)}
 
 
 def _sketch_set_constraint(document, args):
@@ -1087,6 +1137,7 @@ DISPATCH = {
     "sketch.add_profile": _sketch_add_profile,
     "sketch.add_constraint": _sketch_add_constraint,
     "sketch.set_constraint": _sketch_set_constraint,
+    "sketch.patch_relations": _sketch_patch_relations,
     "feature.pad": _feature_pad,
     "feature.loft": _feature_loft,
     "feature.sweep": _feature_sweep,
@@ -1112,6 +1163,11 @@ def _validate_document(document: Any, *, op_id: str, action: str) -> dict[str, A
     for obj in document.Objects:
         if getattr(obj, "TypeId", "") == "Sketcher::SketchObject":
             sketch_states.append(_validate_sketch(obj, op_id=op_id, action=action))
+    try:
+        validate_consumed_profiles(document)
+    except ConstraintVerificationError as exc:
+        raise FreeCADRunnerError(exc.code, str(exc), op_id=op_id,
+                                 action=action, details=exc.details) from exc
     for obj in document.Objects:
         if not bool(getattr(obj, "isValid", lambda: True)()):
             raise FreeCADRunnerError(
@@ -1265,9 +1321,62 @@ def _open_document(task: dict[str, Any], plan: dict[str, Any]) -> Any:
         if not isinstance(base_name, str) or Path(base_name).name != base_name:
             raise FreeCADRunnerError("invalid_base_artifact", "base input is not a safe filename")
         base = INPUT_ROOT / base_name
-        if not base.is_file() or base.is_symlink() or base.suffix.lower() != ".fcstd":
-            raise FreeCADRunnerError("invalid_base_artifact", "base FCStd input is missing")
-        document = App.openDocument(str(base))
+        import_format = task['params'].get('import_format')
+        expected_suffix = '.step' if import_format == 'step' else '.fcstd'
+        if not base.is_file() or base.is_symlink() or base.suffix.lower() != expected_suffix:
+            raise FreeCADRunnerError("invalid_base_artifact", "native base input is missing or has an incompatible format")
+        document = None
+        try:
+            if import_format == 'step':
+                document = App.newDocument(_name(plan.get('document_name','ImportedModel'),'document name'))
+                shape = Part.read(str(base))
+                if shape.isNull() or not shape.isValid() or not shape.Solids:
+                    raise FreeCADRunnerError('native_import_invalid','STEP 没有有效实体')
+                feature = document.addObject('Part::Feature','ImportedBase')
+                feature.Label = '导入 STEP 实体'
+                feature.Shape = shape
+            else:
+                if import_format == 'fcstd':
+                    with zipfile.ZipFile(base) as archive:
+                        if len(archive.infolist()) > 10000 or sum(i.file_size for i in archive.infolist()) > 512*1024*1024:
+                            raise FreeCADRunnerError('native_import_resource_limit','FCStd 解压大小超过导入预算')
+                        xml = archive.read('Document.xml')
+                        root = ET.fromstring(xml)
+                        # Our operation ledger is an inert FeaturePython object.
+                        # Remove it from the archive before opening; never restore
+                        # imported Python objects or trust their provenance.
+                        for parent in root.iter():
+                            for child in list(parent):
+                                if child.tag in {'Object','ObjectDeps'} and (child.get('name') or child.get('Name')) == LEDGER_NAME:
+                                    parent.remove(child)
+                            if parent.tag in {'Objects','ObjectData'} and 'Count' in parent.attrib:
+                                parent.set('Count',str(sum(child.tag=='Object' for child in parent)))
+                        xml = ET.tostring(root,encoding='utf-8',xml_declaration=True)
+                        if b'PythonProxy' in xml or b'PythonType' in xml or b'PropertyPythonObject' in xml:
+                            raise FreeCADRunnerError('native_import_unsupported','此 FCStd 含需要自定义 Python 扩展的对象，不能作为可核验原生导入')
+                        sanitized = OUTPUT_ROOT / 'import-base.FCStd'
+                        with zipfile.ZipFile(sanitized,'w',compression=zipfile.ZIP_DEFLATED) as destination:
+                            for item in archive.infolist():
+                                destination.writestr(item,xml if item.filename == 'Document.xml' else archive.read(item))
+                        base = sanitized
+                document = App.openDocument(str(base))
+                if import_format and document.getObject(LEDGER_NAME):
+                    document.removeObject(LEDGER_NAME)
+                if import_format:
+                    for imported_object in document.Objects:
+                        for property_name in ('CADAgentRelationOrigins',MAP_PROPERTY):
+                            if property_name in imported_object.PropertiesList:
+                                imported_object.removeProperty(property_name)
+            document.recompute()
+            if import_format and (len(document.Objects) > 2000 or not component_shapes(document)):
+                raise FreeCADRunnerError('native_import_invalid','导入文档没有有效实体或超过对象预算')
+        except Exception as error:
+            if document is not None:
+                App.closeDocument(document.Name)
+            if import_format and not isinstance(error, FreeCADRunnerError):
+                raise FreeCADRunnerError('native_import_invalid', f'{import_format.upper()} 文件无法解析或重算',
+                    details={'reason': str(error)}) from error
+            raise
     else:
         document_name = _name(plan.get("document_name", "Model"), "document name")
         document = App.newDocument(document_name)
@@ -1332,7 +1441,8 @@ def _validate_plan(task: dict[str, Any]) -> dict[str, Any]:
     inputs = task.get("inputs")
     if not isinstance(params, dict) or not isinstance(inputs, dict):
         raise FreeCADRunnerError("invalid_task", "task params and inputs must be objects")
-    if set(params) - {"plan", "expected_revision_id", "measurement_formats", "constraint_repair", "repair_acceptance_hash"} or not isinstance(
+    if set(params) - {"plan", "expected_revision_id", "measurement_formats", "constraint_repair", "repair_acceptance_hash", "import_format",
+                      "profile_replan", "profile_acceptance_hash"} or not isinstance(
         params.get("plan"), dict
     ):
         raise FreeCADRunnerError(
@@ -1357,6 +1467,9 @@ def _validate_plan(task: dict[str, Any]) -> dict[str, Any]:
     operations = plan.get("operations")
     if not isinstance(operations, list) or not 1 <= len(operations) <= 200:
         raise FreeCADRunnerError("invalid_plan", "plan must contain 1 to 200 operations")
+    if 'import_format' in params and (params['import_format'] not in {'fcstd','step'} or not inputs.get('base')
+            or [op.get('action') for op in operations] != ['document.inspect','document.export']):
+        raise FreeCADRunnerError('invalid_task','导入只能检查和导出服务端冻结的 FCStd 或 STEP')
     seen: set[str] = set()
     for operation in operations:
         if not isinstance(operation, dict) or set(operation) != {"op_id", "action", "args"}:
@@ -1386,18 +1499,28 @@ def _validate_plan(task: dict[str, Any]) -> dict[str, Any]:
 def run_task(task: dict[str, Any]) -> dict[str, Any]:
     plan = _validate_plan(task)
     document = _open_document(task, plan)
+    source_baseline = None
+    if task['inputs'].get('base'):
+        source_baseline = {'sha256': hashlib.sha256((INPUT_ROOT / task['inputs']['base']).read_bytes()).hexdigest(),
+            'solid_count': sum(len(shape.Solids) for _, shape in component_shapes(document))}
     ledger = _ledger(document)
     base_ledger = dict(_ledger_records(ledger))
     checkpoint_hash = (hashlib.sha256((INPUT_ROOT / task['inputs']['base']).read_bytes()).hexdigest()
                        if task.get('inputs', {}).get('base') else None)
     plan_hash = constraint_digest(plan)
     repair_contract = task['params'].get('constraint_repair')
+    profile_contract = task['params'].get('profile_replan')
     operation_results: list[dict[str, str | int | float | bool | None]] = []
     validations: list[dict[str, str | int | float | bool | None]] = []
     try:
         if repair_contract:
             validate_constraint_baseline(plan, repair_contract, checkpoint_hash,
                                         task['params'].get('repair_acceptance_hash'))
+        if profile_contract and (profile_contract.get('schema_version') != 'profile-replan-contract.v1'
+                or profile_contract['execution_plan_hash'] != plan_hash
+                or profile_contract['execution_checkpoint_hash'] != checkpoint_hash
+                or profile_contract['acceptance_hash'] != task['params'].get('profile_acceptance_hash')):
+            raise ConstraintVerificationError('profile replan baseline does not match the execution')
         for operation in plan["operations"]:
             op_id = str(operation["op_id"])
             action = str(operation["action"])
@@ -1418,8 +1541,24 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
 
             if action == 'api.execute':
                 records = list(ledger.OperationRecords)
+                trusted_sketches = {obj.Name: (project_object(obj),
+                    getattr(obj, MAP_PROPERTY, None), list(getattr(obj, 'CADAgentRelationOrigins', ())))
+                    for obj in document.Objects if obj.TypeId == 'Sketcher::SketchObject'}
                 try:
                     document = execute_program(document, _keys(action, operation['args']))
+                    for obj in document.Objects:
+                        if obj.TypeId != 'Sketcher::SketchObject':
+                            continue
+                        prior = trusted_sketches.get(obj.Name)
+                        observed = project_object(obj)
+                        same = prior and all(prior[0].get(field) == observed.get(field) for field in ('sketch_constraints_sha256','external_geometry')) and prior[0]['inspection'].get('geometry') == observed['inspection'].get('geometry')
+                        for name, value in ((MAP_PROPERTY, prior[1] if same else None),
+                                            ('CADAgentRelationOrigins', prior[2] if same else None)):
+                            if name in obj.PropertiesList:
+                                obj.removeProperty(name)
+                            if value is not None:
+                                obj.addProperty('App::PropertyString' if name == MAP_PROPERTY else 'App::PropertyStringList', name, 'CAD Agent')
+                                setattr(obj, name, value)
                     validation = _validate_document(document, op_id=op_id, action=action)
                     ledger = _ledger(document)
                     ledger.OperationRecords = [*records, f'{op_id}:{digest}']
@@ -1518,8 +1657,13 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
                     "action": action,
                     "status": "succeeded",
                     "object": result.get("object"),
+                    **{key:result[key] for key in ('relationship_verified','parameter_probes','certificate_hash') if key in result},
                 }
             )
+            if action == 'sketch.patch_relations':
+                validation.update(gate='sketch_relationships',status='passed',
+                    contract_hash=result['certificate_hash'],parameter_probes=result['parameter_probes'],
+                    evidence_json=result['verification_report_json'])
             validations.append(validation)
 
         if repair_contract:
@@ -1542,6 +1686,19 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
                 'contract_hash': verification['contract_hash'],
                 'parameter_probes': len(verification['parameter_probes']),
                 'evidence_json': json.dumps(verification, ensure_ascii=False, allow_nan=False)})
+        if profile_contract:
+            try:
+                verification = verify_replanned_profile(document, profile_contract, _validate_document)
+            except ConstraintVerificationError as exc:
+                export = plan['operations'][-1]
+                error = FreeCADRunnerError(exc.code, str(exc)[:4000], op_id=export['op_id'],
+                    action=export['action'], details=exc.details)
+                attach_failure_snapshot(error, document, plan, export,
+                    [row for row in operation_results if row['op_id'] != export['op_id']], checkpoint_hash, base_ledger)
+                raise error from exc
+            validations.append({'gate': 'profile_replan', 'status': 'passed',
+                'contract_hash': verification['contract_hash'],
+                'evidence_json': json.dumps(verification, ensure_ascii=False, allow_nan=False)})
         export_args = plan["operations"][-1]["args"]
         files = _export_document(document, export_args,
             measurement_formats=task['params'].get('measurement_formats', ()))
@@ -1551,6 +1708,7 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
             "operations": operation_results,
             "files": files,
             "validations": validations,
+            **({'source_baseline': source_baseline} if source_baseline is not None else {}),
             "runtime": {
                 "freecad": ".".join(App.Version()[:3]),
                 "python": sys.version.split()[0],

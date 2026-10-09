@@ -11,7 +11,7 @@ from app.execution.backend import ExecutionBackend
 from app.execution.composition import get_execution_backend
 from app.execution.contracts import ArtifactInput
 from app.freecad.operation_generator import FreeCADOperationGenerator
-from app.freecad.constraint_patch import NativeConstraintRepairValidation
+from app.freecad.repair_validation import NativeConstraintRepairValidation
 from app.validation.durable_visual import DurableVisualValidator
 from app.workflows.source_preparation import SourcePreparer
 from app.workflows.modeling import DurableModelingSourceGenerator

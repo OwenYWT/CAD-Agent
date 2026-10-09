@@ -11,7 +11,7 @@ import { engineeringSourceLabel } from '../../adapters/documentView';
 
 const active = (status: string) => ['pending','planning','running','cancelling'].includes(status);
 const statuses: Record<string,string> = {pending:'排队中',planning:'准备计算',running:'正在计算',cancelling:'正在取消',cancelled:'已取消',failed:'计算失败',timed_out:'计算超时',succeeded:'计算完成'};
-const inputClass = 'mt-1 w-full rounded border border-[var(--line)] bg-white p-2';
+const inputClass = 'ww-field ww-engineering-field mt-1 w-full';
 
 function Plane({label,value,onChange}: {label:string; value:BoundaryPlane; onChange:(v:BoundaryPlane)=>void}) {
   return <label className="block type-caption">{label}<select className={inputClass} aria-label={label} value={`${value.axis}:${value.side}`}
@@ -92,7 +92,7 @@ export default function EngineeringTasks({document, initiallyOpen = false, onTas
       try {
         const rows=await listEngineeringTasks(document.document_id,controller.signal);
         if (controller.signal.aborted) return;
-        setTasks(rows);
+        setTasks(rows.filter(row => ['linear_static','contour_milling'].includes(row.task_kind)));
         onTasksChange?.(document.document_id,rows);
         if (rows.some(t=>active(t.status))) timer=setTimeout(()=>void poll(),2000);
       } catch(e) {if (!controller.signal.aborted) setError(e instanceof Error ? e.message : '工程任务加载失败');}

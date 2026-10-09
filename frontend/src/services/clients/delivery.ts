@@ -1,5 +1,5 @@
 import { authFetch } from "../../auth";
-import type { DocumentRelease, ReleaseArtifact, ReleaseBOM, ReleaseResult } from "../../types/release";
+import type { DocumentRelease, ReleaseArtifact, ReleaseBOM, ReleaseResult, ReleaseOptions } from "../../types/release";
 import type { BridgeState, BridgePairing } from "../../types/localBridge";
 import type { CloudDocument } from "../../types/document";
 import { API_BASE } from "./http";
@@ -35,11 +35,11 @@ export async function downloadLocalBridgeClient():Promise<void> {
   await downloadEngineeringArtifact('/api/local-bridge/client','cad_local_bridge.py');
 }
 
-export async function submitDocumentRelease(document:CloudDocument, releaseName:string, engineeringWorkflowIds:string[], key:string) {
+export async function submitDocumentRelease(document:CloudDocument, releaseName:string, engineeringWorkflowIds:string[], key:string, options?:ReleaseOptions) {
   return readJson<{release_id:string}>(await authFetch(`${API_BASE}/api/documents/${document.document_id}/releases`,{
     method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({release_name:releaseName,
       expected_revision_id:document.head_revision_id,expected_state_version:document.state_version,
-      engineering_workflow_ids:engineeringWorkflowIds,idempotency_key:key}),
+      engineering_workflow_ids:engineeringWorkflowIds,idempotency_key:key,...(options ? {options} : {})}),
   }),'发布提交失败');
 }
 

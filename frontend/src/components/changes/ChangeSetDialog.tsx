@@ -23,7 +23,7 @@ interface ChangeSetDialogProps {
   changeSetId?: string | null;
   onClose: () => void;
   onRestore?: (snapshot: ModelSnapshotDetail) => boolean | void | Promise<boolean | void>;
-  onAskAgent?: (prompt: string) => void;
+  onAskAgent?: (prompt: string, continuation?: { candidateRevisionId: string; baseRevisionId: string }) => void;
   onDurableChangeSet?: (detail: DurableChangeSetDetail) => void;
   canCommit?: boolean;
   onReviewed?: (status: "committed" | "rolled_back" | "rejected" | "changes_requested") => void | Promise<void>;
@@ -257,6 +257,7 @@ export default function ChangeSetDialog({
       + `审查意见：${reviewNote.trim() || "未填写"}。`
       + `已证实参数变化：${parameterSummary}。`
       + `风险：${changeSet.risk.reasons.join("；")}。`,
+      changeSet.source === "durable" && changeSet.baseRevisionId ? { candidateRevisionId: changeSet.targetRevisionId, baseRevisionId: changeSet.baseRevisionId } : undefined,
     );
   };
 

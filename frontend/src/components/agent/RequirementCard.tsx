@@ -13,21 +13,21 @@ export function RequirementSummary({ objective, basis, profile, compact = false 
   </section>;
   return <section className="ww-requirement-card" aria-label="需求卡">
     <h3>需求依据</h3>
-    <dl><div><dt>已确认条件</dt><dd data-i18n-skip>{basis?.target || objective || "等待描述目标"}</dd></div>
-      {basis?.purpose || basis?.design_scope !== "geometry" ? <div><dt>用途</dt><dd>{basis?.purpose || "待确认（不影响本次外形时可后补）"}</dd></div> : null}
-      <div><dt>尺寸来源</dt><dd>{basis?.source_reference || "未提供"}{basis?.source_kind && ['reference','user_measurement'].includes(basis.source_kind) ? "（用户提供，未独立核验）" : ""}</dd></div>
+    <dl><div><dt>已确认条件</dt><dd>{basis?.target || objective ? <span data-i18n-skip>{basis?.target || objective}</span> : "等待描述目标"}</dd></div>
+      {basis?.purpose || basis?.design_scope !== "geometry" ? <div><dt>用途</dt><dd>{basis?.purpose ? <span data-i18n-skip>{basis.purpose}</span> : "待确认（不影响本次外形时可后补）"}</dd></div> : null}
+      <div><dt>尺寸来源</dt><dd>{basis?.source_kind==='user_specification' && ['用户指定的设计尺寸','用户需求中指定的设计尺寸'].includes(basis.source_reference) ? "用户指定的设计尺寸" : basis?.source_reference ? <span data-i18n-skip>{basis.source_reference}</span> : "未提供"}{basis?.source_kind && ['reference','user_measurement'].includes(basis.source_kind) ? "（用户提供，未独立核验）" : ""}</dd></div>
       {basis?.dimensions ? <div><dt>明确尺寸</dt><dd data-i18n-skip>{basis.dimensions}</dd></div> : null}
       <div><dt>采用的制造设置</dt><dd>{profile ? `${profile.material} · ${profile.process.toUpperCase()}` : "待确认"}</dd></div>
-      {basis?.design_scope !== "geometry" ? <div><dt>开孔与装配依据</dt><dd>{basis?.fit_notes || "未提供；开孔位置、装配间隙和实物配合未验证"}</dd></div> : null}
+      {basis?.design_scope !== "geometry" ? <div><dt>开孔与装配依据</dt><dd>{basis?.fit_notes ? <span data-i18n-skip>{basis.fit_notes}</span> : "未提供；开孔位置、装配间隙和实物配合未验证"}</dd></div> : null}
     </dl>
     <p className="type-caption text-amber-800">{requirementNotice(basis)}模型生成成功、检查通过和保存版本分别确认。</p>
   </section>;
 }
 
-export default function RequirementCard({ objective, profile, onConfirm, onBack, disabled=false }: {
-  objective:string; profile?:ManufacturingProfile | null; onConfirm:(basis:RequirementBasis)=>void; onBack:()=>void; disabled?:boolean;
+export default function RequirementCard({ objective, profile, onConfirm, onBack, disabled=false, initialBasis }: {
+  objective:string; profile?:ManufacturingProfile | null; onConfirm:(basis:RequirementBasis)=>void; onBack:()=>void; disabled?:boolean; initialBasis?:RequirementBasis;
 }) {
-  const [basis,setBasis]=useState<RequirementBasis>(()=>initialRequirementBasis(objective));
+  const [basis,setBasis]=useState<RequirementBasis>(()=>initialBasis ? {...initialBasis,target:objective} : initialRequirementBasis(objective));
   const physical = basis.design_scope !== "geometry";
   const set=(patch:Partial<RequirementBasis>)=>setBasis(value=>({...value,...patch}));
   const complete=basis.source_kind!=='none' && !!basis.dimensions.trim() && !!basis.source_reference.trim();

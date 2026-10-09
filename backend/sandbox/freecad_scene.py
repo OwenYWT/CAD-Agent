@@ -11,6 +11,7 @@ from pathlib import Path
 import FreeCAD as App
 import MeshPart
 import Part
+from freecad_topology import resolve_topology_selector, TopologyResolutionError
 
 LOD = {'coarse': (0.8, 0.8), 'medium': (0.15, 0.35), 'fine': (0.03, 0.12)}
 MAX_INSTANCES = 5000
@@ -70,7 +71,19 @@ def tessellate_scene(document, output: Path, known_definitions=()):
         local = source.Shape.copy()
         local.Placement = App.Placement()
         digest = hashlib.sha256(local.exportBrepToString().encode()).hexdigest()
-        instances.append({'kernel_name': obj.Name, 'label': obj.Label, 'geometry_sha256': digest,
+        face_bindings = []
+        for axis in 'xyz':
+            for extreme in ('min', 'max'):
+                selector = {'schema_version': 'topology-selector.v1', 'backend': 'freecad', 'revision_id': 'scene', 'object_name': obj.Name, 'subelement_kind': 'face', 'geometry': 'planar', 'axis': axis, 'extreme': extreme, 'tolerance_mm': 1e-5}
+                try:
+                    resolved = resolve_topology_selector(document, selector, expected_revision_id='scene')
+                    face = obj.getSubObject(resolved['subelement_name'])
+                    matches = [index for index, native in enumerate(obj.Shape.Faces, 1) if native.isSame(face)]
+                    if len(matches) == 1:
+                        face_bindings.append({'face_index': matches[0], 'axis': axis, 'extreme': extreme})
+                except TopologyResolutionError:
+                    continue
+        instances.append({'face_bindings': face_bindings, 'kernel_name': obj.Name, 'label': obj.Label, 'geometry_sha256': digest,
             'matrix': list(placed.Placement.toMatrix().A), 'is_instance': obj.TypeId == 'App::Link'})
         if digest in definitions:
             continue
@@ -81,21 +94,28 @@ def tessellate_scene(document, output: Path, known_definitions=()):
             definition['cached'] = True
             continue
         for lod, (linear, angular) in LOD.items():
-            mesh = MeshPart.meshFromShape(Shape=local.copy(), LinearDeflection=linear, AngularDeflection=angular, Relative=False)
-            count = mesh.CountFacets
+            facets, face_ranges = [], []
+            for face_index, face in enumerate(local.Faces, 1):
+                face_mesh = MeshPart.meshFromShape(Shape=face, LinearDeflection=linear, AngularDeflection=angular, Relative=False)
+                start = len(facets)
+                facets.extend(face_mesh.Facets)
+                face_ranges.append({'face_index': face_index, 'start': start, 'count': len(facets) - start})
+                if (84 + 50 * len(facets)) + total_bytes > MAX_MESH_BYTES:
+                    raise ValueError('tessellation exceeds the mesh output budget')
+            count = len(facets)
             size = 84 + 50 * count
             total_bytes += size
             if count < 1 or total_bytes > MAX_MESH_BYTES:
                 raise ValueError('tessellation is empty or exceeds the mesh output budget')
             payload = bytearray(b'CAD Agent component mesh v1'.ljust(80, b'\0') + struct.pack('<I', count))
-            for facet in mesh.Facets:
+            for facet in facets:
                 values = [*facet.Normal, *(v for point in facet.Points for v in point)]
                 payload.extend(struct.pack('<12fH', *values, 0))
             data = bytes(payload)
             name = digest + '-' + lod + '.stl'
             generated[name] = data
             definition['lods'][lod] = {'name': name, 'sha256': hashlib.sha256(data).hexdigest(),
-                'size_bytes': len(data), 'triangles': count, 'linear_deflection_mm': linear, 'angular_deflection_rad': angular}
+                'size_bytes': len(data), 'triangles': count, 'face_ranges': face_ranges, 'linear_deflection_mm': linear, 'angular_deflection_rad': angular}
     if not instances:
         raise ValueError('FCStd contains no visible solid components')
     scene = {'schema_version': 'cad-scene.v1', 'units': 'mm', 'instances': instances, 'definitions': definitions,

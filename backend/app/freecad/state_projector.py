@@ -215,6 +215,11 @@ def _inspection(obj):
     result = {}
     if str(getattr(obj, "TypeId", "")) == "Sketcher::SketchObject":
         constraints = list(getattr(obj, "Constraints", ()))
+        try:
+            mappings = json.loads(getattr(obj, '_AgentConstraintMap', '[]'))
+            by_index = {record['index']: record for record in mappings if record.get('origin') == 'typed_operation'}
+        except (ValueError, TypeError, KeyError):
+            by_index = {}
         items = []
         for index,c in enumerate(constraints[:256]):
             item = {"index":index,"type":str(c.Type),
@@ -223,6 +228,14 @@ def _inspection(obj):
                 "value":float(c.Value),"name":str(getattr(c,"Name",""))}
             if str(c.Type) in {'DistanceX','DistanceY','Distance','Radius','Diameter','Angle'} and callable(getattr(obj,'getDriving',None)):
                 item['driving'] = bool(obj.getDriving(index))
+            if item['name'] and item['name'] in list(getattr(obj,'CADAgentRelationOrigins',())):
+                item.update(logical_id=item['name'],origin='user_relation')
+            elif index in by_index:
+                record = by_index[index]
+                # This address is independent of mutable native ordinals. Only
+                # records from the trusted typed executor supply provenance.
+                identity = json.dumps([obj.Name, record['logical_id']], separators=(',', ':'))
+                item.update(logical_id='relation_' + hashlib.sha256(identity.encode()).hexdigest()[:32], origin='typed_operation')
             items.append(item)
         result["constraints"] = {"total":len(constraints),"items":items}
         geometries = list(getattr(obj,"Geometry", ()))
@@ -298,6 +311,12 @@ def project_object(obj: Any) -> dict[str, Any]:
         "properties": properties,
     }
     type_id = projected["type_id"]
+    expressions = list(getattr(obj, 'ExpressionEngine', ()))
+    projected['expressions'] = {'total':len(expressions), 'items':[
+        {'property':str(path), 'expression':str(expression)} for path,expression in expressions[:256]
+    ]}
+    if type_id == 'Sketcher::SketchObject':
+        projected['external_geometry'] = len(getattr(obj, 'ExternalGeometry', ()))
     categories = {"PartDesign::Body": "body", "App::Part": "part", "App::DocumentObjectGroup": "group",
                   "App::Link": "instance", "Sketcher::SketchObject": "sketch",
                   "App::Origin": "datum", "App::Plane": "datum", "App::Line": "datum", "App::Point": "datum"}
@@ -343,7 +362,7 @@ def project_object(obj: Any) -> dict[str, Any]:
         # Additional inspector metadata must not change the established
         # structural fingerprint for an otherwise identical saved sketch.
         fingerprint_constraints = {**constraints, 'items':[
-            {k:v for k,v in c.items() if k != 'driving'} for c in constraints['items']
+            {k:v for k,v in c.items() if k not in {'driving','logical_id','origin'}} for c in constraints['items']
         ]} if constraints else constraints
         projected["sketch_constraints_sha256"] = hashlib.sha256(
             json.dumps(fingerprint_constraints,
