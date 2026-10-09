@@ -17,6 +17,9 @@ async def submit_release(context,document_id,submission:ReleaseSubmission):
     name=submission.release_name.strip()
     request={'document_id':str(document_id),'release_name':name,'revision_id':str(submission.expected_revision_id),
         'state_version':submission.expected_state_version,'engineering_workflow_ids':sorted(map(str,submission.engineering_workflow_ids))}
+    from app.freecad.release_contracts import ReleaseOptions
+    if submission.options != ReleaseOptions():
+        request['options'] = submission.options.model_dump(mode='json')
     digest=canonical_sha256(request);key='release:'+submission.idempotency_key;dispatch=None
     projection=await checkpoint(context,document_id,submission.expected_revision_id)
     if not projection['fcstd']:
@@ -44,7 +47,7 @@ async def submit_release(context,document_id,submission:ReleaseSubmission):
             for analysis_id in sorted(submission.engineering_workflow_ids,key=str):
                 analysis=(await conn.execute(text('''SELECT t.*,w.status FROM document_engineering_tasks t JOIN workflow_runs w ON w.id=t.workflow_run_id
                     WHERE t.workflow_run_id=:id AND t.document_id=:doc'''),{'id':analysis_id,'doc':document_id})).mappings().one_or_none()
-                if analysis is None or analysis['status']!='succeeded' or analysis['task_kind'] not in {'linear_static','contour_milling'}:
+                if analysis is None or analysis['status']!='succeeded' or analysis['task_kind'] not in {'linear_static','contour_milling','native_measure'}:
                     raise ValueError('只能选择本文件中已成功完成的有限元或加工任务')
                 if analysis['source_revision_id']!=submission.expected_revision_id or analysis['source_sha256']!=source['sha256']:
                     raise ValueError('所选工程证据属于其他修订或原生检查点，请重新计算后发布')
@@ -60,7 +63,11 @@ async def submit_release(context,document_id,submission:ReleaseSubmission):
                         'size_bytes':artifact['size_bytes'],'sha256':artifact['sha256']})
             if source['size_bytes']+sum(r['size_bytes'] for r in references)>128*1024*1024:
                 raise ValueError('所选发布输入超过 128 MiB 预算')
-            task=ReleaseTask(release_name=name,source={'document_id':document_id,'project_id':doc['project_id'],
+            source_request = await conn.scalar(text('SELECT request_payload FROM workflow_runs WHERE id=:id AND project_id=:project'), {'id': source['source_workflow_run_id'], 'project': doc['project_id']})
+            requirements = await conn.scalar(text("SELECT payload->'requirements' FROM task_events WHERE workflow_run_id=:id AND event_type='agent.requirements.completed' ORDER BY sequence LIMIT 1"), {'id': source['source_workflow_run_id']})
+            task=ReleaseTask(release_name=name,options=submission.options,
+                manufacturing_profile=(source_request or {}).get('manufacturing_profile'), requirements=requirements,
+                source={'document_id':document_id,'project_id':doc['project_id'],
                 'revision_id':submission.expected_revision_id,'state_version':submission.expected_state_version,
                 'fcstd_artifact_id':source['id'],'fcstd_sha256':source['sha256']},engineering_artifacts=references,
                 annotations=await annotation_context(conn,document_id))

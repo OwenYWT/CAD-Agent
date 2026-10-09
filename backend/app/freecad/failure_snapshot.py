@@ -47,16 +47,24 @@ def constraint_counts(document):
 
 def record_created_constraints(document, operation, counts, plan_hash):
     """Called inside the same native transaction, including a failing addition."""
-    if operation['action'] not in {'sketch.add_constraint', 'sketch.add_profile'}:
+    if operation['action'] not in {'sketch.add_constraint', 'sketch.add_profile','sketch.patch_relations'}:
         return
     sketch = document.getObject(operation['args']['sketch'])
     if sketch is None:
         return
     records = constraint_records(sketch)
     known = {r['index'] for r in records}
-    start = counts.get(sketch.Name, 0)
+    relations = operation['action']=='sketch.patch_relations'
+    start = 0 if relations else counts.get(sketch.Name, 0)
     for index in range(start, sketch.ConstraintCount):
         if index in known:
+            continue
+        if relations:
+            name=str(sketch.Constraints[index].Name)
+            if name not in list(sketch.CADAgentRelationOrigins):
+                continue
+            records.append({'logical_id':name,'index':index,'operation_id':operation['op_id'],
+                'operation_hash':digest(operation),'plan_hash':plan_hash,'origin':'user_relation','generated_slot':index})
             continue
         explicit = operation['action'] == 'sketch.add_constraint'
         logical_id = operation['args'].get('logical_id', operation['op_id']) if explicit else (
@@ -118,7 +126,9 @@ def capture_failure(document, plan, operation, completed, checkpoint_hash, base_
     return {'schema_version': SNAPSHOT_SCHEMA, 'valid_checkpoint': False,
         'document_name': document.Name, 'checkpoint_hash': checkpoint_hash,
         'plan_hash': digest(plan), 'failed_operation_id': operation['op_id'],
-        'failure': {'code': error.code, 'message': str(error), 'action': operation['action']},
+        'failure': {'code': error.code, 'message': str(error), 'action': operation['action'],
+            'details': {k: v for k, v in getattr(error, 'details', {}).items()
+                if k in {'object', 'stage', 'reason', 'closed_profile'}}},
         'operations': [{'operation_id': op['op_id'], 'operation_hash': digest(op),
             'status': 'executed' if op['op_id'] in done else 'failing' if op['op_id'] == operation['op_id'] else 'not_executed',
             'committed_checkpoint': op['op_id'] in base_ledger} for op in plan['operations']],
@@ -133,7 +143,7 @@ def attach_failure_snapshot(error, document, plan, operation, completed, checkpo
                             base_ledger, *, max_bytes=1024 * 1024):
     """Evidence is best effort. No extraction/serialization error may stop rollback."""
     if not (getattr(error, 'code', '').startswith('sketch_')
-            or getattr(error, 'code', '') == 'constraint_repair_verification_failed'):
+            or getattr(error, 'code', '') in {'constraint_repair_verification_failed', 'profile_geometry_invalid'}):
         return
     try:
         evidence = capture_failure(document, plan, operation, completed, checkpoint_hash, base_ledger, error)

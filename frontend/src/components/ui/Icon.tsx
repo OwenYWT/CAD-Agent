@@ -24,6 +24,7 @@ export type IconName =
   | "sliders"
   | "trash"
   | "undo"
+  | "warning"
   | "user"
   | "x";
 
@@ -51,6 +52,7 @@ const paths: Record<IconName, React.ReactNode> = {
   sliders: <><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/><circle cx="9" cy="6" r="2" fill="white"/><circle cx="15" cy="12" r="2" fill="white"/><circle cx="7" cy="18" r="2" fill="white"/></>,
   trash: <><path d="M4 7h16"/><path d="M9 3h6l1 4H8l1-4Z"/><path d="m6 7 1 14h10l1-14"/><path d="M10 11v6M14 11v6"/></>,
   undo: <><path d="m9 7-4 4 4 4"/><path d="M5 11h10a5 5 0 0 1 5 5v1"/></>,
+  warning: <><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5"/><circle cx="12" cy="17" r=".8" fill="currentColor" stroke="none"/></>,
   user: <><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></>,
   x: <><path d="m6 6 12 12"/><path d="m18 6-12 12"/></>,
 };

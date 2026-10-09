@@ -140,3 +140,74 @@ async def test_snapshot_rejects_unsupported_process_instead_of_silent_fallback()
                 tenant_id=owner.tenant_id,
                 manufacturing_profile={"process": "unknown", "material": "X"},
             )
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_explicit_check_configuration_ignores_ambient_identity_and_keeps_disabled_rules():
+    from app.dfm.configuration import freeze_rules
+    from app.dfm.postgres_store import configured_rules
+    from app.principal_context import current_principal
+    owners = [user_principal(f"check-rules-{uuid4()}") for _ in range(2)]
+    configurations = []
+    for index, owner in enumerate(owners):
+        assert current_principal().tenant_id != owner.tenant_id
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as connection:
+            await ensure_principal(connection, owner)
+            await configured_rules(connection, tenant_id=owner.tenant_id, process="CNC")
+            await connection.execute(text("""
+                UPDATE dfm_rules SET threshold_max=:maximum, enabled=:enabled
+                WHERE tenant_id=:tenant AND id='cnc_max_size'
+            """), {"tenant": owner.tenant_id, "maximum": 1 if index == 0 else 1000,
+                   "enabled": index == 0})
+            rules = await configured_rules(connection, tenant_id=owner.tenant_id, process="cnc")
+            configurations.append(freeze_rules(rules, tenant_id=owner.tenant_id,
+                principal_id=owner.principal_id, process="cnc"))
+    selected = [next(r for r in c['rules'] if r['id'] == 'cnc_max_size') for c in configurations]
+    assert (selected[0]['threshold_max'], selected[0]['enabled']) == (1, True)
+    assert (selected[1]['threshold_max'], selected[1]['enabled']) == (1000, False)
+    assert configurations[0]['sha256'] != configurations[1]['sha256']
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_all_disabled_native_rules_do_not_silently_restore_builtin_rules():
+    from app.dfm.postgres_store import configured_rules
+    owner = user_principal(f"disabled-policy-{uuid4()}")
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as connection:
+        await ensure_principal(connection, owner)
+        await configured_rules(connection, tenant_id=owner.tenant_id, process="CNC")
+        await connection.execute(text("UPDATE dfm_rules SET enabled=false WHERE tenant_id=:tenant AND process='CNC'"), {"tenant": owner.tenant_id})
+        policy = await resolve_dfm_policy_snapshot(connection, tenant_id=owner.tenant_id,
+            manufacturing_profile={"process": "cnc", "material": "steel"})
+    assert policy.source == "tenant-postgres" and policy.rules == ()
+    assert policy.rule_set_versions and policy.threshold_precedence == "configured_rules"
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_legacy_check_captures_rules_once_without_rewriting_immutable_request():
+    from app.dfm.postgres_store import configured_rules
+    from app.repositories.projects import create_project
+    from app.services.run_state import create_workflow
+    from app.services.engineering_checks import execution_rule_configuration
+    owner = user_principal(f"legacy-check-{uuid4()}")
+    project = uuid4()
+    original = {"process": "CNC", "description": "Legacy admitted check"}
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as connection:
+        await ensure_principal(connection, owner)
+        await create_project(connection, project_id=project, tenant_id=owner.tenant_id,
+            creator_principal_id=owner.principal_id, name="Legacy check", slug=str(project))
+        workflow = await create_workflow(connection, tenant_id=owner.tenant_id,
+            project_id=project, requested_by_principal_id=owner.principal_id,
+            kind="mcad.check", idempotency_key=str(uuid4()), request_payload=original)
+        first = await execution_rule_configuration(connection, tenant_id=owner.tenant_id,
+            principal_id=owner.principal_id, workflow_id=workflow.workflow_id,
+            process="CNC", supplied=None)
+        await connection.execute(text("UPDATE dfm_rules SET threshold_max=1 WHERE tenant_id=:tenant AND id='cnc_max_size'"), {"tenant": owner.tenant_id})
+        second = await execution_rule_configuration(connection, tenant_id=owner.tenant_id,
+            principal_id=owner.principal_id, workflow_id=workflow.workflow_id,
+            process="CNC", supplied=None)
+        assert first == second and first['origin'] == 'legacy_activity'
+        assert await connection.scalar(text("SELECT request_payload FROM workflow_runs WHERE id=:id"), {"id": workflow.workflow_id}) == original
+        assert await connection.scalar(text("SELECT count(*) FROM task_events WHERE workflow_run_id=:id AND event_type='engineering.configuration_captured'"), {"id": workflow.workflow_id}) == 1
+        with pytest.raises(ValueError, match="ownership"):
+            await execution_rule_configuration(connection, tenant_id=owner.tenant_id,
+                principal_id=uuid4(), workflow_id=workflow.workflow_id, process="CNC", supplied=None)

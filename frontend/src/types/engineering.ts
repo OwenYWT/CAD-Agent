@@ -63,6 +63,7 @@ export interface ValidationResult {
   impact?: string;
   object: string;
   suggestion?: string;
+  outcome?:string; evidenceId?:string; revisionId?:string;
 }
 
 export interface ParameterChange {

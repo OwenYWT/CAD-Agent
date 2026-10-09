@@ -44,7 +44,8 @@ async def main():
         try: await handle.result()
         except WorkflowFailureError as exc:
             cause=McadAgentWorkflowV2._root_application_error(exc)
-            assert cause.type=='agent_freecad_repair_not_allowed',cause
+            assert cause.type=='profile_replan_rejected',cause
+            assert 'earlier constraint proof' in str(cause),cause
         else: raise AssertionError('self-intersecting incident must not succeed')
     print('CONSTRAINT_FAILURE='+json.dumps({'document_id':str(workspace.branch_id),
         'base_revision_id':str(workspace.head_revision_id),'workflow_id':str(workflow_id)}))
@@ -68,6 +69,16 @@ def main():
         response = api.get('/api/tasks/' + fixture['workflow_id'] + '/snapshot'); response.raise_for_status()
         snapshot = response.json()
         assert snapshot['status'] == 'failed' and not snapshot.get('change_set')
+        response=api.get('/api/tasks/'+fixture['workflow_id']+'/diagnostic');response.raise_for_status()
+        diagnostic=response.json()
+        assert diagnostic['snapshot']['valid_checkpoint'] is False and diagnostic['task_status']=='failed'
+        assert diagnostic['snapshot']['failed_operation_id'] and diagnostic['snapshot']['sketches']
+        assert all('solver' in sketch and 'geometry' in sketch and 'constraints' in sketch for sketch in diagnostic['snapshot']['sketches'])
+        assert all(operation['status'] in {'executed','failing','not_executed'} for operation in diagnostic['snapshot']['operations'])
+        for headers in [{},{'Authorization':'Bearer '+private['editor']['token']}]:
+            for route in ['diagnostic','takeover-baseline']:
+                denied=httpx.get(os.environ['CAD_NATIVE_E2E_URL']+'/api/tasks/'+fixture['workflow_id']+'/'+route,headers=headers,trust_env=False)
+                assert denied.status_code in {401,403,404},(route,denied.text)
         response = api.get('/api/documents/' + fixture['document_id']); response.raise_for_status()
         assert response.json()['head_revision_id'] == fixture['base_revision_id']
     errors = []
@@ -90,14 +101,23 @@ def main():
             expect(chain).to_contain_text('redundant')
             expect(chain).to_contain_text('修复失败原因：')
             expect(chain).to_contain_text('profile cannot support a valid downstream feature')
+            expect(chain).to_contain_text('earlier constraint proof')
             expect(card.locator('.animate-spin')).to_have_count(0)
+            card.get_by_role('button',name='查看失败草图与求解诊断',exact=True).click()
+            diagnostic_dialog=page.get_by_role('dialog',name='失败现场诊断',exact=True)
+            expect(diagnostic_dialog.get_by_role('group',name='失败草图几何',exact=True).first).to_be_visible()
+            expect(diagnostic_dialog).to_contain_text('自由度：')
+            for _ in range(12):
+                page.keyboard.press('Tab');assert diagnostic_dialog.evaluate('e=>e.contains(document.activeElement)')
+            diagnostic_dialog.get_by_role('button',name='关闭',exact=True).click()
             page.reload()
             expect(page.get_by_test_id('repair-failure-chain')).to_be_visible()
             assert not errors, errors
             page.screenshot(path=str(out/'retained-failure.png'))
             (out/'report.json').write_text(json.dumps({'passed': True, 'fixture': fixture,
                 'real_failed_workflow': True, 'original_and_repair_error_visible': True,
-                'no_candidate': True, 'head_unchanged': True, 'reload_preserved': True, 'page_errors': errors}, indent=2))
+                'no_candidate': True, 'head_unchanged': True, 'reload_preserved': True,
+                'owned_diagnostic':True,'diagnostic_permissions':True,'diagnostic_focus_trap':True,'page_errors': errors}, indent=2))
             print('CONSTRAINT FAILURE BROWSER PASSED')
         except BaseException:
             page.screenshot(path=str(out/'failure.png'))

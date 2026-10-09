@@ -122,7 +122,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             <label className="block" htmlFor="password">
               <span className="ww-field-label">{screen === "register" ? "设置密码" : "密码"}</span>
               <span className="relative block">
-                <input autoComplete={screen === "register" ? "new-password" : "current-password"} className="ww-field pr-12" id="password" minLength={screen === "register" ? 8 : undefined} name="password" onChange={(event) => setPassword(event.target.value)} placeholder={screen === "register" ? "至少 8 位" : "输入密码"} required type={showPassword ? "text" : "password"} value={password} />
+                <input autoComplete={screen === "register" ? "new-password" : "current-password"} className="ww-field ww-field--suffix" id="password" minLength={screen === "register" ? 8 : undefined} name="password" onChange={(event) => setPassword(event.target.value)} placeholder={screen === "register" ? "至少 8 位" : "输入密码"} required type={showPassword ? "text" : "password"} value={password} />
                 <button aria-label={showPassword ? "隐藏密码" : "显示密码"} className="icon-button absolute right-0.5 top-0.5 text-[var(--muted)] hover:text-[var(--ink)]" onClick={() => setShowPassword((value) => !value)} title={showPassword ? "隐藏密码" : "显示密码"} type="button"><Icon name={showPassword ? "eye-off" : "eye"} size={18} /></button>
               </span>
               {screen === "register" && <span className="mt-1 block type-body text-[var(--muted)]">至少 8 位字符。</span>}
@@ -132,8 +132,8 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               <>
                 <label className="block" htmlFor="confirm-password">
                   <span className="ww-field-label">确认密码</span>
-                  <input aria-invalid={passwordMismatch} autoComplete="new-password" className={`ww-field ${passwordMismatch ? "border-red-400 focus:ring-red-100" : ""}`} id="confirm-password" name="confirm-password" onChange={(event) => setConfirmPassword(event.target.value)} required type={showPassword ? "text" : "password"} value={confirmPassword} />
-                  {passwordMismatch && <span className="mt-1 block type-body text-red-600">两次输入的密码不一致。</span>}
+                  <input aria-invalid={passwordMismatch} autoComplete="new-password" aria-describedby={passwordMismatch ? "password-mismatch" : undefined} className="ww-field" id="confirm-password" name="confirm-password" onChange={(event) => setConfirmPassword(event.target.value)} required type={showPassword ? "text" : "password"} value={confirmPassword} />
+                  {passwordMismatch && <span id="password-mismatch" className="mt-1 block type-body text-red-600">两次输入的密码不一致。</span>}
                 </label>
                 <label className="block" htmlFor="invite-code">
                   <span className="ww-field-label">邀请码</span>

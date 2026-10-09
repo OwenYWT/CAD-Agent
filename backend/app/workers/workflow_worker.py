@@ -17,7 +17,7 @@ from app.db import database_readiness
 from app.execution.backend import ExecutionBackend
 from app.execution.composition import get_execution_backend
 from app.freecad.operation_generator import FreeCADOperationGenerator
-from app.freecad.constraint_patch import NativeConstraintRepairValidation
+from app.freecad.repair_validation import NativeConstraintRepairValidation
 from app.object_store import object_store_readiness
 from app.temporal_client import get_temporal_client
 from app.workflows.activities import McadWorkflowActivities

@@ -13,6 +13,7 @@ from botocore.exceptions import ClientError
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from scripts.ci.live_budget import BudgetExceeded, Limits, MonthLedger, RunBudget, S3Store
+from scripts.ci.live_gateway import create_app
 from scripts.ci.require_test_report import validate
 
 
@@ -41,34 +42,9 @@ def main():
     ledger.update(identity, limits.run)
     budget = RunBudget(limits)
     passed = False
-    from fastapi import FastAPI, Request
-    from fastapi.responses import JSONResponse
-    import httpx
     import uvicorn
-    app = FastAPI()
     failures = []
-    @app.post('/v1/chat/completions')
-    async def completions(request: Request):
-        payload = await request.json()
-        if payload.get('stream'):
-            return JSONResponse({'error': 'live budget gateway requires non-streaming usage'}, status_code=400)
-        try:
-            slot = budget.reserve(payload.get('model'), payload.get('max_completion_tokens', payload.get('max_tokens', limits.output)))
-        except BudgetExceeded as error:
-            failures.append(str(error))
-            return JSONResponse({'error': str(error)}, status_code=402)
-        # A transport failure retains its reservation; the upstream may have
-        # processed a paid request even if its response never reached the runner.
-        async with httpx.AsyncClient(timeout=300) as client:
-            try:
-                result = await client.post(os.environ['CAD_EVAL_PROVIDER_URL'].rstrip('/')+'/chat/completions',
-                    headers={'Authorization': 'Bearer '+os.environ['MOONSHOT_API_KEY']}, json=payload)
-                data = result.json()
-                budget.settle(slot, data.get('usage'))
-                return JSONResponse(data, status_code=result.status_code)
-            except (httpx.HTTPError, ValueError) as error:
-                failures.append(type(error).__name__)
-                return JSONResponse({'error': 'live evaluation request/usage failed'}, status_code=502)
+    app = create_app(budget, os.environ['CAD_EVAL_PROVIDER_URL'], os.environ['MOONSHOT_API_KEY'], failures)
     server = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=18777, log_level='warning', access_log=False))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()

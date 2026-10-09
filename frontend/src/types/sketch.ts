@@ -3,6 +3,7 @@ export type SketchPoint = [number,number,number];
 export interface SketchConstraint {
   index: number; type: string; name: string; value: number; driving?: boolean;
   first: number; first_position: number; second: number; second_position: number;
+  logical_id?:string; origin?:string;
 }
 export interface SketchGeometry {
   index: number; type: string; center?: SketchPoint; start?: SketchPoint; end?: SketchPoint;

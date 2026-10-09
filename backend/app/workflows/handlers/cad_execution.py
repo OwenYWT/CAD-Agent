@@ -33,7 +33,8 @@ from app.workflows.execution_support import _run_backend_with_heartbeats
 from app.workflows.execution_support import _mark_execution_failure
 from app.workflows.revision_inputs import _freecad_revision_artifact
 from app.workflows.checkpoint_inputs import checkpoint_manifest, checkpoint_artifact
-from app.workflows.constraint_evidence import persist_failure_snapshot, load_repair_contract, persist_repair_verification
+from app.workflows.constraint_evidence import (persist_failure_snapshot, load_repair_contract, persist_repair_verification,
+    load_profile_contract, persist_profile_verification)
 from app.contracts.constraint_patch import ConstraintRepairValidation
 
 async def agent_execute_model(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[str, Any]:
@@ -411,7 +412,19 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
     materialized: dict[str, Path] = {}
     task_inputs: dict[str, str] = {}
     try:
-        if request.operation == "modify" or payload.get("checkpoint_manifest_id"):
+        native_import = request.operation_context.native_import if request.operation_context else None
+        if native_import and not payload.get('checkpoint_manifest_id'):
+            base_path = temp_dir / ('base.FCStd' if native_import.format == 'fcstd' else 'base.step')
+            downloaded = await download_object(native_import.object_key(request.tenant_id, request.branch_id), base_path)
+            if downloaded['sha256'] != native_import.sha256 or downloaded['size_bytes'] != native_import.size_bytes:
+                raise ValueError('导入文件完整性核验失败')
+            artifact_id = str(native_import.artifact_id)
+            declarations.append(ArtifactInput(artifact_id=artifact_id,filename=base_path.name,
+                sha256=native_import.sha256,size_bytes=native_import.size_bytes,
+                media_type='application/x-freecad' if native_import.format=='fcstd' else 'model/step'))
+            materialized[artifact_id] = base_path
+            task_inputs['base'] = base_path.name
+        elif request.operation == "modify" or payload.get("checkpoint_manifest_id"):
             if payload.get("checkpoint_manifest_id"):
                 checkpoint = await checkpoint_manifest(request, candidate_build_id, payload["checkpoint_manifest_id"])
                 artifact = checkpoint_artifact(checkpoint, "fcstd")
@@ -433,7 +446,8 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                 )
             input_revision_id = (
                 request.revision_restore.source_revision_id
-                if request.revision_restore else request.expected_base_revision_id
+                if request.revision_restore else request.operation_context.source_candidate_revision_id
+                if request.operation_context and request.operation_context.source_candidate_revision_id else request.expected_base_revision_id
             )
             artifact_id = f"{payload.get('checkpoint_manifest_id') or input_revision_id}:fcstd"
             declarations.append(
@@ -450,6 +464,10 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
 
         repair_contract = await load_repair_contract(request,
             source_id=payload['source_id'], source_hash=source_hash)
+        profile_contract = await load_profile_contract(request, source_id=payload['source_id'], source_hash=source_hash)
+        if profile_contract:
+            constraint_validation.verify_profile_contract(operation_plan, profile_contract, plan.design_brief.acceptance,
+                declarations[0].sha256 if declarations else None)
         if repair_contract:
             constraint_validation.verify_contract(operation_plan, repair_contract, plan.design_brief.acceptance)
         task = {
@@ -464,6 +482,10 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
         }
         if request.revision_restore is not None:
             task["params"]["expected_revision_id"] = str(request.revision_restore.source_revision_id)
+        elif request.operation_context and request.operation_context.source_candidate_revision_id:
+            task['params']['expected_revision_id'] = str(request.operation_context.source_candidate_revision_id)
+        if native_import:
+            task['params']['import_format'] = native_import.format
         if repair_contract:
             checkpoint_hash = declarations[0].sha256 if declarations else None
             if checkpoint_hash != repair_contract.get('execution_checkpoint_hash', repair_contract['checkpoint_hash']):
@@ -471,6 +493,9 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                     type='constraint_patch_rejected', non_retryable=True)
             task['params'].update(constraint_repair=repair_contract,
                 repair_acceptance_hash=repair_contract['acceptance_hash'])
+        if profile_contract:
+            task['params'].update(profile_replan=profile_contract,
+                profile_acceptance_hash=profile_contract['acceptance_hash'])
         export_formats = tuple(operation_plan.operations[-1].typed_args().formats)
         measurement_step = (operation_plan.execution_mode == 'final'
             and plan.design_brief.acceptance is not None and 'step' not in export_formats)
@@ -610,6 +635,18 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                     non_retryable=not retryable,
                 )
 
+            if any(op.action=='sketch.patch_relations' for op in operation_plan.operations):
+                metadata_path=outcome.files.get('capability-result')
+                try:
+                    if metadata_path is None:
+                        raise ValueError('关系编辑缺少原生验证产物')
+                    reports=constraint_validation.verify_relation_receipts(json.loads(metadata_path.read_text(encoding='utf-8')),
+                        operation_plan.model_dump(mode='json'))
+                except (ValueError,KeyError,TypeError) as exc:
+                    raise ApplicationError(str(exc),type='sketch_relationship_verification_failed',non_retryable=True) from exc
+                for report in reports:
+                    await persist_repair_verification(request,source_id=payload['source_id'],source_hash=source_hash,
+                        attempt_id=attempt_id,report=report)
             if repair_contract:
                 metadata_path = outcome.files.get('capability-result')
                 if metadata_path is None:
@@ -621,6 +658,17 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                     raise ApplicationError(str(exc), type='constraint_repair_verification_failed',
                                            non_retryable=True) from exc
                 await persist_repair_verification(request, source_id=payload['source_id'], source_hash=source_hash,
+                    attempt_id=attempt_id, report=native_report)
+            if profile_contract:
+                metadata_path = outcome.files.get('capability-result')
+                if metadata_path is None:
+                    raise ApplicationError('profile replan validation evidence is missing',
+                        type='profile_replan_verification_failed', non_retryable=True)
+                try:
+                    native_report = constraint_validation.verify_profile_receipt(json.loads(metadata_path.read_text()), profile_contract)
+                except (ValueError, KeyError, TypeError) as exc:
+                    raise ApplicationError(str(exc), type='profile_replan_verification_failed', non_retryable=True) from exc
+                await persist_profile_verification(request, source_id=payload['source_id'], source_hash=source_hash,
                     attempt_id=attempt_id, report=native_report)
             upload_heartbeat = asyncio.create_task(
                 _heartbeat_loop(
@@ -711,6 +759,17 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                 "tool_result": execution_receipt(source_id=str(payload["source_id"]),
                     source_hash=source_hash, attempt_id=str(attempt_id), outputs=staged_outputs),
             }
+            if task_inputs.get('base'):
+                metadata_path = outcome.files.get('capability-result')
+                baseline = ((json.loads(metadata_path.read_text(encoding='utf-8')).get('result') or {}).get('source_baseline')
+                    if metadata_path else None)
+                if baseline is not None:
+                    if (baseline.get('sha256') != declarations[0].sha256 or type(baseline.get('solid_count')) is not int
+                            or baseline['solid_count'] < 0 or native_import and baseline['solid_count'] < 1):
+                        raise ApplicationError('原生输入实体数量证据无效',type='native_source_geometry_invalid',non_retryable=True)
+                    result_payload['source_solid_count'] = baseline['solid_count']
+                elif native_import:
+                    raise ApplicationError('原生导入缺少输入几何证据',type='native_source_geometry_missing',non_retryable=True)
             async with tenant_transaction(
                 request.tenant_id,
                 request.principal_id,

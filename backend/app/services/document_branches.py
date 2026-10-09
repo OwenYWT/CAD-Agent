@@ -11,7 +11,7 @@ from app.db import tenant_transaction
 from app.domain.projects import Permission
 from app.execution.canonical import canonical_sha256
 from app.repositories.revisions import create_initial_branch
-from app.services.cloud_documents import DocumentConflict, authorized_document, checkpoint
+from app.services.cloud_documents import DocumentConflict, authorized_document, checkpoint, revision_design_context
 from app.services.run_state import IdempotencyConflict
 from app.services.workflow_admission import create_document_workflow
 from app.services.workflow_dispatch import persist_dispatch
@@ -41,11 +41,14 @@ async def list_document_branches(context, document_id):
 
 
 async def _queue(conn, context, doc, *, key, objective, rule, source, restore=None, modification=None):
+    design = await revision_design_context(conn, context.tenant_id, doc['project_id'],
+        restore.source_revision_id if restore else doc['head_revision_id'])
     operation_context = OperationContextV1(rule=rule, source_channel='rest', requested_operation='modify',
         resolved_operation='modify', submission_modeling_backend='freecad', base_revision_id=doc['head_revision_id'],
-        base_source_kind='fcstd_artifact', base_source_id=UUID(source['artifact_id']), base_source_sha256=source['sha256'])
+        base_source_kind='fcstd_artifact', base_source_id=UUID(source['artifact_id']), base_source_sha256=source['sha256'],
+        requirement_basis=design['requirement_basis'])
     payload = mcad_agent_v2_request_payload(branch_id=doc['id'],expected_base_revision_id=doc['head_revision_id'],
-        operation='modify',objective=objective,existing_code=None,manufacturing_profile=None,output_formats=('step','stl'),
+        operation='modify',objective=objective,existing_code=None,manufacturing_profile=design['manufacturing_profile'],output_formats=('step','stl'),
         confirmation_timeout_seconds=3600,modeling_backend='freecad',operation_context=operation_context,
         structured_modification=modification,revision_restore=restore,expected_state_version=doc['state_version'])
     created = await create_document_workflow(conn,tenant_id=context.tenant_id,project_id=doc['project_id'],
@@ -54,7 +57,7 @@ async def _queue(conn, context, doc, *, key, objective, rule, source, restore=No
         project_id=doc['project_id'],principal_id=context.principal_id,branch_id=doc['id'],
         expected_base_revision_id=doc['head_revision_id'],expected_state_version=doc['state_version'],document_queue=True,
         operation='modify',objective=objective,modeling_backend='freecad',operation_context=operation_context,
-        structured_modification=modification,revision_restore=restore)
+        structured_modification=modification,revision_restore=restore,manufacturing_profile=design['manufacturing_profile'])
     dispatch = await persist_dispatch(conn,tenant_id=context.tenant_id,principal_id=context.principal_id,
         workflow_id=created.workflow_id,workflow_type='McadAgentWorkflowV2',temporal_id=temporal_agent_v2_workflow_id(created.workflow_id),
         task_queue=settings.temporal_agent_v2_task_queue,payload=request.temporal_payload())

@@ -41,15 +41,16 @@ async def generate(provider, state=None):
 
 @pytest.mark.asyncio
 async def test_discover_describe_and_dispatch_actual_api_operation_contract():
-    plan = {"operations": [
-        {"op_id": "api", "action": "api.execute", "args": {"source": "document.addObject('Part::Box', 'Box')"}},
-        {"op_id": "export", "action": "document.export", "args": {"objects": ["Box"], "formats": ["fcstd", "step", "stl"]}}]}
+    program = {
+        "execute": {"op_id": "api", "args": {"source": "document.addObject('Part::Box', 'Box')"}},
+        "export": {"op_id": "export", "args": {"objects": ["Box"], "formats": ["fcstd", "step", "stl"]}}}
     provider = ProviderTurns(
         [call("freecad_discover", {"module": "Part", "symbol": "makeHelix"}, "discover")],
         [call("freecad_describe_operation", {"action": "api.execute"}, "describe")],
-        [call("freecad_execute", plan, "build")])
+        [call("freecad_execute_api", program, "build")])
     result = await generate(provider)
     assert result.provenance["execution_tool_call"]["id"] == "build"
+    assert result.provenance["execution_tool_call"]["function"]["name"] == "freecad_execute_api"
     assert "tool_result" not in result.provenance  # Dispatch is not execution.
     assert result.operation_plan.operations[0].action == "api.execute"
     messages = provider.requests[-1]["messages"]

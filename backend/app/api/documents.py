@@ -8,7 +8,7 @@ import logging
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, UploadFile, File, Form
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 from sqlalchemy import text
@@ -49,6 +49,34 @@ from app.models.document_requests import OperationRequest
 from app.services.document_operations import submit_document_operation
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+
+
+@router.post('/imports', status_code=202)
+async def upload_native_document(file: UploadFile = File(...), session_id: str = Form(...),
+        panel_id: str = Form(...), idempotency_key: str = Form(...), manufacturing_profile: str | None = Form(None),
+        principal: PrincipalContext = Depends(get_durable_principal)):
+    from app.services.document_imports import import_document
+    payload = await file.read(64*1024*1024+1)
+    try:
+        profile = json.loads(manufacturing_profile) if manufacturing_profile else None
+        return await import_document(principal,session_id=session_id,panel_id=panel_id,filename=file.filename or '',
+            payload=payload,idempotency_key=idempotency_key,manufacturing_profile=profile)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except DocumentConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except (ValueError, IdempotencyConflict) as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.get('/imports/receipt')
+async def import_receipt(session_id: str, panel_id: str, idempotency_key: str,
+        principal: PrincipalContext = Depends(get_durable_principal)):
+    from app.services.durable_submission import recover_session_submission
+    result = await recover_session_submission(principal,session_id=session_id,panel_id=panel_id,idempotency_key=idempotency_key)
+    if result is None:
+        raise HTTPException(404, '原导入请求未受理')
+    return result
 
 
 class FeatureAnnotationRequest(BaseModel):

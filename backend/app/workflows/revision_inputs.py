@@ -41,7 +41,8 @@ async def _freecad_revision_artifact(request: McadAgentWorkflowV2Request, artifa
             project_id=request.project_id,
             revision_id=(
                 request.revision_restore.source_revision_id
-                if request.revision_restore else request.expected_base_revision_id
+                if request.revision_restore else request.operation_context.source_candidate_revision_id
+                if request.operation_context and request.operation_context.source_candidate_revision_id else request.expected_base_revision_id
             ),
             artifact_kind=artifact_kind,
         )
@@ -59,6 +60,10 @@ async def _freecad_revision_artifact(request: McadAgentWorkflowV2Request, artifa
             "historical FCStd artifact identity differs from the accepted restore request",
             type="revision_restore_source_changed", non_retryable=True,
         )
+    context = request.operation_context
+    if context and context.source_candidate_revision_id and artifact_kind == "fcstd" and (
+            artifact['id'] != context.base_source_id or artifact['sha256'] != context.base_source_sha256):
+        raise ValueError('候选检查点完整性身份不匹配')
     return artifact
 
 
@@ -91,12 +96,15 @@ async def _freecad_revision_state(request: McadAgentWorkflowV2Request) -> dict[s
             type="agent_freecad_base_state_invalid",
             non_retryable=True,
         )
+    source_revision = (request.revision_restore.source_revision_id if request.revision_restore else
+                       request.operation_context.source_candidate_revision_id if request.operation_context and request.operation_context.source_candidate_revision_id else
+                       request.expected_base_revision_id)
     # Freeze user-authored meaning at submission time; retries must not read
     # a later collaborator's annotation into an already accepted operation.
     async with tenant_transaction(request.tenant_id, request.principal_id) as conn:
         from app.services.revision_validation import revision_dfm_summary
-        state = {**state, "revision_id": str(request.expected_base_revision_id),
-                 "dfm_summary": await revision_dfm_summary(conn, request.branch_id, request.expected_base_revision_id)}
+        state = {**state, "revision_id": str(source_revision),
+                 "dfm_summary": await revision_dfm_summary(conn, request.branch_id, source_revision)}
         annotations = await conn.scalar(text("SELECT arguments->'_feature_annotations' FROM cad_operations WHERE id=:id"),
                                         {"id": request.workflow_run_id})
         references = await conn.scalar(text("SELECT arguments->'_engineering_evidence' FROM cad_operations WHERE id=:id"),
@@ -107,12 +115,13 @@ async def _freecad_revision_state(request: McadAgentWorkflowV2Request) -> dict[s
             if not selection or selection.get("parameter_state_sha256") != str(artifact["sha256"]):
                 raise ValueError("冻结的选择与原生检查点不一致")
             state = {**state, "selection_context": selection}
-        if references:
+        if references and source_revision == request.expected_base_revision_id:
             from app.services.engineering_evidence import verified_engineering_context
             state = {**state, 'engineering_evidence': await verified_engineering_context(conn, references,
                 request.branch_id, request.expected_base_revision_id)}
     if annotations:
-        state = {**state, "feature_annotations": annotations}
+        known_names = {obj.get('name') for obj in state.get('objects', [])}
+        state = {**state, "feature_annotations": [item for item in annotations if item.get('kernel_name') in known_names]}
     from app.freecad.reference_geometry import normalize_reference_state
     return normalize_reference_state(state)
 

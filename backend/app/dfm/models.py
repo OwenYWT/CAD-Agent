@@ -1,6 +1,22 @@
 """DFM rule data models and STEP analysis result types."""
 
+import math
 from pydantic import BaseModel
+
+
+def rule_process(process: str | None) -> str | None:
+    if process is None:
+        return None
+    value = process.strip()
+    return {'cnc':'CNC','fdm':'FDM','sla':'SLA','laser_cut':'sheet_metal'}.get(value.lower(), value)
+
+
+def validate_rule_thresholds(rule: dict) -> None:
+    minimum, maximum = rule.get('threshold_min'), rule.get('threshold_max')
+    if any(value is not None and not math.isfinite(float(value)) for value in (minimum, maximum)):
+        raise ValueError('规则阈值必须是有限数值')
+    if minimum is not None and maximum is not None and minimum > maximum:
+        raise ValueError('规则最小阈值不能大于最大阈值')
 
 
 class DFMRule(BaseModel):

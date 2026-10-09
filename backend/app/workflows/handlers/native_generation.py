@@ -23,7 +23,8 @@ from app.workflows.validation_support import _record_freecad_inspections, record
 from app.workflows.revision_inputs import _revision_restore_operation_plan
 from app.workflows.errors import planning_error
 from app.workflows.checkpoint_inputs import checkpoint_context, checkpoint_manifest, checkpoint_artifact
-from app.workflows.constraint_evidence import load_failure_snapshot, load_repair_contract
+from app.workflows.constraint_evidence import load_failure_snapshot, load_repair_contract, load_profile_contract
+import app.freecad.profile_replan as profile_replan
 from app.freecad.constraint_patch import carry_contract, progress_fingerprint
 from app.freecad.constraint_repair import SKETCH_FAILURES
 
@@ -92,7 +93,19 @@ async def agent_generate_operations(payload: dict[str, Any], *, freecad_operatio
             kind="agent_freecad_operations",
         )
     try:
-        if request.revision_restore is not None:
+        if request.operation_context and request.operation_context.native_import:
+            source = request.operation_context.native_import
+            operation_plan = FreeCADOperationPlan.model_validate({'schema_version':'freecad-operation-plan.v1',
+                'document_name':'ImportedModel', 'operations':[
+                    {'op_id':f'import-inspect-{source.artifact_id.hex}', 'action':'document.inspect', 'args':{}},
+                    {'op_id':f'import-export-{source.artifact_id.hex}', 'action':'document.export',
+                     'args':{'formats':list(dict.fromkeys(('fcstd', *request.output_formats))), 'basename':'model'}}]})
+            source_code = operation_plan.model_dump_json()
+            generator_kind = 'native-file-import-v1'
+            provenance = {'provider':'cad-agent','model':generator_kind,'provider_response_id':None,
+                'request_hash':canonical_sha256(source.model_dump(mode='json')),
+                'response_hash':hashlib.sha256(source_code.encode()).hexdigest(),'finish_reason':'deterministic','usage':{}}
+        elif request.revision_restore is not None:
             operation_plan = _revision_restore_operation_plan(request)
             source_code = operation_plan.model_dump_json()
             generator_kind = "native-revision-restore-v1"
@@ -159,6 +172,12 @@ async def agent_generate_operations(payload: dict[str, Any], *, freecad_operatio
                 provenance = {**provenance, 'constraint_repair': carry_contract(retained,
                     FreeCADOperationPlan.model_validate_json(source_code), checkpoint_artifact(checkpoint, 'fcstd')['sha256'])}
                 generator_kind += ':constraint_patch_continuation'
+            retained_profile = await load_profile_contract(request, source_id=feedback['source_id'], source_hash=feedback['source_hash'])
+            if retained_profile:
+                checkpoint = await checkpoint_manifest(request, candidate_build_id, payload['checkpoint_manifest_id'])
+                provenance = {**provenance, 'profile_replan': profile_replan.carry_contract(retained_profile,
+                    FreeCADOperationPlan.model_validate_json(source_code), checkpoint_artifact(checkpoint, 'fcstd')['sha256'])}
+                generator_kind += ':profile_replan_continuation'
         async with tenant_transaction(
             request.tenant_id,
             request.principal_id,
@@ -214,6 +233,9 @@ async def agent_generate_operations(payload: dict[str, Any], *, freecad_operatio
 
 async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations: FreeCADOperationGenerator) -> dict[str, Any]:
     request = _agent_v2_request(payload)
+    if request.operation_context and request.operation_context.native_import:
+        raise ApplicationError('导入文件未通过真实几何检查，请在原 CAD 中修正后重新导入。',
+            type='native_import_repair_forbidden', non_retryable=True)
     if request.revision_restore is not None:
         raise ApplicationError(
             "historical revision restoration cannot rewrite model operations",
@@ -253,6 +275,18 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
         source_hash=str(payload['source_hash']), failure=failure)
     prior_contract = await load_repair_contract(request, source_id=source_id,
         source_hash=str(payload['source_hash']))
+    prior_profile = await load_profile_contract(request, source_id=source_id, source_hash=str(payload['source_hash']))
+    profile_context = None
+    if failure['error_code'] == profile_replan.PROFILE_ERROR and payload.get('profile_replanning_v1'):
+        signature = profile_replan.progress_fingerprint(diagnostic['snapshot']) if diagnostic else ''
+        used = int(payload.get('profile_repair_index', repair_index)) - 1
+        decision = RepairDecision(bool(diagnostic) and used < settings.profile_replan_max_attempts
+            and signature not in (payload.get('seen_signatures') or ()), 'profile_geometry', 'profile_replan',
+            settings.profile_replan_max_attempts, signature,
+            'verified profile diagnostic is missing' if not diagnostic else
+            'profile replan attempt budget exhausted' if used >= settings.profile_replan_max_attempts else
+            'profile replan made no physical progress' if signature in (payload.get('seen_signatures') or ()) else
+            'verified profile topology replan')
     if failure['error_code'] in SKETCH_FAILURES and diagnostic is None:
         raise ApplicationError('缺少可核验的失败草图现场，不能安全地修改约束。原始建模错误：'
             + str(failure.get('error_message') or '')[:2500],
@@ -271,11 +305,12 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
             'constraint repair attempt budget exhausted' if exhausted else 'verified local constraint repair')
     if not decision.repairable:
         raise ApplicationError(
-            decision.reason,
+            decision.reason + '. Original modeling failure: ' + str(failure.get('error_message') or '')[:2500],
             {
                 "failure_class": decision.failure_class,
                 "strategy": decision.strategy,
                 "signature": decision.signature,
+                "original_error_code": failure['error_code'],
             },
             type="agent_freecad_repair_not_allowed",
             non_retryable=True,
@@ -346,6 +381,12 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
         if payload.get('checkpoint_manifest_id'):
             base_state, _ = await checkpoint_context(request, candidate_build_id,
                 payload['checkpoint_manifest_id'], base_state)
+        if decision.strategy == 'profile_replan':
+            profile_context = profile_replan.build_context(
+                FreeCADOperationPlan.model_validate_json(str(source['source_code'])), diagnostic['snapshot'],
+                failure, base_state, prior_contract)
+            if prior_profile and prior_profile['sketch'] != profile_context['sketch']:
+                raise profile_replan.rejected('another replanned sketch has outstanding verification obligations')
         repaired = await _await_provider_operation(freecad_operations.repair(
             source_code=str(source["source_code"]),
             failure=failure,
@@ -357,13 +398,17 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
             output_formats=request.output_formats,
             rejection_sink=rejection_sink,
             **({'diagnostic': diagnostic['snapshot'], 'prior_contract': prior_contract} if diagnostic else {}),
+            **({'profile_context': profile_context} if profile_context else {}),
         ))
         provenance = repaired.provenance
         if prior_contract and not provenance.get('constraint_repair'):
             # Geometry/visual repairs after a constraint repair inherit its frozen
             # requirements. They cannot silently discard earlier proof obligations.
             provenance = {**provenance, 'constraint_repair': carry_contract(prior_contract,
-                repaired.operation_plan, prior_contract.get('execution_checkpoint_hash', prior_contract['checkpoint_hash']))}
+                    repaired.operation_plan, prior_contract.get('execution_checkpoint_hash', prior_contract['checkpoint_hash']))}
+        if prior_profile and not provenance.get('profile_replan'):
+            provenance = {**provenance, 'profile_replan': profile_replan.carry_contract(prior_profile,
+                repaired.operation_plan, prior_profile['execution_checkpoint_hash'])}
         async with tenant_transaction(
             request.tenant_id,
             request.principal_id,
@@ -376,7 +421,8 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
                 step_id=step_id,
                 predecessor_source_id=source_id,
                 source_code=repaired.source_code,
-                generator_kind=f"repair:{decision.failure_class}:" + ('constraint_patch' if provenance.get('constraint_repair') else 'freecad_operations'),
+                generator_kind=f"repair:{decision.failure_class}:" + ('constraint_patch' if provenance.get('constraint_repair') else 'freecad_operations')
+                    + (':profile_replan' if provenance.get('profile_replan') else ''),
                 provider=str(provenance["provider"]),
                 model=str(provenance["model"]),
                 provider_response_id=(
@@ -425,6 +471,11 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
         }
     except Exception as exc:
         error = planning_error(exc)
+        if failure['error_code'] == profile_replan.PROFILE_ERROR:
+            error = ApplicationError('原始轮廓错误：' + str(failure.get('error_message') or '')[:1800]
+                + '\n几何重规划失败：' + str(error)[:1800],
+                {'original_error_code': failure['error_code'], 'operation_id': failure.get('operation_id')},
+                type=error.type or 'profile_replan_failed', non_retryable=True)
         await _fail_agent_logical_step(
             tenant_id=request.tenant_id,
             principal_id=request.principal_id,

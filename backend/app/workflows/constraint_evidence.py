@@ -54,6 +54,8 @@ async def persist_failure_snapshot(request, payload, attempt_id, error, operatio
                         {'sha256': sha256, 'valid_checkpoint': False})
         details.update(constraint_diagnostic_sha256=sha256, constraint_diagnostic_attempt_id=str(attempt_id),
                        constraint_repair_max_attempts=settings.constraint_repair_max_attempts)
+        if error.code == 'profile_geometry_invalid':
+            details['profile_replan_max_attempts'] = settings.profile_replan_max_attempts
     except Exception as exc:
         logger.warning('Constraint diagnostic unavailable for attempt %s (%s)', attempt_id, type(exc).__name__)
         details['failure_snapshot_unavailable'] = type(exc).__name__
@@ -153,3 +155,56 @@ async def load_repair_contract(request, *, source_id, source_hash):
             or envelope['source_id'] != str(source_id) or envelope['source_hash'] != source_hash):
         raise ValueError('constraint repair proof ownership mismatch')
     return envelope['contract']
+
+
+async def persist_profile_contract(connection, request, *, source_id, source_hash, contract):
+    envelope = {'workflow_run_id': str(request.workflow_run_id), 'source_id': str(source_id),
+                'source_hash': source_hash, 'contract': contract}
+    raw = canonical(envelope).encode()
+    sha256 = hashlib.sha256(raw).hexdigest()
+    stored = await put_object(evidence_key(request, sha256), raw, content_type='application/json')
+    if stored['sha256'] != sha256:
+        raise ValueError('profile replan proof storage integrity failure')
+    await append_workflow_event(connection, tenant_id=request.tenant_id, workflow_id=request.workflow_run_id,
+        event_type='agent.freecad.profile_replan', payload={'source_id': str(source_id), 'source_hash': source_hash,
+            'sha256': sha256, 'acceptance_hash': contract['acceptance_hash'], 'sketch': contract['sketch']})
+
+
+async def load_profile_contract(request, *, source_id, source_hash):
+    async with tenant_transaction(request.tenant_id, request.principal_id) as conn:
+        source = (await conn.execute(text('''SELECT generator_kind,source_hash FROM agent_generated_sources
+            WHERE tenant_id=:tenant AND workflow_run_id=:workflow AND id=:source'''),
+            {'tenant': request.tenant_id, 'workflow': request.workflow_run_id, 'source': UUID(str(source_id))})).mappings().one_or_none()
+        if source is None or source['source_hash'] != source_hash:
+            raise ValueError('profile proof source is not owned by this task')
+        row = (await conn.execute(text('''SELECT payload FROM task_events WHERE tenant_id=:tenant
+            AND workflow_run_id=:workflow AND event_type='agent.freecad.profile_replan'
+            AND payload->>'source_id'=:source AND payload->>'source_hash'=:source_hash ORDER BY sequence DESC LIMIT 1'''),
+            {'tenant': request.tenant_id, 'workflow': request.workflow_run_id,
+             'source': str(source_id), 'source_hash': source_hash})).mappings().one_or_none()
+    if row is None:
+        if 'profile_replan' in source['generator_kind']:
+            raise ValueError('profile replan proof is missing; execution is forbidden')
+        return None
+    raw = await get_object(evidence_key(request, row['payload']['sha256']))
+    if hashlib.sha256(raw).hexdigest() != row['payload']['sha256']:
+        raise ValueError('profile replan proof integrity failure')
+    envelope = json.loads(raw)
+    if (envelope['workflow_run_id'] != str(request.workflow_run_id) or envelope['source_id'] != str(source_id)
+            or envelope['source_hash'] != source_hash):
+        raise ValueError('profile replan proof ownership mismatch')
+    return envelope['contract']
+
+
+async def persist_profile_verification(request, *, source_id, source_hash, attempt_id, report):
+    raw = canonical({'source_id': str(source_id), 'source_hash': source_hash,
+        'execution_attempt_id': str(attempt_id), 'report': report}).encode()
+    sha256 = hashlib.sha256(raw).hexdigest()
+    stored = await put_object(evidence_key(request, sha256), raw, content_type='application/json')
+    if stored['sha256'] != sha256:
+        raise ValueError('profile replan verification storage integrity failure')
+    async with tenant_transaction(request.tenant_id, request.principal_id) as conn:
+        await append_workflow_event(conn, tenant_id=request.tenant_id, workflow_id=request.workflow_run_id,
+            event_type='agent.freecad.profile_verified', payload={'source_id': str(source_id),
+                'source_hash': source_hash, 'execution_attempt_id': str(attempt_id), 'sha256': sha256,
+                'contract_hash': report['contract_hash'], 'parameter_probes': len(report['parameter_probes'])})

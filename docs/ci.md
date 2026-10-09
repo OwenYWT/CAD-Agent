@@ -84,6 +84,8 @@ Python／npm 缓存按锁文件失效；BuildKit 分镜像缓存，缓存写入�
 
 网关在每次请求前按最大上下文／输出及配置单价预留费用，核对模型、调用次数和每次运行上限；实际 usage 完整时才释放未用预留。月度 S3 账本用条件写入避免并发超支；中断、缺少 usage 或账本结算失败都保留预留。单价是管理员配置，不等于供应商账单。
 
+网关支持实际客户端使用的 SSE 流式响应，要求完整 usage 和终止标记后才结算。连接建立失败且请求尚未发送时可以释放费用预留，但该次尝试仍占请求名额；读取、写入、协议错误及无法确定是否已送达的请求保留费用预留。连接重试仅限建立连接阶段，不重放已发送的模型请求。
+
 当前固定 11 项 live 用例覆盖原有八个受排除的真实 provider 用例、原生自然语言生成与 L2 检查修改两项、有效冻结基线的真实约束修复一项。仍不等于自然语言建模整体成功率，也不证明制造条件。
 
 需要验证实际模型表现时，可手动运行评测，再下载该运行证据并验证：
@@ -95,10 +97,25 @@ python scripts/ci/require_live_evidence.py <解压后的证据目录> \
 
 该可选验证要求实际调用、11 项全部通过、费用与月度结算证据完整、来源匹配且在 24 小时内。它仅验证一次实际评测的证据；PR、定时任务与发布都不会自动要求或启动付费评测。普通 CI 使用离线预算测试和隔离 S3 条件写入验证费用控制流程，不能将这些流程验证描述为真实模型能力评测通过。
 
+### 单项 C10 需求修订验收
+
+`scripts/ci/requirement_revision_live.py` 是另一个明确授权后使用的单项入口，未接入自动运行。它要求隔离的 PostgreSQL、Temporal、对象存储、真实 FreeCAD 镜像、前端依赖及 Playwright；`CAD_CI_SCOPE` 必须以 `cad-ci-c10-` 开头，数据库名以 `cad_live_c10_` 开头。还需配置上面的模型、单价与费用变量、`MOONSHOT_API_KEY`、`SANDBOX_IMAGE`、`RUNNER_TEMP`，并显式设置 `CAD_C10_LIVE_AUTHORIZED=1`。
+
+```bash
+# 仅在获得本次付费授权并准备好隔离环境后执行。
+python scripts/ci/requirement_revision_live.py \
+  --report /private/path/c10-attempt-001 \
+  --ledger /private/path/c10-authorization.json
+```
+
+同一次授权的所有重试必须复用同一 ledger，报告目录必须全新。账本锁防止并发，发出请求前原子保存预留，退出重启仍累计请求和费用；不能通过新建账本、修改上限或删除旧记录续跑。此入口的账本只覆盖这一项授权，不代替上面 GitHub 全评测的月度 S3 账本。原生计划、验收标准和模型返回都来自真实产品流程；脚本仅通过用户界面确认需求和候选，并在最后重开 FCStd/STEP 独立测量。
+
+通过条件包括：9 mm 原版与 10 mm 修订版分别完成真实生成、必需几何验收、接受提交、刷新重开；新需求及验收版本匹配，原需求、事件、验收及文件字节不变；两个版本的尺寸、中心贯穿孔和单实体实测通过。只完成准入或原版生成不能计为 C10 通过。2026-10-07 的实际执行触及 8 次尝试上限，C10 尚未通过，详见本次 QA 记录。
+
 ## GitHub 主分支保护
 
 YAML 的汇总 job 不会自动启用保护。main 仍需设置：通过 PR 合并、必需状态检查 `Required regression gate`（限定 GitHub Actions）、合并前与最新 main 兼容、管理人员同样受规则约束且不保留日常绕过，并禁用强推和删除。
 
-GitHub Free 的公开仓库支持保护；私有个人仓库需要 GitHub Pro 等支持套餐。改为公开后仍须配置规则，同时会公开源码和历史。本轮没有改变仓库可见性或远端保护设置。[GitHub 官方说明](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)。
+GitHub Free 的公开仓库支持保护；私有个人仓库需要 GitHub Pro 等支持套餐。[GitHub 官方说明](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)。2026-10-07 经用户明确授权，仓库已公开并实际启用上述 main 保护，已从 GitHub API 回读确认。要求通过 PR 合并及通过绑定 GitHub Actions 的必需检查，审阅批准人数为 0；不把“要求 PR”描述为“要求另一位人员批准”。
 
-本轮验证范围和实际结果见 `docs/verification/ci-regression-20261003/implementation.md`。GitHub 合入前结果以对应提交的 `Required regression gate` 为准，本轮没有调用付费模型。
+CI 首次交付验证见 `docs/verification/ci-regression-20261003/implementation.md`；后续独立验收和 C10 执行见 `docs/qa/code-review/` 中对应日期的记录。GitHub 合入前结果以对应提交的 `Required regression gate` 为准。

@@ -22,6 +22,7 @@ import type {
   GenerationResult,
   ManufacturingProfile,
   WSMessage,
+  ConnectionState,
 } from "../types";
 import type { PanelState } from "../stores/sessionStore";
 import type { SelectionContext } from "../types/document";
@@ -31,7 +32,7 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 const BASE_RECONNECT_DELAY_MS = 1000;
 const PENDING_CHANGE_SET_MESSAGE = "当前有待审阅候选，请先应用或拒绝此候选，再基于已保存版本修改。";
 
-export type ConnectionState = "connecting" | "connected" | "reconnecting" | "disconnected";
+export type { ConnectionState } from '../types';
 
 export function durableIdentityPayload(panel: PanelState) {
   const durable = panel.durable || emptyDurableContext();
@@ -324,6 +325,7 @@ export function useWebSocket() {
     manufacturingProfile: ManufacturingProfile | null = null,
     selectionContext?: SelectionContext | null,
     requirementBasis?: RequirementBasis,
+    sourceCandidateRevisionId?: string,
   ) => {
     const ws = wsRef.current;
     if (ws?.readyState !== WebSocket.OPEN) return false;
@@ -338,7 +340,7 @@ export function useWebSocket() {
     const message = {
       type: "user_message",
       text,
-      operation_intent: operationIntentForPanel(panel),
+      operation_intent: sourceCandidateRevisionId ? "modify" : operationIntentForPanel(panel),
       capability,
       panel_id: panelId,
       workflow_run_id: panel?.durable?.workflowRunId || undefined,
@@ -347,6 +349,7 @@ export function useWebSocket() {
       idempotency_key: identity.idempotency_key || createId(),
       ...(selectionContext ? { selection_context: selectionContext } : {}),
       ...(requirementBasis ? { requirement_basis: requirementBasis } : {}),
+      ...(sourceCandidateRevisionId ? { source_candidate_revision_id: sourceCandidateRevisionId } : {}),
     };
     return sendSubmission(message);
   }, [sendSubmission, setError]);

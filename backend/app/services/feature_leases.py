@@ -33,7 +33,7 @@ def operation_targets(features,payload):
         return None
     native = modification.get('native_edits') or []
     if native:
-        if any(edit.get('action') != 'sketch.set_constraint' for edit in native):
+        if any(edit.get('action') not in {'sketch.set_constraint','sketch.patch_relations'} for edit in native):
             return None
         names = {(edit.get('args') or {}).get('sketch') for edit in native}
     else:

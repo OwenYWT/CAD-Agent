@@ -17,7 +17,7 @@ class FreeCADParameterUpdateV1(BaseModel):
 
 class FreeCADNativeEditV1(BaseModel):
     model_config = ConfigDict(extra='forbid', frozen=True)
-    action: Literal['assembly.instance', 'assembly.place', 'sketch.set_constraint']
+    action: Literal['assembly.instance', 'assembly.place', 'sketch.set_constraint', 'sketch.patch_relations']
     args: dict
 
     @model_validator(mode='after')

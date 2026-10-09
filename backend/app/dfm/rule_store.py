@@ -175,13 +175,19 @@ async def update_rule(rule_id: str, updates: dict) -> DFMRule | None:
     if not filtered:
         return None
 
-    sets = ", ".join(f"{k} = ?" for k in filtered)
-    values = list(filtered.values()) + [rule_id]
-    await db.execute(f"UPDATE rules SET {sets} WHERE id = ?", values)
-    await db.commit()
-
-    cursor = await db.execute("SELECT * FROM rules WHERE id = ?", (rule_id,))
-    row = await cursor.fetchone()
+    from app.dfm.models import validate_rule_thresholds
+    async with _lock:
+        cursor = await db.execute("SELECT * FROM rules WHERE id = ?", (rule_id,))
+        existing = await cursor.fetchone()
+        if existing is None:
+            return None
+        validate_rule_thresholds({**dict(existing), **filtered})
+        sets = ", ".join(f"{k} = ?" for k in filtered)
+        values = list(filtered.values()) + [rule_id]
+        await db.execute(f"UPDATE rules SET {sets} WHERE id = ?", values)
+        await db.commit()
+        cursor = await db.execute("SELECT * FROM rules WHERE id = ?", (rule_id,))
+        row = await cursor.fetchone()
     return _row_to_rule(row) if row else None
 
 

@@ -90,6 +90,18 @@ CAD Skills 是否与源码 manifest 一致。它不加载应用凭据，也不�
 
 ## 回退与资源边界
 
+切换应用镜像前先暂停写入入口，保留当前 worker 处理已受理任务，并使用目标镜像检查实际持久派发载荷，并重放这些任务的真实 Temporal 历史：
+
+```bash
+python3 deploy/tencent/check-inflight.py --source-container <当前后端容器> --target-image <目标后端镜像摘要>
+```
+
+该命令只读，不修改任务或部署；必须具备检查所有租户任务的数据库身份，受 RLS 限制而看不到完整集合时直接失败。退出码 2 表示存在不兼容请求、未结束的 Model Job 或仍在规划／执行的工作流：保留当前版本，完成这些任务后重查，不要将新请求交给旧 worker。检查通过表示已读取的请求和历史可由目标版本处理，不能代替同一旧、新镜像对的后续真实 CAD 演练；恢复写入前还须验证模型、报告、鉴权、监控和存储。只有请求和真实历史均兼容且等待用户确认的工作流可以跨版本继续；规划／执行中的任务必须先完成，避免检查之后又创建 Model Job。切换期间保持写入暂停并结束已进入 API 的写请求；在最终检查前停止同一队列的所有旧 worker，避免已确认的信号在检查后创建 Model Job。最终检查不通过时启动原容器继续处理，不能按指向新版的 Compose 默认值启动另一镜像。检查通过后切换应用、核验并恢复写入。
+
+固定发布基线 `df8fdbb` 无法重放含新版 `agent-v2-native-source-solid-count-v1` patch 的历史，必须保留新版处理完已受理任务再回退。旧版不支持新版的 `rule_configuration`，不能接手尚未完成的冻结 DFM 检查。已完成报告在旧 API 中可能不显示这项新增元数据，但原始报告哈希必须保持不变，恢复新版后必须能读取完整配置。不要降级数据库或覆盖既有 `.env`、`backend.env`、`monitor.env` 来消除不兼容。
+
+统一 `bash scripts/ci/run.sh deploy` 必须执行 `scripts/ci/release_image_contract.py`，在独立测试 Compose 中保留同一数据库、Temporal、对象存储和卷切换应用镜像。默认从固定提交 `df8fdbb84f34164d9ad18e9101f881de4f0fa17a` 自动构建旧版，只有运行时构建输入完全一致时复用已验证依赖层，并清空再复制全部应用源码；依赖变化时使用该提交的原 Dockerfile 构建。也可明确提供一整组 `CAD_CI_BASELINE_BACKEND_IMAGE`、`CAD_CI_BASELINE_FRONTEND_IMAGE` 和 `CAD_CI_BASELINE_SANDBOX_IMAGE` 检查其他版本对。报告记录实际镜像 ID、同一在途任务、执行中拒绝切换、新候选审查提交、原生体积、历史不变和不兼容回退拒绝。Required regression gate 要求镜像演练报告，缺失或失败不能通过。
+
 原发布保留在 `/www/releases/0209a4b-20260822-2345`，原站持续提供服务。
 2026-09-10 的旧库与配置备份仍保留。2026-09-13 切换前的联合备份位于
 `/www/backups/cad-20260913-task-state-7d1dd5e`，仅 root 可读；包含 PostgreSQL、Temporal、MinIO 和 cad_data。

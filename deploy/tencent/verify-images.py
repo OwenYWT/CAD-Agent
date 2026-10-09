@@ -57,6 +57,7 @@ def main():
                            ("sketch_diagnostics.py", "freecad_sketch_diagnostics.py"),
                            ("failure_snapshot.py", "freecad_failure_snapshot.py"),
                            ("constraint_relationships.py", "freecad_constraint_relationships.py"),
+                           ("sketch_relations.py", "freecad_sketch_relations.py"),
                            ("reference_geometry.py", "freecad_reference_geometry.py"),
                            ("topology.py", "freecad_topology.py"),
                            ("capabilities.json", "freecad-capabilities.json")):

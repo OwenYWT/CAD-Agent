@@ -29,7 +29,7 @@ test("Q07 native gate summaries do not fabricate a non-watertight mesh", () => {
   const checks = adaptValidation(result);
   assert.equal(checks.some((check) => check.id === "mesh-watertight"), false);
   assert.equal(checks.find((check) => check.id === "gate-geometry")?.status, "pass");
-  assert.equal(checks.find((check) => check.id === "gate-visual")?.status, "warning");
+  assert.equal(checks.find((check) => check.id === "gate-visual")?.status, "unknown");
   assert.equal(checks.find((check) => check.id === "gate-dfm")?.status, "fail");
 });
 

@@ -285,6 +285,12 @@ def compile_parameter_operation_plan(
                 raise ParameterStateError('sketch_constraint_unavailable', '当前检查点没有此草图约束的完整记录')
             if constraint['type'] != args['expected_type'] or constraint.get('driving') is False:
                 raise ParameterStateError('sketch_constraint_invalid', '约束类型已变化，或此约束仅用于测量')
+        elif action == 'sketch.patch_relations':
+            from app.freecad.sketch_relations import relation_certificate
+            try:
+                relation_certificate(objects.get(args['sketch'],{}),args,list(objects.values()))
+            except ValueError as exc:
+                raise ParameterStateError('sketch_relation_protected',str(exc)) from exc
         else:
             raise ParameterStateError('native_edit_invalid', '此结构化操作尚未开放')
         operations.append({'op_id':f'native-edit-{index}', 'action':action, 'args':args})

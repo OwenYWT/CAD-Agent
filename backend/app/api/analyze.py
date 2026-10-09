@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.api.auth import verify_api_key
+from app.api.auth import get_durable_principal, verify_api_key
 from app.config import settings
 from app.db import tenant_transaction
 from app.execution.canonical import canonical_sha256
@@ -78,7 +78,22 @@ async def _run_durable_check(
         await _durable_source(request_id)
     )
     principal = current_principal()
-    body_payload = body.model_dump(mode="json")
+    from app.services.engineering_checks import authorize_check_source
+    await authorize_check_source(principal, source_workflow_id)
+    if body.source_revision_id and body.source_revision_id != str(source_revision_id):
+        raise HTTPException(409, "当前检查模型的版本已变化")
+    async with tenant_transaction(principal.tenant_id, principal.principal_id) as connection:
+        source_payload = await connection.scalar(text("""
+            SELECT request_payload FROM workflow_runs
+            WHERE tenant_id=:tenant AND id=:workflow
+        """), {"tenant": principal.tenant_id, "workflow": source_workflow_id})
+    profile = (source_payload or {}).get("manufacturing_profile") or {}
+    process = body.process or profile.get("process")
+    material = body.material or profile.get("material")
+    if not process:
+        raise HTTPException(422, "此版本未记录制造工艺，请明确选择检查工艺")
+    body_payload = body.model_dump(mode="json", exclude={"idempotency_key", "asynchronous"})
+    body_payload.update(process=process, material=material)
     workflow_run_id, handle = await start_mcad_check_workflow(
         tenant_id=principal.tenant_id,
         project_id=project_id,
@@ -86,20 +101,21 @@ async def _run_durable_check(
         source_workflow_run_id=source_workflow_id,
         source_revision_id=source_revision_id,
         idempotency_key=(
-            f"check:{source_workflow_id}:"
-            f"{canonical_sha256(body_payload)}"
+            f"check-v2:{principal.principal_id}:{source_workflow_id}:"
+            f"{body.idempotency_key or canonical_sha256(body_payload)}"
         ),
+        configuration_scoped_idempotency=body.idempotency_key is None,
         code=body.code,
         description=body.description,
-        process=body.process,
-        material=body.material,
+        process=process,
+        material=material,
         timeout_seconds=min(
             3600,
             max(1, int(settings.sandbox_timeout_s * 2)),
         ),
     )
     response.headers["X-Workflow-Run-ID"] = str(workflow_run_id)
-    if handle is None:
+    if handle is None or body.asynchronous:
         return JSONResponse(status_code=202,
             headers={"X-Workflow-Run-ID": str(workflow_run_id)},
             content={"workflow_run_id": str(workflow_run_id), "task_status": "pending",
@@ -109,14 +125,11 @@ async def _run_durable_check(
             handle.result(),
             timeout=settings.generate_deadline_s,
         )
-    except TimeoutError as exc:
-        raise HTTPException(
-            status_code=504,
-            detail=(
-                "工程检查仍在后台运行，可通过 X-Workflow-Run-ID "
-                "查询持久任务状态。"
-            ),
-        ) from exc
+    except TimeoutError:
+        return JSONResponse(status_code=202,
+            headers={"X-Workflow-Run-ID": str(workflow_run_id)},
+            content={"workflow_run_id": str(workflow_run_id), "task_status": "pending",
+                     "message": "工程检查仍在后台运行。"})
     except Exception as exc:
         logger.error(
             "Durable analysis failed for %s (workflow %s): %s",
@@ -130,7 +143,11 @@ async def _run_durable_check(
             detail="工程检查失败，请通过任务状态查看错误并重试。",
         ) from exc
     try:
-        return DesignAnalysisResponse.model_validate(result["analysis"])
+        analysis = DesignAnalysisResponse.model_validate(result["analysis"])
+        analysis.source_revision_id = str(source_revision_id)
+        analysis.process = process
+        analysis.material = material
+        return analysis
     except (KeyError, TypeError, ValueError) as exc:
         logger.error(
             "Durable analysis returned an invalid projection for workflow %s",
@@ -193,5 +210,22 @@ async def analyze_design(
     if not await request_belongs_to(request_id, credential):
         raise HTTPException(404, "Request ID not found")
     if settings.durable_control_plane_enabled:
-        return await _run_durable_check(request_id, body, response)
+        from app.services.run_state import IdempotencyConflict
+        try:
+            return await _run_durable_check(request_id, body, response)
+        except IdempotencyConflict as exc:
+            raise HTTPException(409, "检查请求标识已用于不同的输入") from exc
     return await _run_legacy_check(request_id, body)
+
+
+@router.get("/analyze/tasks/{workflow_run_id}")
+async def engineering_check_result(workflow_run_id: UUID, principal=Depends(get_durable_principal)):
+    from app.services.engineering_checks import read_engineering_check
+    try:
+        return await read_engineering_check(principal, workflow_run_id)
+    except KeyError as exc:
+        raise HTTPException(404, "未找到检查任务") from exc
+    except PermissionError as exc:
+        raise HTTPException(403, "无权读取该检查任务") from exc
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, str(exc)) from exc

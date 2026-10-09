@@ -297,9 +297,10 @@ async def test_dfm_analyzer_is_llm_free(tmp_path, monkeypatch):
     analyzer = DFMAnalyzer()
     result = await analyzer.analyze(stl, process="CNC")
 
-    # design_score is a real int in [0, 100]
-    assert isinstance(result.design_score, int)
-    assert 0 <= result.design_score <= 100
+    # STL cannot supply every CNC B-rep measurement; missing checks stay explicit.
+    assert result.design_score is None
+    assert result.evaluation_status == "indeterminate"
+    assert any(check["status"] == "indeterminate" for check in result.evaluated_rules)
     # rule_violations present (list of dicts) — at minimum CNC heuristic advisories fire
     assert isinstance(result.rule_violations, list)
     assert result.rule_violations, "expected at least advisory rule violations"
@@ -336,7 +337,9 @@ async def test_dfm_analyzer_thin_part_scores_lower(tmp_path, monkeypatch):
     thin_res = await analyzer.analyze(thin, process="FDM")
     ok_res = await analyzer.analyze(printable, process="FDM")
 
-    assert thin_res.design_score <= ok_res.design_score
+    assert thin_res.design_score is None and ok_res.design_score is None
+    assert thin_res.evaluation_status == "failed"
+    assert any(check["status"] == "indeterminate" for check in ok_res.evaluated_rules)
     # the thin part must surface a geometric wall-thickness violation
     cats = {v["category"] for v in thin_res.rule_violations if v["source"] == "geometric"}
     assert "wall_thickness" in cats

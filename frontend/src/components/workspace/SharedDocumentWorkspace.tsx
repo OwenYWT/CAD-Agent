@@ -19,12 +19,12 @@ function SharedView({ id }: { id: string }) {
   };
   return <main className="flex h-[100dvh] flex-col bg-white text-[var(--ink)]">
     <header className="workspace-header"><strong>{cloud.document?.can_edit ? "协作编辑" : "共享审阅"} · 已提交版本</strong><a className="workspace-button ml-auto" href="/">返回个人工作区</a></header>
-    <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto md:grid-cols-[1fr_360px] md:overflow-hidden">
-      <div className="relative min-h-[360px]"><Suspense fallback={<p role="status">正在加载模型…</p>}>
+    <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-auto md:grid-cols-[minmax(0,1fr)_360px] md:overflow-hidden">
+      <div className="relative min-h-[360px] min-w-0 overflow-hidden"><Suspense fallback={<p role="status">正在加载模型…</p>}>
         {cloud.document?.fcstd ? <DocumentSceneViewer key={id} documentId={id} revisionId={cloud.document.head_revision_id} selectedId={cloud.selectedId} onSelect={cloud.select} />
           : <Viewer3D stlUrl={cloud.document?.mesh?.url || null} />}
       </Suspense></div>
-      <aside className="overflow-y-auto border-l border-[var(--line)]">
+      <aside className="min-h-0 min-w-0 overflow-y-auto border-l border-[var(--line)]">
         {taskId && cloud.document?.can_edit ? <DocumentTaskPanel key={taskId} taskId={taskId} onReview={setReviewId} /> : null}
         <CloudDocumentPanel connection={cloud} onSubmitted={cloud.document?.can_edit ? selectTask : undefined}
           onReview={cloud.document?.can_edit ? setReviewId : undefined} onTask={cloud.document?.can_edit ? selectTask : undefined} />

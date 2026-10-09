@@ -17,6 +17,12 @@ from app.workflows.revision_inputs import _freecad_revision_artifact
 from app.workflows.revision_inputs import _freecad_revision_state
 from app.workflows.errors import planning_error
 
+def requirements_objective(request) -> str:
+    """The same frozen user inputs reach new-design and modification planning."""
+    basis = request.operation_context.requirement_basis if request.operation_context else None
+    return request.objective + ('\n\n' + basis.planning_context() if basis else '')
+
+
 async def agent_requirements(payload: dict[str, Any], *, durable_planner: DurableAgentPlanner) -> dict[str, Any]:
     request = _agent_v2_request(payload)
     tenant_id = request.tenant_id
@@ -43,17 +49,21 @@ async def agent_requirements(payload: dict[str, Any], *, durable_planner: Durabl
         )
     try:
         base_state: dict[str, Any] | None = None
-        if request.revision_restore is not None:
+        if request.operation_context and request.operation_context.native_import:
+            source = request.operation_context.native_import
+            requirements = CADPlan(description=f'导入 {source.filename}', part_type='custom', dimensions={}, features=[],
+                manufacturing_profile=request.manufacturing_profile,
+                design_brief={'intent_summary':f'导入 {source.filename}', 'artifact_type':'custom',
+                    'acceptance_criteria':['文件可打开，实体有效且可重算；产生原生检查点与可审核候选'],
+                    'functional_requirements':['FCStd 保留原生特征历史；STEP 保留实体边界，不恢复原始建模历史']})
+        elif request.revision_restore is not None:
             requirements = ModificationPlan(
                 description=f"从历史 FCStd 恢复版本 {request.revision_restore.source_revision_id}",
                 modification_type="revision_restore",
             )
         elif request.operation == "generate":
             requirements = await durable_planner.requirements_generation(
-                request.objective + (
-                    "\n\n" + request.operation_context.requirement_basis.planning_context()
-                    if request.operation_context and request.operation_context.requirement_basis else ""
-                ),
+                requirements_objective(request),
                 **({"require_acceptance": True} if payload.get("engineering_acceptance_v1") else {}),
             )
         else:
@@ -119,7 +129,7 @@ async def agent_requirements(payload: dict[str, Any], *, durable_planner: Durabl
                 model_context = request.existing_code or ""
             requirements = await durable_planner.requirements_modification(
                 model_context,
-                request.objective,
+                requirements_objective(request),
                 **({'require_acceptance':True} if payload.get('engineering_acceptance_v1') and request.modeling_backend=='freecad' else {}),
             )
         acceptance = (requirements.design_brief.acceptance
@@ -231,7 +241,14 @@ async def agent_plan(payload: dict[str, Any], *, durable_planner: DurableAgentPl
             )
         if payload.get("validation_repair_v2"):
             plan = enforce_design_validation(plan, autonomous=(
-                request.structured_modification is None and request.revision_restore is None))
+                request.structured_modification is None and request.revision_restore is None
+                and not (request.operation_context and request.operation_context.native_import)))
+        if request.operation_context and request.operation_context.native_import:
+            imported_plan = plan.temporal_payload()
+            imported_plan['confirmation_policy'] = 'none'
+            for gate in imported_plan['validation_policy'].values():
+                gate['repair_budget'] = 0
+            plan = AgentPlan.model_validate(imported_plan)
         if request.revision_restore is not None:
             restored_plan = plan.temporal_payload()
             # Restoration must fail on invalid history, never redesign it.

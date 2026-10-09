@@ -99,12 +99,13 @@ export function adaptValidation(result: GenerationResult | null, analysis?: Desi
       id: `gate-${gate.gate}`,
       domain: gate.gate === "dfm" ? "DFM" : gate.gate === "bom" ? "装配" : "几何",
       title: `${names[gate.gate] || gate.gate}（${gate.mode === "required" ? "必需" : "参考"}）`,
-      status: gate.outcome === "passed" ? "pass" : gate.outcome === "failed" ? "fail" : "warning",
+      status: gate.outcome === "passed" ? "pass" : gate.outcome === "failed" ? "fail" : "unknown",
+      outcome:gate.outcome,evidenceId:gate.evidence_id,revisionId:result?.revision_id,
       description: [outcomes[gate.outcome] || "尚无确定结果", ...(gate.issues || [])].join("；"),
       object: "当前模型",
     });
   }
-  analysis?.dfm_issues.forEach((issue, index) => checks.push({
+  analysis?.dfm_issues?.forEach((issue, index) => checks.push({
     id: `analysis-${index}`,
     domain: "DFM",
     title: issue.category,
@@ -113,6 +114,9 @@ export function adaptValidation(result: GenerationResult | null, analysis?: Desi
     object: issue.location || "当前模型",
     suggestion: issue.suggestion,
   }));
+  if (analysis) checks.push({ id: "analysis-conclusion", domain: "DFM", title: "制造检查结论",
+    status: analysis.evaluation_status === "passed" ? "pass" : analysis.evaluation_status === "failed" ? "fail" : analysis.evaluation_status === "warning" ? "warning" : "unknown",
+    description: [analysis.design_summary, ...(analysis.analysis_errors || [])].join("；"), object: "当前查看版本" });
   return checks;
 }
 

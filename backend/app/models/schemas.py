@@ -624,6 +624,9 @@ class GenerateResponse(BaseModel):
 
 
 class AnalyzeRequest(BaseModel):
+    asynchronous: bool = False
+    source_revision_id: str | None = None
+    idempotency_key: str | None = Field(None, min_length=1, max_length=200)
     code: str = Field("", max_length=50000)
     description: str = Field("", max_length=5000)
     process: str | None = None  # filter rules by process; None = evaluate all
@@ -676,7 +679,14 @@ class StepAnalysisSummary(BaseModel):
 
 
 class DesignAnalysisResponse(BaseModel):
-    design_score: int = 0
+    design_score: int | None = None
+    evaluation_status: str = "indeterminate"
+    evaluated_rules: list[dict] = []
+    analysis_errors: list[str] = []
+    rule_configuration: dict | None = None
+    source_revision_id: str | None = None
+    process: str | None = None
+    material: str | None = None
     design_summary: str = ""
     structural_issues: list[str] = []
     functional_notes: list[str] = []

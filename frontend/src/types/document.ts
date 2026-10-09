@@ -16,7 +16,8 @@ export interface SemanticFeature {
     geometry: "planar" | "circular"; axis: "x" | "y" | "z"; extreme: "min" | "max";
     radius_mm?: number; center?: { x: number; y: number; z: number }; tolerance_mm: number }>;
   shape: { volume?: number; faces?: number; edges?: number } | null;
-  sketch: { fully_constrained?: boolean; solve_status?: number } | null;
+  sketch: { fully_constrained?: boolean; solver_status?: number; constraint_status?: string; degrees_of_freedom?: number | null } | null;
+  sketch_constraints_sha256?:string;
   instance?: { source: string; translation_mm: number[]; rotation_axis: number[]; rotation_deg: number } | null;
 }
 
@@ -34,7 +35,7 @@ export interface KernelInspection {
 
 export interface CloudDocument {
   document_id: string; project_id: string; active_branch_id: string;
-  head_revision_id: string; revision_id: string; state_version: number; event_sequence: number;
+  head_revision_id: string; revision_id: string; revision_number?: number; state_version: number; event_sequence: number;
   can_edit: boolean; can_share: boolean; features: SemanticFeature[]; roots: string[];
   can_commit?: boolean;
   can_review?: boolean; can_export?: boolean; can_rollback?: boolean;
@@ -47,7 +48,7 @@ export interface CloudDocument {
 export type DocumentViewMode = "committed" | "candidate" | "history";
 export interface DocumentViewIdentity {
   documentId: string; mode: DocumentViewMode; viewedRevisionId: string;
-  headRevisionId: string; headStateVersion: number; changeSetId?: string | null;
+  headRevisionId: string; headStateVersion: number; viewedRevisionNumber?: number; changeSetId?: string | null;
 }
 export interface SelectionContext {
   revision_id: string; state_version: number; feature_ids: string[];
@@ -59,6 +60,9 @@ export interface DocumentRevisionView extends Pick<CloudDocument, "document_id" 
   review_status: string | null; base_state_version: number | null;
   snapshot: import("./index").ModelSnapshotDetail | null;
   validation_summary: Record<string, unknown> | null;
+  manufacturing_profile?: import('./index').ManufacturingProfile | null;
+  objective?: string | null;
+  requirement_basis?: import('./requirements').RequirementBasis | null;
 }
 
 export interface DocumentDelta extends Pick<CloudDocument, "mesh" | "fcstd" | "state" | "modeling_backend" | "parameter_state_sha256" | "roots"> {

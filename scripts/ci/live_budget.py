@@ -57,7 +57,7 @@ class RunBudget:
 
     def reserve(self, model, output_tokens):
         with self.lock:
-            if model != self.limits.model or output_tokens > self.limits.output:
+            if model != self.limits.model or type(output_tokens) is not int or not 0 < output_tokens <= self.limits.output:
                 raise BudgetExceeded('unapproved model or output token request')
             if len(self.records) >= self.limits.calls or self.charged+self.limits.reservation > self.limits.run:
                 raise BudgetExceeded('provider call/run cost budget exhausted')
@@ -68,7 +68,7 @@ class RunBudget:
     def settle(self, index, usage):
         with self.lock:
             row = self.records[index]
-            if row['usage_verified']:
+            if row['usage_verified'] or row.get('request_sent') is False:
                 raise ValueError('provider usage already settled')
             # No usage means retain the full reservation. No zero-cost success.
             if not isinstance(usage, dict) or 'prompt_tokens' not in usage or 'completion_tokens' not in usage:
@@ -81,6 +81,20 @@ class RunBudget:
             row.update(cost=str(actual), input_tokens=incoming, output_tokens=outgoing, usage_verified=True)
             if incoming > self.limits.context or outgoing > self.limits.output or self.charged > self.limits.run:
                 raise BudgetExceeded('provider usage exceeded configured model bounds')
+
+    def release_unsubmitted(self, index, error_type):
+        """Only connection establishment failures prove no inference was sent.
+
+        Read/write/protocol failures retain the full reservation. The attempt
+        still counts against the request limit and never fabricates token usage.
+        """
+        with self.lock:
+            row = self.records[index]
+            if error_type not in {'ConnectError', 'ConnectTimeout', 'PoolTimeout'} or row['usage_verified'] or row.get('request_sent') is False:
+                raise ValueError('no proof of an unsubmitted request')
+            self.charged -= Decimal(row['cost'])
+            row.update(cost='0', request_sent=False, reservation_released_before_send=True,
+                transport_error=error_type)
 
 
 class MonthLedger:

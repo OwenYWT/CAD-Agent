@@ -82,7 +82,8 @@ def build_patch_context(before, snapshot, failure, base_state=None, prior_contra
             'constraint': _constraint_args(op),
             'status': next(row['status'] for row in snapshot['operations'] if row['operation_id'] == op.op_id)}
             for op in before.operations if op.action == 'sketch.add_constraint' and op.args['sketch'] == sketch],
-        'acceptance': acceptance, 'acceptance_hash': digest(acceptance), 'prior_contract': prior}
+        'acceptance': acceptance, 'acceptance_hash': digest(acceptance), 'prior_contract': prior,
+        'requirement_bindings': requirement_bindings(before,sketch,geometry,acceptance)}
 
 
 def _referenced(context, target):
@@ -125,6 +126,47 @@ def requirement_protection(args, acceptance):
         if any(abs(value - v) <= TOLERANCE or
                args['kind'] == 'radius' and abs(2 * value - v) <= TOLERANCE for v in values):
             result.append(check['check_id'])
+    return result
+
+
+def requirement_bindings(plan, sketch, geometry, acceptance):
+    """Explain conservative protection with object/role identity, not just a number.
+
+    A construction association is narrower than an independently verified final
+    geometric requirement. It never authorizes removing a driver. Unknown frames,
+    curves and external references retain the same conservative protection.
+    """
+    created = next((op.args for op in plan.operations if op.action=='sketch.create' and op.args['name']==sketch), {})
+    axes = {'xy':('x','y'),'xz':('x','z'),'yz':('y','z')}.get(str(created.get('plane','')).lower())
+    geometry_by_id = {item['index']:item for item in geometry}
+    result=[]
+    for op in plan.operations:
+        if op.action!='sketch.add_constraint' or op.args['sketch']!=sketch:
+            continue
+        args=op.args
+        links=requirement_protection(args,acceptance)
+        for check in acceptance['checks']:
+            if check['check_id'] not in links:
+                continue
+            target=geometry_by_id.get((args.get('first') or {}).get('geometry_index'))
+            role='unknown'
+            axis=None
+            if target and target.get('type')=='Part::GeomCircle' and args['kind'] in {'radius','diameter'}:
+                role='circle_radius' if args['kind']=='radius' else 'circle_diameter'
+            elif target and target.get('type')=='Part::GeomLineSegment':
+                if args['kind']=='distance':
+                    role='line_length'
+                    varying=[i for i in range(2) if abs(target['start'][i]-target['end'][i])>TOLERANCE]
+                    if axes and len(varying)==1: axis=axes[varying[0]]
+                elif args['kind'] in {'distance_x','distance_y'}:
+                    role='point_coordinate';axis=axes[args['kind']=='distance_y'] if axes else None
+            result.append({'logical_constraint_id':_logical_id(op),'operation_id':op.op_id,'sketch':sketch,
+                'geometry_index':(args.get('first') or {}).get('geometry_index'),'dimension_role':role,'axis':axis,
+                'check_id':check['check_id'],'requirement_kind':check['kind'],
+                'source_kind':check['source_kind'],'source_quote':check.get('source_quote'),
+                'measurement_scope':deepcopy(check.get('scope') or {}),
+                'binding_status':'construction_association' if role!='unknown' else 'ambiguous_value',
+                'protected':True,'grants_edit_permission':False})
     return result
 
 
@@ -340,10 +382,20 @@ def verify_native_receipt(metadata, certificate):
     return report
 
 
-class NativeConstraintRepairValidation:
-    validate_snapshot = staticmethod(validate_snapshot)
-    verify_contract = staticmethod(verify_compiled_contract)
-    verify_receipt = staticmethod(verify_native_receipt)
+def describe_failure_protection(source_code, snapshot, requirements):
+    bindings=[]
+    note='来源未知或不支持的关系继续保护。'
+    plan=FreeCADOperationPlan.model_validate_json(source_code)
+    saved=requirements.get('requirements') or {}
+    acceptance=saved.get('acceptance') or (saved.get('design_brief') or {}).get('acceptance')
+    if acceptance:
+        for sketch in snapshot['sketches']:
+            try:
+                geometry=construction_geometry(plan,sketch['name'],requirements.get('base_state'))
+                bindings.extend(requirement_bindings(plan,sketch['name'],geometry,acceptance))
+            except ValueError:
+                note='部分几何无法建立可靠关联，保持保护；不能据此删除约束。'
+    return {'requirement_bindings':bindings,'protection_note':note}
 
 
 def progress_fingerprint(snapshot):

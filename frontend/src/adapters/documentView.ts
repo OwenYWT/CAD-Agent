@@ -9,7 +9,7 @@ export function viewIdentity(head: CloudDocument, choice?: { mode: DocumentViewM
 
 export function viewLabel(identity: DocumentViewIdentity | null): string {
   if (!identity) return "尚未建立云文档";
-  return identity.mode === "committed" ? `已提交版本 · v${identity.headStateVersion} · ${identity.viewedRevisionId.slice(0, 8)}`
+  return identity.mode === "committed" ? `已保存修订${identity.viewedRevisionNumber === undefined ? "" : ` #${identity.viewedRevisionNumber}`} · ${identity.viewedRevisionId.slice(0, 8)}`
     : `${identity.mode === "candidate" ? "候选版本 · 未提交" : "历史版本 · 只读"} · ${identity.viewedRevisionId.slice(0, 8)}`;
 }
 

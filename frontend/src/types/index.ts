@@ -335,7 +335,14 @@ export interface StepAnalysisSummary {
 }
 
 export interface DesignAnalysis {
-  design_score: number;
+  design_score: number | null;
+  evaluation_status?: "passed" | "warning" | "failed" | "indeterminate";
+  evaluated_rules?: { rule_id: string; status: string; reason?: string; unit?: string; threshold_min?: number | null; threshold_max?: number | null; actual_value?: number | null }[];
+  rule_configuration?: { schema_version: string; sha256: string; tenant_id: string; principal_id: string; process: string | null; origin: string; rules: { id: string; enabled: boolean; unit: string; threshold_min: number | null; threshold_max: number | null }[] } | null;
+  analysis_errors?: string[];
+  source_revision_id?: string | null;
+  process?: string | null;
+  material?: string | null;
   design_summary: string;
   structural_issues: string[];
   functional_notes: string[];
@@ -618,3 +625,4 @@ export interface CapabilityDefinition {
     url: string;
   };
 }
+export type ConnectionState = "connecting" | "connected" | "reconnecting" | "disconnected";

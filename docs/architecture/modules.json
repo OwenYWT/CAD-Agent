@@ -40,7 +40,9 @@
         "frontend/src/services/clients/history",
         "frontend/src/services/clients/revisions",
         "app.workflows.handlers.candidates",
-        "app.workflows.handlers.review"
+        "app.workflows.handlers.review",
+        "app.services.candidate_continuation",
+        "app.services.document_imports"
       ],
       "allowed_dependencies": [
         "P00",
@@ -95,7 +97,12 @@
         "app.repositories.artifacts",
         "app.repositories.audit",
         "app.execution.composition",
-        "app.workflows.constraint_evidence"
+        "app.workflows.constraint_evidence",
+        "app.services.engineering_checks",
+        "app.services.task_diagnostics",
+        "app.services.durable_submission",
+        "app.services.event_relay",
+        "app.execution.canonical"
       ],
       "allowed_dependencies": [
         "P00",
@@ -120,7 +127,9 @@
         "app.freecad.selection",
         "app.freecad.inspection",
         "app.topology.contracts",
-        "app.freecad.constraint_patch"
+        "app.freecad.constraint_patch",
+        "app.freecad.profile_replan",
+        "app.freecad.repair_validation"
       ],
       "allowed_dependencies": [
         "P00",
@@ -285,7 +294,8 @@
         "app.storage.*",
         "app.runtime",
         "app.model_job_context",
-        "app"
+        "app",
+        "app.dfm.configuration"
       ],
       "allowed_dependencies": [
         "P00",
@@ -557,10 +567,15 @@
     "backend/app/capabilities/runtime.py": "P01",
     "backend/app/config.py": "P01",
     "backend/app/contracts/__init__.py": "P00",
+    "backend/app/contracts/acceptance.py": "P00",
+    "backend/app/contracts/cad_tools.py": "P00",
+    "backend/app/contracts/constraint_patch.py": "P00",
+    "backend/app/contracts/geometry_request.py": "P00",
     "backend/app/contracts/model_operations.py": "P00",
     "backend/app/contracts/usage.py": "P00",
     "backend/app/db.py": "P01",
     "backend/app/dfm/__init__.py": "P01",
+    "backend/app/dfm/configuration.py": "P01",
     "backend/app/dfm/dfm_scoring.py": "P01",
     "backend/app/dfm/knowledge_graph.py": "P01",
     "backend/app/dfm/models.py": "P01",
@@ -593,11 +608,16 @@
     "backend/app/execution/model_fence.py": "M03",
     "backend/app/execution/podman_backend.py": "M03",
     "backend/app/freecad/__init__.py": "M04",
+    "backend/app/freecad/agent_tools.py": "M04",
+    "backend/app/freecad/api_catalog.py": "M04",
     "backend/app/freecad/bom_contracts.py": "P00",
+    "backend/app/freecad/constraint_patch.py": "M04",
+    "backend/app/freecad/constraint_relationships.py": "M04",
     "backend/app/freecad/constraint_repair.py": "M04",
     "backend/app/freecad/contracts.py": "P00",
     "backend/app/freecad/edge_intent.py": "M04",
     "backend/app/freecad/engineering_contracts.py": "P00",
+    "backend/app/freecad/failure_snapshot.py": "M04",
     "backend/app/freecad/inspection.py": "M04",
     "backend/app/freecad/operation_compiler.py": "M04",
     "backend/app/freecad/operation_generator.py": "M04",
@@ -607,6 +627,7 @@
     "backend/app/freecad/selection.py": "M04",
     "backend/app/freecad/semantic_state.py": "M04",
     "backend/app/freecad/sketch_diagnostics.py": "M04",
+    "backend/app/freecad/sketch_relations.py": "M04",
     "backend/app/freecad/state_contract.py": "M04",
     "backend/app/freecad/state_projector.py": "M04",
     "backend/app/freecad/topology.py": "M04",
@@ -650,6 +671,7 @@
     "backend/app/models/document_requests.py": "P00",
     "backend/app/models/native_modification.py": "P00",
     "backend/app/models/schemas.py": "P00",
+    "backend/app/models/workflow_requests.py": "P00",
     "backend/app/monitoring.py": "P02",
     "backend/app/object_store.py": "P01",
     "backend/app/parameters.py": "P01",
@@ -676,6 +698,7 @@
     "backend/app/services/__init__.py": "P00",
     "backend/app/services/artifact_commit.py": "M02",
     "backend/app/services/authentication.py": "M01",
+    "backend/app/services/candidate_continuation.py": "M02",
     "backend/app/services/change_sets.py": "M02",
     "backend/app/services/cloud_documents.py": "M02",
     "backend/app/services/design_analysis.py": "M06",
@@ -683,11 +706,13 @@
     "backend/app/services/document_diff.py": "M02",
     "backend/app/services/document_engineering.py": "M08",
     "backend/app/services/document_geometry.py": "M07",
+    "backend/app/services/document_imports.py": "M02",
     "backend/app/services/document_operations.py": "M02",
     "backend/app/services/document_rebase.py": "M02",
     "backend/app/services/document_releases.py": "M09",
     "backend/app/services/document_sharing.py": "M02",
     "backend/app/services/durable_submission.py": "M03",
+    "backend/app/services/engineering_checks.py": "M03",
     "backend/app/services/engineering_evidence.py": "M08",
     "backend/app/services/event_relay.py": "M03",
     "backend/app/services/feature_annotations.py": "M02",
@@ -702,6 +727,7 @@
     "backend/app/services/run_state.py": "M03",
     "backend/app/services/scene_jobs.py": "M07",
     "backend/app/services/sms.py": "M01",
+    "backend/app/services/task_diagnostics.py": "M03",
     "backend/app/services/task_evidence.py": "M03",
     "backend/app/services/task_retry.py": "M03",
     "backend/app/services/workflow_admission.py": "M02",
@@ -756,6 +782,8 @@
     "backend/app/workflows/__init__.py": "P00",
     "backend/app/workflows/activities.py": "P02",
     "backend/app/workflows/agent_v2.py": "M03",
+    "backend/app/workflows/checkpoint_inputs.py": "M03",
+    "backend/app/workflows/constraint_evidence.py": "M03",
     "backend/app/workflows/definitions.py": "M03",
     "backend/app/workflows/document_queue.py": "M03",
     "backend/app/workflows/engineering_activities.py": "M03",
@@ -783,18 +811,20 @@
     "backend/app/workflows/model_job_policy.py": "M03",
     "backend/app/workflows/modeling.py": "M03",
     "backend/app/workflows/revision_inputs.py": "M03",
-    "backend/app/workflows/checkpoint_inputs.py": "M03",
     "backend/app/workflows/scene_activities.py": "M03",
     "backend/app/workflows/source_preparation.py": "M03",
     "backend/app/workflows/temporal.py": "M03",
     "backend/app/workflows/validation_support.py": "M03",
+    "backend/tests/e2e/product_acceptance_browser.py": "P00",
     "frontend/src/App.tsx": "P04",
     "frontend/src/adapters/branchView.ts": "P00",
     "frontend/src/adapters/camToolpath.ts": "P00",
     "frontend/src/adapters/changeSetAdapter.ts": "P00",
     "frontend/src/adapters/documentAdapter.ts": "P00",
     "frontend/src/adapters/documentView.ts": "P00",
+    "frontend/src/adapters/draftHistory.ts": "P00",
     "frontend/src/adapters/durableTaskAdapter.ts": "P00",
+    "frontend/src/adapters/engineeringCheck.ts": "P00",
     "frontend/src/adapters/engineeringField.ts": "P00",
     "frontend/src/adapters/engineeringMeasurements.ts": "P00",
     "frontend/src/adapters/featureTree.ts": "P00",
@@ -804,6 +834,7 @@
     "frontend/src/adapters/resultSnapshotAdapter.ts": "P00",
     "frontend/src/adapters/sketchPreview.ts": "P00",
     "frontend/src/adapters/taskState.ts": "P00",
+    "frontend/src/adapters/workspaceStatus.ts": "P00",
     "frontend/src/auth.ts": "P04",
     "frontend/src/capabilities/manifest.ts": "P04",
     "frontend/src/components/AccountPanel.tsx": "P04",
@@ -826,6 +857,7 @@
     "frontend/src/components/Viewer3D.tsx": "P04",
     "frontend/src/components/agent/AgentDrawer.tsx": "P04",
     "frontend/src/components/agent/AgentPanel.tsx": "P04",
+    "frontend/src/components/agent/FailureDiagnostic.tsx": "P04",
     "frontend/src/components/agent/RequirementCard.tsx": "P04",
     "frontend/src/components/agent/TaskCard.tsx": "P04",
     "frontend/src/components/agent/agentContext.ts": "P04",
@@ -835,6 +867,7 @@
     "frontend/src/components/common/WorkspaceOverlay.tsx": "P04",
     "frontend/src/components/export/ExportDialog.tsx": "P04",
     "frontend/src/components/parameters/ParameterDrawer.tsx": "P04",
+    "frontend/src/components/project/NativeImportPanel.tsx": "P04",
     "frontend/src/components/project/ProjectFlow.tsx": "P04",
     "frontend/src/components/project/ProjectSidebar.tsx": "P04",
     "frontend/src/components/project/ProjectStart.tsx": "P04",
@@ -843,9 +876,12 @@
     "frontend/src/components/validation/ValidationDialog.tsx": "P04",
     "frontend/src/components/viewer/CamToolpathViewer.tsx": "P04",
     "frontend/src/components/viewer/CameraFit.tsx": "P04",
+    "frontend/src/components/viewer/CameraLink.tsx": "P04",
     "frontend/src/components/viewer/DocumentSceneViewer.tsx": "P04",
     "frontend/src/components/viewer/EngineeringFieldViewer.tsx": "P04",
     "frontend/src/components/viewer/MechanicalWorkspace.tsx": "P04",
+    "frontend/src/components/viewer/RevisionComparison.tsx": "P04",
+    "frontend/src/components/viewer/ViewControls.tsx": "P04",
     "frontend/src/components/viewer/canvasEvents.ts": "P04",
     "frontend/src/components/workspace/CloudDocumentPanel.tsx": "P04",
     "frontend/src/components/workspace/ContourMillingForm.tsx": "P04",
@@ -855,11 +891,14 @@
     "frontend/src/components/workspace/EngineeringTasks.tsx": "P04",
     "frontend/src/components/workspace/EngineeringWorkspace.tsx": "P04",
     "frontend/src/components/workspace/FeatureInspection.tsx": "P04",
+    "frontend/src/components/workspace/FeatureMeasurements.tsx": "P04",
     "frontend/src/components/workspace/InstanceProperties.tsx": "P04",
     "frontend/src/components/workspace/LocalBridgePanel.tsx": "P04",
+    "frontend/src/components/workspace/ModelTree.tsx": "P04",
     "frontend/src/components/workspace/ProjectMembers.tsx": "P04",
     "frontend/src/components/workspace/SharedDocumentWorkspace.tsx": "P04",
     "frontend/src/components/workspace/SketchEditor.tsx": "P04",
+    "frontend/src/components/workspace/SketchRelations.tsx": "P04",
     "frontend/src/components/workspace/WorkspaceInspector.tsx": "P04",
     "frontend/src/components/workspace/WorkspaceShell.tsx": "P04",
     "frontend/src/controllers/sessionMessages.ts": "P04",
@@ -869,7 +908,10 @@
     "frontend/src/hooks/useCloudDocument.ts": "P04",
     "frontend/src/hooks/useDocumentView.ts": "P04",
     "frontend/src/hooks/useDraftGuard.ts": "P04",
+    "frontend/src/hooks/useDraftHistory.ts": "P04",
     "frontend/src/hooks/useFeatureLease.ts": "P04",
+    "frontend/src/hooks/useModalFocus.ts": "P04",
+    "frontend/src/hooks/useMutationReceipt.ts": "P04",
     "frontend/src/hooks/useWebSocket.ts": "P04",
     "frontend/src/i18n/I18nContext.ts": "P04",
     "frontend/src/i18n/I18nProvider.tsx": "P04",
@@ -901,6 +943,7 @@
     "frontend/src/types/engineeringTask.ts": "P00",
     "frontend/src/types/index.ts": "P00",
     "frontend/src/types/localBridge.ts": "P00",
+    "frontend/src/types/nativeImport.ts": "P00",
     "frontend/src/types/release.ts": "P00",
     "frontend/src/types/requirements.ts": "P00",
     "frontend/src/types/scene.ts": "P00",
@@ -910,17 +953,8 @@
     "frontend/src/utils/parameterMapping.ts": "P04",
     "frontend/src/utils/parameterValidation.ts": "P04",
     "frontend/src/utils/suggestions.ts": "P04",
-    "backend/app/models/workflow_requests.py": "P00",
-    "backend/app/contracts/acceptance.py": "P00",
-    "backend/app/contracts/geometry_request.py": "P00",
-    "backend/app/freecad/api_catalog.py": "M04",
-    "backend/app/freecad/agent_tools.py": "M04",
-    "backend/app/contracts/cad_tools.py": "P00",
-    "backend/app/contracts/constraint_patch.py": "P00",
-    "backend/app/workflows/constraint_evidence.py": "M03",
-    "backend/app/freecad/constraint_patch.py": "M04",
-    "backend/app/freecad/failure_snapshot.py": "M04",
-    "backend/app/freecad/constraint_relationships.py": "M04"
+    "backend/app/freecad/profile_replan.py": "M04",
+    "backend/app/freecad/repair_validation.py": "M04"
   },
   "required_runtime_reports": {
     "browser-e2e/native-parameters/kernel.log": {
@@ -1307,7 +1341,10 @@
         "freecad_checkpoint_replay_contract",
         "feature-measurements",
         "curved-surfaces",
-        "engineering"
+        "engineering",
+        "freecad_product_acceptance_contract",
+        "cadquery-svg",
+        "freecad_profile_replan_contract"
       ]
     },
     "deploy-smoke/packaged-browser/report.json": {
@@ -1319,6 +1356,24 @@
         "real_auth": true
       },
       "job": "deploy-smoke"
+    },
+    "deploy-smoke/image-transition/report.json": {
+      "job": "deploy-smoke",
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "classification": "SHIPPING_IMAGES_REAL_TEMPORAL_FREECAD",
+        "immutable_history": true,
+        "active_model_job_switch_rejected": true,
+        "history_replay_before_switch": true,
+        "worker_quiesced_before_final_preflight": true,
+        "unsupported_inflight_rollback_rejected": true,
+        "frozen_check_drained_before_rollback": true,
+        "raw_report_preserved_after_rollback": true,
+        "complete_report_restored_after_upgrade": true,
+        "restored_current_release": true,
+        "provider_calls": 0
+      }
     },
     "deploy-smoke/compose.json": {
       "job": "deploy-smoke",
@@ -1385,6 +1440,171 @@
       "families": [
         "ModelJobWorkflow"
       ]
+    },
+    "mcad-core/native/freecad_product_acceptance_contract.log": {
+      "job": "mcad-core",
+      "kind": "marker",
+      "marker": "CAD_PRODUCT_ACCEPTANCE_CONTRACT="
+    },
+    "mcad-core/native/cadquery-svg.log": {
+      "job": "mcad-core",
+      "kind": "marker",
+      "marker": "CADQUERY_SVG_CONTRACT="
+    },
+    "browser-e2e/browser-product/report.json": {
+      "job": "browser-e2e",
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "real_kernel": true,
+        "real_auth": true,
+        "paid_provider_calls": 0,
+        "network_substitution": false
+      }
+    },
+    "browser-e2e/browser-product/trace.zip": {
+      "job": "browser-e2e",
+      "kind": "browser-trace"
+    },
+    "browser-e2e/browser-acceptance-followup/rules.json": {
+      "job": "browser-e2e",
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "classification": "REAL_API_TEMPORAL_FREECAD",
+        "cases": [
+          "owner_rules_applied",
+          "disabled_rules_not_executed",
+          "configuration_frozen_at_admission",
+          "transport_retry_reuses_original_configuration",
+          "changed_configuration_new_implicit_request",
+          "tenant_rules_isolated",
+          "depth_ratio_indeterminate_instead_of_diameter",
+          "native_volume_and_saved_head"
+        ]
+      }
+    },
+    "browser-e2e/browser-acceptance-followup/browser.json": {
+      "job": "browser-e2e",
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "classification": "REAL_BROWSER_API_AND_TRANSPORT_FAILURE",
+        "lost_successful_write_responses": 5,
+        "page_errors": [],
+        "cases": [
+          "source_bounds_full_uuid_mobile_targets_svg_and_long_name_touch_keyboard",
+          "panel_alignment_and_real_disconnect_reconnect",
+          "recommendation_draft_survives_tabs_and_close",
+          "supplier_create_delete_real_commit_lost_reply_readback_and_not_delivered",
+          "dfm_save_real_commit_lost_reply_and_readback_without_repeat_write",
+          "formal_release_selected_evidence_verified_download_and_role_matrix",
+          "history_restore_new_candidate_commit_reopen_and_old_evidence_rejection",
+          "revised_requirement_basis_durable_admission_and_cancel_preserves_history",
+          "invite_create_disable_lost_reply_actual_admin_readback_and_role_denial"
+        ]
+      }
+    },
+    "browser-e2e/browser-acceptance-followup/release.json": {
+      "job": "browser-e2e",
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "classification": "REAL_BROWSER_API_TEMPORAL_FREECAD",
+        "package_hash_verified": true,
+        "roles": [
+          "owner",
+          "editor",
+          "viewer",
+          "outsider",
+          "revoked-editor",
+          "anonymous"
+        ],
+        "idempotency_conflicts_and_unknown_evidence": true,
+        "head_unchanged": true
+      }
+    },
+    "browser-e2e/browser-acceptance-followup/requirements-intake.json": {
+      "job": "browser-e2e",
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "classification": "REAL_BROWSER_WEBSOCKET_DURABLE_ADMISSION",
+        "original_revision_immutable": true,
+        "saved_head_unchanged": true,
+        "cancelled_before_provider_execution": true,
+        "natural_language_geometry_evaluated": false
+      }
+    },
+    "browser-e2e/browser-acceptance-followup/restore.json": {
+      "job": "browser-e2e",
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "classification": "REAL_BROWSER_API_TEMPORAL_FREECAD",
+        "new_candidate_before_commit": true,
+        "original_revisions_immutable": true,
+        "old_release_evidence_rejected": true
+      }
+    },
+    "browser-e2e/browser-acceptance-followup/trace.zip": {
+      "job": "browser-e2e",
+      "kind": "browser-trace"
+    },
+    "browser-e2e/draft-reconciliation/report.json": {
+      "job": "browser-e2e",
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "classification": "REAL_BROWSER_API_AND_TRANSPORT_FAILURE",
+        "packaged_frontend": false,
+        "cases": [
+          "lost_committed_reply_preserves_subsequent_draft",
+          "navigation_and_refresh_keep_dirty_draft",
+          "explicit_save_then_clean_refresh",
+          "undelivered_write_preserves_draft_and_explicit_retry",
+          "empty_draft_validation_and_explicit_discard_use_latest_baseline",
+          "enabled_only_readback_updates_baseline_without_replacing_draft",
+          "minimum_threshold_normal_save_is_clean",
+          "invite_inputs_locked_until_committed_result_reconciles"
+        ],
+        "lost_successful_write_responses": 3,
+        "page_errors": []
+      }
+    },
+    "browser-e2e/draft-reconciliation/trace.zip": {
+      "job": "browser-e2e",
+      "kind": "browser-trace"
+    },
+    "deploy-smoke/draft-reconciliation/report.json": {
+      "job": "deploy-smoke",
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "classification": "REAL_BROWSER_API_AND_TRANSPORT_FAILURE",
+        "packaged_frontend": true,
+        "cases": [
+          "lost_committed_reply_preserves_subsequent_draft",
+          "navigation_and_refresh_keep_dirty_draft",
+          "explicit_save_then_clean_refresh",
+          "undelivered_write_preserves_draft_and_explicit_retry",
+          "empty_draft_validation_and_explicit_discard_use_latest_baseline",
+          "enabled_only_readback_updates_baseline_without_replacing_draft",
+          "minimum_threshold_normal_save_is_clean",
+          "invite_inputs_locked_until_committed_result_reconciles"
+        ],
+        "lost_successful_write_responses": 3,
+        "page_errors": []
+      }
+    },
+    "deploy-smoke/draft-reconciliation/trace.zip": {
+      "job": "deploy-smoke",
+      "kind": "browser-trace"
+    },
+    "mcad-core/native/freecad_profile_replan_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_PROFILE_REPLAN_CONTRACT=",
+      "job": "mcad-core"
     }
   },
   "required_ci_jobs": [

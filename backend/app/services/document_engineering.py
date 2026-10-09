@@ -46,6 +46,16 @@ async def submit_engineering(context, document_id: UUID, submission: Engineering
     projection = await checkpoint(context, document_id, submission.expected_revision_id)
     if projection['fcstd'] is None:
         raise ValueError('工程计算需要已提交的原生 FCStd 检查点')
+    if submission.task.kind == 'native_measure':
+        names={feature['kernel_name'] for feature in projection['features']}
+        if submission.task.component_name not in names or submission.task.other_component_name and submission.task.other_component_name not in names:
+            raise ValueError('测量对象不属于此版本')
+        from app.topology.contracts import FreeCADTopologySelector
+        bindings = [FreeCADTopologySelector.model_validate(binding) for feature in projection['features'] for binding in feature.get('topology_bindings', [])]
+        for selector in submission.task.selectors:
+            parsed = FreeCADTopologySelector.model_validate(selector)
+            if parsed.revision_id != submission.expected_revision_id or parsed not in bindings:
+                raise ValueError('测量选择缺少当前版本的完整且唯一的拓扑依据')
     dispatch = None
     async with tenant_transaction(context.tenant_id, context.principal_id) as conn:
         doc = await authorized_document(conn, context, document_id, Permission.RUN_VALIDATION)
@@ -75,7 +85,7 @@ async def engineering_tasks(context, document_id):
         rows = (await conn.execute(text('''SELECT t.workflow_run_id,t.source_revision_id,t.source_state_version,t.task_kind,t.created_at,
             w.status,w.error_code,w.error_message,w.request_payload->'engineering_task' AS task
             FROM document_engineering_tasks t JOIN workflow_runs w ON w.id=t.workflow_run_id
-            WHERE t.document_id=:doc AND t.task_kind IN ('linear_static','contour_milling')
+            WHERE t.document_id=:doc AND t.task_kind IN ('linear_static','contour_milling','native_measure')
             ORDER BY t.created_at DESC,t.workflow_run_id DESC LIMIT 50'''), {'doc': document_id})).mappings().all()
         return {'tasks': [dict(row) for row in rows]}
 

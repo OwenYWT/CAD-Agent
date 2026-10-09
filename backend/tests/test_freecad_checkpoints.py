@@ -11,17 +11,17 @@ from tests.test_freecad_agent_tools import ProviderTurns, call
 from tests.test_freecad_operation_generator import _provenance, _valid_plan
 
 
-def checkpoint_plan():
-    return {"execution_mode": "checkpoint", "operations": [
-        {"op_id": "make", "action": "api.execute", "args": {
+def checkpoint_request():
+    return {"execution_mode": "checkpoint",
+        "execute": {"op_id": "make", "args": {
             "source": "document.addObject('Spreadsheet::Sheet', 'Dimensions')"}},
-        {"op_id": "export", "action": "document.export", "args": {
-            "formats": ["fcstd"], "objects": ["Dimensions"]}}]}
+        "export": {"op_id": "export", "args": {
+            "formats": ["fcstd"], "objects": ["Dimensions"]}}}
 
 
 @pytest.mark.asyncio
 async def test_checkpoint_allows_native_only_artifact_without_claiming_final_success():
-    provider = ProviderTurns([call("freecad_execute", checkpoint_plan())])
+    provider = ProviderTurns([call("freecad_execute_api", checkpoint_request())])
     result = await FreeCADOperationGenerator(client=provider, provenance_reader=_provenance)._complete(
         user_payload={"checkpoint_enabled": True}, generator_kind="test",
         output_formats=("step", "stl"))
@@ -32,7 +32,7 @@ async def test_checkpoint_allows_native_only_artifact_without_claiming_final_suc
 
 @pytest.mark.asyncio
 async def test_old_workflow_cannot_accidentally_accept_checkpoint():
-    provider = ProviderTurns([call("freecad_execute", checkpoint_plan())],
+    provider = ProviderTurns([call("freecad_execute_api", checkpoint_request())],
                              [call("freecad_execute", _valid_plan())])
     result = await FreeCADOperationGenerator(client=provider, provenance_reader=_provenance)._complete(
         user_payload={}, generator_kind="test", output_formats=("step", "stl"))

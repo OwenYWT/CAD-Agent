@@ -10,6 +10,7 @@ from pathlib import Path
 
 from app.config import settings, make_llm_client
 from app.agent.failure_taxonomy import FixPath, classify
+from app.agent.run_steps import ensure_timeline_fields
 from app.llm import find_provider_exception
 from app.models.schemas import CADPlan, GenerateResponse, ParamConfig, StepUpdate
 

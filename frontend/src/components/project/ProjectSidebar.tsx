@@ -94,7 +94,7 @@ export default function ProjectSidebar({ collapsed, mobileOpen, onCollapse, onMo
 
   return (
     <>
-      {mobileOpen ? <button aria-label="关闭项目导航" className="fixed inset-0 z-40 bg-black/25 lg:hidden" onClick={onMobileClose} type="button" /> : null}
+      {mobileOpen ? <button aria-label="关闭项目导航" className="fixed inset-0 z-[94] bg-black/25 xl:hidden" onClick={onMobileClose} type="button" /> : null}
       <aside className={`workspace-sidebar ${collapsed ? "workspace-sidebar--collapsed" : ""} ${mobileOpen ? "workspace-sidebar--mobile-open" : ""}`}>
         <div className="ww-sidebar-brand">
           <BrandMark nameClassName="type-section-heading tracking-[-0.02em]" showName={!collapsed} />

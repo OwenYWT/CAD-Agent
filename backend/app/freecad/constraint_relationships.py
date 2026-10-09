@@ -100,10 +100,10 @@ def native_args(constraint):
     if kind is None:
         return None
     first = {'geometry_index': constraint['first'],
-             'point_position': constraint.get('first_position') or None}
+             'point_position': constraint.get('first_position') if constraint.get('first_position') in {1,2,3} else None}
     return {'kind': kind, 'first': first,
         'second': ({'datum': 'origin'} if kind == 'coincident' and constraint['second'] == -1 and constraint.get('second_position') == 1
-                   else {'geometry_index': constraint['second'], 'point_position': constraint.get('second_position') or None})
+                   else {'geometry_index': constraint['second'], 'point_position': constraint.get('second_position') if constraint.get('second_position') in {1,2,3} else None})
                   if kind in {'equal', 'coincident'} else None,
         'value_mm': constraint['value'] if kind in {'distance', 'distance_x', 'distance_y', 'radius', 'diameter'} else None}
 

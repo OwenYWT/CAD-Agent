@@ -133,7 +133,11 @@ export default function WorkspaceShell({
       if (previousFocus?.isConnected && overlayElement?.contains(document.activeElement)) previousFocus.focus();
     };
   }, [inspectorOverlayActive, inspectorCollapsed]);
-  const [agentWidth, setAgentWidth] = useState(340);
+  const [agentWidth, setAgentWidth] = useState(()=>{
+    const saved=Number(localStorage.getItem('cad-agent-panel-width'));
+    return Number.isFinite(saved) && saved>=300 && saved<=480 ? saved : 340;
+  });
+  useEffect(()=>{localStorage.setItem('cad-agent-panel-width',String(agentWidth));},[agentWidth]);
   const resizeAgent = useCallback((delta: number) => {
     setAgentWidth((width) => clamp(width + delta, 300, 480));
   }, []);

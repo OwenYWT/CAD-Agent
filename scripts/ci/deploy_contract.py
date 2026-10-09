@@ -55,6 +55,8 @@ def main():
     runtime = os.getenv('SANDBOX_COMMAND', 'docker')
     report = Path(os.environ['CAD_CI_REPORT_ROOT'])
     report.mkdir(parents=True, exist_ok=True)
+    from scripts.ci.build_release_baseline import build_baseline
+    baseline_images = build_baseline(report)
     private = Path(tempfile.mkdtemp(prefix=scope + '-', dir=os.getenv('RUNNER_TEMP')))
     private.chmod(0o700)
     work = private / 'work'
@@ -174,6 +176,10 @@ def main():
         subprocess.run([sys.executable, str(ROOT/'scripts/ci/deploy_http_contract.py'), 'accounts'], env=test_env, check=True)
         subprocess.run([sys.executable, str(ROOT/'backend/tests/e2e/browser_contract.py')], env=test_env, check=True)
         subprocess.run([sys.executable, str(ROOT/'scripts/ci/deploy_http_contract.py'), 'permissions'], env=test_env, check=True)
+        subprocess.run([sys.executable, str(ROOT/'backend/tests/e2e/dfm_draft_reconciliation_browser.py')],
+            env={**test_env, 'CAD_DRAFT_PACKAGED': '1', 'CAD_DRAFT_RECONCILIATION_REPORT': str(report/'draft-reconciliation')}, check=True)
+        test_env.update(baseline_images)
+        subprocess.run([sys.executable, str(ROOT/'scripts/ci/release_image_contract.py')], env=test_env, check=True)
         (report/'compose.json').write_text(json.dumps({'passed': True, 'source_sha': env.get('GITHUB_SHA'),
             'compose_sha256': hashlib.sha256((ROOT/'deploy/tencent/compose.yml').read_bytes()).hexdigest(),
             'application_image': inspected['Image'], 'source_mounts': False, 'project': scope,

@@ -113,7 +113,9 @@ def _metrics(stl_path: Path) -> tuple[dict[str, Any], str | None]:
     return metrics, thickness_issue
 
 
-def _actual(category: str, metrics: dict[str, Any]) -> float | None:
+def _actual(category: str, metrics: dict[str, Any], unit: str) -> float | None:
+    if {"wall_thickness": "mm", "overhang": "ratio", "size": "mm", "feature": "mm"}.get(category) != unit:
+        return None
     return {
         "wall_thickness": metrics.get("min_wall_thickness_mm"),
         "overhang": metrics.get("overhang_ratio"),
@@ -122,9 +124,11 @@ def _actual(category: str, metrics: dict[str, Any]) -> float | None:
     }.get(category)
 
 
-def _thresholds(rule: dict[str, Any], constraints: dict[str, Any]):
+def _thresholds(rule: dict[str, Any], constraints: dict[str, Any], *, configured_rules: bool = False):
     minimum = rule.get("threshold_min")
     maximum = rule.get("threshold_max")
+    if configured_rules:
+        return minimum, maximum
     for key in _CONSTRAINT_RULE_KEYS.get(str(rule["category"]), ()):
         if key not in constraints:
             continue
@@ -165,12 +169,12 @@ def evaluate_dfm(
         if rule["check_type"] == "heuristic" and not bridge_rule:
             unevaluated.append(rule_id)
             continue
-        actual = metrics.get("bridge_span_mm") if bridge_rule else _actual(str(rule["category"]), metrics)
+        actual = metrics.get("bridge_span_mm") if bridge_rule and rule.get("unit") == "mm" else _actual(str(rule["category"]), metrics, str(rule.get("unit") or ""))
         if actual is None or not math.isfinite(float(actual)):
             unevaluated.append(rule_id)
             continue
         evaluated.append(rule_id)
-        minimum, maximum = _thresholds(rule, constraints)
+        minimum, maximum = _thresholds(rule, constraints, configured_rules=policy.get("threshold_precedence") == "configured_rules")
         # Older tenant policy snapshots used a heuristic bridge rule without
         # a calibrated span. Preserve the policy: any measured bridge needs
         # review until the user supplies a tested positive threshold.
@@ -197,6 +201,8 @@ def evaluate_dfm(
                 }
             )
     issues: list[str] = []
+    if not policy.get("rules"):
+        issues.append("no_active_rules")
     if metrics.get("unanchored_roof_area_mm2",0)>1e-6:
         issues.append("horizontal_roof_requires_support")
     if not metrics["is_watertight"]:

@@ -7,6 +7,7 @@ import type { DurablePanelContext } from "../stores/sessionStore";
 import { confirmDurableTask } from "../services/clients/tasks";
 import { updateDocumentParameters } from "../services/clients/documents";
 import { EngineeringApiError } from "../services/clients/http";
+import { useDraftHistory } from '../hooks/useDraftHistory';
 export const PARAMETER_STATUS: Record<string, string> = {queued:"排队中", running:"运行中", reviewable:"等待审核", committed:"已提交", rejected:"已拒绝", failed:"失败", cancelled:"已取消", rolled_back:"已回退"};
 
 /** One mounted edit session; the owner supplies its task context explicitly. */
@@ -14,7 +15,8 @@ export function useParameterEditor({feature, document, onSubmitted, operations =
   feature: SemanticFeature; document: CloudDocument; operations?: DocumentOperation[];
   onSubmitted: (id: string, document: CloudDocument) => void; durable?: DurablePanelContext;
 }) {
-  const [values, setValues] = useState<Record<string, string>>({});
+  const history = useDraftHistory<Record<string,string>>({});
+  const values=history.value, setValues=history.set;
   const [editBase, setEditBase] = useState<CloudDocument | null>(null);
   const lease = useFeatureLease(document, feature.id);
   const [pending, setPending] = useState(false);
@@ -39,7 +41,7 @@ export function useParameterEditor({feature, document, onSubmitted, operations =
   if (submittedId && (saved || failed)) {
     setSubmittedId(null); setAttemptToken(null); setUncertain(false); setIdempotencyKey(crypto.randomUUID());
     if (saved) {
-      setValues({}); setEditBase(null); setError(""); setSavedMessage(`已保存 · v${document.state_version}，可继续编辑`);
+      history.reset({}); setEditBase(null); setError(""); setSavedMessage(`已保存修订 ${document.head_revision_id.slice(0,8)}，可继续编辑`);
     } else {
       setError(`本次参数修改${PARAMETER_STATUS[submittedOperation!.status] || submittedOperation!.status}，输入已保留，可修正后重新提交。${submittedOperation?.error_code || ""}`);
     }
@@ -53,7 +55,7 @@ export function useParameterEditor({feature, document, onSubmitted, operations =
     && (p.minimum === null || Number(values[p.id]) >= p.minimum)
     && (p.maximum === null || Number(values[p.id]) <= p.maximum)));
   const dirty = Object.keys(values).length > 0 && !submittedId;
-  const reset = () => { setValues({}); setEditBase(null); setSubmittedId(null); setAttemptToken(null); setUncertain(false); setError(""); setIdempotencyKey(crypto.randomUUID()); void lease.release().catch(() => {}); };
+  const reset = () => { history.reset({}); setEditBase(null); setSubmittedId(null); setAttemptToken(null); setUncertain(false); setError(""); setIdempotencyKey(crypto.randomUUID()); void lease.release().catch(() => {}); };
   useDraftGuard(dirty || pending, `${feature.label} 参数`, reset);
   const submit = async () => {
     if (!valid || (stale && !uncertain) || submittedId || !document.can_edit) return;
@@ -72,5 +74,7 @@ export function useParameterEditor({feature, document, onSubmitted, operations =
     }
     finally { setPending(false); }
   };
-  return { values, setValues, editBase, setEditBase, lease, pending, error, setError, setIdempotencyKey, submittedId, uncertain, confirmation, confirming, confirm, savedMessage, setSavedMessage, submittedOperation, originalFeature, stale, valid, dirty, reset, submit };
+  const undo=()=>{history.undo();setIdempotencyKey(crypto.randomUUID());};
+  const redo=()=>{history.redo();setIdempotencyKey(crypto.randomUUID());};
+  return { values, setValues, editBase, setEditBase, lease, pending, error, setError, setIdempotencyKey, submittedId, uncertain, confirmation, confirming, confirm, savedMessage, setSavedMessage, submittedOperation, originalFeature, stale, valid, dirty, reset, submit,undo,redo,canUndo:history.canUndo,canRedo:history.canRedo };
 }
