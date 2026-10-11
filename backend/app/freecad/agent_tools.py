@@ -18,6 +18,8 @@ from app.freecad.contracts import (
 )
 from app.freecad.inspection import InspectionRequest, inspect_state
 from app.contracts.constraint_patch import ConstraintPatch
+from app.contracts.profile_patch import ProfilePatch
+from app.contracts.cut_patch import CutPatch
 
 
 OperationAction = FreeCADOperation.model_fields["action"].annotation
@@ -32,6 +34,8 @@ EXECUTE_TOOL = "freecad_execute"
 API_EXECUTE_TOOL = "freecad_execute_api"
 CONSTRAINT_PATCH_TOOL = 'freecad_patch_constraints'
 FAILURE_INSPECTION_TOOL = 'freecad_inspect_failure'
+PROFILE_PATCH_TOOL = 'freecad_patch_profile'
+CUT_PATCH_TOOL = 'freecad_patch_cut'
 
 
 class NativeProgram(FrozenContract):
@@ -130,7 +134,8 @@ _READS = {
 }
 
 
-def tool_schemas(*, has_document: bool, constraint_repair: bool = False) -> list[dict[str, Any]]:
+def tool_schemas(*, has_document: bool, constraint_repair: bool = False,
+                 profile_repair: bool = False, cut_repair: bool = False) -> list[dict[str, Any]]:
     if constraint_repair:
         return [{'type': 'function', 'function': {'name': name, 'description': description,
                  'parameters': model.model_json_schema()}} for name, model, description in (
@@ -138,6 +143,19 @@ def tool_schemas(*, has_document: bool, constraint_repair: bool = False) -> list
              'Inspect the actual failed sketch, logical constraint identities, execution progress and frozen construction inputs. Failure evidence is not a valid checkpoint.'),
             (CONSTRAINT_PATCH_TOOL, ConstraintPatch,
              'Propose only constraint additions, replacements or deletions on the diagnosed sketch. Use logical IDs, never native ordinals. Backend verifies authority, mathematical relationships and native parameter behavior; a proposal is not successful execution.'))]
+    if profile_repair or cut_repair:
+        patch_tool = (CUT_PATCH_TOOL, CutPatch,
+            'Repair only the failed cut direction or, when backend-authorized, its private sketch placement. '
+            'Use the supplied source hash and failed operation ID. The backend preserves dimensions, '
+            'every other operation and exports; execution and independent acceptance follow.') if cut_repair else (
+            PROFILE_PATCH_TOOL, ProfilePatch,
+            'Replace only the diagnosed sketch boundary geometry and constraints. Use the supplied baseline hashes. '
+            'Do not include sketch.create, features or exports: the backend preserves them and compiles the full transaction. '
+            'Execution, parameter coupling checks and frozen engineering acceptance follow the proposal.')
+        return [{'type': 'function', 'function': {'name': name, 'description': description,
+                 'parameters': model.model_json_schema()}} for name, model, description in (
+            ('freecad_describe_operation', OperationQuery, 'Read a typed operation argument schema.'),
+            patch_tool)]
     specs = [
         (name, model, description) for name, (model, description) in _READS.items()
         if has_document or name != "freecad_inspect"

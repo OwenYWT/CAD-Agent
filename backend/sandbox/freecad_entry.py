@@ -33,6 +33,7 @@ from freecad_scene import component_shapes, run_scene
 from freecad_engineering import EngineeringError, run_engineering
 from freecad_result_channel import publish_result
 from freecad_sketch_diagnostics import diagnose_sketch
+from freecad_cut_diagnostics import diagnose_cut, pending_profiles
 from freecad_failure_snapshot import (
     attach_failure_snapshot, constraint_counts, record_created_constraints,
     constraint_records, write_constraint_records, MAP_PROPERTY,
@@ -209,6 +210,10 @@ def _point(value: object, label: str) -> tuple[float, float]:
 def _reference(value: object, label: str) -> tuple[int, int | None]:
     if value == {'datum': 'origin'}:
         return -1, 1
+    if value == {'datum': 'horizontal_axis'}:
+        return -1, None
+    if value == {'datum': 'vertical_axis'}:
+        return -2, None
     if not isinstance(value, dict) or not set(value) <= {"geometry_index", "point_position"}:
         raise FreeCADRunnerError("invalid_constraint", f"{label} is invalid")
     index = value.get("geometry_index")
@@ -464,6 +469,10 @@ def _sketch_add_constraint(document: Any, args: dict[str, Any]) -> dict[str, Any
         constraint = Sketcher.Constraint(
             "Coincident", first_index, first_point, second_index, second_point
         )
+    elif kind == 'point_on_object':
+        if first_point is None or second not in ({'datum': 'horizontal_axis'}, {'datum': 'vertical_axis'}):
+            raise FreeCADRunnerError('sketch_malformed_constraint', 'point_on_object requires a point and sketch axis datum')
+        constraint = Sketcher.Constraint('PointOnObject', first_index, first_point, second_index)
     elif kind == "equal":
         if second_index is None:
             raise FreeCADRunnerError("sketch_malformed_constraint", "equal requires two geometries")
@@ -1263,6 +1272,7 @@ def _validate_subtractive_effect(
     *,
     op_id: str,
     action: str,
+    args: dict[str, Any] | None = None,
 ) -> None:
     """Fail closed when FreeCAD creates a subtractive feature without a cut."""
 
@@ -1305,6 +1315,12 @@ def _validate_subtractive_effect(
             for axis in ("X", "Y", "Z"):
                 for bound in ("Min", "Max"):
                     details[f"base_{axis.lower()}_{bound.lower()}"] = float(getattr(box, axis + bound))
+            if profile is not None and args is not None:
+                try:
+                    details['cut_diagnostic_json'] = json.dumps(diagnose_cut(profile, base.Shape, args, action),
+                        ensure_ascii=False, allow_nan=False)
+                except Exception as diagnostic_error:
+                    details['cut_diagnostic_unavailable'] = str(diagnostic_error)[:500]
         raise FreeCADRunnerError(
             "subtractive_feature_no_effect",
             f"{action} did not produce a smaller valid solid",
@@ -1607,6 +1623,7 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
                         subtractive_baseline,
                         op_id=op_id,
                         action=action,
+                        args=operation_args,
                     )
                     if _bind_through_profile(document.getObject(result["object"])):
                         validation = _validate_document(document, op_id=op_id, action=action)
@@ -1622,6 +1639,16 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
                     record_created_constraints(document, operation, before_constraints, plan_hash)
                 except Exception:
                     pass
+                if (getattr(exc, 'code', '') == 'subtractive_feature_no_effect'
+                        or getattr(exc, 'code', '').startswith('sketch_')):
+                    try:
+                        base_name = (getattr(exc, 'details', {}) or {}).get('base_object')
+                        if base_name:
+                            exc.details['pending_profiles_json'] = pending_profiles(document, plan, operation,
+                                document.getObject(base_name).Shape, DISPATCH,
+                                body_name=_body_for(document, document.getObject(exc.details['profile'])).Name)
+                    except Exception as diagnostic_error:
+                        exc.details['pending_profiles_unavailable'] = str(diagnostic_error)[:500]
                 attach_failure_snapshot(exc, document, plan, operation, operation_results,
                                         checkpoint_hash, base_ledger)
                 document.abortTransaction()

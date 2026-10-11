@@ -11,6 +11,20 @@ function snapshot(id: string, status: string): DurableTaskSnapshot {
     error_code:status==='failed'?'ProviderQuotaError':null, error_message:status==='failed'?'模型服务额度不足':null };
 }
 
+test('terminal repair budget reason takes precedence over the last native failure', () => {
+  const p=panel(); const s=useSessionStore.getState();
+  const stopped='当前失败操作 screw；已通过 throat、clamp；整体修复预算已耗尽（2/2）';
+  s.applyDurableSnapshot({...snapshot('cuts','failed'), error_code:'agent_freecad_repair_budget_exhausted',
+    error_message:stopped,steps:[
+      {id:'original',step_key:'model',kind:'agent_freecad_operations',status:'failed',attempt_count:1,
+        error_code:'subtractive_feature_no_effect',error_message:'throat removed no material'},
+      {id:'last',step_key:'repair-model-02',kind:'agent_freecad_repair',status:'failed',attempt_count:1,
+        error_code:'subtractive_feature_no_effect',error_message:'screw removed no material'}]},p.id);
+  const state=taskState(s.getActivePanel());
+  assert.equal(state.originalModelFailure?.error_message,'throat removed no material');
+  assert.equal(state.repairFailureMessage,stopped);
+});
+
 test('failed repair preserves the original modeling error on the same task', () => {
   const p=panel(); const s=useSessionStore.getState();
   s.applyDurableSnapshot({...snapshot('constraint-task','failed'), error_code:'constraint_patch_rejected',

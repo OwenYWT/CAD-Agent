@@ -4,6 +4,7 @@ from __future__ import annotations
 from copy import deepcopy
 from fractions import Fraction
 from pathlib import Path
+import json
 import shutil
 import tempfile
 
@@ -118,12 +119,43 @@ def validate_sketch(sketch, specification, *, nominal):
             'checked_constraints': len(rules), 'derived_relationships': len(specification['derivations'])}
 
 
+def _profile_intersections(sketch):
+    """Bounded native evidence in sketch-local coordinates; never an acceptance substitute."""
+    edges = [(i, geometry.toShape()) for i, geometry in enumerate(sketch.Geometry)
+             if not sketch.getConstruction(i)]
+    result, checked = [], 0
+    for position, (i, first) in enumerate(edges):
+        for j, second in edges[position + 1:]:
+            if checked >= 4096 or len(result) >= 16:
+                return {'intersections': result, 'complete': False, 'pairs_checked': checked}
+            checked += 1
+            common = first.common(second)
+            if common.Edges and sum(edge.Length for edge in common.Edges) > TOLERANCE:
+                result.append({'geometry_indices': [i, j], 'kind': 'overlap'})
+                continue
+            distance, points, _ = first.distToShape(second)
+            if distance > TOLERANCE:
+                continue
+            for a, b in points:
+                if (any((a-v.Point).Length <= TOLERANCE for v in first.Vertexes)
+                        and any((b-v.Point).Length <= TOLERANCE for v in second.Vertexes)):
+                    continue  # Ordinary adjacent endpoints are valid.
+                result.append({'geometry_indices': [i, j], 'kind': 'crossing_or_t_junction',
+                               'point_local_mm': [a.x, a.y, a.z]})
+    return {'intersections': result, 'complete': True, 'pairs_checked': checked}
+
+
 def validate_profile(sketch, *, closed, shape=None):
     import Part
     def invalid(reason, message):
+        evidence = {}
+        try:
+            evidence['profile_intersections_json'] = json.dumps(_profile_intersections(sketch))
+        except Exception as exc:
+            evidence['intersection_diagnostic_error'] = type(exc).__name__
         return ConstraintVerificationError(message, code='profile_geometry_invalid', details={
             'object': sketch.Name, 'stage': 'profile_topology', 'reason': reason,
-            'closed_profile': closed})
+            'closed_profile': closed, **evidence})
     shape = sketch.Shape if shape is None else shape
     if shape.isNull() or not shape.isValid() or not shape.Edges:
         raise invalid('invalid_shape', f'{sketch.Name} has no valid downstream profile')

@@ -43,7 +43,7 @@ class AcceptanceCheck(AcceptanceModel):
     check_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
     kind: Literal[
         "solid_count", "overall_dimension", "hole_count", "hole_diameter",
-        "hole_depth", "hole_position", "wall_thickness", "volume", "void_connected", "surface_clearance",
+        "hole_depth", "hole_position", "wall_thickness", "volume", "void_connected", "surface_clearance", "planar_gap",
     ]
     description: str = Field(min_length=1)
     source_quote: str = Field(min_length=1,
@@ -77,6 +77,9 @@ class AcceptanceCheck(AcceptanceModel):
             {'if':{'properties':{'kind':{'const':'surface_clearance'}}},
              'then':{'required':['scope'],'properties':{'scope':{'required':['centers_mm'],
                  'properties':{'centers_mm':{'minItems':2,'maxItems':2}}}}}},
+            {'if':{'properties':{'kind':{'const':'planar_gap'}}},
+             'then':{'properties':{'scope':{'properties':{
+                 'centers_mm':{'maxItems':0},'point_mm':{'type':'null'}}}}}},
             {'if':{'properties':{'kind':{'const':'hole_position'}}},
              'then':{'required':['scope'], 'properties':{'nominal':{'type':'null'},
                  'scope':{'required':['axis','centers_mm'], 'properties':{
@@ -119,6 +122,8 @@ class AcceptanceCheck(AcceptanceModel):
                 raise ValueError('continuous_normal covers the whole part; point/region selectors require an explicitly local measurement mode')
         if self.kind == "surface_clearance" and len(self.scope.centers_mm) != 2:
             raise ValueError("surface clearance requires two explicit points identifying distinct faces")
+        if self.kind == 'planar_gap' and (self.scope.centers_mm or self.scope.point_mm is not None):
+            raise ValueError('planar_gap selects a unique opposing planar face pair, not guessed surface points')
         if self.kind == "volume" and self.tolerance_mm is not None:
             raise ValueError("volume requires cubic millimetre tolerance")
         if self.kind != "volume" and self.tolerance_mm3 is not None:
@@ -257,6 +262,18 @@ class _ClearanceCheck(_ToolCheck):
     tolerance_mm3: None = None
 
 
+class _PlanarGapScope(MeasurementScope):
+    centers_mm: tuple[()] = ()
+    point_mm: None = None
+
+
+class _PlanarGapCheck(_ToolCheck):
+    kind: Literal['planar_gap']
+    nominal: float = Field(ge=0, strict=True)
+    scope: _PlanarGapScope = Field(default_factory=_PlanarGapScope)
+    tolerance_mm3: None = None
+
+
 class _WholeWallScope(MeasurementScope):
     wall_mode: Literal['continuous_normal'] = 'continuous_normal'
     point_mm: None = None
@@ -290,7 +307,7 @@ class _WallCheck(_ToolCheck):
 def acceptance_tool_schema():
     """Discriminated tool view of the same versioned measurement definitions."""
     schema=TypeAdapter(Annotated[Union[_ScalarCheck,_CountCheck,_VolumeCheck,_DimensionCheck,
-                                      _PositionCheck,_VoidCheck,_ClearanceCheck,_WallCheck],
+                                      _PositionCheck,_VoidCheck,_ClearanceCheck,_PlanarGapCheck,_WallCheck],
         Field(discriminator='kind')]).json_schema()
     definitions=schema.pop('$defs')
     return schema,definitions

@@ -48,7 +48,7 @@ def relation_certificate(sketch, args, document_objects=None):
         if action!='add':
             if old is None or old.get('origin') not in {'user_relation','typed_operation'} or old.get('logical_id')!=identity:
                 raise ValueError('来源未知或原模型关系保持保护；仅可修改本系统明确创建的关系')
-            if old['type'] not in {'Horizontal','Vertical','Coincident','Equal'}:
+            if old['type'] not in {'Horizontal','Vertical','Coincident','Equal','PointOnObject'}:
                 raise ValueError('尺寸和必要驱动参数保持保护')
             removed.append(next(rule for rule in rules if rule['logical_id']==identity))
             rules=[rule for rule in rules if rule['logical_id']!=identity]
@@ -58,7 +58,7 @@ def relation_certificate(sketch, args, document_objects=None):
                 if isinstance(relation.get(reference),dict) and 'geometry_index' in relation[reference]:
                     relation[reference].setdefault('point_position',None)
             rows=relation_rows(relation,basis)
-            if relation.get('kind') not in {'horizontal','vertical','coincident','equal'} or rows is None or not all(satisfies(row,basis) for row in rows):
+            if relation.get('kind') not in {'horizontal','vertical','coincident','equal','point_on_object'} or rows is None or not all(satisfies(row,basis) for row in rows):
                 raise ValueError('新关系必须由当前真实几何证明，不能移动几何或增加任意尺寸')
             rules.append({'logical_id':identity,'args':relation})
     equations=[];refs=[]

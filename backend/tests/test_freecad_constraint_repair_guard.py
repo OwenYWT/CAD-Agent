@@ -21,7 +21,8 @@ def source_plan():
 
 
 async def repair(before, after, code='sketch_redundant_constraints', sketch='BaseSketch'):
-    generator=FreeCADOperationGenerator(client=_client([after]),provenance_reader=_provenance)
+    # Rejections now feed back to the planner within its existing two-attempt budget.
+    generator=FreeCADOperationGenerator(client=_client([after, after]),provenance_reader=_provenance)
     return await generator.repair(source_code=json.dumps(before),
         failure={'error_code':code,'details':{'object':sketch}},
         base_state=None,output_formats=('step','stl'))

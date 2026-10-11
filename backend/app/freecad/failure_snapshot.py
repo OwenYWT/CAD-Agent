@@ -128,7 +128,9 @@ def capture_failure(document, plan, operation, completed, checkpoint_hash, base_
         'plan_hash': digest(plan), 'failed_operation_id': operation['op_id'],
         'failure': {'code': error.code, 'message': str(error), 'action': operation['action'],
             'details': {k: v for k, v in getattr(error, 'details', {}).items()
-                if k in {'object', 'stage', 'reason', 'closed_profile'}}},
+                if k in {'object', 'stage', 'reason', 'closed_profile',
+                         'profile_intersections_json', 'intersection_diagnostic_error', 'profile',
+                         'cut_diagnostic_json', 'pending_profiles_json'}}},
         'operations': [{'operation_id': op['op_id'], 'operation_hash': digest(op),
             'status': 'executed' if op['op_id'] in done else 'failing' if op['op_id'] == operation['op_id'] else 'not_executed',
             'committed_checkpoint': op['op_id'] in base_ledger} for op in plan['operations']],
@@ -143,7 +145,8 @@ def attach_failure_snapshot(error, document, plan, operation, completed, checkpo
                             base_ledger, *, max_bytes=1024 * 1024):
     """Evidence is best effort. No extraction/serialization error may stop rollback."""
     if not (getattr(error, 'code', '').startswith('sketch_')
-            or getattr(error, 'code', '') in {'constraint_repair_verification_failed', 'profile_geometry_invalid'}):
+            or getattr(error, 'code', '') in {'constraint_repair_verification_failed', 'profile_geometry_invalid',
+                                            'subtractive_feature_no_effect'}):
         return
     try:
         evidence = capture_failure(document, plan, operation, completed, checkpoint_hash, base_ledger, error)

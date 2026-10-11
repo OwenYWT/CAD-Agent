@@ -191,6 +191,12 @@ surfaces. Identify each face with an explicit surface-interior point in scope.ce
 It is a face-pair minimum clearance, NOT uniform normal wall thickness, all-wall thickness or a manufacturing
 fit certificate. Use it only for an explicitly requested minimum surface separation. Do not replace a wall
 requirement with this different metric or guess selection points the user has not specified.
+For a planar opening/gap requirement without supplied surface coordinates, use planar_gap.
+The backend selects a unique pair of opposing parallel trimmed faces with overlapping projected area
+and proves that the space between them contains no material. An optional axis and bounded region narrow
+the selection. No pair or multiple pairs is indeterminate; nominal is never used to choose a pair.
+Do not guess world-coordinate surface points to express a relative gap. Use surface_clearance only
+when its explicit surface selectors are actually known. Neither check certifies manufacturing fit.
 Wall modes: radial certifies cylindrical side walls only; surface_normal certifies one explicitly selected
 planar face, a complete spherical/toroidal offset surface, or a trimmed curved face whose
 normal-offset boundary and entire material layer the kernel can certify without self-intersections.

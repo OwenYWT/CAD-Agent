@@ -4,6 +4,24 @@ from pydantic import ValidationError
 from app.contracts.acceptance import AcceptanceContract, MeasurementEvidence, acceptance_outcome
 
 
+def test_planar_gap_schema_and_runtime_reject_guessed_surface_points():
+    import jsonschema
+    from app.contracts.acceptance import AcceptanceCheck, acceptance_tool_schema
+    raw = {'check_id': 'gap', 'kind': 'planar_gap', 'nominal': 25,
+           'description': 'opening', 'source_quote': '25 mm gap'}
+    schemas = [AcceptanceCheck.model_json_schema()]
+    schema, definitions = acceptance_tool_schema()
+    schemas.append({**schema, '$defs': definitions})
+    assert AcceptanceCheck.model_validate(raw).kind == 'planar_gap'
+    for schema in schemas:
+        jsonschema.validate(raw, schema)
+        for scope in ({'centers_mm': [[0, 0, 0]]}, {'point_mm': [0, 0, 0]}):
+            with pytest.raises(jsonschema.ValidationError):
+                jsonschema.validate({**raw, 'scope': scope}, schema)
+            with pytest.raises(ValidationError):
+                AcceptanceCheck.model_validate({**raw, 'scope': scope})
+
+
 def contract(**change):
     data = {"objective": "一个整体零件", "checks": [{"check_id": "connected", "kind": "solid_count",
         "description": "One connected solid", "source_quote": "整体零件", "nominal": 1}]}
