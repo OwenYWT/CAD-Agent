@@ -54,6 +54,14 @@ async def persist_failure_snapshot(request, payload, attempt_id, error, operatio
                         {'sha256': sha256, 'valid_checkpoint': False})
         details.update(constraint_diagnostic_sha256=sha256, constraint_diagnostic_attempt_id=str(attempt_id),
                        constraint_repair_max_attempts=settings.constraint_repair_max_attempts)
+        if payload.get('progressive_repair_v1'):
+            from app.workflows.native_repair import observation
+            details['repair_progress_json'] = canonical(observation(snapshot, operation_plan.model_dump(mode='json')))
+            details['native_repair_policy_json'] = canonical({
+                'max_attempts': settings.native_repair_max_attempts,
+                'cut_attempts': settings.cut_repair_max_attempts,
+                'constraint_attempts': settings.constraint_repair_max_attempts,
+                'profile_attempts': settings.profile_replan_max_attempts})
         if error.code == 'profile_geometry_invalid':
             details['profile_replan_max_attempts'] = settings.profile_replan_max_attempts
     except Exception as exc:

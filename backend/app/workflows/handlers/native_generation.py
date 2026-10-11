@@ -266,7 +266,7 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
             if failure.get("runtime_error_type")
             else None
         ),
-        repair_count=int(payload.get("gate_repair_index", repair_index)) - 1,
+        repair_count=int(payload.get('cut_operation_repair_index', payload.get("gate_repair_index", repair_index))) - 1,
         seen_signatures=tuple(
             str(item) for item in payload.get("seen_signatures") or ()
         ),
@@ -277,14 +277,25 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
         source_hash=str(payload['source_hash']))
     prior_profile = await load_profile_contract(request, source_id=source_id, source_hash=str(payload['source_hash']))
     profile_context = None
+    target_index = int(payload.get('target_repair_index', repair_index))
+    if (payload.get('progressive_repair_v1') and diagnostic
+            and failure['error_code'] == 'subtractive_feature_no_effect'):
+        from app.workflows.native_repair import observation
+        signature = 'cut:' + observation(diagnostic['snapshot'])['signature']
+        limit = int(payload['native_repair_policy']['cut_attempts'])
+        decision = RepairDecision(target_index <= limit and signature not in (payload.get('seen_signatures') or ()),
+            'subtractive_feature_no_effect', 'local_cut_patch', limit, signature,
+            'native cut repair has no remaining physical progress/budget')
     if failure['error_code'] == profile_replan.PROFILE_ERROR and payload.get('profile_replanning_v1'):
         signature = profile_replan.progress_fingerprint(diagnostic['snapshot']) if diagnostic else ''
-        used = int(payload.get('profile_repair_index', repair_index)) - 1
-        decision = RepairDecision(bool(diagnostic) and used < settings.profile_replan_max_attempts
+        used = (target_index if payload.get('progressive_repair_v1') else int(payload.get('profile_repair_index', repair_index))) - 1
+        limit = (int(payload['native_repair_policy']['profile_attempts']) if payload.get('progressive_repair_v1')
+                 else settings.profile_replan_max_attempts)
+        decision = RepairDecision(bool(diagnostic) and used < limit
             and signature not in (payload.get('seen_signatures') or ()), 'profile_geometry', 'profile_replan',
-            settings.profile_replan_max_attempts, signature,
+            limit, signature,
             'verified profile diagnostic is missing' if not diagnostic else
-            'profile replan attempt budget exhausted' if used >= settings.profile_replan_max_attempts else
+            'profile replan attempt budget exhausted' if used >= limit else
             'profile replan made no physical progress' if signature in (payload.get('seen_signatures') or ()) else
             'verified profile topology replan')
     if failure['error_code'] in SKETCH_FAILURES and diagnostic is None:
@@ -296,8 +307,10 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
         seen = {progress_fingerprint(entry['context']['snapshot'])
                 for entry in (prior_contract or {}).get('patches', [])}
         seen.update(str(item) for item in payload.get('seen_signatures') or ())
-        budget = settings.constraint_repair_max_attempts
-        exhausted = max(repair_index - 1, len((prior_contract or {}).get('patches', []))) >= budget
+        budget = (int(payload['native_repair_policy']['constraint_attempts']) if payload.get('progressive_repair_v1')
+                  else settings.constraint_repair_max_attempts)
+        exhausted = ((target_index - 1) if payload.get('progressive_repair_v1') else
+            max(repair_index - 1, len((prior_contract or {}).get('patches', [])))) >= budget
         repeated = signature in seen
         decision = RepairDecision(not exhausted and not repeated, 'sketch_constraints',
             'local_constraint_patch', budget, signature,

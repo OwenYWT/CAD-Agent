@@ -102,7 +102,8 @@
         "app.services.task_diagnostics",
         "app.services.durable_submission",
         "app.services.event_relay",
-        "app.execution.canonical"
+        "app.execution.canonical",
+        "app.workflows.native_repair"
       ],
       "allowed_dependencies": [
         "P00",
@@ -954,7 +955,11 @@
     "frontend/src/utils/parameterValidation.ts": "P04",
     "frontend/src/utils/suggestions.ts": "P04",
     "backend/app/freecad/profile_replan.py": "M04",
-    "backend/app/freecad/repair_validation.py": "M04"
+    "backend/app/freecad/repair_validation.py": "M04",
+    "backend/app/contracts/profile_patch.py": "P00",
+    "backend/app/contracts/cut_patch.py": "P00",
+    "backend/app/freecad/repair_differences.py": "M04",
+    "backend/app/workflows/native_repair.py": "M03"
   },
   "required_runtime_reports": {
     "browser-e2e/native-parameters/kernel.log": {
@@ -1344,7 +1349,10 @@
         "engineering",
         "freecad_product_acceptance_contract",
         "cadquery-svg",
-        "freecad_profile_replan_contract"
+        "freecad_profile_replan_contract",
+        "freecad_scoped_repair_contract",
+        "planar-gap",
+        "freecad_cut_diagnostics_contract"
       ]
     },
     "deploy-smoke/packaged-browser/report.json": {
@@ -1604,6 +1612,21 @@
     "mcad-core/native/freecad_profile_replan_contract.log": {
       "kind": "marker",
       "marker": "CAD_PROFILE_REPLAN_CONTRACT=",
+      "job": "mcad-core"
+    },
+    "mcad-core/native/freecad_scoped_repair_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_SCOPED_REPAIR_CONTRACT=",
+      "job": "mcad-core"
+    },
+    "mcad-core/native/planar-gap.log": {
+      "kind": "marker",
+      "marker": "CAD_PLANAR_GAP_CONTRACT=",
+      "job": "mcad-core"
+    },
+    "mcad-core/native/freecad_cut_diagnostics_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_CUT_DIAGNOSTICS_CONTRACT=",
       "job": "mcad-core"
     }
   },

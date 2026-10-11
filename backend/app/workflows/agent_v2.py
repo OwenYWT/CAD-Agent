@@ -15,6 +15,7 @@ from temporalio.workflow import ActivityCancellationType
 from app.workflows.model_job import ModelJobWorkflow
 from app.workflows.model_job_policy import MODEL_OPERATIONS
 from app.contracts.model_operations import CAD_OPERATIONS
+from app.workflows.native_repair import NativeRepairBudget, RepairStopped
 
 from app.geometry_ir.planner import build_geometry_plan, summarize_geometry_plan
 from app.topology.step_resolver import resolve_step_topology
@@ -61,6 +62,7 @@ class McadAgentWorkflowV2:
         self._validation_repair_v2 = False
         self._provider_streaming_v1 = False
         self._model_jobs_v1 = False
+        self._native_repair_budget = None
 
     @workflow.signal(name="confirmation")
     async def confirmation(self, decision: dict[str, Any]) -> None:
@@ -198,6 +200,10 @@ class McadAgentWorkflowV2:
         while current is not None and id(current) not in seen:
             seen.add(id(current))
             if isinstance(current, ApplicationError):
+                # These terminal decisions retain the native error as their
+                # cause, but own the reason the workflow stopped repairing.
+                if current.type in {'agent_freecad_repair_budget_exhausted', 'agent_freecad_repair_no_progress'}:
+                    return current
                 root = current
             current = getattr(current, "cause", None)
         return root
@@ -373,6 +379,7 @@ class McadAgentWorkflowV2:
         turn_index: int | None = None,
     ) -> dict[str, Any]:
         profile_repair_count = 0
+        cut_operation_repairs: dict[str, int] = {}
         generation_step = ({**step, "step_key": f"tool-{turn_index}-{step['step_key'][:80]}"}
                            if turn_index is not None else step)
         generated = await self._activity(
@@ -418,6 +425,8 @@ class McadAgentWorkflowV2:
                     ),
                     execution=True,
                 )
+                if request.get('progressive_repair_v1') and self._native_repair_budget is not None:
+                    self._native_repair_budget.succeeded()
                 break
             except Exception as exc:
                 if request.get("revision_restore") is not None or (request.get('operation_context') or {}).get('native_import'):
@@ -433,9 +442,28 @@ class McadAgentWorkflowV2:
                     if getattr(self, '_constraint_patches_v1', False) else 2)
                 profile_failure = (request.get('profile_replanning_v1')
                     and failure['error_code'] == 'profile_geometry_invalid')
+                cut_failure = (request.get('scoped_repair_feedback_v1')
+                    and failure['error_code'] == 'subtractive_feature_no_effect')
+                progressive = request.get('progressive_repair_v1') and (
+                    cut_failure or profile_failure or failure['error_code'].startswith('sketch_'))
+                target_repair_index = None
+                if progressive:
+                    if self._native_repair_budget is None:
+                        try:
+                            policy = json.loads((failure.get('details') or {}).get('native_repair_policy_json') or '{}')
+                            self._native_repair_budget = NativeRepairBudget(policy)
+                        except (ValueError, TypeError):
+                            raise ApplicationError('缺少有效且已保存的原生修复策略。原始错误：' + failure['error_message'],
+                                type='agent_freecad_repair_no_progress', non_retryable=True) from exc
+                    try:
+                        target_repair_index = self._native_repair_budget.reserve(failure)
+                    except RepairStopped as stopped:
+                        raise ApplicationError(str(stopped), type=stopped.code, non_retryable=True) from exc
+                if cut_failure:
+                    budget = 2  # Legacy histories retain the original transaction-wide policy.
                 if profile_failure:
                     budget = int((failure.get('details') or {}).get('profile_replan_max_attempts', 2))
-                if (profile_repair_count if profile_failure else repair_count) >= budget:
+                if not progressive and (profile_repair_count if profile_failure else repair_count) >= budget:
                     raise
                 failure["error_message"] = (
                     f"{failure['error_message']}\n"
@@ -459,6 +487,10 @@ class McadAgentWorkflowV2:
                         "seen_signatures": seen_signatures,
                         "base_state": base_state,
                         **({'profile_repair_index': profile_repair_count + 1} if profile_failure else {}),
+                        **({'cut_operation_repair_index': cut_operation_repairs.get(failure.get('operation_id'), 0) + 1}
+                           if cut_failure else {}),
+                        **({'target_repair_index': target_repair_index,
+                            'native_repair_policy': self._native_repair_budget.policy} if progressive else {}),
                     },
                     suffix=f"repair-operations-{generation_step['step_key']}-{repair_index:02d}",
                 )
@@ -470,6 +502,9 @@ class McadAgentWorkflowV2:
                 repair_count = repair_index
                 if profile_failure:
                     profile_repair_count += 1
+                if cut_failure:
+                    key = failure.get('operation_id')
+                    cut_operation_repairs[key] = cut_operation_repairs.get(key, 0) + 1
         return {
             "step": step,
             "generated": generated,
@@ -617,7 +652,13 @@ class McadAgentWorkflowV2:
                     mode="json"
                 ),
             }
-            if geometry["outcome"] == "passed":
+            selection_errors = []
+            if getattr(self, '_scoped_repair_feedback_v1', False):
+                acceptance = (plan.get('design_brief') or {}).get('acceptance') or {}
+                required = {c['check_id'] for c in acceptance.get('checks', []) if c.get('required', True)}
+                selection_errors = [row for row in (geometry['report'].get('acceptance') or {}).get('evidence', [])
+                    if row['check_id'] in required and row.get('details', {}).get('error_code') == 'acceptance_scope_invalid']
+            if geometry["outcome"] == "passed" and not selection_errors:
                 return {
                     **modeled,
                     "generated": generated,
@@ -626,15 +667,17 @@ class McadAgentWorkflowV2:
                     "repair_count": repair_count,
                     "seen_signatures": seen_signatures,
                 }
-            if geometry["outcome"] != "failed" or repair_count >= geometry_budget:
+            if selection_errors or geometry["outcome"] != "failed" or repair_count >= geometry_budget:
                 raise ApplicationError(
-                    "Required geometry validation did not pass.",
+                    ('验收测量对象无法可靠定位；保留冻结要求，不能通过改写模型绕过。'
+                     + '；'.join(row['check_id'] + ': ' + '; '.join(row.get('issues', [])) for row in selection_errors))
+                    if selection_errors else "Required geometry validation did not pass.",
                     {
                         "outcome": geometry["outcome"],
                         "evidence_id": geometry["evidence_id"],
                         "staging_manifest_id": executed["staging_manifest_id"],
                     },
-                    type="agent_geometry_validation_failed",
+                    type='agent_acceptance_scope_invalid' if selection_errors else "agent_geometry_validation_failed",
                     non_retryable=True,
                 )
             repair_index = repair_count + 1
@@ -1083,6 +1126,8 @@ class McadAgentWorkflowV2:
             self._freecad_checkpoints_v1 = workflow.patched("agent-v2-freecad-checkpoints-v1")
             self._cad_jobs_v1 = workflow.patched("agent-v2-cad-jobs-v1")
             self._constraint_patches_v1 = workflow.patched("agent-v2-freecad-constraint-patches-v1")
+            self._scoped_repair_feedback_v1 = workflow.patched('agent-v2-scoped-repair-feedback-v1')
+            progressive_repair_v1 = workflow.patched('agent-v2-progressive-native-repair-v1')
             profile_replanning_v1 = workflow.patched('agent-v2-profile-replanning-v1')
             self._phase = "requirements"
             requirements = await self._activity(
@@ -1211,6 +1256,10 @@ class McadAgentWorkflowV2:
             modeling_offset = 3 if request["operation"] == "generate" else 2
             modeled: list[dict[str, Any]] = []
             if use_freecad:
+                if progressive_repair_v1:
+                    request = {**request, 'progressive_repair_v1': True}
+                if self._scoped_repair_feedback_v1:
+                    request = {**request, 'scoped_repair_feedback_v1': True}
                 if profile_replanning_v1:
                     request = {**request, 'profile_replanning_v1': True}
                 if self._freecad_checkpoints_v1:

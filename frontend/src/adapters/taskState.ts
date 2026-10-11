@@ -59,7 +59,8 @@ export function taskState(panel: PanelState, document?: CloudDocument | null) {
   const failedSteps=(snapshot?.steps || []).filter(step=>['failed','timed_out'].includes(step.status) && step.error_message);
   const originalModelFailure=failedSteps.find(step=>['agent_freecad_operations','agent_model','agent_modeling'].includes(step.kind)) || null;
   const repairFailure=failedSteps.filter(step=>step.kind.includes('repair')).at(-1) || null;
-  const repairFailureMessage=repairFailure?.error_message || (originalModelFailure &&
+  const repairFailureMessage=/^agent_freecad_repair_(budget_exhausted|no_progress)$/.test(errorCode)
+    ? errorMessage : repairFailure?.error_message || (originalModelFailure &&
     /constraint_|repair_/.test(errorCode) && errorMessage!==originalModelFailure.error_message ? errorMessage : '');
   return {phase,label:TASK_PHASE_LABELS[phase],title,taskId,status,operationLabel,hasSaved,quota,errorCode,errorMessage,error,snapshot,recovery,continuationOnly,recoveryObjective,
     running:phase==='running',changeSetId:durable?.changeSetId || null,changeStatus,

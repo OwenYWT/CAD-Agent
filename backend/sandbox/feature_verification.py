@@ -9,6 +9,13 @@ from __future__ import annotations
 import math
 
 
+class MeasurementSelectionError(ValueError):
+    """The measurement target is missing or ambiguous; changing CAD is not evidence."""
+    def __init__(self, message, *, details=None):
+        super().__init__(message)
+        self.details = details or {}
+
+
 def _dot(a, b):
     return sum(x*y for x, y in zip(a, b))
 
@@ -63,14 +70,14 @@ unsampled region. This is minimum Euclidean clearance, not normal wall thickness
         vertex = cq.Vertex.makeVertex(*probe)
         matches = [(i, f) for i, f in enumerate(all_faces) if f.distance(vertex) <= tolerance]
         if len(matches) != 1:
-            raise ValueError('surface point does not identify exactly one trimmed face')
+            raise MeasurementSelectionError('surface point does not identify exactly one trimmed face')
         index, face = matches[0]
         # Boundary/seam probes do not unambiguously express a surface interior.
         if any(edge.distance(vertex) <= tolerance for edge in face.Edges()):
-            raise ValueError('surface selection point lies on a boundary or seam')
+            raise MeasurementSelectionError('surface selection point lies on a boundary or seam')
         indices.append(index); faces.append(face)
     if indices[0] == indices[1]:
-        raise ValueError('surface clearance requires distinct faces')
+        raise MeasurementSelectionError('surface clearance requires distinct faces')
     extrema = BRepExtrema_DistShapeShape(faces[0].wrapped, faces[1].wrapped)
     extrema.SetDeflection(tolerance)
     extrema.Perform()
@@ -87,6 +94,63 @@ unsampled region. This is minimum Euclidean clearance, not normal wall thickness
         'closest_points_mm': [list(extrema.PointOnShape1(1).Coord()), list(extrema.PointOnShape2(1).Coord())],
         'extremum_solutions': extrema.NbSolution(),
     }
+
+
+def _planar_gap(shape, scope, tolerance):
+    """Bind an unambiguous planar opening to real faces, independently of nominal.
+
+    Opposed normals and projected overlap are insufficient: the complete normal
+    prism between the overlapping faces must also be empty of material.
+    """
+    import cadquery as cq
+    axis = _unit(scope['axis']) if scope.get('axis') else None
+    region = None
+    if scope.get('region_min_mm') is not None:
+        lo, hi = scope['region_min_mm'], scope['region_max_mm']
+        if any(b-a <= tolerance for a, b in zip(lo, hi)):
+            raise MeasurementSelectionError('planar gap selection region has no volume')
+        region = cq.Solid.makeBox(*(b-a for a, b in zip(lo, hi)), pnt=cq.Vector(*lo))
+    faces = [(i, face) for i, face in enumerate(shape.Faces()) if face.geomType() == 'PLANE']
+    if len(faces) * (len(faces)-1) // 2 > 4096:
+        raise MeasurementSelectionError('planar gap face-pair verification budget exceeded')
+    pairs = []
+    for position, (i, first) in enumerate(faces):
+        normal = first.normalAt().normalized()
+        if axis and abs(abs(_dot(normal.toTuple(), axis))-1) > 1e-9:
+            continue
+        for j, second in faces[position+1:]:
+            if normal.dot(second.normalAt().normalized()) > -1 + 1e-9:
+                continue
+            distance = (second.Center()-first.Center()).dot(normal)
+            if distance <= tolerance:
+                continue
+            lower = first.intersect(region) if region is not None else first
+            upper = second.intersect(region) if region is not None else second
+            overlap = lower.intersect(upper.translate(normal * -distance))
+            patches = [face for face in overlap.Faces() if face.Area() > tolerance*tolerance]
+            if not patches:
+                continue
+            volume, error, area = 0.0, 0.0, 0.0
+            for patch in patches:
+                prism = cq.Solid.extrudeLinear(patch.outerWire(), patch.innerWires(), normal * distance)
+                if not prism.isValid() or len(prism.Solids()) != 1:
+                    raise ValueError('planar gap normal prism is invalid')
+                material = prism.intersect(shape)
+                if not material.isValid():
+                    raise ValueError('planar gap material intersection is invalid')
+                volume += sum(abs(solid.Volume()) for solid in material.Solids())
+                error += prism.Area()*tolerance
+                area += patch.Area()
+            if volume <= error:
+                pairs.append({'face_indices': [i, j], 'distance_mm': distance,
+                    'axis': normal.toTuple(), 'overlap_area_mm2': area,
+                    'intervening_material_mm3': volume, 'boolean_volume_tolerance_mm3': error})
+    if len(pairs) != 1:
+        raise MeasurementSelectionError(f'planar gap requires exactly one opposing unobstructed face pair; found {len(pairs)}',
+                                        details={'candidate_pairs': pairs})
+    pair = pairs[0]
+    return pair['distance_mm'], {**pair, 'binding': 'unique_opposing_planar_faces',
+        'selection_uses_nominal': False, 'manufacturing_fit': 'unverified'}
 
 
 def _closed_offset_wall(shape, face, tolerance):
@@ -437,6 +501,11 @@ def measure_checks(shape, checks):
                 row['measured'] = [distance]
                 row['method'] = 'occt_trimmed_face_global_minimum_distance'
                 row['details'].update(details)
+            elif kind == 'planar_gap':
+                distance, details = _planar_gap(shape, scope, tolerance)
+                row['measured'] = [distance]
+                row['method'] = 'occt_unique_planar_gap_and_empty_normal_prism'
+                row['details'].update(details)
             elif kind == 'solid_count':
                 row['method'] = 'brep_solid_count'
                 row['measured'] = [len(shape.Solids())]
@@ -614,5 +683,9 @@ def measure_checks(shape, checks):
                 row['issues'].append('no_measurement_evidence')
         except Exception as exc:
             row.update(outcome='indeterminate', measured=[], issues=[f'measurement_error:{type(exc).__name__}:{exc}'])
+            if isinstance(exc, MeasurementSelectionError):
+                row['details'].update(error_code='acceptance_scope_invalid',
+                                      repair_target='measurement_selection', cad_source_repair_allowed=False,
+                                      **exc.details)
         evidence.append(row)
     return evidence

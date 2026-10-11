@@ -94,17 +94,18 @@ def test_no_progress_fingerprint_ignores_edge_order_and_direction():
 
 @pytest.mark.asyncio
 async def test_profile_replan_uses_geometry_tool_and_validates_rejections():
+    from tests.test_freecad_scoped_replan import local_proposal
     before, snapshot, failure = inputs()
-    bad = proposal(); bad['operations'][-2]['args']['length_mm'] = 1
-    provider = ProviderTurns([call('freecad_execute', bad)], [call('freecad_execute', proposal())])
+    bad = local_proposal(context()); bad['operations'][0]['args']['sketch'] = 'Another'
+    provider = ProviderTurns([call('freecad_patch_profile', bad)], [call('freecad_patch_profile', local_proposal(context()))])
     result = await FreeCADOperationGenerator(client=provider, provenance_reader=_provenance).repair(
         source_code=before.model_dump_json(), failure=failure, diagnostic=snapshot,
         profile_context=context(), base_state=None, output_formats=('step', 'stl'))
     assert result.provenance['profile_replan']['acceptance_hash'] == context()['acceptance_hash']
     assert len(provider.requests) == 2
     names = {t['function']['name'] for t in provider.requests[0]['tools']}
-    assert 'freecad_execute' in names and 'freecad_patch_constraints' not in names and 'freecad_execute_api' not in names
-    assert 'frames, features, exports' in json.dumps(provider.requests[1]['messages'])
+    assert 'freecad_patch_profile' in names and 'freecad_execute' not in names and 'freecad_execute_api' not in names
+    assert 'args.sketch' in json.dumps(provider.requests[1]['messages'])
 
 
 @pytest.mark.asyncio
@@ -119,13 +120,36 @@ async def test_topology_error_without_backend_context_stops_before_provider():
 
 @pytest.mark.asyncio
 async def test_profile_tool_budget_stops_rejected_proposals(monkeypatch):
+    from tests.test_freecad_scoped_replan import local_proposal
     from app.config import settings
     monkeypatch.setattr(settings, 'profile_replan_max_tool_calls', 1)
     before, snapshot, failure = inputs()
-    bad = proposal(); bad['operations'][-2]['args']['length_mm'] = 1
-    provider = ProviderTurns([call('freecad_execute', bad)])
+    bad = local_proposal(context()); bad['operations'][0]['args']['sketch'] = 'Another'
+    provider = ProviderTurns([call('freecad_patch_profile', bad)])
     with pytest.raises(ValueError, match='tool-call budget'):
         await FreeCADOperationGenerator(client=provider, provenance_reader=_provenance).repair(
             source_code=before.model_dump_json(), failure=failure, diagnostic=snapshot,
             profile_context=context(), base_state=None, output_formats=('step', 'stl'))
     assert len(provider.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_local_profile_repair_preserves_an_unchanged_downstream_chamfer():
+    from tests.test_freecad_scoped_replan import local_proposal
+    before, snapshot, failure = inputs()
+    # The diagnostic occurs before this future operation. Extend the unit
+    # transaction inventory; no downstream native result is claimed here.
+    raw = before.model_dump(mode='json')
+    raw['operations'].insert(-1, {'op_id': 'chamfer', 'action': 'feature.chamfer',
+        'args': {'name': 'Chamfer', 'target': 'Body', 'size_mm': 0.25, 'use_all_edges': False, 'edge_scope': 'all'}})
+    before = FreeCADOperationPlan.model_validate(raw)
+    snapshot['plan_hash'] = digest(before.model_dump(mode='json'))
+    snapshot['operations'].insert(-1, {'operation_id': 'chamfer', 'operation_hash': digest(before.operations[-2].model_dump(mode='json')),
+        'status': 'not_executed', 'committed_checkpoint': False})
+    ctx = replan.build_context(before, snapshot, failure)
+    patch = local_proposal(ctx)
+    provider = ProviderTurns(*[[call('freecad_patch_profile', patch)] for _ in range(3)])
+    result = await FreeCADOperationGenerator(client=provider, provenance_reader=_provenance).repair(
+        source_code=before.model_dump_json(), failure=failure, diagnostic=snapshot,
+        profile_context=ctx, base_state=None, output_formats=('step', 'stl'))
+    assert result.operation_plan.operations[-2] == before.operations[-2]

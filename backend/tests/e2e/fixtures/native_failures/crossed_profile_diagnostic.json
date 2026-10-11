@@ -1,0 +1,1701 @@
+{
+  "checkpoint_hash": null,
+  "checkpoint_operations": {},
+  "document_name": "Model",
+  "failed_operation_id": "pad-hook",
+  "failure": {
+    "action": "feature.pad",
+    "code": "profile_geometry_invalid",
+    "details": {
+      "closed_profile": true,
+      "object": "HookSketch",
+      "reason": "invalid_planar_region",
+      "stage": "profile_topology"
+    },
+    "message": "HookSketch profile cannot support a valid downstream feature: self-intersecting or invalid planar region"
+  },
+  "operations": [
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "8c4052a0d89822392a7e338d89078532398edd52c30878219fedfc0f462c92b2",
+      "operation_id": "create-clamp-sketch",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "7b77139c8c1cd9e1edd24e4145180b761880a5279f95cf7650220f57774f6b65",
+      "operation_id": "clamp-line-0",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "e2394a9cc066aff1f48801fe886c7041b44db1cb5e3abbb0b2200353ba316d82",
+      "operation_id": "clamp-line-1",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "9fc48c6cec512ff8075c76959fca94b894691ca409245e7032ec7c5341760948",
+      "operation_id": "clamp-line-2",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "655bb301630537e43b8cf3fc7e563ce13c1113ffee98dffc8acc5374d81e90ee",
+      "operation_id": "clamp-line-3",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "9e1245ce5f9db2260d71f16a8905b14fed571ff3db793e2dd3366b8bd8bc65d1",
+      "operation_id": "clamp-line-4",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "acf7c913ab7a7e0c0e67c5a5ddcb5874a1d53d36ebf1f66bec0777e29372f0d4",
+      "operation_id": "clamp-line-5",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "3b8340422d18d1a398f12c0b410f455637b51da5353df8b41c5d728b47477f55",
+      "operation_id": "clamp-line-6",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "260e330dd46008924c4a5f6a5cb75f03a989d7cd5b085843b1c9ed7690257549",
+      "operation_id": "clamp-line-7",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "077b7681988ec5cf91eb4d959b722d74867e43e4fdc8774c8312afa5fb1c9dfd",
+      "operation_id": "clamp-coincident-0",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "dccf10f20df60b36fe7a8153063f80faca429b9e0f31f8823156742597f8aba2",
+      "operation_id": "clamp-coincident-1",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "71433236e5da10457ea07545be9671e088a50c9c03e100b57132cfa10fe1f767",
+      "operation_id": "clamp-coincident-2",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "11066eb2c81c51365d7483adabbb2de44b654824a63e43b1b8fb5e45f4ea9e6d",
+      "operation_id": "clamp-coincident-3",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "33e82d58f1e467b1a6f0ada207a0beee3eed7ee446122ef82a221e686bc0d277",
+      "operation_id": "clamp-coincident-4",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "338a55a46b45ef268080820dd181859f7e94a03dfc7f0d3d44c98d4821b7fa06",
+      "operation_id": "clamp-coincident-5",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "cfd7c4a26ca8f360560ffacb82ae519b3865c4466ba2bd6075e48e4b589e1c9a",
+      "operation_id": "clamp-coincident-6",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "c7e2a632cfe04149f66802f90bac727cc8e51721ffcf8a5bf1b7dce6be4c0bdf",
+      "operation_id": "clamp-coincident-7",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "0f676888b6594a4417442b035b59530925236d1f64a43aa14b43774dd4f2bc55",
+      "operation_id": "clamp-horizontal-0",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "0d0fb6343709fba859ec9b9950272ac41cd719b3cfc0cb7f78dce7366c58bcf4",
+      "operation_id": "clamp-horizontal-2",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "876e0fe182dc38a167e46069c1ad791834b10c36a9098caa52571bbe7bcfadea",
+      "operation_id": "clamp-horizontal-4",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "6acbf32aac789106d7fb91d392a929a61a7e488fb572d99099ce53e3e1d71608",
+      "operation_id": "clamp-horizontal-6",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "d5d4afa6846bd1aee491c6f64f35fa817e3b19e6f0d8b3172adebd18124d8625",
+      "operation_id": "clamp-vertical-1",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "2d25cf94a1acf917e3948e9b6927ffeb132d6d7402486576b76d925399db02d4",
+      "operation_id": "clamp-vertical-3",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "9cc909bcb6a813fe20d1820a7ed99823f8aa1eceffe887dcb8150a0ac48ba27c",
+      "operation_id": "clamp-vertical-5",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "1ba6553f2767353ea3906fa176f997257a7156d21eb96ebcc4e9026d1e009183",
+      "operation_id": "clamp-vertical-7",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "af243e249656f404453c53e6dc5baef602b863f233c433c0621a65a842636ec1",
+      "operation_id": "clamp-dx-start",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "0de99dae9654d9d254458876d567ae7581526ff8c2df3997b116eb958be9a6be",
+      "operation_id": "clamp-dy-start",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "88c6e81484b8581adac7d3a1fea5a46e35bd34a3b710da14957a8444e36b89fa",
+      "operation_id": "clamp-dx-back",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "1823c409ba4f625c3001eb38d3b55da3623356a1f199e0d2b435b480759275f2",
+      "operation_id": "clamp-dy-bottom",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "9416f1ee5d034c134222fbef918efa8960a9c9e96da799abf1ea3355fbfdc429",
+      "operation_id": "clamp-dx-gap-front",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "a593e47b128563e733db95d04ff74f86d9b27181ae9534faf7c02a8a06a6bd9b",
+      "operation_id": "clamp-dy-gap-bottom",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "22561361b67583ef61250fae84c93cf95270370b9cb8da45a29be53cb08bfc57",
+      "operation_id": "clamp-dx-gap-back",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "65b7a4ec9a5a9d2057181d40eebda2852675bdc2546797f07a6ec607f67ed24d",
+      "operation_id": "clamp-dy-gap-top",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "813417d14d65f9aaa50a7b09c9eeaeaef8b3fc5ae4249a9b17dd791a96255f14",
+      "operation_id": "pad-clamp",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "15224444eac5bcda31680ec5ea76b5bfc232892e4d7766d27abfac70813ce051",
+      "operation_id": "create-hook-sketch",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "82aefebf852ad96984a5e3ac78ca6897ca6790f35fa3deb75b6394788d0c6409",
+      "operation_id": "hook-line-0",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "95631f15d1327a8f9a69778ead56b02c7c0cd2470e30a90f2209aa96d46950c2",
+      "operation_id": "hook-line-1",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "47dd39369f6cbb976c8bea8acee98ae0d885093f35c0ce35d65faf2c3ef7b0ff",
+      "operation_id": "hook-line-2",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "b89509219557f97184f7497a3da2d18d559aa42cd3c5f6b59c767b1d5bc4c10d",
+      "operation_id": "hook-line-3",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "a1bd6f62878152a4fafd5d5d47951ad48e6eb091680f4eb45a8ec8e31adad393",
+      "operation_id": "hook-line-4",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "3e7d744a82453481b44409cfde70ca75d55ba09f7fef6fde73fec7e92c556208",
+      "operation_id": "hook-line-5",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "9e1e12d82ee3baee339c9b35c1ba0dcaabfb20774c22e57f160406e13bc3d4d7",
+      "operation_id": "hook-line-6",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "0b0ecfe4c084b69ebb5e1242f75f21cc1ac5911d1cbe38d558dc276189ec97aa",
+      "operation_id": "hook-line-7",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "46ed3baedb0fcf4cdf111d90c9dd0cc511967279cbfc1ad03fcba2896b0ef6bd",
+      "operation_id": "hook-coincident-0",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "244748d5945ef9dd48654d29dcdfaa9f1a0bc5df6c85edfb137743ab6e808488",
+      "operation_id": "hook-coincident-1",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "898e56f3baa619bd9e99b82affdf640409cc5f363a48f5a464769b00eb68d28b",
+      "operation_id": "hook-coincident-2",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "7c6414a026050cb82caa8645e05150fe0af9131e76b32eb4d11b909cb2f0747b",
+      "operation_id": "hook-coincident-3",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "46b659264001af99a2044fcdf43bf214be7a31756c969e2108f1a81bd30a6602",
+      "operation_id": "hook-coincident-4",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "96c182741dde278554cafd9d6068198d7adc7e9066dd70aeed4177cb6c076a7d",
+      "operation_id": "hook-coincident-5",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "cb3632d6453e184c5bbee8d7e5b495826daf88ee4b237e98e4b492655c7bdbbb",
+      "operation_id": "hook-coincident-6",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "8529026bdc8ef49c9c2f2f185cab0c1c404fb3f5ce98675f23ce741ab5e498f6",
+      "operation_id": "hook-coincident-7",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "d80ddaaa9f46fff165c2c391d3bf423cfdf0da6144ffd69f5be2d978e5784dfb",
+      "operation_id": "hook-horizontal-1",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "c0a3ac4d400b096bd8b4b35b28261f5642782076f1bd8c08c87c09968890583b",
+      "operation_id": "hook-horizontal-3",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "5911bc02636275f94685bf83bbf6e0d1a111fc880488adf25a56110afefba735",
+      "operation_id": "hook-horizontal-5",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "06b6cacbac9c60abc8003eed064b68164e4ce8ad728c2036810ba866ff511311",
+      "operation_id": "hook-horizontal-7",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "12a51d845d2573f8b988b5a415ba8e78b5b5a6ce6a94a7fb790f5043d920ba28",
+      "operation_id": "hook-vertical-0",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "95d8927f94b3dbe9cfe032274086ccc21b1604cd8dbc1bdb0292cce19506e9b7",
+      "operation_id": "hook-vertical-2",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "407b63d9999b57ed67b3591369caffba390d7b1bc6db8dc97ef25f3596a54840",
+      "operation_id": "hook-vertical-4",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "8093b50dcda52f40aab2d8e81615d39e0d8ac8a542e12fa829064705cf8c35bb",
+      "operation_id": "hook-vertical-6",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "6b7805e5576d0f1918656a947af4a3117861e4f21bec0df6ee59a7152caceb9d",
+      "operation_id": "hook-dx-a",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "d2262d863f6cea7a9c1170d64a63001175a7086dfd44d75abf388880746599e4",
+      "operation_id": "hook-dy-a",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "f560879d9d69410f330fef90cd2011ee80381dfd153b1f15f5144da73e8fad39",
+      "operation_id": "hook-dy-b",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "f0c9245ecaa1e1409067c561c24abc1c515c4459ee39ed99cd1e4474afaffb91",
+      "operation_id": "hook-dx-c",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "5e1c37fadf63812ef8067aaa7edbbf3e2c08fa4b64da0851f5cc0f87913684ab",
+      "operation_id": "hook-dy-d",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "3e7f379bb2cf64e973504793fc4b3dad23bd9e27213bbf690aac5695cbaad59d",
+      "operation_id": "hook-dx-e",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "5397e124f4b6f3b90ef25bf9e3aaf8c493a508333677abedd9f5f657889810f7",
+      "operation_id": "hook-dy-f",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "4e37a30d62ba165466d9ad90ca92291976e4213dc6be178c123cd0ad080cdafa",
+      "operation_id": "hook-dx-g",
+      "status": "executed"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "70a8bd255e9de57e4fd4d5c6a013fa0d7383cb20038f578986ea60d59bacd094",
+      "operation_id": "pad-hook",
+      "status": "failing"
+    },
+    {
+      "committed_checkpoint": false,
+      "operation_hash": "9bdf7f6d53b04349b25f8f47d7cb42df19ab516671a2a24ecae3ba5c64bce8b1",
+      "operation_id": "export-checkpoint",
+      "status": "not_executed"
+    }
+  ],
+  "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+  "references": [],
+  "schema_version": "freecad-failure-snapshot.v1",
+  "sketches": [
+    {
+      "constraints": [
+        {
+          "driving": null,
+          "first": 0,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 0,
+          "logical_id": "clamp-coincident-0",
+          "name": "",
+          "operation_hash": "077b7681988ec5cf91eb4d959b722d74867e43e4fdc8774c8312afa5fb1c9dfd",
+          "operation_id": "clamp-coincident-0",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": 1,
+          "second_position": 1,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Coincident",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 1,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 1,
+          "logical_id": "clamp-coincident-1",
+          "name": "",
+          "operation_hash": "dccf10f20df60b36fe7a8153063f80faca429b9e0f31f8823156742597f8aba2",
+          "operation_id": "clamp-coincident-1",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": 2,
+          "second_position": 1,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Coincident",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 2,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 2,
+          "logical_id": "clamp-coincident-2",
+          "name": "",
+          "operation_hash": "71433236e5da10457ea07545be9671e088a50c9c03e100b57132cfa10fe1f767",
+          "operation_id": "clamp-coincident-2",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": 3,
+          "second_position": 1,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Coincident",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 3,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 3,
+          "logical_id": "clamp-coincident-3",
+          "name": "",
+          "operation_hash": "11066eb2c81c51365d7483adabbb2de44b654824a63e43b1b8fb5e45f4ea9e6d",
+          "operation_id": "clamp-coincident-3",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": 4,
+          "second_position": 1,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Coincident",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 4,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 4,
+          "logical_id": "clamp-coincident-4",
+          "name": "",
+          "operation_hash": "33e82d58f1e467b1a6f0ada207a0beee3eed7ee446122ef82a221e686bc0d277",
+          "operation_id": "clamp-coincident-4",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": 5,
+          "second_position": 1,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Coincident",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 5,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 5,
+          "logical_id": "clamp-coincident-5",
+          "name": "",
+          "operation_hash": "338a55a46b45ef268080820dd181859f7e94a03dfc7f0d3d44c98d4821b7fa06",
+          "operation_id": "clamp-coincident-5",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": 6,
+          "second_position": 1,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Coincident",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 6,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 6,
+          "logical_id": "clamp-coincident-6",
+          "name": "",
+          "operation_hash": "cfd7c4a26ca8f360560ffacb82ae519b3865c4466ba2bd6075e48e4b589e1c9a",
+          "operation_id": "clamp-coincident-6",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": 7,
+          "second_position": 1,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Coincident",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 7,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 7,
+          "logical_id": "clamp-coincident-7",
+          "name": "",
+          "operation_hash": "c7e2a632cfe04149f66802f90bac727cc8e51721ffcf8a5bf1b7dce6be4c0bdf",
+          "operation_id": "clamp-coincident-7",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": 0,
+          "second_position": 1,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Coincident",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 0,
+          "first_position": 0,
+          "generated_slot": 0,
+          "index": 8,
+          "logical_id": "clamp-horizontal-0",
+          "name": "",
+          "operation_hash": "0f676888b6594a4417442b035b59530925236d1f64a43aa14b43774dd4f2bc55",
+          "operation_id": "clamp-horizontal-0",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Horizontal",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 2,
+          "first_position": 0,
+          "generated_slot": 0,
+          "index": 9,
+          "logical_id": "clamp-horizontal-2",
+          "name": "",
+          "operation_hash": "0d0fb6343709fba859ec9b9950272ac41cd719b3cfc0cb7f78dce7366c58bcf4",
+          "operation_id": "clamp-horizontal-2",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Horizontal",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 4,
+          "first_position": 0,
+          "generated_slot": 0,
+          "index": 10,
+          "logical_id": "clamp-horizontal-4",
+          "name": "",
+          "operation_hash": "876e0fe182dc38a167e46069c1ad791834b10c36a9098caa52571bbe7bcfadea",
+          "operation_id": "clamp-horizontal-4",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Horizontal",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 6,
+          "first_position": 0,
+          "generated_slot": 0,
+          "index": 11,
+          "logical_id": "clamp-horizontal-6",
+          "name": "",
+          "operation_hash": "6acbf32aac789106d7fb91d392a929a61a7e488fb572d99099ce53e3e1d71608",
+          "operation_id": "clamp-horizontal-6",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Horizontal",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 1,
+          "first_position": 0,
+          "generated_slot": 0,
+          "index": 12,
+          "logical_id": "clamp-vertical-1",
+          "name": "",
+          "operation_hash": "d5d4afa6846bd1aee491c6f64f35fa817e3b19e6f0d8b3172adebd18124d8625",
+          "operation_id": "clamp-vertical-1",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Vertical",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 3,
+          "first_position": 0,
+          "generated_slot": 0,
+          "index": 13,
+          "logical_id": "clamp-vertical-3",
+          "name": "",
+          "operation_hash": "2d25cf94a1acf917e3948e9b6927ffeb132d6d7402486576b76d925399db02d4",
+          "operation_id": "clamp-vertical-3",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Vertical",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 5,
+          "first_position": 0,
+          "generated_slot": 0,
+          "index": 14,
+          "logical_id": "clamp-vertical-5",
+          "name": "",
+          "operation_hash": "9cc909bcb6a813fe20d1820a7ed99823f8aa1eceffe887dcb8150a0ac48ba27c",
+          "operation_id": "clamp-vertical-5",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Vertical",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 7,
+          "first_position": 0,
+          "generated_slot": 0,
+          "index": 15,
+          "logical_id": "clamp-vertical-7",
+          "name": "",
+          "operation_hash": "1ba6553f2767353ea3906fa176f997257a7156d21eb96ebcc4e9026d1e009183",
+          "operation_id": "clamp-vertical-7",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Vertical",
+          "value": 0.0
+        },
+        {
+          "driving": true,
+          "first": 0,
+          "first_position": 1,
+          "generated_slot": 0,
+          "index": 16,
+          "logical_id": "clamp-dx-start",
+          "name": "",
+          "operation_hash": "af243e249656f404453c53e6dc5baef602b863f233c433c0621a65a842636ec1",
+          "operation_id": "clamp-dx-start",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "DistanceX",
+          "value": 0.0
+        },
+        {
+          "driving": true,
+          "first": 0,
+          "first_position": 1,
+          "generated_slot": 0,
+          "index": 17,
+          "logical_id": "clamp-dy-start",
+          "name": "",
+          "operation_hash": "0de99dae9654d9d254458876d567ae7581526ff8c2df3997b116eb958be9a6be",
+          "operation_id": "clamp-dy-start",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "DistanceY",
+          "value": 17.5
+        },
+        {
+          "driving": true,
+          "first": 0,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 18,
+          "logical_id": "clamp-dx-back",
+          "name": "",
+          "operation_hash": "88c6e81484b8581adac7d3a1fea5a46e35bd34a3b710da14957a8444e36b89fa",
+          "operation_id": "clamp-dx-back",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "DistanceX",
+          "value": -40.0
+        },
+        {
+          "driving": true,
+          "first": 1,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 19,
+          "logical_id": "clamp-dy-bottom",
+          "name": "",
+          "operation_hash": "1823c409ba4f625c3001eb38d3b55da3623356a1f199e0d2b435b480759275f2",
+          "operation_id": "clamp-dy-bottom",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "DistanceY",
+          "value": -17.5
+        },
+        {
+          "driving": true,
+          "first": 4,
+          "first_position": 1,
+          "generated_slot": 0,
+          "index": 20,
+          "logical_id": "clamp-dx-gap-front",
+          "name": "",
+          "operation_hash": "9416f1ee5d034c134222fbef918efa8960a9c9e96da799abf1ea3355fbfdc429",
+          "operation_id": "clamp-dx-gap-front",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "DistanceX",
+          "value": 0.0
+        },
+        {
+          "driving": true,
+          "first": 4,
+          "first_position": 1,
+          "generated_slot": 0,
+          "index": 21,
+          "logical_id": "clamp-dy-gap-bottom",
+          "name": "",
+          "operation_hash": "a593e47b128563e733db95d04ff74f86d9b27181ae9534faf7c02a8a06a6bd9b",
+          "operation_id": "clamp-dy-gap-bottom",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "DistanceY",
+          "value": -12.5
+        },
+        {
+          "driving": true,
+          "first": 5,
+          "first_position": 1,
+          "generated_slot": 0,
+          "index": 22,
+          "logical_id": "clamp-dx-gap-back",
+          "name": "",
+          "operation_hash": "22561361b67583ef61250fae84c93cf95270370b9cb8da45a29be53cb08bfc57",
+          "operation_id": "clamp-dx-gap-back",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "DistanceX",
+          "value": -35.0
+        },
+        {
+          "driving": true,
+          "first": 5,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 23,
+          "logical_id": "clamp-dy-gap-top",
+          "name": "",
+          "operation_hash": "65b7a4ec9a5a9d2057181d40eebda2852675bdc2546797f07a6ec607f67ed24d",
+          "operation_id": "clamp-dy-gap-top",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "DistanceY",
+          "value": 12.5
+        }
+      ],
+      "expressions": [],
+      "external_geometry": [],
+      "geometry": [
+        {
+          "construction": false,
+          "end": [
+            -40.0,
+            17.5,
+            0.0
+          ],
+          "first_parameter": 0.0,
+          "index": 0,
+          "last_parameter": 40.0,
+          "start": [
+            0.0,
+            17.5,
+            0.0
+          ],
+          "type": "Part::GeomLineSegment"
+        },
+        {
+          "construction": false,
+          "end": [
+            -40.0,
+            -17.5,
+            0.0
+          ],
+          "first_parameter": 0.0,
+          "index": 1,
+          "last_parameter": 35.0,
+          "start": [
+            -40.0,
+            17.5,
+            0.0
+          ],
+          "type": "Part::GeomLineSegment"
+        },
+        {
+          "construction": false,
+          "end": [
+            0.0,
+            -17.5,
+            0.0
+          ],
+          "first_parameter": 0.0,
+          "index": 2,
+          "last_parameter": 40.0,
+          "start": [
+            -40.0,
+            -17.5,
+            0.0
+          ],
+          "type": "Part::GeomLineSegment"
+        },
+        {
+          "construction": false,
+          "end": [
+            0.0,
+            -12.5,
+            0.0
+          ],
+          "first_parameter": 0.0,
+          "index": 3,
+          "last_parameter": 5.0,
+          "start": [
+            0.0,
+            -17.5,
+            0.0
+          ],
+          "type": "Part::GeomLineSegment"
+        },
+        {
+          "construction": false,
+          "end": [
+            -35.0,
+            -12.5,
+            0.0
+          ],
+          "first_parameter": 0.0,
+          "index": 4,
+          "last_parameter": 35.0,
+          "start": [
+            0.0,
+            -12.5,
+            0.0
+          ],
+          "type": "Part::GeomLineSegment"
+        },
+        {
+          "construction": false,
+          "end": [
+            -35.0,
+            12.5,
+            0.0
+          ],
+          "first_parameter": 0.0,
+          "index": 5,
+          "last_parameter": 25.0,
+          "start": [
+            -35.0,
+            -12.5,
+            0.0
+          ],
+          "type": "Part::GeomLineSegment"
+        },
+        {
+          "construction": false,
+          "end": [
+            0.0,
+            12.5,
+            0.0
+          ],
+          "first_parameter": 0.0,
+          "index": 6,
+          "last_parameter": 35.0,
+          "start": [
+            -35.0,
+            12.5,
+            0.0
+          ],
+          "type": "Part::GeomLineSegment"
+        },
+        {
+          "construction": false,
+          "end": [
+            0.0,
+            17.5,
+            0.0
+          ],
+          "first_parameter": 0.0,
+          "index": 7,
+          "last_parameter": 5.0,
+          "start": [
+            0.0,
+            12.5,
+            0.0
+          ],
+          "type": "Part::GeomLineSegment"
+        }
+      ],
+      "name": "ClampSketch",
+      "placement": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        2.220446049250313e-16,
+        -1.0,
+        0.0,
+        0.0,
+        1.0,
+        2.220446049250313e-16,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "solver": {
+        "conflicting_constraint_numbers": [],
+        "constraint_numbering": "one_based",
+        "constraint_status": "fully_constrained",
+        "degrees_of_freedom": 0,
+        "fully_constrained": true,
+        "native_status": "Valid",
+        "object": "ClampSketch",
+        "partially_redundant_constraint_numbers": [],
+        "redundant_constraint_numbers": [],
+        "solver_status": 0
+      }
+    },
+    {
+      "constraints": [
+        {
+          "driving": null,
+          "first": 0,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 0,
+          "logical_id": "hook-coincident-0",
+          "name": "",
+          "operation_hash": "46ed3baedb0fcf4cdf111d90c9dd0cc511967279cbfc1ad03fcba2896b0ef6bd",
+          "operation_id": "hook-coincident-0",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": 1,
+          "second_position": 1,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Coincident",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 1,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 1,
+          "logical_id": "hook-coincident-1",
+          "name": "",
+          "operation_hash": "244748d5945ef9dd48654d29dcdfaa9f1a0bc5df6c85edfb137743ab6e808488",
+          "operation_id": "hook-coincident-1",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": 2,
+          "second_position": 1,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Coincident",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 2,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 2,
+          "logical_id": "hook-coincident-2",
+          "name": "",
+          "operation_hash": "898e56f3baa619bd9e99b82affdf640409cc5f363a48f5a464769b00eb68d28b",
+          "operation_id": "hook-coincident-2",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": 3,
+          "second_position": 1,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Coincident",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 3,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 3,
+          "logical_id": "hook-coincident-3",
+          "name": "",
+          "operation_hash": "7c6414a026050cb82caa8645e05150fe0af9131e76b32eb4d11b909cb2f0747b",
+          "operation_id": "hook-coincident-3",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": 4,
+          "second_position": 1,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Coincident",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 4,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 4,
+          "logical_id": "hook-coincident-4",
+          "name": "",
+          "operation_hash": "46b659264001af99a2044fcdf43bf214be7a31756c969e2108f1a81bd30a6602",
+          "operation_id": "hook-coincident-4",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": 5,
+          "second_position": 1,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Coincident",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 5,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 5,
+          "logical_id": "hook-coincident-5",
+          "name": "",
+          "operation_hash": "96c182741dde278554cafd9d6068198d7adc7e9066dd70aeed4177cb6c076a7d",
+          "operation_id": "hook-coincident-5",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": 6,
+          "second_position": 1,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Coincident",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 6,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 6,
+          "logical_id": "hook-coincident-6",
+          "name": "",
+          "operation_hash": "cb3632d6453e184c5bbee8d7e5b495826daf88ee4b237e98e4b492655c7bdbbb",
+          "operation_id": "hook-coincident-6",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": 7,
+          "second_position": 1,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Coincident",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 7,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 7,
+          "logical_id": "hook-coincident-7",
+          "name": "",
+          "operation_hash": "8529026bdc8ef49c9c2f2f185cab0c1c404fb3f5ce98675f23ce741ab5e498f6",
+          "operation_id": "hook-coincident-7",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": 0,
+          "second_position": 1,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Coincident",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 1,
+          "first_position": 0,
+          "generated_slot": 0,
+          "index": 8,
+          "logical_id": "hook-horizontal-1",
+          "name": "",
+          "operation_hash": "d80ddaaa9f46fff165c2c391d3bf423cfdf0da6144ffd69f5be2d978e5784dfb",
+          "operation_id": "hook-horizontal-1",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Horizontal",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 3,
+          "first_position": 0,
+          "generated_slot": 0,
+          "index": 9,
+          "logical_id": "hook-horizontal-3",
+          "name": "",
+          "operation_hash": "c0a3ac4d400b096bd8b4b35b28261f5642782076f1bd8c08c87c09968890583b",
+          "operation_id": "hook-horizontal-3",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Horizontal",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 5,
+          "first_position": 0,
+          "generated_slot": 0,
+          "index": 10,
+          "logical_id": "hook-horizontal-5",
+          "name": "",
+          "operation_hash": "5911bc02636275f94685bf83bbf6e0d1a111fc880488adf25a56110afefba735",
+          "operation_id": "hook-horizontal-5",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Horizontal",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 7,
+          "first_position": 0,
+          "generated_slot": 0,
+          "index": 11,
+          "logical_id": "hook-horizontal-7",
+          "name": "",
+          "operation_hash": "06b6cacbac9c60abc8003eed064b68164e4ce8ad728c2036810ba866ff511311",
+          "operation_id": "hook-horizontal-7",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Horizontal",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 0,
+          "first_position": 0,
+          "generated_slot": 0,
+          "index": 12,
+          "logical_id": "hook-vertical-0",
+          "name": "",
+          "operation_hash": "12a51d845d2573f8b988b5a415ba8e78b5b5a6ce6a94a7fb790f5043d920ba28",
+          "operation_id": "hook-vertical-0",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Vertical",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 2,
+          "first_position": 0,
+          "generated_slot": 0,
+          "index": 13,
+          "logical_id": "hook-vertical-2",
+          "name": "",
+          "operation_hash": "95d8927f94b3dbe9cfe032274086ccc21b1604cd8dbc1bdb0292cce19506e9b7",
+          "operation_id": "hook-vertical-2",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Vertical",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 4,
+          "first_position": 0,
+          "generated_slot": 0,
+          "index": 14,
+          "logical_id": "hook-vertical-4",
+          "name": "",
+          "operation_hash": "407b63d9999b57ed67b3591369caffba390d7b1bc6db8dc97ef25f3596a54840",
+          "operation_id": "hook-vertical-4",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Vertical",
+          "value": 0.0
+        },
+        {
+          "driving": null,
+          "first": 6,
+          "first_position": 0,
+          "generated_slot": 0,
+          "index": 15,
+          "logical_id": "hook-vertical-6",
+          "name": "",
+          "operation_hash": "8093b50dcda52f40aab2d8e81615d39e0d8ac8a542e12fa829064705cf8c35bb",
+          "operation_id": "hook-vertical-6",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "Vertical",
+          "value": 0.0
+        },
+        {
+          "driving": true,
+          "first": 0,
+          "first_position": 1,
+          "generated_slot": 0,
+          "index": 16,
+          "logical_id": "hook-dx-a",
+          "name": "",
+          "operation_hash": "6b7805e5576d0f1918656a947af4a3117861e4f21bec0df6ee59a7152caceb9d",
+          "operation_id": "hook-dx-a",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "DistanceX",
+          "value": -5.0
+        },
+        {
+          "driving": true,
+          "first": 0,
+          "first_position": 1,
+          "generated_slot": 0,
+          "index": 17,
+          "logical_id": "hook-dy-a",
+          "name": "",
+          "operation_hash": "d2262d863f6cea7a9c1170d64a63001175a7086dfd44d75abf388880746599e4",
+          "operation_id": "hook-dy-a",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "DistanceY",
+          "value": -17.5
+        },
+        {
+          "driving": true,
+          "first": 0,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 18,
+          "logical_id": "hook-dy-b",
+          "name": "",
+          "operation_hash": "f560879d9d69410f330fef90cd2011ee80381dfd153b1f15f5144da73e8fad39",
+          "operation_id": "hook-dy-b",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "DistanceY",
+          "value": -12.5
+        },
+        {
+          "driving": true,
+          "first": 1,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 19,
+          "logical_id": "hook-dx-c",
+          "name": "",
+          "operation_hash": "f0c9245ecaa1e1409067c561c24abc1c515c4459ee39ed99cd1e4474afaffb91",
+          "operation_id": "hook-dx-c",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "DistanceX",
+          "value": 0.0
+        },
+        {
+          "driving": true,
+          "first": 2,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 20,
+          "logical_id": "hook-dy-d",
+          "name": "",
+          "operation_hash": "5e1c37fadf63812ef8067aaa7edbbf3e2c08fa4b64da0851f5cc0f87913684ab",
+          "operation_id": "hook-dy-d",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "DistanceY",
+          "value": -117.5
+        },
+        {
+          "driving": true,
+          "first": 3,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 21,
+          "logical_id": "hook-dx-e",
+          "name": "",
+          "operation_hash": "3e7f379bb2cf64e973504793fc4b3dad23bd9e27213bbf690aac5695cbaad59d",
+          "operation_id": "hook-dx-e",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "DistanceX",
+          "value": 35.0
+        },
+        {
+          "driving": true,
+          "first": 4,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 22,
+          "logical_id": "hook-dy-f",
+          "name": "",
+          "operation_hash": "5397e124f4b6f3b90ef25bf9e3aaf8c493a508333677abedd9f5f657889810f7",
+          "operation_id": "hook-dy-f",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "DistanceY",
+          "value": -112.5
+        },
+        {
+          "driving": true,
+          "first": 5,
+          "first_position": 2,
+          "generated_slot": 0,
+          "index": 23,
+          "logical_id": "hook-dx-g",
+          "name": "",
+          "operation_hash": "4e37a30d62ba165466d9ad90ca92291976e4213dc6be178c123cd0ad080cdafa",
+          "operation_id": "hook-dx-g",
+          "origin": "typed_operation",
+          "plan_hash": "2858123602f0bd0c2fb8f5b16bf0baf279af4134e559248cbbac0499d0536571",
+          "second": -2000,
+          "second_position": 0,
+          "third": -2000,
+          "third_position": 0,
+          "type": "DistanceX",
+          "value": 5.0
+        }
+      ],
+      "expressions": [],
+      "external_geometry": [],
+      "geometry": [
+        {
+          "construction": false,
+          "end": [
+            -5.0,
+            -12.5,
+            0.0
+          ],
+          "first_parameter": 0.0,
+          "index": 0,
+          "last_parameter": 5.0,
+          "start": [
+            -5.0,
+            -17.5,
+            0.0
+          ],
+          "type": "Part::GeomLineSegment"
+        },
+        {
+          "construction": false,
+          "end": [
+            0.0,
+            -12.5,
+            0.0
+          ],
+          "first_parameter": 0.0,
+          "index": 1,
+          "last_parameter": 5.0,
+          "start": [
+            -5.0,
+            -12.5,
+            0.0
+          ],
+          "type": "Part::GeomLineSegment"
+        },
+        {
+          "construction": false,
+          "end": [
+            0.0,
+            -117.5,
+            0.0
+          ],
+          "first_parameter": 0.0,
+          "index": 2,
+          "last_parameter": 105.0,
+          "start": [
+            0.0,
+            -12.5,
+            0.0
+          ],
+          "type": "Part::GeomLineSegment"
+        },
+        {
+          "construction": false,
+          "end": [
+            35.0,
+            -117.5,
+            0.0
+          ],
+          "first_parameter": 0.0,
+          "index": 3,
+          "last_parameter": 35.0,
+          "start": [
+            0.0,
+            -117.5,
+            0.0
+          ],
+          "type": "Part::GeomLineSegment"
+        },
+        {
+          "construction": false,
+          "end": [
+            35.0,
+            -112.5,
+            0.0
+          ],
+          "first_parameter": 0.0,
+          "index": 4,
+          "last_parameter": 5.0,
+          "start": [
+            35.0,
+            -117.5,
+            0.0
+          ],
+          "type": "Part::GeomLineSegment"
+        },
+        {
+          "construction": false,
+          "end": [
+            5.0,
+            -112.5,
+            0.0
+          ],
+          "first_parameter": 0.0,
+          "index": 5,
+          "last_parameter": 30.0,
+          "start": [
+            35.0,
+            -112.5,
+            0.0
+          ],
+          "type": "Part::GeomLineSegment"
+        },
+        {
+          "construction": false,
+          "end": [
+            5.0,
+            -17.5,
+            0.0
+          ],
+          "first_parameter": 0.0,
+          "index": 6,
+          "last_parameter": 95.0,
+          "start": [
+            5.0,
+            -112.5,
+            0.0
+          ],
+          "type": "Part::GeomLineSegment"
+        },
+        {
+          "construction": false,
+          "end": [
+            -5.0,
+            -17.5,
+            0.0
+          ],
+          "first_parameter": 0.0,
+          "index": 7,
+          "last_parameter": 10.0,
+          "start": [
+            5.0,
+            -17.5,
+            0.0
+          ],
+          "type": "Part::GeomLineSegment"
+        }
+      ],
+      "name": "HookSketch",
+      "placement": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        2.220446049250313e-16,
+        -1.0,
+        0.0,
+        0.0,
+        1.0,
+        2.220446049250313e-16,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "solver": {
+        "conflicting_constraint_numbers": [],
+        "constraint_numbering": "one_based",
+        "constraint_status": "fully_constrained",
+        "degrees_of_freedom": 0,
+        "fully_constrained": true,
+        "native_status": "Valid",
+        "object": "HookSketch",
+        "partially_redundant_constraint_numbers": [],
+        "redundant_constraint_numbers": [],
+        "solver_status": 0
+      }
+    }
+  ],
+  "valid_checkpoint": false
+}

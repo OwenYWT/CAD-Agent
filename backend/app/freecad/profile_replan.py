@@ -8,17 +8,19 @@ import json
 
 from app.contracts.acceptance import AcceptanceContract
 from app.freecad.constraint_patch import construction_geometry
-from app.freecad.contracts import FreeCADOperationPlan, FreeCADPlanningError
+from app.freecad.contracts import FreeCADOperationPlan
 from app.freecad.failure_snapshot import digest, validate_snapshot
 from app.freecad.selection import validate_selected_operations
+from app.contracts.profile_patch import ProfilePatch
+from app.freecad.repair_differences import RepairRejected, operation_differences
 
 
 PROFILE_ERROR = 'profile_geometry_invalid'
 _EDITABLE = {'sketch.add_geometry', 'sketch.add_profile', 'sketch.add_constraint'}
 
 
-def rejected(reason):
-    return FreeCADPlanningError('profile_replan_rejected', reason)
+def rejected(reason, differences=()):
+    return RepairRejected('profile_replan_rejected', reason, differences)
 
 
 def _geometry(plan, sketch):
@@ -102,7 +104,13 @@ def validate_proposal(after, context):
     editable = lambda op: op.action in _EDITABLE and op.args.get('sketch') == sketch
     if (before.document_name != after.document_name or before.execution_mode != after.execution_mode
             or [op for op in before.operations if not editable(op)] != [op for op in after.operations if not editable(op)]):
-        raise rejected('profile replan must preserve frames, features, exports and all unrelated operations')
+        differences = operation_differences([op for op in before.operations if not editable(op)],
+                                            [op for op in after.operations if not editable(op)])
+        for field in ('document_name', 'execution_mode'):
+            if getattr(before, field) != getattr(after, field):
+                differences.append({'operation_id': None, 'field': field,
+                    'before': getattr(before, field), 'after': getattr(after, field)})
+        raise rejected('profile replan must preserve frames, features, exports and all unrelated operations', differences)
     ledger = context['snapshot'].get('checkpoint_operations', {})
     for op in after.operations:
         if op.op_id in ledger and digest(op.model_dump(mode='json')) != ledger[op.op_id]:
@@ -122,6 +130,40 @@ def validate_proposal(after, context):
     if context.get('base_state'):
         validate_selected_operations(after, context['base_state'])
     return geometry
+
+
+def compile_patch(proposal, context):
+    """Rebuild only the owned boundary; protected operations never come from the model."""
+    patch = ProfilePatch.model_validate(proposal)
+    expected = {'plan_hash': digest(context['source_plan']),
+                'diagnostic_hash': digest(context['snapshot']),
+                'checkpoint_hash': context['checkpoint_hash'], 'sketch': context['sketch']}
+    for field, value in expected.items():
+        if getattr(patch, field) != value:
+            raise rejected('profile patch baseline/target does not match the diagnosed failure',
+                [{'field': field, 'before': value, 'after': getattr(patch, field)}])
+    before = FreeCADOperationPlan.model_validate(context['source_plan'])
+    editable = lambda op: op.action in _EDITABLE and op.args.get('sketch') == patch.sketch
+    protected_ids = {op.op_id for op in before.operations if not editable(op)}
+    for op in patch.operations:
+        if op.args.get('sketch') != patch.sketch or op.op_id in protected_ids:
+            raise rejected('profile patch cannot target another sketch or reuse a protected operation ID',
+                [{'operation_id': op.op_id, 'field': 'args.sketch' if op.args.get('sketch') != patch.sketch else 'op_id',
+                  'before': patch.sketch if op.args.get('sketch') != patch.sketch else 'protected',
+                  'after': op.args.get('sketch') if op.args.get('sketch') != patch.sketch else op.op_id}])
+    operations, inserted = [], False
+    for op in before.operations:
+        if editable(op):
+            if not inserted:
+                operations.extend(item.model_dump(mode='json') for item in patch.operations)
+                inserted = True
+        else:
+            operations.append(op.model_dump(mode='json'))
+    if not inserted:
+        raise rejected('diagnosed sketch has no owned boundary operations')
+    after = FreeCADOperationPlan.model_validate({**before.model_dump(mode='json'), 'operations': operations})
+    validate_proposal(after, context)
+    return after
 
 
 def make_contract(after, context, policy):

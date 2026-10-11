@@ -134,6 +134,10 @@ class SketchOriginReference(FrozenContract):
     datum: Literal['origin']
 
 
+class SketchAxisReference(FrozenContract):
+    datum: Literal['horizontal_axis', 'vertical_axis']
+
+
 class DocumentInspectArgs(FrozenContract):
     pass
 
@@ -198,9 +202,10 @@ class SketchAddConstraintArgs(FrozenContract):
         "diameter",
         "coincident",
         "equal",
+        "point_on_object",
     ]
     first: ConstraintReference
-    second: ConstraintReference | SketchOriginReference | None = None
+    second: ConstraintReference | SketchOriginReference | SketchAxisReference | None = None
     value_mm: Coordinate | None = None
     driving: bool = True
     logical_id: Annotated[str, Field(min_length=1, max_length=160, pattern=r'^[a-z0-9][a-z0-9_-]*$')] | None = None
@@ -220,11 +225,15 @@ class SketchAddConstraintArgs(FrozenContract):
             raise ValueError('only dimensional constraints support reference mode')
         if self.kind in {"distance", "radius", "diameter"} and self.value_mm is not None and self.value_mm <= 0:
             raise ValueError(f"{self.kind} requires a positive physical length")
-        requires_second = self.kind in {"coincident", "equal"}
+        requires_second = self.kind in {"coincident", "equal", "point_on_object"}
         if requires_second != (self.second is not None):
             raise ValueError(f"{self.kind} second reference requirement is not satisfied")
         if isinstance(self.second, SketchOriginReference) and self.kind != 'coincident':
             raise ValueError('the sketch origin datum supports point coincidence')
+        if isinstance(self.second, SketchAxisReference) != (self.kind == 'point_on_object'):
+            raise ValueError('point_on_object requires an explicit sketch axis datum')
+        if self.kind == 'point_on_object' and self.first.point_position is None:
+            raise ValueError('point_on_object requires first point_position')
         if self.kind in {"distance_x", "distance_y", "coincident"}:
             references = (self.first,) if self.second is None else (self.first, self.second)
             if any(isinstance(reference, ConstraintReference) and reference.point_position is None for reference in references):
@@ -241,7 +250,7 @@ class SketchRelationChange(FrozenContract):
     def relation_change(self):
         if (self.action=='delete') != (self.constraint is None):
             raise ValueError('新增和替换需要关系内容，删除不能带替代关系')
-        if self.constraint and (self.constraint.kind not in {'horizontal','vertical','coincident','equal'} or self.constraint.value_mm is not None):
+        if self.constraint and (self.constraint.kind not in {'horizontal','vertical','coincident','equal','point_on_object'} or self.constraint.value_mm is not None):
             raise ValueError('此入口仅开放可证明的线性几何关系')
         return self
 

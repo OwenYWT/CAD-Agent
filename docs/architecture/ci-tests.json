@@ -2009,7 +2009,58 @@
       "tests/test_freecad_profile_replan.py::test_profile_tool_budget_stops_rejected_proposals",
       "tests/integration/test_temporal_mcadd_workflow.py::test_profile_replan_full_chain_preserves_acceptance_and_checkpoints[success]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_profile_replan_full_chain_preserves_acceptance_and_checkpoints[wrong-gap]",
-      "tests/integration/test_temporal_mcadd_workflow.py::test_profile_replan_full_chain_preserves_acceptance_and_checkpoints[budget]"
+      "tests/integration/test_temporal_mcadd_workflow.py::test_profile_replan_full_chain_preserves_acceptance_and_checkpoints[budget]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_profile_replan_full_chain_preserves_acceptance_and_checkpoints[crossed-incident]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_two_failed_cuts_repair_locally_then_measure_and_commit",
+      "tests/test_engineering_acceptance_contract.py::test_planar_gap_schema_and_runtime_reject_guessed_surface_points",
+      "tests/test_freecad_scoped_repair_workflow.py::test_distinct_failed_cuts_each_receive_their_local_attempt",
+      "tests/test_freecad_scoped_repair_workflow.py::test_repeated_cut_global_budget_and_legacy_history_remain_bounded[failures0-True-agent_freecad_repair_not_allowed-2]",
+      "tests/test_freecad_scoped_repair_workflow.py::test_repeated_cut_global_budget_and_legacy_history_remain_bounded[failures1-True-subtractive_feature_no_effect-2]",
+      "tests/test_freecad_scoped_repair_workflow.py::test_repeated_cut_global_budget_and_legacy_history_remain_bounded[failures2-False-agent_freecad_repair_not_allowed-2]",
+      "tests/test_freecad_scoped_repair_workflow.py::test_invalid_required_selection_never_requests_cad_source_repair[failed-True]",
+      "tests/test_freecad_scoped_repair_workflow.py::test_invalid_required_selection_never_requests_cad_source_repair[indeterminate-True]",
+      "tests/test_freecad_scoped_repair_workflow.py::test_invalid_required_selection_never_requests_cad_source_repair[indeterminate-False]",
+      "tests/test_freecad_scoped_replan.py::test_profile_patch_compiles_protected_operations_and_export_from_baseline",
+      "tests/test_freecad_scoped_replan.py::test_profile_patch_rejects_stale_or_wrong_baseline_with_field_evidence[plan_hash]",
+      "tests/test_freecad_scoped_replan.py::test_profile_patch_rejects_stale_or_wrong_baseline_with_field_evidence[checkpoint_hash]",
+      "tests/test_freecad_scoped_replan.py::test_profile_patch_rejects_stale_or_wrong_baseline_with_field_evidence[diagnostic_hash]",
+      "tests/test_freecad_scoped_replan.py::test_profile_patch_rejects_stale_or_wrong_baseline_with_field_evidence[sketch]",
+      "tests/test_freecad_scoped_replan.py::test_profile_patch_cannot_smuggle_changes_to_unrelated_operations[export]",
+      "tests/test_freecad_scoped_replan.py::test_profile_patch_cannot_smuggle_changes_to_unrelated_operations[frame]",
+      "tests/test_freecad_scoped_replan.py::test_profile_patch_cannot_smuggle_changes_to_unrelated_operations[other-sketch]",
+      "tests/test_freecad_scoped_replan.py::test_profile_patch_cannot_smuggle_changes_to_unrelated_operations[protected-id]",
+      "tests/test_freecad_scoped_replan.py::test_rejected_full_profile_plan_identifies_changed_operation_and_field",
+      "tests/test_freecad_scoped_replan.py::test_datum_axis_is_a_proven_relation_instead_of_an_editable_zero_offset[horizontal_axis-y]",
+      "tests/test_freecad_scoped_replan.py::test_datum_axis_is_a_proven_relation_instead_of_an_editable_zero_offset[vertical_axis-x]",
+      "tests/test_freecad_scoped_replan.py::test_real_crossed_profile_compiles_without_copying_frame_or_clamp",
+      "tests/test_freecad_subtractive_repair_contract.py::test_cut_patch_is_idempotent_and_preserves_other_cut_and_export",
+      "tests/test_freecad_subtractive_repair_contract.py::test_cut_patch_rejection_is_saved_and_corrected_inside_provider_loop",
+      "tests/test_freecad_subtractive_repair_contract.py::test_cut_placement_cannot_move_a_shared_path_or_use_incomplete_acceptance[shared-sweep-path]",
+      "tests/test_freecad_subtractive_repair_contract.py::test_cut_placement_cannot_move_a_shared_path_or_use_incomplete_acceptance[unverified-acceptance]",
+      "tests/test_freecad_subtractive_repair_contract.py::test_cut_schema_lookups_consume_explicit_tool_budget",
+      "tests/test_freecad_scoped_replan.py::test_native_two_point_distances_are_not_reinterpreted_as_absolute_anchors[DistanceX-1]",
+      "tests/test_freecad_scoped_replan.py::test_native_two_point_distances_are_not_reinterpreted_as_absolute_anchors[DistanceY--1]",
+      "tests/test_freecad_scoped_replan.py::test_native_two_point_distances_are_not_reinterpreted_as_absolute_anchors[Distance--1]",
+      "tests/test_freecad_scoped_replan.py::test_native_two_point_distances_are_not_reinterpreted_as_absolute_anchors[Distance--2000]",
+      "tests/test_freecad_subtractive_repair_contract.py::test_cut_repair_against_checkpoint_preserves_all_persisted_operation_ids",
+      "tests/test_freecad_profile_replan.py::test_local_profile_repair_preserves_an_unchanged_downstream_chamfer",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_multiple_cuts_and_constraints_repair_from_retained_plan_then_commit[2]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_multiple_cuts_and_constraints_repair_from_retained_plan_then_commit[8]",
+      "tests/test_freecad_repair_progress.py::test_distinct_cuts_can_progress_past_two_without_discarding_global_limit",
+      "tests/test_freecad_repair_progress.py::test_unchanged_physical_failure_stops_before_another_provider_call",
+      "tests/test_freecad_repair_progress.py::test_regression_to_an_earlier_operation_is_not_forward_progress",
+      "tests/test_freecad_repair_progress.py::test_total_budget_reports_new_failure_and_already_resolved_operations",
+      "tests/test_freecad_repair_progress.py::test_per_target_and_cross_checkpoint_budgets_are_both_bounded",
+      "tests/test_freecad_repair_progress.py::test_constraint_attempts_do_not_count_prior_unrelated_cuts",
+      "tests/test_freecad_repair_progress.py::test_missing_or_mismatched_native_observation_does_not_buy_a_repair",
+      "tests/test_freecad_repair_progress.py::test_constraint_renaming_reordering_and_solver_numbering_are_not_physical_progress",
+      "tests/test_freecad_scoped_repair_workflow.py::test_progressive_workflow_uses_native_target_evidence_and_keeps_budget_across_turns",
+      "tests/test_freecad_scoped_repair_workflow.py::test_progressive_workflow_stops_before_provider_when_evidence_or_budget_is_exhausted[True-8-agent_freecad_repair_no_progress]",
+      "tests/test_freecad_scoped_repair_workflow.py::test_progressive_workflow_stops_before_provider_when_evidence_or_budget_is_exhausted[False-1-agent_freecad_repair_budget_exhausted]",
+      "tests/test_freecad_subtractive_repair_contract.py::test_measured_no_intersection_rejects_direction_only_without_spending_a_cad_attempt[profile_outside_material]",
+      "tests/test_freecad_subtractive_repair_contract.py::test_measured_no_intersection_rejects_direction_only_without_spending_a_cad_attempt[insufficient_reach]",
+      "tests/test_freecad_repair_progress.py::test_removed_constraint_requires_its_preserved_consumer_before_advancing_to_another_sketch",
+      "tests/test_freecad_repair_progress.py::test_changed_solver_failure_within_same_sketch_shares_its_target_budget"
     ],
     "allowed_skips": {
       "tests/integration/test_agent_candidate_seal.py::test_late_workflow_failure_during_cancellation_reaches_a_terminal_state": "real PostgreSQL and MinIO are required",
@@ -2226,7 +2277,11 @@
       "tests/postgres/test_dfm_policy_snapshot.py::test_legacy_check_captures_rules_once_without_rewriting_immutable_request": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests",
       "tests/integration/test_temporal_mcadd_workflow.py::test_profile_replan_full_chain_preserves_acceptance_and_checkpoints[success]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
       "tests/integration/test_temporal_mcadd_workflow.py::test_profile_replan_full_chain_preserves_acceptance_and_checkpoints[wrong-gap]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
-      "tests/integration/test_temporal_mcadd_workflow.py::test_profile_replan_full_chain_preserves_acceptance_and_checkpoints[budget]": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      "tests/integration/test_temporal_mcadd_workflow.py::test_profile_replan_full_chain_preserves_acceptance_and_checkpoints[budget]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_profile_replan_full_chain_preserves_acceptance_and_checkpoints[crossed-incident]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_two_failed_cuts_repair_locally_then_measure_and_commit": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_multiple_cuts_and_constraints_repair_from_retained_plan_then_commit[2]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_multiple_cuts_and_constraints_repair_from_retained_plan_then_commit[8]": "real PostgreSQL, MinIO, Temporal, and Podman are required"
     }
   },
   "durable-core": {
@@ -2289,7 +2344,11 @@
       "tests/integration/test_api_compatibility_matrix.py::test_conversational_ws_submits_once_then_replays_after_disconnect",
       "tests/integration/test_temporal_mcadd_workflow.py::test_profile_replan_full_chain_preserves_acceptance_and_checkpoints[success]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_profile_replan_full_chain_preserves_acceptance_and_checkpoints[wrong-gap]",
-      "tests/integration/test_temporal_mcadd_workflow.py::test_profile_replan_full_chain_preserves_acceptance_and_checkpoints[budget]"
+      "tests/integration/test_temporal_mcadd_workflow.py::test_profile_replan_full_chain_preserves_acceptance_and_checkpoints[budget]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_profile_replan_full_chain_preserves_acceptance_and_checkpoints[crossed-incident]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_two_failed_cuts_repair_locally_then_measure_and_commit",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_multiple_cuts_and_constraints_repair_from_retained_plan_then_commit[2]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_multiple_cuts_and_constraints_repair_from_retained_plan_then_commit[8]"
     ]
   },
   "frontend": {
@@ -2459,7 +2518,8 @@
       "test::unmeasured or indeterminate check outcomes do not produce pass or geometry repair failures",
       "test::draft undo redo is scoped and clears redo after an edit or new saved baseline",
       "test::connection loss never claims that a document is currently synchronizing",
-      "test::document synchronization errors remain distinct from connectivity and recover on a valid snapshot"
+      "test::document synchronization errors remain distinct from connectivity and recover on a valid snapshot",
+      "test::terminal repair budget reason takes precedence over the last native failure"
     ]
   },
   "data-integration": {

@@ -81,6 +81,12 @@ def relation_rows(args, geometry):
                 return [row({coordinate: 1}) for coordinate in a]
             b = _point(second, args['second']['point_position'], by_index)
             return [row(_subtract({left: Fraction(1)}, {right: Fraction(1)})) for left, right in zip(a, b)]
+        if kind == 'point_on_object':
+            datum = (args.get('second') or {}).get('datum')
+            if datum not in {'horizontal_axis', 'vertical_axis'}:
+                return None
+            point = _point(first, args['first']['point_position'], by_index)
+            return [row({point[1 if datum == 'horizontal_axis' else 0]: 1})]
         if kind == 'equal':
             a, b = by_index[first], by_index[second]
             if all('Circle' in o.get('type', '') and 'radius_mm' in o for o in (a, b)):
@@ -95,12 +101,25 @@ def relation_rows(args, geometry):
 def native_args(constraint):
     kinds = {'Horizontal': 'horizontal', 'Vertical': 'vertical', 'Distance': 'distance',
         'DistanceX': 'distance_x', 'DistanceY': 'distance_y', 'Radius': 'radius',
-        'Diameter': 'diameter', 'Coincident': 'coincident', 'Equal': 'equal'}
+        'Diameter': 'diameter', 'Coincident': 'coincident', 'Equal': 'equal', 'PointOnObject': 'point_on_object'}
     kind = kinds.get(constraint['type'])
     if kind is None:
         return None
     first = {'geometry_index': constraint['first'],
              'point_position': constraint.get('first_position') if constraint.get('first_position') in {1,2,3} else None}
+    if kind == 'point_on_object':
+        if constraint['second'] not in {-1, -2} or constraint.get('second_position', 0) != 0:
+            return None
+        return {'kind': kind, 'first': first,
+                'second': {'datum': 'horizontal_axis' if constraint['second'] == -1 else 'vertical_axis'},
+                'value_mm': None}
+    # A two-point distance must never be misread as a coordinate from the origin.
+    # Its relationship proof is deliberately unavailable until that signature is supported.
+    if kind in {'distance_x', 'distance_y', 'distance'} and constraint.get('second', -2000) != -2000:
+        return None  # Includes two-point distances to the origin/axis datums.
+    if kind == 'distance' and first['point_position'] is not None:
+        # Point-to-origin Euclidean distance is not the line-length signature.
+        return None
     return {'kind': kind, 'first': first,
         'second': ({'datum': 'origin'} if kind == 'coincident' and constraint['second'] == -1 and constraint.get('second_position') == 1
                    else {'geometry_index': constraint['second'], 'point_position': constraint.get('second_position') if constraint.get('second_position') in {1,2,3} else None})

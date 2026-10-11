@@ -1,0 +1,603 @@
+{
+  "plan": {
+    "schema_version": "freecad-operation-plan.v1",
+    "document_name": "Model",
+    "execution_mode": "checkpoint",
+    "operations": [
+      {
+        "op_id": "sketch-base",
+        "action": "sketch.create",
+        "args": {
+          "name": "BaseProfile",
+          "body": "HeadphoneHook",
+          "plane": "xy",
+          "offset_mm": 0.0,
+          "reversed": false,
+          "frame": {
+            "schema_version": "body-frame.v1",
+            "origin": {
+              "x": 0.0,
+              "y": -17.5,
+              "z": 0.0
+            },
+            "normal": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "x_axis": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      },
+      {
+        "op_id": "rect-base",
+        "action": "sketch.add_profile",
+        "args": {
+          "sketch": "BaseProfile",
+          "geometry": {
+            "kind": "rectangle",
+            "corner": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "width_mm": 80.0,
+            "height_mm": 120.0,
+            "construction": false
+          }
+        }
+      },
+      {
+        "op_id": "pad-base",
+        "action": "feature.pad",
+        "args": {
+          "name": "BasePad",
+          "profile": "BaseProfile",
+          "length_mm": 35.0,
+          "reversed": false
+        }
+      },
+      {
+        "op_id": "sketch-throat",
+        "action": "sketch.create",
+        "args": {
+          "name": "ThroatSlot",
+          "body": "HeadphoneHook",
+          "plane": "xy",
+          "offset_mm": 0.0,
+          "reversed": false,
+          "frame": {
+            "schema_version": "body-frame.v1",
+            "origin": {
+              "x": 0.0,
+              "y": -17.5,
+              "z": 0.0
+            },
+            "normal": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "x_axis": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      },
+      {
+        "op_id": "rect-throat",
+        "action": "sketch.add_profile",
+        "args": {
+          "sketch": "ThroatSlot",
+          "geometry": {
+            "kind": "rectangle",
+            "corner": {
+              "x": 40.0,
+              "y": 0.0
+            },
+            "width_mm": 35.0,
+            "height_mm": 110.0,
+            "construction": false
+          }
+        }
+      },
+      {
+        "op_id": "pocket-throat",
+        "action": "feature.pocket",
+        "args": {
+          "name": "ThroatPocket",
+          "profile": "ThroatSlot",
+          "length_mm": null,
+          "through_all": true,
+          "reversed": false
+        }
+      },
+      {
+        "op_id": "sketch-clamp",
+        "action": "sketch.create",
+        "args": {
+          "name": "ClampSlot",
+          "body": "HeadphoneHook",
+          "plane": "xy",
+          "offset_mm": 0.0,
+          "reversed": false,
+          "frame": {
+            "schema_version": "body-frame.v1",
+            "origin": {
+              "x": 0.0,
+              "y": -12.5,
+              "z": 0.0
+            },
+            "normal": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "x_axis": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          }
+        }
+      },
+      {
+        "op_id": "rect-clamp",
+        "action": "sketch.add_profile",
+        "args": {
+          "sketch": "ClampSlot",
+          "geometry": {
+            "kind": "rectangle",
+            "corner": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "width_mm": 40.0,
+            "height_mm": 25.0,
+            "construction": false
+          }
+        }
+      },
+      {
+        "op_id": "pocket-clamp",
+        "action": "feature.pocket",
+        "args": {
+          "name": "ClampPocket",
+          "profile": "ClampSlot",
+          "length_mm": 40.0,
+          "through_all": false,
+          "reversed": false
+        }
+      },
+      {
+        "op_id": "sketch-screw",
+        "action": "sketch.create",
+        "args": {
+          "name": "ScrewHole",
+          "body": "HeadphoneHook",
+          "plane": "xy",
+          "offset_mm": 0.0,
+          "reversed": false,
+          "frame": {
+            "schema_version": "body-frame.v1",
+            "origin": {
+              "x": 0.0,
+              "y": 17.5,
+              "z": 0.0
+            },
+            "normal": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "x_axis": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      },
+      {
+        "op_id": "circle-screw",
+        "action": "sketch.add_profile",
+        "args": {
+          "sketch": "ScrewHole",
+          "geometry": {
+            "kind": "circle",
+            "center": {
+              "x": 20.0,
+              "y": -20.0
+            },
+            "radius_mm": 3.0,
+            "construction": false
+          }
+        }
+      },
+      {
+        "op_id": "pocket-screw",
+        "action": "feature.pocket",
+        "args": {
+          "name": "ScrewPocket",
+          "profile": "ScrewHole",
+          "length_mm": 5.0,
+          "through_all": false,
+          "reversed": false
+        }
+      },
+      {
+        "op_id": "sketch-tip",
+        "action": "sketch.create",
+        "args": {
+          "name": "TipUpturn",
+          "body": "HeadphoneHook",
+          "plane": "xy",
+          "offset_mm": 0.0,
+          "reversed": false,
+          "frame": {
+            "schema_version": "body-frame.v1",
+            "origin": {
+              "x": 0.0,
+              "y": -17.5,
+              "z": 0.0
+            },
+            "normal": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "x_axis": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      },
+      {
+        "op_id": "line-tip-1",
+        "action": "sketch.add_geometry",
+        "args": {
+          "sketch": "TipUpturn",
+          "geometry": {
+            "kind": "line",
+            "start": {
+              "x": 75.0,
+              "y": -120.0
+            },
+            "end": {
+              "x": 80.0,
+              "y": -120.0
+            },
+            "construction": false
+          }
+        }
+      },
+      {
+        "op_id": "line-tip-2",
+        "action": "sketch.add_geometry",
+        "args": {
+          "sketch": "TipUpturn",
+          "geometry": {
+            "kind": "line",
+            "start": {
+              "x": 80.0,
+              "y": -120.0
+            },
+            "end": {
+              "x": 80.0,
+              "y": -100.0
+            },
+            "construction": false
+          }
+        }
+      },
+      {
+        "op_id": "line-tip-3",
+        "action": "sketch.add_geometry",
+        "args": {
+          "sketch": "TipUpturn",
+          "geometry": {
+            "kind": "line",
+            "start": {
+              "x": 80.0,
+              "y": -100.0
+            },
+            "end": {
+              "x": 75.0,
+              "y": -120.0
+            },
+            "construction": false
+          }
+        }
+      },
+      {
+        "op_id": "cnstr-tip-coincident-12",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "TipUpturn",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 0,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 1,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "cnstr-tip-coincident-23",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "TipUpturn",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 1,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 2,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "cnstr-tip-coincident-31",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "TipUpturn",
+          "kind": "coincident",
+          "first": {
+            "geometry_index": 2,
+            "point_position": 2
+          },
+          "second": {
+            "geometry_index": 0,
+            "point_position": 1
+          },
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "cnstr-tip-horizontal",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "TipUpturn",
+          "kind": "horizontal",
+          "first": {
+            "geometry_index": 0,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "cnstr-tip-vertical",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "TipUpturn",
+          "kind": "vertical",
+          "first": {
+            "geometry_index": 1,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": null
+        }
+      },
+      {
+        "op_id": "cnstr-tip-width",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "TipUpturn",
+          "kind": "distance",
+          "first": {
+            "geometry_index": 0,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": 5.0
+        }
+      },
+      {
+        "op_id": "cnstr-tip-height",
+        "action": "sketch.add_constraint",
+        "args": {
+          "sketch": "TipUpturn",
+          "kind": "distance",
+          "first": {
+            "geometry_index": 1,
+            "point_position": null
+          },
+          "second": null,
+          "value_mm": 20.0
+        }
+      },
+      {
+        "op_id": "pocket-tip",
+        "action": "feature.pocket",
+        "args": {
+          "name": "TipPocket",
+          "profile": "TipUpturn",
+          "length_mm": null,
+          "through_all": true,
+          "reversed": false
+        }
+      },
+      {
+        "op_id": "export-check",
+        "action": "document.export",
+        "args": {
+          "formats": [
+            "fcstd"
+          ],
+          "basename": "headphone_hook",
+          "objects": [
+            "HeadphoneHook"
+          ]
+        }
+      }
+    ]
+  },
+  "acceptance": {
+    "checks": [
+      {
+        "kind": "planar_gap",
+        "scope": {
+          "axis": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "frame": "world",
+          "point_mm": null,
+          "wall_mode": "continuous_normal",
+          "centers_mm": [],
+          "region_max_mm": null,
+          "region_min_mm": null,
+          "hole_depth_mode": "total_recess",
+          "hole_diameter_mode": "shaft"
+        },
+        "nominal": 25.0,
+        "check_id": "clamp_opening",
+        "required": true,
+        "description": "夹持开口距离，确保可夹在25mm桌板上",
+        "source_kind": "user",
+        "source_quote": "可夹在 25 mm 桌板上的耳机挂钩",
+        "tolerance_mm": null,
+        "tolerance_mm3": null
+      },
+      {
+        "kind": "planar_gap",
+        "scope": {
+          "axis": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "frame": "world",
+          "point_mm": null,
+          "wall_mode": "continuous_normal",
+          "centers_mm": [],
+          "region_max_mm": null,
+          "region_min_mm": null,
+          "hole_depth_mode": "total_recess",
+          "hole_diameter_mode": "shaft"
+        },
+        "nominal": 35.0,
+        "check_id": "hook_throat",
+        "required": false,
+        "description": "挂钩喉宽，确保可挂入耳机头梁",
+        "source_kind": "assumption",
+        "source_quote": "耳机挂钩",
+        "tolerance_mm": null,
+        "tolerance_mm3": null
+      },
+      {
+        "kind": "wall_thickness",
+        "scope": {
+          "axis": null,
+          "frame": "world",
+          "point_mm": null,
+          "wall_mode": "continuous_normal",
+          "centers_mm": [],
+          "region_max_mm": null,
+          "region_min_mm": null,
+          "hole_depth_mode": "total_recess",
+          "hole_diameter_mode": "shaft"
+        },
+        "nominal": 5.0,
+        "check_id": "body_wall_thickness",
+        "required": false,
+        "description": "主体壁厚，保证结构强度",
+        "source_kind": "assumption",
+        "source_quote": "耳机挂钩",
+        "tolerance_mm": null,
+        "tolerance_mm3": null
+      },
+      {
+        "kind": "overall_dimension",
+        "scope": {
+          "axis": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "frame": "world",
+          "point_mm": null,
+          "wall_mode": "continuous_normal",
+          "centers_mm": [],
+          "region_max_mm": null,
+          "region_min_mm": null,
+          "hole_depth_mode": "total_recess",
+          "hole_diameter_mode": "shaft"
+        },
+        "nominal": 120.0,
+        "check_id": "overall_height",
+        "required": false,
+        "description": "挂钩总高度",
+        "source_kind": "assumption",
+        "source_quote": "耳机挂钩",
+        "tolerance_mm": null,
+        "tolerance_mm3": null
+      },
+      {
+        "kind": "hole_diameter",
+        "scope": {
+          "axis": null,
+          "frame": "world",
+          "point_mm": null,
+          "wall_mode": "continuous_normal",
+          "centers_mm": [],
+          "region_max_mm": null,
+          "region_min_mm": null,
+          "hole_depth_mode": "total_recess",
+          "hole_diameter_mode": "shaft"
+        },
+        "nominal": 6.0,
+        "check_id": "clamp_screw_hole_diameter",
+        "required": false,
+        "description": "夹紧螺丝孔直径",
+        "source_kind": "assumption",
+        "source_quote": "可夹在 25 mm 桌板上的耳机挂钩",
+        "tolerance_mm": null,
+        "tolerance_mm3": null
+      },
+      {
+        "kind": "hole_count",
+        "scope": {
+          "axis": null,
+          "frame": "world",
+          "point_mm": null,
+          "wall_mode": "continuous_normal",
+          "centers_mm": [],
+          "region_max_mm": null,
+          "region_min_mm": null,
+          "hole_depth_mode": "total_recess",
+          "hole_diameter_mode": "shaft"
+        },
+        "nominal": 1.0,
+        "check_id": "clamp_screw_hole_count",
+        "required": false,
+        "description": "夹紧螺丝孔数量",
+        "source_kind": "assumption",
+        "source_quote": "可夹在 25 mm 桌板上的耳机挂钩",
+        "tolerance_mm": null,
+        "tolerance_mm3": null
+      }
+    ],
+    "objective": "设计一个可夹在 25 mm 桌板上的耳机挂钩\n\n用户确认的工程依据（用户输入，不是独立校验证据）：\n目标：设计一个可夹在 25 mm 桌板上的耳机挂钩\n用途：未确认\n尺寸来源类型：none；来源：未提供\n用户明确尺寸：25 mm\n开孔与装配依据：未提供\n不得擅自替换用户明确尺寸；冲突必须请求确认。\n适配未验证。缺少依据的几何只能作为概念外形，不得声称适配、配合或制造条件已验证。",
+    "unresolved": [],
+    "schema_version": "engineering-acceptance.v1"
+  }
+}

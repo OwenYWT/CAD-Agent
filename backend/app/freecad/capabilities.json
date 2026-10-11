@@ -1330,6 +1330,24 @@
           "title": "ConstraintReference",
           "type": "object"
         },
+        "SketchAxisReference": {
+          "additionalProperties": false,
+          "properties": {
+            "datum": {
+              "enum": [
+                "horizontal_axis",
+                "vertical_axis"
+              ],
+              "title": "Datum",
+              "type": "string"
+            }
+          },
+          "required": [
+            "datum"
+          ],
+          "title": "SketchAxisReference",
+          "type": "object"
+        },
         "SketchOriginReference": {
           "additionalProperties": false,
           "description": "Stable sketch datum; native negative geometry indices stay internal.",
@@ -1367,7 +1385,8 @@
             "radius",
             "diameter",
             "coincident",
-            "equal"
+            "equal",
+            "point_on_object"
           ],
           "title": "Kind",
           "type": "string"
@@ -1394,6 +1413,9 @@
             },
             {
               "$ref": "#/$defs/SketchOriginReference"
+            },
+            {
+              "$ref": "#/$defs/SketchAxisReference"
             },
             {
               "type": "null"
@@ -2020,7 +2042,8 @@
                 "radius",
                 "diameter",
                 "coincident",
-                "equal"
+                "equal",
+                "point_on_object"
               ],
               "title": "Kind",
               "type": "string"
@@ -2047,6 +2070,9 @@
                 },
                 {
                   "$ref": "#/$defs/SketchOriginReference"
+                },
+                {
+                  "$ref": "#/$defs/SketchAxisReference"
                 },
                 {
                   "type": "null"
@@ -2083,6 +2109,24 @@
             "first"
           ],
           "title": "SketchAddConstraintArgs",
+          "type": "object"
+        },
+        "SketchAxisReference": {
+          "additionalProperties": false,
+          "properties": {
+            "datum": {
+              "enum": [
+                "horizontal_axis",
+                "vertical_axis"
+              ],
+              "title": "Datum",
+              "type": "string"
+            }
+          },
+          "required": [
+            "datum"
+          ],
+          "title": "SketchAxisReference",
           "type": "object"
         },
         "SketchOriginReference": {
