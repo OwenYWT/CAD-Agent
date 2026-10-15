@@ -1366,7 +1366,37 @@
         }
       },
       "additionalProperties": false,
+      "examples": [
+        {
+          "driving": true,
+          "first": {
+            "geometry_index": 0,
+            "point_position": 1
+          },
+          "kind": "point_on_object",
+          "second": {
+            "datum": "horizontal_axis"
+          },
+          "sketch": "SketchA"
+        }
+      ],
       "properties": {
+        "center_of": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Bind a circle center coordinate to one verified rectangular sketch in the same Body/frame. Preserves centering when its dimensions change.",
+          "title": "Center Of"
+        },
         "driving": {
           "default": true,
           "title": "Driving",
@@ -2024,6 +2054,22 @@
         "SketchAddConstraintArgs": {
           "additionalProperties": false,
           "properties": {
+            "center_of": {
+              "anyOf": [
+                {
+                  "maxLength": 80,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Bind a circle center coordinate to one verified rectangular sketch in the same Body/frame. Preserves centering when its dimensions change.",
+              "title": "Center Of"
+            },
             "driving": {
               "default": true,
               "title": "Driving",

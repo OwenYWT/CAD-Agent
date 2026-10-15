@@ -19,9 +19,9 @@ def validate_subtractive_repair(before: FreeCADOperationPlan, after: FreeCADOper
     """Preserve feature dimensions; placement repair needs independent acceptance."""
     if failure.get('error_code') != 'subtractive_feature_no_effect':
         return
-    from app.contracts.acceptance import AcceptanceContract
+    from app.contracts.acceptance_v2 import decode_acceptance
     acceptance = failure.get('engineering_acceptance')
-    contract = AcceptanceContract.model_validate(acceptance) if acceptance else None
+    contract = decode_acceptance(acceptance) if acceptance else None
     target = failure.get('operation_id')
     def rejected(reason):
         return RepairRejected('operation_repair_rejected', reason,

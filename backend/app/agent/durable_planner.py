@@ -95,11 +95,14 @@ class DurableAgentPlanner:
             output_formats=output_formats,
         )
 
-    async def requirements_generation(self, objective: str, *, require_acceptance: bool = False) -> CADPlan:
+    async def requirements_generation(self, objective: str, *, require_acceptance: bool = False,
+                                       acceptance_version=None, requirement_sources=None) -> CADPlan:
         """Run only requirements interpretation; never generate CAD source."""
         result = await self.planner.plan_new(
             [{"role": "user", "content": objective}],
             **({"require_acceptance": True} if require_acceptance else {}),
+            **({'acceptance_version': acceptance_version} if acceptance_version else {}),
+            **({'requirement_sources': requirement_sources} if requirement_sources is not None else {}),
         )
         if require_acceptance and result.part_type != 'profile_2d':
             if result.design_brief is None or result.design_brief.acceptance is None:
@@ -372,13 +375,16 @@ class DurableAgentPlanner:
         self,
         existing_code: str,
         objective: str,
-        *, require_acceptance: bool = False,
+        *, require_acceptance: bool = False, acceptance_version=None, verified_state=None, requirement_sources=None,
     ) -> ModificationPlan:
         """Interpret a modification without generating or executing source."""
         result = await self.planner.plan_modification(
             [{"role": "user", "content": objective}],
             existing_code,
             **({'require_acceptance':True} if require_acceptance else {}),
+            **({'acceptance_version': acceptance_version} if acceptance_version else {}),
+            **({'verified_state': verified_state} if verified_state is not None else {}),
+            **({'requirement_sources': requirement_sources} if requirement_sources is not None else {}),
         )
         if require_acceptance and (result.acceptance is None or result.acceptance.objective != objective):
             raise ValueError('modification must retain its submitted acceptance contract')

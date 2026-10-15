@@ -62,7 +62,7 @@ ACTION_KEYS: dict[str, tuple[set[str], set[str]]] = {
     "sketch.add_geometry": ({"sketch", "geometry"}, {"sketch", "geometry"}),
     "sketch.add_profile": ({"sketch", "geometry"}, {"sketch", "geometry"}),
     "sketch.add_constraint": (
-        {"sketch", "kind", "first", "second", "value_mm", "driving", "logical_id"},
+        {"sketch", "kind", "first", "second", "value_mm", "driving", "logical_id", "center_of"},
         {"sketch", "kind", "first"},
     ),
     "sketch.set_constraint": ({"sketch","constraint_index","expected_type","value_mm","value_deg"}, {"sketch","constraint_index","expected_type"}),
@@ -418,6 +418,49 @@ def _sketch_add_profile(document: Any, args: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _bind_circle_center(document, sketch, index, args):
+    """One native expression, derived from proven rectangle constraints only."""
+    reference = _object(document, args['center_of'], 'center reference')
+    kind = args['kind']
+    if (kind not in {'distance_x', 'distance_y'} or args['first'].get('point_position') != 3
+            or args.get('driving') is False or args.get('second') is not None or reference == sketch
+            or reference.TypeId != 'Sketcher::SketchObject' or not reference.FullyConstrained
+            or _body_for(document, reference) != _body_for(document, sketch)
+            or not isinstance(sketch.Geometry[args['first']['geometry_index']], Part.Circle)):
+        raise FreeCADRunnerError('sketch_relation_unsupported', 'Center binding requires a circle and a fully constrained rectangle in the same Body')
+    if not reference.Placement.Rotation.isSame(sketch.Placement.Rotation, 1e-9):
+        raise FreeCADRunnerError('sketch_relation_unsupported', 'Center binding requires matching sketch axes')
+    geometry = list(reference.Geometry)
+    if len(geometry) != 4 or any(not isinstance(g, Part.LineSegment) for g in geometry):
+        raise FreeCADRunnerError('sketch_relation_unsupported', 'Center reference must be one rectangular boundary')
+    points = [g.StartPoint for g in geometry]
+    expected = [(points[0].x,points[0].y),(points[1].x,points[0].y),
+                (points[1].x,points[2].y),(points[0].x,points[2].y)]
+    if (points[1].x <= points[0].x or points[2].y <= points[0].y
+            or any(abs(p.x-x)>1e-7 or abs(p.y-y)>1e-7 for p,(x,y) in zip(points,expected))
+            or any((g.EndPoint-points[(i+1)%4]).Length>1e-7 for i,g in enumerate(geometry))):
+        raise FreeCADRunnerError('sketch_relation_unsupported', 'Rectangle topology/orientation is not proven')
+    dimension_line = 0 if kind == 'distance_x' else 1
+    coordinate_type = 'DistanceX' if kind == 'distance_x' else 'DistanceY'
+    def unique(predicate):
+        found = [i for i,c in enumerate(reference.Constraints) if predicate(c)]
+        if len(found) != 1:
+            raise FreeCADRunnerError('sketch_relation_unsupported', 'Rectangle driving source is not unique')
+        return found[0]
+    size = unique(lambda c: c.Type=='Distance' and c.First==dimension_line and c.FirstPos==0)
+    anchor = unique(lambda c: c.Type==coordinate_type and c.First==0 and c.FirstPos==1)
+    if not reference.getDriving(size) or not reference.getDriving(anchor):
+        raise FreeCADRunnerError('sketch_relation_unsupported', 'Rectangle center needs driving source dimensions')
+    # The expression follows source dimensions and offsets, not a copied scalar.
+    delta = reference.Placement.inverse().multVec(sketch.Placement.Base)
+    offset = delta.x if kind == 'distance_x' else delta.y
+    wanted = reference.Constraints[anchor].Value + reference.Constraints[size].Value/2 - offset
+    if not math.isclose(float(args['value_mm']), wanted, abs_tol=1e-7, rel_tol=0):
+        raise FreeCADRunnerError('sketch_relation_conflict', 'Requested center coordinate differs from the rectangle center')
+    expression = f'{reference.Name}.Constraints[{anchor}] + {reference.Name}.Constraints[{size}] / 2 - ({offset:.17g} mm)'
+    sketch.setExpression(f'Constraints[{index}]', expression)
+
+
 def _sketch_add_constraint(document: Any, args: dict[str, Any]) -> dict[str, Any]:
     sketch = _object(document, args["sketch"], "sketch")
     if getattr(sketch, "TypeId", "") != "Sketcher::SketchObject":
@@ -481,6 +524,8 @@ def _sketch_add_constraint(document: Any, args: dict[str, Any]) -> dict[str, Any
         raise FreeCADRunnerError("sketch_malformed_constraint", f"unsupported constraint kind: {kind}")
     try:
         index = int(sketch.addConstraint(constraint))
+        if args.get('center_of') is not None:
+            _bind_circle_center(document, sketch, index, args)
         if args.get('driving') is False:
             if value is None:
                 raise ValueError('geometric relations cannot become reference dimensions')
@@ -545,6 +590,9 @@ def _sketch_set_constraint(document, args):
         raise FreeCADRunnerError('sketch_constraint_type_mismatch', 'constraint type does not match the immutable edit')
     if not sketch.getDriving(index):
         raise FreeCADRunnerError('sketch_reference_constraint', 'reference dimensions are measured, not editable')
+    if any(path in {f'Constraints[{index}]', 'Constraints.'+str(sketch.Constraints[index].Name)} and expression
+           for path, expression in sketch.ExpressionEngine):
+        raise FreeCADRunnerError('sketch_constraint_expression_protected', 'Edit the source dimension of this native relationship')
     field, unit = ('value_deg','deg') if kind == 'Angle' else ('value_mm','mm')
     other = 'value_mm' if kind == 'Angle' else 'value_deg'
     if field not in args or args.get(other) is not None:
@@ -1017,6 +1065,18 @@ def _property_set(document: Any, args: dict[str, Any]) -> dict[str, Any]:
         )
     unit = args.get("unit")
     try:
+        if (obj.TypeId == "PartDesign::Hole" and property_name == "Diameter"
+                and str(obj.HoleCutType) in {"Counterbore", "Countersink"}
+                and obj.HoleCutCustomValues):
+            requested = (float(value) if isinstance(value, (int, float))
+                         else float(App.Units.Quantity(value).Value))
+            if requested >= float(obj.HoleCutDiameter.Value):
+                raise FreeCADRunnerError(
+                    "parameter_value_out_of_range",
+                    "shaft diameter would reset custom entrance dimensions; update the entrance first",
+                    details={"object": obj.Name, "property": property_name,
+                             "dependent_property": "HoleCutDiameter"},
+                )
         if obj.TypeId == "PartDesign::Pad" and property_name == "Length":
             for feature in document.Objects:
                 _bind_through_profile(feature, changing_pad=obj)

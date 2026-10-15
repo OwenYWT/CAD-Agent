@@ -67,7 +67,8 @@ Use only these envelope and operation fields. Do not add units, backend, reasoni
 comments, descriptions or unrelated metadata. Keep tool arguments compact.
 
 Every 2D point (corner, center, start, end) is an object {"x":number,"y":number},
-never an array. Constraint second is allowed ONLY for coincident and equal.
+never an array. The sketch.add_constraint schema defines the allowed references for each kind;
+use freecad_describe_operation for its current variants and validated examples.
 distance constrains the LENGTH of one line: first={"geometry_index":i}, no point_position,
 no second. distance_x/distance_y constrain ONE point's coordinate from the sketch origin:
 first={"geometry_index":i,"point_position":1|2|3}, no second. Every added dimensional
@@ -97,6 +98,9 @@ link the four endpoints, dimension one width and one height, and anchor one corn
 with signed distance_x/distance_y. Use actual geometry indices, accounting for all
 previous geometry in that sketch. Do not add these constraints after sketch.add_profile.
 Each circle needs distance_x and distance_y at point_position=3 plus radius or diameter.
+When its center must follow a rectangular sketch, set center_of on both coordinate
+constraints. This installs verified native expressions; independent coordinates do
+not preserve a centered relationship after width/depth edits.
 Constrain each degree of freedom only once. When two widths/heights/radii already have
 independent dimensions, do not also add equality between them. Equal dimensions do not
 require an extra equality constraint. Diagnose constraints with the actual solver;
@@ -131,9 +135,8 @@ Typed actions and args (freecad_execute only):
   Never add constraints to these helpers or guess their geometry indexes.
 - sketch.add_geometry: {sketch, geometry}; geometry is line(start/end), circle(center/radius_mm),
   or rectangle(corner/width_mm/height_mm). Coordinates are numeric millimetres.
-- sketch.add_constraint: {sketch, kind, first, second?, value_mm?}; kinds are horizontal,
-  vertical, distance_x, distance_y, distance, radius, diameter, coincident, equal. References
-  use geometry_index and optional point_position 1|2|3.
+- sketch.add_constraint: use freecad_describe_operation for the authoritative kind,
+  reference and datum variants. Do not use native negative indices as persistent identities.
 - feature.pad: {name, profile, length_mm, reversed?}
 - feature.loft: {name, profiles:[first_sketch,second_sketch,...], subtractive?:boolean, ruled?:boolean}.
   Ordered sections must be fully constrained and belong to one Body. Hollow/open
@@ -271,6 +274,7 @@ class FreeCADOperationGenerator:
         rejection_sink: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         checkpoint_enabled: bool = False,
         execution_feedback: dict[str, Any] | None = None,
+        max_tool_calls: int | None = None,
     ) -> FreeCADOperationGenerationResult:
         required_formats = self._required_formats(output_formats)
         if execution_feedback is not None:
@@ -372,6 +376,7 @@ class FreeCADOperationGenerator:
         result = await self._complete(
             user_payload=payload,
             generator_kind="freecad_operations",
+            max_tool_calls=max_tool_calls,
             output_formats=output_formats,
             base_state=base_state,
             rejection_sink=rejection_sink,
@@ -389,6 +394,7 @@ class FreeCADOperationGenerator:
         diagnostic: dict[str, Any] | None = None,
         prior_contract: dict[str, Any] | None = None,
         profile_context: dict[str, Any] | None = None,
+        max_tool_calls: int | None = None,
     ) -> FreeCADOperationGenerationResult:
         current = FreeCADOperationPlan.model_validate_json(source_code)
         if profile_context is not None:
@@ -421,7 +427,8 @@ class FreeCADOperationGenerator:
                     'Do not reproduce other operations or supply an export. '
                     'If the scope cannot satisfy the requirements, return an explicit clarification error.'},
                 generator_kind='freecad_profile_replan', output_formats=output_formats, base_state=base_state,
-                rejection_sink=rejection_sink, profile_context=profile_context, resource_policy=policy)
+                rejection_sink=rejection_sink, profile_context=profile_context, resource_policy=policy,
+                max_tool_calls=max_tool_calls)
             # Existing operations already carry durable scoped IDs. Re-scoping
             # a repair would change the immutable identities we just checked.
             contract = profile_replan.make_contract(result.operation_plan, profile_context, policy)
@@ -461,12 +468,14 @@ class FreeCADOperationGenerator:
                     'a valid repair, request clarification through an explicit error.'},
                 generator_kind='freecad_constraint_patch', output_formats=output_formats,
                 base_state=base_state, rejection_sink=rejection_sink,
-                constraint_context=context, constraint_source=current)
+                constraint_context=context, constraint_source=current, max_tool_calls=max_tool_calls)
         # Reject an unsupported repair scope before paying for a provider call.
+        from app.freecad.repair_capabilities import require_cut_repair_capability
+        capability = require_cut_repair_capability(current, failure)
         try:
             validate_subtractive_repair(current, current, failure)
         except ValueError as exc:
-            raise FreeCADPlanningError("engineering_input_required", str(exc)) from exc
+            raise FreeCADPlanningError("repair_scope_protected", str(exc)) from exc
         constraint_repair = failure.get('error_code') in SKETCH_FAILURES
         cut_context = {'source': current, 'failure': failure} if failure.get('error_code') == 'subtractive_feature_no_effect' else None
         cut_policy = {'max_tool_calls': settings.cut_repair_max_tool_calls, 'max_rejections': 2} if cut_context else None
@@ -475,6 +484,7 @@ class FreeCADOperationGenerator:
             "checkpoint_enabled": current.execution_mode == "checkpoint",
             "current_operation_plan": current.model_dump(mode="json"),
             "execution_failure": failure,
+            **({'repair_capability': capability} if capability else {}),
             "base_freecad_state": bounded_agent_context(base_state) if base_state else None,
             **({'measured_cut': json.loads((failure.get('details') or {}).get('cut_diagnostic_json') or '{}'),
                 'pending_profile_diagnostics': json.loads((failure.get('details') or {}).get('pending_profiles_json') or '{}')}
@@ -520,6 +530,7 @@ class FreeCADOperationGenerator:
             rejection_sink=rejection_sink,
             cut_context=cut_context,
             resource_policy=cut_policy,
+            max_tool_calls=max_tool_calls,
         )
         if result.source_code == current.model_dump_json():
             raise ValueError("FreeCAD operation repair returned an unchanged plan")
@@ -556,6 +567,7 @@ class FreeCADOperationGenerator:
         profile_context: dict[str, Any] | None = None,
         cut_context: dict[str, Any] | None = None,
         resource_policy: dict[str, Any] | None = None,
+        max_tool_calls: int | None = None,
     ) -> FreeCADOperationGenerationResult:
         async def record_rejection(content, error, attempt):
             if rejection_sink is not None:
@@ -615,6 +627,9 @@ class FreeCADOperationGenerator:
             },
         ]
         for attempt in itertools.count():
+            if max_tool_calls is not None and attempt >= max_tool_calls:
+                raise FreeCADPlanningError('agent_tool_budget_exhausted',
+                    f'FreeCAD tool-call budget exhausted ({attempt}/{max_tool_calls})')
             if resource_policy and attempt >= resource_policy['max_tool_calls']:
                 kind = 'cut_repair' if cut_context else 'profile_replan'
                 raise FreeCADPlanningError(kind + '_budget_exhausted', kind + ' tool-call budget exhausted')

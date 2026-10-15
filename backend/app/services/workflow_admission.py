@@ -15,6 +15,7 @@ from app.execution.canonical import canonical_sha256
 from app.repositories.runs import append_workflow_event
 from app.services.cloud_documents import enqueue_operation
 from app.services.run_state import create_workflow
+from app.services.provider_budgets import admit as admit_provider_budget
 
 
 async def create_document_workflow(
@@ -29,6 +30,7 @@ async def create_document_workflow(
     )
     if created.replayed:
         return created
+    await admit_provider_budget(connection, tenant_id=tenant_id, workflow_id=created.workflow_id)
     await enqueue_operation(
         connection, workflow_id=created.workflow_id, tenant_id=tenant_id,
         principal_id=requested_by_principal_id, payload=request_payload,

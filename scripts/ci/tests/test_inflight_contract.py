@@ -29,6 +29,20 @@ class InflightContracts(unittest.TestCase):
         result = probe.inspect_requests([item])
         self.assertEqual(result, {'compatible': True, 'checked': 1, 'blockers': []})
 
+    def test_supported_persistent_budget_contract_is_accepted(self):
+        item = self.check_request()
+        item['provider_budget_contract'] = 'provider-budget.v1'
+        self.assertTrue(probe.inspect_requests([item])['compatible'])
+
+    def test_unknown_persistent_budget_contract_blocks_old_target(self):
+        item = self.check_request()
+        item['provider_budget_contract'] = 'provider-budget.future'
+        result = probe.inspect_requests([item])
+        self.assertFalse(result['compatible'])
+        self.assertEqual(result['blockers'], [{'workflow_id': item['id'],
+            'reason': 'provider_budget_contract_unsupported'}])
+        self.assertNotIn('private', json.dumps(result))
+
     def test_unknown_contract_cannot_pass_through_agent_prefix(self):
         request = McadAgentWorkflowV2Request(**{name: uuid4() for name in (
             'workflow_run_id', 'tenant_id', 'project_id', 'principal_id',

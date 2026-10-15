@@ -11,6 +11,24 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from scripts.ci.live_budget import BudgetExceeded
 
 
+def bounded_payload(payload, limits):
+    """The reserved output bound must also constrain the actual HTTP request.
+
+    Only this provider/model has an audited combined reasoning/output bound.
+    Separately billed hosted tools and other models need their own contract.
+    """
+    if limits.model != 'kimi-k2.7-code' or limits.context != 262144 or limits.output < 32768:
+        raise BudgetExceeded('no audited billing bound for this model configuration')
+    if (payload.get('model') != limits.model or payload.get('n', 1) != 1
+            or any(t.get('type') != 'function' for t in payload.get('tools', []))
+            or any(k in payload for k in ('max_completion_tokens', 'max_output_tokens', 'prompt_cache_options'))):
+        raise BudgetExceeded('unbounded provider option or separately billed tool')
+    output = payload.get('max_tokens', limits.output)
+    if type(output) is not int or not 0 < output <= limits.output:
+        raise BudgetExceeded('output limit exceeds the frozen reservation')
+    return {**payload, 'max_tokens': output}
+
+
 class StreamUsage:
     """Only a complete provider stream may release a cost reservation."""
 
@@ -51,8 +69,8 @@ def create_app(budget, provider_url, provider_key, failures, *, changed=lambda: 
     async def completions(request: Request):
         payload = await request.json()
         try:
-            slot = budget.reserve(payload.get('model'), payload.get(
-                'max_completion_tokens', payload.get('max_tokens', budget.limits.output)))
+            payload = bounded_payload(payload, budget.limits)
+            slot = budget.reserve(payload['model'], payload['max_tokens'])
             changed()  # Persist the reservation before sending a paid request.
         except (BudgetExceeded, ValueError) as error:
             failures.append(str(error))

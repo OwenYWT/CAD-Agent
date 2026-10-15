@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator, model_serializer
 from app.contracts.acceptance import AcceptanceContract, AcceptanceMeasurements, acceptance_outcome
+from app.contracts.acceptance_v2 import VersionedAcceptance
 
 
 class GeometryBounds(BaseModel):
@@ -55,7 +56,7 @@ class DurableGeometryReport(BaseModel):
     artifacts: tuple[GeometryArtifactEvidence, ...]
     issues: tuple[str, ...] = ()
     acceptance: AcceptanceMeasurements | None = None
-    acceptance_contract: AcceptanceContract | None = None
+    acceptance_contract: VersionedAcceptance | None = None
     request_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
     @model_serializer(mode="wrap")
@@ -90,10 +91,13 @@ class DurableGeometryReport(BaseModel):
         }
 
 
-def verify_geometry_evidence(report, *, request_sha256, acceptance, expected_solid_count):
+def verify_geometry_evidence(report, *, request_sha256, acceptance, expected_solid_count, measurement_context=None):
     """Reject stale workers and stale cached evidence before authorizing a gate."""
     if report.request_sha256 != request_sha256:
         raise ValueError("geometry evidence belongs to a different measurement request")
+    if measurement_context is not None:
+        if sorted(a.sha256 for a in report.artifacts) != sorted(measurement_context['artifact_sha256s']):
+            raise ValueError('geometry evidence belongs to a different manifest artifact')
     if acceptance is not None:
         if report.acceptance_contract is not None and report.acceptance_contract.digest() != acceptance.digest():
             raise ValueError("displayed measurement criteria differ from the acceptance contract")
@@ -101,6 +105,26 @@ def verify_geometry_evidence(report, *, request_sha256, acceptance, expected_sol
             raise ValueError("geometry evidence is not bound to the acceptance contract")
         if report.outcome == "passed" and acceptance_outcome(acceptance, report.acceptance.evidence) != "passed":
             raise ValueError("required acceptance evidence did not pass")
+        if acceptance.schema_version == 'engineering-acceptance.v2':
+            from app.contracts.acceptance_comparison import compare_measurement
+            checks = {c.check_id: c for c in acceptance.checks}
+            for row in report.acceptance.evidence:
+                if measurement_context is not None and (row.outcome != 'indeterminate' or row.details.get('measurement_binding')):
+                    from app.contracts.measurement_binding import verify_measurement_binding
+                    verify_measurement_binding(row.details.get('measurement_binding'),
+                        check=checks[row.check_id].model_dump(mode='json'), acceptance_digest=acceptance.digest(),
+                        context=measurement_context, artifact_sha256s=[a.sha256 for a in report.artifacts if a.format=='step'])
+                    if row.outcome in {'passed', 'failed'} and row.details['measurement_binding']['status'] != 'bound':
+                        raise ValueError('a definite measurement requires a bound scope')
+                if row.outcome == 'indeterminate':
+                    continue
+                comparison = checks[row.check_id].comparison.model_dump(mode='json')
+                if (row.details.get('comparison_policy_id') != acceptance.comparison_policy_id
+                        or row.details.get('comparison') != comparison):
+                    raise ValueError('v2 geometry evidence omitted or changed its frozen comparison')
+                result = compare_measurement(comparison, row.measured, row.details['numerical_tolerance'])
+                if result['outcome'] != row.outcome:
+                    raise ValueError('v2 geometry outcome differs from measured values')
     if expected_solid_count is not None and report.outcome == "passed":
         solids = [a for a in report.artifacts if a.format in {"step", "stl"}]
         if not solids or any(a.solid_count != expected_solid_count for a in solids):

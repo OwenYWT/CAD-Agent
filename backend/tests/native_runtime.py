@@ -1,5 +1,6 @@
 """Run native test cases with the engine selected by the test environment."""
 import os
+import subprocess
 
 from app.execution.podman_backend import DockerExecutionBackend, PodmanExecutionBackend
 from app.sandbox.executor import CadQueryExecutor
@@ -25,3 +26,22 @@ def native_backend() -> PodmanExecutionBackend:
         command=os.environ.get("SANDBOX_COMMAND", "podman"),
         sandbox_executor=executor,
     )
+
+
+def native_execution_active(backend: PodmanExecutionBackend) -> bool:
+    """Observe an actual running container on the configured native engine."""
+    executor = backend._sandbox
+    if executor.runtime == 'docker':
+        with executor._active_lock:
+            return bool(executor._active_containers)
+    client = executor.client
+    with client._active_lock:
+        names = [name for name, _ in client._active.values()]
+    # A live Podman CLI can precede container creation. Do not interrupt the
+    # worker until the engine confirms that native execution has started.
+    for name in names:
+        state = subprocess.run([client.command, 'inspect', '--format', '{{.State.Running}}', name],
+                               capture_output=True, text=True, timeout=5)
+        if state.returncode == 0 and state.stdout.strip() == 'true':
+            return True
+    return False

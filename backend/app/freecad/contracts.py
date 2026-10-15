@@ -209,9 +209,15 @@ class SketchAddConstraintArgs(FrozenContract):
     value_mm: Coordinate | None = None
     driving: bool = True
     logical_id: Annotated[str, Field(min_length=1, max_length=160, pattern=r'^[a-z0-9][a-z0-9_-]*$')] | None = None
+    center_of: ObjectName | None = Field(default=None,
+        description='Bind a circle center coordinate to one verified rectangular sketch in the same Body/frame. Preserves centering when its dimensions change.')
 
     @model_validator(mode="after")
     def valid_signature(self) -> "SketchAddConstraintArgs":
+        if self.center_of is not None and (self.kind not in {'distance_x', 'distance_y'}
+                or self.first.point_position != 3 or not self.driving or self.second is not None
+                or self.center_of == self.sketch):
+            raise ValueError('center_of requires a driving circle-center coordinate and a different rectangle sketch')
         requires_value = self.kind in {
             "distance_x",
             "distance_y",
@@ -583,6 +589,8 @@ class FreeCADOperation(FrozenContract):
                 payload.pop('driving', None)
             if payload.get('logical_id') is None:
                 payload.pop('logical_id', None)
+            if payload.get('center_of') is None:
+                payload.pop('center_of', None)
         # Additive scope support must not change hashes of retained v1 plans.
         if self.action == "feature.chamfer" and payload.get("edge_scope") is None:
             payload.pop("edge_scope", None)
@@ -665,8 +673,14 @@ def normalize_capability_schema(value):
 
 
 def capability_schemas() -> dict:
-    return {action: normalize_capability_schema(model.model_json_schema())
-            for action, model in _ACTION_ARG_TYPES.items()}
+    schemas = {action: normalize_capability_schema(model.model_json_schema())
+               for action, model in _ACTION_ARG_TYPES.items()}
+    schemas['sketch.add_constraint']['examples'] = [SketchAddConstraintArgs.model_validate({
+        'sketch': 'SketchA', 'kind': 'point_on_object',
+        'first': {'geometry_index': 0, 'point_position': 1},
+        'second': {'datum': 'horizontal_axis'},
+    }).model_dump(mode='json', exclude_none=True)]
+    return schemas
 
 
 def planner_discriminated_shapes() -> dict:

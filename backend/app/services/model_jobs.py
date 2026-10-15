@@ -21,6 +21,8 @@ from app.execution.canonical import canonical_sha256
 from app.model_job_context import ModelJobContext, model_job_context
 from app.services.llm_usage import UsageContext, usage_context
 from app.contracts.model_operations import DURABLE_OPERATIONS, ModelHandlers
+from app.contracts.provider_budget import provider_budget_context
+from app.services.provider_budgets import PgProviderBudget, admit as admit_provider_budget, freeze_policy
 
 logger = logging.getLogger(__name__)
 LEASE_SECONDS = 30
@@ -50,6 +52,15 @@ async def submit(request: dict) -> dict:
             raise PermissionError('Model job principal differs from task submitter')
         if owner['status'] in {'failed','cancelled','timed_out','succeeded','cancelling'} or owner['cancellation_requested_at']:
             return {'status': 'cancelled'}
+        if not await conn.scalar(text('SELECT 1 FROM provider_budget_policies WHERE workflow_run_id=:run'), values):
+            # Runs admitted before this ledger existed have no auditable spend
+            # baseline. Apply request limits prospectively; never claim a hard
+            # currency guarantee for their already dispatched calls.
+            from app.config import settings
+            policy = freeze_policy(mode='requests', request_limit=settings.provider_budget_request_limit,
+                                   month_request_limit=settings.provider_budget_tenant_month_request_limit)
+            policy['legacy_admission'] = True
+            await admit_provider_budget(conn, tenant_id=values['tenant'], workflow_id=values['run'], policy=policy)
         await conn.execute(text("""INSERT INTO model_jobs
             (id,tenant_id,principal_id,workflow_run_id,operation,payload,payload_hash)
             VALUES(:id,:tenant,:principal,:run,:operation,CAST(:payload AS json),:digest)
@@ -122,11 +133,13 @@ async def execute(job: dict, operations: ModelHandlers):
         context = model_job_context.set(ModelJobContext(job['id'], job['generation']))
         usage = usage_context.set(UsageContext(job['tenant_id'],job['principal_id'],
             job['workflow_run_id'],job['operation'],job['generation']))
+        budget = provider_budget_context.set(PgProviderBudget(job))
         try:
             if canonical_sha256({'operation':job['operation'],'payload':job['payload']}) != job['payload_hash']:
                 raise ValueError('Model job payload integrity mismatch')
             return await operations[job['operation']](job['payload'])
         finally:
+            provider_budget_context.reset(budget)
             usage_context.reset(usage)
             model_job_context.reset(context)
 
@@ -169,7 +182,7 @@ async def execute(job: dict, operations: ModelHandlers):
             # Losing database connectivity is not a failed model response.
             # Leave the fenced lease for takeover once the database recovers.
             raise
-        error = {'code': getattr(exc,'type',None) or type(exc).__name__,
+        error = {'code': getattr(exc,'type',None) or getattr(exc,'code',None) or type(exc).__name__,
                  'message': str(exc)[:4000], 'details': list(exc.details) if isinstance(exc,ApplicationError) else []}
         await finish(job,status='failed',error=error)
     finally:

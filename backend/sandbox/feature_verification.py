@@ -16,6 +16,53 @@ class MeasurementSelectionError(ValueError):
         self.details = details or {}
 
 
+class MeasurementKernelError(ValueError):
+    def __init__(self, message, *, stage, native_error=None):
+        super().__init__(message)
+        self.details = {'stage': stage, 'native_error': native_error or message}
+
+
+def _measurement_common(left, right, stage):
+    """A completed empty Boolean is distinct from a failed Boolean.
+
+    Inspect the native result before CadQuery wraps it: wrapping a successful
+    null result itself can raise. Non-destructive mode preserves source BReps.
+    """
+    import cadquery as cq
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
+    from OCP.TopTools import TopTools_ListOfShape
+    try:
+        arguments, tools = TopTools_ListOfShape(), TopTools_ListOfShape()
+        arguments.Append(left.wrapped)
+        tools.Append(right.wrapped)
+        builder = BRepAlgoAPI_Common()
+        builder.SetArguments(arguments)
+        builder.SetTools(tools)
+        builder.SetNonDestructive(True)
+        builder.Build()
+        # cadquery-ocp 7.9 exposes IsDone, but not HasErrors. Check the latter
+        # too on bindings that expose it; never infer success from error text.
+        has_errors = getattr(builder, 'HasErrors', None)
+        if not builder.IsDone() or (callable(has_errors) and has_errors()):
+            raise MeasurementKernelError('OCCT common did not complete', stage=stage)
+        native = builder.Shape()
+        if native.IsNull():
+            return None
+        result = cq.Shape.cast(native)
+        if not result.isValid():
+            raise MeasurementKernelError('OCCT common produced invalid geometry', stage=stage)
+        return result
+    except MeasurementKernelError:
+        raise
+    except Exception as exc:
+        raise MeasurementKernelError('OCCT common failed', stage=stage,
+            native_error=f'{type(exc).__name__}: {exc}') from exc
+
+
+def _positive_face_patches(shape, tolerance):
+    return [] if shape is None else [f for f in shape.Faces() if f.Area() > tolerance*tolerance]
+
+
 def _dot(a, b):
     return sum(x*y for x, y in zip(a, b))
 
@@ -103,6 +150,8 @@ def _planar_gap(shape, scope, tolerance):
     prism between the overlapping faces must also be empty of material.
     """
     import cadquery as cq
+    if shape.isNull() or not shape.isValid() or not shape.Solids():
+        raise MeasurementKernelError('planar gap requires valid material BRep', stage='input')
     axis = _unit(scope['axis']) if scope.get('axis') else None
     region = None
     if scope.get('region_min_mm') is not None:
@@ -114,6 +163,7 @@ def _planar_gap(shape, scope, tolerance):
     if len(faces) * (len(faces)-1) // 2 > 4096:
         raise MeasurementSelectionError('planar gap face-pair verification budget exceeded')
     pairs = []
+    empty_intersections = 0
     for position, (i, first) in enumerate(faces):
         normal = first.normalAt().normalized()
         if axis and abs(abs(_dot(normal.toTuple(), axis))-1) > 1e-9:
@@ -124,21 +174,27 @@ def _planar_gap(shape, scope, tolerance):
             distance = (second.Center()-first.Center()).dot(normal)
             if distance <= tolerance:
                 continue
-            lower = first.intersect(region) if region is not None else first
-            upper = second.intersect(region) if region is not None else second
-            overlap = lower.intersect(upper.translate(normal * -distance))
-            patches = [face for face in overlap.Faces() if face.Area() > tolerance*tolerance]
+            lower = _measurement_common(first, region, 'clip_lower') if region is not None else first
+            upper = _measurement_common(second, region, 'clip_upper') if region is not None else second
+            if not _positive_face_patches(lower, tolerance) or not _positive_face_patches(upper, tolerance):
+                empty_intersections += 1
+                continue
+            overlap = _measurement_common(lower, upper.translate(normal * -distance), 'projected_overlap')
+            patches = _positive_face_patches(overlap, tolerance)
             if not patches:
+                empty_intersections += 1
                 continue
             volume, error, area = 0.0, 0.0, 0.0
             for patch in patches:
-                prism = cq.Solid.extrudeLinear(patch.outerWire(), patch.innerWires(), normal * distance)
+                try:
+                    prism = cq.Solid.extrudeLinear(patch.outerWire(), patch.innerWires(), normal * distance)
+                except Exception as exc:
+                    raise MeasurementKernelError('planar gap prism construction failed', stage='normal_prism',
+                        native_error=f'{type(exc).__name__}: {exc}') from exc
                 if not prism.isValid() or len(prism.Solids()) != 1:
-                    raise ValueError('planar gap normal prism is invalid')
-                material = prism.intersect(shape)
-                if not material.isValid():
-                    raise ValueError('planar gap material intersection is invalid')
-                volume += sum(abs(solid.Volume()) for solid in material.Solids())
+                    raise MeasurementKernelError('planar gap normal prism is invalid', stage='normal_prism')
+                material = _measurement_common(prism, shape, 'intervening_material')
+                volume += sum(abs(solid.Volume()) for solid in material.Solids()) if material is not None else 0.
                 error += prism.Area()*tolerance
                 area += patch.Area()
             if volume <= error:
@@ -147,7 +203,9 @@ def _planar_gap(shape, scope, tolerance):
                     'intervening_material_mm3': volume, 'boolean_volume_tolerance_mm3': error})
     if len(pairs) != 1:
         raise MeasurementSelectionError(f'planar gap requires exactly one opposing unobstructed face pair; found {len(pairs)}',
-                                        details={'candidate_pairs': pairs})
+                details={'candidate_pairs': pairs, 'candidate_count': len(pairs), 'scope': scope,
+                    'reason': 'no_pair' if not pairs else 'ambiguous_pair', 'stage': 'pair_selection',
+                    'empty_intersections': empty_intersections})
     pair = pairs[0]
     return pair['distance_mm'], {**pair, 'binding': 'unique_opposing_planar_faces',
         'selection_uses_nominal': False, 'manufacturing_fit': 'unverified'}
@@ -473,21 +531,41 @@ def _scope_passages(passages, scope, tolerance):
     return result
 
 
-def measure_checks(shape, checks):
+def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.v1',
+                   comparison_policy_id=None, binding_context=None, acceptance_digest=None, artifact_sha256=None,
+                   bound_shapes=None):
     import cadquery as cq
     from OCP.Precision import Precision
 
     tolerance = float(Precision.Confusion_s())
     evidence = []
-    passages = None
+    passage_cache = {}
+    source_shape = shape
     for check in checks:
+        shape = source_shape
+        native_binding = None
         row = {'check_id':check['check_id'], 'outcome':'indeterminate',
                'method':'final_step_brep', 'measured':[], 'issues':[],
                'details':{'numerical_tolerance_mm':tolerance}}
         kind = check['kind']; scope = check.get('scope') or {}
+        shape_id=(scope.get('object_ref') or {}).get('feature_id')
+        passages=passage_cache.get(shape_id)
+        origin = None
         try:
+            if acceptance_version not in {'engineering-acceptance.v1', 'engineering-acceptance.v2'}:
+                raise ValueError('unsupported acceptance version')
             frame=scope.get('frame','world')
-            if frame!='world':
+            if frame=='selected_object':
+                reference=scope.get('object_ref') or {}
+                selected=(bound_shapes or {}).get(reference.get('feature_id'))
+                if not selected or selected.get('status')!='bound':
+                    raise MeasurementSelectionError('selected object has no verified current native/STEP correspondence',
+                        details={'reason':(selected or {}).get('reason','object_authority_missing'),'stage':'object_binding'})
+                native_binding=selected['proof']
+                if native_binding['reference']!=reference:
+                    raise MeasurementSelectionError('selected measurement object authority differs')
+                shape=selected['local_shape']
+            elif frame!='world':
                 bounds=_geometric_bounds(shape)
                 origin=(bounds[:3] if frame=='bounds_min'
                         else tuple((lo+hi)/2 for lo,hi in zip(bounds[:3],bounds[3:])))
@@ -674,11 +752,22 @@ def measure_checks(shape, checks):
             else:
                 row['issues'].append('measurement_kind_not_supported')
             if row['measured'] and not row['issues']:
-                wanted = 0 if kind=='hole_position' else check['nominal']
-                allowed = 0 if kind in {'solid_count','hole_count','void_connected'} else (check.get('tolerance_mm') or 0)+row['details']['numerical_tolerance_mm']
-                if kind == 'volume':
-                    allowed = (check.get('tolerance_mm3') or 0)+row['details']['numerical_tolerance_mm3']
-                row['outcome'] = 'passed' if all(abs(v-wanted)<=allowed for v in row['measured']) else 'failed'
+                if acceptance_version == 'engineering-acceptance.v2':
+                    try:
+                        from acceptance_comparison import compare_measurement
+                    except ImportError:
+                        from app.contracts.acceptance_comparison import compare_measurement
+                    compared = compare_measurement(check['comparison'], row['measured'],
+                        row['details']['numerical_tolerance_mm3' if kind == 'volume' else 'numerical_tolerance_mm'],
+                        policy_id=comparison_policy_id)
+                    row['outcome'] = compared.pop('outcome')
+                    row['details'].update(compared)
+                else:
+                    wanted = 0 if kind=='hole_position' else check['nominal']
+                    allowed = 0 if kind in {'solid_count','hole_count','void_connected'} else (check.get('tolerance_mm') or 0)+row['details']['numerical_tolerance_mm']
+                    if kind == 'volume':
+                        allowed = (check.get('tolerance_mm3') or 0)+row['details']['numerical_tolerance_mm3']
+                    row['outcome'] = 'passed' if all(abs(v-wanted)<=allowed for v in row['measured']) else 'failed'
             elif not row['issues']:
                 row['issues'].append('no_measurement_evidence')
         except Exception as exc:
@@ -687,5 +776,18 @@ def measure_checks(shape, checks):
                 row['details'].update(error_code='acceptance_scope_invalid',
                                       repair_target='measurement_selection', cad_source_repair_allowed=False,
                                       **exc.details)
+            elif isinstance(exc, MeasurementKernelError):
+                row['details'].update(error_code='acceptance_measurement_failed',
+                    repair_target='measurement_kernel', cad_source_repair_allowed=False, **exc.details)
+        if passages is not None:
+            passage_cache[shape_id]=passages
+        if binding_context is not None:
+            try:
+                from measurement_binding import bind_measurement_scope
+            except ImportError:
+                from app.contracts.measurement_binding import bind_measurement_scope
+            row['details']['measurement_binding'] = bind_measurement_scope(check,
+                acceptance_digest=acceptance_digest, context=binding_context, artifact_sha256=artifact_sha256,
+                resolved_scope=scope, frame_origin=origin, evidence=row, native_binding=native_binding)
         evidence.append(row)
     return evidence

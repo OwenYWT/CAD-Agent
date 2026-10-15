@@ -48,6 +48,7 @@ async def failure_diagnostic(principal, workflow_id: UUID, *, describe_requireme
     if source_row and requirements and describe_requirements:
         protection=describe_requirements(source_row['source_code'],envelope['snapshot'],requirements)
     return {**envelope, 'sha256': event['sha256'], 'task_status': task['status'],
+            'task_error_code': task.get('error_code'), 'repair_stop_reason': task.get('error_message'),
             **protection,
             'base_revision_id': task['request_payload'].get('expected_base_revision_id'),
             'base_state_version': base_state_version,

@@ -3,10 +3,21 @@ from decimal import Decimal
 import unittest
 
 from scripts.ci.live_budget import BudgetExceeded, Limits, RunBudget
-from scripts.ci.live_gateway import StreamUsage
+from scripts.ci.live_gateway import StreamUsage, bounded_payload
 
 
 class LiveStreamContract(unittest.TestCase):
+    def test_reserved_bound_is_enforced_in_forwarded_payload(self):
+        limits=Limits('CNY',Decimal('5'),Decimal('5'),Decimal('6.5'),Decimal('27'),8,262144,32768,'kimi-k2.7-code')
+        original={'model':limits.model,'messages':[]}
+        assert bounded_payload(original,limits)['max_tokens']==32768
+        assert 'max_tokens' not in original
+        for change in [{'n':2}, {'model':'unknown'}, {'max_tokens':32769},
+                       {'max_completion_tokens':100}, {'tools':[{'type':'builtin_function'}]},
+                       {'prompt_cache_options':{'ttl':3600}}]:
+            with self.subTest(change=change), self.assertRaises(BudgetExceeded):
+                bounded_payload({**original,**change},limits)
+
     def stream(self, lines):
         parser = StreamUsage()
         for line in lines:

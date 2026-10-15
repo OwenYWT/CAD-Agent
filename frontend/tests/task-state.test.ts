@@ -11,6 +11,16 @@ function snapshot(id: string, status: string): DurableTaskSnapshot {
     error_code:status==='failed'?'ProviderQuotaError':null, error_message:status==='failed'?'模型服务额度不足':null };
 }
 
+test('task and provider budgets remain distinct from provider account quota and missing input', () => {
+  for (const code of ['provider_budget_exhausted','agent_work_budget_exhausted','agent_tool_budget_exhausted']) {
+    const p=panel(); const s=useSessionStore.getState();
+    s.applyDurableSnapshot({...snapshot(code,'failed'),error_code:code,error_message:'已达到冻结的任务预算'},p.id);
+    const state=taskState(s.getActivePanel());
+    assert.equal(state.phase,'failed'); assert.equal(state.title,'本次任务预算已耗尽');
+    assert.equal(state.quota,false); assert.equal(state.repairFailureMessage,'已达到冻结的任务预算');
+  }
+});
+
 test('terminal repair budget reason takes precedence over the last native failure', () => {
   const p=panel(); const s=useSessionStore.getState();
   const stopped='当前失败操作 screw；已通过 throat、clamp；整体修复预算已耗尽（2/2）';

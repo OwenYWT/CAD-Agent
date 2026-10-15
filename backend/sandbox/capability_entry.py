@@ -484,6 +484,8 @@ def _geometry_validate(task: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
         dimension_tolerance=float(params.get("dimension_tolerance", 0.05)),
         expected_solid_count=params.get("expected_solid_count"),
         acceptance=params.get("acceptance"),
+        measurement_context=params.get('measurement_context'),
+        native_path=str(_input(task,'measurement-native')) if 'measurement-native' in task['inputs'] else None,
     )
     output = _output(params)
     output.write_text(

@@ -13,6 +13,8 @@ from app.config import settings, make_llm_client
 from app.llm import find_provider_exception
 from app.models.schemas import CADPlan, ModificationPlan
 from app.contracts.acceptance import acceptance_tool_schema
+from app.contracts.acceptance_v2 import AcceptanceContractV2
+from app.validation.requirement_binding import extract_source_requirements, validate_requirement_bindings, RequirementBindingError
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +23,8 @@ def _validation_feedback(error: Exception) -> str:
     """Keep field-level diagnostics without copying potentially sensitive values."""
     if isinstance(error, ValidationError):
         return json.dumps([
-            {"field": ".".join(map(str, item["loc"])),
+            {"field": ".".join(str(part) for part in item['loc'] if part not in {
+                'engineering-acceptance.v1', 'engineering-acceptance.v2'}),
              "type": item["type"], "message": item["msg"]}
             for item in error.errors(include_input=False, include_url=False)
         ], ensure_ascii=False)
@@ -50,13 +53,16 @@ def _tool_call_data(call):
         'name':call.function.name, 'arguments':call.function.arguments}}
 
 
-def _planning_format(model, tool_name, enabled):
+def _planning_format(model, tool_name, enabled, acceptance_version='engineering-acceptance.v1'):
     if not enabled:
         return {'response_format':{'type':'json_object'}}
     schema=model.model_json_schema()
     check_schema,definitions=acceptance_tool_schema()
     schema['$defs'].update(definitions)
     schema['$defs']['AcceptanceCheck']=check_schema
+    contract_name = 'AcceptanceContractV2' if acceptance_version == 'engineering-acceptance.v2' else 'AcceptanceContract'
+    if model is CADPlan:
+        schema['$defs']['DesignBrief']['properties']['acceptance'] = {'$ref': '#/$defs/' + contract_name}
     schema['additionalProperties']=False
     if model is CADPlan:
         # The engineering workflow requires a nested acceptance object for
@@ -69,7 +75,7 @@ def _planning_format(model, tool_name, enabled):
     else:
         schema.setdefault('required',[]).append('acceptance')
         schema['properties']['acceptance']={
-            '$ref':'#/$defs/AcceptanceContract',
+            '$ref':'#/$defs/' + contract_name,
             'description':'Required complete measurement contract for this modification.'}
     return {'tools':[{'type':'function', 'function':{'name':tool_name,
         'description':'Submit the complete CAD requirements for server validation. This does not execute or approve geometry.',
@@ -89,6 +95,31 @@ MODIFICATION_CONTEXT_PROMPT = '你是一个 CAD 修改需求分析专家。请�
 MODIFICATION_JSON_FORMAT = '将修改请求解析为 JSON（不要输出其他任何文字）:\n{{\n    "description": "修改描述",\n    "modification_type": "dimension_change|add_feature|remove_feature|redesign",\n    "target_params": {{"param_name": new_value}},\n    "new_features": ["feature description"]\n}}'
 
 MODIFICATION_SYSTEM_PROMPT = MODIFICATION_CONTEXT_PROMPT + MODIFICATION_JSON_FORMAT
+
+
+def _v2_requirements_prompt(objective, tool_name, *, verified_state=None, requirement_sources=None):
+    return ('\nSubmit all requirements with ' + tool_name + '. Use engineering-acceptance.v2. '
+        'The server binds objective. Copy binding_ref from the source requirement_id below, retaining property, '
+        'quantity, unit, comparison and authorized tolerance exactly. Cover every extracted requirement. '
+        'eq/ge/le/range mean equality, inclusive minimum, inclusive maximum and closed interval. '
+        'Never put nominal/tolerance_mm into v2. Positive engineering tolerance needs its exact supplied '
+        'tolerance_source_refs; absent tolerance means numerical precision only. Do not invent confirmed sources. '
+        'Assumptions must be optional and cannot substitute for an explicit requirement. '
+        'Use each supplied scope; do not guess world regions or surface points. A planar_gap needs a unique '
+        'opposing face pair, and whole-part wall requirements need continuous_normal coverage. '
+        'hole_position compares zero transverse residual against its authorized centers and axis. '
+        'Keep all other required features in the design. Unsupported or unbound semantic conditions belong '
+        'in verification_limits, never silently dropped or recast as missing user input. '
+        'Only missing design information belongs in unresolved and 必须确认 open_questions. '
+        'The tool schema is authoritative. Server extracted source assertions:\n' +
+        json.dumps(extract_source_requirements(objective, verified_state=verified_state,
+            requirement_sources=requirement_sources), ensure_ascii=False))
+
+
+def _validate_v2(objective, acceptance, *, verified_state=None, requirement_sources=None):
+    if not isinstance(acceptance, AcceptanceContractV2):
+        raise RequirementBindingError('requirement_binding_mismatch', 'new requirements must use engineering-acceptance.v2')
+    return validate_requirement_bindings(objective, acceptance, verified_state, requirement_sources=requirement_sources)
 
 
 class Planner:
@@ -163,11 +194,14 @@ class Planner:
         ensure_design_brief(plan)
         return plan
 
-    async def plan_new(self, messages: list[dict], *, require_acceptance: bool = False) -> CADPlan:
+    async def plan_new(self, messages: list[dict], *, require_acceptance: bool = False,
+                       acceptance_version='engineering-acceptance.v1', requirement_sources=None) -> CADPlan:
         system = ((PLANNER_REQUIREMENTS_RULES + PLANNER_PRESENTATION_RULES)
                   if require_acceptance else PLANNER_SYSTEM_PROMPT)
         objective = str(messages[-1]["content"])
-        if require_acceptance:
+        if require_acceptance and acceptance_version == 'engineering-acceptance.v2':
+            system += _v2_requirements_prompt(objective, 'submit_cad_plan', requirement_sources=requirement_sources)
+        elif require_acceptance:
             system += """\nSubmit the complete requirements using submit_cad_plan. Include design_brief.acceptance={checks:[...], unresolved:[...]}; the server binds objective.
 Every requested geometric requirement must be represented by a check or an explicit unresolved item.
 Each check must quote its exact source text from the user request. Never promote an invented assumption
@@ -225,7 +259,7 @@ The submit_cad_plan tool parameters contain the authoritative field definitions 
                     stream=True,
                     temperature=0.1,
                     messages=[{"role": "system", "content": system}] + messages + corrections,
-                    **_planning_format(CADPlan, 'submit_cad_plan', require_acceptance),
+                    **_planning_format(CADPlan, 'submit_cad_plan', require_acceptance, acceptance_version),
                 )
                 elapsed = time.time() - t0
                 choice = response.choices[0]
@@ -257,6 +291,8 @@ The submit_cad_plan tool parameters contain the authoritative field definitions 
                     # Preserve the existing 2D gate instead of inventing 3D evidence.
                     (parsed.get("design_brief") or {}).pop("acceptance", None)
                 plan = self._parse_plan_payload(parsed)
+                if require_acceptance and acceptance_version == 'engineering-acceptance.v2' and plan.part_type != 'profile_2d':
+                    _validate_v2(objective, plan.design_brief.acceptance, requirement_sources=requirement_sources)
 
                 # Preserve the validated semantic classification. Context labels
                 # (e.g. 装配依据) and negations are not assembly requests.
@@ -280,11 +316,18 @@ The submit_cad_plan tool parameters contain the authoritative field definitions 
                 if attempt == 0:
                     corrections = _correction_messages(content, e, message)
                     continue
+                if isinstance(e, RequirementBindingError):
+                    raise
                 raise ValueError("planner model did not return a valid CAD plan: " + _validation_feedback(e)) from e
 
-    async def plan_modification(self, messages: list[dict], current_code: str, *, require_acceptance: bool = False) -> ModificationPlan:
+    async def plan_modification(self, messages: list[dict], current_code: str, *, require_acceptance: bool = False,
+                                acceptance_version='engineering-acceptance.v1', verified_state=None,
+                                requirement_sources=None) -> ModificationPlan:
         system = (MODIFICATION_CONTEXT_PROMPT if require_acceptance else MODIFICATION_SYSTEM_PROMPT).format(current_code=current_code)
-        if require_acceptance:
+        if require_acceptance and acceptance_version == 'engineering-acceptance.v2':
+            system += _v2_requirements_prompt(str(messages[-1]['content']), 'submit_modification_plan',
+                verified_state=verified_state, requirement_sources=requirement_sources)
+        elif require_acceptance:
             system += """\nSubmit the complete requirements using submit_modification_plan. Include acceptance={checks:[...],unresolved:[...]}. The server binds the objective.
 Define independently measurable final-geometry criteria for the requested change and explicitly protected
 dimensions/features. Quote exact source text from the current user request. For 'preserve' requirements,
@@ -312,7 +355,7 @@ The submit_modification_plan tool parameters contain the authoritative field def
                     stream=True,
                     temperature=0.1,
                     messages=[{"role": "system", "content": system}] + messages + corrections,
-                    **_planning_format(ModificationPlan, 'submit_modification_plan', require_acceptance),
+                    **_planning_format(ModificationPlan, 'submit_modification_plan', require_acceptance, acceptance_version),
                 )
                 elapsed = time.time() - t0
                 choice = response.choices[0]
@@ -341,7 +384,11 @@ The submit_modification_plan tool parameters contain the authoritative field def
                     if not isinstance(parsed.get('acceptance'),dict):
                         raise ValueError('modification requires an explicit acceptance contract')
                     parsed['acceptance']['objective']=str(messages[-1]['content'])
-                return self._parse_modification_payload(parsed)
+                plan = self._parse_modification_payload(parsed)
+                if require_acceptance and acceptance_version == 'engineering-acceptance.v2':
+                    _validate_v2(str(messages[-1]['content']), plan.acceptance, verified_state=verified_state,
+                                 requirement_sources=requirement_sources)
+                return plan
             except RuntimeError:
                 raise
             except Exception as e:
@@ -358,4 +405,6 @@ The submit_modification_plan tool parameters contain the authoritative field def
                 if attempt == 0:
                     corrections = _correction_messages(content, e, message)
                     continue
+                if isinstance(e, RequirementBindingError):
+                    raise
                 raise ValueError("planner model did not return a valid modification plan: " + _validation_feedback(e)) from e

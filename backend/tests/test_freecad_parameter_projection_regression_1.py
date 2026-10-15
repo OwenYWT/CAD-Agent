@@ -129,3 +129,34 @@ def test_quantity_constraint_round_trips_through_typed_modify_contract() -> None
         "expected_property_type": "App::PropertyQuantityConstraint",
         "unit": "mm",
     }
+
+
+
+def test_hole_batch_preserves_custom_dimensions_for_both_input_orders() -> None:
+    import pytest
+    from app.freecad.state_contract import ParameterStateError
+
+    state = {
+        "schema_version": "freecad-state.v2", "document": "Model", "object_count": 1,
+        "root_objects": ["Hole"], "objects": [{"name": "Hole", "type_id": "PartDesign::Hole"}],
+        "parameters": [
+            {"id": "Hole." + name, "object_name": "Hole", "property_name": name,
+             "label": name, "group": "Hole", "property_type": "App::PropertyLength",
+             "value": value, "unit": "mm", "editable": True}
+            for name, value in [("Diameter", 4), ("HoleCutDiameter", 8), ("HoleCutDepth", 3)]
+        ],
+    }
+    for shaft, mouth, expected in [(10, 12, ["HoleCutDiameter", "Diameter"]),
+                                    (2, 6, ["Diameter", "HoleCutDiameter"])]:
+        updates = [{"parameter_id": "Hole.Diameter", "value": shaft},
+                   {"parameter_id": "Hole.HoleCutDiameter", "value": mouth}]
+        for ordered in (updates, list(reversed(updates))):
+            plan = compile_parameter_operation_plan(state, {"parameter_updates": ordered},
+                                                    output_formats=("step",))
+            assert [op.args["property"] for op in plan.operations[:-1]] == expected
+            assert {op.args["property"]: op.args["value"] for op in plan.operations[:-1]} == {
+                "Diameter": shaft, "HoleCutDiameter": mouth}
+    with pytest.raises(ParameterStateError, match="wider"):
+        compile_parameter_operation_plan(state, {"parameter_updates": [
+            {"parameter_id": "Hole.Diameter", "value": 10},
+            {"parameter_id": "Hole.HoleCutDiameter", "value": 9}]}, output_formats=("step",))

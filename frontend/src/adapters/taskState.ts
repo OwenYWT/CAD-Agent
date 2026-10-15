@@ -52,14 +52,18 @@ export function taskState(panel: PanelState, document?: CloudDocument | null) {
   else if (status==='succeeded' && durable?.changeSetId && !['committed','rejected','changes_requested','rolled_back'].includes(changeStatus || '')) phase='candidate';
   else if (hasSaved || changeStatus==='committed') phase='saved';
   else phase='needs_input';
-  const title=phase==='failed' ? status==='cancelled' ? '任务已取消' : quota ? '模型服务额度不足，本次未生成模型' : '本次任务失败'
+  const title=phase==='failed' ? status==='cancelled' ? '任务已取消' : quota ? '模型服务额度不足，本次未生成模型'
+    : ['provider_budget_exhausted','agent_work_budget_exhausted','agent_tool_budget_exhausted'].includes(errorCode) ? '本次任务预算已耗尽'
+    : errorCode==='provider_cost_bound_unavailable' ? '当前模型缺少可核验的费用上限'
+    : errorCode==='repair_capability_unsupported' ? '当前操作暂不支持自动修复' : '本次任务失败'
     : phase==='running' ? panel.submissionPending ? '正在提交需求' : status==='cancelling' ? '正在取消任务' : operationLabel
     : phase==='candidate' ? '模型已生成，候选待确认'
     : phase==='saved' ? '模型已保存为当前版本' : unconfirmed ? '等待确认任务是否受理' : snapshot?.confirmation ? '执行计划等待确认' : '等待补充需求';
   const failedSteps=(snapshot?.steps || []).filter(step=>['failed','timed_out'].includes(step.status) && step.error_message);
   const originalModelFailure=failedSteps.find(step=>['agent_freecad_operations','agent_model','agent_modeling'].includes(step.kind)) || null;
   const repairFailure=failedSteps.filter(step=>step.kind.includes('repair')).at(-1) || null;
-  const repairFailureMessage=/^agent_freecad_repair_(budget_exhausted|no_progress)$/.test(errorCode)
+  const repairFailureMessage=/^agent_freecad_repair_(budget_exhausted|no_progress)$/.test(errorCode) ||
+    ['provider_budget_exhausted','agent_work_budget_exhausted','agent_tool_budget_exhausted'].includes(errorCode)
     ? errorMessage : repairFailure?.error_message || (originalModelFailure &&
     /constraint_|repair_/.test(errorCode) && errorMessage!==originalModelFailure.error_message ? errorMessage : '');
   return {phase,label:TASK_PHASE_LABELS[phase],title,taskId,status,operationLabel,hasSaved,quota,errorCode,errorMessage,error,snapshot,recovery,continuationOnly,recoveryObjective,

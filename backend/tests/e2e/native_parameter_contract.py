@@ -65,8 +65,10 @@ def case_plan(kind):
         else:
             add('feature.hole', name='Hole', profile='Profile', diameter_mm=4,
                 through_all=True, cut={'kind':'counterbore','diameter_mm':8,'depth_mm':3})
-            edit = ('Hole.HoleCutDiameter', 8, 9)
-            volume = lambda v: math.pi*(2500*12-4*9-(v/2)**2*3)
+            batch = kind.startswith('counterbore_batch')
+            edit = ('Hole.HoleCutDiameter', 8, 12 if batch else 9)
+            shaft_radius = 5 if batch else 2
+            volume = lambda v: math.pi*(2500*12-shaft_radius**2*9-(v/2)**2*3)
     add('document.export', formats=['fcstd','step','stl'], basename=kind)
     return {'operations': ops}, edit, volume
 
@@ -86,7 +88,7 @@ def main():
             note={'note':'Native parameter regression: exact persisted value and exported geometry are independently checked.'}
             call('POST',f'/api/change-sets/{change}/accept',json=note)
             call('POST',f'/api/change-sets/{change}/commit',json=note)
-        for kind in ['pattern','revolve','counterbore']:
+        for kind in ['pattern','revolve','counterbore','counterbore_batch','counterbore_batch_reverse']:
             plan, (parameter, initial, updated), volume = case_plan(kind)
             result = subprocess.run(command+['-',account['user']['id'],json.dumps(plan)],input=SEED,text=True,capture_output=True)
             (out/(kind+'-seed.log')).write_text(result.stdout+result.stderr)
@@ -96,10 +98,16 @@ def main():
             before=call('GET',path)
             params={p['id']:p for f in before['features'] for p in f['parameters']}
             assert params[parameter]['value']==initial and params[parameter]['editable']
+            updates=[{'parameter_id':parameter,'value':updated}]
+            if kind.startswith('counterbore_batch'):
+                updates.insert(0,{'parameter_id':'Hole.Diameter','value':10})
+                if kind.endswith('_reverse'):
+                    updates.reverse()
+            changed_ids={update['parameter_id'] for update in updates}
             request={'action':'parameters.update','expected_base_revision_id':before['head_revision_id'],
                 'expected_state_version':before['state_version'],'idempotency_key':str(uuid4()),
                 'modification':{'expected_state_sha256':before['parameter_state_sha256'],
-                    'parameter_updates':[{'parameter_id':parameter,'value':updated}]}}
+                    'parameter_updates':updates}}
             task=call('POST',path+'/operations',json=request)['workflow_run_id']
             assert call('POST',path+'/operations',json=request)['workflow_run_id']==task
             confirmed=False
@@ -113,8 +121,8 @@ def main():
             assert snapshot['status']=='succeeded', (kind,snapshot.get('error_code'),snapshot.get('error_message'))
             commit(snapshot['change_set']['id']); after=call('GET',path)
             after_params={p['id']:p for f in after['features'] for p in f['parameters']}
-            assert after_params[parameter]['value']==updated
-            assert {k:p['value'] for k,p in params.items() if k!=parameter} == {k:p['value'] for k,p in after_params.items() if k!=parameter}
+            assert all(after_params[u['parameter_id']]['value']==u['value'] for u in updates)
+            assert {k:p['value'] for k,p in params.items() if k not in changed_ids} == {k:p['value'] for k,p in after_params.items() if k not in changed_ids}
             assert after['state_version']==before['state_version']+1
             assert {f['id'] for f in after['features']}=={f['id'] for f in before['features']}
             assert client.post(path+'/operations',json={**request,'idempotency_key':str(uuid4())}).status_code==409
@@ -123,6 +131,7 @@ def main():
             assert hashlib.sha256(response.content).hexdigest()==artifact['sha256']
             step=out/(kind+'.step');step.write_bytes(response.content)
             evidence.append({'kind':kind,'task':task,'parameter':parameter,'before':initial,'after':updated,
+                'updates':updates,
                 'step':str(step),'expected_volume':volume(updated),'state_version':after['state_version'],
                 'stable_feature_ids':True,'unrelated_parameters_preserved':True,'idempotency_and_stale_base':True})
             print('NATIVE_PARAMETER_EDIT',kind,'passed',flush=True)

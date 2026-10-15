@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from app.contracts.acceptance import AcceptanceContract
+from app.contracts.acceptance_v2 import decode_acceptance
 from app.contracts.constraint_patch import ConstraintPatch
 from app.freecad.contracts import FreeCADOperation, FreeCADOperationPlan, FreeCADPlanningError
 from app.freecad.constraint_relationships import (
@@ -68,7 +68,7 @@ def build_patch_context(before, snapshot, failure, base_state=None, prior_contra
     acceptance = failure.get('engineering_acceptance')
     if not acceptance:
         raise PatchRejected('saved engineering requirements are required for automatic repair', sketch=sketch)
-    acceptance = AcceptanceContract.model_validate(acceptance).model_dump(mode='json')
+    acceptance = decode_acceptance(acceptance).model_dump(mode='json')
     if acceptance.get('unresolved') or acceptance.get('verification_limits'):
         raise PatchRejected('unresolved requirements or unsupported necessary checks require clarification', sketch=sketch)
     prior = deepcopy(prior_contract or {})
@@ -336,7 +336,7 @@ def compile_patch(before: FreeCADOperationPlan, proposal, context, *, max_change
 
 def verify_compiled_contract(plan, certificate, acceptance):
     """Re-run scope and relationship proofs immediately before execution."""
-    frozen = AcceptanceContract.model_validate(acceptance).model_dump(mode='json')
+    frozen = decode_acceptance(acceptance).model_dump(mode='json')
     if digest(frozen) != certificate['acceptance_hash']:
         raise PatchRejected('frozen acceptance changed after repair')
     prior = None

@@ -229,8 +229,11 @@ async def test_provider_socket_cancellation_persists_real_usage_state(request_jo
         async with tenant_transaction(job['tenant_id'],job['principal_id']) as conn:
             calls=(await conn.execute(text('SELECT status,principal_id,total_tokens FROM llm_calls WHERE workflow_run_id=:id'),
                 {'id':job['workflow_run_id']})).mappings().all()
+            reservations=(await conn.execute(text('SELECT status,actual_amount FROM provider_budget_reservations WHERE model_job_id=:id'),
+                {'id':job['id']})).mappings().all()
         assert len(calls)==1 and calls[0]['status']=='cancelled'
         assert calls[0]['principal_id']==job['principal_id'] and calls[0]['total_tokens'] is None
+        assert len(reservations)==1 and reservations[0]['status']=='unknown' and reservations[0]['actual_amount'] is None
     finally:
         task.cancel();await asyncio.gather(task,return_exceptions=True)
         await client.close();server.close();await server.wait_closed()

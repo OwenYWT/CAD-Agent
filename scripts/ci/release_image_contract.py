@@ -157,6 +157,7 @@ asyncio.run(main())
         (report / 'revision-views.json').write_text(json.dumps({label + ':' + revision: value for (label, revision), value in views.items()}, ensure_ascii=False, indent=2))
     transitions = []
     incompatible_history_rejected = False
+    provider_budget_rollback_rejected = False
     initial = call('GET', path)
     remember('previous', initial['head_revision_id'])
     pending = call('POST', path + '/operations', json={'action': 'parameters.update',
@@ -230,8 +231,10 @@ asyncio.run(main())
         except ValueError:
             assert target == 'previous'
             assert any(item['reason'] == 'workflow_history_incompatible' for item in preflights[-1]['blockers'])
+            assert any(item['reason'] == 'provider_budget_contract_unsupported' for item in preflights[-1]['blockers'])
             assert container('backend') == unchanged
             incompatible_history_rejected = True
+            provider_budget_rollback_rejected = True
         resumed = call('GET', '/api/tasks/' + task + '/snapshot')
         assert resumed['status'] == 'waiting_confirmation'
         assert resumed['request_payload'] == pending['request_payload']
@@ -356,6 +359,7 @@ asyncio.run(main())
         'images': ids, 'transitions': transitions, 'immutable_history': True,
         'active_model_job_switch_rejected': True,
         'history_replay_before_switch': True, 'incompatible_history_switch_rejected': incompatible_history_rejected,
+        'provider_budget_rollback_rejected': provider_budget_rollback_rejected,
         'worker_quiesced_before_final_preflight': True,
         'unsupported_inflight_rollback_rejected': True, 'frozen_check_drained_before_rollback': True,
         'legacy_result_route_available': legacy_route, 'raw_report_preserved_after_rollback': True,

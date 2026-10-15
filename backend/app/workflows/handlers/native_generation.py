@@ -150,6 +150,8 @@ async def agent_generate_operations(payload: dict[str, Any], *, freecad_operatio
             async def rejection_sink(evidence):
                 await record_freecad_rejection(request, step.step_key, evidence)
             generated = await _await_provider_operation(freecad_operations.generate(
+                **({'max_tool_calls': payload['work_budget_policy']['max_normal_tool_calls']}
+                   if payload.get('work_budget_policy') else {}),
                 plan=plan,
                 requirements=dict(payload["requirements"]),
                 base_state=(
@@ -390,6 +392,8 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
     try:
         async def rejection_sink(evidence):
             await record_freecad_rejection(request, repair_step_key, evidence)
+        from app.freecad.repair_capabilities import require_cut_repair_capability
+        require_cut_repair_capability(FreeCADOperationPlan.model_validate_json(str(source['source_code'])), failure)
         base_state = payload.get('base_state')
         if payload.get('checkpoint_manifest_id'):
             base_state, _ = await checkpoint_context(request, candidate_build_id,
@@ -401,6 +405,8 @@ async def agent_repair_operations(payload: dict[str, Any], *, freecad_operations
             if prior_profile and prior_profile['sketch'] != profile_context['sketch']:
                 raise profile_replan.rejected('another replanned sketch has outstanding verification obligations')
         repaired = await _await_provider_operation(freecad_operations.repair(
+            **({'max_tool_calls': payload['work_budget_policy']['max_normal_tool_calls']}
+               if payload.get('work_budget_policy') else {}),
             source_code=str(source["source_code"]),
             failure=failure,
             base_state=(

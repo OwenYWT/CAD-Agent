@@ -28,6 +28,7 @@ function ValidationEvidenceDetails({taskId,evidenceId}:{taskId:string;evidenceId
         <strong>{check.description} · {check.outcome}</strong>
         <p>目标：{check.expected}；{check.measuredLabel}：{check.measured}</p>
         {typeof check.tolerance === 'number' ? <p>允许偏差：±{check.tolerance}</p> : null}
+        {typeof check.tolerance === 'string' ? <p>允许偏差：{check.tolerance}</p> : null}
         <p>量测方法：{check.method}</p>
       </div>)}
       {evidence.report.expected_dimensions_mm ? <p>检查采用的尺寸：{JSON.stringify(evidence.report.expected_dimensions_mm)} mm</p> : null}

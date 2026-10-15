@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.config import make_llm_client, settings
 from app.contracts.acceptance import AcceptanceContract, acceptance_outcome
+from app.contracts.acceptance_v2 import decode_acceptance
 from app.validation.durable_geometry import DurableGeometryReport
 from app.llm import (
     get_last_chat_completion_provenance,
@@ -103,7 +104,7 @@ def brief_with_verified_geometry(brief, geometry_record, manifest_id):
         raise ValueError('visual geometry evidence belongs to another candidate artifact')
     raw=dict(geometry_record['evidence']);raw.pop('runtime_provenance',None)
     report=DurableGeometryReport.model_validate(raw)
-    contract=AcceptanceContract.model_validate(brief['acceptance'])
+    contract=decode_acceptance(brief['acceptance'])
     if report.acceptance is None or report.acceptance.contract_sha256 != contract.digest():
         raise ValueError('visual geometry evidence belongs to another requirement contract')
     if report.outcome=='passed' and acceptance_outcome(contract,report.acceptance.evidence)=='passed':

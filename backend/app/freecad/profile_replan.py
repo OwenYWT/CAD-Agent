@@ -6,7 +6,7 @@ not grant permission to change an accepted checkpoint, feature or requirement.
 from copy import deepcopy
 import json
 
-from app.contracts.acceptance import AcceptanceContract
+from app.contracts.acceptance_v2 import decode_acceptance
 from app.freecad.constraint_patch import construction_geometry
 from app.freecad.contracts import FreeCADOperationPlan
 from app.freecad.failure_snapshot import digest, validate_snapshot
@@ -81,7 +81,7 @@ def build_context(before, snapshot, failure, base_state=None, prior_contract=Non
     if any(op.action == 'api.execute' or op.action == 'sketch.set_constraint' and op.args['sketch'] == sketch
            for op in before.operations):
         raise rejected('native programs and indexed constraint edits cannot be rewritten by profile replan')
-    acceptance = AcceptanceContract.model_validate(failure.get('engineering_acceptance') or {})
+    acceptance = decode_acceptance(failure.get('engineering_acceptance') or {})
     required = [c for c in acceptance.checks if c.required]
     if (acceptance.unresolved or acceptance.verification_limits or not required
             or not any(c.kind not in {'solid_count', 'volume'} for c in required)):
@@ -188,7 +188,7 @@ def verify_contract(plan, contract, acceptance, checkpoint_hash):
     if any(expected[k] != contract[k] for k in ('schema_version', 'context', 'sketch', 'closed_profile',
             'construction_geometry', 'acceptance_hash')):
         raise rejected('profile replan proof failed independent reconstruction')
-    frozen = AcceptanceContract.model_validate(acceptance).model_dump(mode='json')
+    frozen = decode_acceptance(acceptance).model_dump(mode='json')
     if (digest(frozen) != contract['acceptance_hash'] or digest(plan.model_dump(mode='json')) != contract['execution_plan_hash']
             or checkpoint_hash != contract['execution_checkpoint_hash']):
         raise rejected('profile replan source, checkpoint or frozen acceptance changed')

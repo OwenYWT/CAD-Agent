@@ -30,6 +30,37 @@ class GateMode(str, Enum):
     DISABLED = "disabled"
 
 
+def resolve_solid_count_policy(plan: dict) -> dict:
+    """Freeze one step-local count policy; imported counts are applied at runtime."""
+    checks = [c for c in ((plan.get('design_brief') or {}).get('acceptance') or {}).get('checks', [])
+              if c['kind'] == 'solid_count' and c.get('required', True)]
+    lower, upper = 0, math.inf
+    for check in checks:
+        comparison = check.get('comparison') or {'op': 'eq', 'value': check['nominal']}
+        op = comparison['op']
+        if op == 'eq':
+            lower, upper = max(lower, comparison['value']), min(upper, comparison['value'])
+        elif op in {'ge', 'range'}:
+            lower = max(lower, comparison['lower'])
+        if op in {'le', 'range'}:
+            upper = min(upper, comparison['upper'])
+    if lower > upper:
+        raise ValueError('explicit solid count requirements conflict')
+    expected = int(lower) if lower == upper else None
+    steps = {}
+    for step in plan['steps']:
+        if step['kind'] == 'assembly_part':
+            value, source = 1, 'component_policy'
+        elif checks:
+            value, source = expected, 'frozen_acceptance'
+        elif plan['operation'] == 'generate' and plan['model_kind'] not in {'profile_2d', 'assembly'}:
+            value, source = 1, 'single_part_policy'
+        else:
+            value, source = None, 'independent_geometry'
+        steps[step['step_key']] = {'expected_solid_count': value, 'source': source}
+    return {'schema_version': 'solid-count-policy.v1', 'steps': steps}
+
+
 class ValidationGatePolicy(FrozenContract):
     mode: GateMode
     repair_budget: int = Field(default=0, ge=0, le=5)

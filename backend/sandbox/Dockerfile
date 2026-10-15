@@ -129,7 +129,10 @@ COPY backend/app/freecad/reference_geometry.py /opt/cad-agent/freecad_reference_
 COPY backend/app/freecad/topology.py /opt/cad-agent/freecad_topology.py
 COPY backend/sandbox/geometry_validation.py /opt/cad-agent/geometry_validation.py
 COPY backend/sandbox/feature_verification.py /opt/cad-agent/feature_verification.py
+COPY backend/sandbox/measurement_source.py /opt/cad-agent/measurement_source.py
 COPY backend/app/contracts/geometry_request.py /opt/cad-agent/geometry_request.py
+COPY backend/app/contracts/acceptance_comparison.py /opt/cad-agent/acceptance_comparison.py
+COPY backend/app/contracts/measurement_binding.py /opt/cad-agent/measurement_binding.py
 COPY backend/sandbox/mesh_normalization.py /opt/cad-agent/mesh_normalization.py
 COPY backend/sandbox/visual_render.py /opt/cad-agent/visual_render.py
 COPY backend/sandbox/dfm_brep.py /opt/cad-agent/dfm_brep.py

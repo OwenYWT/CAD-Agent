@@ -1,4 +1,5 @@
 import re
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import Field, model_validator
@@ -32,6 +33,16 @@ class Settings(BaseSettings):
     profile_replan_max_rejections: int = Field(default=3, ge=1, le=8)
     cut_repair_max_tool_calls: int = Field(default=8, ge=1, le=32)
     native_repair_max_attempts: int = Field(default=8, ge=1, le=32)
+    agent_max_work_units: int = Field(default=128, ge=1, le=4096)
+    agent_max_repair_attempts: int = Field(default=16, ge=1, le=128)
+    agent_max_checkpoint_turns: int = Field(default=8, ge=1, le=64)
+    agent_max_normal_tool_calls: int = Field(default=16, ge=1, le=64)
+    provider_budget_mode: Literal['requests', 'hard_cost'] = 'requests'
+    provider_budget_request_limit: int = Field(default=128, ge=1, le=10000)
+    provider_budget_tenant_month_request_limit: int = Field(default=10000, ge=1)
+    # No inferred prices or unproven output bounds. Hard-cost mode fails closed
+    # until the administrator supplies a verified provider billing contract.
+    provider_budget_cost_contract: dict[str, Any] | None = None
     cut_repair_max_attempts: int = Field(default=2, ge=1, le=4)
     constraint_repair_max_attempts: int = Field(default=6, ge=1, le=32)
     constraint_repair_max_tool_calls: int = Field(default=8, ge=1, le=64)
