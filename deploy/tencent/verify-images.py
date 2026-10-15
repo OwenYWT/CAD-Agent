@@ -47,7 +47,7 @@ def main():
         "executor_entry.py", "capability_entry.py", "freecad_entry.py", "freecad_api.py", "freecad_catalog.py",
         "freecad_edge_scope.py", "freecad_bom.py", "freecad_constraint_validation.py",
         "freecad_scene.py", "freecad_engineering.py", "freecad_cam.py", "freecad_release.py", "freecad_result_channel.py",
-        "geometry_validation.py", "feature_verification.py", "mesh_normalization.py", "visual_render.py", "dfm_brep.py", "dfm_validation.py",
+        "geometry_validation.py", "feature_verification.py", "measurement_source.py", "mesh_normalization.py", "visual_render.py", "dfm_brep.py", "dfm_validation.py",
         "runtime_probe.py", "freecad_runtime_probe.py", "runtime-lock.json",
         "runtime-requirements.txt", "patch_build123d.py",
     )
@@ -62,7 +62,8 @@ def main():
                            ("topology.py", "freecad_topology.py"),
                            ("capabilities.json", "freecad-capabilities.json")):
         sandbox["/opt/cad-agent/" + target] = sources["backend/app/freecad/" + source]
-    sandbox["/opt/cad-agent/geometry_request.py"] = sources["backend/app/contracts/geometry_request.py"]
+    for name in ("geometry_request.py", "acceptance_comparison.py", "measurement_binding.py"):
+        sandbox["/opt/cad-agent/" + name] = sources["backend/app/contracts/" + name]
     for path, digest in sources.items():
         if path.startswith("third_party/cadskills/skills/"):
             sandbox[path.replace("third_party/cadskills/", "/opt/cadskills/", 1)] = digest

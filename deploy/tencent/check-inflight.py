@@ -70,7 +70,21 @@ def inspect_requests(requests, *, require_histories=False):
     result = {'compatible': not blockers, 'checked': len(requests), 'blockers': blockers}
     if require_histories and not blockers:
         result['replayed_histories'] = asyncio.run(replay_histories(requests, blockers))
-        result['compatible'] = not blockers
+    # Budget enforcement lives in activities and the leased model runner, not
+    # Temporal history. A successful replay alone cannot certify an old image
+    # will honor the immutable policy stored beside the workflow dispatch.
+    for item in requests:
+        contract = item.get('provider_budget_contract')
+        if contract is None:
+            continue
+        try:
+            from app.contracts.provider_budget import SUPPORTED_PROVIDER_BUDGET_CONTRACTS
+            supported = isinstance(contract, str) and contract in SUPPORTED_PROVIDER_BUDGET_CONTRACTS
+        except ImportError:
+            supported = False
+        if not supported:
+            blockers.append({'workflow_id': item['id'], 'reason': 'provider_budget_contract_unsupported'})
+    result['compatible'] = not blockers
     return result
 
 
@@ -113,6 +127,11 @@ async def read():
         rows=(await c.execute(text("SELECT w.id::text AS id,w.kind,w.status,d.payload AS request_payload FROM workflow_runs w LEFT JOIN workflow_dispatches d ON d.workflow_id=w.id WHERE w.status NOT IN ('succeeded','failed','cancelled','timed_out') ORDER BY w.id"))).mappings().all()
         jobs=await c.scalar(text("SELECT count(*) FROM model_jobs WHERE status IN ('queued','running')"))
         requests=[dict(row) for row in rows]
+        if await c.scalar(text("SELECT to_regclass('public.provider_budget_policies') IS NOT NULL")):
+            policies=(await c.execute(text("SELECT p.workflow_run_id::text AS id,COALESCE(p.policy->>'schema_version','') AS contract FROM provider_budget_policies p JOIN workflow_runs w ON w.id=p.workflow_run_id WHERE w.status NOT IN ('succeeded','failed','cancelled','timed_out')"))).mappings().all()
+            contracts={row['id']:row['contract'] for row in policies}
+            for item in requests:
+                if item['id'] in contracts: item['provider_budget_contract']=contracts[item['id']]
     await close_database()
     if not jobs and requests and all(item['status']=='waiting_confirmation' for item in requests):
         client=await Client.connect(os.environ['TEMPORAL_TARGET'],namespace=os.getenv('TEMPORAL_NAMESPACE','default'))

@@ -16,6 +16,7 @@ from app.workflows.model_job import ModelJobWorkflow
 from app.workflows.model_job_policy import MODEL_OPERATIONS
 from app.contracts.model_operations import CAD_OPERATIONS
 from app.workflows.native_repair import NativeRepairBudget, RepairStopped
+from app.workflows.work_accounting import WorkAccounting, WorkBudgetPolicy
 
 from app.geometry_ir.planner import build_geometry_plan, summarize_geometry_plan
 from app.topology.step_resolver import resolve_step_topology
@@ -63,6 +64,24 @@ class McadAgentWorkflowV2:
         self._provider_streaming_v1 = False
         self._model_jobs_v1 = False
         self._native_repair_budget = None
+        self._repair_accounting_v2 = False
+        self._work_accounting = None
+        self._solid_count_policy = None
+
+    def _accounting(self) -> WorkAccounting:
+        if self._work_accounting is None:
+            self._work_accounting = WorkAccounting(WorkBudgetPolicy())
+        return self._work_accounting
+
+    def _stage_used(self, scope: str, stage: str, legacy: int) -> int:
+        return self._accounting().used(scope, stage) if self._repair_accounting_v2 else legacy
+
+    def _reserve_repair(self, key: str, scope: str, stage: str) -> dict:
+        if not self._repair_accounting_v2:
+            return {}
+        sequence = self._accounting().reserve_repair(key, scope, stage)
+        return {'repair_sequence': sequence, 'repair_stage': stage,
+                'work_accounting': self._accounting().snapshot()}
 
     @workflow.signal(name="confirmation")
     async def confirmation(self, decision: dict[str, Any]) -> None:
@@ -93,6 +112,12 @@ class McadAgentWorkflowV2:
         suffix: str,
         execution: bool = False,
     ) -> dict[str, Any]:
+        if self._repair_accounting_v2 and (name in MODEL_OPERATIONS or name in CAD_OPERATIONS
+                or name == 'agent_v2.execute_model'):
+            accounting = self._accounting()
+            accounting.reserve_work(name + ':' + suffix)
+            payload = {**payload, 'work_budget_policy': accounting.policy.model_dump(mode='json'),
+                       'work_accounting': accounting.snapshot()}
         if self._model_jobs_v1 and name in MODEL_OPERATIONS:
             return await self._model_job(name,payload,suffix)
         if getattr(self, "_cad_jobs_v1", False) and name in CAD_OPERATIONS:
@@ -202,7 +227,8 @@ class McadAgentWorkflowV2:
             if isinstance(current, ApplicationError):
                 # These terminal decisions retain the native error as their
                 # cause, but own the reason the workflow stopped repairing.
-                if current.type in {'agent_freecad_repair_budget_exhausted', 'agent_freecad_repair_no_progress'}:
+                if current.type in {'agent_freecad_repair_budget_exhausted', 'agent_freecad_repair_no_progress',
+                                    'agent_work_budget_exhausted'}:
                     return current
                 root = current
             current = getattr(current, "cause", None)
@@ -345,6 +371,7 @@ class McadAgentWorkflowV2:
                         "source_hash": generated["source_hash"],
                         "failure": failure,
                         "repair_index": repair_index,
+                        **self._reserve_repair(f"source:{step['step_key']}:{repair_index}", step['step_key'], 'native'),
                         "original_step_key": step["step_key"],
                         "step_index": repair_step_index,
                         "seen_signatures": seen_signatures,
@@ -482,6 +509,7 @@ class McadAgentWorkflowV2:
                         "source_hash": generated["source_hash"],
                         "failure": failure,
                         "repair_index": repair_index,
+                        **self._reserve_repair(f"native:{generation_step['step_key']}:{repair_index}", step['step_key'], 'native'),
                         "original_step_key": generation_step["step_key"],
                         "step_index": repair_step_index,
                         "seen_signatures": seen_signatures,
@@ -521,6 +549,8 @@ class McadAgentWorkflowV2:
         request = {**kwargs.pop("request"), "checkpoint_enabled": True}
         index = 0
         while True:
+            if self._repair_accounting_v2:
+                self._accounting().reserve_checkpoint(f"{kwargs['step']['step_key']}:{index}")
             self._phase = f"executing:freecad:tool-{index}"
             result = await self._freecad_model_step(**kwargs, request=request, turn_index=index)
             mode = json.loads(result["generated"]["source_code"]).get("execution_mode", "final")
@@ -589,7 +619,9 @@ class McadAgentWorkflowV2:
                     ),
                     "expected_dimensions_mm": expected_dimensions,
                     "dimension_tolerance": 0.05,
-                    **({'expected_solid_count': source_solid_count} if source_solid_count is not None else {"expected_solid_count": 1}
+                    **({'expected_solid_count': source_solid_count} if source_solid_count is not None else
+                       {'expected_solid_count': self._solid_count_policy['steps'][step['step_key']]['expected_solid_count']}
+                       if self._solid_count_policy is not None else {"expected_solid_count": 1}
                        if getattr(self, "_final_solid_acceptance_v1", False)
                        and request.get("operation") == "generate"
                        and plan.get("model_kind") != "profile_2d"
@@ -653,12 +685,15 @@ class McadAgentWorkflowV2:
                 ),
             }
             selection_errors = []
+            measurement_errors = []
             if getattr(self, '_scoped_repair_feedback_v1', False):
                 acceptance = (plan.get('design_brief') or {}).get('acceptance') or {}
                 required = {c['check_id'] for c in acceptance.get('checks', []) if c.get('required', True)}
                 selection_errors = [row for row in (geometry['report'].get('acceptance') or {}).get('evidence', [])
                     if row['check_id'] in required and row.get('details', {}).get('error_code') == 'acceptance_scope_invalid']
-            if geometry["outcome"] == "passed" and not selection_errors:
+                measurement_errors = [row for row in (geometry['report'].get('acceptance') or {}).get('evidence', [])
+                    if row['check_id'] in required and row.get('details', {}).get('error_code') == 'acceptance_measurement_failed']
+            if geometry["outcome"] == "passed" and not selection_errors and not measurement_errors:
                 return {
                     **modeled,
                     "generated": generated,
@@ -667,17 +702,23 @@ class McadAgentWorkflowV2:
                     "repair_count": repair_count,
                     "seen_signatures": seen_signatures,
                 }
-            if selection_errors or geometry["outcome"] != "failed" or repair_count >= geometry_budget:
+            geometry_used = self._stage_used(step['step_key'], 'geometry', repair_count)
+            if selection_errors or measurement_errors or geometry["outcome"] != "failed" or geometry_used >= geometry_budget:
                 raise ApplicationError(
                     ('验收测量对象无法可靠定位；保留冻结要求，不能通过改写模型绕过。'
                      + '；'.join(row['check_id'] + ': ' + '; '.join(row.get('issues', [])) for row in selection_errors))
-                    if selection_errors else "Required geometry validation did not pass.",
+                    if selection_errors else '独立测量内核未能完成；保留模型和冻结要求，不能通过 CAD 修复绕过。'
+                    if measurement_errors else "Required geometry validation did not pass.",
                     {
                         "outcome": geometry["outcome"],
                         "evidence_id": geometry["evidence_id"],
                         "staging_manifest_id": executed["staging_manifest_id"],
+                        **({'budget_name': 'geometry:' + step['step_key'], 'budget_used': geometry_used,
+                            'budget_limit': geometry_budget, 'work_accounting': self._accounting().snapshot()}
+                           if self._repair_accounting_v2 else {}),
                     },
-                    type='agent_acceptance_scope_invalid' if selection_errors else "agent_geometry_validation_failed",
+                    type='agent_acceptance_scope_invalid' if selection_errors else 'agent_acceptance_measurement_failed'
+                    if measurement_errors else "agent_geometry_validation_failed",
                     non_retryable=True,
                 )
             repair_index = repair_count + 1
@@ -745,6 +786,9 @@ class McadAgentWorkflowV2:
                     "source_hash": generated["source_hash"],
                     "failure": failure,
                     "repair_index": repair_index,
+                    **({'gate_repair_index': geometry_used + 1,
+                        **self._reserve_repair(f"geometry:{step['step_key']}:{geometry_used + 1}", step['step_key'], 'geometry')}
+                       if self._repair_accounting_v2 else {}),
                     "original_step_key": step["step_key"],
                     "step_index": repair_step_index,
                     "seen_signatures": seen_signatures,
@@ -807,7 +851,7 @@ class McadAgentWorkflowV2:
         if policy["mode"] == "disabled":
             return {**modeled, "visual": None}
         current = modeled
-        visual_repairs = 0
+        visual_repairs = self._stage_used(modeled['step']['step_key'], 'visual', 0)
         cycle_key = f"-c{validation_cycle:02d}" if validation_cycle else ""
         while True:
             render_index = visual_repairs + 1
@@ -897,6 +941,7 @@ class McadAgentWorkflowV2:
             )
             judgment = dict(visual["report"].get("judgment") or {})
             repair_index = int(current.get("repair_count") or 0) + 1
+            accounting = self._reserve_repair(repair_step_key, current['step']['step_key'], 'visual')
             if freecad:
                 repaired = await self._activity(
                     "agent_v2.repair_operations",
@@ -909,6 +954,7 @@ class McadAgentWorkflowV2:
                         "step_index": 40_000 + plan_step_index * 10 + validation_cycle * 100 + visual_repairs,
                         "repair_index": repair_index,
                         "gate_repair_index": visual_repairs,
+                        **accounting,
                         "original_step_key": current["step"]["step_key"],
                         "seen_signatures": current.get("seen_signatures") or (),
                         "base_state": current.get("base_state"),
@@ -938,6 +984,7 @@ class McadAgentWorkflowV2:
                         "source_id": current["generated"]["source_id"],
                         "source_hash": current["generated"]["source_hash"],
                         "repair_step_key": repair_step_key,
+                        **accounting,
                         "step_index": 40_000 + plan_step_index * 10 + visual_repairs,
                         "issues": judgment.get("issues") or (),
                         "suggestions": judgment.get("suggestions") or (),
@@ -1041,7 +1088,7 @@ class McadAgentWorkflowV2:
         if policy["mode"] == "disabled":
             return {**modeled, "dfm": None}
         current = modeled
-        repair_count = 0
+        repair_count = self._stage_used(modeled['step']['step_key'], 'dfm', 0)
         freecad = plan.get("modeling_backend") == "freecad" or (
             plan.get("modeling_backend") is None and request.get("modeling_backend") == "freecad")
         while True:
@@ -1077,6 +1124,7 @@ class McadAgentWorkflowV2:
                 "source_id": current["generated"]["source_id"], "source_hash": current["generated"]["source_hash"],
                 "repair_step_key": repair_key, "step_index": step_index, "repair_index": repair_index,
                 "gate_repair_index": repair_count, "original_step_key": current["step"]["step_key"],
+                **self._reserve_repair(repair_key, current['step']['step_key'], 'dfm'),
                 "seen_signatures": current.get("seen_signatures", []), "base_state": current.get("base_state"),
                 "failure": failure,
                 **self._checkpoint_execution_context(current),
@@ -1129,10 +1177,15 @@ class McadAgentWorkflowV2:
             self._scoped_repair_feedback_v1 = workflow.patched('agent-v2-scoped-repair-feedback-v1')
             progressive_repair_v1 = workflow.patched('agent-v2-progressive-native-repair-v1')
             profile_replanning_v1 = workflow.patched('agent-v2-profile-replanning-v1')
+            repair_accounting_v2 = workflow.patched('agent-v2-repair-accounting-v2')
+            acceptance_bindings_v2 = workflow.patched('agent-v2-acceptance-bindings-v2') and self._engineering_acceptance_v1
+            solid_count_policy_v2 = workflow.patched('agent-v2-solid-count-policy-v2')
             self._phase = "requirements"
             requirements = await self._activity(
                 "agent_v2.requirements",
-                {**request, "engineering_acceptance_v1": True} if self._engineering_acceptance_v1 else request,
+                {**request, "engineering_acceptance_v1": True,
+                 **({'acceptance_bindings_v2': True} if acceptance_bindings_v2 else {})}
+                if self._engineering_acceptance_v1 else request,
                 suffix="requirements",
             )
             if self._cancel_reason is not None:
@@ -1166,10 +1219,17 @@ class McadAgentWorkflowV2:
                     ),
                     "backend_policy_v1": backend_policy_v1,
                     "validation_repair_v2": self._validation_repair_v2,
+                    **({'repair_accounting_v2': True} if repair_accounting_v2 else {}),
+                    **({'solid_count_policy_v2': True} if solid_count_policy_v2 else {}),
                 },
                 suffix="plan",
             )
             self._plan = dict(planned["plan"])
+            if solid_count_policy_v2:
+                self._solid_count_policy = planned['solid_count_policy']
+            if repair_accounting_v2:
+                self._work_accounting = WorkAccounting(WorkBudgetPolicy.model_validate(planned['work_budget_policy']))
+                self._repair_accounting_v2 = True
 
             if planned["requires_confirmation"]:
                 self._phase = "waiting_confirmation"

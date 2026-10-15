@@ -26,3 +26,14 @@ test('hole-position evidence identifies deviation, not measured coordinates', ()
   assert.equal(row.measuredLabel,'孔轴位置偏差');assert.equal(row.expected,'[[4,5,0]] mm');
   assert.equal(row.measured,'0.005 mm');assert.equal(row.tolerance,0.01);
 });
+
+test('v2 comparisons display bounds and asymmetric authorized tolerance', () => {
+  const rows = engineeringMeasurements({acceptance_contract:{schema_version:'engineering-acceptance.v2',checks:[
+    {check_id:'min',kind:'wall_thickness',comparison:{op:'ge',lower:5,unit:'mm'}},
+    {check_id:'max',kind:'planar_gap',comparison:{op:'le',upper:5,unit:'mm'}},
+    {check_id:'range',kind:'planar_gap',comparison:{op:'range',lower:4,upper:6,unit:'mm'}},
+    {check_id:'eq',kind:'planar_gap',comparison:{op:'eq',value:25,unit:'mm',tolerance_minus:0.1,tolerance_plus:0.2}},
+  ]},acceptance:{evidence:['min','max','range','eq'].map(check_id=>({check_id,measured:[5],outcome:'failed'}))}});
+  assert.deepEqual(rows.map(r=>r.expected), ['≥ 5 mm','≤ 5 mm','[4, 6] mm','25 mm']);
+  assert.equal(rows[3].tolerance,'−0.1 / +0.2');
+});

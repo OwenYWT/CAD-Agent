@@ -96,7 +96,7 @@ case "$command" in
       tests/integration/test_temporal_mcadd_workflow.py tests/integration/test_websocket_replay.py \
       tests/integration/test_change_set_api.py tests/integration/test_postgres_project_files.py \
       tests/integration/test_postgres_history.py tests/integration/test_api_compatibility_matrix.py \
-      -k 'not real_freecad_generation_validation and not real_visual_provider and not real_repair_provider and not real_planner_retriever and not real_generate_runs_llm and not live_freecad_tools_contract and not live_freecad_checkpoint_contract'
+      -k 'not real_freecad_generation_validation and not real_visual_provider and not real_repair_provider and not real_planner_retriever and not real_generate_runs_llm and not live_freecad_tools_contract and not live_freecad_checkpoint_contract and not live_durable_three_edit_trajectory'
     native_nodes=()
     while IFS= read -r node; do native_nodes+=("$node"); done < <("$python" -c "from scripts.ci.require_test_report import required_cases;print('\n'.join(required_cases('native-runtime')))")
     # Explicit resource budget for the locked CAD kernel/import graph. The

@@ -13,7 +13,7 @@ from botocore.exceptions import ClientError
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from scripts.ci.live_budget import BudgetExceeded, Limits, MonthLedger, RunBudget, S3Store
-from scripts.ci.live_gateway import create_app
+from scripts.ci.live_gateway import create_app, bounded_payload
 from scripts.ci.require_test_report import validate
 
 
@@ -21,8 +21,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', choices=('preflight', 'run'))
     parser.add_argument('--report', type=Path)
+    parser.add_argument('--suite', choices=('all', 'mainline'), default='all')
     args = parser.parse_args()
     limits = Limits.environment()
+    bounded_payload({'model':limits.model}, limits)
     for key in ('MOONSHOT_API_KEY', 'CAD_EVAL_PROVIDER_URL', 'CAD_EVAL_LEDGER_ENDPOINT',
                 'CAD_EVAL_LEDGER_BUCKET', 'CAD_EVAL_LEDGER_ACCESS_KEY', 'CAD_EVAL_LEDGER_SECRET_KEY'):
         if not os.environ.get(key):
@@ -41,6 +43,8 @@ def main():
     ledger = MonthLedger(S3Store(), 'cad-evals/budgets/'+datetime.now(timezone.utc).strftime('%Y-%m')+'.json', limits.currency, limits.month)
     ledger.update(identity, limits.run)
     budget = RunBudget(limits)
+    catalog = json.loads((ROOT/'docs/architecture/ci-live-cases.json').read_text())
+    nodes = catalog['node_ids'] if args.suite=='all' else catalog['mainline_node_ids']
     passed = False
     import uvicorn
     failures = []
@@ -57,11 +61,11 @@ def main():
             threading.Event().wait(.05)
         if not server.started:
             raise RuntimeError('budget gateway did not start')
-        nodes = json.loads((ROOT/'docs/architecture/ci-live-cases.json').read_text())['node_ids']
         env = dict(os.environ, LLM_BASE_URL='http://127.0.0.1:18777/v1', LLM_PROVIDER='moonshot',
             LLM_MODEL=limits.model, VISION_MODEL=limits.model, CAD_AGENT_TEST_REAL_FREECAD_AGENT='1',
             CAD_CONSTRAINT_LIVE_REPAIR='1', RUN_REAL_FREECAD_AGENT='1', RUN_REAL_FREECAD='1',
-            DASHSCOPE_API_KEY='', AZURE_OPENAI_API_KEY='', CAD_CONSTRAINT_REPORT=str(args.report/'constraint-chain'))
+            DASHSCOPE_API_KEY='', AZURE_OPENAI_API_KEY='', CAD_CONSTRAINT_REPORT=str(args.report/'constraint-chain'),
+            CAD_MAINLINE_EVAL_REPORT=str(args.report/'mainline'), CAD_AGENT_TEST_EVIDENCE_DIR=str(args.report/'cad-artifacts'))
         with (args.report/'live.log').open('w') as log:
             process = subprocess.run([sys.executable, '-m', 'pytest', '-p', 'scripts.ci.pytest_contract', *nodes,
                 '-q', '--junitxml='+str(args.report/'live.xml')], cwd=ROOT/'backend', env=env, stdout=log, stderr=subprocess.STDOUT)
@@ -86,6 +90,7 @@ def main():
             'passed': passed and settled, 'monthly_settled': settled, 'source_sha': os.environ['GITHUB_SHA'],
             'finished_at': datetime.now(timezone.utc).isoformat(),
             'currency': limits.currency, 'run_id': identity, 'model': limits.model,
+            'suite':args.suite, 'node_ids':nodes,
             'charged_or_reserved': str(budget.charged), 'run_limit': str(limits.run),
             'monthly_reservation': str(limits.run), 'calls': budget.records,
             'budget_failures': failures, 'prices_are_configured_not_invoices': True}, indent=2))

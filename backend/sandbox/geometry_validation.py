@@ -8,6 +8,68 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
+def selected_measurement_shapes(native_path, context, final_shape):
+    """Read a confirmed native component, then independently prove STEP presence."""
+    import os
+    import subprocess
+    import tempfile
+    import cadquery as cq
+    from OCP.Precision import Precision
+    try:
+        from feature_verification import _measurement_common
+        from measurement_binding import rigid_transform
+    except ModuleNotFoundError:
+        from sandbox.feature_verification import _measurement_common
+        from app.contracts.measurement_binding import rigid_transform
+    if not native_path or context.get('schema_version')!='measurement-context.v2':
+        raise ValueError('selected measurements require an authenticated native checkpoint')
+    reference=context['native_reference']
+    data=Path(native_path).read_bytes()
+    if len(data)!=reference['size_bytes'] or hashlib.sha256(data).hexdigest()!=reference['sha256']:
+        raise ValueError('native measurement artifact identity differs from the frozen request')
+    with tempfile.TemporaryDirectory(prefix='cad-measurement-') as folder:
+        directory=Path(folder)
+        request=directory/'request.json'
+        request.write_text(json.dumps({'input_path':str(native_path),'sha256':reference['sha256'],
+            'objects':context['selected_objects']}))
+        process=subprocess.run(['/opt/freecad/bin/FreeCADCmd','-c',
+            "import sys; sys.path.insert(0,'/opt/cad-agent'); import measurement_source; measurement_source.main()"],
+            env={**os.environ,'CAD_MEASUREMENT_REQUEST':str(request)},text=True,capture_output=True,timeout=60)
+        if (process.returncode or 'CAD_MEASUREMENT_SOURCE_READONLY=1' not in process.stdout
+                or 'Traceback' in process.stdout+process.stderr):
+            raise ValueError('native read-only component extraction failed: '+(process.stdout+process.stderr)[-4000:])
+        values=json.loads((directory/'components.json').read_text())
+        result={}
+        for identity,item in values.items():
+            if item.get('status')=='missing':
+                result[identity]=item
+                continue
+            rigid_transform(item['frame_transform'])
+            shapes={}
+            for frame,artifact in item['shapes'].items():
+                filename=artifact['filename']
+                if Path(filename).name!=filename:
+                    raise ValueError('invalid component artifact filename')
+                path=directory/filename
+                if hashlib.sha256(path.read_bytes()).hexdigest()!=artifact['sha256']:
+                    raise ValueError('component artifact identity differs')
+                shapes[frame]=cq.Shape.importBrep(str(path))
+            world=shapes['world']
+            common=_measurement_common(world,final_shape,'selected_object_presence')
+            actual=sum(abs(s.Volume()) for s in common.Solids()) if common is not None else 0.
+            expected=sum(abs(s.Volume()) for s in world.Solids())
+            epsilon=world.Area()*float(Precision.Confusion_s())
+            if expected<=0 or abs(actual-expected)>epsilon:
+                result[identity]={'status':'unsupported','reason':'selected_component_not_in_final_step'}
+                continue
+            result[identity]={'status':'bound','local_shape':shapes['local'],
+                'proof':{**item,'contained_in_final_step':True,'native_artifact_sha256':reference['sha256'],
+                    'presence_volume_mm3':actual,'volume_error_mm3':epsilon}}
+    if hashlib.sha256(Path(native_path).read_bytes()).hexdigest()!=reference['sha256']:
+        raise ValueError('read-only binding changed the native input')
+    return result
+
+
 _AXIS_GROUPS = (
     ("width", "depth", "height"),
     ("length", "width", "height"),
@@ -203,6 +265,8 @@ def validate_geometry_files(
     dimension_tolerance: float = 0.05,
     expected_solid_count: int | None = None,
     acceptance: dict[str, Any] | None = None,
+    measurement_context: dict[str, Any] | None = None,
+    native_path: str | None = None,
 ) -> dict[str, Any]:
     if expected_solid_count is not None and (
         type(expected_solid_count) is not int or expected_solid_count < 1
@@ -258,7 +322,7 @@ def validate_geometry_files(
             from app.contracts.geometry_request import geometry_request_digest
         result['request_sha256'] = geometry_request_digest(
             expected_dimensions_mm=expected, dimension_tolerance=dimension_tolerance,
-            expected_solid_count=expected_solid_count, acceptance=acceptance)
+            expected_solid_count=expected_solid_count, acceptance=acceptance, measurement_context=measurement_context)
     if acceptance is not None:
         try:
             from feature_verification import measure_checks
@@ -266,17 +330,24 @@ def validate_geometry_files(
             from sandbox.feature_verification import measure_checks
         steps = [item for item in artifacts if item['format'].lower() == 'step']
         evidence = []
+        digest = hashlib.sha256(json.dumps(acceptance, ensure_ascii=False, sort_keys=True,
+                                           separators=(',', ':')).encode()).hexdigest()
         if len(steps) == 1 and all(item['parseable'] for item in reports):
             import cadquery as cq
             shape = cq.importers.importStep(steps[0]['path']).val()
-            evidence = measure_checks(shape, acceptance['checks'])
+            bound_shapes=None
+            if (measurement_context or {}).get('selected_objects'):
+                bound_shapes=selected_measurement_shapes(native_path,measurement_context,shape)
+            evidence = measure_checks(shape, acceptance['checks'],
+                acceptance_version=acceptance.get('schema_version', 'engineering-acceptance.v1'),
+                comparison_policy_id=acceptance.get('comparison_policy_id'), binding_context=measurement_context,
+                acceptance_digest=digest, artifact_sha256=hashlib.sha256(Path(steps[0]['path']).read_bytes()).hexdigest(),
+                bound_shapes=bound_shapes)
         else:
             evidence = [{'check_id':c['check_id'], 'outcome':'indeterminate',
                 'method':'final_step_brep', 'measured':[],
                 'issues':['measurement_requires_one_parseable_step'], 'details':{}}
                 for c in acceptance['checks']]
-        digest = hashlib.sha256(json.dumps(acceptance, ensure_ascii=False, sort_keys=True,
-                                           separators=(',', ':')).encode()).hexdigest()
         result['acceptance'] = {'contract_sha256':digest, 'evidence':evidence}
         result['acceptance_contract'] = acceptance
         by_id = {e['check_id']:e for e in evidence}

@@ -1,6 +1,7 @@
 from contextvars import ContextVar
 import hashlib
 import json
+import logging
 import time
 from typing import Any
 
@@ -8,6 +9,9 @@ from openai import AsyncAzureOpenAI, AsyncOpenAI, OpenAIError, RateLimitError
 from openai.types.chat import ChatCompletion
 
 from app.config import Settings, settings
+from app.contracts.provider_budget import provider_budget_context
+
+logger = logging.getLogger(__name__)
 
 
 _QUOTA_MARKERS = (
@@ -35,19 +39,17 @@ def get_last_chat_completion_provenance() -> dict[str, Any] | None:
     return dict(value) if value is not None else None
 
 
+def _request_hash(params: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(params, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+
+
 def _completion_provenance(
     *,
     params: dict[str, Any],
     response: Any,
     provider: str,
 ) -> dict[str, Any]:
-    request_payload = json.dumps(
-        params,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        default=str,
-    ).encode("utf-8")
     choices = list(getattr(response, "choices", ()) or ())
     first = choices[0] if choices else None
     message = getattr(first, "message", None)
@@ -75,11 +77,12 @@ def _completion_provenance(
         }
     return {
         "provider": provider,
+        "request_model": params["model"],
         "model": str(getattr(response, "model", "") or params["model"]),
         "provider_response_id": (
             str(getattr(response, "id", "") or "") or None
         ),
-        "request_hash": hashlib.sha256(request_payload).hexdigest(),
+        "request_hash": _request_hash(params),
         "response_hash": hashlib.sha256(response_bytes).hexdigest(),
         "finish_reason": (
             str(getattr(first, "finish_reason", "") or "") or None
@@ -185,9 +188,24 @@ class ChatCompletionAdapter:
         params["timeout"] = None
         if params.get("stream"):
             params["stream_options"] = {**params.get("stream_options", {}), "include_usage": True}
-        request_hash = hashlib.sha256(json.dumps(params, sort_keys=True, default=str).encode()).hexdigest()
+        budget = provider_budget_context.get()
+        logical_call = None
+        if budget is not None:
+            params = await budget.prepare_request(params, provider=self._settings.normalized_llm_provider)
+            logical_call = budget.logical_call_id()
+        request_hash = _request_hash(params)
         reset_chat_completion_provenance()
         for attempt in range(self._settings.llm_max_retries + 1):
+            reservation = None
+            if budget is not None:
+                reservation = await budget.reserve_attempt(logical_call_id=logical_call, attempt=attempt + 1,
+                    request_digest=request_hash, provider=self._settings.normalized_llm_provider, model=params['model'])
+                cached = await budget.claim_dispatch(reservation)
+                if cached is not None:
+                    response = ChatCompletion.model_validate(cached)
+                    _last_chat_completion_provenance.set(_completion_provenance(params=params, response=response,
+                        provider=self._settings.normalized_llm_provider))
+                    return response
             handle = await self._usage.start_call(provider=self._settings.normalized_llm_provider,
                                       model=params["model"], request_hash=request_hash, attempt=attempt + 1)
             started = time.perf_counter()
@@ -205,6 +223,13 @@ class ChatCompletionAdapter:
                     )
                 )
                 provenance = get_last_chat_completion_provenance()
+                if budget is not None:
+                    try:
+                        await budget.settle(reservation, provenance=provenance, response=response.model_dump(mode='json'))
+                    except Exception:
+                        # The full reservation remains held after a failed DB
+                        # settlement. Do not destroy an actual model result.
+                        logger.exception('Provider receipt could not be settled; reservation retained')
                 return response
             except OpenAIError as exc:
                 error = exc
@@ -217,6 +242,11 @@ class ChatCompletionAdapter:
                 error = exc
                 raise
             finally:
+                if budget is not None and error is not None:
+                    try:
+                        await budget.mark_unknown(reservation, reason=type(error).__name__)
+                    except Exception:
+                        logger.exception('Provider dispatch remains unresolved; reservation retained')
                 await self._usage.finish_call(handle, duration_ms=round((time.perf_counter() - started) * 1000),
                                   provenance=provenance, error=error)
 

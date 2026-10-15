@@ -11,6 +11,64 @@
     "tests/integration/test_temporal_mcadd_workflow.py::test_agent_v2_real_planner_retriever_codegen_and_execution_provenance",
     "tests/integration/test_temporal_mcadd_workflow.py::test_agent_v2_live_freecad_tools_contract",
     "tests/integration/test_temporal_mcadd_workflow.py::test_agent_v2_live_freecad_checkpoint_contract",
-    "tests/integration/test_temporal_mcadd_workflow.py::test_constraint_patch_incident_full_chain_and_owned_evidence[valid-baseline]"
+    "tests/integration/test_temporal_mcadd_workflow.py::test_constraint_patch_incident_full_chain_and_owned_evidence[valid-baseline]",
+    "tests/integration/test_temporal_mcadd_workflow.py::test_live_durable_three_edit_trajectory"
+  ],
+  "mainline_node_ids": [
+    "tests/integration/test_temporal_mcadd_workflow.py::test_live_durable_three_edit_trajectory"
+  ],
+  "mainline_cases": [
+    {
+      "case_id": "centered-plate-three-edits-v1",
+      "operation": "generate",
+      "objective": "创建60x40x8 mm的板，一个居中通孔，孔径6 mm，输出STEP和STL。",
+      "expected": {
+        "length": 60,
+        "width": 40,
+        "thickness": 8,
+        "hole_diameter": 6,
+        "hole_count": 1,
+        "solid_count": 1
+      }
+    },
+    {
+      "case_id": "length-change",
+      "operation": "modify",
+      "objective": "将当前板修改为80x40x8 mm，一个居中通孔，孔径6 mm，输出STEP和STL。",
+      "expected": {
+        "length": 80,
+        "width": 40,
+        "thickness": 8,
+        "hole_diameter": 6,
+        "hole_count": 1,
+        "solid_count": 1
+      }
+    },
+    {
+      "case_id": "diameter-change",
+      "operation": "modify",
+      "objective": "将当前板修改为80x40x8 mm，一个居中通孔，孔径8 mm，输出STEP和STL。",
+      "expected": {
+        "length": 80,
+        "width": 40,
+        "thickness": 8,
+        "hole_diameter": 8,
+        "hole_count": 1,
+        "solid_count": 1
+      }
+    },
+    {
+      "case_id": "thickness-change",
+      "operation": "modify",
+      "objective": "将当前板修改为80x40x10 mm，一个居中通孔，孔径8 mm，输出STEP和STL。",
+      "expected": {
+        "length": 80,
+        "width": 40,
+        "thickness": 10,
+        "hole_diameter": 8,
+        "hole_count": 1,
+        "solid_count": 1
+      }
+    }
   ]
 }

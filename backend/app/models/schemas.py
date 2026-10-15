@@ -3,7 +3,7 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator, model_serializer
-from app.contracts.acceptance import AcceptanceContract
+from app.contracts.acceptance_v2 import VersionedAcceptance
 
 from app.execution.contracts import ExecutionError
 from app.parameters import CADParameter, extract_parameters
@@ -171,7 +171,7 @@ class DesignBrief(BaseModel):
     printability_targets: list[str] = []
     acceptance_criteria: list[str] = []
     open_questions: list[str] = []
-    acceptance: AcceptanceContract | None = None
+    acceptance: VersionedAcceptance | None = None
 
     @model_serializer(mode="wrap")
     def preserve_legacy_wire(self, handler):
@@ -235,7 +235,7 @@ class ModificationPlan(BaseModel):
     modification_type: str  # "dimension_change"|"add_feature"|"remove_feature"|"redesign"
     target_params: dict[str, float] = {}
     new_features: list[str] = []
-    acceptance: AcceptanceContract | None = None
+    acceptance: VersionedAcceptance | None = None
 
     @model_serializer(mode="wrap")
     def preserve_legacy_wire(self, handler):

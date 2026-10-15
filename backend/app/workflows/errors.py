@@ -5,11 +5,13 @@ from app.services.public_errors import public_generation_error
 from app.freecad.contracts import FreeCADPlanningError
 from app.freecad.state_contract import ParameterStateError
 from app.llm import is_nonretryable_provider_error
+from app.contracts.acceptance_v2 import RequirementBindingError
+from app.contracts.provider_budget import ProviderBudgetError
 
 def planning_error(exc: Exception) -> ApplicationError:
     if isinstance(exc, ApplicationError):
         return exc
-    if isinstance(exc, (ParameterStateError, FreeCADPlanningError)):
+    if isinstance(exc, (ParameterStateError, FreeCADPlanningError, RequirementBindingError, ProviderBudgetError)):
         return ApplicationError(
             str(exc),
             type=exc.code,

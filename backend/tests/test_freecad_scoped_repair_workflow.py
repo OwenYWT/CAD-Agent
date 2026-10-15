@@ -132,7 +132,8 @@ async def test_progressive_workflow_stops_before_provider_when_evidence_or_budge
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('outcome,enabled', [('failed', True), ('indeterminate', True), ('indeterminate', False)])
-async def test_invalid_required_selection_never_requests_cad_source_repair(outcome, enabled):
+@pytest.mark.parametrize('error_code', ['acceptance_scope_invalid', 'acceptance_measurement_failed'])
+async def test_invalid_required_selection_never_requests_cad_source_repair(outcome, enabled, error_code):
     from tests.test_acceptance_validation_repairs import GateRun, arguments
     from tests.test_cad_intelligence_layers import _sample_report
 
@@ -143,7 +144,7 @@ async def test_invalid_required_selection_never_requests_cad_source_repair(outco
             report = _sample_report().model_dump(mode='json')
             report.update(outcome=outcome, acceptance={'contract_sha256': '0'*64, 'evidence': [
                 {'check_id': 'gap', 'method': 'face_selection', 'outcome': 'indeterminate',
-                 'issues': ['ambiguous surface'], 'details': {'error_code': 'acceptance_scope_invalid'}},
+                 'issues': ['unverified measurement'], 'details': {'error_code': error_code, 'cad_source_repair_allowed':False}},
                 {'check_id': 'solid', 'method': 'brep_solids', 'outcome': 'failed', 'measured': [2]},
             ]})
             return {'report': report, 'outcome': outcome, 'evidence_id': 'evidence'}
@@ -155,5 +156,5 @@ async def test_invalid_required_selection_never_requests_cad_source_repair(outco
         {'check_id': 'gap', 'required': True}, {'check_id': 'solid', 'required': True}]}
     with pytest.raises(ApplicationError) as raised:
         await flow._geometry_gate(**args, expected_dimensions={})
-    assert raised.value.type == ('agent_acceptance_scope_invalid' if enabled else 'agent_geometry_validation_failed')
+    assert raised.value.type == ('agent_'+error_code if enabled else 'agent_geometry_validation_failed')
     assert flow.calls == ['agent_v2.validate_geometry']

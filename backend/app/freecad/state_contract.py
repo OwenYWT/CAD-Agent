@@ -267,6 +267,26 @@ def compile_parameter_operation_plan(
             },
         })
     objects = {obj['name']:obj for obj in validated.objects}
+    # A native Hole can silently reset its custom entrance dimensions when the
+    # shaft temporarily reaches the old entrance diameter. Both final values
+    # are already type/range/permission checked above. Order this proven pair
+    # so each intermediate shape stays valid; retain per-operation validation.
+    for object_name, obj in objects.items():
+        if obj['type_id'] != 'PartDesign::Hole':
+            continue
+        positions = {op['args']['property']: index for index, op in enumerate(operations)
+                     if op['args']['object'] == object_name}
+        if not {'Diameter', 'HoleCutDiameter'} <= positions.keys():
+            continue
+        shaft_index, mouth_index = positions['Diameter'], positions['HoleCutDiameter']
+        shaft, mouth = operations[shaft_index], operations[mouth_index]
+        if mouth['args']['value'] <= shaft['args']['value']:
+            raise ParameterStateError('parameter_value_out_of_range',
+                                      'hole entrance must remain wider than its shaft')
+        old_mouth = next(p for p in validated.parameters
+                         if p.object_name == object_name and p.property_name == 'HoleCutDiameter')
+        if shaft['args']['value'] >= old_mouth.value:
+            operations[shaft_index], operations[mouth_index] = mouth, shaft
     for index, edit in enumerate(native_edits):
         action, args = edit['action'], edit['args']
         if action == 'assembly.instance':
@@ -285,6 +305,9 @@ def compile_parameter_operation_plan(
                 raise ParameterStateError('sketch_constraint_unavailable', '当前检查点没有此草图约束的完整记录')
             if constraint['type'] != args['expected_type'] or constraint.get('driving') is False:
                 raise ParameterStateError('sketch_constraint_invalid', '约束类型已变化，或此约束仅用于测量')
+            if any(e.get('property') in {f"Constraints[{args['constraint_index']}]", 'Constraints.'+str(constraint.get('name', ''))}
+                   and e.get('expression') for e in sketch.get('expressions', {}).get('items', [])):
+                raise ParameterStateError('sketch_constraint_expression_protected', '该尺寸由原生关系驱动，请修改它的来源尺寸')
         elif action == 'sketch.patch_relations':
             from app.freecad.sketch_relations import relation_certificate
             try:

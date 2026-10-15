@@ -47,12 +47,17 @@ export default function DocumentReleases({document}:{document:CloudDocument}) {
   const submitting=useRef(false);
   const stale=base.head_revision_id!==document.head_revision_id || base.state_version!==document.state_version;
   useEffect(()=>{
+    const online=()=>setReload(value=>value+1);
+    window.addEventListener('online',online);
+    return ()=>window.removeEventListener('online',online);
+  },[]);
+  useEffect(()=>{
     const controller=new AbortController();let timer:ReturnType<typeof setTimeout>;
     const poll=async()=>{
       try {
         const [rows,engineering]=await Promise.all([listDocumentReleases(document.document_id,controller.signal),listEngineeringTasks(document.document_id,controller.signal)]);
         if (controller.signal.aborted) return;
-        setReleases(rows);setTasks(engineering);
+        setReleases(rows);setTasks(engineering);setError('');
         if (rows.some(r=>active(r.status))) timer=setTimeout(()=>void poll(),2000);
       } catch(e) {if (!controller.signal.aborted) setError(e instanceof Error ? e.message : '发布列表读取失败');}
     };void poll();return ()=>{controller.abort();clearTimeout(timer);};

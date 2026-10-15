@@ -90,6 +90,7 @@ def provider_credentials_are_scoped_to_live_cases(request, monkeypatch):
         "test_agent_v2_real_planner_retriever_codegen_and_execution_provenance",
         "test_agent_v2_live_freecad_tools_contract",
         "test_agent_v2_live_freecad_checkpoint_contract",
+        "test_live_durable_three_edit_trajectory",
     }
     if REAL_FREECAD_AGENT and os.environ.get('CAD_CONSTRAINT_LIVE_REPAIR') == '1':
         live.add('test_constraint_patch_incident_full_chain_and_owned_evidence')
@@ -1106,7 +1107,7 @@ class _V2PassingVisualStub:
 
 
 class _NativeBudgetRequirements:
-    async def plan_new(self, messages, *, require_acceptance=False):
+    async def plan_new(self, messages, *, require_acceptance=False, **_kwargs):
         from app.models.schemas import CADPlan, DesignBrief
         from app.contracts.acceptance import AcceptanceContract
         objective=messages[-1]['content']
@@ -3486,7 +3487,8 @@ class _EngineeringAcceptancePlanner(DurableAgentPlanner):
     def compose_freecad_generation(self,*args,**kwargs):
         plan=super().compose_freecad_generation(*args,**kwargs)
         contract=plan.design_brief.acceptance
-        checks=tuple(c.model_copy(update={'nominal':self.diameter}) if c.kind=='hole_diameter' else c for c in contract.checks)
+        checks=tuple(c.model_copy(update={'nominal':self.diameter})
+            if c.kind=='hole_diameter' and contract.schema_version=='engineering-acceptance.v1' else c for c in contract.checks)
         brief=plan.design_brief.model_copy(update={'acceptance':contract.model_copy(update={'checks':checks})})
         policy=plan.validation_policy.model_copy(update={'geometry':plan.validation_policy.geometry.model_copy(update={'repair_budget':0})})
         return plan.model_copy(update={'design_brief':brief,'validation_policy':policy})
@@ -3505,8 +3507,17 @@ class _RequirementsToolFixture:
         value=await _NativeBudgetRequirements().plan_new(
             [{'role':'user','content':self.objective}],require_acceptance=True)
         payload=value.model_dump(mode='json')
+        if 'AcceptanceContractV2' in kwargs['tools'][0]['function']['parameters'].get('$defs', {}):
+            from app.contracts.acceptance_v2 import AcceptanceContractV2
+            from app.validation.requirement_binding import extract_requirements
+            records=extract_requirements(self.objective)
+            assert not records['unsupported']
+            payload['design_brief']['acceptance']=AcceptanceContractV2.model_validate({'objective':self.objective,'checks':[
+                {'check_id':r['property'].replace('_','-'), 'binding_ref':r['requirement_id'], 'kind':r['kind'],
+                 'description':r['property'], 'source_quote':r['source_quote'], 'comparison':r['comparison'], 'scope':r['scope']}
+                for r in records['requirements']]}).model_dump(mode='json')
         if self.calls==1:
-            payload['design_brief']['acceptance']['checks'][3]['scope']['axis']=None
+            next(c for c in payload['design_brief']['acceptance']['checks'] if c['kind']=='hole_position')['scope']['axis']=None
         else:
             assert kwargs['messages'][-1]['tool_call_id']=='requirements-1'
             assert 'hole positions' in kwargs['messages'][-1]['content']
@@ -3848,6 +3859,7 @@ class _SlowCheckpointFixture(_CheckpointToolFixture):
 @pytest.mark.parametrize('interruption',['generation','execution','cancel'])
 async def test_freecad_checkpoint_survives_worker_restart_without_rebuilding_base(interruption,monkeypatch):
     from app.services.workflow_admission import create_document_workflow
+    from tests.native_runtime import native_execution_active
     owner,project_id,initial=await _seed_project('checkpoint-restart')
     objective='Create a 60x40x8 mm plate with one centered 6 mm through hole.'
     async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
@@ -3880,9 +3892,12 @@ async def test_freecad_checkpoint_survives_worker_restart_without_rebuilding_bas
         if interruption=='generation':
             await generator.entered.wait()
         else:
-            # Observe the real Docker container, not merely a queued activity.
-            while len(native_specs)<2 or not backend._sandbox._active_containers:
-                await asyncio.sleep(0.05)
+            # Observe native execution on either supported engine, not merely
+            # a queued activity or a CLI which has not created its container.
+            async def wait_native_execution():
+                while len(native_specs)<2 or not await asyncio.to_thread(native_execution_active,backend):
+                    await asyncio.sleep(0.05)
+            await asyncio.wait_for(wait_native_execution(),120)
         async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
             before=(await conn.execute(text('SELECT id,manifest_hash FROM agent_staging_manifests WHERE workflow_run_id=:id'),{'id':created.workflow_id})).mappings().one()
         assert generator.calls==(1 if interruption=='generation' else 3)
@@ -3891,9 +3906,11 @@ async def test_freecad_checkpoint_survives_worker_restart_without_rebuilding_bas
                 workflow_run_id=created.workflow_id,reason='Cancel active native checkpoint continuation')
             result=await handle.result()
             assert result['status']=='cancelled'
-            while backend._sandbox._active_containers:
-                await asyncio.sleep(0.05)
-    assert not backend._sandbox._active_containers
+            async def wait_native_stopped():
+                while await asyncio.to_thread(native_execution_active,backend):
+                    await asyncio.sleep(0.05)
+            await asyncio.wait_for(wait_native_stopped(),30)
+    assert not await asyncio.to_thread(native_execution_active,backend)
     if interruption=='cancel':
         async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
             assert await conn.scalar(text('SELECT count(*) FROM agent_staging_manifests WHERE workflow_run_id=:id'),{'id':created.workflow_id})==1
@@ -3983,7 +4000,7 @@ async def test_native_engineering_acceptance_gates_commit(required_diameter,exec
         measured={e['check_id']:e for e in report['acceptance']['evidence']}
         assert measured['hole-diameter']['measured']==[6]
         criteria={c['check_id']:c for c in report['acceptance_contract']['checks']}
-        assert criteria['hole-diameter']['nominal']==required_diameter
+        assert criteria['hole-diameter'].get('nominal',criteria['hole-diameter'].get('comparison',{}).get('value'))==required_diameter
         if output_formats==('stl',):
             manifest=await conn.scalar(text('SELECT manifest FROM agent_staging_manifests WHERE workflow_run_id=:id'),{'id':created.workflow_id})
             assert 'step' not in {a['format'] for a in manifest['outputs']}
@@ -4084,6 +4101,198 @@ async def test_native_engineering_acceptance_gates_commit(required_diameter,exec
 @pytest.mark.parametrize('required_diameter',[6,7])
 async def test_native_stl_only_delivery_keeps_exact_acceptance(required_diameter):
     await test_native_engineering_acceptance_gates_commit(required_diameter,'typed',output_formats=('stl',))
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('explicit_two', [True, False], ids=['explicit-two', 'default-one'])
+async def test_v2_requirements_multi_solid_binding_and_commit(explicit_two, *, return_context=False):
+    """Controlled proposals; all execution, independent gates and persistence are real."""
+    from tests.constraint_incident import IncidentRequirements, fixture_provenance
+    from app.models.schemas import CADPlan, DesignBrief
+    from app.freecad.contracts import FreeCADOperationPlan
+    from app.freecad.operation_generator import FreeCADOperationGenerationResult
+    from app.contracts.acceptance_v2 import AcceptanceContractV2
+    from app.validation.requirement_binding import extract_source_requirements
+    from app.services.workflow_admission import create_document_workflow
+    from app.services.revision_validation import revision_geometry_baseline
+    from app.workflows.agent_v2 import McadAgentWorkflowV2
+    from temporalio.worker import Replayer
+
+    class Requirements(IncidentRequirements):
+        async def requirements_generation(self, objective, **kwargs):
+            extracted = extract_source_requirements(objective, requirement_sources=kwargs.get('requirement_sources'))
+            assert not extracted['unsupported']
+            acceptance = AcceptanceContractV2.model_validate({'objective':objective, 'checks':[
+                {'check_id':r['requirement_id'], 'binding_ref':r['requirement_id'], 'kind':r['kind'],
+                 'description':r['property'], 'source_quote':r['source_quote'], 'comparison':r['comparison'], 'scope':r['scope']}
+                for r in extracted['requirements']]})
+            return CADPlan(description=objective, part_type='custom', dimensions={}, features=[], constraints=[],
+                design_brief=DesignBrief(intent_summary=objective, artifact_type='custom', acceptance=acceptance,
+                    open_questions=['确认此固定回归输入']))
+
+    class Operations:
+        async def generate(self, **kwargs):
+            operations=[]
+            for i in range(2):
+                operations.extend([
+                    {'op_id':f'sketch-{i}', 'action':'sketch.create', 'args':{'name':f'Sketch{i}', 'body':f'Body{i}'}},
+                    {'op_id':f'profile-{i}', 'action':'sketch.add_profile', 'args':{'sketch':f'Sketch{i}',
+                        'geometry':{'kind':'rectangle','corner':{'x':i*10,'y':0},'width_mm':2,'height_mm':2}}},
+                    {'op_id':f'pad-{i}', 'action':'feature.pad', 'args':{'name':f'Pad{i}','profile':f'Sketch{i}','length_mm':2}}])
+            operations.append({'op_id':'export','action':'document.export','args':{'objects':['Body0','Body1'],'formats':['fcstd','step','stl']}})
+            plan=FreeCADOperationPlan.model_validate({'operations':operations})
+            source=plan.model_dump_json()
+            return FreeCADOperationGenerationResult(operation_plan=plan,source_code=source,
+                generator_kind='controlled-two-solids',provenance=fixture_provenance(source))
+
+    owner, project_id, initial = await _seed_project('v2-two-solids')
+    objective = '体积16 mm³' + ('，两个独立实体' if explicit_two else '')
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+        created=await create_document_workflow(conn,tenant_id=owner.tenant_id,project_id=project_id,
+            requested_by_principal_id=owner.principal_id,kind='mcad.agent.v2.generate',
+            idempotency_key=f'v2-solids-{project_id}',request_payload={'objective':objective})
+    request=McadAgentWorkflowV2Request(workflow_run_id=created.workflow_id,tenant_id=owner.tenant_id,
+        project_id=project_id,principal_id=owner.principal_id,branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id,operation='generate',modeling_backend='freecad',objective=objective)
+    client=await get_temporal_client()
+    async with build_agent_v2_workflow_worker(client,backend=get_execution_backend(),
+            durable_planner=Requirements(),freecad_operations=Operations()):
+        handle=await client.start_workflow('McadAgentWorkflowV2',request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),task_queue=settings.temporal_agent_v2_task_queue)
+        if explicit_two:
+            result=await handle.result()
+            assert result['status']=='succeeded'
+        else:
+            with pytest.raises(WorkflowFailureError) as error:
+                await handle.result()
+            assert error.value.cause.type=='agent_geometry_validation_failed'
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+        report=await conn.scalar(text("SELECT evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"),{'id':created.workflow_id})
+        assert report['acceptance_contract']['schema_version']=='engineering-acceptance.v2'
+        assert all(a['solid_count']==2 for a in report['artifacts'])
+        for row in report['acceptance']['evidence']:
+            assert row['outcome']=='passed' and row['details']['comparison_policy_id']=='occt-confusion-v1'
+            binding=row['details']['measurement_binding']
+            assert binding['status']=='bound' and binding['base_revision_id']==str(initial.revision_id)
+            assert binding['artifact_sha256'] in [a['sha256'] for a in report['artifacts']]
+        assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'),{'id':initial.branch_id})==initial.revision_id
+        if not explicit_two:
+            assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'),{'id':created.workflow_id})==0
+    if explicit_two:
+        change_set=UUID(result['change_set_id'])
+        await accept_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,change_set_id=change_set,
+            review_note='已核对两个独立实体和实测体积；本回归未验收视觉与制造条件。')
+        committed=await commit_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,change_set_id=change_set)
+        assert committed.status=='committed'
+        async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+            revision=await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'),{'id':initial.branch_id})
+            baseline=await revision_geometry_baseline(conn,initial.branch_id,revision)
+            assert baseline['revision_id']==str(revision) and baseline['artifact_sha256s']
+            measured={m['kind']:m['values'] for m in baseline['measurements']}
+            assert measured['solid_count']==[2.] and measured['volume']==pytest.approx([16.])
+    await Replayer(workflows=[McadAgentWorkflowV2]).replay_workflow(await handle.fetch_history())
+    if return_context:
+        return owner,project_id,initial,UUID(result['candidate_revision_id'])
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('required_height',[3,4])
+async def test_selected_local_measurement_survives_native_edit_and_gates_commit(required_height):
+    from app.agent.durable_plan import ValidationGatePolicy,GateMode
+    from app.models.schemas import ModificationPlan
+    from app.models.workflow_requests import OperationContextV1
+    from app.contracts.acceptance_v2 import AcceptanceContractV2
+    from app.validation.requirement_binding import extract_source_requirements
+    from app.services.cloud_documents import document_snapshot
+    from app.services.workflow_admission import create_document_workflow
+    owner,project_id,initial,base=await test_v2_requirements_multi_solid_binding_and_commit(True,return_context=True)
+    projection=await document_snapshot(owner,initial.branch_id)
+    selected=next(f for f in projection['features'] if f['kernel_name']=='Body0')
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as connection:
+        artifact=(await connection.execute(text("SELECT id,sha256 FROM artifacts WHERE revision_id=:id AND artifact_kind='fcstd'"),
+            {'id':base})).mappings().one()
+    context=OperationContextV1(rule='explicit_rest_operation',source_channel='rest',requested_operation='modify',
+        resolved_operation='modify',requested_modeling_backend='freecad',submission_modeling_backend='freecad',
+        base_revision_id=base,base_source_kind='fcstd_artifact',base_source_id=artifact['id'],base_source_sha256=artifact['sha256'],
+        selection_context={'revision_id':base,'state_version':projection['state_version'],'feature_ids':[selected['id']]})
+    objective=f'将所选对象沿局部Z轴高度改为{required_height}mm'
+    class Requirements(DurableAgentPlanner):
+        async def requirements_modification(self,existing_code,objective,**kwargs):
+            extracted=extract_source_requirements(objective,verified_state=kwargs['verified_state'],
+                requirement_sources=kwargs['requirement_sources'])
+            assert not extracted['unsupported'],extracted
+            acceptance=AcceptanceContractV2.model_validate({'objective':objective,'checks':[
+                {'check_id':r['requirement_id'],'binding_ref':r['requirement_id'],'kind':r['kind'],
+                    'description':r['property'],'source_quote':r['source_quote'],'scope':r['scope'],'comparison':r['comparison']}
+                for r in extracted['requirements']]})
+            # Controlled negative proposal asks for a legal edit to 3 mm even
+            # when the separately frozen acceptance requires 4 mm.
+            proposal=ModificationPlan(description=objective,modification_type='parameter_change',
+                target_params={'Pad0.Length':3},acceptance=acceptance)
+            # Exercise the real stream adapter, planner, request accounting and
+            # provenance at the controlled proposal boundary. No CAD result or
+            # acceptance evidence is supplied by this fixture.
+            from types import SimpleNamespace
+            from openai.types.chat import ChatCompletionChunk
+            from app.llm import LLMClientAdapter
+            from app.services import llm_usage
+            from tests.test_llm_stream_integrity import Stream
+            async def create(**request):
+                assert str(selected['id']) in request['messages'][0]['content']
+                assert request['stream']
+                return Stream([ChatCompletionChunk(id='controlled-local-selection',
+                    object='chat.completion.chunk',created=1,model='controlled-proposals',choices=[{
+                        'index':0,'delta':{'role':'assistant','tool_calls':[{'index':0,'id':'proposal',
+                            'type':'function','function':{'name':'submit_modification_plan',
+                                'arguments':proposal.model_dump_json()}}]},'finish_reason':'tool_calls'}])])
+            self.planner._client=LLMClientAdapter(SimpleNamespace(chat=SimpleNamespace(
+                completions=SimpleNamespace(create=create))),settings.model_copy(update={
+                    'llm_provider':'controlled-proposals','llm_max_retries':0}),sink=llm_usage)
+            return await super().requirements_modification(existing_code,objective,**kwargs)
+        def compose_modification(self,*args,**kwargs):
+            plan=super().compose_modification(*args,**kwargs)
+            off=ValidationGatePolicy(mode=GateMode.DISABLED,repair_budget=0)
+            return plan.model_copy(update={'validation_policy':plan.validation_policy.model_copy(update={
+                'visual':off,'dfm':off,'geometry':plan.validation_policy.geometry.model_copy(update={'repair_budget':0})})})
+    payload={'objective':objective,'branch_id':str(initial.branch_id),'expected_base_revision_id':str(base),
+        'operation':'modify','modeling_backend':'freecad','operation_context':context.model_dump(mode='json')}
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as connection:
+        created=await create_document_workflow(connection,tenant_id=owner.tenant_id,project_id=project_id,
+            requested_by_principal_id=owner.principal_id,kind='mcad.agent.v2.modify',
+            idempotency_key=f'local-edit-{project_id}',request_payload=payload)
+    request=McadAgentWorkflowV2Request(**payload,workflow_run_id=created.workflow_id,tenant_id=owner.tenant_id,
+        project_id=project_id,principal_id=owner.principal_id)
+    client=await get_temporal_client()
+    async with build_agent_v2_workflow_worker(client,backend=get_execution_backend(),durable_planner=Requirements()):
+        handle=await client.start_workflow('McadAgentWorkflowV2',request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id),task_queue=settings.temporal_agent_v2_task_queue)
+        await _wait_for_status(owner,created.workflow_id,{'waiting_confirmation'})
+        await confirm_mcad_workflow(created.workflow_id,accepted=True,
+            note='确认固定局部高度测试输入；执行与验收使用真实内核。',workflow_kind='mcad.agent.v2.modify')
+        if required_height==3:
+            result=await handle.result()
+            assert result['status']=='succeeded'
+        else:
+            with pytest.raises(WorkflowFailureError) as failure:
+                await handle.result()
+            from app.workflows.agent_v2 import McadAgentWorkflowV2
+            assert McadAgentWorkflowV2._root_application_error(failure.value).type=='agent_geometry_validation_failed'
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as connection:
+        report=await connection.scalar(text("SELECT evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"),{'id':created.workflow_id})
+        measured=report['acceptance']['evidence'][0]
+        assert measured['measured']==pytest.approx([3.])
+        binding=measured['details']['measurement_binding']
+        assert binding['authority_ref']['object_ref']['feature_id']==selected['id']
+        assert binding['proof']['native_component']['contained_in_final_step']
+        assert binding['base_revision_id']==str(base)
+        assert await connection.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'),{'id':initial.branch_id})==base
+        if required_height==4:
+            assert await connection.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'),{'id':created.workflow_id})==0
+    if required_height==3:
+        change_set=UUID(result['change_set_id'])
+        await accept_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,
+            change_set_id=change_set,review_note='已核对所选 Body 的真实局部高度与最终 STEP 对应关系。')
+        assert (await commit_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,change_set_id=change_set)).status=='committed'
 
 
 @pytest.mark.asyncio(loop_scope='module')
@@ -4354,7 +4563,7 @@ async def test_two_failed_cuts_repair_locally_then_measure_and_commit():
 
 @pytest.mark.asyncio(loop_scope='module')
 @pytest.mark.parametrize('repair_budget', [2, 8])
-async def test_multiple_cuts_and_constraints_repair_from_retained_plan_then_commit(repair_budget, monkeypatch):
+async def test_multiple_cuts_and_constraints_repair_from_retained_plan_then_commit(repair_budget, monkeypatch, geometry_failure=False):
     from tests.multiple_cut_scenario import MultipleCutRequirements, MultipleCutGenerator, FIXTURE
     from app.services.workflow_admission import create_document_workflow
     from app.workflows.agent_v2 import McadAgentWorkflowV2
@@ -4369,9 +4578,9 @@ async def test_multiple_cuts_and_constraints_repair_from_retained_plan_then_comm
     request = McadAgentWorkflowV2Request(workflow_run_id=created.workflow_id, tenant_id=owner.tenant_id,
         project_id=project_id, principal_id=owner.principal_id, branch_id=initial.branch_id,
         expected_base_revision_id=initial.revision_id, operation='generate', modeling_backend='freecad', objective=objective)
-    generator, client = MultipleCutGenerator(), await get_temporal_client()
+    generator, client = MultipleCutGenerator(geometry_failure=geometry_failure), await get_temporal_client()
     async with build_agent_v2_workflow_worker(client, backend=get_execution_backend(),
-            durable_planner=MultipleCutRequirements(), freecad_operations=generator):
+            durable_planner=MultipleCutRequirements(geometry_failure=geometry_failure), freecad_operations=generator):
         handle = await client.start_workflow('McadAgentWorkflowV2', request.temporal_payload(),
             id=temporal_agent_v2_workflow_id(created.workflow_id), task_queue=settings.temporal_agent_v2_task_queue)
         if repair_budget == 2:
@@ -4400,8 +4609,13 @@ async def test_multiple_cuts_and_constraints_repair_from_retained_plan_then_comm
         ('pocket-screw', 'subtractive_feature_no_effect'), ('pocket-tip', 'sketch_under_constrained'),
         ('pocket-tip', 'subtractive_feature_no_effect')]
     async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
-        geometry = (await conn.execute(text("SELECT evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"),
-            {'id': created.workflow_id})).scalars().one()
+        geometries = (await conn.execute(text("SELECT evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry' ORDER BY created_at,id"),
+            {'id': created.workflow_id})).scalars().all()
+        assert len(geometries) == 1 + int(geometry_failure)
+        assert generator.geometry_repairs == int(geometry_failure)
+        if geometry_failure:
+            assert geometries[0]['outcome'] == 'failed'
+        geometry = geometries[-1]
         evidence = {row['check_id']: row for row in geometry['acceptance']['evidence']}
         assert evidence['clamp_opening']['outcome'] == 'passed'
         assert evidence['clamp_opening']['measured'] == pytest.approx([25], abs=1e-7)
@@ -4451,3 +4665,130 @@ async def test_multiple_cuts_and_constraints_repair_from_retained_plan_then_comm
             retained.mkdir(parents=True, exist_ok=True)
             (retained/'saved-measurements.log').write_bytes(measured)
     await Replayer(workflows=[McadAgentWorkflowV2]).replay_workflow(await handle.fetch_history())
+
+
+@pytest.mark.asyncio(loop_scope='module')
+async def test_geometry_repair_after_five_native_repairs_uses_own_budget(monkeypatch):
+    await test_multiple_cuts_and_constraints_repair_from_retained_plan_then_commit(8, monkeypatch, geometry_failure=True)
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.skipif(not REAL_FREECAD_AGENT, reason='explicit bounded live model evaluation required')
+async def test_live_durable_three_edit_trajectory():
+    """No substituted planner/tool response; every edit starts at its real predecessor."""
+    import subprocess
+    import tempfile
+    import time
+    from dataclasses import asdict
+    from temporalio.worker import Replayer
+    from app.services.workflow_admission import create_document_workflow
+    from app.workflows.agent_v2 import McadAgentWorkflowV2
+
+    repository = Path(__file__).resolve().parents[3]
+    catalog = json.loads((repository/'docs/architecture/ci-live-cases.json').read_text())
+    cases = catalog['mainline_cases']
+    destination = Path(os.environ['CAD_MAINLINE_EVAL_REPORT'])
+    destination.mkdir(parents=True, exist_ok=True)
+    index = {'schema_version':'cad-collaboration-eval.v1','provider_kind':'live',
+        'source_sha':subprocess.check_output(['git','rev-parse','HEAD'],cwd=repository,text=True).strip(),
+        'dirty_workspace':bool(subprocess.check_output(['git','status','--porcelain'],cwd=repository)),
+        'model_id':settings.llm_model,
+        'runtime':asdict(get_execution_backend().runtime_snapshot()),
+        'case_set_digest':hashlib.sha256(json.dumps(cases,sort_keys=True).encode()).hexdigest(),
+        'trajectory_passed':False,'runs':[]}
+    source_paths=subprocess.check_output(['git','ls-files','-z','--cached','--others','--exclude-standard','--',
+        'backend/app','backend/sandbox','backend/tests','backend/requirements*.lock','frontend/src',
+        'scripts/ci','docs/architecture'],cwd=repository).decode().split('\0')
+    index['source_files_digest']=hashlib.sha256(json.dumps({p:hashlib.sha256((repository/p).read_bytes()).hexdigest()
+        for p in sorted(set(source_paths)) if p and (repository/p).is_file()},sort_keys=True).encode()).hexdigest()
+    owner, project_id, initial = await _seed_project('live-three-edits')
+    client, base = await get_temporal_client(), initial.revision_id
+    try:
+        async with build_agent_v2_workflow_worker(client,backend=get_execution_backend()):
+            for sequence, case in enumerate(cases):
+                started = time.monotonic()
+                row = {'case_id':case['case_id'],'base_revision_id':str(base),'terminal_outcome':'failed',
+                    'commit_status':'not_committed','candidate_revision_id':None,'plan_confirmations':0}
+                index['runs'].append(row)
+                async with tenant_transaction(owner.tenant_id,owner.principal_id) as connection:
+                    created = await create_document_workflow(connection,tenant_id=owner.tenant_id,
+                        project_id=project_id,requested_by_principal_id=owner.principal_id,
+                        kind='mcad.agent.v2.'+case['operation'],idempotency_key=f'live-{project_id}-{sequence}',
+                        request_payload={'objective':case['objective'],'branch_id':str(initial.branch_id),
+                            'expected_base_revision_id':str(base),'operation':case['operation'],'modeling_backend':'freecad'})
+                row['workflow_id']=str(created.workflow_id)
+                request = McadAgentWorkflowV2Request(workflow_run_id=created.workflow_id,
+                    tenant_id=owner.tenant_id,project_id=project_id,principal_id=owner.principal_id,
+                    branch_id=initial.branch_id,expected_base_revision_id=base,operation=case['operation'],
+                    modeling_backend='freecad',objective=case['objective'],output_formats=('step','stl'),
+                    confirmation_timeout_seconds=120)
+                handle = await client.start_workflow('McadAgentWorkflowV2',request.temporal_payload(),
+                    id=temporal_agent_v2_workflow_id(created.workflow_id),task_queue=settings.temporal_agent_v2_task_queue)
+                try:
+                    for _ in range(1800):
+                        phase=await handle.query('phase')
+                        if phase=='waiting_confirmation' and not row['plan_confirmations']:
+                            await confirm_mcad_workflow(created.workflow_id,accepted=True,note='确认评测已冻结的目标',
+                                workflow_kind='mcad.agent.v2.'+case['operation'])
+                            row['plan_confirmations']+=1
+                        if phase.startswith(('executing:','validating:')) or phase in {'reviewable','failed','cancelled','timed_out'}:
+                            break
+                        await asyncio.sleep(.1)
+                    result=await asyncio.wait_for(handle.result(),timeout=600)
+                    assert result['status']=='succeeded', result
+                    row['candidate_revision_id']=result['candidate_revision_id']
+                    artifacts={a['artifact_kind']:a for a in result['artifacts']}
+                    with tempfile.TemporaryDirectory(prefix='durable-eval-') as directory:
+                        folder=Path(directory); folder.chmod(0o755)
+                        for kind,filename in [('fcstd','model.FCStd'),('step','model.step')]:
+                            data=await get_object(artifacts[kind]['object_key'])
+                            assert hashlib.sha256(data).hexdigest()==artifacts[kind]['sha256']
+                            (folder/filename).write_bytes(data)
+                        (folder/'expected.json').write_text(json.dumps(case['expected']))
+                        (folder/'verify.py').write_bytes((repository/'backend/tests/e2e/durable_eval_geometry.py').read_bytes())
+                        process=await asyncio.create_subprocess_exec(settings.sandbox_command,'run','--rm',
+                            '--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges',
+                            '--tmpfs','/tmp:rw,size=2g','-v',f'{directory}:/sandbox/input:ro',
+                            '--entrypoint','python',settings.sandbox_image,'/sandbox/input/verify.py',
+                            stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.STDOUT)
+                        measured,_=await process.communicate()
+                        (destination/(str(sequence)+'-geometry.log')).write_bytes(measured)
+                        assert process.returncode==0 and b'CAD_DURABLE_EVAL_GEOMETRY=' in measured,measured.decode()
+                    row['first_usable_seconds']=time.monotonic()-started
+                    change_set=UUID(result['change_set_id'])
+                    await accept_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,
+                        change_set_id=change_set,review_note='预先冻结的独立几何断言通过；保留产品审核与提交保护。')
+                    committed=await commit_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,change_set_id=change_set)
+                    assert committed.status=='committed'
+                    base=UUID(result['candidate_revision_id'])
+                    row.update(terminal_outcome='passed',commit_status='committed')
+                    await Replayer(workflows=[McadAgentWorkflowV2]).replay_workflow(await handle.fetch_history())
+                finally:
+                    row['elapsed_seconds']=time.monotonic()-started
+                    async with tenant_transaction(owner.tenant_id,owner.principal_id) as connection:
+                        row['snapshot']=await get_task_snapshot(owner,created.workflow_id)
+                        row['evidence_refs']=[dict(r) for r in (await connection.execute(text(
+                            'SELECT id,gate,outcome,evidence_hash FROM agent_validation_evidence WHERE workflow_run_id=:id'),
+                            {'id':created.workflow_id})).mappings()]
+                        row['budget_evidence_refs']=[dict(r) for r in (await connection.execute(text(
+                            'SELECT id,model_job_id,logical_call_id,attempt,status,reserved_amount,actual_amount FROM provider_budget_reservations WHERE workflow_run_id=:id'),
+                            {'id':created.workflow_id})).mappings()]
+                        row['frozen_requirement_refs']=[dict(r) for r in (await connection.execute(text(
+                            "SELECT id,payload FROM task_events WHERE workflow_run_id=:id AND event_type='agent.requirements.completed'"),
+                            {'id':created.workflow_id})).mappings()]
+                    steps=row['snapshot']['steps']
+                    row['repair_steps']=sum('repair' in s['kind'] for s in steps)
+                    row['first_pass']=row['terminal_outcome']=='passed' and row['repair_steps']==0 and not any(s['status']=='failed' for s in steps)
+                    row['failure_stage']=row['snapshot'].get('current_step_kind') if row['terminal_outcome']!='passed' else None
+                    row['original_error_code']=row['snapshot'].get('error_code')
+                    assert row['budget_evidence_refs'], 'mainline inference must have durable admission records'
+        index['trajectory_passed']=all(r['terminal_outcome']=='passed' for r in index['runs']) and len(index['runs'])==4
+        assert index['trajectory_passed']
+    finally:
+        index['not_started_case_ids']=[c['case_id'] for c in cases[len(index['runs']):]]
+        index['metrics']={'started_tasks':len(index['runs']), 'planned_tasks':len(cases),
+            'passed_tasks':sum(r['terminal_outcome']=='passed' for r in index['runs']),
+            'first_pass_tasks':sum(r.get('first_pass',False) for r in index['runs']),
+            'three_edit_trajectory_success':index['trajectory_passed'],
+            'scope':'One frozen trajectory; not a population success-rate or improvement estimate.'}
+        (destination/'trajectory.json').write_text(json.dumps(index,ensure_ascii=False,default=str,indent=2))

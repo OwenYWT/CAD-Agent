@@ -16,6 +16,15 @@ FIXTURE = json.loads((Path(__file__).parent / 'e2e/fixtures/native_failures/mult
 
 
 class MultipleCutRequirements(IncidentRequirements):
+    def __init__(self, *, geometry_failure=False):
+        super().__init__()
+        self.geometry_failure = geometry_failure
+
+    def compose_freecad_generation(self, *args, **kwargs):
+        plan = super().compose_freecad_generation(*args, **kwargs)
+        return plan.model_copy(update={'validation_policy':plan.validation_policy.model_copy(update={
+            'geometry':plan.validation_policy.geometry.model_copy(update={'repair_budget':int(self.geometry_failure)})})})
+
     async def requirements_generation(self, objective, **kwargs):
         return CADPlan(description=objective, part_type='custom', dimensions={}, features=[], constraints=[],
             modeling_hint='retained multiple-cut regression', design_brief=DesignBrief(intent_summary=objective,
@@ -23,9 +32,11 @@ class MultipleCutRequirements(IncidentRequirements):
 
 
 class MultipleCutGenerator:
-    def __init__(self):
+    def __init__(self, *, geometry_failure=False):
         self.generations = 0
         self.repairs = []
+        self.geometry_failure = geometry_failure
+        self.geometry_repairs = 0
 
     async def generate(self, **kwargs):
         self.generations += 1
@@ -33,6 +44,13 @@ class MultipleCutGenerator:
         raw = deepcopy(FIXTURE['plan']) if self.generations == 1 else {'operations': [
             {'op_id': 'export-final', 'action': 'document.export', 'args': {
                 'objects': ['HeadphoneHook'], 'formats': ['fcstd', 'step', 'stl']}}]}
+        if self.generations == 2 and self.geometry_failure:
+            raw['operations'] = [
+                {'op_id':'extra-sketch','action':'sketch.create','args':{'name':'ExtraSketch','body':'ExtraBody'}},
+                {'op_id':'extra-profile','action':'sketch.add_profile','args':{'sketch':'ExtraSketch',
+                    'geometry':{'kind':'rectangle','corner':{'x':500,'y':500},'width_mm':2,'height_mm':2}}},
+                {'op_id':'extra-pad','action':'feature.pad','args':{'name':'ExtraPad','profile':'ExtraSketch','length_mm':2}},
+                {**raw['operations'][-1], 'args':{**raw['operations'][-1]['args'],'objects':['HeadphoneHook','ExtraBody']}}]
         plan = FreeCADOperationPlan.model_validate(raw)
         source = plan.model_dump_json()
         return FreeCADOperationGenerationResult(operation_plan=plan, source_code=source,
@@ -41,6 +59,16 @@ class MultipleCutGenerator:
     async def repair(self, **kwargs):
         before = FreeCADOperationPlan.model_validate_json(kwargs['source_code'])
         failure = kwargs['failure']
+        if failure['error_code'] == 'geometry_validation_failed':
+            self.geometry_repairs += 1
+            # Remove the unintended operations from the final turn. The real
+            # pre-turn checkpoint is reloaded; nothing is hidden from exports.
+            raw = {'operations':[{'op_id':'export-final','action':'document.export','args':{
+                'objects':['HeadphoneHook'],'formats':['fcstd','step','stl']}}]}
+            plan = FreeCADOperationPlan.model_validate(raw)
+            source = plan.model_dump_json()
+            return FreeCADOperationGenerationResult(operation_plan=plan, source_code=source,
+                generator_kind='controlled-geometry-correction', provenance=fixture_provenance(source))
         identity = failure['operation_id']
         self.repairs.append((identity, failure['error_code']))
         if failure['error_code'].startswith('sketch_'):

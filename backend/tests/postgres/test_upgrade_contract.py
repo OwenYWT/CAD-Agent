@@ -1,5 +1,6 @@
 """Real previous-schema upgrade with pending work; never downgrade a shared DB."""
 import asyncio
+import json
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -22,6 +23,7 @@ def test_upgrade_preserves_pending_job_and_unfinished_usage(monkeypatch):
     from app.services.run_state import create_workflow
     from app.services.llm_usage import UsageContext, usage_context, start_call
     from app.services import model_jobs
+    from app.execution.canonical import canonical_sha256
 
     monkeypatch.setattr(settings, 'database_url', URL)
     monkeypatch.setattr(settings, 'durable_control_plane_enabled', True)
@@ -55,13 +57,22 @@ def test_upgrade_preserves_pending_job_and_unfinished_usage(monkeypatch):
         'workflow_run_id': str(run), 'dimension': 6.5}}
 
     async def old_job():
-        result = await model_jobs.submit(request)
-        assert result['status'] == 'queued'
+        # Persist the 0029 row shape before installing newer schema. The
+        # current submit path correctly requires the current ledger tables.
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+            await conn.execute(text('''INSERT INTO model_jobs
+                (id,tenant_id,principal_id,workflow_run_id,operation,payload,payload_hash)
+                VALUES(:id,:tenant,:principal,:run,:operation,CAST(:payload AS jsonb),:digest)'''),
+                dict(id=request['job_id'],tenant=owner.tenant_id,principal=owner.principal_id,
+                    run=run,operation=request['operation'],payload=json.dumps(request['payload']),
+                    digest=canonical_sha256({'operation':request['operation'],'payload':request['payload']})))
         await close_database()
     asyncio.run(old_job())
     command.upgrade(config, 'head')
 
     async def verify():
+        async with get_database_engine().connect() as conn:
+            assert await conn.scalar(text('SELECT count(*) FROM provider_budget_policies')) == 0
         assert (await model_jobs.submit(request))['status'] == 'queued'
         async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
             row = (await conn.execute(text('SELECT payload,generation,status FROM model_jobs WHERE id=:id'),
@@ -72,7 +83,9 @@ def test_upgrade_preserves_pending_job_and_unfinished_usage(monkeypatch):
                                        {'id': owner.principal_id})).mappings().one()
             assert call['status'] == 'started' and call['total_tokens'] is None
             assert await conn.scalar(text("SELECT data_type FROM information_schema.columns WHERE table_name='model_jobs' AND column_name='payload'")) == 'json'
+            policy=await conn.scalar(text('SELECT policy FROM provider_budget_policies WHERE workflow_run_id=:id'),{'id':run})
+            assert policy['mode']=='requests' and policy['legacy_admission'] is True
         async with get_database_engine().connect() as conn:
-            assert await conn.scalar(text('SELECT version_num FROM alembic_version')) == '0030_model_job_json_numbers'
+            assert await conn.scalar(text('SELECT version_num FROM alembic_version')) == '0031_provider_budgets'
         await close_database()
     asyncio.run(verify())

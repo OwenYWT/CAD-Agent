@@ -2,6 +2,7 @@
 from __future__ import annotations
 from app.config import settings
 from app.contracts.acceptance import AcceptanceContract, acceptance_outcome
+from app.contracts.acceptance_v2 import decode_acceptance
 from app.contracts.geometry_request import geometry_request_digest
 import asyncio
 import hashlib
@@ -29,7 +30,7 @@ from app.workflows.validation_support import _record_agent_validation_outcome
 async def agent_validate_geometry(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[str, Any]:
     info = execution_identity()
     request = _agent_v2_request(payload)
-    acceptance = (AcceptanceContract.model_validate(payload["acceptance"])
+    acceptance = (decode_acceptance(payload["acceptance"])
                   if payload.get("acceptance") is not None else None)
     candidate_build_id = _uuid(payload, "candidate_build_id")
     manifest_id = _uuid(payload, "staging_manifest_id")
@@ -44,10 +45,44 @@ async def agent_validate_geometry(payload: dict[str, Any], *, backend: Execution
     dimension_tolerance = float(payload.get("dimension_tolerance", 0.05))
     expected_solid_count = payload.get("expected_solid_count")
     guarded = acceptance is not None or expected_solid_count is not None
+    measurement_context = None
+    native_measurement_output = None
+    if acceptance is not None and acceptance.schema_version == 'engineering-acceptance.v2':
+        async with tenant_transaction(request.tenant_id, request.principal_id) as connection:
+            bound_manifest = await connection.scalar(text('''SELECT manifest FROM agent_staging_manifests
+                WHERE tenant_id=:tenant AND candidate_build_id=:candidate AND workflow_run_id=:run AND id=:id'''),
+                {'tenant':request.tenant_id,'candidate':candidate_build_id,'run':request.workflow_run_id,'id':manifest_id})
+        if bound_manifest is None:
+            raise ApplicationError('geometry validation manifest does not exist', type='agent_geometry_manifest_missing', non_retryable=True)
+        bound_outputs = [item for item in bound_manifest.get('outputs', ()) if item.get('format') in {'step','stl','dxf'}]
+        if not any(item['format']=='step' for item in bound_outputs):
+            bound_outputs += [item for item in bound_manifest.get('verification_outputs', ()) if item.get('format')=='step']
+        measurement_context = {'schema_version':'measurement-context.v1',
+            'base_revision_id':str(request.expected_base_revision_id), 'checkpoint_manifest_id':str(manifest_id),
+            'artifact_sha256s':[item['sha256'] for item in bound_outputs]}
+        references=[c.scope.object_ref.model_dump(mode='json') for c in acceptance.checks if c.scope.object_ref is not None]
+        if references:
+            async with tenant_transaction(request.tenant_id,request.principal_id) as connection:
+                selection=await connection.scalar(text("SELECT arguments->'_selection_context' FROM cad_operations WHERE id=:id"),
+                    {'id':request.workflow_run_id})
+            selection=selection or {}
+            allowed=[{'revision_id':selection.get('revision_id'),'feature_id':f['feature_id'],
+                'kernel_name':f['kernel_name'],'type_id':f['type'],
+                'parameter_state_sha256':selection.get('parameter_state_sha256')}
+                for f in selection.get('features',[])]
+            native_outputs=[item for item in bound_manifest.get('outputs',[]) if item.get('format')=='fcstd']
+            if (any(reference not in allowed for reference in references) or selection.get('topology_selector')
+                    or len(native_outputs)!=1):
+                raise ApplicationError('Local measurement authority is not the frozen user selection and current native artifact',
+                    type='engineering_verification_unavailable',non_retryable=True)
+            native_measurement_output=native_outputs[0]
+            measurement_context.update(schema_version='measurement-context.v2',
+                native_reference={key:native_measurement_output[key] for key in ('sha256','size_bytes')},
+                selected_objects=list({reference['feature_id']:reference for reference in references}.values()))
     request_digest = geometry_request_digest(
         expected_dimensions_mm=expected_dimensions, dimension_tolerance=dimension_tolerance,
         expected_solid_count=expected_solid_count,
-        acceptance=acceptance.model_dump(mode="json") if acceptance else None)
+        acceptance=acceptance.model_dump(mode="json") if acceptance else None, measurement_context=measurement_context)
     async with tenant_transaction(
         request.tenant_id,
         request.principal_id,
@@ -66,7 +101,7 @@ async def agent_validate_geometry(payload: dict[str, Any], *, backend: Execution
                 cached.pop("runtime_provenance", None)
                 verify_geometry_evidence(DurableGeometryReport.model_validate(cached),
                     request_sha256=request_digest, acceptance=acceptance,
-                    expected_solid_count=expected_solid_count)
+                    expected_solid_count=expected_solid_count, measurement_context=measurement_context)
             except ValueError:
                 replay = None
         if replay is not None:
@@ -182,6 +217,22 @@ async def agent_validate_geometry(payload: dict[str, Any], *, backend: Execution
             task_artifacts.append(
                 {"role": role, "format": artifact_format}
             )
+        if native_measurement_output is not None and integrity_issue is None:
+            item=native_measurement_output
+            filename='measurement-native.FCStd'
+            path=temp_dir/filename
+            try:
+                downloaded=await download_object(str(item['object_key']),path)
+                if downloaded['sha256']!=item['sha256'] or downloaded['size_bytes']!=item['size_bytes']:
+                    integrity_issue='native_measurement_integrity_mismatch'
+            except Exception as exc:
+                integrity_issue='native_measurement_unavailable:'+type(exc).__name__
+            if integrity_issue is None:
+                artifact_id=f'{manifest_id}:measurement-native'
+                declarations.append(ArtifactInput(artifact_id=artifact_id,filename=filename,
+                    sha256=item['sha256'],size_bytes=item['size_bytes'],media_type=item['content_type']))
+                materialized[artifact_id]=path
+                task_inputs['measurement-native']=filename
         if integrity_issue is not None:
             report = indeterminate_geometry_report(
                 outputs=model_outputs,
@@ -205,6 +256,7 @@ async def agent_validate_geometry(payload: dict[str, Any], *, backend: Execution
                     **({"expected_solid_count": payload["expected_solid_count"]}
                        if "expected_solid_count" in payload else {}),
                     **({"acceptance": acceptance.model_dump(mode="json")} if acceptance else {}),
+                    **({'measurement_context':measurement_context} if measurement_context is not None else {}),
                     "output": "geometry-report.json",
                 },
                 "inputs": task_inputs,
@@ -296,7 +348,8 @@ async def agent_validate_geometry(payload: dict[str, Any], *, backend: Execution
                         )
                         if guarded:
                             verify_geometry_evidence(report, request_sha256=request_digest,
-                                acceptance=acceptance, expected_solid_count=expected_solid_count)
+                                acceptance=acceptance, expected_solid_count=expected_solid_count,
+                                measurement_context=measurement_context)
                             expected_artifacts = {(f"artifact-{n:02d}", i['format'], i['sha256'], i['size_bytes']) for n, i in enumerate(model_outputs)}
                             measured_artifacts = {(i.role, i.format, i.sha256, i.size_bytes) for i in report.artifacts}
                             if measured_artifacts != expected_artifacts or len(report.artifacts) != len(model_outputs):

@@ -65,6 +65,7 @@ def _constraint(
     *,
     second: dict[str, int] | None = None,
     value_mm: float | None = None,
+    center_of: str | None = None,
 ) -> dict[str, Any]:
     args: dict[str, Any] = {
         "sketch": sketch,
@@ -75,6 +76,8 @@ def _constraint(
         args["second"] = second
     if value_mm is not None:
         args["value_mm"] = value_mm
+    if center_of is not None:
+        args['center_of'] = center_of
     return _op(op_id, "sketch.add_constraint", args)
 
 
@@ -592,6 +595,7 @@ def compile_common_generation(
                         "distance_x",
                         {"geometry_index": 0, "point_position": 3},
                         value_mm=center_x,
+                        center_of='BaseSketch',
                     ),
                     _constraint(
                         "hole-center-y",
@@ -599,6 +603,7 @@ def compile_common_generation(
                         "distance_y",
                         {"geometry_index": 0, "point_position": 3},
                         value_mm=center_y,
+                        center_of='BaseSketch',
                     ),
                     _constraint(
                         "hole-radius",

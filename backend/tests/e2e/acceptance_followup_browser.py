@@ -96,14 +96,21 @@ def main():
                     page.set_viewport_size({'width':1440, 'height':1000})
                     page.get_by_role('button', name='属性', exact=True).click()
                     left = page.locator('.ww-inspector-pane .ww-model-tree h3').bounding_box()['x']
+                    # Mount the release list while offline, so its initial read
+                    # deterministically fails rather than racing the disconnect.
+                    context.set_offline(True)
                     page.get_by_role('button', name='版本', exact=True).click()
                     version_left = page.locator('.ww-inspector-pane').get_by_text('零件与历史版本', exact=True).bounding_box()['x']
                     assert abs(left - version_left) <= 1, (left, version_left)
-                    context.set_offline(True)
                     expect(page.locator('.workspace-status')).to_contain_text('已断开', timeout=30000)
                     expect(page.locator('.workspace-status')).to_have_attribute('data-status', 'offline')
+                    release_panel=page.get_by_test_id('document-releases')
+                    expect(release_panel.locator('[role="alert"]')).to_have_count(1)
                     context.set_offline(False)
                     expect(page.locator('.workspace-status')).to_contain_text('文档已同步', timeout=30000)
+                    evidence_id=json.loads((out/'native-volume.json').read_text())['workflow_run_id']
+                    expect(release_panel.locator(f'input[data-evidence="{evidence_id}"]')).to_have_count(1)
+                    expect(release_panel.locator('[role="alert"]')).to_have_count(0)
                     records.append('panel_alignment_and_real_disconnect_reconnect')
                     drawer = settings()
                     drawer.get_by_role('tab', name='工艺知识图谱', exact=True).click()

@@ -79,6 +79,18 @@ async def test_inspection_can_page_beyond_three_calls_without_losing_measured_va
 
 
 @pytest.mark.asyncio
+async def test_distinct_valid_inspections_cannot_escape_frozen_call_budget():
+    from app.freecad.contracts import FreeCADPlanningError
+    provider=ProviderTurns(*[[call('freecad_inspect',{'objects':['Pad'],'fields':['properties'],
+        'offset':i,'limit':1},f'page-{i}')] for i in range(4)])
+    with pytest.raises(FreeCADPlanningError) as stopped:
+        await FreeCADOperationGenerator(client=provider,provenance_reader=_provenance)._complete(
+            user_payload={'task':'modify'},generator_kind='freecad_operations',output_formats=('step',),
+            base_state={'objects':[{'name':'Pad','properties':{f'p{i}':i for i in range(4)}}]},max_tool_calls=3)
+    assert stopped.value.code=='agent_tool_budget_exhausted' and len(provider.requests)==3
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("bad", [
     [call("commit_revision", {"confirmed": True})],
     [call("freecad_execute", {**_valid_plan(), "confirmed": True})],
