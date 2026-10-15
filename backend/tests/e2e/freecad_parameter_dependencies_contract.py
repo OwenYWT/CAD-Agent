@@ -129,7 +129,15 @@ for order in [('Diameter','HoleCutDiameter'),('HoleCutDiameter','Diameter')]:
 
 Path('/sandbox/output/dependency-evidence.json').write_text(json.dumps(evidence, indent=2))
 if os.getenv('CAD_DEPENDENCY_EVIDENCE_DIR'):
-    shutil.copytree(root,os.environ['CAD_DEPENDENCY_EVIDENCE_DIR'],dirs_exist_ok=True)
+    destination = Path(os.environ['CAD_DEPENDENCY_EVIDENCE_DIR'])
+    destination.mkdir(parents=True, exist_ok=True)
+    # Export artifacts without changing metadata on the host-owned mount root.
+    for artifact in root.iterdir():
+        target = destination / artifact.name
+        if artifact.is_dir():
+            shutil.copytree(artifact, target, dirs_exist_ok=True)
+        else:
+            shutil.copy2(artifact, target)
 print('CAD_PARAMETER_DEPENDENCIES_CONTRACT=' + json.dumps(evidence))
 if os.getenv('CAD_EXPECT_BASELINE_FAILURES') != '1':
     assert centered, 'V01: width changed but hole did not remain centered'
