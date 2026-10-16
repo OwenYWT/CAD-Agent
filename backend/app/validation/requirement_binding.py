@@ -86,7 +86,7 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
     # These semantic obligations require a separate proven selector/baseline;
     # recognizing another number in the sentence is not coverage for them.
     for pattern, reason in [
-        (r'不要|禁止|不得|不能|并非|不是|not\s+(?:a|an|the)|without|except|excluding', 'negative_requirement_unbound'),
+        (r'不要|禁止|不得|不能|并非|不是|\bnot\b|\bnon[- ]?through|\bno\s+through|without|except|excluding', 'negative_requirement_unbound'),
         (r'均匀|等距|同轴|对称|连通|uniform\w*|equally\s+spaced|coaxial|symmetric', 'relationship_coverage_unbound'),
     ]:
         for match in re.finditer(pattern, objective, re.I):

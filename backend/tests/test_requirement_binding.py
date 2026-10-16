@@ -322,3 +322,16 @@ def test_unbound_comparative_words_cannot_be_dropped_by_a_shorter_quantity_match
          'description':'hole diameter', 'source_quote':objective, 'comparison':{'op':'eq','value':6.,'unit':'mm'}}]})
     with pytest.raises(RequirementBindingError, match='engineering_verification_unavailable'):
         validate_requirement_bindings(objective, proposed)
+
+
+@pytest.mark.parametrize('objective', [
+    'a non-through hole with diameter 6 mm',
+    'a non-through 6 mm hole',
+    'a 6 mm diameter hole, not through',
+    'no through hole with diameter 6 mm',
+], ids=['non-through', 'non-through-sized', 'not-through', 'no-through'])
+def test_negated_through_requirement_cannot_be_ignored_or_reversed(objective):
+    assert any(r['reason'] == 'negative_requirement_unbound'
+               for r in extract_requirements(objective)['unsupported'])
+    with pytest.raises(RequirementBindingError, match='engineering_verification_unavailable'):
+        validate_requirement_bindings(objective, parsed_contract(objective))

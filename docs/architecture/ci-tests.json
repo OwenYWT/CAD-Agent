@@ -2244,7 +2244,12 @@
       "tests/test_requirement_binding.py::test_unbound_comparative_words_cannot_be_dropped_by_a_shorter_quantity_match[greater than approximately 6 mm diameter hole]",
       "tests/test_requirement_binding.py::test_unbound_comparative_words_cannot_be_dropped_by_a_shorter_quantity_match[less than approximately 6 mm diameter hole]",
       "tests/test_requirement_binding.py::test_unbound_comparative_words_cannot_be_dropped_by_a_shorter_quantity_match[more than 6 mm diameter hole]",
-      "tests/test_requirement_binding.py::test_unbound_comparative_words_cannot_be_dropped_by_a_shorter_quantity_match[at least approximately 6 mm diameter hole]"
+      "tests/test_requirement_binding.py::test_unbound_comparative_words_cannot_be_dropped_by_a_shorter_quantity_match[at least approximately 6 mm diameter hole]",
+      "tests/test_requirement_binding.py::test_negated_through_requirement_cannot_be_ignored_or_reversed[non-through]",
+      "tests/test_requirement_binding.py::test_negated_through_requirement_cannot_be_ignored_or_reversed[non-through-sized]",
+      "tests/test_requirement_binding.py::test_negated_through_requirement_cannot_be_ignored_or_reversed[not-through]",
+      "tests/test_requirement_binding.py::test_negated_through_requirement_cannot_be_ignored_or_reversed[no-through]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[a 6 mm diameter hole, not through-12-6-False-engineering_verification_unavailable]"
     ],
     "allowed_skips": {
       "tests/integration/test_agent_candidate_seal.py::test_late_workflow_failure_during_cancellation_reaches_a_terminal_state": "real PostgreSQL and MinIO are required",
@@ -2501,7 +2506,8 @@
       "tests/postgres/test_provider_budgets.py::test_pending_receipt_survives_fencing_and_settles_exactly_once[takeover]": "isolated migrated PostgreSQL required",
       "tests/postgres/test_provider_budgets.py::test_pending_receipt_survives_fencing_and_settles_exactly_once[cancelled]": "isolated migrated PostgreSQL required",
       "tests/postgres/test_provider_budgets.py::test_recovery_does_not_invent_missing_usage_or_release_unknown_hold": "isolated migrated PostgreSQL required",
-      "tests/postgres/test_upgrade_contract.py::test_receipt_queue_upgrade_preserves_legacy_holds_and_blocks_lossy_downgrade": "requires dedicated empty migration database"
+      "tests/postgres/test_upgrade_contract.py::test_receipt_queue_upgrade_preserves_legacy_holds_and_blocks_lossy_downgrade": "requires dedicated empty migration database",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[a 6 mm diameter hole, not through-12-6-False-engineering_verification_unavailable]": "real PostgreSQL, MinIO, Temporal, and Podman are required"
     }
   },
   "durable-core": {
@@ -2580,7 +2586,8 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[greater than 6 mm diameter hole-12-6-False-engineering_verification_unavailable]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[less than 6 mm diameter hole-12-6-False-engineering_verification_unavailable]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[at least 6 mm diameter hole-12-6-False-passed]",
-      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[at least 6 mm diameter hole-12-5-False-agent_geometry_validation_failed]"
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[at least 6 mm diameter hole-12-5-False-agent_geometry_validation_failed]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[a 6 mm diameter hole, not through-12-6-False-engineering_verification_unavailable]"
     ]
   },
   "frontend": {

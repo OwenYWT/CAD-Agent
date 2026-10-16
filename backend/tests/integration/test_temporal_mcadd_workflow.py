@@ -4801,6 +4801,7 @@ async def test_live_durable_three_edit_trajectory():
     ('一个孔径6 mm的通孔', 4, 6, True, 'requirement_binding_mismatch'),
     ('greater than 6 mm diameter hole', 12, 6, False, 'engineering_verification_unavailable'),
     ('less than 6 mm diameter hole', 12, 6, False, 'engineering_verification_unavailable'),
+    ('a 6 mm diameter hole, not through', 12, 6, False, 'engineering_verification_unavailable'),
     ('at least 6 mm diameter hole', 12, 6, False, 'passed'),
     ('at least 6 mm diameter hole', 12, 5, False, 'agent_geometry_validation_failed'),
 ])
