@@ -48,7 +48,7 @@ def missing_fields(original, parsed, prefix=''):
     return missing
 
 
-def inspect_requests(requests, *, require_histories=False):
+def inspect_requests(requests, *, require_histories=False, receipt_recovery_contract=None):
     from app.models.workflow_requests import McadAgentWorkflowV2Request, McadCheckRequest, McadWorkflowRequest
     blockers = []
     for item in requests:
@@ -84,6 +84,16 @@ def inspect_requests(requests, *, require_histories=False):
             supported = False
         if not supported:
             blockers.append({'workflow_id': item['id'], 'reason': 'provider_budget_contract_unsupported'})
+    # Completed/cancelled jobs can still have queued billing receipts. They
+    # must not disappear from an application rollback's compatibility cohort.
+    if receipt_recovery_contract is not None:
+        try:
+            from app.contracts.provider_budget import SUPPORTED_PROVIDER_RECEIPT_CONTRACTS
+            supported = isinstance(receipt_recovery_contract, str) and receipt_recovery_contract in SUPPORTED_PROVIDER_RECEIPT_CONTRACTS
+        except ImportError:
+            supported = False
+        if not supported:
+            blockers.append({'reason': 'provider_receipt_recovery_unsupported'})
     result['compatible'] = not blockers
     return result
 
@@ -127,11 +137,14 @@ async def read():
         rows=(await c.execute(text("SELECT w.id::text AS id,w.kind,w.status,d.payload AS request_payload FROM workflow_runs w LEFT JOIN workflow_dispatches d ON d.workflow_id=w.id WHERE w.status NOT IN ('succeeded','failed','cancelled','timed_out') ORDER BY w.id"))).mappings().all()
         jobs=await c.scalar(text("SELECT count(*) FROM model_jobs WHERE status IN ('queued','running')"))
         requests=[dict(row) for row in rows]
+        pending_receipts=0
         if await c.scalar(text("SELECT to_regclass('public.provider_budget_policies') IS NOT NULL")):
             policies=(await c.execute(text("SELECT p.workflow_run_id::text AS id,COALESCE(p.policy->>'schema_version','') AS contract FROM provider_budget_policies p JOIN workflow_runs w ON w.id=p.workflow_run_id WHERE w.status NOT IN ('succeeded','failed','cancelled','timed_out')"))).mappings().all()
             contracts={row['id']:row['contract'] for row in policies}
             for item in requests:
                 if item['id'] in contracts: item['provider_budget_contract']=contracts[item['id']]
+            if await c.scalar(text("SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='provider_budget_reservations' AND column_name='settlement_next_attempt_at')")):
+                pending_receipts=await c.scalar(text("SELECT count(*) FROM provider_budget_reservations WHERE settlement_next_attempt_at IS NOT NULL"))
     await close_database()
     if not jobs and requests and all(item['status']=='waiting_confirmation' for item in requests):
         client=await Client.connect(os.environ['TEMPORAL_TARGET'],namespace=os.getenv('TEMPORAL_NAMESPACE','default'))
@@ -140,7 +153,7 @@ async def read():
             identity=(temporal_agent_v2_workflow_id if kind.startswith('mcad.agent.v2.') else temporal_check_workflow_id if kind=='mcad.check' else temporal_workflow_id)(item['id'])
             history=await client.get_workflow_handle(identity).fetch_history()
             item.update(temporal_id=identity,history=history.to_json())
-    print(json.dumps({'requests':requests,'active_model_jobs':jobs}))
+    print(json.dumps({'requests':requests,'active_model_jobs':jobs,'receipt_recovery_contract':'provider-receipt-recovery.v1' if pending_receipts else None}))
 asyncio.run(read())
 '''
     source = subprocess.run([runtime, 'exec', '-i', source_container, 'python', '-'], input=reader,
@@ -156,9 +169,10 @@ asyncio.run(read())
         # this read. Drain it instead of treating that brief gap as quiescence.
         return {'compatible': False, 'checked': len(cohort['requests']), 'target_image': identity,
                 'blockers': [{'reason': 'active_workflows_require_drain', 'workflow_ids': executing}]}
-    wrapper = 'import io,json,sys\nv=json.load(sys.stdin);sys.stdin=io.StringIO(json.dumps({"requests":v["requests"],"require_histories":True,"framed":True}));exec(compile(v["probe"],"check-inflight.py","exec"))'
+    wrapper = 'import io,json,sys\nv=json.load(sys.stdin);sys.stdin=io.StringIO(json.dumps({"requests":v["requests"],"require_histories":True,"receipt_recovery_contract":v["receipt_recovery_contract"],"framed":True}));exec(compile(v["probe"],"check-inflight.py","exec"))'
     target = subprocess.run([runtime, 'run', '--rm', '-i', '--network', 'none', '--read-only', '--entrypoint', 'python', identity, '-c', wrapper],
-        input=json.dumps({'probe': Path(__file__).read_text(), 'requests': cohort['requests']}), capture_output=True, text=True)
+        input=json.dumps({'probe': Path(__file__).read_text(), 'requests': cohort['requests'],
+                          'receipt_recovery_contract':cohort.get('receipt_recovery_contract')}), capture_output=True, text=True)
     if target.returncode not in {0, 2}:
         raise RuntimeError('Target image compatibility probe did not execute')
     result = parse_response(target.stdout)
@@ -172,7 +186,8 @@ if __name__ == '__main__':
     if len(sys.argv) == 1:
         data = json.load(sys.stdin)
         framed = isinstance(data, dict) and data.get('framed', False)
-        result = (inspect_requests(data['requests'], require_histories=data.get('require_histories', False))
+        result = (inspect_requests(data['requests'], require_histories=data.get('require_histories', False),
+                                   receipt_recovery_contract=data.get('receipt_recovery_contract'))
                   if isinstance(data, dict) else inspect_requests(data))
     else:
         import argparse

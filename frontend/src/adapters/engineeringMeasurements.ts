@@ -11,7 +11,7 @@ export function engineeringMeasurements(report: RecordValue) {
   return (Array.isArray(acceptance.evidence) ? acceptance.evidence : []).map(record).map(item => {
     const check = checks.find(c => c.check_id === item.check_id);
     const kind = check?.kind;
-    const unit = kind === 'volume' ? 'mm³' : ['solid_count', 'hole_count', 'void_connected'].includes(String(kind)) ? '' : kind ? 'mm' : '';
+    const unit = kind === 'volume' ? 'mm³' : ['solid_count', 'hole_count', 'hole_through', 'void_connected'].includes(String(kind)) ? '' : kind ? 'mm' : '';
     const scope = record(check?.scope);
     const expected = kind === 'hole_position' ? scope.centers_mm : check?.nominal;
     const comparison = record(check?.comparison);
@@ -25,13 +25,17 @@ export function engineeringMeasurements(report: RecordValue) {
       else if (comparison.op === 'range' && finite(comparison.lower) && finite(comparison.upper)) expectedText = `[${comparison.lower}, ${comparison.upper}] ${unit}`.trim();
     }
     const measured = Array.isArray(item.measured) ? item.measured.filter(v => typeof v === 'number' && Number.isFinite(v)) : [];
+    if (v2 && kind === 'hole_through' && comparison.op === 'eq' && comparison.value === 1) expectedText = '贯通';
+    const measuredText = kind === 'hole_through'
+      ? measured.map(v => v === 1 ? '贯通' : v === 0 ? '未贯通' : '未知').join('、')
+      : `${measured.join('、')} ${unit}`.trim();
     return {
       id: String(item.check_id ?? ''),
       description: typeof check?.description === 'string' ? check.description : String(item.check_id ?? '未命名检查'),
       expected: expectedText,
-      measured: measured.length ? `${measured.join('、')} ${unit}`.trim() : '无量测值',
+      measured: measured.length ? measuredText : '无量测值',
       measuredLabel: kind === 'hole_position' ? '孔轴位置偏差' : '实测',
-      tolerance: v2 ? comparison.op === 'eq' && finite(comparison.tolerance_minus) && finite(comparison.tolerance_plus)
+      tolerance: kind === 'hole_through' ? undefined : v2 ? comparison.op === 'eq' && finite(comparison.tolerance_minus) && finite(comparison.tolerance_plus)
         ? `−${comparison.tolerance_minus} / +${comparison.tolerance_plus}` : undefined
         : kind === 'volume' ? check?.tolerance_mm3 : check?.tolerance_mm,
       method: typeof item.method === 'string' ? item.method : '未记录',

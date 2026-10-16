@@ -43,6 +43,15 @@ class InflightContracts(unittest.TestCase):
             'reason': 'provider_budget_contract_unsupported'}])
         self.assertNotIn('private', json.dumps(result))
 
+    def test_receipt_recovery_is_required_even_without_active_workflows(self):
+        result = probe.inspect_requests([], receipt_recovery_contract='provider-receipt-recovery.v1')
+        self.assertTrue(result['compatible'])
+        from unittest.mock import patch
+        with patch('app.contracts.provider_budget.SUPPORTED_PROVIDER_RECEIPT_CONTRACTS', frozenset()):
+            result = probe.inspect_requests([], receipt_recovery_contract='provider-receipt-recovery.v1')
+        self.assertEqual(result, {'compatible':False, 'checked':0,
+            'blockers':[{'reason':'provider_receipt_recovery_unsupported'}]})
+
     def test_unknown_contract_cannot_pass_through_agent_prefix(self):
         request = McadAgentWorkflowV2Request(**{name: uuid4() for name in (
             'workflow_run_id', 'tenant_id', 'project_id', 'principal_id',

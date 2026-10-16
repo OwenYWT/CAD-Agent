@@ -108,6 +108,8 @@ def _v2_requirements_prompt(objective, tool_name, *, verified_state=None, requir
         'Use each supplied scope; do not guess world regions or surface points. A planar_gap needs a unique '
         'opposing face pair, and whole-part wall requirements need continuous_normal coverage. '
         'hole_position compares zero transverse residual against its authorized centers and axis. '
+        'hole_through is a separate exact count predicate (eq 1): the complete round shaft must reach '
+        'exterior at both ends; matching diameter or nominal depth cannot replace it. '
         'Keep all other required features in the design. Unsupported or unbound semantic conditions belong '
         'in verification_limits, never silently dropped or recast as missing user input. '
         'Only missing design information belongs in unresolved and 必须确认 open_questions. '

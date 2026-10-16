@@ -4,20 +4,24 @@ Observation logs are deliberately absent from this boundary. An ambiguous send
 keeps its reservation until a provider receipt is reconciled; lease expiry alone
 does not prove that a request was free. Amounts use Decimal and PostgreSQL NUMERIC.
 """
+import asyncio
 from copy import deepcopy
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import json
+import logging
 from uuid import UUID, uuid5
 
 from sqlalchemy import text
 
 from app.config import settings
 from app.contracts.provider_budget import ProviderBudgetError
-from app.db import tenant_transaction
+from app.db import get_database_engine, tenant_transaction
 from app.execution.canonical import canonical_sha256
 from app.execution.model_fence import assert_model_execution_current
 from app.model_job_context import ModelJobContext
+
+logger = logging.getLogger(__name__)
 
 
 def _error(code, message):
@@ -166,7 +170,7 @@ class PgProviderBudget:
                 WHERE model_job_id=:job AND generation<:generation AND logical_call_id=:logical
                   AND request_digest=:digest AND provider=:provider AND model=:model
                   AND policy=CAST(:policy AS jsonb) AND response IS NOT NULL
-                  AND status IN ('settled','reconciled','unknown')
+                  AND status IN ('settled','reconciled','unknown','dispatch_claimed')
                 ORDER BY generation DESC,attempt DESC LIMIT 1'''),
                 {'job': self.job['id'], 'generation': self.job['generation'], 'logical': logical_call_id,
                  'digest': request_digest, 'provider': provider, 'model': model,
@@ -247,6 +251,40 @@ class PgProviderBudget:
             JOIN provider_budget_allocations l ON l.account_id=a.id
             WHERE l.reservation_id=:id ORDER BY a.id FOR UPDATE OF a'''), {'id': identity})).mappings().all()
 
+    @staticmethod
+    def _receipt_identity(row, provenance):
+        if any(provenance.get(k) != row[v] for k, v in (
+                ('request_hash', 'request_digest'), ('provider', 'provider'), ('request_model', 'model'))):
+            raise _error('provider_receipt_conflict', 'Receipt belongs to a different provider request')
+
+    async def record_receipt(self, reservation, *, provenance, response):
+        """Commit the response and retry intent without touching account balances.
+
+        This is the durable handoff to settlement. It is not best-effort logging
+        and deliberately precedes both settlement and model job completion.
+        """
+        async with self._transaction(fenced=False) as conn:
+            row = await self._reservation(conn, reservation)
+            self._receipt_identity(row, provenance)
+            if row['receipt'] is not None or row['response'] is not None:
+                if row['receipt'] != provenance or row['response'] != response:
+                    raise _error('provider_receipt_conflict', 'Attempt already has a different receipt')
+                return
+            if row['status'] not in {'dispatch_claimed', 'unknown'}:
+                raise _error('provider_receipt_conflict', 'No dispatch claim exists for this receipt')
+            await conn.execute(text('''UPDATE provider_budget_reservations SET receipt=CAST(:receipt AS jsonb),
+                response=CAST(:response AS json),settlement_next_attempt_at=now(),updated_at=now() WHERE id=:id'''),
+                {'id': row['id'], 'receipt': json.dumps(provenance, allow_nan=False),
+                 'response': json.dumps(response, allow_nan=False)})
+            await self._event(conn, row['id'], 'receipt_recorded', {'receipt_hash': canonical_sha256(provenance)})
+
+    async def settle_recorded(self, reservation):
+        async with self._transaction(fenced=False) as conn:
+            row = await self._reservation(conn, reservation)
+            if row['receipt'] is None or row['response'] is None:
+                raise _error('provider_receipt_missing', 'Settlement requires a durable provider receipt')
+        await self.settle(reservation, provenance=row['receipt'], response=row['response'])
+
     async def settle(self, reservation, *, provenance, response):
         # Billing evidence must survive cancellation/takeover, but is restricted
         # to this exact attempt. It cannot write a model result or advance Head.
@@ -258,13 +296,14 @@ class PgProviderBudget:
                 return
             if row['status'] not in {'dispatch_claimed', 'unknown'}:
                 raise _error('provider_receipt_conflict', 'No dispatch claim exists for this receipt')
-            if any(provenance.get(k) != row[v] for k, v in (
-                    ('request_hash', 'request_digest'), ('provider', 'provider'), ('request_model', 'model'))):
-                raise _error('provider_receipt_conflict', 'Receipt belongs to a different provider request')
+            self._receipt_identity(row, provenance)
+            if row['response'] is not None and (row['response'] != response or
+                    (row['status'] != 'unknown' and row['receipt'] != provenance)):
+                raise _error('provider_receipt_conflict', 'Attempt already has a different receipt')
             amount = receipt_amount(row['policy'], provenance)
             cost = row['policy']['cost']
             if cost is not None and (amount is None or provenance.get('model') != cost['model']):
-                await conn.execute(text("UPDATE provider_budget_reservations SET status='unknown',receipt=CAST(:receipt AS jsonb),response=CAST(:response AS json),updated_at=now() WHERE id=:id"),
+                await conn.execute(text("UPDATE provider_budget_reservations SET status='unknown',receipt=CAST(:receipt AS jsonb),response=CAST(:response AS json),settlement_next_attempt_at=NULL,settlement_last_error=NULL,updated_at=now() WHERE id=:id"),
                     {'id': row['id'], 'receipt': json.dumps(provenance), 'response': json.dumps(response, allow_nan=False)})
                 await self._event(conn, row['id'], 'unknown', {'reason': 'missing_usage_or_unpriced_model'})
                 return
@@ -277,7 +316,8 @@ class PgProviderBudget:
                     {'id': account['id'], 'reserved': row['reserved_amount'], 'actual': amount or Decimal(0), 'over': over_bound})
             status = 'reconciled' if row['status'] == 'unknown' else 'settled'
             await conn.execute(text('''UPDATE provider_budget_reservations SET status=:status,actual_amount=:actual,
-                receipt=CAST(:receipt AS jsonb),response=CAST(:response AS json),updated_at=now() WHERE id=:id'''),
+                receipt=CAST(:receipt AS jsonb),response=CAST(:response AS json),settlement_next_attempt_at=NULL,
+                settlement_last_error=NULL,updated_at=now() WHERE id=:id'''),
                 {'id': row['id'], 'status': status, 'actual': amount, 'receipt': json.dumps(provenance),
                  'response': json.dumps(response, allow_nan=False)})
             await self._event(conn, row['id'], status, {'receipt_hash': canonical_sha256(provenance),
@@ -295,3 +335,45 @@ class PgProviderBudget:
                                    {'id': account['id'], 'amount': row['reserved_amount']})
             await conn.execute(text("UPDATE provider_budget_reservations SET status='released_unsent',updated_at=now() WHERE id=:id"), {'id': row['id']})
             await self._event(conn, row['id'], 'released_unsent', {'proof': 'dispatch_never_claimed'})
+
+
+async def recover_next_settlement():
+    """Lease one durable receipt across all tenants, including completed jobs.
+
+    A crash after claim leaves a scheduled retry. Concurrent or repeated
+    delivery is safe because the reservation and accounts settle atomically.
+    """
+    async with get_database_engine().begin() as conn:
+        await conn.execute(text('SET LOCAL ROLE cad_agent_model_dispatch'))
+        row = (await conn.execute(text('''WITH due AS (
+            SELECT id FROM provider_budget_reservations
+            WHERE settlement_next_attempt_at<=now() AND status IN ('dispatch_claimed','unknown')
+            ORDER BY settlement_next_attempt_at,id FOR UPDATE SKIP LOCKED LIMIT 1
+        ) UPDATE provider_budget_reservations r SET settlement_attempts=settlement_attempts+1,
+            settlement_next_attempt_at=now()+LEAST(300,30*power(2,LEAST(settlement_attempts,4)))*interval '1 second'
+            FROM due,model_jobs j WHERE r.id=due.id AND j.id=r.model_job_id AND j.tenant_id=r.tenant_id
+            RETURNING r.id AS reservation_id,r.model_job_id AS id,r.tenant_id,r.generation,
+                      j.principal_id,j.workflow_run_id'''))).mappings().one_or_none()
+    if row is None:
+        return False
+    port = PgProviderBudget(dict(row))
+    try:
+        await port.settle_recorded({'id': row['reservation_id']})
+    except Exception as exc:
+        logger.exception('Provider settlement retry failed; durable receipt remains queued')
+        async with port._transaction(fenced=False) as conn:
+            await conn.execute(text('''UPDATE provider_budget_reservations SET settlement_last_error=:error
+                WHERE id=:id AND settlement_next_attempt_at IS NOT NULL'''),
+                {'id': row['reservation_id'], 'error': type(exc).__name__})
+    return True
+
+
+async def run_provider_settlements():
+    while True:
+        try:
+            recovered = await recover_next_settlement()
+        except Exception:
+            logger.exception('Provider settlement dispatcher unavailable; pending receipts remain durable')
+            await asyncio.sleep(5)
+        else:
+            await asyncio.sleep(0 if recovered else 0.5)

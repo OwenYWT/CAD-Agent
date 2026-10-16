@@ -1,5 +1,6 @@
 """Real PostgreSQL admission, concurrency, fencing and receipt recovery."""
 import asyncio
+from contextlib import asynccontextmanager
 import json
 from decimal import Decimal
 from uuid import UUID, uuid4
@@ -282,8 +283,181 @@ async def test_real_http_dispatch_is_independent_of_usage_log_and_fails_closed(r
             assert all(a['requests_used']==1 for a in balances)
             if failure=='settlement_database':
                 assert all(a['held']==Decimal('2.588672') and a['settled']==0 for a in balances)
+                async with tenant_transaction(job['tenant_id'], job['principal_id']) as conn:
+                    pending = (await conn.execute(text('SELECT * FROM provider_budget_reservations '
+                        'WHERE model_job_id=:id'), job)).mappings().one()
+                assert pending['receipt'] and pending['response'] == response.model_dump(mode='json')
+                assert pending['settlement_next_attempt_at'] is not None
             else:
                 assert all(a['held']==0 and a['settled']==Decimal('0.0000335') for a in balances)
     finally:
         provider_budget_context.reset(token)
         await client.close(); server.close(); await server.wait_closed()
+
+
+@asynccontextmanager
+async def reject_ledger_write(job, stage):
+    """Inject a real PostgreSQL transaction error, not a replacement ledger."""
+    from app.db import get_database_engine
+    table, condition = {
+        'settlement': ('provider_budget_accounts', 'NEW.held < OLD.held'),
+        'receipt': ('provider_budget_reservations', 'NEW.receipt IS NOT NULL'),
+    }[stage]
+    name = 'receipt_fault_' + uuid4().hex
+    async with get_database_engine().begin() as conn:
+        await conn.execute(text(f'''CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+            IF NEW.tenant_id='{job['tenant_id']}'::uuid AND ({condition}) THEN
+                RAISE EXCEPTION 'controlled ledger transaction failure';
+            END IF; RETURN NEW; END $$'''))
+        await conn.execute(text(f'CREATE TRIGGER {name} BEFORE UPDATE ON {table} FOR EACH ROW EXECUTE FUNCTION {name}()'))
+    try:
+        yield
+    finally:
+        async with get_database_engine().begin() as conn:
+            await conn.execute(text(f'DROP TRIGGER {name} ON {table}'))
+            await conn.execute(text(f'DROP FUNCTION {name}()'))
+
+
+@pytest_asyncio.fixture
+async def receipt_transport():
+    from app.config import Settings
+    from app.llm import create_llm_client
+    from app.services import llm_usage
+    dispatched = []
+    async def serve(reader, writer):
+        try:
+            headers = await reader.readuntil(b'\r\n\r\n')
+            size = next(int(x.split(b':',1)[1]) for x in headers.split(b'\r\n') if x.lower().startswith(b'content-length:'))
+            dispatched.append(json.loads(await reader.readexactly(size)))
+            body = json.dumps({'id':'durable-receipt', 'object':'chat.completion', 'created':1, 'model':'kimi-k2.7-code',
+                'choices':[{'index':0,'message':{'role':'assistant','content':'transport-only'},'finish_reason':'stop'}],
+                'usage':{'prompt_tokens':1,'completion_tokens':1,'total_tokens':2}}).encode()
+            writer.write(b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: '+str(len(body)).encode()+b'\r\n\r\n'+body)
+            await writer.drain()
+        finally:
+            writer.close(); await writer.wait_closed()
+    server = await asyncio.start_server(serve, '127.0.0.1', 0)
+    client = create_llm_client(Settings(_env_file=None, moonshot_api_key='test-only', llm_max_retries=0,
+        llm_base_url=f'http://127.0.0.1:{server.sockets[0].getsockname()[1]}/v1'), sink=llm_usage)
+    try:
+        yield client, dispatched
+    finally:
+        await client.close(); server.close(); await server.wait_closed()
+
+
+async def reservation_for(job):
+    async with tenant_transaction(job['tenant_id'], job['principal_id']) as conn:
+        return (await conn.execute(text('SELECT * FROM provider_budget_reservations WHERE model_job_id=:id'), job)).mappings().one()
+
+
+@pytest.mark.asyncio
+async def test_sql_settlement_failure_recovers_after_completed_job_and_worker_restart(budget_job, request_job, receipt_transport):
+    from app.db import close_database
+    from app.services.provider_budgets import recover_next_settlement
+    job, _ = budget_job
+    client, dispatched = receipt_transport
+    async def operation(payload):
+        return (await client.chat.completions.create(model='kimi-k2.7-code', messages=[])).model_dump(mode='json')
+    async with reject_ledger_write(job, 'settlement'):
+        await jobs.execute(job, {job['operation']:operation})
+        result = await jobs.read(request_job)
+        assert result['status'] == 'succeeded' and len(dispatched) == 1
+        pending = await reservation_for(job)
+        assert pending['status'] == 'dispatch_claimed' and pending['response'] == result['result']
+        assert pending['receipt']['provider_response_id'] == 'durable-receipt'
+        assert pending['settlement_next_attempt_at'] is not None
+        assert all(a['held'] == Decimal('2.588672') and a['settled'] == 0 for a in await accounts(job))
+        # A second failure belongs to the durable queue and survives restart.
+        for _ in range(10):
+            await recover_next_settlement()
+            if (await reservation_for(job))['settlement_attempts']:
+                break
+        failed = await reservation_for(job)
+        assert failed['settlement_attempts'] == 1 and failed['settlement_last_error']
+        assert failed['settlement_next_attempt_at'] > failed['updated_at']
+    async with tenant_transaction(job['tenant_id'], job['principal_id']) as conn:
+        await conn.execute(text("UPDATE provider_budget_reservations SET settlement_next_attempt_at=now()-interval '1 second' WHERE id=:id"), {'id':pending['id']})
+    await close_database()
+    # The normal worker starts recovery even with no executable Model Jobs.
+    worker = asyncio.create_task(jobs.run_model_jobs({}, concurrency=0))
+    try:
+        async with asyncio.timeout(10):
+            while (await reservation_for(job))['status'] != 'settled':
+                await asyncio.sleep(.05)
+    finally:
+        worker.cancel(); await asyncio.gather(worker, return_exceptions=True)
+    settled = await reservation_for(job)
+    assert settled['settlement_attempts'] == 2 and settled['settlement_next_attempt_at'] is None
+    assert settled['settlement_last_error'] is None and len(dispatched) == 1
+    assert await jobs.read(request_job) == result
+    assert all(a['held'] == 0 and a['settled'] == Decimal('0.0000335') and a['requests_used'] == 1 for a in await accounts(job))
+    async with tenant_transaction(job['tenant_id'], job['principal_id']) as conn:
+        assert await conn.scalar(text("SELECT count(*) FROM provider_budget_events WHERE reservation_id=:id AND event_type='settled'"), {'id':pending['id']}) == 1
+
+
+@pytest.mark.asyncio
+async def test_unpersisted_receipt_cannot_report_model_job_success(budget_job, request_job, receipt_transport):
+    job, _ = budget_job
+    client, dispatched = receipt_transport
+    async def operation(payload):
+        return (await client.chat.completions.create(model='kimi-k2.7-code', messages=[])).model_dump(mode='json')
+    async with reject_ledger_write(job, 'receipt'):
+        await jobs.execute(job, {job['operation']:operation})
+    assert (await jobs.read(request_job))['status'] == 'failed'
+    assert len(dispatched) == 1  # Database failure never resends the provider call.
+    row = await reservation_for(job)
+    assert row['status'] == 'unknown' and row['receipt'] is None and row['response'] is None
+    assert all(a['held'] == Decimal('2.588672') and a['settled'] == 0 for a in await accounts(job))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('terminal', ['takeover', 'cancelled'])
+async def test_pending_receipt_survives_fencing_and_settles_exactly_once(budget_job, request_job, terminal):
+    job, port = budget_job
+    row = await reserve(port)
+    await port.claim_dispatch(row)
+    proof = receipt(usage={'prompt_tokens':1,'completion_tokens':1})
+    response = {'exact_reply': 1.2345678901234567e20, 'tiny': 5e-324}
+    await port.record_receipt(row, provenance=proof, response=response)
+    await port.record_receipt(row, provenance=proof, response=response)
+    with pytest.raises(ProviderBudgetError, match='different receipt'):
+        await port.record_receipt(row, provenance=proof, response={'changed': True})
+    if terminal == 'takeover':
+        async with tenant_transaction(job['tenant_id'], job['principal_id']) as conn:
+            await conn.execute(text("UPDATE model_jobs SET lease_until=now()-interval '1 second' WHERE id=:id"), job)
+        recovered = await jobs.claim()
+        newer = PgProviderBudget(recovered)
+        await newer.prepare_request({'model':'kimi-k2.7-code','messages':[]}, provider='moonshot')
+        replay = await reserve(newer)
+        assert replay['id'] == row['id'] and await newer.claim_dispatch(replay) == response
+    else:
+        await jobs.cancel(request_job)
+        await jobs.finish(job, status='cancelled')
+    assert all(a['requests_used']==1 and a['held']==Decimal('2.588672') for a in await accounts(job))
+    # Both a retry and a late original settlement may arrive after fencing.
+    await asyncio.gather(*(port.settle_recorded(row) for _ in range(4)))
+    assert all(a['requests_used']==1 and a['held']==0 and a['settled']==Decimal('0.0000335') for a in await accounts(job))
+    assert (await reservation_for(job))['settlement_next_attempt_at'] is None
+    if terminal == 'cancelled':
+        assert (await jobs.read(request_job))['status'] == 'cancelled'
+
+
+@pytest.mark.asyncio
+async def test_recovery_does_not_invent_missing_usage_or_release_unknown_hold(budget_job):
+    from app.services.provider_budgets import recover_next_settlement
+    job, port = budget_job
+    row = await reserve(port)
+    await port.claim_dispatch(row)
+    await port.record_receipt(row, provenance=receipt(), response={'actual_reply':'unpriced'})
+    for _ in range(10):
+        await recover_next_settlement()
+        if (await reservation_for(job))['status'] == 'unknown':
+            break
+    pending = await reservation_for(job)
+    assert pending['status'] == 'unknown' and pending['settlement_next_attempt_at'] is None
+    assert all(a['held']==Decimal('2.588672') and a['settled']==0 for a in await accounts(job))
+    # The dispatcher has no receipt contents or account-mutation privilege.
+    from sqlalchemy.exc import DBAPIError
+    async with jobs.dispatcher() as conn:
+        with pytest.raises(DBAPIError, match='permission denied'):
+            await conn.execute(text('SELECT response FROM provider_budget_reservations'))

@@ -16,7 +16,7 @@ from app.contracts.acceptance_v2 import RequirementBindingError
 
 _NUMBER = r'(?:\d+(?:\.\d+)?|\.\d+)'
 _UNIT = r'(?:mm(?:³|3|\^3)?|cm(?:³|3|\^3)?|m(?:³|3|\^3)?|立方毫米|立方厘米|立方米|毫米|厘米|米)'
-_RELATION = r'(?:至少|不小于|不少于|不低于|不超过|至多|不大于|不高于|大于|小于|超过|最小|最大|minimum|maximum|at\s+least|at\s+most|no\s+less\s+than|no\s+more\s+than|greater\s+than|less\s+than|>=|<=|≥|≤|>|<)'
+_RELATION = r'(?:至少|不小于|不少于|不低于|不超过|至多|不大于|不高于|大于|小于|超过|最小|最大|minimum|maximum|at\s+least|at\s+most|no\s+less\s+than|no\s+more\s+than|greater\s+than|more\s+than|less\s+than|>=|<=|≥|≤|>|<)'
 _PROPERTIES = {
     '夹口': ('gap', 'planar_gap'), '开口': ('gap', 'planar_gap'), '间隙': ('gap', 'planar_gap'),
     'gap': ('gap', 'planar_gap'), 'opening': ('gap', 'planar_gap'),
@@ -31,17 +31,19 @@ _PROPERTIES = {
     '厚度': ('thickness', 'overall_dimension'), '厚': ('thickness', 'overall_dimension'), 'thickness': ('thickness', 'overall_dimension'),
 }
 _PROPERTY = '|'.join(re.escape(p) for p in sorted(_PROPERTIES, key=len, reverse=True))
-_SCALAR = re.compile(
-    rf'(?P<prefix>{_RELATION})?\s*(?P<property>{_PROPERTY})\s*(?:改为|修改为|设为|调整为|为|是|[:：=]|of|is|to)?\s*'
-    rf'(?P<relation>{_RELATION})?\s*(?P<value>{_NUMBER})\s*(?P<unit1>{_UNIT})?\s*'
+_DIMENSION_QUANTITY = (
+    rf'(?P<value>{_NUMBER})\s*(?P<unit1>{_UNIT})?\s*'
     rf'(?:(?P<range>至|到|[~～–—-]|to)\s*(?P<upper>{_NUMBER})\s*(?P<unit2>{_UNIT})?)?\s*'
     rf'(?:(?:±|\+/-)\s*(?P<symmetric>{_NUMBER})|\+\s*(?P<plus>{_NUMBER})\s*/\s*[-−]\s*(?P<minus>{_NUMBER}))?\s*'
-    rf'(?P<unit3>{_UNIT})?', re.I)
+    rf'(?P<unit3>{_UNIT})?')
+_SCALAR = re.compile(
+    rf'(?P<prefix>{_RELATION})?\s*(?P<property>{_PROPERTY})\s*(?:改为|修改为|设为|调整为|为|是|[:：=]|of|is|to)?\s*'
+    rf'(?P<relation>{_RELATION})?\s*{_DIMENSION_QUANTITY}', re.I)
 _COUNT_WORDS = {'一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5, '六': 6,
                 '七': 7, '八': 8, '九': 9, '十': 10, 'one': 1, 'two': 2, 'three': 3,
                 'four': 4, 'five': 5, 'six': 6, 'single': 1, 'a': 1, 'an': 1}
 _COUNT = re.compile(rf'(?P<relation>{_RELATION})?\s*(?P<count>\d+|[一二两三四五六七八九十]|\b(?:one|two|three|four|five|six|single|an?|a)\b)'
-    r'\s*(?:个|处|independent\s+|separate\s+|connected\s+|centered\s+|through\s+|独立|连通|居中|通)*\s*'
+    r'\s*(?:个|处|independent\s+|separate\s+|connected\s+|centered\s+|through[- ]?|独立|连通|居中|贯穿|通)*\s*'
     r'(?P<kind>实体|孔|solids?\b|holes?\b)', re.I)
 _EXPLICIT_QUANTITY = re.compile(rf'(?<![a-zA-Z0-9_.]){_NUMBER}\s*{_UNIT}(?![a-zA-Z])', re.I)
 _OTHER_ENGINEERING_QUANTITY = re.compile(
@@ -51,8 +53,10 @@ _OTHER_ENGINEERING_QUANTITY = re.compile(
     rf'\b(?:{_NUMBER}|one|two|three|four|five|six)\s+(?:[a-z-]+\s+){{0,2}}'
     r'(?:legs?|supports?|ribs?|fins?|pins?|posts?|slots?|teeth|holes?|solids?)\b', re.I)
 _BOX_DIMENSIONS = re.compile(rf'(?P<x>{_NUMBER})\s*[x×*]\s*(?P<y>{_NUMBER})\s*[x×*]\s*(?P<z>{_NUMBER})\s*(?P<unit>{_UNIT})', re.I)
-_DIAMETER = re.compile(rf'(?:直径|diameter)\s*(?:为|of|=)?\s*(?P<value>{_NUMBER})\s*(?P<unit>{_UNIT})', re.I)
-_HOLE_SIZE = re.compile(rf'(?P<value>{_NUMBER})\s*(?P<unit>{_UNIT})\s+(?:diameter\s+)?(?:through[- ]?)?holes?\b', re.I)
+_DIAMETER = re.compile(rf'(?P<prefix>{_RELATION})?\s*(?:直径|diameter)\s*(?:为|of|=)?\s*'
+    rf'(?P<relation>{_RELATION})?\s*{_DIMENSION_QUANTITY}', re.I)
+_HOLE_SIZE = re.compile(rf'(?P<relation>{_RELATION})?\s*{_DIMENSION_QUANTITY}'
+    rf'\s+(?:diameter\s+)?(?:through[- ]?)?holes?\b', re.I)
 _SIZED_HOLE_COUNT = re.compile(rf'(?P<relation>{_RELATION})?\s*\b(?P<count>one|two|three|four|five|six|single|an?|\d+)\s+'
     rf'(?:centered\s+|central\s+)?{_NUMBER}\s*{_UNIT}\s+(?:diameter\s+)?(?:through[- ]?)?holes?\b', re.I)
 _SUFFIX_DIMENSION = re.compile(rf'(?P<relation>{_RELATION})?\s*(?P<value>{_NUMBER})\s*(?P<unit>{_UNIT})\s*'
@@ -61,7 +65,7 @@ _WORLD_AXIS = re.compile(r'(?:世界|world)\s*(?P<axis>[xyz])\s*(?:轴|axis)?', 
 _LOCAL_AXIS = re.compile(r'(?:局部|local)\s*(?P<axis>[xyz])\s*(?:轴|axis)?', re.I)
 _CENTERED = re.compile(r'(?:居中|中心|centered|central)', re.I)
 _LOWER = {'至少', '不小于', '不少于', '不低于', '最小', 'minimum', 'at least', 'no less than', '>=', '≥'}
-_STRICT = {'大于', '小于', '超过', 'greater than', 'less than', '>', '<'}
+_STRICT = {'大于', '小于', '超过', 'greater than', 'more than', 'less than', '>', '<'}
 _PRESERVATION = re.compile(
     rf'(?:(?:保持|保留)\s*(?P<leading>{_PROPERTY})(?:\s*(?:不变|原值))?|'
     rf'(?P<trailing>{_PROPERTY})\s*(?:保持)?(?:不变|原值)|'
@@ -98,17 +102,55 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
             'tolerance_source_refs': comparison.get('tolerance_source_refs', [])})
         covered.append((start, end))
 
+    def relation_comparison(match, value, unit):
+        # Every word order goes through the same boundary policy. In
+        # particular, a diameter shortcut cannot turn a rejected > into =.
+        groups = match.groupdict()
+        relations = [re.sub(r'\s+', ' ', groups[key].lower())
+                     for key in ('prefix', 'relation') if groups.get(key)]
+        reason = ('multiple_comparison_relations' if len(relations) > 1 else
+                  'strict_boundary_unsupported' if any(r in _STRICT for r in relations) else None)
+        if reason:
+            unsupported.append({'source_span': list(match.span()), 'reason': reason})
+            covered.append(match.span())
+            return None
+        relation = next(iter(relations), '')
+        op = 'ge' if relation in _LOWER else 'le' if relation else 'eq'
+        return {'op': op, {'eq': 'value', 'ge': 'lower', 'le': 'upper'}[op]: value, 'unit': unit}
+
+    def dimension_comparison(match):
+        unit = match['unit1'] or match['unit2'] or match['unit3']
+        if unit is None:
+            unsupported.append({'source_span': list(match.span()), 'reason': 'quantity_unit_unbound'})
+            return None
+        value, canonical_unit = _quantity(match['value'], unit)
+        comparison = relation_comparison(match, value, canonical_unit)
+        if comparison is None:
+            return None
+        if match['range']:
+            upper, upper_unit = _quantity(match['upper'], match['unit2'] or match['unit3'] or unit)
+            if comparison['op'] != 'eq' or upper_unit != canonical_unit or upper < value:
+                unsupported.append({'source_span': list(match.span()), 'reason': 'range_relation_conflict'})
+                return None
+            comparison = {'op': 'range', 'lower': value, 'upper': upper, 'unit': canonical_unit}
+        if match['symmetric'] or match['plus']:
+            if comparison['op'] != 'eq':
+                unsupported.append({'source_span': list(match.span()), 'reason': 'range_tolerance_conflict'})
+                return None
+            minus, _ = _quantity(match['symmetric'] or match['minus'], match['unit3'] or unit)
+            plus, _ = _quantity(match['symmetric'] or match['plus'], match['unit3'] or unit)
+            comparison.update(tolerance_minus=minus, tolerance_plus=plus)
+        return comparison
+
     for match in _SUFFIX_DIMENSION.finditer(objective):
         raw=match['property'].lower()
         prop={'long':'length','wide':'width','thick':'thickness','high':'height',
               '长':'length','宽':'width','厚':'thickness','高':'height'}[raw]
-        relation=re.sub(r'\s+',' ',(match['relation'] or '').lower())
-        if relation in _STRICT:
-            unsupported.append({'source_span':list(match.span()),'reason':'strict_boundary_unsupported'})
-            continue
-        op='ge' if relation in _LOWER else 'le' if relation else 'eq'
         value,unit=_quantity(match['value'],match['unit'])
-        append(*match.span(),prop,'overall_dimension',{'op':op,{'eq':'value','ge':'lower','le':'upper'}[op]:value,'unit':unit},
+        comparison = relation_comparison(match, value, unit)
+        if comparison is None:
+            continue
+        append(*match.span(),prop,'overall_dimension',comparison,
             {'axis':{'length':[1,0,0],'width':[0,1,0],'height':[0,0,1],'thickness':[0,0,1]}[prop]})
 
     preservation_spans = []
@@ -154,35 +196,9 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
 
     for match in _SCALAR.finditer(objective):
         prop, kind = _PROPERTIES[match['property'].lower()]
-        unit = match['unit1'] or match['unit2'] or match['unit3']
-        if unit is None:
-            unsupported.append({'source_span': list(match.span()), 'reason': 'quantity_unit_unbound'})
+        comparison = dimension_comparison(match)
+        if comparison is None:
             continue
-        value, canonical_unit = _quantity(match['value'], unit)
-        relation = re.sub(r'\s+', ' ', (match['relation'] or match['prefix'] or '').lower())
-        if match['relation'] and match['prefix']:
-            unsupported.append({'source_span': list(match.span()), 'reason': 'multiple_comparison_relations'})
-            continue
-        if relation in _STRICT:
-            unsupported.append({'source_span': list(match.span()), 'reason': 'strict_boundary_unsupported'})
-            covered.append(match.span())
-            continue
-        op = ('ge' if relation in _LOWER
-              else 'le' if relation else 'eq')
-        comparison = {'op': op, {'eq': 'value', 'ge': 'lower', 'le': 'upper'}[op]: value, 'unit': canonical_unit}
-        if match['range']:
-            upper, upper_unit = _quantity(match['upper'], match['unit2'] or match['unit3'] or unit)
-            if relation or upper_unit != canonical_unit or upper < value:
-                unsupported.append({'source_span': list(match.span()), 'reason': 'range_relation_conflict'})
-                continue
-            comparison = {'op': 'range', 'lower': value, 'upper': upper, 'unit': canonical_unit}
-        if match['symmetric'] or match['plus']:
-            if comparison['op'] != 'eq':
-                unsupported.append({'source_span': list(match.span()), 'reason': 'range_tolerance_conflict'})
-                continue
-            minus, _ = _quantity(match['symmetric'] or match['minus'], match['unit3'] or unit)
-            plus, _ = _quantity(match['symmetric'] or match['plus'], match['unit3'] or unit)
-            comparison.update(tolerance_minus=minus, tolerance_plus=plus)
         scope = {}
         if kind == 'overall_dimension':
             scope = {'axis': {'length': [1, 0, 0], 'width': [0, 1, 0],
@@ -192,42 +208,50 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
         raw = match['count'].lower()
         count = int(raw) if raw.isdecimal() else _COUNT_WORDS[raw]
         kind = 'hole_count' if match['kind'].lower().startswith(('孔', 'hole')) else 'solid_count'
-        relation = re.sub(r'\s+', ' ', (match['relation'] or '').lower())
-        if relation in _STRICT:
-            unsupported.append({'source_span': list(match.span()), 'reason': 'strict_boundary_unsupported'})
-            continue
-        op = 'ge' if relation in _LOWER else 'le' if relation else 'eq'
-        append(*match.span(), kind, kind, {'op': op, {'eq':'value','ge':'lower','le':'upper'}[op]: float(count), 'unit': 'count'})
+        comparison = relation_comparison(match, float(count), 'count')
+        if comparison is not None:
+            append(*match.span(), kind, kind, comparison)
     for match in _SIZED_HOLE_COUNT.finditer(objective):
         raw=match['count'].lower()
-        relation=re.sub(r'\s+',' ',(match['relation'] or '').lower())
-        if relation in _STRICT:
-            unsupported.append({'source_span':list(match.span()),'reason':'strict_boundary_unsupported'})
-            continue
-        op='ge' if relation in _LOWER else 'le' if relation else 'eq'
-        append(*match.span(), 'hole_count','hole_count',{'op':op,{'eq':'value','ge':'lower','le':'upper'}[op]:float(int(raw) if raw.isdecimal() else _COUNT_WORDS[raw]),'unit':'count'})
+        comparison = relation_comparison(match, float(int(raw) if raw.isdecimal() else _COUNT_WORDS[raw]), 'count')
+        if comparison is not None:
+            append(*match.span(), 'hole_count', 'hole_count', comparison)
     for match in list(_DIAMETER.finditer(objective)) + list(_HOLE_SIZE.finditer(objective)):
-        if any(a <= match.start() and match.end() <= b for a, b in covered):
-            # Count phrases can contain a distinct diameter obligation.
-            if any(r['property']=='hole_diameter' and r['source_span'][0]<=match.start() and match.end()<=r['source_span'][1] for r in requirements):
-                continue
+        # The same quantity can match several word-order patterns. Once bound
+        # or rejected, it must not be reinterpreted by a shorter fallback.
+        if any(r['source_span'][0] <= match.start('value') < r['source_span'][1]
+               for r in requirements + unsupported
+               if r.get('property') == 'hole_diameter' or 'reason' in r):
+            covered.append(match.span())
+            continue
         clause = re.split(r'[，,。；;\n]', objective[:match.start()])[-1] + objective[match.start():]
         clause = re.split(r'[，,。；;\n]', clause)[0]
         if not re.search(r'孔|hole|bore', clause, re.I):
             continue
-        value, unit = _quantity(match['value'], match['unit'])
-        append(*match.span(), 'hole_diameter', 'hole_diameter', {'op': 'eq', 'value': value, 'unit': unit})
+        comparison = dimension_comparison(match)
+        if comparison is not None:
+            append(*match.span(), 'hole_diameter', 'hole_diameter', comparison)
     for match in _CENTERED.finditer(objective):
         context = objective[max(0, match.start()-20):match.end()+30]
         if re.search(r'孔|hole|bore', context, re.I) and re.search(r'板|plate', objective, re.I):
             append(*match.span(), 'hole_position', 'hole_position', {'op': 'eq', 'value': 0., 'unit': 'mm'},
                 {'axis': [0, 0, 1], 'frame': 'bounds_center', 'centers_mm': [[0, 0, 0]]})
     thickness = [r for r in requirements if r['property'] == 'thickness' and r['comparison']['op'] == 'eq']
-    through = re.search(r'通孔|贯穿孔|through[- ]hole', objective, re.I)
+    through = re.search(r'通孔|贯穿孔|\bthrough[- ]?holes?\b', objective, re.I)
+    if through:
+        append(*through.span(), 'hole_through', 'hole_through', {'op': 'eq', 'value': 1., 'unit': 'count'})
     if through and len(thickness) == 1 and re.search(r'板|plate', objective, re.I):
         append(*through.span(), 'hole_depth', 'hole_depth', dict(thickness[0]['comparison']))
         requirements[-1]['derivation'] = {'rule': 'through_plate_thickness.v1',
                                          'source_refs': [thickness[0]['requirement_id']]}
+    # Numeric coverage alone is insufficient. Qualifiers or unsupported word
+    # order may leave a comparison outside a shorter, otherwise valid match.
+    # Reject that interpretation instead of silently accepting its equality.
+    for relation in re.finditer(_RELATION, objective, re.I):
+        if not any(a <= relation.start() and relation.end() <= b for a, b in covered):
+            normalized = re.sub(r'\s+', ' ', relation.group().lower())
+            unsupported.append({'source_span':list(relation.span()), 'reason':
+                'strict_boundary_unsupported' if normalized in _STRICT else 'comparison_relation_unbound'})
     for pattern in (_EXPLICIT_QUANTITY,_OTHER_ENGINEERING_QUANTITY):
         for quantity in pattern.finditer(objective):
             if not any(a <= quantity.start() and quantity.end() <= b for a, b in covered):

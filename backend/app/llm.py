@@ -224,12 +224,15 @@ class ChatCompletionAdapter:
                 )
                 provenance = get_last_chat_completion_provenance()
                 if budget is not None:
+                    recorded_response = response.model_dump(mode='json')
+                    # A usable response may outlive this worker or its job.
+                    # Persist the receipt and retry intent before returning it;
+                    # inability to record it must never become job success.
+                    await budget.record_receipt(reservation, provenance=provenance, response=recorded_response)
                     try:
-                        await budget.settle(reservation, provenance=provenance, response=response.model_dump(mode='json'))
+                        await budget.settle(reservation, provenance=provenance, response=recorded_response)
                     except Exception:
-                        # The full reservation remains held after a failed DB
-                        # settlement. Do not destroy an actual model result.
-                        logger.exception('Provider receipt could not be settled; reservation retained')
+                        logger.exception('Provider receipt queued for settlement recovery; reservation retained')
                 return response
             except OpenAIError as exc:
                 error = exc

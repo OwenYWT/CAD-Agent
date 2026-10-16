@@ -183,7 +183,7 @@ def test_sized_centered_hole_phrase_retains_separate_count_diameter_and_depth():
     extracted=extract_requirements(text)
     assert not extracted['unsupported']
     records={r['property']:r for r in extracted['requirements']}
-    assert len(records)==7
+    assert len(records)==8
     assert records['hole_count']['comparison']=={'op':'eq','value':1.,'unit':'count'}
     assert records['hole_diameter']['comparison']=={'op':'eq','value':6.,'unit':'mm'}
     assert records['hole_depth']['comparison']=={'op':'eq','value':8.,'unit':'mm'}
@@ -223,7 +223,7 @@ def test_frozen_live_trajectory_has_independent_complete_geometry_obligations():
         result=extract_requirements(case['objective'])
         assert not result['unsupported'],result
         records={r['property']:r for r in result['requirements']}
-        assert set(records)=={'length','width','thickness','hole_count','hole_diameter','hole_position','hole_depth'}
+        assert set(records)=={'length','width','thickness','hole_count','hole_diameter','hole_position','hole_depth','hole_through'}
         for name in ('length','width','thickness','hole_count','hole_diameter'):
             assert records[name]['comparison']['value']==case['expected'][name]
         assert records['hole_depth']['comparison']['value']==case['expected']['thickness']
@@ -251,3 +251,74 @@ def test_local_axis_uses_only_frozen_confirmed_body_identity():
 def test_selected_or_conflicting_coordinate_scope_cannot_become_global(objective):
     from app.validation.requirement_binding import extract_requirements
     assert extract_requirements(objective)['unsupported']
+
+
+@pytest.mark.parametrize('objective', [
+    '一个孔径6 mm的通孔', '一个孔径6 mm的贯穿孔',
+    'one 6 mm through hole', 'a 6 mm through-hole', 'one 6 mm throughhole', '一个贯穿孔', 'one through-hole',
+    'Create a 60x40x12 mm plate with one 6 mm through hole.',
+])
+def test_through_hole_is_a_separate_required_predicate_without_inferred_thickness(objective):
+    extracted = extract_requirements(objective)
+    assert not extracted['unsupported']
+    form = [r for r in extracted['requirements'] if r['kind'] == 'hole_through']
+    assert len(form) == 1
+    assert form[0]['comparison'] == {'op': 'eq', 'value': 1., 'unit': 'count'}
+    assert any(r['kind'] == 'hole_count' and r['comparison'] == {'op':'eq','value':1.,'unit':'count'}
+               for r in extracted['requirements'])
+    contract = parsed_contract(objective)
+    assert validate_requirement_bindings(objective, contract)['status'] == 'bound'
+    missing = contract.model_copy(update={'checks': tuple(c for c in contract.checks if c.kind != 'hole_through')})
+    with pytest.raises(RequirementBindingError, match='coverage'):
+        validate_requirement_bindings(objective, missing)
+
+
+@pytest.mark.parametrize('objective', [
+    'greater than 6 mm diameter hole', 'less than 6 mm diameter hole',
+    'greater than diameter 6 mm hole', 'diameter less than 6 mm hole',
+    '直径大于6 mm的孔', '小于直径6 mm的孔',
+    '> 6 mm diameter hole', '< 6 mm hole',
+    'greater than hole diameter 6 mm', '孔直径小于6 mm',
+])
+def test_every_diameter_word_order_preserves_strict_comparison_rejection(objective):
+    extracted = extract_requirements(objective)
+    assert any(r['reason'] == 'strict_boundary_unsupported' for r in extracted['unsupported'])
+    assert not any(r['kind'] == 'hole_diameter' for r in extracted['requirements'])
+
+
+@pytest.mark.parametrize('objective,comparison', [
+    ('at least 6 mm diameter hole', {'op': 'ge', 'lower': 6., 'unit': 'mm'}),
+    ('at most 6 mm diameter hole', {'op': 'le', 'upper': 6., 'unit': 'mm'}),
+    ('diameter no less than 6 mm hole', {'op': 'ge', 'lower': 6., 'unit': 'mm'}),
+    ('直径不超过6 mm的孔', {'op': 'le', 'upper': 6., 'unit': 'mm'}),
+    ('6 to 8 mm diameter hole', {'op': 'range', 'lower': 6., 'upper': 8., 'unit': 'mm'}),
+    ('直径6至8 mm的孔', {'op': 'range', 'lower': 6., 'upper': 8., 'unit': 'mm'}),
+])
+def test_diameter_shortcuts_retain_supported_bounds(objective, comparison):
+    extracted = extract_requirements(objective)
+    assert not extracted['unsupported']
+    assert [r['comparison'] for r in extracted['requirements'] if r['kind'] == 'hole_diameter'] == [comparison]
+    assert validate_requirement_bindings(objective, parsed_contract(objective))['status'] == 'bound'
+
+
+def test_diameter_shortcut_tolerance_retains_authority():
+    objective = '直径6±0.1 mm的孔'
+    contract = parsed_contract(objective)
+    assert contract.checks[0].comparison.tolerance_minus == .1
+    assert contract.checks[0].comparison.tolerance_source_refs
+    assert validate_requirement_bindings(objective, contract)['status'] == 'bound'
+
+
+@pytest.mark.parametrize('objective', [
+    'greater than approximately 6 mm diameter hole',
+    'less than approximately 6 mm diameter hole',
+    'more than 6 mm diameter hole',
+    'at least approximately 6 mm diameter hole',
+])
+def test_unbound_comparative_words_cannot_be_dropped_by_a_shorter_quantity_match(objective):
+    assert extract_requirements(objective)['unsupported']
+    proposed = AcceptanceContractV2.model_validate({'objective':objective, 'checks':[
+        {'check_id':'diameter', 'binding_ref':'unproven-shortcut', 'kind':'hole_diameter',
+         'description':'hole diameter', 'source_quote':objective, 'comparison':{'op':'eq','value':6.,'unit':'mm'}}]})
+    with pytest.raises(RequirementBindingError, match='engineering_verification_unavailable'):
+        validate_requirement_bindings(objective, proposed)

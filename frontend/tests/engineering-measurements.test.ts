@@ -37,3 +37,16 @@ test('v2 comparisons display bounds and asymmetric authorized tolerance', () => 
   assert.deepEqual(rows.map(r=>r.expected), ['≥ 5 mm','≤ 5 mm','[4, 6] mm','25 mm']);
   assert.equal(rows[3].tolerance,'−0.1 / +0.2');
 });
+
+test('through-hole evidence displays the geometric predicate without length units or inferred success', () => {
+  const report = {acceptance_contract:{schema_version:'engineering-acceptance.v2', checks:[
+    {check_id:'through',kind:'hole_through',comparison:{op:'eq',value:1,unit:'count',tolerance_minus:0,tolerance_plus:0}},
+  ]},acceptance:{evidence:[{check_id:'through',measured:[1,0],outcome:'failed'}]}};
+  const [row] = engineeringMeasurements(report);
+  assert.equal(row.expected,'贯通');assert.equal(row.measured,'贯通、未贯通');
+  assert.equal(row.outcome,'未通过');assert.equal(row.tolerance,undefined);
+  report.acceptance.evidence[0].measured=[];
+  report.acceptance.evidence[0].outcome='indeterminate';
+  assert.equal(engineeringMeasurements(report)[0].outcome,'未验证');
+  assert.equal(engineeringMeasurements(report)[0].measured,'无量测值');
+});

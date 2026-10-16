@@ -22,7 +22,7 @@ from app.model_job_context import ModelJobContext, model_job_context
 from app.services.llm_usage import UsageContext, usage_context
 from app.contracts.model_operations import DURABLE_OPERATIONS, ModelHandlers
 from app.contracts.provider_budget import provider_budget_context
-from app.services.provider_budgets import PgProviderBudget, admit as admit_provider_budget, freeze_policy
+from app.services.provider_budgets import PgProviderBudget, admit as admit_provider_budget, freeze_policy, run_provider_settlements
 
 logger = logging.getLogger(__name__)
 LEASE_SECONDS = 30
@@ -193,6 +193,7 @@ async def execute(job: dict, operations: ModelHandlers):
 
 async def run_model_jobs(operations: ModelHandlers, *, concurrency: int = 4):
     running = set()
+    settlements = asyncio.create_task(run_provider_settlements())
     try:
         while True:
             for task in tuple(running):
@@ -209,9 +210,10 @@ async def run_model_jobs(operations: ModelHandlers, *, concurrency: int = 4):
                 running.add(asyncio.create_task(execute(job,operations)))
             await asyncio.sleep(0.5)
     finally:
+        settlements.cancel()
         for task in running:
             task.cancel()
-        await asyncio.gather(*running,return_exceptions=True)
+        await asyncio.gather(settlements,*running,return_exceptions=True)
 
 
 @activity.defn(name='model_jobs.submit')
