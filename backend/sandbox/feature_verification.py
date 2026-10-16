@@ -531,6 +531,35 @@ def _scope_passages(passages, scope, tolerance):
     return result
 
 
+def _through_passage(shape, passage, tolerance):
+    """Prove the complete shaft cross-section reaches exterior on both ends.
+
+    A depth equal to a nominal plate thickness is not a topology certificate.
+    Intersect the actual shaft cylinder, extended past both BRep bounds, with
+    the complete material. Any remaining solid blocks the passage, including
+    a blind bottom or thin internal web. A failed Boolean remains indeterminate.
+    This deliberately certifies straight, complete round bores only.
+    """
+    import cadquery as cq
+    from itertools import product
+
+    bounds = _geometric_bounds(shape)
+    axis = passage['axis']
+    projections = [_dot(corner, axis) for corner in product(*zip(bounds[:3], bounds[3:]))]
+    margin = max(1., 10*tolerance)
+    lo, hi = min(projections)-margin, max(projections)+margin
+    start = tuple(o+a*lo for o, a in zip(passage['origin'], axis))
+    probe = cq.Solid.makeCylinder(passage['diameter']/2, hi-lo, cq.Vector(*start), cq.Vector(*axis))
+    material = _measurement_common(shape, probe, 'through_passage_material')
+    solids = [] if material is None else material.Solids()
+    volumes = [abs(s.Volume()) for s in solids]
+    if any(not math.isfinite(v) or v <= 0 for v in volumes):
+        raise MeasurementKernelError('blocking material has an invalid volume', stage='through_passage_material')
+    return int(not solids), {'axis': axis, 'origin_mm': passage['origin'],
+        'shaft_diameter_mm': passage['diameter'], 'exterior_interval_mm': [lo, hi],
+        'blocking_material_mm3': sum(volumes), 'blocking_solids': len(solids)}
+
+
 def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.v1',
                    comparison_policy_id=None, binding_context=None, acceptance_digest=None, artifact_sha256=None,
                    bound_shapes=None):
@@ -639,6 +668,14 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                     row['issues'].append('incomplete_cylindrical_boundary')
                 elif kind == 'hole_count':
                     row['measured'] = [len(holes)]
+                elif kind == 'hole_through':
+                    row['method'] = 'complete_shaft_to_exterior_without_material'
+                    if not holes:
+                        row['outcome'] = 'failed';row['issues'].append('no_matching_cylindrical_passage')
+                    else:
+                        certificates = [_through_passage(shape, hole, tolerance) for hole in holes]
+                        row['measured'] = [value for value, _ in certificates]
+                        row['details']['passages'] = [proof for _, proof in certificates]
                 elif kind in {'hole_diameter','hole_depth'}:
                     if not holes:
                         row['outcome'] = 'failed';row['issues'].append('no_matching_cylindrical_passage')

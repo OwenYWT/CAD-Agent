@@ -86,7 +86,7 @@ Comparison = Annotated[Union[EqualComparison, LowerComparison, UpperComparison, 
 class AcceptanceCheckV2(AcceptanceModel):
     check_id: str = Field(pattern=r'^[a-z0-9][a-z0-9_-]*$')
     kind: Literal['solid_count', 'overall_dimension', 'hole_count', 'hole_diameter',
-                  'hole_depth', 'hole_position', 'wall_thickness', 'volume', 'void_connected',
+                  'hole_depth', 'hole_through', 'hole_position', 'wall_thickness', 'volume', 'void_connected',
                   'surface_clearance', 'planar_gap']
     description: str = Field(min_length=1)
     source_quote: str = Field(min_length=1)
@@ -101,7 +101,7 @@ class AcceptanceCheckV2(AcceptanceModel):
         if self.required != (self.source_kind != 'assumption'):
             raise ValueError('requiredness must match verified provenance')
         kind, scope, comparison = self.kind, self.scope, self.comparison
-        count = kind in {'solid_count', 'hole_count', 'void_connected'}
+        count = kind in {'solid_count', 'hole_count', 'hole_through', 'void_connected'}
         if comparison.unit != ('count' if count else 'mm3' if kind == 'volume' else 'mm'):
             raise ValueError('comparison unit does not match measurement quantity')
         if count:
@@ -109,6 +109,8 @@ class AcceptanceCheckV2(AcceptanceModel):
                 raise ValueError('counts must be integers')
             if isinstance(comparison, EqualComparison) and (comparison.tolerance_minus or comparison.tolerance_plus):
                 raise ValueError('counts do not accept engineering tolerance')
+        if kind == 'hole_through' and (not isinstance(comparison, EqualComparison) or comparison.value != 1):
+            raise ValueError('hole_through requires an exact unobstructed passage predicate (1)')
         if kind == 'hole_position':
             if not scope.centers_mm or scope.axis is None:
                 raise ValueError('hole positions require centers and an axis')

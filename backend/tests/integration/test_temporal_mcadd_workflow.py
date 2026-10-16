@@ -4792,3 +4792,112 @@ async def test_live_durable_three_edit_trajectory():
             'three_edit_trajectory_success':index['trajectory_passed'],
             'scope':'One frozen trajectory; not a population success-rate or improvement estimate.'}
         (destination/'trajectory.json').write_text(json.dumps(index,ensure_ascii=False,default=str,indent=2))
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('objective,depth,diameter,omit_through,expected', [
+    ('一个孔径6 mm的通孔', 4, 6, False, 'agent_geometry_validation_failed'),
+    ('一个孔径6 mm的通孔', 12, 6, False, 'passed'),
+    ('一个孔径6 mm的通孔', 4, 6, True, 'requirement_binding_mismatch'),
+    ('greater than 6 mm diameter hole', 12, 6, False, 'engineering_verification_unavailable'),
+    ('less than 6 mm diameter hole', 12, 6, False, 'engineering_verification_unavailable'),
+    ('a 6 mm diameter hole, not through', 12, 6, False, 'engineering_verification_unavailable'),
+    ('at least 6 mm diameter hole', 12, 6, False, 'passed'),
+    ('at least 6 mm diameter hole', 12, 5, False, 'agent_geometry_validation_failed'),
+])
+async def test_native_source_semantics_gate_candidates(objective, depth, diameter, omit_through, expected):
+    """Incident proposals through real Temporal/PG/FreeCAD/STEP/S3 and review.
+
+    Only requirements and modeling inputs are controlled. The source binding,
+    kernel execution, independent measurements, saved Head and candidate writes
+    are real. Visual/DFM checks are disabled, not reported as passing.
+    """
+    from app.contracts.acceptance_v2 import AcceptanceContractV2
+    from app.freecad.contracts import FreeCADOperationPlan
+    from app.freecad.operation_generator import FreeCADOperationGenerationResult
+    from app.models.schemas import CADPlan, DesignBrief
+    from app.services.workflow_admission import create_document_workflow
+    from app.validation.requirement_binding import extract_source_requirements
+    from tests.constraint_incident import IncidentRequirements, fixture_provenance
+
+    class Requirements(IncidentRequirements):
+        async def requirements_generation(self, objective, **kwargs):
+            extracted = extract_source_requirements(objective, requirement_sources=kwargs.get('requirement_sources'))
+            records = extracted['requirements']
+            if extracted['unsupported']:
+                # A planner proposes the equality that caused the incident.
+                # The real source validator must refuse it before CAD runs.
+                records = [{'requirement_id':'forged-equality', 'kind':'hole_diameter', 'property':'hole_diameter',
+                    'source_quote':objective, 'comparison':{'op':'eq','value':6.,'unit':'mm'}, 'scope':{}}]
+            checks = [{'check_id':r['requirement_id'], 'binding_ref':r['requirement_id'], 'kind':r['kind'],
+                'description':r['property'], 'source_quote':r['source_quote'], 'comparison':r['comparison'], 'scope':r['scope']}
+                for r in records if not (omit_through and r['kind']=='hole_through')]
+            acceptance = AcceptanceContractV2.model_validate({'objective':objective, 'checks':checks})
+            return CADPlan(description=objective, part_type='custom', dimensions={}, features=[], constraints=[],
+                design_brief=DesignBrief(intent_summary=objective, artifact_type='custom', acceptance=acceptance))
+
+    class Operations:
+        async def generate(self, **kwargs):
+            plan = FreeCADOperationPlan.model_validate({'operations':[
+                {'op_id':'base-sketch','action':'sketch.create','args':{'name':'BaseSketch'}},
+                {'op_id':'base-profile','action':'sketch.add_profile','args':{'sketch':'BaseSketch',
+                    'geometry':{'kind':'rectangle','corner':{'x':0,'y':0},'width_mm':40,'height_mm':30}}},
+                {'op_id':'base-pad','action':'feature.pad','args':{'name':'Pad','profile':'BaseSketch','length_mm':12}},
+                {'op_id':'hole-sketch','action':'sketch.create','args':{'name':'HoleSketch',
+                    'frame':{'origin':{'x':0,'y':0,'z':12},'normal':[0,0,1],'x_axis':[1,0,0]}}},
+                {'op_id':'hole-profile','action':'sketch.add_profile','args':{'sketch':'HoleSketch',
+                    'geometry':{'kind':'circle','center':{'x':20,'y':15},'radius_mm':diameter/2}}},
+                {'op_id':'pocket','action':'feature.pocket','args':{'name':'Pocket','profile':'HoleSketch','length_mm':depth}},
+                {'op_id':'export','action':'document.export','args':{'objects':['Body'],'formats':['fcstd','step','stl']}}]})
+            source = plan.model_dump_json()
+            return FreeCADOperationGenerationResult(operation_plan=plan, source_code=source,
+                generator_kind='retained-acceptance-incident', provenance=fixture_provenance(source))
+
+    owner, project, initial = await _seed_project('source-semantics')
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        created = await create_document_workflow(conn, tenant_id=owner.tenant_id, project_id=project,
+            requested_by_principal_id=owner.principal_id, kind='mcad.agent.v2.generate',
+            idempotency_key=f'source-semantics-{project}', request_payload={'objective':objective})
+    request = McadAgentWorkflowV2Request(workflow_run_id=created.workflow_id, tenant_id=owner.tenant_id,
+        project_id=project, principal_id=owner.principal_id, branch_id=initial.branch_id,
+        expected_base_revision_id=initial.revision_id, operation='generate', modeling_backend='freecad', objective=objective)
+    client = await get_temporal_client()
+    async with build_agent_v2_workflow_worker(client, backend=get_execution_backend(),
+            durable_planner=Requirements(), freecad_operations=Operations()):
+        handle = await client.start_workflow('McadAgentWorkflowV2', request.temporal_payload(),
+            id=temporal_agent_v2_workflow_id(created.workflow_id), task_queue=settings.temporal_agent_v2_task_queue)
+        if expected == 'passed':
+            result = await handle.result()
+            assert result['status'] == 'succeeded'
+        else:
+            with pytest.raises(WorkflowFailureError) as error:
+                await handle.result()
+            from app.workflows.agent_v2 import McadAgentWorkflowV2
+            assert McadAgentWorkflowV2._root_application_error(error.value).type == expected
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        values = {'id':created.workflow_id}
+        assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'),
+                                 {'id':initial.branch_id}) == initial.revision_id
+        changes = (await conn.execute(text('SELECT id,status FROM change_sets WHERE source_workflow_run_id=:id'), values)).mappings().all()
+        reports = (await conn.execute(text("SELECT evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"), values)).scalars().all()
+        if expected in {'engineering_verification_unavailable', 'requirement_binding_mismatch'}:
+            assert not reports and not changes
+            assert await conn.scalar(text('SELECT count(*) FROM execution_attempts WHERE workflow_run_id=:id'), values) == 0
+        else:
+            assert len(reports) == 1
+            report = reports[0]
+            assert report['outcome'] == ('passed' if expected=='passed' else 'failed')
+            criteria = {c['check_id']:c for c in report['acceptance_contract']['checks']}
+            evidence = {criteria[e['check_id']]['kind']:e for e in report['acceptance']['evidence']}
+            assert evidence['hole_diameter']['measured'] == [diameter]
+            if '通孔' in objective:
+                assert evidence['hole_through']['measured'] == [int(depth==12)]
+                assert evidence['hole_diameter']['outcome'] == 'passed'
+            if expected == 'passed':
+                assert len(changes) == 1 and changes[0]['status'] == 'pending_review'
+                for artifact in result['artifacts']:
+                    if artifact['artifact_kind'] in {'fcstd','step'}:
+                        data = await get_object(artifact['object_key'])
+                        assert hashlib.sha256(data).hexdigest() == artifact['sha256']
+            else:
+                assert not changes

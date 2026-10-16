@@ -73,4 +73,62 @@ print('NATIVE_ACCEPTANCE_V2_SAVED')
     else:
         raise AssertionError('wrong artifact hash accepted')
     assert hashlib.sha256(step.read_bytes()).hexdigest()==before
-    print('CAD_ACCEPTANCE_COMPARISON_V2=' + json.dumps({'step_sha256': before, 'evidence': evidence, 'v1_retained': True}))
+    # Topology is a separate obligation: equal diameter/count does not prove
+    # that an opening reaches the other side. Reopen each actual FCStd before
+    # independently reading its STEP (no native feature flags are consulted).
+    program = f'''
+import FreeCAD as App, Part
+root = {str(root)!r}
+plate = Part.makeBox(40, 30, 12)
+axis = App.Vector(0, 0, 1)
+def bore(z, depth, radius=3, x=20):
+    return Part.makeCylinder(radius, depth, App.Vector(x, 15, z), axis)
+through = plate.cut(bore(-1, 14))
+shapes = {{
+    'blind': plate.cut(bore(8, 5)),
+    'through': through,
+    'counterbore': through.cut(bore(9, 4, 5)),
+    'countersink': through.cut(Part.makeCone(3, 5, 2, App.Vector(20, 15, 10))),
+    'sealed_cavity': plate.cut(bore(4, 4)),
+    'thin_web': plate.cut(bore(.01, 12)),
+    'mixed': through.cut(bore(8, 5, x=10)),
+}}
+rotated = through.copy()
+rotated.rotate(App.Vector(), App.Vector(1, 2, 3), 43)
+rotated.translate(App.Vector(81, -32, 67))
+shapes['rotated_through'] = rotated
+for name, shape in shapes.items():
+    doc = App.newDocument(name)
+    feature = doc.addObject('PartDesign::Body', 'Body').newObject('PartDesign::Feature', 'Plate')
+    feature.Shape = shape
+    doc.recompute()
+    assert shape.isValid() and len(shape.Solids) == 1
+    doc.saveAs(root + '/' + name + '.FCStd')
+    App.closeDocument(doc.Name)
+    reopened = App.openDocument(root + '/' + name + '.FCStd')
+    reopened.recompute()
+    Part.export([reopened.getObject('Body')], root + '/' + name + '.step')
+    App.closeDocument(reopened.Name)
+print('NATIVE_THROUGH_CASES_SAVED')
+'''
+    script.write_text(program)
+    result = subprocess.run(['/opt/freecad/bin/FreeCADCmd', '-c',
+        f"exec(compile(open({str(script)!r}).read(), {str(script)!r}, 'exec'))"], capture_output=True, text=True)
+    assert result.returncode == 0 and 'NATIVE_THROUGH_CASES_SAVED' in result.stdout and 'Traceback' not in result.stdout + result.stderr, result.stdout + result.stderr
+    through_evidence = {}
+    for name, expected in [('blind', 'failed'), ('through', 'passed'), ('counterbore', 'passed'),
+                           ('countersink', 'passed'), ('sealed_cavity', 'failed'), ('thin_web', 'failed'),
+                           ('mixed', 'failed'), ('rotated_through', 'passed')]:
+        native_path, step_path = root / (name + '.FCStd'), root / (name + '.step')
+        hashes = [hashlib.sha256(p.read_bytes()).hexdigest() for p in (native_path, step_path)]
+        shape = cq.importers.importStep(str(step_path)).val()
+        checks = [{'check_id': 'diameter', 'kind': 'hole_diameter', 'comparison': {'op': 'eq', 'value': 6., 'unit': 'mm'}},
+                  {'check_id': 'through', 'kind': 'hole_through', 'comparison': {'op': 'eq', 'value': 1., 'unit': 'count'}}]
+        rows = measure_checks(shape, checks, acceptance_version='engineering-acceptance.v2', comparison_policy_id='occt-confusion-v1')
+        assert rows[0]['outcome'] == 'passed', (name, rows)
+        assert rows[1]['outcome'] == expected, (name, rows)
+        assert all(v == 1 for v in rows[1]['measured']) == (expected == 'passed'), (name, rows)
+        assert [hashlib.sha256(p.read_bytes()).hexdigest() for p in (native_path, step_path)] == hashes
+        through_evidence[name] = {'native_sha256': hashes[0], 'step_sha256': hashes[1], 'evidence': rows}
+    print('CAD_ACCEPTANCE_COMPARISON_V2=' + json.dumps({'step_sha256': before, 'evidence': evidence,
+        'through_evidence': through_evidence, 'v1_retained': True}))

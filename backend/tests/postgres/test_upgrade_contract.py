@@ -86,6 +86,97 @@ def test_upgrade_preserves_pending_job_and_unfinished_usage(monkeypatch):
             policy=await conn.scalar(text('SELECT policy FROM provider_budget_policies WHERE workflow_run_id=:id'),{'id':run})
             assert policy['mode']=='requests' and policy['legacy_admission'] is True
         async with get_database_engine().connect() as conn:
-            assert await conn.scalar(text('SELECT version_num FROM alembic_version')) == '0031_provider_budgets'
+            assert await conn.scalar(text('SELECT version_num FROM alembic_version')) == '0032_provider_receipt_recovery'
         await close_database()
     asyncio.run(verify())
+
+
+def test_receipt_queue_upgrade_preserves_legacy_holds_and_blocks_lossy_downgrade(monkeypatch):
+    """An isolated 0031 ledger is upgraded with an actual unresolved dispatch."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from app.config import settings
+    from app.db import close_database, tenant_transaction
+    from app.domain.identity import user_principal
+    from app.repositories.identity import reconcile_principal
+    from app.repositories.projects import create_project
+    from app.services.run_state import create_workflow
+    from app.services import model_jobs
+    from app.services.provider_budgets import PgProviderBudget, admit, freeze_policy, recover_next_settlement
+    from tests.test_provider_budget_policy import cost_contract
+    from decimal import Decimal
+
+    name = 'cad_receipt_upgrade_' + uuid4().hex
+    url = URL.rsplit('/', 1)[0] + '/' + name
+    async def database(create):
+        engine = create_async_engine(URL, isolation_level='AUTOCOMMIT')
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text(f'CREATE DATABASE {name}' if create else f'DROP DATABASE {name}'))
+        finally:
+            await engine.dispose()
+    asyncio.run(database(True))
+    monkeypatch.setattr(settings, 'database_url', url)
+    monkeypatch.setattr(settings, 'durable_control_plane_enabled', True)
+    monkeypatch.setenv('DATABASE_MIGRATION_URL', url)
+    config = Config(str(Path(__file__).resolve().parents[2] / 'alembic.ini'))
+    config.set_main_option('sqlalchemy.url', url.replace('%', '%%'))
+    try:
+        command.upgrade(config, '0031_provider_budgets')
+        async def seed():
+            await close_database()
+            owner = user_principal(f'receipt-upgrade-{uuid4()}')
+            await reconcile_principal(owner)
+            project = uuid4()
+            async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+                await create_project(conn, project_id=project, tenant_id=owner.tenant_id,
+                    creator_principal_id=owner.principal_id, name='receipt upgrade', slug=str(project))
+                run = await create_workflow(conn, tenant_id=owner.tenant_id, project_id=project,
+                    requested_by_principal_id=owner.principal_id, kind='mcad.agent.v2.generate',
+                    idempotency_key=str(uuid4()), request_payload={})
+                await admit(conn, tenant_id=owner.tenant_id, workflow_id=run.workflow_id,
+                    policy=freeze_policy(mode='hard_cost', request_limit=8, month_request_limit=20, cost_contract=cost_contract()))
+            request = {'job_id':str(uuid4()), 'operation':'agent_v2.requirements', 'payload':{
+                'tenant_id':str(owner.tenant_id), 'principal_id':str(owner.principal_id), 'workflow_run_id':str(run.workflow_id)}}
+            await model_jobs.submit(request)
+            job = await model_jobs.claim()
+            port = PgProviderBudget(job)
+            await port.prepare_request({'model':'kimi-k2.7-code', 'messages':[]}, provider='moonshot')
+            row = await port.reserve_attempt(logical_call_id='legacy', attempt=1,
+                request_digest='legacy-digest', provider='moonshot', model='kimi-k2.7-code')
+            await port.claim_dispatch(row)
+            await model_jobs.finish(job, status='succeeded', result={'legacy_response':True})
+            await close_database()
+            return job, row
+        job, row = asyncio.run(seed())
+        command.upgrade(config, 'head')
+        async def record_late_receipt():
+            async with tenant_transaction(job['tenant_id'], job['principal_id']) as conn:
+                pending = (await conn.execute(text('SELECT * FROM provider_budget_reservations WHERE id=:id'), row)).mappings().one()
+                assert pending['status']=='dispatch_claimed' and pending['response'] is None
+                assert pending['settlement_attempts']==0 and pending['settlement_next_attempt_at'] is None
+                accounts = (await conn.execute(text('SELECT held,settled FROM provider_budget_accounts'))).mappings().all()
+                assert len(accounts)==2 and all(a['held']==Decimal('2.588672') and a['settled']==0 for a in accounts)
+            assert not await recover_next_settlement()  # An absent receipt cannot be invented by migration.
+            await PgProviderBudget(job).record_receipt(row, provenance={'provider':'moonshot','request_model':'kimi-k2.7-code',
+                'model':'kimi-k2.7-code','request_hash':'legacy-digest','usage':{'prompt_tokens':1,'completion_tokens':1}},
+                response={'legacy_response':True})
+            await close_database()
+        asyncio.run(record_late_receipt())
+        with pytest.raises(Exception, match='Drain pending provider settlements'):
+            command.downgrade(config, '0031_provider_budgets')
+        async def recover():
+            assert await recover_next_settlement()
+            async with tenant_transaction(job['tenant_id'], job['principal_id']) as conn:
+                settled = (await conn.execute(text('SELECT * FROM provider_budget_reservations WHERE id=:id'), row)).mappings().one()
+                assert settled['status']=='settled' and settled['settlement_next_attempt_at'] is None
+                assert settled['response']=={'legacy_response':True}
+                assert await conn.scalar(text('SELECT status FROM model_jobs WHERE id=:id'), job)=='succeeded'
+                accounts = (await conn.execute(text('SELECT held,settled FROM provider_budget_accounts'))).mappings().all()
+                assert all(a['held']==0 and a['settled']==Decimal('0.0000335') for a in accounts)
+            await close_database()
+        asyncio.run(recover())
+        command.downgrade(config, '0031_provider_budgets')
+        command.upgrade(config, 'head')
+    finally:
+        asyncio.run(close_database())
+        asyncio.run(database(False))

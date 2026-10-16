@@ -61,3 +61,13 @@ def test_counts_and_position_residuals_do_not_use_length_comparison_incorrectly(
             scope={'axis': [0, 0, 1], 'centers_mm': [[0, 0, 0]]}))
     assert compare_measurement({'op': 'ge', 'lower': 5., 'unit': 'mm'}, [], 1e-7)['outcome'] == 'indeterminate'
     assert compare_measurement({'op': 'ge', 'lower': 5., 'unit': 'mm'}, [float('nan')], 1e-7)['outcome'] == 'indeterminate'
+
+
+@pytest.mark.parametrize('comparison', [
+    {'op':'eq','value':0.,'unit':'count'}, {'op':'ge','lower':1.,'unit':'count'},
+    {'op':'eq','value':1.,'unit':'mm'},
+    {'op':'eq','value':1.,'unit':'count','tolerance_minus':1.,'tolerance_source_refs':['invented']},
+])
+def test_through_hole_topology_cannot_be_weakened_by_a_numeric_bound_or_tolerance(comparison):
+    with pytest.raises(ValidationError):
+        AcceptanceContractV2.model_validate(contract(comparison, 'hole_through'))

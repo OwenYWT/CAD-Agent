@@ -2197,7 +2197,59 @@
       "tests/test_requirement_binding.py::test_unsupported_angle_or_feature_count_is_not_lost_beside_supported_dimensions[length100mm, 4 support legs]",
       "tests/postgres/test_provider_budgets.py::test_completed_reply_replayed_after_worker_takeover[True]",
       "tests/postgres/test_provider_budgets.py::test_completed_reply_replayed_after_worker_takeover[False]",
-      "tests/postgres/test_provider_budgets.py::test_real_http_dispatch_is_independent_of_usage_log_and_fails_closed[worker_takeover]"
+      "tests/postgres/test_provider_budgets.py::test_real_http_dispatch_is_independent_of_usage_log_and_fails_closed[worker_takeover]",
+      "tests/test_acceptance_comparison_v2.py::test_through_hole_topology_cannot_be_weakened_by_a_numeric_bound_or_tolerance[comparison0]",
+      "tests/test_acceptance_comparison_v2.py::test_through_hole_topology_cannot_be_weakened_by_a_numeric_bound_or_tolerance[comparison1]",
+      "tests/test_acceptance_comparison_v2.py::test_through_hole_topology_cannot_be_weakened_by_a_numeric_bound_or_tolerance[comparison2]",
+      "tests/test_acceptance_comparison_v2.py::test_through_hole_topology_cannot_be_weakened_by_a_numeric_bound_or_tolerance[comparison3]",
+      "tests/test_freecad_parameter_projection_regression_1.py::test_hole_batch_preserves_custom_dimensions_for_both_input_orders",
+      "tests/test_requirement_binding.py::test_through_hole_is_a_separate_required_predicate_without_inferred_thickness[\\u4e00\\u4e2a\\u5b54\\u5f846 mm\\u7684\\u901a\\u5b54]",
+      "tests/test_requirement_binding.py::test_through_hole_is_a_separate_required_predicate_without_inferred_thickness[\\u4e00\\u4e2a\\u5b54\\u5f846 mm\\u7684\\u8d2f\\u7a7f\\u5b54]",
+      "tests/test_requirement_binding.py::test_through_hole_is_a_separate_required_predicate_without_inferred_thickness[one 6 mm through hole]",
+      "tests/test_requirement_binding.py::test_through_hole_is_a_separate_required_predicate_without_inferred_thickness[a 6 mm through-hole]",
+      "tests/test_requirement_binding.py::test_through_hole_is_a_separate_required_predicate_without_inferred_thickness[Create a 60x40x12 mm plate with one 6 mm through hole.]",
+      "tests/test_requirement_binding.py::test_every_diameter_word_order_preserves_strict_comparison_rejection[greater than 6 mm diameter hole]",
+      "tests/test_requirement_binding.py::test_every_diameter_word_order_preserves_strict_comparison_rejection[less than 6 mm diameter hole]",
+      "tests/test_requirement_binding.py::test_every_diameter_word_order_preserves_strict_comparison_rejection[greater than diameter 6 mm hole]",
+      "tests/test_requirement_binding.py::test_every_diameter_word_order_preserves_strict_comparison_rejection[diameter less than 6 mm hole]",
+      "tests/test_requirement_binding.py::test_every_diameter_word_order_preserves_strict_comparison_rejection[\\u76f4\\u5f84\\u5927\\u4e8e6 mm\\u7684\\u5b54]",
+      "tests/test_requirement_binding.py::test_every_diameter_word_order_preserves_strict_comparison_rejection[\\u5c0f\\u4e8e\\u76f4\\u5f846 mm\\u7684\\u5b54]",
+      "tests/test_requirement_binding.py::test_every_diameter_word_order_preserves_strict_comparison_rejection[> 6 mm diameter hole]",
+      "tests/test_requirement_binding.py::test_every_diameter_word_order_preserves_strict_comparison_rejection[< 6 mm hole]",
+      "tests/test_requirement_binding.py::test_every_diameter_word_order_preserves_strict_comparison_rejection[greater than hole diameter 6 mm]",
+      "tests/test_requirement_binding.py::test_every_diameter_word_order_preserves_strict_comparison_rejection[\\u5b54\\u76f4\\u5f84\\u5c0f\\u4e8e6 mm]",
+      "tests/test_requirement_binding.py::test_diameter_shortcuts_retain_supported_bounds[at least 6 mm diameter hole-comparison0]",
+      "tests/test_requirement_binding.py::test_diameter_shortcuts_retain_supported_bounds[at most 6 mm diameter hole-comparison1]",
+      "tests/test_requirement_binding.py::test_diameter_shortcuts_retain_supported_bounds[diameter no less than 6 mm hole-comparison2]",
+      "tests/test_requirement_binding.py::test_diameter_shortcuts_retain_supported_bounds[\\u76f4\\u5f84\\u4e0d\\u8d85\\u8fc76 mm\\u7684\\u5b54-comparison3]",
+      "tests/test_requirement_binding.py::test_diameter_shortcuts_retain_supported_bounds[6 to 8 mm diameter hole-comparison4]",
+      "tests/test_requirement_binding.py::test_diameter_shortcuts_retain_supported_bounds[\\u76f4\\u5f846\\u81f38 mm\\u7684\\u5b54-comparison5]",
+      "tests/test_requirement_binding.py::test_diameter_shortcut_tolerance_retains_authority",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[\\u4e00\\u4e2a\\u5b54\\u5f846 mm\\u7684\\u901a\\u5b54-4-6-False-agent_geometry_validation_failed]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[\\u4e00\\u4e2a\\u5b54\\u5f846 mm\\u7684\\u901a\\u5b54-12-6-False-passed]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[\\u4e00\\u4e2a\\u5b54\\u5f846 mm\\u7684\\u901a\\u5b54-4-6-True-requirement_binding_mismatch]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[greater than 6 mm diameter hole-12-6-False-engineering_verification_unavailable]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[less than 6 mm diameter hole-12-6-False-engineering_verification_unavailable]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[at least 6 mm diameter hole-12-6-False-passed]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[at least 6 mm diameter hole-12-5-False-agent_geometry_validation_failed]",
+      "tests/postgres/test_provider_budgets.py::test_sql_settlement_failure_recovers_after_completed_job_and_worker_restart",
+      "tests/postgres/test_provider_budgets.py::test_unpersisted_receipt_cannot_report_model_job_success",
+      "tests/postgres/test_provider_budgets.py::test_pending_receipt_survives_fencing_and_settles_exactly_once[takeover]",
+      "tests/postgres/test_provider_budgets.py::test_pending_receipt_survives_fencing_and_settles_exactly_once[cancelled]",
+      "tests/postgres/test_provider_budgets.py::test_recovery_does_not_invent_missing_usage_or_release_unknown_hold",
+      "tests/postgres/test_upgrade_contract.py::test_receipt_queue_upgrade_preserves_legacy_holds_and_blocks_lossy_downgrade",
+      "tests/test_requirement_binding.py::test_through_hole_is_a_separate_required_predicate_without_inferred_thickness[one 6 mm throughhole]",
+      "tests/test_requirement_binding.py::test_through_hole_is_a_separate_required_predicate_without_inferred_thickness[\\u4e00\\u4e2a\\u8d2f\\u7a7f\\u5b54]",
+      "tests/test_requirement_binding.py::test_through_hole_is_a_separate_required_predicate_without_inferred_thickness[one through-hole]",
+      "tests/test_requirement_binding.py::test_unbound_comparative_words_cannot_be_dropped_by_a_shorter_quantity_match[greater than approximately 6 mm diameter hole]",
+      "tests/test_requirement_binding.py::test_unbound_comparative_words_cannot_be_dropped_by_a_shorter_quantity_match[less than approximately 6 mm diameter hole]",
+      "tests/test_requirement_binding.py::test_unbound_comparative_words_cannot_be_dropped_by_a_shorter_quantity_match[more than 6 mm diameter hole]",
+      "tests/test_requirement_binding.py::test_unbound_comparative_words_cannot_be_dropped_by_a_shorter_quantity_match[at least approximately 6 mm diameter hole]",
+      "tests/test_requirement_binding.py::test_negated_through_requirement_cannot_be_ignored_or_reversed[non-through]",
+      "tests/test_requirement_binding.py::test_negated_through_requirement_cannot_be_ignored_or_reversed[non-through-sized]",
+      "tests/test_requirement_binding.py::test_negated_through_requirement_cannot_be_ignored_or_reversed[not-through]",
+      "tests/test_requirement_binding.py::test_negated_through_requirement_cannot_be_ignored_or_reversed[no-through]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[a 6 mm diameter hole, not through-12-6-False-engineering_verification_unavailable]"
     ],
     "allowed_skips": {
       "tests/integration/test_agent_candidate_seal.py::test_late_workflow_failure_during_cancellation_reaches_a_terminal_state": "real PostgreSQL and MinIO are required",
@@ -2441,7 +2493,21 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_selected_local_measurement_survives_native_edit_and_gates_commit[4]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
       "tests/postgres/test_provider_budgets.py::test_completed_reply_replayed_after_worker_takeover[True]": "isolated migrated PostgreSQL required",
       "tests/postgres/test_provider_budgets.py::test_completed_reply_replayed_after_worker_takeover[False]": "isolated migrated PostgreSQL required",
-      "tests/postgres/test_provider_budgets.py::test_real_http_dispatch_is_independent_of_usage_log_and_fails_closed[worker_takeover]": "isolated migrated PostgreSQL required"
+      "tests/postgres/test_provider_budgets.py::test_real_http_dispatch_is_independent_of_usage_log_and_fails_closed[worker_takeover]": "isolated migrated PostgreSQL required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[\\u4e00\\u4e2a\\u5b54\\u5f846 mm\\u7684\\u901a\\u5b54-4-6-False-agent_geometry_validation_failed]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[\\u4e00\\u4e2a\\u5b54\\u5f846 mm\\u7684\\u901a\\u5b54-12-6-False-passed]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[\\u4e00\\u4e2a\\u5b54\\u5f846 mm\\u7684\\u901a\\u5b54-4-6-True-requirement_binding_mismatch]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[greater than 6 mm diameter hole-12-6-False-engineering_verification_unavailable]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[less than 6 mm diameter hole-12-6-False-engineering_verification_unavailable]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[at least 6 mm diameter hole-12-6-False-passed]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[at least 6 mm diameter hole-12-5-False-agent_geometry_validation_failed]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/postgres/test_provider_budgets.py::test_sql_settlement_failure_recovers_after_completed_job_and_worker_restart": "isolated migrated PostgreSQL required",
+      "tests/postgres/test_provider_budgets.py::test_unpersisted_receipt_cannot_report_model_job_success": "isolated migrated PostgreSQL required",
+      "tests/postgres/test_provider_budgets.py::test_pending_receipt_survives_fencing_and_settles_exactly_once[takeover]": "isolated migrated PostgreSQL required",
+      "tests/postgres/test_provider_budgets.py::test_pending_receipt_survives_fencing_and_settles_exactly_once[cancelled]": "isolated migrated PostgreSQL required",
+      "tests/postgres/test_provider_budgets.py::test_recovery_does_not_invent_missing_usage_or_release_unknown_hold": "isolated migrated PostgreSQL required",
+      "tests/postgres/test_upgrade_contract.py::test_receipt_queue_upgrade_preserves_legacy_holds_and_blocks_lossy_downgrade": "requires dedicated empty migration database",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[a 6 mm diameter hole, not through-12-6-False-engineering_verification_unavailable]": "real PostgreSQL, MinIO, Temporal, and Podman are required"
     }
   },
   "durable-core": {
@@ -2513,7 +2579,15 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_v2_requirements_multi_solid_binding_and_commit[default-one]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_geometry_repair_after_five_native_repairs_uses_own_budget",
       "tests/integration/test_temporal_mcadd_workflow.py::test_selected_local_measurement_survives_native_edit_and_gates_commit[3]",
-      "tests/integration/test_temporal_mcadd_workflow.py::test_selected_local_measurement_survives_native_edit_and_gates_commit[4]"
+      "tests/integration/test_temporal_mcadd_workflow.py::test_selected_local_measurement_survives_native_edit_and_gates_commit[4]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[\\u4e00\\u4e2a\\u5b54\\u5f846 mm\\u7684\\u901a\\u5b54-4-6-False-agent_geometry_validation_failed]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[\\u4e00\\u4e2a\\u5b54\\u5f846 mm\\u7684\\u901a\\u5b54-12-6-False-passed]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[\\u4e00\\u4e2a\\u5b54\\u5f846 mm\\u7684\\u901a\\u5b54-4-6-True-requirement_binding_mismatch]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[greater than 6 mm diameter hole-12-6-False-engineering_verification_unavailable]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[less than 6 mm diameter hole-12-6-False-engineering_verification_unavailable]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[at least 6 mm diameter hole-12-6-False-passed]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[at least 6 mm diameter hole-12-5-False-agent_geometry_validation_failed]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[a 6 mm diameter hole, not through-12-6-False-engineering_verification_unavailable]"
     ]
   },
   "frontend": {
@@ -2686,7 +2760,8 @@
       "test::document synchronization errors remain distinct from connectivity and recover on a valid snapshot",
       "test::terminal repair budget reason takes precedence over the last native failure",
       "test::v2 comparisons display bounds and asymmetric authorized tolerance",
-      "test::task and provider budgets remain distinct from provider account quota and missing input"
+      "test::task and provider budgets remain distinct from provider account quota and missing input",
+      "test::through-hole evidence displays the geometric predicate without length units or inferred success"
     ]
   },
   "data-integration": {
@@ -2941,7 +3016,8 @@
   "schema-upgrade": {
     "engine": "pytest",
     "node_ids": [
-      "tests/postgres/test_upgrade_contract.py::test_upgrade_preserves_pending_job_and_unfinished_usage"
+      "tests/postgres/test_upgrade_contract.py::test_upgrade_preserves_pending_job_and_unfinished_usage",
+      "tests/postgres/test_upgrade_contract.py::test_receipt_queue_upgrade_preserves_legacy_holds_and_blocks_lossy_downgrade"
     ]
   },
   "transactions": {
@@ -3046,7 +3122,12 @@
       "tests/postgres/test_provider_budgets.py::test_real_http_dispatch_is_independent_of_usage_log_and_fails_closed[settlement_database]",
       "tests/postgres/test_provider_budgets.py::test_completed_reply_replayed_after_worker_takeover[True]",
       "tests/postgres/test_provider_budgets.py::test_completed_reply_replayed_after_worker_takeover[False]",
-      "tests/postgres/test_provider_budgets.py::test_real_http_dispatch_is_independent_of_usage_log_and_fails_closed[worker_takeover]"
+      "tests/postgres/test_provider_budgets.py::test_real_http_dispatch_is_independent_of_usage_log_and_fails_closed[worker_takeover]",
+      "tests/postgres/test_provider_budgets.py::test_sql_settlement_failure_recovers_after_completed_job_and_worker_restart",
+      "tests/postgres/test_provider_budgets.py::test_unpersisted_receipt_cannot_report_model_job_success",
+      "tests/postgres/test_provider_budgets.py::test_pending_receipt_survives_fencing_and_settles_exactly_once[takeover]",
+      "tests/postgres/test_provider_budgets.py::test_pending_receipt_survives_fencing_and_settles_exactly_once[cancelled]",
+      "tests/postgres/test_provider_budgets.py::test_recovery_does_not_invent_missing_usage_or_release_unknown_hold"
     ]
   },
   "ci-contracts": {
@@ -3106,7 +3187,8 @@
       "scripts/ci/tests/test_live_stream.py::LiveStreamContract::test_only_pre_send_connection_failure_releases_cost_not_attempt",
       "scripts/ci/tests/test_live_stream.py::LiveStreamContract::test_reserved_bound_is_enforced_in_forwarded_payload",
       "scripts/ci/tests/test_inflight_contract.py::InflightContracts::test_supported_persistent_budget_contract_is_accepted",
-      "scripts/ci/tests/test_inflight_contract.py::InflightContracts::test_unknown_persistent_budget_contract_blocks_old_target"
+      "scripts/ci/tests/test_inflight_contract.py::InflightContracts::test_unknown_persistent_budget_contract_blocks_old_target",
+      "scripts/ci/tests/test_inflight_contract.py::InflightContracts::test_receipt_recovery_is_required_even_without_active_workflows"
     ]
   },
   "native-runtime": {
