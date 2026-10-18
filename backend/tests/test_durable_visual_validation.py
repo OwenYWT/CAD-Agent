@@ -1,7 +1,9 @@
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
+from openai.types.chat import ChatCompletion
 from pydantic import ValidationError
 from types import SimpleNamespace
 
@@ -90,6 +92,36 @@ def test_visual_pass_requires_four_renders_and_provider_provenance():
         },
     )
     assert report.outcome == "passed"
+    assert report.provider_provenance.request_model is None
+
+
+def test_completion_receipt_round_trips_through_visual_evidence():
+    # Exercise the production receipt producer and strict durable consumer
+    # together, including a provider's resolved model differing from its alias.
+    judgment = {"is_match": True, "confidence": 0.92, "issues": [], "suggestions": []}
+    response = ChatCompletion.model_validate({
+        "id": "receipt-contract", "object": "chat.completion", "created": 1,
+        "model": "resolved-vision-version",
+        "choices": [{"index": 0, "finish_reason": "stop",
+                     "message": {"role": "assistant", "content": json.dumps(judgment)}}],
+        "usage": {"prompt_tokens": 12, "completion_tokens": 8, "total_tokens": 20},
+    })
+    provenance = _completion_provenance(
+        params={"model": "vision-alias", "messages": []},
+        response=response, provider="moonshot",
+    )
+    report = DurableVisualReport(
+        schema_version="durable-visual-report.v1", outcome="passed",
+        renders=tuple(_render(view) for view in ("front", "right", "top", "isometric")),
+        judgment=VisualJudgment.model_validate(judgment), provider_provenance=provenance,
+    )
+    saved = report.durable_evidence()
+    assert saved["provider_provenance"] == provenance
+    assert DurableVisualReport.model_validate(saved) == report
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        DurableVisualReport.model_validate({
+            **saved, "provider_provenance": {**provenance, "unrecognized_field": True},
+        })
 
 
 def test_visual_low_confidence_cannot_be_passed():
@@ -224,6 +256,7 @@ async def test_visual_provider_pass_and_failure_remain_distinct(validator, expec
     assert report.provider_provenance.model_dump(mode="json") == {
         "provider": "controlled",
         "model": "vision",
+        "request_model": None,
         "provider_response_id": None,
         "request_hash": "a" * 64,
         "response_hash": "b" * 64,
@@ -293,13 +326,16 @@ async def test_visual_judgment_uses_configured_vision_model(tmp_path, monkeypatc
         client=client,
         provenance_reader=provenance_reader,
     )
-    judgment, provenance = await validator.judge(
+    report = await validator.report(
         objective="box",
         design_brief={},
         render_paths=tuple(paths),
+        renders=tuple(_render(view) for view in ("front", "right", "top", "isometric")),
+        runtime_provenance=None,
     )
-    assert judgment.is_match is True
+    assert report.outcome == "passed" and report.judgment.is_match is True
     assert seen["model"] == "moonshot-vision-test"
     assert seen["response_format"] == {"type": "json_object"}
     assert len(seen["messages"][1]["content"]) == 5
-    assert provenance["model"] == "moonshot-vision-test"
+    assert report.provider_provenance.model == "moonshot-vision-test"
+    assert report.provider_provenance.request_model == "moonshot-vision-test"
