@@ -768,6 +768,18 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                             or baseline['solid_count'] < 0 or native_import and baseline['solid_count'] < 1):
                         raise ApplicationError('原生输入实体数量证据无效',type='native_source_geometry_invalid',non_retryable=True)
                     result_payload['source_solid_count'] = baseline['solid_count']
+                    if native_import and baseline.get('normalization') is not None:
+                        normalization = baseline['normalization']
+                        if (native_import.format != 'step'
+                                or normalization.get('schema_version') != 'step-import-normalization.v1'
+                                or normalization.get('strict_check_passed') is not True
+                                or normalization.get('saved_strict_check_passed') is not True
+                                or normalization.get('geometry_before') != normalization.get('geometry_after')):
+                            raise ApplicationError('STEP 导入精度校正证据无效',
+                                type='native_source_geometry_invalid', non_retryable=True)
+                        manifest['native_import_normalization'] = {
+                            'source_sha256': baseline['sha256'], **normalization}
+                        result_payload['native_import_normalization'] = manifest['native_import_normalization']
                 elif native_import:
                     raise ApplicationError('原生导入缺少输入几何证据',type='native_source_geometry_missing',non_retryable=True)
             async with tenant_transaction(

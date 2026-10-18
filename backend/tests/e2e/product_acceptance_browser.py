@@ -22,6 +22,26 @@ OUT = Path(os.environ['CAD_PRODUCT_BROWSER_REPORT'])
 PRIVATE = json.loads(Path(os.environ['CAD_NATIVE_E2E_PRIVATE']).read_text())
 
 
+IMPORT_EVIDENCE = '''import asyncio,json,sys
+from uuid import UUID
+from sqlalchemy import text
+from app.domain.identity import user_principal
+from app.db import close_database,tenant_transaction
+async def main():
+    principal=user_principal(sys.argv[1])
+    async with tenant_transaction(principal.tenant_id,principal.principal_id) as connection:
+        manifest=await connection.scalar(text('SELECT manifest FROM agent_staging_manifests WHERE workflow_run_id=:id'),{'id':UUID(sys.argv[2])})
+    if isinstance(manifest,str): manifest=json.loads(manifest)
+    report=manifest['native_import_normalization']
+    assert report['source_sha256']==sys.argv[3]
+    assert report['changed_edges'] and report['strict_check_passed'] and report['saved_strict_check_passed']
+    assert report['geometry_before']==report['geometry_after']
+    print('IMPORT_EVIDENCE='+json.dumps(report))
+    await close_database()
+asyncio.run(main())
+'''
+
+
 CONTINUE = '''import asyncio,json,sys
 from uuid import UUID
 from app.domain.identity import user_principal
@@ -88,6 +108,10 @@ def run():
         subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
     log = (OUT/'kernel.log').read_text()
     assert 'CAD_PRODUCT_ACCEPTANCE_CONTRACT=' in log and 'Traceback (most recent call last)' not in log
+    step_command = [*command[:-1], "exec(compile(open('/tests/freecad_step_import_contract.py').read(), '/tests/freecad_step_import_contract.py', 'exec'))"]
+    with (OUT/'step-kernel.log').open('w') as log:
+        subprocess.run(step_command, stdout=log, stderr=subprocess.STDOUT, check=True)
+    assert 'CAD_STEP_IMPORT_CONTRACT=' in (OUT/'step-kernel.log').read_text()
     records = []
     with httpx.Client(base_url=API, headers={'Authorization':'Bearer '+PRIVATE['owner']['token']}, timeout=60, trust_env=False) as api:
         def call(method, path, **kwargs):
@@ -117,9 +141,16 @@ def run():
             response = api.post('/api/documents/imports', data=data, files={'file':(name,content)})
             assert response.status_code == 202, response.text
             receipt = response.json()
+            original_head = call('GET','/api/documents/'+receipt['branch_id'])['head_revision_id']
             task = terminal(receipt['workflow_run_id'])
             (OUT/(name+'-task.json')).write_text(json.dumps(task,ensure_ascii=False,indent=2))
             assert task['status']=='succeeded', (task.get('error_code'),task.get('error_message'))
+            assert call('GET','/api/documents/'+receipt['branch_id'])['head_revision_id'] == original_head
+            if name == 'curved-import.step':
+                evidence = run_native_seed(IMPORT_EVIDENCE, [PRIVATE['owner']['user']['id'],
+                    receipt['workflow_run_id'], hashlib.sha256(content).hexdigest()])
+                (OUT/'step-import-evidence.log').write_text(evidence.stdout+evidence.stderr)
+                assert evidence.returncode == 0 and 'IMPORT_EVIDENCE=' in evidence.stdout
             commit(task['change_set']['id'])
             same = call('POST','/api/documents/imports',data=data,files={'file':(name,content)})
             assert same['workflow_run_id']==receipt['workflow_run_id']
@@ -130,6 +161,19 @@ def run():
 
         fcstd, doc, fcstd_request = import_file('baseline.FCStd')
         step, step_doc, _ = import_file('baseline.step')
+        curved, curved_doc, _ = import_file('curved-import.step')
+        assert curved_doc['head_revision_id'] and curved['workflow_run_id']
+        records.append('real_curved_step_import_geometry_gate_commit_and_persisted_precision_evidence')
+        rejected_data = {'session_id':str(uuid4()), 'panel_id':str(uuid4()), 'idempotency_key':str(uuid4())}
+        rejected = call('POST','/api/documents/imports',data=rejected_data,
+            files={'file':('excessive-precision.step',(kernel/'input'/'excessive-precision.step').read_bytes())})
+        rejected_head = call('GET','/api/documents/'+rejected['branch_id'])['head_revision_id']
+        rejected_task = terminal(rejected['workflow_run_id'])
+        assert rejected_task['status'] == 'failed'
+        assert rejected_task['error_code'] == 'native_import_precision_unsupported', rejected_task.get('error_code')
+        assert not rejected_task.get('change_set')
+        assert call('GET','/api/documents/'+rejected['branch_id'])['head_revision_id'] == rejected_head
+        records.append('excessive_step_precision_rejected_without_candidate_or_head_change')
         assert any(f['type']=='Sketcher::SketchObject' for f in doc['features'])
         assert not any(f['type']=='Sketcher::SketchObject' for f in step_doc['features'])
         path = '/api/documents/'+doc['document_id']
