@@ -1366,6 +1366,7 @@
         "curved-surfaces",
         "engineering",
         "freecad_product_acceptance_contract",
+        "freecad_step_import_contract",
         "cadquery-svg",
         "freecad_profile_replan_contract",
         "freecad_scoped_repair_contract",
@@ -1475,6 +1476,11 @@
       "job": "mcad-core",
       "kind": "marker",
       "marker": "CAD_PRODUCT_ACCEPTANCE_CONTRACT="
+    },
+    "mcad-core/native/freecad_step_import_contract.log": {
+      "job": "mcad-core",
+      "kind": "marker",
+      "marker": "CAD_STEP_IMPORT_CONTRACT="
     },
     "mcad-core/native/cadquery-svg.log": {
       "job": "mcad-core",

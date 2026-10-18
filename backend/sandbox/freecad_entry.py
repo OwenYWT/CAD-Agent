@@ -46,6 +46,7 @@ from freecad_constraint_validation import (
 )
 from freecad_edge_scope import EdgeScopeError, resolve_edge_scope, verify_protected_faces
 from freecad_api import execute_program
+from step_import_normalization import StepNormalizationError, normalize_step_shape, verify_saved_import
 
 
 INPUT_ROOT = Path("/sandbox/input")
@@ -1390,7 +1391,7 @@ def _validate_subtractive_effect(
         )
 
 
-def _open_document(task: dict[str, Any], plan: dict[str, Any]) -> Any:
+def _open_document(task: dict[str, Any], plan: dict[str, Any], *, import_evidence=None) -> Any:
     inputs = task["inputs"]
     base_name = inputs.get("base")
     if base_name is not None:
@@ -1408,6 +1409,12 @@ def _open_document(task: dict[str, Any], plan: dict[str, Any]) -> Any:
                 shape = Part.read(str(base))
                 if shape.isNull() or not shape.isValid() or not shape.Solids:
                     raise FreeCADRunnerError('native_import_invalid','STEP 没有有效实体')
+                try:
+                    shape, evidence = normalize_step_shape(shape)
+                except StepNormalizationError as error:
+                    raise FreeCADRunnerError(error.code, str(error), details=error.details) from error
+                if evidence is not None and import_evidence is not None:
+                    import_evidence.update(evidence)
                 feature = document.addObject('Part::Feature','ImportedBase')
                 feature.Label = '导入 STEP 实体'
                 feature.Shape = shape
@@ -1574,11 +1581,14 @@ def _validate_plan(task: dict[str, Any]) -> dict[str, Any]:
 
 def run_task(task: dict[str, Any]) -> dict[str, Any]:
     plan = _validate_plan(task)
-    document = _open_document(task, plan)
+    import_evidence = {}
+    document = _open_document(task, plan, import_evidence=import_evidence)
     source_baseline = None
     if task['inputs'].get('base'):
         source_baseline = {'sha256': hashlib.sha256((INPUT_ROOT / task['inputs']['base']).read_bytes()).hexdigest(),
             'solid_count': sum(len(shape.Solids) for _, shape in component_shapes(document))}
+        if import_evidence:
+            source_baseline['normalization'] = import_evidence
     ledger = _ledger(document)
     base_ledger = dict(_ledger_records(ledger))
     checkpoint_hash = (hashlib.sha256((INPUT_ROOT / task['inputs']['base']).read_bytes()).hexdigest()
@@ -1789,6 +1799,12 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
         export_args = plan["operations"][-1]["args"]
         files = _export_document(document, export_args,
             measurement_formats=task['params'].get('measurement_formats', ()))
+        if import_evidence:
+            try:
+                verify_saved_import(files['fcstd'])
+            except StepNormalizationError as error:
+                raise FreeCADRunnerError(error.code, str(error), details=error.details) from error
+            import_evidence['saved_strict_check_passed'] = True
         return {
             "schema_version": "freecad-operation-result.v1",
             "status": "succeeded",
