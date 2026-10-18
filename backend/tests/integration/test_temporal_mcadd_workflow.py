@@ -2408,6 +2408,7 @@ async def test_agent_v2_geometry_failure_repairs_and_revalidates_new_manifest():
     assert visual_evidence["evidence"]["provider_provenance"] == {
         "finish_reason": "stop",
         "model": "controlled-vision-model",
+        "request_model": None,
         "provider": "controlled-vision-provider",
         "provider_response_id": "vision-completion-1",
         "request_hash": "5" * 64,

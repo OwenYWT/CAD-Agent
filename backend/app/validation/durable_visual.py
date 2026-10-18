@@ -53,6 +53,9 @@ class VisualProviderProvenance(BaseModel):
 
     provider: str = Field(min_length=1, max_length=120)
     model: str = Field(min_length=1, max_length=240)
+    # Completion receipts retain the requested alias separately from the
+    # provider's resolved model. Older persisted evidence predates this field.
+    request_model: str | None = Field(default=None, min_length=1, max_length=240)
     provider_response_id: str | None = Field(default=None, max_length=500)
     request_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     response_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
