@@ -197,6 +197,11 @@ class PgProviderBudget:
                 if row['frozen'] or row['requests_used'] >= limit or (money and row['settled'] + row['held'] + amount > Decimal(money)):
                     raise _error('provider_budget_exhausted', f'Provider budget exhausted ({scope})')
                 accounts.append(account)
+            from app.services.customer_billing import BillingError, check_provider_request
+            try:
+                await check_provider_request(conn, self.job['tenant_id'])
+            except BillingError as exc:
+                raise _error(exc.code, str(exc)) from exc
             values = {**self.job, 'id': identity, 'job': self.job['id'], 'logical': logical_call_id,
                       'attempt': attempt, 'digest': request_digest, 'provider': provider, 'model': model,
                       'policy': json.dumps(policy), 'amount': amount}

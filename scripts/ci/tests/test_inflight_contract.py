@@ -52,6 +52,16 @@ class InflightContracts(unittest.TestCase):
         self.assertEqual(result, {'compatible':False, 'checked':0,
             'blockers':[{'reason':'provider_receipt_recovery_unsupported'}]})
 
+    def test_customer_billing_cannot_be_bypassed_by_an_idle_application_rollback(self):
+        result = probe.inspect_requests([], customer_billing_contract='customer-billing.v1')
+        self.assertTrue(result['compatible'])
+        from unittest.mock import patch
+        with patch('app.services.customer_billing.SUPPORTED_CUSTOMER_BILLING_CONTRACTS', frozenset()):
+            result = probe.inspect_requests([], customer_billing_contract='customer-billing.v1')
+        self.assertEqual(result, {'compatible': False, 'checked': 0,
+            'blockers': [{'reason': 'customer_billing_contract_unsupported'}]})
+        self.assertFalse(probe.inspect_requests([], customer_billing_contract='future-billing')['compatible'])
+
     def test_unknown_contract_cannot_pass_through_agent_prefix(self):
         request = McadAgentWorkflowV2Request(**{name: uuid4() for name in (
             'workflow_run_id', 'tenant_id', 'project_id', 'principal_id',

@@ -2249,7 +2249,16 @@
       "tests/test_requirement_binding.py::test_negated_through_requirement_cannot_be_ignored_or_reversed[non-through-sized]",
       "tests/test_requirement_binding.py::test_negated_through_requirement_cannot_be_ignored_or_reversed[not-through]",
       "tests/test_requirement_binding.py::test_negated_through_requirement_cannot_be_ignored_or_reversed[no-through]",
-      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[a 6 mm diameter hole, not through-12-6-False-engineering_verification_unavailable]"
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[a 6 mm diameter hole, not through-12-6-False-engineering_verification_unavailable]",
+      "tests/integration/test_customer_billing.py::test_customer_accounts_are_private_and_cannot_self_upgrade_or_credit",
+      "tests/integration/test_customer_billing.py::test_manual_adjustments_are_idempotent_audited_and_never_report_payment_success",
+      "tests/integration/test_customer_billing.py::test_three_tiers_versioned_assignment_and_no_unconfigured_paid_entitlement",
+      "tests/integration/test_customer_billing.py::test_invited_project_member_cannot_read_or_change_workspace_billing",
+      "tests/integration/test_customer_billing.py::test_wallet_concurrent_debits_and_failed_transaction_preserve_ledger",
+      "tests/integration/test_customer_billing.py::test_subscription_quota_is_checked_in_real_provider_reservation",
+      "tests/integration/test_session_revocation.py::test_modeling_socket_rejects_requests_after_session_revocation[logout]",
+      "tests/integration/test_session_revocation.py::test_modeling_socket_rejects_requests_after_session_revocation[refresh]",
+      "tests/integration/test_session_revocation.py::test_task_stream_stops_delivering_events_after_logout"
     ],
     "allowed_skips": {
       "tests/integration/test_agent_candidate_seal.py::test_late_workflow_failure_during_cancellation_reaches_a_terminal_state": "real PostgreSQL and MinIO are required",
@@ -2507,7 +2516,16 @@
       "tests/postgres/test_provider_budgets.py::test_pending_receipt_survives_fencing_and_settles_exactly_once[cancelled]": "isolated migrated PostgreSQL required",
       "tests/postgres/test_provider_budgets.py::test_recovery_does_not_invent_missing_usage_or_release_unknown_hold": "isolated migrated PostgreSQL required",
       "tests/postgres/test_upgrade_contract.py::test_receipt_queue_upgrade_preserves_legacy_holds_and_blocks_lossy_downgrade": "requires dedicated empty migration database",
-      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[a 6 mm diameter hole, not through-12-6-False-engineering_verification_unavailable]": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_source_semantics_gate_candidates[a 6 mm diameter hole, not through-12-6-False-engineering_verification_unavailable]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_customer_billing.py::test_customer_accounts_are_private_and_cannot_self_upgrade_or_credit": "isolated PostgreSQL required",
+      "tests/integration/test_customer_billing.py::test_manual_adjustments_are_idempotent_audited_and_never_report_payment_success": "isolated PostgreSQL required",
+      "tests/integration/test_customer_billing.py::test_three_tiers_versioned_assignment_and_no_unconfigured_paid_entitlement": "isolated PostgreSQL required",
+      "tests/integration/test_customer_billing.py::test_invited_project_member_cannot_read_or_change_workspace_billing": "isolated PostgreSQL required",
+      "tests/integration/test_customer_billing.py::test_wallet_concurrent_debits_and_failed_transaction_preserve_ledger": "isolated PostgreSQL required",
+      "tests/integration/test_customer_billing.py::test_subscription_quota_is_checked_in_real_provider_reservation": "isolated PostgreSQL required",
+      "tests/integration/test_session_revocation.py::test_modeling_socket_rejects_requests_after_session_revocation[logout]": "isolated PostgreSQL required",
+      "tests/integration/test_session_revocation.py::test_modeling_socket_rejects_requests_after_session_revocation[refresh]": "isolated PostgreSQL required",
+      "tests/integration/test_session_revocation.py::test_task_stream_stops_delivering_events_after_logout": "isolated PostgreSQL required"
     }
   },
   "durable-core": {
@@ -2788,7 +2806,16 @@
       "tests/integration/test_postgres_compat_workflows.py::test_compat_workflow_progress_result_cancel_and_owner_isolation",
       "tests/integration/test_postgres_engineering_knowledge.py::test_dfm_and_knowledge_are_seeded_mutable_and_tenant_isolated",
       "tests/integration/test_postgres_fusion_connectors.py::test_fusion_oauth_tokens_are_encrypted_one_time_and_tenant_isolated",
-      "tests/integration/test_postgres_fusion_connectors.py::test_fusion_agent_metadata_audit_and_artifacts_are_durable"
+      "tests/integration/test_postgres_fusion_connectors.py::test_fusion_agent_metadata_audit_and_artifacts_are_durable",
+      "tests/integration/test_customer_billing.py::test_customer_accounts_are_private_and_cannot_self_upgrade_or_credit",
+      "tests/integration/test_customer_billing.py::test_manual_adjustments_are_idempotent_audited_and_never_report_payment_success",
+      "tests/integration/test_customer_billing.py::test_three_tiers_versioned_assignment_and_no_unconfigured_paid_entitlement",
+      "tests/integration/test_customer_billing.py::test_invited_project_member_cannot_read_or_change_workspace_billing",
+      "tests/integration/test_customer_billing.py::test_wallet_concurrent_debits_and_failed_transaction_preserve_ledger",
+      "tests/integration/test_customer_billing.py::test_subscription_quota_is_checked_in_real_provider_reservation",
+      "tests/integration/test_session_revocation.py::test_modeling_socket_rejects_requests_after_session_revocation[logout]",
+      "tests/integration/test_session_revocation.py::test_modeling_socket_rejects_requests_after_session_revocation[refresh]",
+      "tests/integration/test_session_revocation.py::test_task_stream_stops_delivering_events_after_logout"
     ]
   },
   "fusion": {
@@ -3188,7 +3215,8 @@
       "scripts/ci/tests/test_live_stream.py::LiveStreamContract::test_reserved_bound_is_enforced_in_forwarded_payload",
       "scripts/ci/tests/test_inflight_contract.py::InflightContracts::test_supported_persistent_budget_contract_is_accepted",
       "scripts/ci/tests/test_inflight_contract.py::InflightContracts::test_unknown_persistent_budget_contract_blocks_old_target",
-      "scripts/ci/tests/test_inflight_contract.py::InflightContracts::test_receipt_recovery_is_required_even_without_active_workflows"
+      "scripts/ci/tests/test_inflight_contract.py::InflightContracts::test_receipt_recovery_is_required_even_without_active_workflows",
+      "scripts/ci/tests/test_inflight_contract.py::InflightContracts::test_customer_billing_cannot_be_bypassed_by_an_idle_application_rollback"
     ]
   },
   "native-runtime": {

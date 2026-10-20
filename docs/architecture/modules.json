@@ -114,7 +114,8 @@
       ],
       "allowed_dependencies": [
         "P00",
-        "P01"
+        "P01",
+        "M12"
       ]
     },
     "M04": {
@@ -335,13 +336,15 @@
         "P00",
         "P01",
         "P03",
-        "P04"
+        "P04",
+        "M12"
       ]
     },
     "P03": {
       "owner": "HTTP transport",
       "public": [
-        "app.api.auth"
+        "app.api.auth",
+        "app.api.billing"
       ],
       "allowed_dependencies": [
         "P00",
@@ -355,7 +358,8 @@
         "M07",
         "M08",
         "M09",
-        "M10"
+        "M10",
+        "M12"
       ]
     },
     "P04": {
@@ -374,6 +378,23 @@
         "M08",
         "M09",
         "M10"
+      ]
+    },
+    "M12": {
+      "owner": "customer billing",
+      "writes": [
+        "billing_plan_versions",
+        "tenant_subscriptions",
+        "tenant_wallet_accounts",
+        "tenant_wallet_entries",
+        "tenant_billing_events"
+      ],
+      "public": [
+        "app.services.customer_billing"
+      ],
+      "allowed_dependencies": [
+        "P00",
+        "P01"
       ]
     }
   },
@@ -977,7 +998,11 @@
     "backend/app/validation/requirement_binding.py": "M06",
     "backend/app/workflows/work_accounting.py": "M03",
     "backend/app/services/provider_budgets.py": "M03",
-    "backend/app/contracts/measurement_binding.py": "P00"
+    "backend/app/contracts/measurement_binding.py": "P00",
+    "backend/app/api/billing.py": "P03",
+    "backend/app/services/customer_billing.py": "M12",
+    "frontend/src/services/clients/billing.ts": "P04",
+    "frontend/src/components/BillingOverview.tsx": "P04"
   },
   "required_runtime_reports": {
     "browser-e2e/native-parameters/kernel.log": {
@@ -1671,6 +1696,19 @@
       "kind": "marker",
       "marker": "CAD_MEASUREMENT_BINDING_CONTRACT=",
       "job": "mcad-core"
+    },
+    "browser-e2e/browser-customer-billing/report.json": {
+      "job": "browser-e2e",
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "real_auth": true,
+        "real_postgres": true,
+        "persisted_reload": true,
+        "separate_accounts": true,
+        "page_errors": [],
+        "token_refresh_reconnects": true
+      }
     }
   },
   "required_ci_jobs": [

@@ -1,7 +1,7 @@
 import { dispatchSessionMessage } from "../controllers/sessionMessages";
 import type { RequirementBasis } from "../types/requirements";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getAuthToken } from "../auth";
+import { getAuthToken, onSessionRefreshed } from "../auth";
 import { observedDocument } from "../stores/documentHeads";
 import {
   durableEventStep,
@@ -124,7 +124,7 @@ export function useWebSocket() {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        if (disposed) return;
+        if (disposed || wsRef.current !== ws) return;
         setConnectionState("connected");
         const state = useSessionStore.getState();
         requestPanelReplay(ws);
@@ -181,9 +181,20 @@ export function useWebSocket() {
     // Defer the initial socket by one task so the throwaway effect is cancelled
     // before it creates a CONNECTING socket that Chrome reports as a warning.
     startupTimer = setTimeout(openSocket, 0);
+    const stopRefreshListener = onSessionRefreshed(() => {
+      if (disposed) return;
+      if (startupTimer) clearTimeout(startupTimer);
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      const previous = wsRef.current;
+      wsRef.current = null;
+      previous?.close(1000);
+      reconnectAttemptRef.current = 0;
+      openSocket();
+    });
 
     return () => {
       disposed = true;
+      stopRefreshListener();
       if (startupTimer) {
         clearTimeout(startupTimer);
         startupTimer = null;
@@ -223,6 +234,7 @@ export function useWebSocket() {
       durableWsRef.current = socket;
 
       socket.onopen = () => {
+        if (disposed || durableWsRef.current !== socket) return;
         reconnectAttempts = 0;
       };
       socket.onmessage = (raw) => {
@@ -279,8 +291,18 @@ export function useWebSocket() {
     };
 
     openDurableSocket();
+    const stopRefreshListener = onSessionRefreshed(() => {
+      if (disposed) return;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      const previous = durableWsRef.current;
+      durableWsRef.current = null;
+      previous?.close(1000);
+      reconnectAttempts = 0;
+      openDurableSocket();
+    });
     return () => {
       disposed = true;
+      stopRefreshListener();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       const socket = durableWsRef.current;
       durableWsRef.current = null;

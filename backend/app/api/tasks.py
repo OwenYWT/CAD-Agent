@@ -318,6 +318,9 @@ async def durable_task_websocket(
     published_snapshot_marker = _task_snapshot_marker(snapshot)
     try:
         while True:
+            if not await verify_ws_token(token):
+                await websocket.close(code=4003, reason="Login session expired or revoked")
+                return
             try:
                 page = await read_task_events(
                     principal,

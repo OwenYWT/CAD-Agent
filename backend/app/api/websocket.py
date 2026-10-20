@@ -556,6 +556,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     try:
         while True:
             data = await websocket.receive_json()
+            # A socket can outlive logout, token refresh or session expiry.
+            # Recheck before processing each request, including read/recovery
+            # messages; the handshake does not grant a permanent login.
+            if not await verify_ws_token(token):
+                await websocket.close(code=4003, reason="Login session expired or revoked")
+                return
             msg_type = data.get("type")
             panel_id = data.get("panel_id", "default")
 

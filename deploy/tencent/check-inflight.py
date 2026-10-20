@@ -48,7 +48,8 @@ def missing_fields(original, parsed, prefix=''):
     return missing
 
 
-def inspect_requests(requests, *, require_histories=False, receipt_recovery_contract=None):
+def inspect_requests(requests, *, require_histories=False, receipt_recovery_contract=None,
+                     customer_billing_contract=None):
     from app.models.workflow_requests import McadAgentWorkflowV2Request, McadCheckRequest, McadWorkflowRequest
     blockers = []
     for item in requests:
@@ -94,6 +95,16 @@ def inspect_requests(requests, *, require_histories=False, receipt_recovery_cont
             supported = False
         if not supported:
             blockers.append({'reason': 'provider_receipt_recovery_unsupported'})
+    # An idle tenant can still have an active plan or customer balance. Rolling
+    # back to a provider runner without customer admission would bypass quotas.
+    if customer_billing_contract is not None:
+        try:
+            from app.services.customer_billing import SUPPORTED_CUSTOMER_BILLING_CONTRACTS
+            supported = isinstance(customer_billing_contract, str) and customer_billing_contract in SUPPORTED_CUSTOMER_BILLING_CONTRACTS
+        except ImportError:
+            supported = False
+        if not supported:
+            blockers.append({'reason': 'customer_billing_contract_unsupported'})
     result['compatible'] = not blockers
     return result
 
@@ -138,6 +149,14 @@ async def read():
         jobs=await c.scalar(text("SELECT count(*) FROM model_jobs WHERE status IN ('queued','running')"))
         requests=[dict(row) for row in rows]
         pending_receipts=0
+        customer_billing=False
+        if await c.scalar(text("SELECT to_regclass('public.tenant_subscriptions') IS NOT NULL")):
+            customer_billing=await c.scalar(text("""SELECT
+                EXISTS(SELECT 1 FROM tenant_subscriptions s JOIN billing_plan_versions p ON p.id=s.plan_version_id
+                    WHERE p.code<>'basic' OR p.version<>1 OR s.status<>'active' OR s.expires_at IS NOT NULL)
+                OR EXISTS(SELECT 1 FROM tenant_wallet_entries)
+                OR EXISTS(SELECT 1 FROM tenant_billing_events)
+                OR EXISTS(SELECT 1 FROM billing_plan_versions WHERE version>1)"""))
         if await c.scalar(text("SELECT to_regclass('public.provider_budget_policies') IS NOT NULL")):
             policies=(await c.execute(text("SELECT p.workflow_run_id::text AS id,COALESCE(p.policy->>'schema_version','') AS contract FROM provider_budget_policies p JOIN workflow_runs w ON w.id=p.workflow_run_id WHERE w.status NOT IN ('succeeded','failed','cancelled','timed_out')"))).mappings().all()
             contracts={row['id']:row['contract'] for row in policies}
@@ -153,7 +172,8 @@ async def read():
             identity=(temporal_agent_v2_workflow_id if kind.startswith('mcad.agent.v2.') else temporal_check_workflow_id if kind=='mcad.check' else temporal_workflow_id)(item['id'])
             history=await client.get_workflow_handle(identity).fetch_history()
             item.update(temporal_id=identity,history=history.to_json())
-    print(json.dumps({'requests':requests,'active_model_jobs':jobs,'receipt_recovery_contract':'provider-receipt-recovery.v1' if pending_receipts else None}))
+    print(json.dumps({'requests':requests,'active_model_jobs':jobs,'receipt_recovery_contract':'provider-receipt-recovery.v1' if pending_receipts else None,
+        'customer_billing_contract':'customer-billing.v1' if customer_billing else None}))
 asyncio.run(read())
 '''
     source = subprocess.run([runtime, 'exec', '-i', source_container, 'python', '-'], input=reader,
@@ -169,10 +189,11 @@ asyncio.run(read())
         # this read. Drain it instead of treating that brief gap as quiescence.
         return {'compatible': False, 'checked': len(cohort['requests']), 'target_image': identity,
                 'blockers': [{'reason': 'active_workflows_require_drain', 'workflow_ids': executing}]}
-    wrapper = 'import io,json,sys\nv=json.load(sys.stdin);sys.stdin=io.StringIO(json.dumps({"requests":v["requests"],"require_histories":True,"receipt_recovery_contract":v["receipt_recovery_contract"],"framed":True}));exec(compile(v["probe"],"check-inflight.py","exec"))'
+    wrapper = 'import io,json,sys\nv=json.load(sys.stdin);sys.stdin=io.StringIO(json.dumps({"requests":v["requests"],"require_histories":True,"receipt_recovery_contract":v["receipt_recovery_contract"],"customer_billing_contract":v["customer_billing_contract"],"framed":True}));exec(compile(v["probe"],"check-inflight.py","exec"))'
     target = subprocess.run([runtime, 'run', '--rm', '-i', '--network', 'none', '--read-only', '--entrypoint', 'python', identity, '-c', wrapper],
         input=json.dumps({'probe': Path(__file__).read_text(), 'requests': cohort['requests'],
-                          'receipt_recovery_contract':cohort.get('receipt_recovery_contract')}), capture_output=True, text=True)
+                          'receipt_recovery_contract':cohort.get('receipt_recovery_contract'),
+                          'customer_billing_contract':cohort.get('customer_billing_contract')}), capture_output=True, text=True)
     if target.returncode not in {0, 2}:
         raise RuntimeError('Target image compatibility probe did not execute')
     result = parse_response(target.stdout)
@@ -187,7 +208,8 @@ if __name__ == '__main__':
         data = json.load(sys.stdin)
         framed = isinstance(data, dict) and data.get('framed', False)
         result = (inspect_requests(data['requests'], require_histories=data.get('require_histories', False),
-                                   receipt_recovery_contract=data.get('receipt_recovery_contract'))
+                                   receipt_recovery_contract=data.get('receipt_recovery_contract'),
+                                   customer_billing_contract=data.get('customer_billing_contract'))
                   if isinstance(data, dict) else inspect_requests(data))
     else:
         import argparse

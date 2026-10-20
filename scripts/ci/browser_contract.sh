@@ -9,6 +9,7 @@ export CAD_NATIVE_E2E_WEB=http://127.0.0.1:$web_port
 export CAD_API_TARGET="$CAD_NATIVE_E2E_URL"
 export CAD_NATIVE_E2E_COMMAND='["python"]'
 export CAD_NATIVE_E2E_PRIVATE="${RUNNER_TEMP:?}/cad-browser-private.json"
+billing_private="$RUNNER_TEMP/cad-billing-private.json"
 report_root=${CAD_BROWSER_REPORT_ROOT:-$root/reports}
 export CAD_BROWSER_CONTRACT_REPORT="$report_root/browser-contract"
 export CAD_TASK_STATE_REPORT_DIR="$report_root/browser-parameters"
@@ -41,7 +42,7 @@ web_pid=$!
 cleanup() {
   kill "$api_pid" "$worker_pid" "$web_pid" "$monitor_pid" 2>/dev/null || true
   wait "$api_pid" "$worker_pid" "$web_pid" "$monitor_pid" 2>/dev/null || true
-  rm -f "$CAD_NATIVE_E2E_PRIVATE"
+  rm -f "$CAD_NATIVE_E2E_PRIVATE" "$billing_private"
 }
 trap cleanup EXIT
 for attempt in {1..90}; do
@@ -67,6 +68,10 @@ PYREADY
   sleep 1
 done
 python tests/e2e/browser_contract.py
+# Billing entitlements belong to separate accounts; never change the fixture
+# accounts used by the native, repair and continuous-edit contracts below.
+CAD_NATIVE_E2E_PRIVATE="$billing_private" python tests/e2e/create_ci_account.py
+CAD_NATIVE_E2E_PRIVATE="$billing_private" python tests/e2e/customer_billing_browser.py
 python tests/e2e/task_state_browser.py candidate
 python tests/e2e/parameter_rejection_browser.py
 python tests/e2e/workspace_layout_browser.py
