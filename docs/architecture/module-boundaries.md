@@ -42,6 +42,7 @@ flowchart LR
 - Provider：依赖用量接口；生产装配仍使用真实数据库采集，不存在空 Sink。采集的特殊取消后写入只有显式允许的用量模块可以绕过 Job 栅栏。
 - 前端：Clients 不依赖 UI/Store。参数编辑明确接收所属面板的持久任务上下文。WebSocket 连接维护与消息业务分发分开，保留现有事件归属和 Store。
 - 监控：认证数据库连接与查询连接可分别配置；查询角色不可访问凭据/请求正文或修改数据。`MONITOR_DATABASE_URL` 未配置时维持旧部署兼容，通过只读角色限制查询。
+- 客户计费（M12）：`customer_billing` 管理版本化套餐、租户订阅与余额流水；provider 预留事务在发出新请求前检查客户额度。金额和费用日志分账，默认套餐保留旧限制。数据库版本为 `0033_tenant_billing_foundation`，支付接入和发布保护边界见 [租户隔离与套餐基础](customer-billing.md)。
 
 ## 兼容入口
 

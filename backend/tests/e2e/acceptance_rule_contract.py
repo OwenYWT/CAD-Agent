@@ -4,13 +4,12 @@ import math
 import os
 from pathlib import Path
 import signal
-import time
 from uuid import uuid4
 
 import httpx
 from app.freecad.operation_compiler import compile_common_generation
 from native_parameter_contract import SEED
-from runtime_fixture import run_native_seed
+from runtime_fixture import run_native_seed, wait_for_task
 
 
 def main():
@@ -40,13 +39,9 @@ def main():
         def call(method, path, **kwargs):
             response = api.request(method, path, **kwargs); response.raise_for_status(); return response.json()
         def terminal(workflow):
-            for _ in range(240):
-                value = call('GET', f'/api/tasks/{workflow}/snapshot')
-                if value['status'] in {'succeeded', 'failed', 'cancelled', 'timed_out'}:
-                    assert value['status'] == 'succeeded', value.get('error_message')
-                    return value
-                time.sleep(.5)
-            raise AssertionError('Check did not complete: ' + workflow)
+            value = wait_for_task(api, workflow)
+            assert value['status'] == 'succeeded', value.get('error_message')
+            return value
         for action in ('accept', 'commit'):
             call('POST', f'/api/change-sets/{fixture["change_set_id"]}/{action}', json={'note': 'Native geometry and unsupported DFM metrics are independently checked.'})
         doc = call('GET', '/api/documents/' + fixture['document_id'])

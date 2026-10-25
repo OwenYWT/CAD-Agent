@@ -14,12 +14,13 @@ from app.config import settings
 
 
 _engine: AsyncEngine | None = None
-DatabaseRole = Literal["runtime", "worker", "auth", "migrator"]
+DatabaseRole = Literal["runtime", "worker", "auth", "migrator", "billing_admin"]
 _DATABASE_ROLES: dict[DatabaseRole, str] = {
     "runtime": "cad_agent_runtime",
     "worker": "cad_agent_worker",
     "auth": "cad_agent_auth",
     "migrator": "cad_agent_migrator",
+    "billing_admin": "cad_agent_billing_admin",
 }
 
 

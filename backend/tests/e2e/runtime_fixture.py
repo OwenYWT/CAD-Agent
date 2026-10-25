@@ -1,7 +1,35 @@
 """Execute real fixture setup in an explicitly selected test backend runtime."""
 import json
+import math
 import os
 import subprocess
+import time
+
+
+def task_wait_seconds():
+    """One fixture deadline for the full durable chain, not one CAD activity."""
+    seconds = float(os.getenv('CAD_TASK_STATE_TIMEOUT', '900'))
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError('CAD_TASK_STATE_TIMEOUT must be finite and positive')
+    return seconds
+
+
+def wait_for_task(client, workflow, *, accept_confirmation=False):
+    # Use the existing task-state browser budget. A fixed number of half-second
+    # polls incorrectly expires while later native/DFM activities are healthy.
+    deadline = time.monotonic() + task_wait_seconds()
+    confirmed = False
+    while True:
+        snapshot = client.get(f'/api/tasks/{workflow}/snapshot').raise_for_status().json()
+        if snapshot['status'] == 'waiting_confirmation' and accept_confirmation and not confirmed:
+            client.post(f'/api/tasks/{workflow}/confirmation', json={'accepted': True}).raise_for_status()
+            confirmed = True
+        if snapshot['status'] in {'succeeded', 'failed', 'cancelled', 'timed_out'}:
+            return snapshot
+        if time.monotonic() >= deadline:
+            raise AssertionError(f'Real workflow exceeded test deadline: {workflow}; '
+                                 f'status={snapshot["status"]}; steps={snapshot.get("steps", [])}')
+        time.sleep(.5)
 
 
 def run_native_seed(source: str, arguments: list[str]):

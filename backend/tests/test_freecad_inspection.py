@@ -8,6 +8,41 @@ from app.freecad.operation_generator import FreeCADOperationGenerator
 from tests.test_freecad_operation_generator import _client, _provenance, _valid_plan
 
 
+def test_constraint_inspection_retains_native_expression_ownership():
+    from copy import deepcopy
+    state={'objects':[{'name':'HoleSketch','type_id':'Sketcher::SketchObject',
+        'inspection':{'constraints':{'items':[{'index':0,'name':'center_x',
+            'type':'DistanceX','driving':True,'value':30.}], 'total':1}},
+        'expressions':{'items':[{'property':'Constraints.center_x',
+            'expression':'BaseSketch.Constraints.width / 2'}], 'total':1}}]}
+    before=deepcopy(state)
+    measured=inspect_state(state,InspectionRequest(objects=['HoleSketch'],fields=['constraints']))
+    row=measured['objects'][0]['constraints']['items'][0]
+    assert row['expression_bindings']==state['objects'][0]['expressions']['items']
+    assert row['edit_policy']=='source_dimension_only'
+    assert state==before
+
+
+def test_existing_expression_driver_is_rejected_before_execution_without_rewriting():
+    from copy import deepcopy
+    from app.freecad.inspection import validate_constraint_edit_authority
+    from app.freecad.contracts import FreeCADOperationPlan
+    state={'objects':[{'name':'HoleSketch','inspection':{'constraints':{'items':[
+        {'index':0,'name':'center_x','type':'DistanceX','driving':True}]}},
+        'expressions':{'items':[{'property':'Constraints[0]',
+            'expression':'BaseSketch.Constraints.width / 2'}]}}]}
+    plan=FreeCADOperationPlan.model_validate({'operations':[
+        {'op_id':'move-hole','action':'sketch.set_constraint','args':{
+            'sketch':'HoleSketch','constraint_index':0,'expected_type':'DistanceX','value_mm':40}},
+        {'op_id':'export','action':'document.export','args':{'formats':['fcstd','step']}}]})
+    before=(deepcopy(state),plan.model_dump())
+    with pytest.raises(ValueError,match='BaseSketch.Constraints.width / 2'):
+        validate_constraint_edit_authority(plan,state)
+    assert (state,plan.model_dump())==before
+    state['objects'][0]['expressions']['items']=[]
+    validate_constraint_edit_authority(plan,state)
+
+
 def test_inspection_is_bounded_and_reports_unknown_and_unrecorded_data():
     state={'objects':[{'name':'Hole','properties':{f'p{i}':'x'*4000 for i in range(100)}}]}
     query=InspectionRequest(objects=['Hole','missing'],fields=['properties','constraints'],limit=32)

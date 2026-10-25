@@ -31,8 +31,11 @@ def test_explicit_design_dimensions_are_not_physical_measurements():
         source_kind='user_specification', source_reference='用户指定的设计尺寸', dimensions='100×60×3 mm')
     assert '100×60×3 mm' in basis.planning_context()
     assert '适配未验证' not in basis.planning_context()
+    assert '开孔与装配依据：未提供' not in basis.planning_context()
     assert '不得擅自替换用户明确尺寸' in basis.planning_context()
     assert RequirementBasisV1.model_validate(basis.model_dump()) == basis
+    supplied = basis.model_copy(update={'fit_notes': '上盖安装孔间距20 mm'})
+    assert '上盖安装孔间距20 mm' in supplied.planning_context()
 
 
 def test_design_input_cannot_be_used_as_physical_fit_evidence():

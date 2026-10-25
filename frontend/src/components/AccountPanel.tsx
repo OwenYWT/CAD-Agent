@@ -5,6 +5,7 @@ import { useI18n } from "../i18n/I18nContext";
 import { Icon } from "./ui/Icon";
 import { useMutationReceipt } from '../hooks/useMutationReceipt';
 import { readJson } from '../services/clients/http';
+import { BillingOverview } from "./BillingOverview";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
@@ -191,6 +192,10 @@ export function AccountPanel({ user, onUserUpdate, onLogout }: AccountPanelProps
             </div>
             <button aria-label="关闭账号管理" className="workspace-icon-button" onClick={closePanel} type="button"><Icon name="x" size={16} /></button>
           </div>
+
+          {user.registered_via !== "auth_disabled" && (
+            <BillingOverview key={`${user.id}:${new URLSearchParams(window.location.search).get("workspace") || ""}`} />
+          )}
 
           <div className="grid grid-cols-2 gap-2">
             <button

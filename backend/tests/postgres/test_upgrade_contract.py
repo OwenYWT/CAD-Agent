@@ -3,7 +3,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
-from uuid import uuid4
+from uuid import uuid4, uuid5
 
 import pytest
 from alembic import command
@@ -86,7 +86,13 @@ def test_upgrade_preserves_pending_job_and_unfinished_usage(monkeypatch):
             policy=await conn.scalar(text('SELECT policy FROM provider_budget_policies WHERE workflow_run_id=:id'),{'id':run})
             assert policy['mode']=='requests' and policy['legacy_admission'] is True
         async with get_database_engine().connect() as conn:
-            assert await conn.scalar(text('SELECT version_num FROM alembic_version')) == '0032_provider_receipt_recovery'
+            assert await conn.scalar(text('SELECT version_num FROM alembic_version')) == '0033_tenant_billing_foundation'
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+            from app.services.customer_billing import account_summary
+            summary = await account_summary(conn, owner.tenant_id, owner.principal_id)
+            assert summary['plan']['code'] == 'basic'
+            assert summary['plan']['monthly_provider_requests'] is None
+            assert summary['wallet']['balance_minor'] == 0
         await close_database()
     asyncio.run(verify())
 
@@ -141,8 +147,34 @@ def test_receipt_queue_upgrade_preserves_legacy_holds_and_blocks_lossy_downgrade
             job = await model_jobs.claim()
             port = PgProviderBudget(job)
             await port.prepare_request({'model':'kimi-k2.7-code', 'messages':[]}, provider='moonshot')
-            row = await port.reserve_attempt(logical_call_id='legacy', attempt=1,
-                request_digest='legacy-digest', provider='moonshot', model='kimi-k2.7-code')
+            # Materialize the historical 0031 row contract directly. The current
+            # dispatcher requires 0033 customer admission and cannot run against
+            # an old schema; no provider call is involved in this migration test.
+            async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+                policy = port.policy
+                amount = Decimal(policy['reservation'])
+                identity = uuid5(job['id'], f"{job['generation']}:legacy:1")
+                row = dict((await conn.execute(text('''INSERT INTO provider_budget_reservations
+                    (id,tenant_id,workflow_run_id,model_job_id,generation,logical_call_id,attempt,
+                     request_digest,provider,model,policy,reserved_amount,status)
+                    VALUES(:id,:tenant,:run,:job,:generation,'legacy',1,'legacy-digest','moonshot',
+                           'kimi-k2.7-code',CAST(:policy AS jsonb),:amount,'reserved') RETURNING *'''),
+                    dict(id=identity,tenant=owner.tenant_id,run=run.workflow_id,job=job['id'],
+                         generation=job['generation'],policy=json.dumps(policy),amount=amount))).mappings().one())
+                month = await conn.scalar(text("SELECT to_char(now() AT TIME ZONE 'UTC','YYYY-MM')"))
+                for scope, limit, money in [
+                    (f'task:{run.workflow_id}',policy['request_limit'],policy['cost']['task_limit']),
+                    (f'month:{month}',policy['month_request_limit'],policy['cost']['month_limit']),
+                ]:
+                    account = uuid5(owner.tenant_id, scope)
+                    await conn.execute(text('''INSERT INTO provider_budget_accounts
+                        (id,tenant_id,scope,request_limit,currency,cost_limit,policy,requests_used,held)
+                        VALUES(:id,:tenant,:scope,:limit,'CNY',:money,CAST(:policy AS jsonb),1,:amount)'''),
+                        dict(id=account,tenant=owner.tenant_id,scope=scope,limit=limit,
+                             money=Decimal(money),policy=json.dumps({'mode':policy['mode']}),amount=amount))
+                    await conn.execute(text('''INSERT INTO provider_budget_allocations
+                        (reservation_id,account_id,tenant_id) VALUES(:id,:account,:tenant)'''),
+                        dict(id=identity,account=account,tenant=owner.tenant_id))
             await port.claim_dispatch(row)
             await model_jobs.finish(job, status='succeeded', result={'legacy_response':True})
             await close_database()
@@ -156,6 +188,11 @@ def test_receipt_queue_upgrade_preserves_legacy_holds_and_blocks_lossy_downgrade
                 assert pending['settlement_attempts']==0 and pending['settlement_next_attempt_at'] is None
                 accounts = (await conn.execute(text('SELECT held,settled FROM provider_budget_accounts'))).mappings().all()
                 assert len(accounts)==2 and all(a['held']==Decimal('2.588672') and a['settled']==0 for a in accounts)
+                from app.services.customer_billing import account_summary
+                summary = await account_summary(conn, job['tenant_id'], job['principal_id'])
+                assert summary['plan']['monthly_provider_requests'] is None
+                assert summary['usage']['provider_requests'] == 1
+                assert summary['wallet']['balance_minor'] == 0
             assert not await recover_next_settlement()  # An absent receipt cannot be invented by migration.
             await PgProviderBudget(job).record_receipt(row, provenance={'provider':'moonshot','request_model':'kimi-k2.7-code',
                 'model':'kimi-k2.7-code','request_hash':'legacy-digest','usage':{'prompt_tokens':1,'completion_tokens':1}},
@@ -177,6 +214,27 @@ def test_receipt_queue_upgrade_preserves_legacy_holds_and_blocks_lossy_downgrade
         asyncio.run(recover())
         command.downgrade(config, '0031_provider_budgets')
         command.upgrade(config, 'head')
+        async def credit():
+            from app.services.customer_billing import adjust_wallet
+            async with tenant_transaction(job['tenant_id'], role='billing_admin') as conn:
+                await adjust_wallet(conn, tenant_id=job['tenant_id'], actor_subject='migration-test',
+                    idempotency_key='preserve-credit', amount_minor=500, reference='manual-test', reason='upgrade test')
+            await close_database()
+        asyncio.run(credit())
+        with pytest.raises(Exception, match='Customer billing records must be preserved'):
+            command.downgrade(config, '0032_provider_receipt_recovery')
+        async def preserved():
+            from app.db import get_database_engine
+            async with tenant_transaction(job['tenant_id'], job['principal_id']) as conn:
+                assert await conn.scalar(text('SELECT balance_minor FROM tenant_wallet_accounts')) == 500
+                assert await conn.scalar(text('SELECT sum(amount_minor) FROM tenant_wallet_entries')) == 500
+            # Even the migration owner cannot silently rewrite audit history.
+            for table in ('billing_plan_versions', 'tenant_wallet_entries'):
+                with pytest.raises(Exception, match='billing history is append-only'):
+                    async with get_database_engine().begin() as conn:
+                        await conn.execute(text(f'DELETE FROM {table}'))
+            await close_database()
+        asyncio.run(preserved())
     finally:
         asyncio.run(close_database())
         asyncio.run(database(False))

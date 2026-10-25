@@ -38,3 +38,30 @@ def compare_measurement(comparison: dict, measured, numerical_tolerance: float,
             'numerical_tolerance': epsilon,
             'engineering_tolerance': {'minus': minus, 'plus': plus},
             'evaluated_values': len(measured), 'all_values_required': True}
+
+
+def compare_feature_measurement(check: dict, measured, numerical_tolerance: float,
+                                *, feature_count=None, policy_id=COMPARISON_POLICY_ID) -> dict:
+    """Keep observed absence distinct from a missing/failed measurement.
+
+    The verifier supplies cardinality only after complete feature enumeration
+    in the bound scope. No zero diameter/depth is fabricated for an absent
+    feature. Both the isolated worker and the receiver apply this same rule.
+    """
+    result = compare_measurement(check['comparison'], measured, numerical_tolerance, policy_id=policy_id)
+    if feature_count is None:
+        return result
+    if (type(feature_count) is not int or feature_count < 0
+            or check['kind'] not in {'hole_diameter', 'hole_depth', 'hole_through', 'hole_position'}):
+        raise ValueError('invalid measured feature cardinality')
+    result['feature_count'] = feature_count
+    if check['kind'] == 'hole_position':
+        expected = len(check['scope']['centers_mm'])
+        if feature_count != expected:
+            result.update(outcome='failed', feature_failure='position_count_mismatch')
+    else:
+        if measured and len(measured) != feature_count:
+            raise ValueError('feature cardinality differs from measured values')
+        if feature_count == 0:
+            result.update(outcome='failed', feature_failure='required_feature_absent')
+    return result

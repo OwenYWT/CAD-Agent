@@ -3,10 +3,11 @@ import hashlib
 import json
 from typing import Annotated, Literal, Union
 
-from pydantic import BeforeValidator, Field, TypeAdapter, model_validator
+from pydantic import BeforeValidator, Field, TypeAdapter, model_validator, model_serializer
 
 from app.contracts.acceptance import AcceptanceModel, AcceptanceContract, MeasurementScope
 from app.contracts.acceptance_comparison import COMPARISON_POLICY_ID
+from app.contracts.hole_populations import population_pools
 
 Quantity = Annotated[float, Field(strict=True, ge=0)]
 Unit = Literal['mm', 'mm3', 'count']
@@ -20,9 +21,29 @@ class SelectedMeasurementObject(AcceptanceModel):
     parameter_state_sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
 
 
+class ComponentRegion(AcceptanceModel):
+    min_mm: tuple[float, float, float]
+    max_mm: tuple[float, float, float]
+
+    @model_validator(mode='after')
+    def positive_volume(self):
+        if any(a >= b for a, b in zip(self.min_mm, self.max_mm)):
+            raise ValueError('component region must have positive volume')
+        return self
+
+
 class MeasurementScopeV2(MeasurementScope):
     frame: Literal['world', 'bounds_center', 'bounds_min', 'selected_object'] = 'world'
     object_ref: SelectedMeasurementObject | None = None
+    component_region: ComponentRegion | None = Field(default=None,
+        description='Explicit source-authorized world region selecting exactly one whole solid by positive-volume overlap. Never clips geometry or selects by nominal.')
+
+    @model_serializer(mode='wrap')
+    def retain_existing_digest(self, handler):
+        result = handler(self)
+        if self.component_region is None:
+            result.pop('component_region', None)
+        return result
 
     @model_validator(mode='after')
     def coordinate_authority(self):
@@ -30,6 +51,8 @@ class MeasurementScopeV2(MeasurementScope):
             raise ValueError('local measurement coordinates require a frozen user-selected object')
         if self.object_ref is not None and self.frame!='selected_object':
             raise ValueError('selected object measurements must retain their authorized local frame')
+        if self.component_region is not None and (self.frame != 'world' or self.object_ref is not None):
+            raise ValueError('component regions require explicit world coordinates and cannot replace native selection authority')
         return self
 
 
@@ -83,11 +106,17 @@ Comparison = Annotated[Union[EqualComparison, LowerComparison, UpperComparison, 
                        Field(discriminator='op')]
 
 
+class HoleGroupRef(AcceptanceModel):
+    schema_version: Literal['hole-group.v1'] = 'hole-group.v1'
+    group_id: str = Field(min_length=1, max_length=512,
+        description='Server-owned counted hole phrase identity. Groups jointly partition ALL measured holes in the same scope; this is not a geometry selector.')
+
+
 class AcceptanceCheckV2(AcceptanceModel):
     check_id: str = Field(pattern=r'^[a-z0-9][a-z0-9_-]*$')
     kind: Literal['solid_count', 'overall_dimension', 'hole_count', 'hole_diameter',
                   'hole_depth', 'hole_through', 'hole_position', 'wall_thickness', 'volume', 'void_connected',
-                  'surface_clearance', 'planar_gap']
+                  'surface_clearance', 'planar_gap', 'bounding_box']
     description: str = Field(min_length=1)
     source_quote: str = Field(min_length=1)
     source_kind: Literal['user', 'confirmed', 'assumption'] = 'user'
@@ -95,6 +124,14 @@ class AcceptanceCheckV2(AcceptanceModel):
     binding_ref: str = Field(min_length=1, description='ID from the server extracted requirements; never invent an ID.')
     comparison: Comparison
     scope: MeasurementScopeV2 = Field(default_factory=MeasurementScopeV2)
+    hole_group: HoleGroupRef | None = None
+
+    @model_serializer(mode='wrap')
+    def retain_existing_digest(self, handler):
+        result = handler(self)
+        if self.hole_group is None:
+            result.pop('hole_group', None)
+        return result
 
     @model_validator(mode='after')
     def measurement_definition(self):
@@ -118,6 +155,9 @@ class AcceptanceCheckV2(AcceptanceModel):
                 raise ValueError('hole_position compares zero transverse position residual')
         if kind == 'overall_dimension' and scope.axis is None:
             raise ValueError('overall dimension requires an explicit axis')
+        if kind == 'bounding_box' and (scope.component_region is None
+                or not isinstance(comparison, EqualComparison) or comparison.value != 0):
+            raise ValueError('bounding_box compares zero residual against source-authorized component bounds')
         if kind == 'surface_clearance' and len(scope.centers_mm) != 2:
             raise ValueError('surface clearance requires two explicit face points')
         if kind == 'planar_gap' and (scope.centers_mm or scope.point_mm is not None):
@@ -149,6 +189,9 @@ class AcceptanceContractV2(AcceptanceModel):
         for check in self.checks:
             if check.source_kind != 'assumption' and check.source_quote not in self.objective:
                 raise ValueError(f'checks.{check.check_id}.source_quote is absent from objective')
+        grouped = [c.model_dump(mode='json') for c in self.checks if c.hole_group is not None]
+        if grouped:
+            population_pools(grouped)
         return self
 
     def digest(self) -> str:

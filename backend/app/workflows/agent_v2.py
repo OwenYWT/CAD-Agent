@@ -1179,12 +1179,14 @@ class McadAgentWorkflowV2:
             profile_replanning_v1 = workflow.patched('agent-v2-profile-replanning-v1')
             repair_accounting_v2 = workflow.patched('agent-v2-repair-accounting-v2')
             acceptance_bindings_v2 = workflow.patched('agent-v2-acceptance-bindings-v2') and self._engineering_acceptance_v1
+            all_3d_acceptance_v1 = workflow.patched('agent-v2-all-3d-acceptance-v1') and acceptance_bindings_v2
             solid_count_policy_v2 = workflow.patched('agent-v2-solid-count-policy-v2')
             self._phase = "requirements"
             requirements = await self._activity(
                 "agent_v2.requirements",
                 {**request, "engineering_acceptance_v1": True,
-                 **({'acceptance_bindings_v2': True} if acceptance_bindings_v2 else {})}
+                 **({'acceptance_bindings_v2': True} if acceptance_bindings_v2 else {}),
+                 **({'all_3d_acceptance_v1': True} if all_3d_acceptance_v1 else {})}
                 if self._engineering_acceptance_v1 else request,
                 suffix="requirements",
             )

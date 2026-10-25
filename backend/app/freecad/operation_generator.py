@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.freecad.semantic_state import bounded_agent_context
-from app.freecad.inspection import InspectionRequest, inspect_state
+from app.freecad.inspection import InspectionRequest, inspect_state, validate_constraint_edit_authority
 from app.freecad.api_catalog import CapabilityQuery, query_capabilities
 from app.freecad.agent_tools import (
     EXECUTE_TOOL, API_EXECUTE_TOOL, CONSTRAINT_PATCH_TOOL, FAILURE_INSPECTION_TOOL, PROFILE_PATCH_TOOL, CUT_PATCH_TOOL,
@@ -101,6 +101,10 @@ Each circle needs distance_x and distance_y at point_position=3 plus radius or d
 When its center must follow a rectangular sketch, set center_of on both coordinate
 constraints. This installs verified native expressions; independent coordinates do
 not preserve a centered relationship after width/depth edits.
+For existing sketches, inspect constraints and preserve their expression_bindings.
+A driving dimension may itself be controlled by an expression: never set its datum.
+Edit the source dimension identified by that expression; native recomputation moves
+dependent features. Do not add a redundant move for an already related hole center.
 Constrain each degree of freedom only once. When two widths/heights/radii already have
 independent dimensions, do not also add equality between them. Equal dimensions do not
 require an extra equality constraint. Diagnose constraints with the actual solver;
@@ -155,6 +159,10 @@ Typed actions and args (freecad_execute only):
   360-degree polar pattern spaces occurrences evenly without duplicating the start.
 - feature.pocket: {name, profile, exactly one of length_mm or through_all:true, reversed?}
 - feature.hole: {name, profile, diameter_mm, exactly one of depth_mm or through_all:true, reversed?, cut?}
+  through_all traverses the entire Body in the cut direction, including opposite walls across an empty cavity.
+  A through hole in ONE wall of an enclosure normally needs the specified wall depth_mm, not through_all.
+  Preserve which wall is requested and leave the opposite wall intact; a through-hole requirement describes
+  an open local material passage, not permission to perforate every wall on the same axis.
   cut is {kind:"counterbore",diameter_mm,depth_mm} or {kind:"countersink",diameter_mm,angle_deg}.
   It applies only to the sketch-side entrance, with the opposite entrance preserved.
   Use this native cut for a specified countersink/counterbore, not an all-mouth chamfer.
@@ -293,6 +301,8 @@ class FreeCADOperationGenerator:
         else:
             compiled = None
         if compiled is not None:
+            if base_state is not None:
+                validate_constraint_edit_authority(compiled, base_state)
             validate_chamfer_intent(compiled, requirements, plan.objective)
             source_code = compiled.model_dump_json()
             inspections = []
@@ -806,6 +816,8 @@ class FreeCADOperationGenerator:
                 if base_state is not None and not inspections and not constraint_context and not profile_context and not cut_context:
                     raise ValueError("inspect relevant existing objects before planning their modification")
                 operation_plan = FreeCADOperationPlan.model_validate(raw)
+                if base_state is not None:
+                    validate_constraint_edit_authority(operation_plan, base_state)
                 if profile_context:
                     profile_replan.validate_proposal(operation_plan, profile_context)
                 if cut_context and base_state is not None:

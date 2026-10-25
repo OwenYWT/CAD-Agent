@@ -114,7 +114,8 @@
       ],
       "allowed_dependencies": [
         "P00",
-        "P01"
+        "P01",
+        "M12"
       ]
     },
     "M04": {
@@ -183,7 +184,8 @@
         "app.workflows.handlers.geometry_validation",
         "app.workflows.handlers.visual_validation",
         "app.validation.requirement_binding",
-        "app.services.revision_validation"
+        "app.services.revision_validation",
+        "app.validation.acceptance_preflight"
       ],
       "allowed_dependencies": [
         "P00",
@@ -335,13 +337,15 @@
         "P00",
         "P01",
         "P03",
-        "P04"
+        "P04",
+        "M12"
       ]
     },
     "P03": {
       "owner": "HTTP transport",
       "public": [
-        "app.api.auth"
+        "app.api.auth",
+        "app.api.billing"
       ],
       "allowed_dependencies": [
         "P00",
@@ -355,7 +359,8 @@
         "M07",
         "M08",
         "M09",
-        "M10"
+        "M10",
+        "M12"
       ]
     },
     "P04": {
@@ -374,6 +379,23 @@
         "M08",
         "M09",
         "M10"
+      ]
+    },
+    "M12": {
+      "owner": "customer billing",
+      "writes": [
+        "billing_plan_versions",
+        "tenant_subscriptions",
+        "tenant_wallet_accounts",
+        "tenant_wallet_entries",
+        "tenant_billing_events"
+      ],
+      "public": [
+        "app.services.customer_billing"
+      ],
+      "allowed_dependencies": [
+        "P00",
+        "P01"
       ]
     }
   },
@@ -977,7 +999,14 @@
     "backend/app/validation/requirement_binding.py": "M06",
     "backend/app/workflows/work_accounting.py": "M03",
     "backend/app/services/provider_budgets.py": "M03",
-    "backend/app/contracts/measurement_binding.py": "P00"
+    "backend/app/contracts/measurement_binding.py": "P00",
+    "backend/app/api/billing.py": "P03",
+    "backend/app/services/customer_billing.py": "M12",
+    "frontend/src/services/clients/billing.ts": "P04",
+    "frontend/src/components/BillingOverview.tsx": "P04",
+    "backend/app/validation/acceptance_preflight.py": "M06",
+    "backend/app/validation/source_obligations.py": "M06",
+    "backend/app/contracts/hole_populations.py": "P00"
   },
   "required_runtime_reports": {
     "browser-e2e/native-parameters/kernel.log": {
@@ -1537,6 +1566,7 @@
           "formal_release_selected_evidence_verified_download_and_role_matrix",
           "history_restore_new_candidate_commit_reopen_and_old_evidence_rejection",
           "revised_requirement_basis_durable_admission_and_cancel_preserves_history",
+          "initial_geometry_basis_retains_feature_context_in_durable_request",
           "invite_create_disable_lost_reply_actual_admin_readback_and_role_denial"
         ]
       }
@@ -1569,6 +1599,15 @@
         "original_revision_immutable": true,
         "saved_head_unchanged": true,
         "cancelled_before_provider_execution": true,
+        "natural_language_geometry_evaluated": false
+      }
+    },
+    "browser-e2e/browser-acceptance-followup/initial-geometry-intake.json": {
+      "job": "browser-e2e",
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "classification": "REAL_BROWSER_WEBSOCKET_DURABLE_ADMISSION",
         "natural_language_geometry_evaluated": false
       }
     },
@@ -1671,6 +1710,50 @@
       "kind": "marker",
       "marker": "CAD_MEASUREMENT_BINDING_CONTRACT=",
       "job": "mcad-core"
+    },
+    "browser-e2e/browser-customer-billing/report.json": {
+      "job": "browser-e2e",
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "real_auth": true,
+        "real_postgres": true,
+        "persisted_reload": true,
+        "separate_accounts": true,
+        "page_errors": [],
+        "token_refresh_reconnects": true
+      }
+    },
+    "mcad-core/native/component-measurement.log": {
+      "kind": "marker",
+      "marker": "CAD_COMPONENT_MEASUREMENT_CONTRACT=",
+      "job": "mcad-core"
+    },
+    "mcad-core/native/source-obligations.log": {
+      "kind": "marker",
+      "marker": "CAD_SOURCE_OBLIGATION_CONTRACT=",
+      "job": "mcad-core"
+    },
+    "mcad-core/native/source-obligations-receiver.log": {
+      "kind": "marker",
+      "marker": "CAD_SOURCE_RECEIVER_CONTRACT=",
+      "job": "mcad-core"
+    },
+    "browser-e2e/browser-hole-populations/report.json": {
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "complete_inventory_visible": true,
+        "group_measurements_visible": true,
+        "candidate_before_commit": true,
+        "commit_and_reload": true,
+        "page_errors": []
+      },
+      "job": "browser-e2e"
+    },
+    "browser-e2e/browser-hole-populations/trace.zip": {
+      "kind": "browser-trace",
+      "job": "browser-e2e"
     }
   },
   "required_ci_jobs": [

@@ -55,6 +55,12 @@ export function saveAuthSession(session: AuthSession) {
 // login page instead of leaving a "zombie" authenticated view that 401s forever.
 type SessionListener = () => void;
 const sessionListeners = new Set<SessionListener>();
+const refreshListeners = new Set<SessionListener>();
+
+export function onSessionRefreshed(listener: SessionListener): () => void {
+  refreshListeners.add(listener);
+  return () => refreshListeners.delete(listener);
+}
 
 export function onSessionCleared(listener: SessionListener): () => void {
   sessionListeners.add(listener);
@@ -125,6 +131,9 @@ export async function refreshAuthSession(): Promise<AuthSession | null> {
   if (!res.ok) return null;
   const session = (await res.json()) as AuthSession;
   saveAuthSession(session);
+  refreshListeners.forEach(listener => {
+    try { listener(); } catch { /* Other connections must still rotate. */ }
+  });
   return session;
 }
 

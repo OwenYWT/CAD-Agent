@@ -216,6 +216,8 @@ def create_app() -> FastAPI:
     app.include_router(knowledge_router, prefix="/api")
     app.include_router(feedback_router)
     app.include_router(login_router)
+    from app.api.billing import router as billing_router
+    app.include_router(billing_router)
     app.include_router(capabilities_router)
     app.include_router(capability_actions_router)
     app.include_router(fusion360_router)

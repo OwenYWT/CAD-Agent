@@ -27,7 +27,7 @@ with sync_playwright() as pw:
   prompt=p.get_by_role('textbox',name='工程需求',exact=True)
   prompt.fill('创建一个 100×60×3 mm 的板');p.get_by_role('button',name='开始创建',exact=True).click()
   intake=p.get_by_role('region',name='执行前需求确认',exact=True)
-  expect(intake.get_by_role('textbox',name='关键尺寸依据',exact=True)).to_have_value('100×60×3 mm')
+  expect(intake.get_by_role('textbox',name='关键尺寸依据',exact=True)).to_have_value('创建一个 100×60×3 mm 的板')
   expect(intake.get_by_role('button',name='确认并执行',exact=True)).to_be_enabled()
   expect(intake.get_by_role('checkbox')).to_have_count(0)
   assert '适配未验证' not in intake.inner_text()

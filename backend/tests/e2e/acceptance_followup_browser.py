@@ -13,7 +13,7 @@ from playwright.sync_api import expect, sync_playwright
 from transport_fault_proxy import TransportFaultProxy
 from acceptance_release_contract import verify_release
 from acceptance_restore_contract import verify_restore
-from requirement_revision_browser import verify_requirement_intake
+from requirement_revision_browser import verify_requirement_intake, verify_initial_geometry_basis
 
 
 def main():
@@ -194,6 +194,8 @@ def main():
                     records.append('history_restore_new_candidate_commit_reopen_and_old_evidence_rejection')
                     verify_requirement_intake(page, api, fixture, out)
                     records.append('revised_requirement_basis_durable_admission_and_cancel_preserves_history')
+                    verify_initial_geometry_basis(page, api, out)
+                    records.append('initial_geometry_basis_retains_feature_context_in_durable_request')
                     page.get_by_role('button', name='打开账号管理', exact=True).click()
                     page.get_by_role('button', name='退出登录', exact=True).click()
                     login(private['admin'])

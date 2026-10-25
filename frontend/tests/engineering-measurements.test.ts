@@ -50,3 +50,22 @@ test('through-hole evidence displays the geometric predicate without length unit
   assert.equal(engineeringMeasurements(report)[0].outcome,'未验证');
   assert.equal(engineeringMeasurements(report)[0].measured,'无量测值');
 });
+
+test('group display uses the recorded complete partition and labels the whole inventory', () => {
+  const report = {acceptance_contract:{schema_version:'engineering-acceptance.v2',checks:[
+    {check_id:'count',kind:'hole_count',hole_group:{group_id:'a'},comparison:{op:'eq',value:2,unit:'count'}},
+    {check_id:'diameter',kind:'hole_diameter',hole_group:{group_id:'a'},comparison:{op:'eq',value:6,unit:'mm'}},
+  ]},acceptance:{evidence:[
+    {check_id:'count',measured:[4],outcome:'passed',details:{population_evaluation:{outcome:'passed',feature_count:4,assignment:{a:[0,2],b:[1,3]}}}},
+    {check_id:'diameter',measured:[6,4,6,4],outcome:'passed',details:{population_evaluation:{outcome:'passed',feature_count:4,assignment:{a:[0,2],b:[1,3]}}}},
+  ]}};
+  const rows = engineeringMeasurements(report);
+  assert.equal(rows[0].measured,'2'); assert.equal(rows[1].measured,'6、6 mm');
+  assert.equal(rows[0].measuredLabel,'本组实测（全范围 4 孔）');
+  report.acceptance.evidence[1].outcome='failed';
+  report.acceptance.evidence[1].details.population_evaluation.outcome='failed';
+  const failed = engineeringMeasurements(report)[1];
+  assert.equal(failed.measured,'6、4、6、4 mm');
+  assert.equal(failed.measuredLabel,'全范围实测（孔组未满足）');
+  assert.equal(failed.outcome,'未通过');
+});

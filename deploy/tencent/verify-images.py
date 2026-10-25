@@ -62,7 +62,7 @@ def main():
                            ("topology.py", "freecad_topology.py"),
                            ("capabilities.json", "freecad-capabilities.json")):
         sandbox["/opt/cad-agent/" + target] = sources["backend/app/freecad/" + source]
-    for name in ("geometry_request.py", "acceptance_comparison.py", "measurement_binding.py"):
+    for name in ("geometry_request.py", "acceptance_comparison.py", "hole_populations.py", "measurement_binding.py"):
         sandbox["/opt/cad-agent/" + name] = sources["backend/app/contracts/" + name]
     for path, digest in sources.items():
         if path.startswith("third_party/cadskills/skills/"):

@@ -105,9 +105,33 @@ def verify_geometry_evidence(report, *, request_sha256, acceptance, expected_sol
             raise ValueError("geometry evidence is not bound to the acceptance contract")
         if report.outcome == "passed" and acceptance_outcome(acceptance, report.acceptance.evidence) != "passed":
             raise ValueError("required acceptance evidence did not pass")
+        checks = {c.check_id: c for c in acceptance.checks}
+        # Historical contracts remain readable, but neither a legacy contract
+        # nor an old worker may authorize an incompletely enumerated inventory.
+        for row in report.acceptance.evidence:
+            check = checks[row.check_id].model_dump(mode='json')
+            if row.outcome == 'indeterminate' or not check['kind'].startswith('hole_') or check.get('hole_group'):
+                continue
+            from app.contracts.hole_populations import verify_inventory_coverage, inventory_values, digest
+            inventory = row.details.get('hole_inventory') or {}
+            # Counts have zero comparison tolerance; geometric coverage still
+            # propagates the kernel's independent linear precision.
+            verify_inventory_coverage(inventory, row.details.get('numerical_tolerance_mm'), check=check)
+            if (row.details.get('hole_inventory_sha256') != digest(inventory)
+                    or (check['kind'] != 'hole_position' and list(row.measured) != inventory_values(check, inventory))
+                    or (check['kind'] != 'hole_count' and row.details.get('feature_count') != len(inventory['passages']))):
+                raise ValueError('hole measurement differs from its independently certified inventory')
+            if measurement_context is not None:
+                selection = row.details['measurement_binding']['proof']['selection']
+                if selection.get('hole_inventory_sha256') != digest(inventory):
+                    raise ValueError('hole coverage differs from its bound measurement evidence')
         if acceptance.schema_version == 'engineering-acceptance.v2':
-            from app.contracts.acceptance_comparison import compare_measurement
-            checks = {c.check_id: c for c in acceptance.checks}
+            from app.contracts.acceptance_comparison import compare_feature_measurement
+            grouped = [c.model_dump(mode='json') for c in acceptance.checks if c.hole_group]
+            if grouped:
+                from app.contracts.hole_populations import population_pools, compare_hole_populations, inventory_values, digest
+                pools = population_pools(grouped)
+                seen_inventories = {}
             for row in report.acceptance.evidence:
                 if measurement_context is not None and (row.outcome != 'indeterminate' or row.details.get('measurement_binding')):
                     from app.contracts.measurement_binding import verify_measurement_binding
@@ -116,15 +140,43 @@ def verify_geometry_evidence(report, *, request_sha256, acceptance, expected_sol
                         context=measurement_context, artifact_sha256s=[a.sha256 for a in report.artifacts if a.format=='step'])
                     if row.outcome in {'passed', 'failed'} and row.details['measurement_binding']['status'] != 'bound':
                         raise ValueError('a definite measurement requires a bound scope')
+                    if row.details.get('feature_count') is not None:
+                        selection = row.details['measurement_binding']['proof']['selection']
+                        if any(selection.get(key) != row.details.get(key) for key in ('feature_count','feature_failure')):
+                            raise ValueError('feature cardinality differs from its bound scope evidence')
                 if row.outcome == 'indeterminate':
                     continue
                 comparison = checks[row.check_id].comparison.model_dump(mode='json')
                 if (row.details.get('comparison_policy_id') != acceptance.comparison_policy_id
                         or row.details.get('comparison') != comparison):
                     raise ValueError('v2 geometry evidence omitted or changed its frozen comparison')
-                result = compare_measurement(comparison, row.measured, row.details['numerical_tolerance'])
+                check = checks[row.check_id].model_dump(mode='json')
+                if check.get('hole_group'):
+                    pool_id = digest(check.get('scope') or {})
+                    inventory = row.details.get('hole_inventory')
+                    result = compare_hole_populations(pools[pool_id], inventory or {},
+                        row.details['numerical_tolerance'], policy_id=acceptance.comparison_policy_id)
+                    if (result != row.details.get('population_evaluation') or result['outcome'] != row.outcome
+                            or list(row.measured) != inventory_values(check, inventory)
+                            or row.details.get('feature_count') != result['feature_count']
+                            or row.details.get('hole_inventory_sha256') != result['inventory_sha256']
+                            or row.details.get('population_evaluation_sha256') != digest(result)):
+                        raise ValueError('hole population evidence differs from the complete measured inventory')
+                    if pool_id in seen_inventories and seen_inventories[pool_id] != result:
+                        raise ValueError('one population scope must have one complete measured inventory')
+                    seen_inventories[pool_id] = result
+                    if measurement_context is not None:
+                        selection = row.details['measurement_binding']['proof']['selection']
+                        if any(selection.get(key) != row.details[key] for key in
+                               ('hole_inventory_sha256', 'population_evaluation_sha256')):
+                            raise ValueError('hole population inventory differs from its bound measurement evidence')
+                    continue
+                result = compare_feature_measurement(checks[row.check_id].model_dump(mode='json'),
+                    row.measured, row.details['numerical_tolerance'], feature_count=row.details.get('feature_count'))
                 if result['outcome'] != row.outcome:
                     raise ValueError('v2 geometry outcome differs from measured values')
+                if result.get('feature_failure') != row.details.get('feature_failure'):
+                    raise ValueError('v2 feature failure differs from measured cardinality')
     if expected_solid_count is not None and report.outcome == "passed":
         solids = [a for a in report.artifacts if a.format in {"step", "stl"}]
         if not solids or any(a.solid_count != expected_solid_count for a in solids):

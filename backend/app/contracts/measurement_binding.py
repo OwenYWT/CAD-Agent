@@ -54,6 +54,21 @@ def bind_measurement_scope(check, *, acceptance_digest, context, artifact_sha256
     if artifact_sha256 not in context['artifact_sha256s']:
         raise ValueError('measurement binding artifact differs from its manifest')
     measured = bool(evidence['measured'])
+    if check.get('hole_group') and evidence['details'].get('population_evaluation'):
+        # Complete enumeration binds even an empty inventory. The receiver
+        # re-evaluates the full quantified predicate and its coverage below.
+        measured |= evidence['details'].get('hole_inventory', {}).get('complete') is True
+    if evidence['details'].get('feature_failure'):
+        try:
+            from acceptance_comparison import compare_feature_measurement
+        except ImportError:
+            from app.contracts.acceptance_comparison import compare_feature_measurement
+        compared = compare_feature_measurement(check, evidence['measured'],
+            evidence['details']['numerical_tolerance'], feature_count=evidence['details'].get('feature_count'))
+        # A complete enumeration can bind the scope while proving that the
+        # requested feature is absent. An empty/failed measurement cannot.
+        measured |= (evidence['outcome'] == compared['outcome'] == 'failed'
+                     and compared.get('feature_failure') == evidence['details']['feature_failure'])
     reason = evidence['details'].get('reason')
     status = ('bound' if measured else 'ambiguous' if reason == 'ambiguous_pair'
               else 'missing' if reason in {'no_pair','selected_object_missing'} or 'no_measurement_evidence' in evidence['issues']
@@ -70,8 +85,9 @@ def bind_measurement_scope(check, *, acceptance_digest, context, artifact_sha256
         'proof': {'method': evidence['method'], 'coordinate_authority': (check.get('scope') or {}).get('frame','world'),
                   'selection': {k:v for k,v in evidence['details'].items() if k in
                       {'binding','face_indices','candidate_count','empty_intersections',
-                       'reason','resolved_frame_origin_mm','axis','overlap_area_mm2',
-                       'intervening_material_mm3','boolean_volume_tolerance_mm3'}},
+                       'reason','resolved_frame_origin_mm','axis','overlap_area_mm2','component_selection',
+                       'intervening_material_mm3','boolean_volume_tolerance_mm3','feature_count','feature_failure',
+                       'hole_inventory_sha256','population_evaluation_sha256'}},
                   'selection_uses_comparison_target': False}}
     reference=(check.get('scope') or {}).get('object_ref')
     if reference is not None:
