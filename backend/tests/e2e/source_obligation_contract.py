@@ -175,7 +175,11 @@ print('SOURCE_OBLIGATION_MODELS_SAVED')
         assert rows and all(r['outcome']==expected for r in rows), (name,rows)
         rotated[name] = rows
     if os.environ.get('CAD_SOURCE_EVIDENCE_DIR'):
-        shutil.copytree(root, Path(os.environ['CAD_SOURCE_EVIDENCE_DIR']) / 'saved-models')
+        retained = Path(os.environ['CAD_SOURCE_EVIDENCE_DIR']) / 'saved-models'
+        shutil.copytree(root, retained)
+        # copytree preserves TemporaryDirectory's 0700 mode. These synthetic
+        # fixtures must also be readable by the CI uploader outside the sandbox.
+        retained.chmod(0o755)
     print('CAD_SOURCE_OBLIGATION_CONTRACT=' + json.dumps({'cases': reports,
         'rotated_inventory_evidence': rotated,
         'unscoped_multigroup_readback': json.loads((root / 'mixed-groups-observations.json').read_text()),
