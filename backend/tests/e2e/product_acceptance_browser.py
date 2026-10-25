@@ -8,12 +8,11 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import time
 from uuid import uuid4
 
 import httpx
 from playwright.sync_api import expect, sync_playwright
-from runtime_fixture import run_native_seed
+from runtime_fixture import run_native_seed, wait_for_task, task_wait_seconds
 
 API = os.environ['CAD_NATIVE_E2E_URL']
 WEB = os.environ['CAD_NATIVE_E2E_WEB']
@@ -120,14 +119,7 @@ def run():
             return response.json()
 
         def terminal(workflow):
-            for _ in range(240):
-                snapshot = call('GET', f'/api/tasks/{workflow}/snapshot')
-                if snapshot['status'] == 'waiting_confirmation':
-                    call('POST', f'/api/tasks/{workflow}/confirmation', json={'accepted':True})
-                elif snapshot['status'] in {'succeeded','failed','cancelled','timed_out'}:
-                    return snapshot
-                time.sleep(.5)
-            raise AssertionError('Native task did not reach a terminal state: '+workflow)
+            return wait_for_task(api, workflow, accept_confirmation=True)
 
         def commit(change):
             note = {'note':'Real product regression: native geometry and frozen source identity checked.'}
@@ -413,12 +405,17 @@ def run():
                     checks.get_by_role('button',name='运行工程检查',exact=True).click()
                 assert checking.value.status==202,checking.value.text()
                 browser_check_id=checking.value.json()['workflow_run_id']
+                # The UI must survive the same complete workflow as API polls.
+                # The old 90s wait expired before the admitted 120s CAD budget.
+                check_wait_ms=task_wait_seconds()*1000
                 page.reload(wait_until='domcontentloaded')
                 expect(page.get_by_test_id('document-scene')).to_have_attribute('data-revision',saved['head_revision_id'],timeout=90000)
                 page.get_by_role('button',name='检查',exact=True).click()
                 checked=page.locator('.ww-inspector-pane')
-                expect(checked.get_by_role('button',name='运行工程检查',exact=True)).to_be_enabled(timeout=90000)
-                assert call('GET','/api/analyze/tasks/'+browser_check_id)['analysis']['source_revision_id']==saved['head_revision_id']
+                expect(checked.get_by_role('button',name='运行工程检查',exact=True)).to_be_enabled(timeout=check_wait_ms)
+                completed_check=call('GET','/api/analyze/tasks/'+browser_check_id)
+                assert completed_check['task_status']=='succeeded',completed_check
+                assert completed_check['analysis']['source_revision_id']==saved['head_revision_id']
                 assert call('GET',path)['head_revision_id']==saved['head_revision_id']
                 page.get_by_role('button',name='返回 Agent',exact=True).click()
                 page.get_by_role('button',name='版本',exact=True).click()

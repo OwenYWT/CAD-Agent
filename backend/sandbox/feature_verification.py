@@ -22,20 +22,29 @@ class MeasurementKernelError(ValueError):
         self.details = {'stage': stage, 'native_error': native_error or message}
 
 
+class MeasurementCoverageError(ValueError):
+    """A valid measurement target contains boundaries the inventory cannot cover."""
+
+
 def _measurement_common(left, right, stage):
+    return _measurement_boolean(left, right, stage)
+
+
+def _measurement_boolean(left, right, stage, *, difference=False):
     """A completed empty Boolean is distinct from a failed Boolean.
 
     Inspect the native result before CadQuery wraps it: wrapping a successful
     null result itself can raise. Non-destructive mode preserves source BReps.
     """
     import cadquery as cq
-    from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Common, BRepAlgoAPI_Cut
     from OCP.TopTools import TopTools_ListOfShape
+    operation = 'cut' if difference else 'common'
     try:
         arguments, tools = TopTools_ListOfShape(), TopTools_ListOfShape()
         arguments.Append(left.wrapped)
         tools.Append(right.wrapped)
-        builder = BRepAlgoAPI_Common()
+        builder = BRepAlgoAPI_Cut() if difference else BRepAlgoAPI_Common()
         builder.SetArguments(arguments)
         builder.SetTools(tools)
         builder.SetNonDestructive(True)
@@ -44,18 +53,18 @@ def _measurement_common(left, right, stage):
         # too on bindings that expose it; never infer success from error text.
         has_errors = getattr(builder, 'HasErrors', None)
         if not builder.IsDone() or (callable(has_errors) and has_errors()):
-            raise MeasurementKernelError('OCCT common did not complete', stage=stage)
+            raise MeasurementKernelError(f'OCCT {operation} did not complete', stage=stage)
         native = builder.Shape()
         if native.IsNull():
             return None
         result = cq.Shape.cast(native)
         if not result.isValid():
-            raise MeasurementKernelError('OCCT common produced invalid geometry', stage=stage)
+            raise MeasurementKernelError(f'OCCT {operation} produced invalid geometry', stage=stage)
         return result
     except MeasurementKernelError:
         raise
     except Exception as exc:
-        raise MeasurementKernelError('OCCT common failed', stage=stage,
+        raise MeasurementKernelError(f'OCCT {operation} failed', stage=stage,
             native_error=f'{type(exc).__name__}: {exc}') from exc
 
 
@@ -441,16 +450,24 @@ def _continuous_normal_wall(shape, tolerance):
     }
 
 
-def _cylindrical_voids(shape, tolerance):
+def _cylindrical_voids(shape, tolerance, *, boundary_faces=None):
     """Group concave complete cylindrical segments into coaxial passages.
 
     A bore split into faces at a seam or counterbore remains one passage.
-    Incomplete angular surfaces are not silently treated as round holes.
+    Incomplete angular surfaces are not silently treated as round holes. Every
+    original face is accounted for, including surfaces the detector cannot
+    classify. An unrecognized surface is never evidence of an absent bore.
     """
     from OCP.BRepAdaptor import BRepAdaptor_Surface
     groups = []
-    for face in shape.Faces():
-        if face.geomType() not in {"CYLINDER", "CONE"}:
+    for face_index, face in enumerate(shape.Faces()):
+        kind = face.geomType()
+        boundary = {'face_index': face_index, 'surface_type': kind,
+                    'wire_count': len(face.Wires()),
+                    'classification': 'planar' if kind == 'PLANE' else 'unresolved'}
+        if boundary_faces is not None:
+            boundary_faces.append(boundary)
+        if kind not in {"CYLINDER", "CONE"}:
             continue
         surface = BRepAdaptor_Surface(face.wrapped, True)
         is_cylinder = face.geomType() == "CYLINDER"
@@ -465,11 +482,20 @@ def _cylindrical_voids(shape, tolerance):
         point = surface.Value(u, v).Coord()
         radial = _sub(_axis_point(point, axis), origin)
         normal = face.normalAt(__import__('cadquery').Vector(*point)).toTuple()
-        if _dot(normal, radial) >= 0:
+        orientation = _dot(normal, radial)
+        boundary['normal_radial_dot'] = orientation
+        if orientation > 0:
+            boundary['classification'] = 'outward_round'
             continue  # An outside boss is not a hole.
+        if not math.isfinite(orientation) or orientation >= 0:
+            continue  # A singular/ambiguous normal cannot classify this face.
+        boundary['classification'] = 'inward_round'
         ends = [surface.Value(u, t).Coord() for t in (surface.FirstVParameter(), surface.LastVParameter())]
-        interval = sorted(_dot(p, axis) for p in ends)
+        ordered_ends = sorted(ends, key=lambda p: _dot(p, axis))
+        interval = [_dot(p, axis) for p in ordered_ends]
         segment = {"radius": float(cylinder.Radius()) if is_cylinder else None, "interval": interval,
+                   "end_radii": [_distance(_axis_point(p, axis), origin) for p in ordered_ends],
+                   "face_index": face_index,
                    "largest_radius":max(_distance(_axis_point(p,axis),origin) for p in ends),
                    "angular_span": abs(surface.LastUParameter()-surface.FirstUParameter())}
         group = next((g for g in groups if _distance(g['axis'], axis) < tolerance
@@ -513,6 +539,96 @@ def _cylindrical_voids(shape, tolerance):
     return passages
 
 
+def _closed_brep_topology(shape):
+    """Euler data of complete shells, independent of analytic surface type.
+
+    A face with n boundary wires contributes 2-n, not one. Degenerate edges
+    (e.g. sphere poles) contribute no edge. Seam edges remain counted once.
+    """
+    from OCP.BRep import BRep_Tool
+    if not shape.isValid() or not shape.Solids():
+        raise MeasurementKernelError('invalid whole BRep in coverage proof', stage='hole_inventory_coverage')
+    faces = shape.Faces()
+    return [{'shells': [{'closed': shell.Closed(), 'vertices': len(shell.Vertices()),
+        'edges': sum(not BRep_Tool.Degenerated_s(edge.wrapped) for edge in shell.Edges()),
+        'face_indices': [next(i for i, original in enumerate(faces) if original.wrapped.IsSame(face.wrapped))
+                         for face in shell.Faces()],
+        'face_wire_counts': [len(face.Wires()) for face in shell.Faces()]}
+        for shell in solid.Shells()]} for solid in shape.Solids()]
+
+
+def _hole_inventory_coverage(shape, passages, boundary_faces, tolerance, exterior):
+    """Account for every source face before checking passage fills and handles.
+
+    The source and filled BReps both participate in the proof. Unknown conical,
+    polygonal or spline through passages cannot disappear from the Euler data.
+    Genus alone cannot exclude a blind bore: every inward round face must also
+    belong to a measured passage, and every other curved face needs an explicit
+    classifier. Unknown surfaces (including NURBS equivalents) leave coverage
+    unproven, regardless of their size or Boolean volume residual. Planar open
+    box cavities remain supported. Neither target values
+    nor a generated model's feature labels are used. Only temporary BReps are
+    filled; the exported artifact and frozen requirements are never changed.
+    """
+    import cadquery as cq
+    owners = {}
+    for index, passage in enumerate(passages):
+        for segment in passage['segments']:
+            face_index = segment['face_index']
+            if face_index in owners:
+                raise MeasurementKernelError('face belongs to multiple passages', stage='hole_inventory_coverage')
+            owners[face_index] = index
+    boundary = [dict(face) for face in boundary_faces]
+    for face in boundary:
+        if face['classification'] == 'inward_round' and face['face_index'] in owners:
+            face.update(classification='passage_wall', passage_index=owners[face['face_index']])
+    coverage = {'schema_version': 'hole-coverage.v2',
+        'method': 'whole_boundary_classification_and_passage_fill',
+        'source_topology': _closed_brep_topology(shape), 'passages': [],
+        'boundary_faces': boundary,
+        'unrepresented_analytic_faces': [f['face_index'] for f in boundary if f['classification'] == 'inward_round'],
+        'incomplete_passages': [i for i, p in enumerate(passages) if not p['complete']],
+        'source_volume_mm3': sum(s.Volume() for s in shape.Solids()),
+        'material_overlap_mm3': 0., 'fill_volume_mm3': 0., 'surface_area_mm2': shape.Area()}
+    fills = []
+    for passage in passages:
+        measured = {key: passage[key] for key in ('diameter', 'largest_section_diameter',
+            'depth', 'shaft_length', 'axis', 'origin', 'start', 'end')}
+        measured['face_indices'] = sorted(s['face_index'] for s in passage['segments'])
+        value, proof = _through_passage(shape, passage, tolerance, exterior)
+        measured.update(through=value, through_evidence=proof)
+        coverage['passages'].append(measured)
+        # Coaxial surface splits represent one segment. Fill their union once.
+        segments = []
+        for segment in passage['segments']:
+            key = (*segment['interval'], *segment['end_radii'])
+            if any(max(abs(a-b) for a, b in zip(key, seen)) <= tolerance for seen in segments):
+                continue
+            segments.append(key)
+            lo, hi = segment['interval']
+            start = cq.Vector(*(o+a*lo for o, a in zip(passage['origin'], passage['axis'])))
+            direction = cq.Vector(*passage['axis'])
+            if segment['radius'] is not None:
+                fill = cq.Solid.makeCylinder(segment['radius'], hi-lo, start, direction)
+            else:
+                fill = cq.Solid.makeCone(*segment['end_radii'], hi-lo, start, direction)
+            fills.append(fill)
+    restored = shape
+    if fills:
+        union = fills[0].fuse(*fills[1:]).clean() if len(fills) > 1 else fills[0]
+        if not union.isValid():
+            raise MeasurementKernelError('invalid passage fill union', stage='hole_inventory_coverage')
+        overlap = _measurement_common(shape, union, 'hole_inventory_coverage')
+        coverage['material_overlap_mm3'] = 0. if overlap is None else sum(s.Volume() for s in overlap.Solids())
+        coverage['fill_volume_mm3'] = sum(s.Volume() for s in union.Solids())
+        restored = shape.fuse(union).clean()
+        coverage['surface_area_mm2'] += union.Area()
+    coverage['filled_topology'] = _closed_brep_topology(restored)
+    coverage['filled_volume_mm3'] = sum(s.Volume() for s in restored.Solids())
+    coverage['surface_area_mm2'] += restored.Area()
+    return coverage
+
+
 def _scope_passages(passages, scope, tolerance):
     axis = _unit(scope['axis']) if scope.get('axis') else None
     result = []
@@ -531,23 +647,40 @@ def _scope_passages(passages, scope, tolerance):
     return result
 
 
-def _through_passage(shape, passage, tolerance):
-    """Prove the complete shaft cross-section reaches exterior on both ends.
+def _exterior_void(shape, tolerance):
+    """Select the connected exterior of an enclosing box minus actual material.
 
-    A depth equal to a nominal plate thickness is not a topology certificate.
-    Intersect the actual shaft cylinder, extended past both BRep bounds, with
-    the complete material. Any remaining solid blocks the passage, including
-    a blind bottom or thin internal web. A failed Boolean remains indeterminate.
-    This deliberately certifies straight, complete round bores only.
+    A witness in the padding identifies the exterior solid; whole end-section
+    intersections, not witness rays, subsequently prove the passage connection.
     """
     import cadquery as cq
-    from itertools import product
-
     bounds = _geometric_bounds(shape)
+    padding = max(math.dist(bounds[:3], bounds[3:]) * .01, tolerance * 1000)
+    lo = [v-padding for v in bounds[:3]]
+    hi = [v+padding for v in bounds[3:]]
+    box = cq.Solid.makeBox(*(b-a for a, b in zip(lo, hi)), cq.Vector(*lo))
+    void = _measurement_boolean(box, shape, 'through_exterior_void', difference=True)
+    witness = cq.Vector(*(v-padding/2 for v in bounds[:3]))
+    exterior = [] if void is None else [s for s in void.Solids() if s.isInside(witness, tolerance)]
+    if len(exterior) != 1:
+        raise MeasurementKernelError('cannot certify a unique exterior void', stage='through_exterior_void')
+    return exterior[0], {'region_mm':[lo,hi], 'exterior_witness_mm':list(witness.toTuple()),
+                         'method':'connected_brep_void_in_padded_bounds'}
+
+
+def _through_passage(shape, passage, tolerance, exterior):
+    """Prove that a complete material passage has two open end sections.
+
+    A through-wall hole can open into a cavity. Extending its axis across the
+    entire assembly confuses an unrelated opposite wall with a blind bottom.
+    Test the measured shaft interval and both complete end disks instead;
+    planar/curved caps and arbitrarily thin bottoms still contain material.
+    Both end sections must also belong to the connected exterior void, so a
+    tunnel between sealed internal chambers cannot masquerade as a through hole.
+    """
+    import cadquery as cq
     axis = passage['axis']
-    projections = [_dot(corner, axis) for corner in product(*zip(bounds[:3], bounds[3:]))]
-    margin = max(1., 10*tolerance)
-    lo, hi = min(projections)-margin, max(projections)+margin
+    lo, hi = passage['start'], passage['end']
     start = tuple(o+a*lo for o, a in zip(passage['origin'], axis))
     probe = cq.Solid.makeCylinder(passage['diameter']/2, hi-lo, cq.Vector(*start), cq.Vector(*axis))
     material = _measurement_common(shape, probe, 'through_passage_material')
@@ -555,9 +688,23 @@ def _through_passage(shape, passage, tolerance):
     volumes = [abs(s.Volume()) for s in solids]
     if any(not math.isfinite(v) or v <= 0 for v in volumes):
         raise MeasurementKernelError('blocking material has an invalid volume', stage='through_passage_material')
-    return int(not solids), {'axis': axis, 'origin_mm': passage['origin'],
-        'shaft_diameter_mm': passage['diameter'], 'exterior_interval_mm': [lo, hi],
-        'blocking_material_mm3': sum(volumes), 'blocking_solids': len(solids)}
+    caps, exterior_areas, connected = [], [], []
+    for end in (lo, hi):
+        center = cq.Vector(*(o+a*end for o, a in zip(passage['origin'], axis)))
+        disk = cq.Face.makeFromWires(cq.Wire.makeCircle(passage['diameter']/2, center, cq.Vector(*axis)))
+        blocked = _measurement_common(disk, shape, 'through_passage_end_section')
+        caps.append(sum(f.Area() for f in _positive_face_patches(blocked, tolerance)))
+        open_section = _measurement_common(disk, exterior, 'through_passage_exterior_connection')
+        area = sum(f.Area() for f in _positive_face_patches(open_section, tolerance))
+        exterior_areas.append(area)
+        area_error = sum(edge.Length() for edge in disk.Edges()) * tolerance
+        connected.append(area > 0 and abs(area-disk.Area()) <= area_error)
+    return int(not solids and not any(caps) and all(connected)), {'axis': axis, 'origin_mm': passage['origin'],
+        'shaft_diameter_mm': passage['diameter'], 'passage_interval_mm': [lo, hi],
+        'blocking_material_mm3': sum(volumes), 'blocking_solids': len(solids),
+        'blocked_end_area_mm2': caps, 'exterior_end_area_mm2':exterior_areas,
+        'end_sections_connected_to_exterior':connected,
+        'scope': 'complete local material passage and exterior-connected end sections'}
 
 
 def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.v1',
@@ -569,6 +716,17 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
     tolerance = float(Precision.Confusion_s())
     evidence = []
     passage_cache = {}
+    boundary_face_cache = {}
+    coverage_cache = {}
+    exterior_cache = {}
+    population_cache = {}
+    grouped_checks = [c for c in checks if c.get('hole_group')]
+    if grouped_checks:
+        try:
+            from hole_populations import population_pools, compare_hole_populations, inventory_values, digest
+        except ImportError:
+            from app.contracts.hole_populations import population_pools, compare_hole_populations, inventory_values, digest
+        pools = population_pools(grouped_checks)
     source_shape = shape
     for check in checks:
         shape = source_shape
@@ -578,12 +736,35 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                'details':{'numerical_tolerance_mm':tolerance}}
         kind = check['kind']; scope = check.get('scope') or {}
         shape_id=(scope.get('object_ref') or {}).get('feature_id')
+        component_region = scope.get('component_region')
+        if component_region:
+            shape_id = ('component_region', tuple(component_region['min_mm']), tuple(component_region['max_mm']))
         passages=passage_cache.get(shape_id)
         origin = None
         try:
             if acceptance_version not in {'engineering-acceptance.v1', 'engineering-acceptance.v2'}:
                 raise ValueError('unsupported acceptance version')
             frame=scope.get('frame','world')
+            if component_region:
+                if acceptance_version != 'engineering-acceptance.v2' or frame != 'world' or scope.get('object_ref'):
+                    raise MeasurementSelectionError('component region lacks explicit world authority')
+                lo, hi = component_region['min_mm'], component_region['max_mm']
+                if any(b-a <= tolerance for a, b in zip(lo, hi)):
+                    raise MeasurementSelectionError('component region has no volume')
+                region = cq.Solid.makeBox(*(b-a for a, b in zip(lo, hi)), cq.Vector(*lo))
+                matches = []
+                for index, solid in enumerate(source_shape.Solids()):
+                    overlap = _measurement_common(solid, region, 'component_selection')
+                    if overlap is not None and any(s.Volume() > 0 for s in overlap.Solids()):
+                        matches.append((index, solid))
+                if len(matches) != 1:
+                    raise MeasurementSelectionError('component region must identify exactly one whole solid',
+                        details={'reason':'ambiguous_pair' if matches else 'selected_object_missing',
+                                 'stage':'component_selection','candidate_count':len(matches)})
+                index, shape = matches[0]  # Retain the entire solid, including out-of-region material.
+                row['details']['component_selection'] = {'solid_index':index, 'region':component_region,
+                    'method':'unique_positive_volume_overlap', 'clipped':False,
+                    'actual_bounds_mm':list(_geometric_bounds(shape)), 'selection_uses_nominal':False}
             if frame=='selected_object':
                 reference=scope.get('object_ref') or {}
                 selected=(bound_shapes or {}).get(reference.get('feature_id'))
@@ -603,7 +784,15 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                     if scope.get(field) is not None:scope[field]=[v+o for v,o in zip(scope[field],origin)]
                 scope['centers_mm']=[[v+o for v,o in zip(point,origin)] for point in scope.get('centers_mm',[])]
                 row['details']['resolved_frame_origin_mm']=origin
-            if kind == 'surface_clearance':
+            if kind == 'bounding_box':
+                if not component_region:
+                    raise MeasurementSelectionError('bounding box requires source-authorized component region')
+                bounds = _geometric_bounds(shape)
+                expected = [*component_region['min_mm'], *component_region['max_mm']]
+                row['method'] = 'whole_component_brep_bounds_residual'
+                row['measured'] = [abs(a-b) for a,b in zip(bounds,expected)]
+                row['details']['bounds_mm'] = list(bounds)
+            elif kind == 'surface_clearance':
                 distance, details = _surface_clearance(shape, scope, tolerance)
                 row['measured'] = [distance]
                 row['method'] = 'occt_trimmed_face_global_minimum_distance'
@@ -623,12 +812,14 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                 for xyz in scope['centers_mm']:
                     point=cq.Vector(*xyz)
                     if not all(a+tolerance<v<b-tolerance for a,v,b in zip(lo,xyz,hi)):
-                        raise ValueError('connectivity probe must be inside its region')
+                        raise MeasurementSelectionError('connectivity probe must be strictly inside its region',
+                            details={'reason':'probe_outside_region','stage':'void_selection'})
                     vertex=cq.Vertex.makeVertex(*xyz)
                     matches=[i for i,s in enumerate(components) if s.isInside(point,tolerance)
                         and all(f.distance(vertex)>tolerance for f in s.Faces())]
                     if len(matches)!=1:
-                        raise ValueError('connectivity probe is not uniquely inside a void')
+                        raise MeasurementSelectionError('connectivity probe is not uniquely inside a void',
+                            details={'reason':'void_probe_unbound','stage':'void_selection'})
                     membership.append(matches[0])
                 row['method']='connected_brep_void_components_in_explicit_region'
                 row['details']['region_mm']=[lo,hi]
@@ -660,23 +851,80 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                 row['details']['bounds_method'] = 'occt_add_optimal_without_triangulation_or_shape_tolerance_padding'
             elif kind.startswith('hole_'):
                 if passages is None:
-                    passages = _cylindrical_voids(shape,tolerance)
+                    boundary_face_cache[shape_id] = []
+                    passages = _cylindrical_voids(shape,tolerance, boundary_faces=boundary_face_cache[shape_id])
                 holes = _scope_passages(passages,scope,tolerance)
                 row['method'] = 'concave_cylindrical_passages'
                 row['details']['scope'] = 'complete cylindrical passages only'
+                inventory = None
+                # Every hole predicate ranges over the selected inventory.
+                # A diameter/depth/through-only contract must not silently
+                # quantify just the surfaces this detector happens to know.
+                if kind.startswith('hole_'):
+                    try:
+                        from hole_populations import verify_inventory_coverage, digest
+                    except ImportError:
+                        from app.contracts.hole_populations import verify_inventory_coverage, digest
+                    if shape_id not in coverage_cache:
+                        if passages and shape_id not in exterior_cache:
+                            exterior_cache[shape_id] = _exterior_void(shape, tolerance)
+                        coverage_cache[shape_id] = _hole_inventory_coverage(shape, passages,
+                            boundary_face_cache[shape_id], tolerance,
+                            exterior_cache[shape_id][0] if passages else None)
+                    coverage = coverage_cache[shape_id]
+                    indices = [i for i, p in enumerate(passages) if any(p is hole for hole in holes)]
+                    inventory = {'schema_version': 'hole-inventory.v2', 'complete': False,
+                        'coverage': coverage, 'selected_indices': indices,
+                        'passages': [coverage['passages'][i] for i in indices]}
+                    row['details']['hole_inventory'] = inventory
+                    # Verify first; complete is derived from geometric evidence.
+                    try:
+                        from hole_populations import verify_hole_coverage
+                    except ImportError:
+                        from app.contracts.hole_populations import verify_hole_coverage
+                    try:
+                        verify_hole_coverage(coverage, tolerance, check=check)
+                    except ValueError as exc:
+                        raise MeasurementCoverageError(str(exc)) from exc
+                    inventory['complete'] = True
+                    verify_inventory_coverage(inventory, tolerance, check=check)
+                    row['details']['hole_inventory_sha256'] = digest(inventory)
                 if any(not h['complete'] for h in holes):
                     row['issues'].append('incomplete_cylindrical_boundary')
+                elif check.get('hole_group'):
+                    pool_id = digest(check.get('scope') or {})
+                    if pool_id not in population_cache:
+                        evaluation = compare_hole_populations(pools[pool_id], inventory, tolerance,
+                                                              policy_id=comparison_policy_id)
+                        population_cache[pool_id] = inventory, evaluation
+                    inventory, evaluation = population_cache[pool_id]
+                    row['method'] = 'certified_hole_inventory_quantified_partition'
+                    row['measured'] = inventory_values(check, inventory)
+                    row['outcome'] = evaluation['outcome']
+                    row['details'].update(hole_inventory=inventory, population_evaluation=evaluation,
+                        hole_inventory_sha256=evaluation['inventory_sha256'],
+                        population_evaluation_sha256=digest(evaluation), feature_count=evaluation['feature_count'],
+                        comparison=check['comparison'], comparison_policy_id=comparison_policy_id,
+                        numerical_tolerance=tolerance, verification_scope='cad_geometry')
+                    if evaluation['outcome'] == 'failed':
+                        row['issues'].append('hole_population_constraints_unsatisfied')
                 elif kind == 'hole_count':
                     row['measured'] = [len(holes)]
                 elif kind == 'hole_through':
-                    row['method'] = 'complete_shaft_to_exterior_without_material'
+                    row['details']['feature_count'] = len(holes)
+                    row['method'] = 'complete_shaft_and_exterior_connected_end_sections'
                     if not holes:
                         row['outcome'] = 'failed';row['issues'].append('no_matching_cylindrical_passage')
                     else:
-                        certificates = [_through_passage(shape, hole, tolerance) for hole in holes]
+                        if shape_id not in exterior_cache:
+                            exterior_cache[shape_id] = _exterior_void(shape, tolerance)
+                        exterior, proof = exterior_cache[shape_id]
+                        row['details']['exterior_void'] = proof
+                        certificates = [_through_passage(shape, hole, tolerance, exterior) for hole in holes]
                         row['measured'] = [value for value, _ in certificates]
                         row['details']['passages'] = [proof for _, proof in certificates]
                 elif kind in {'hole_diameter','hole_depth'}:
+                    row['details']['feature_count'] = len(holes)
                     if not holes:
                         row['outcome'] = 'failed';row['issues'].append('no_matching_cylindrical_passage')
                     else:
@@ -685,6 +933,7 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                         row['measured'] = [h[quantity] for h in holes]
                         row['details']['quantity'] = quantity
                 elif kind == 'hole_position':
+                    row['details']['feature_count'] = len(holes)
                     axis = _unit(scope['axis']);remaining = list(holes);distances=[]
                     for expected in scope['centers_mm']:
                         if not remaining:
@@ -741,7 +990,9 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                         row['details']['scope']='local probe only; not a whole-surface certificate'
                 elif mode == 'radial':
                     from OCP.BRepAdaptor import BRepAdaptor_Surface
-                    if passages is None: passages=_cylindrical_voids(shape,tolerance)
+                    if passages is None:
+                        boundary_face_cache[shape_id] = []
+                        passages = _cylindrical_voids(shape,tolerance, boundary_faces=boundary_face_cache[shape_id])
                     holes=_scope_passages(passages,scope,tolerance)
                     for hole in holes:
                         candidates=[]
@@ -788,14 +1039,18 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                     row['issues'].append('continuous_normal_wall_not_certified_by_analytic_measurements')
             else:
                 row['issues'].append('measurement_kind_not_supported')
-            if row['measured'] and not row['issues']:
+            cardinality_failure = (row['outcome'] == 'failed' and row['details'].get('feature_count') is not None
+                and row['issues'] in [['no_matching_cylindrical_passage'], ['hole_position_count_mismatch']])
+            if not row['details'].get('population_evaluation') and ((row['measured'] and not row['issues'])
+                    or (acceptance_version == 'engineering-acceptance.v2' and cardinality_failure)):
                 if acceptance_version == 'engineering-acceptance.v2':
                     try:
-                        from acceptance_comparison import compare_measurement
+                        from acceptance_comparison import compare_feature_measurement
                     except ImportError:
-                        from app.contracts.acceptance_comparison import compare_measurement
-                    compared = compare_measurement(check['comparison'], row['measured'],
+                        from app.contracts.acceptance_comparison import compare_feature_measurement
+                    compared = compare_feature_measurement(check, row['measured'],
                         row['details']['numerical_tolerance_mm3' if kind == 'volume' else 'numerical_tolerance_mm'],
+                        feature_count=row['details'].get('feature_count'),
                         policy_id=comparison_policy_id)
                     row['outcome'] = compared.pop('outcome')
                     row['details'].update(compared)
@@ -805,7 +1060,7 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                     if kind == 'volume':
                         allowed = (check.get('tolerance_mm3') or 0)+row['details']['numerical_tolerance_mm3']
                     row['outcome'] = 'passed' if all(abs(v-wanted)<=allowed for v in row['measured']) else 'failed'
-            elif not row['issues']:
+            elif not row['issues'] and not row['details'].get('population_evaluation'):
                 row['issues'].append('no_measurement_evidence')
         except Exception as exc:
             row.update(outcome='indeterminate', measured=[], issues=[f'measurement_error:{type(exc).__name__}:{exc}'])
@@ -816,6 +1071,10 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
             elif isinstance(exc, MeasurementKernelError):
                 row['details'].update(error_code='acceptance_measurement_failed',
                     repair_target='measurement_kernel', cad_source_repair_allowed=False, **exc.details)
+            elif isinstance(exc, MeasurementCoverageError):
+                row['details'].update(error_code='acceptance_inventory_incomplete',
+                    reason='hole_inventory_incomplete', stage='hole_inventory_coverage',
+                    repair_target='measurement_coverage', cad_source_repair_allowed=False)
         if passages is not None:
             passage_cache[shape_id]=passages
         if binding_context is not None:

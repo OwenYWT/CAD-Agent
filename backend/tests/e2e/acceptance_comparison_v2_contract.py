@@ -93,6 +93,19 @@ shapes = {{
     'thin_web': plate.cut(bore(.01, 12)),
     'mixed': through.cut(bore(8, 5, x=10)),
 }}
+# A local through-wall passage opens into a real cavity. The opposite wall
+# must remain intact; extending the test ray across the whole part is wrong.
+enclosure = Part.makeBox(40, 30, 24).cut(Part.makeBox(34, 24, 21, App.Vector(3, 3, 3)))
+side_bore = lambda x, length: Part.makeCylinder(3, length, App.Vector(x, 15, 12), App.Vector(1, 0, 0))
+shapes['wall_through'] = enclosure.cut(side_bore(37, 4))
+shapes['wall_blind'] = enclosure.cut(side_bore(38, 3))
+shapes['wall_thin_web'] = enclosure.cut(side_bore(37.01, 4))
+shapes['wall_both_sides'] = enclosure.cut(side_bore(-1, 42))
+# A full round shaft between two closed internal chambers has two empty end
+# sections but no connection to exterior. It is not a through opening.
+chambers = Part.makeBox(8, 8, 8, App.Vector(8, 11, 2)).fuse(Part.makeBox(8, 8, 8, App.Vector(24, 11, 2)))
+chambers = chambers.fuse(Part.makeCylinder(3, 16, App.Vector(12, 15, 6), App.Vector(1, 0, 0)))
+shapes['sealed_chambers'] = plate.cut(chambers)
 rotated = through.copy()
 rotated.rotate(App.Vector(), App.Vector(1, 2, 3), 43)
 rotated.translate(App.Vector(81, -32, 67))
@@ -118,7 +131,10 @@ print('NATIVE_THROUGH_CASES_SAVED')
     through_evidence = {}
     for name, expected in [('blind', 'failed'), ('through', 'passed'), ('counterbore', 'passed'),
                            ('countersink', 'passed'), ('sealed_cavity', 'failed'), ('thin_web', 'failed'),
-                           ('mixed', 'failed'), ('rotated_through', 'passed')]:
+                           ('mixed', 'failed'), ('rotated_through', 'passed'),
+                           ('wall_through', 'passed'), ('wall_blind', 'failed'),
+                           ('wall_thin_web', 'failed'), ('wall_both_sides', 'passed'),
+                           ('sealed_chambers', 'failed')]:
         native_path, step_path = root / (name + '.FCStd'), root / (name + '.step')
         hashes = [hashlib.sha256(p.read_bytes()).hexdigest() for p in (native_path, step_path)]
         shape = cq.importers.importStep(str(step_path)).val()
@@ -128,6 +144,17 @@ print('NATIVE_THROUGH_CASES_SAVED')
         assert rows[0]['outcome'] == 'passed', (name, rows)
         assert rows[1]['outcome'] == expected, (name, rows)
         assert all(v == 1 for v in rows[1]['measured']) == (expected == 'passed'), (name, rows)
+        if name in {'sealed_cavity', 'sealed_chambers'}:
+            count = measure_checks(shape, [{'check_id': 'count', 'kind': 'hole_count',
+                'comparison': {'op': 'eq', 'value': 1., 'unit': 'count'}}],
+                acceptance_version='engineering-acceptance.v2', comparison_policy_id='occt-confusion-v1')[0]
+            assert count['outcome'] == 'indeterminate', count
+            assert count['details']['hole_inventory']['complete'] is False, count
+        if name in {'wall_through', 'wall_both_sides'}:
+            count = measure_checks(shape, [{'check_id':'one_side_hole', 'kind':'hole_count',
+                'comparison':{'op':'eq','value':1.,'unit':'count'}, 'scope':{'axis':[1,0,0]}}],
+                acceptance_version='engineering-acceptance.v2', comparison_policy_id='occt-confusion-v1')[0]
+            assert count['outcome'] == ('passed' if name == 'wall_through' else 'failed'), count
         assert [hashlib.sha256(p.read_bytes()).hexdigest() for p in (native_path, step_path)] == hashes
         through_evidence[name] = {'native_sha256': hashes[0], 'step_sha256': hashes[1], 'evidence': rows}
     print('CAD_ACCEPTANCE_COMPARISON_V2=' + json.dumps({'step_sha256': before, 'evidence': evidence,

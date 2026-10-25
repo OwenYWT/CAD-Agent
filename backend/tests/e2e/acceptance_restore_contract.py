@@ -1,9 +1,9 @@
 """Public parameter edit, browser history restore, candidate commit and reopen."""
 import json
-import time
 from uuid import uuid4
 
 from playwright.sync_api import expect
+from runtime_fixture import wait_for_task, task_wait_seconds
 
 
 def verify_restore(page, api, fixture, out):
@@ -16,17 +16,9 @@ def verify_restore(page, api, fixture, out):
     assert values[parameter] == 9
 
     def terminal(task):
-        confirmed = False
-        for _ in range(240):
-            snapshot = api.get('/api/tasks/' + task + '/snapshot').raise_for_status().json()
-            if snapshot['status'] == 'waiting_confirmation' and not confirmed:
-                api.post('/api/tasks/' + task + '/confirmation', json={'accepted': True}).raise_for_status()
-                confirmed = True
-            if snapshot['status'] in {'succeeded', 'failed', 'cancelled', 'timed_out'}:
-                assert snapshot['status'] == 'succeeded', snapshot.get('error_message')
-                return snapshot
-            time.sleep(.5)
-        raise AssertionError('Native workflow did not finish: ' + task)
+        snapshot = wait_for_task(api, task, accept_confirmation=True)
+        assert snapshot['status'] == 'succeeded', snapshot.get('error_message')
+        return snapshot
 
     edited = api.post(path + '/operations', json={'action': 'parameters.update',
         'expected_base_revision_id': original, 'expected_state_version': before['state_version'],
@@ -54,7 +46,7 @@ def verify_restore(page, api, fixture, out):
     assert accepted['request_payload']['revision_restore']['source_revision_id'] == original
     assert accepted['request_payload']['expected_base_revision_id'] == middle['head_revision_id']
     confirmation.get_by_role('button', name='确认并继续', exact=True).click()
-    expect(card).to_have_attribute('data-task-phase', 'candidate', timeout=120000)
+    expect(card).to_have_attribute('data-task-phase', 'candidate', timeout=task_wait_seconds()*1000)
     assert api.get(path).raise_for_status().json()['head_revision_id'] == middle['head_revision_id']
     card.get_by_role('button', name='审阅候选与参数变化', exact=True).click()
     review = page.get_by_role('dialog', name='变更审查', exact=True)

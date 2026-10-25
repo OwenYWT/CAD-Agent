@@ -81,8 +81,10 @@ python tests/e2e/monitoring_permissions_browser.py
 kill "$worker_pid"
 wait "$worker_pid" || true
 python tests/e2e/constraint_failure_browser.py
+python tests/e2e/hole_population_browser.py seed
 python -m app.workers.workflow_worker >> "$report_root/browser-worker.log" 2>&1 &
 worker_pid=$!
+python tests/e2e/hole_population_browser.py browser
 python tests/e2e/native_parameter_contract.py
 "${SANDBOX_COMMAND:-docker}" run --rm --network none --read-only \
   --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,size=2g \

@@ -31,7 +31,8 @@ class RequirementBasisV1(BaseModel):
             f'目标：{self.target}', f'用途：{self.purpose or "未确认"}',
             f'尺寸来源类型：{self.source_kind}；来源：{self.source_reference or "未提供"}',
             f'用户明确尺寸：{self.dimensions or "未提供，不得凭机型名称声称尺寸可靠"}',
-            f'开孔与装配依据：{self.fit_notes or "未提供"}',
+            *([f'开孔与装配依据：{self.fit_notes or "未提供"}']
+              if self.fit_notes or self.design_scope == 'physical_fit' else []),
             '不得擅自替换用户明确尺寸；冲突必须请求确认。',
             ('适配未验证。缺少依据的几何只能作为概念外形，不得声称适配、配合或制造条件已验证。'
              if self.design_scope == 'physical_fit' else

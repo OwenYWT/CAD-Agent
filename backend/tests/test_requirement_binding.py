@@ -35,6 +35,99 @@ def test_property_quantity_relation_and_unit_are_independently_extracted(text, o
     assert report['status'] == 'bound' and report['bindings'][0]['status'] == 'bound'
 
 
+def test_declared_unit_binds_labelled_values_without_losing_its_source():
+    text = '单位：mm\n壁厚：3\n孔径：4.5'
+    result = extract_requirements(text)
+    assert not result['unsupported']
+    assert [(r['kind'], r['comparison']['value']) for r in result['requirements']] == [
+        ('wall_thickness', 3), ('hole_diameter', 4.5)]
+    assert all(text[slice(*r['unit_source_span'])] == '单位：mm' for r in result['requirements'])
+    assert validate_requirement_bindings(text, parsed_contract(text))['status'] == 'bound'
+    assert extract_requirements('壁厚：3')['unsupported']
+
+
+def test_conflicting_document_units_do_not_authorize_bare_quantities():
+    assert extract_requirements('单位：mm\n单位：cm\n壁厚：3')['unsupported']
+
+
+@pytest.mark.parametrize('condition', ['圆角半径：4', '密封槽深度：2', '孔中心距：68', '支脚高度：3'])
+def test_declared_unit_does_not_hide_unbound_feature_quantities(condition):
+    result = extract_requirements('单位：mm\n长度：80\n' + condition)
+    assert result['requirements'] and result['unsupported']
+
+
+@pytest.mark.parametrize('condition', ['不包含上盖', '不创建圆角', '不添加螺纹', '两个实体互不接触'])
+def test_unbound_exclusions_and_separation_cannot_silently_pass(condition):
+    assert extract_requirements('长度80mm，' + condition)['unsupported']
+
+
+@pytest.mark.parametrize('text,count', [
+    ('4 个 M4 圆形通孔，孔径4.5 mm', 4),
+    ('上盖固定孔为 4 个圆形 M3 通孔，孔径3.4 mm', 4),
+    ('1 个圆形线缆接头孔，孔径12.5 mm', 1),
+])
+def test_hole_qualifiers_do_not_hide_the_explicit_count(text, count):
+    result = extract_requirements(text)
+    counts = [r for r in result['requirements'] if r['kind'] == 'hole_count']
+    assert len(counts) == 1 and counts[0]['comparison']['value'] == count
+    assert validate_requirement_bindings(text, parsed_contract(text))['status'] == 'bound'
+
+
+def test_screw_designation_is_not_a_hole_count():
+    for text in ('M4 圆形通孔', 'M4 通孔', 'M3孔'):
+        result = extract_requirements(text)
+        assert not any(r['kind'] == 'hole_count' for r in result['requirements'])
+
+
+def test_explicit_components_bind_separate_world_bounds_not_assembly_dimensions():
+    text = ('盒体外部长方体坐标范围为 X=0 至 80 mm、Y=0 至 55 mm、Z=0 至 32 mm。'
+            '上盖坐标范围为 X=90 至 170 mm、Y=0 至 55 mm、Z=0 至 3 mm。')
+    extracted = extract_requirements(text)
+    assert not extracted['unsupported']
+    contract = parsed_contract(text)
+    assert len(contract.checks) == 2
+    assert [c.kind for c in contract.checks] == ['bounding_box','bounding_box']
+    assert contract.checks[0].scope.component_region.max_mm == (80.,55.,32.)
+    assert contract.checks[1].scope.component_region.min_mm == (90.,0.,0.)
+    assert validate_requirement_bindings(text,contract)['status']=='bound'
+    changed = contract.checks[1].model_copy(update={'scope':contract.checks[0].scope})
+    with pytest.raises(RequirementBindingError,match='scope'):
+        validate_requirement_bindings(text,contract.model_copy(update={'checks':(contract.checks[0],changed)}))
+
+
+def test_cavity_coordinates_are_not_mislabelled_as_a_material_component():
+    result = extract_requirements('内部空腔坐标范围为 X=3 至 77 mm、Y=3 至 52 mm、Z=3 至 32 mm。')
+    assert not result['requirements'] and result['unsupported'][0]['reason']=='void_component_scope_unbound'
+
+
+def test_quote_is_bound_by_verified_reference_without_fixing_a_wrong_measurement():
+    from app.validation.requirement_binding import bind_source_quotes
+    text = '孔径6 mm，孔深8 mm'
+    raw = parsed_contract(text).model_dump(mode='json')
+    raw['checks'][0]['source_quote'] = '孔径…6 mm'
+    raw['checks'][0]['comparison']['value'] = 7
+    bind_source_quotes(text, raw)
+    assert raw['checks'][0]['source_quote'] == '孔径6 mm'
+    with pytest.raises(RequirementBindingError, match='quantity'):
+        validate_requirement_bindings(text, AcceptanceContractV2.model_validate(raw))
+
+
+def test_auto_intake_echo_does_not_create_a_second_unlabelled_requirement_source():
+    from types import SimpleNamespace
+    from app.domain.requirement_basis import RequirementBasisV1
+    from app.workflows.handlers.planning import requirements_sources
+    objective = '创建板，长80 mm、宽55 mm、厚3 mm'
+    def sources(dimensions):
+        return requirements_sources(SimpleNamespace(objective=objective,
+            operation_context=SimpleNamespace(requirement_basis=RequirementBasisV1(
+                target='板', design_scope='geometry', source_kind='user_specification',
+                source_reference='用户需求中指定的设计尺寸', dimensions=dimensions))))
+    assert len(sources('80 mm；55 mm；3 mm')) == 1
+    assert len(sources(objective)) == 1
+    assert len(sources('80 mm；55 mm；4 mm')) == 2
+    assert len(sources('孔径3 mm')) == 2
+
+
 @pytest.mark.parametrize('comparison,code', [
     ({'op': 'eq', 'value': 20., 'unit': 'mm', 'tolerance_minus': 5.,
       'tolerance_plus': 5., 'tolerance_source_refs': ['invented']}, 'requirement_binding_mismatch'),
@@ -99,8 +192,10 @@ def test_equal_numbers_do_not_authorize_swapping_properties_or_selection():
     text = '孔径 6 mm，孔深 6 mm'
     parsed = parsed_contract(text)
     changed = parsed.checks[0].model_copy(update={'kind': 'hole_depth'})
-    with pytest.raises(RequirementBindingError, match='property'):
+    with pytest.raises(RequirementBindingError, match='property') as error:
         validate_requirement_bindings(text, parsed.model_copy(update={'checks': (changed, parsed.checks[1])}))
+    assert 'expected hole_diameter' in str(error.value)
+    assert parsed.checks[1].binding_ref in str(error.value)
 
 
 def test_unsupported_numeric_geometry_is_never_reported_as_fully_bound():
@@ -145,11 +240,14 @@ def test_ambiguous_or_unmeasured_preservation_is_unavailable(values):
 
 
 def test_selected_object_baseline_cannot_authorize_whole_model_preservation():
-    state=baseline()
-    state['verified_acceptance']['measurements'][0]['scope']={'frame':'selected_object',
-        'object_ref':{'feature_id':'one-of-two-bodies','revision_id':'previous-base'}}
-    result=extract_requirements('保持孔径不变',verified_state=state)
-    assert result['unsupported'] and not result['requirements']
+    for scope in [
+        {'frame':'selected_object', 'object_ref':{'feature_id':'one-of-two-bodies','revision_id':'previous-base'}},
+        {'frame':'world', 'component_region':{'min_mm':[0,0,0],'max_mm':[80,55,32]}},
+    ]:
+        state=baseline()
+        state['verified_acceptance']['measurements'][0]['scope']=scope
+        result=extract_requirements('保持孔径不变',verified_state=state)
+        assert result['unsupported'] and not result['requirements']
 
 
 def test_hole_section_semantics_cannot_be_changed_by_planner():

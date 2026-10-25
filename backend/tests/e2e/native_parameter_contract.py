@@ -11,10 +11,10 @@ import math
 import os
 from pathlib import Path
 import subprocess
-import time
 from uuid import uuid4
 
 import httpx
+from runtime_fixture import wait_for_task
 
 SEED = '''import asyncio,json,sys
 from uuid import uuid4
@@ -110,13 +110,7 @@ def main():
                     'parameter_updates':updates}}
             task=call('POST',path+'/operations',json=request)['workflow_run_id']
             assert call('POST',path+'/operations',json=request)['workflow_run_id']==task
-            confirmed=False
-            while True:
-                snapshot=call('GET',f'/api/tasks/{task}/snapshot')
-                if snapshot['status']=='waiting_confirmation' and not confirmed:
-                    call('POST',f'/api/tasks/{task}/confirmation',json={'accepted':True});confirmed=True
-                if snapshot['status'] in {'succeeded','failed','cancelled','timed_out'}: break
-                time.sleep(.5)
+            snapshot=wait_for_task(client,task,accept_confirmation=True)
             (out/(kind+'-task.json')).write_text(json.dumps(snapshot,ensure_ascii=False,indent=2))
             assert snapshot['status']=='succeeded', (kind,snapshot.get('error_code'),snapshot.get('error_message'))
             commit(snapshot['change_set']['id']); after=call('GET',path)

@@ -14,7 +14,8 @@ from app.llm import find_provider_exception
 from app.models.schemas import CADPlan, ModificationPlan
 from app.contracts.acceptance import acceptance_tool_schema
 from app.contracts.acceptance_v2 import AcceptanceContractV2
-from app.validation.requirement_binding import extract_source_requirements, validate_requirement_bindings, RequirementBindingError
+from app.validation.requirement_binding import extract_source_requirements, validate_requirement_bindings, bind_source_quotes, RequirementBindingError
+from app.validation.acceptance_preflight import validate_new_acceptance
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,9 @@ def _v2_requirements_prompt(objective, tool_name, *, verified_state=None, requir
     return ('\nSubmit all requirements with ' + tool_name + '. Use engineering-acceptance.v2. '
         'The server binds objective. Copy binding_ref from the source requirement_id below, retaining property, '
         'quantity, unit, comparison and authorized tolerance exactly. Cover every extracted requirement. '
+        'Copy each supplied hole_group exactly as well: it identifies a counted source phrase. '
+        'All groups in one scope jointly partition the complete measured hole inventory, each hole counted once. '
+        'Do not replace hole_group with a guessed region or omit the group count, diameter, depth or through predicate. '
         'eq/ge/le/range mean equality, inclusive minimum, inclusive maximum and closed interval. '
         'Never put nominal/tolerance_mm into v2. Positive engineering tolerance needs its exact supplied '
         'tolerance_source_refs; absent tolerance means numerical precision only. Do not invent confirmed sources. '
@@ -109,7 +113,14 @@ def _v2_requirements_prompt(objective, tool_name, *, verified_state=None, requir
         'opposing face pair, and whole-part wall requirements need continuous_normal coverage. '
         'hole_position compares zero transverse residual against its authorized centers and axis. '
         'hole_through is a separate exact count predicate (eq 1): the complete round shaft must reach '
-        'exterior at both ends; matching diameter or nominal depth cannot replace it. '
+        'exterior-connected void at both ends of that material passage; matching diameter or nominal depth cannot replace it. '
+        'A shaft between sealed internal chambers does not prove a through opening. '
+        'A side-wall through hole can open into a cavity; it does not authorize a second hole in the opposite wall. '
+        'For nominal geometry or concept designs, missing manufacturing tolerances do not create a required '
+        'fit or motion certification. Keep physical fit, waterproof performance and manufacturing validation '
+        'separate from geometry; retain explicit performance requirements as unverified when unsupported. '
+        'Requested STEP/STL/FCStd delivery is enforced by native export, artifact readers and sealing; '
+        'it is not an unsupported geometric measurement. Retain the requested output formats in the plan. '
         'Keep all other required features in the design. Unsupported or unbound semantic conditions belong '
         'in verification_limits, never silently dropped or recast as missing user input. '
         'Only missing design information belongs in unresolved and 必须确认 open_questions. '
@@ -288,11 +299,15 @@ The submit_cad_plan tool parameters contain the authoritative field definitions 
                     if not isinstance(acceptance, dict):
                         raise ValueError("requirements must include an explicit acceptance contract at design_brief.acceptance; a top-level acceptance field is not this contract")
                     acceptance["objective"] = objective
+                    if acceptance_version == 'engineering-acceptance.v2':
+                        bind_source_quotes(objective, acceptance, requirement_sources=requirement_sources)
                 elif require_acceptance:
                     # STEP solid measurements do not apply to a DXF profile.
                     # Preserve the existing 2D gate instead of inventing 3D evidence.
                     (parsed.get("design_brief") or {}).pop("acceptance", None)
                 plan = self._parse_plan_payload(parsed)
+                if require_acceptance and plan.part_type != 'profile_2d':
+                    validate_new_acceptance(plan.design_brief.acceptance)
                 if require_acceptance and acceptance_version == 'engineering-acceptance.v2' and plan.part_type != 'profile_2d':
                     _validate_v2(objective, plan.design_brief.acceptance, requirement_sources=requirement_sources)
 
@@ -386,7 +401,12 @@ The submit_modification_plan tool parameters contain the authoritative field def
                     if not isinstance(parsed.get('acceptance'),dict):
                         raise ValueError('modification requires an explicit acceptance contract')
                     parsed['acceptance']['objective']=str(messages[-1]['content'])
+                    if acceptance_version == 'engineering-acceptance.v2':
+                        bind_source_quotes(str(messages[-1]['content']), parsed['acceptance'],
+                            verified_state=verified_state, requirement_sources=requirement_sources)
                 plan = self._parse_modification_payload(parsed)
+                if require_acceptance:
+                    validate_new_acceptance(plan.acceptance)
                 if require_acceptance and acceptance_version == 'engineering-acceptance.v2':
                     _validate_v2(str(messages[-1]['content']), plan.acceptance, verified_state=verified_state,
                                  requirement_sources=requirement_sources)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 import hashlib
 import json
+import re
 from typing import Any
 from temporalio.exceptions import ApplicationError
 from app.agent.durable_plan import AgentPlan, normalize_agent_plan_backend, enforce_design_validation
@@ -30,8 +31,43 @@ def requirements_sources(request) -> list[dict]:
         for key in ('dimensions', 'fit_notes'):
             value = getattr(basis, key)
             if value:
+                if key == 'dimensions' and _dimension_echo(request.objective, value):
+                    continue
                 sources.append({'source_input_id':'basis-'+key.replace('_','-'), 'source_kind':'confirmed', 'text':value})
     return sources
+
+
+def _dimension_echo(objective: str, value: str) -> bool:
+    """Discard only a provable duplicate of the unchanged original input.
+
+    Older intake clients extracted a bare, ordered list of numbers. That list
+    cannot become a new property requirement. Any edited value or labelled
+    supplementary condition remains an independent confirmed source.
+    """
+    if value.strip() == objective.strip():
+        return True
+    quantity = r'\d+(?:\.\d+)?(?:\s*[×xX*]\s*\d+(?:\.\d+)?){0,2}\s*(?:mm|cm|毫米|厘米)'
+    if not re.fullmatch(rf'\s*{quantity}(?:\s*[；;]\s*{quantity})*\s*', value, re.I):
+        return False
+    normalize = lambda text: re.sub(r'\s+', '', text).lower()
+    return ([normalize(m.group()) for m in re.finditer(quantity, objective, re.I)]
+            == [normalize(m.group()) for m in re.finditer(quantity, value, re.I)])
+
+
+def modification_acceptance_options(request, payload, *, sources, base_state):
+    # New 3D jobs share source semantics across backends. The workflow patch
+    # preserves the input/decisions of released CadQuery histories; DXF/SVG-only
+    # jobs retain their separate 2D validation policy.
+    enabled = request.modeling_backend == 'freecad' or (
+        payload.get('all_3d_acceptance_v1') and bool(set(request.output_formats) & {'step', 'stl'}))
+    if not enabled or not payload.get('engineering_acceptance_v1'):
+        return {}
+    result = {'require_acceptance': True}
+    if payload.get('acceptance_bindings_v2'):
+        result['acceptance_version'] = 'engineering-acceptance.v2'
+        if sources is not None:
+            result.update(requirement_sources=sources, verified_state=base_state)
+    return result
 
 
 async def agent_requirements(payload: dict[str, Any], *, durable_planner: DurableAgentPlanner) -> dict[str, Any]:
@@ -147,13 +183,15 @@ async def agent_requirements(payload: dict[str, Any], *, durable_planner: Durabl
                 )
             else:
                 model_context = request.existing_code or ""
+            acceptance_options = modification_acceptance_options(request, payload, sources=sources, base_state=base_state)
             requirements = await durable_planner.requirements_modification(
                 model_context,
                 requirements_objective(request),
-                **({'require_acceptance':True} if payload.get('engineering_acceptance_v1') and request.modeling_backend=='freecad' else {}),
-                **({'acceptance_version': 'engineering-acceptance.v2'} if payload.get('acceptance_bindings_v2') and request.modeling_backend=='freecad' else {}),
-                **({'requirement_sources':sources, 'verified_state':base_state} if sources is not None and request.modeling_backend=='freecad' else {}),
+                **acceptance_options,
             )
+            if acceptance_options.get('require_acceptance') and requirements.acceptance is None:
+                raise ApplicationError('修改任务缺少必需的工程验收合同',
+                    type='engineering_verification_unavailable', non_retryable=True)
         acceptance = (requirements.design_brief.acceptance
             if isinstance(requirements, CADPlan) and requirements.design_brief
             else getattr(requirements, 'acceptance', None))

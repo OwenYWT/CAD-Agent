@@ -61,6 +61,11 @@ for wall in [1.5,3,5]:
     tube=cq.Workplane('XY').circle(20).circle(20-wall).extrude(30).val()
     measured=measure_checks(tube,[check('wall_thickness',wall,axis=[0,0,1],wall_mode='radial')])
     assert measured[0]['outcome']=='passed',measured
+    # A preceding wall measurement shares the analytic scan, including its
+    # inward-face inventory; check ordering must not change hole coverage.
+    ordered=measure_checks(tube,[check('wall_thickness',wall,axis=[0,0,1],wall_mode='radial'),
+                                check('hole_count',1)])
+    assert all(row['outcome']=='passed' for row in ordered),ordered
     assert measure_checks(tube,[check('wall_thickness',wall+1,axis=[0,0,1],wall_mode='radial')])[0]['outcome']=='failed'
     # The radius difference is not a material certificate. Neither a hidden
     # cavity nor a cross-drilled wall may retain a passing radial certificate.
@@ -116,6 +121,20 @@ scope={'region_min_mm':[-15,-10,0],'region_max_mm':[15,10,10],'centers_mm':[[-7,
 for part,wanted in [(separate,0),(joined,1)]:
     result=measure_checks(part,[check('void_connected',wanted,**scope)])
     assert result[0]['outcome']=='passed',result
+# An exterior probe must be interior to the measurement region. A boundary
+# probe is an invalid instruction, not a reason to alter the saved cavity.
+outer=cq.Solid.makeBox(80,55,32)
+cavity=cq.Solid.makeBox(74,49,29,cq.Vector(3,3,3))
+open_box=outer.cut(cavity)
+closed_box=open_box.fuse(cq.Solid.makeBox(80,55,1,cq.Vector(0,0,31)))
+opening={'region_min_mm':[-1,-1,-1],'region_max_mm':[81,56,34],
+         'centers_mm':[[40,27.5,10],[40,27.5,33]]}
+assert measure_checks(open_box,[check('void_connected',1,**opening)])[0]['outcome']=='passed'
+assert measure_checks(closed_box,[check('void_connected',1,**opening)])[0]['outcome']=='failed'
+invalid={**opening,'region_max_mm':[81,56,33]}
+row=measure_checks(open_box,[check('void_connected',1,**invalid)])[0]
+assert row['outcome']=='indeterminate' and row['details']['cad_source_repair_allowed'] is False,row
+assert row['details']['reason']=='probe_outside_region',row
 with tempfile.TemporaryDirectory() as directory:
     file=Path(directory)/'candidate.step'
     cq.exporters.export(stepped,str(file))
