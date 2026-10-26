@@ -27,6 +27,59 @@ _probe = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_probe)
 
 
+def cache_previous_frontend(base_url: str, profile: Path) -> dict:
+    """Cache real old HTML without relying on every old script staying cached."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as browser:
+        context = browser.chromium.launch_persistent_context(str(profile), headless=True, java_script_enabled=False)
+        try:
+            page = context.new_page()
+            response = page.goto(base_url, wait_until='networkidle', timeout=45000)
+            assert response is not None and response.status == 200
+            return {'entry_script': page.locator('script[type=module]').get_attribute('src'),
+                    'entry_sha256': hashlib.sha256(response.body()).hexdigest(),
+                    'real_browser_cache': True, 'scripts_not_precached': True}
+        finally:
+            context.close()
+
+
+def verify_frontend_refresh(base_url: str, profile: Path, report: Path, previous: dict) -> dict:
+    """Use the same browser cache across actual shipping-image replacement."""
+    from playwright.sync_api import expect, sync_playwright
+
+    with httpx.Client(timeout=30, trust_env=False) as client:
+        expected = client.get(base_url).raise_for_status().content
+    expected_script = re.search(rb'<script[^>]+src="([^"]+)"', expected)
+    assert expected_script is not None
+    with sync_playwright() as browser:
+        context = browser.chromium.launch_persistent_context(str(profile), headless=True)
+        try:
+            page = context.new_page()
+            errors = []
+            page.on('pageerror', lambda error: errors.append(str(error)))
+            page.on('console', lambda message: errors.append(message.text) if message.type == 'error' else None)
+            page.goto(base_url, wait_until='networkidle', timeout=45000)
+            # A partially cached previous page may already be open when the
+            # deployment switches. A normal refresh must recover without users
+            # clearing their login, browser storage, or cached HTML themselves.
+            errors.clear()
+            page.reload(wait_until='networkidle', timeout=45000)
+            expect(page.locator('#account')).to_be_visible(timeout=15000)
+            actual_script = page.locator('script[type=module]').get_attribute('src')
+            assert actual_script == expected_script.group(1).decode()
+            page.reload(wait_until='networkidle', timeout=45000)
+            expect(page.locator('#account')).to_be_visible(timeout=15000)
+            assert not errors, errors
+            page.screenshot(path=str(report / 'frontend-refresh.png'))
+            result = {'passed': True, 'previous': previous, 'current_entry_script': actual_script,
+                      'same_browser_cache': True, 'normal_refreshes_verified': 2, 'errors': errors}
+            (report / 'frontend-refresh.json').write_text(json.dumps(result, indent=2))
+            return result
+        finally:
+            context.close()
+
+
 def main():
     private = Path(os.environ['CAD_CI_DEPLOY_PRIVATE'])
     compose = json.loads(os.environ['CAD_CI_DEPLOY_COMPOSE'])
@@ -109,6 +162,9 @@ def main():
         {'op_id': 'export', 'action': 'document.export', 'args': {'formats': ['fcstd', 'step', 'stl'], 'basename': 'transition'}},
     ]}
     select('previous')
+    browser_profile = private / 'frontend-upgrade-browser'
+    cached_frontend = cache_previous_frontend(os.environ['CAD_NATIVE_E2E_URL'], browser_profile)
+    frontend_refresh = None
     seeded = run([runtime, 'exec', '-i', container('backend'), 'python', '-', people['owner']['user']['id'], json.dumps(plan)], input=SEED, capture_output=True)
     (report / 'seed.log').write_text(seeded.stdout + seeded.stderr)
     fixture = json.loads(next(line.split('=', 1)[1] for line in seeded.stdout.splitlines() if line.startswith('NATIVE_PARAMETER_SEED=')))
@@ -228,6 +284,8 @@ asyncio.run(main())
             select(target)
             switched = True
             assert preflights[-1]['replayed_histories'], 'waiting task history was not replayed'
+            if target == 'current':
+                frontend_refresh = verify_frontend_refresh(os.environ['CAD_NATIVE_E2E_URL'], browser_profile, report, cached_frontend)
         except ValueError:
             assert target == 'previous'
             assert any(item['reason'] == 'workflow_history_incompatible' for item in preflights[-1]['blockers'])
@@ -355,6 +413,7 @@ asyncio.run(main())
     select('current')
     assert call('GET', '/api/analyze/tasks/' + task) == completed
     verify_history('current')
+    assert frontend_refresh and frontend_refresh['passed']
     (report / 'report.json').write_text(json.dumps({'passed': True, 'classification': 'SHIPPING_IMAGES_REAL_TEMPORAL_FREECAD',
         'images': ids, 'transitions': transitions, 'immutable_history': True,
         'active_model_job_switch_rejected': True,
@@ -364,6 +423,7 @@ asyncio.run(main())
         'unsupported_inflight_rollback_rejected': True, 'frozen_check_drained_before_rollback': True,
         'legacy_result_route_available': legacy_route, 'raw_report_preserved_after_rollback': True,
         'complete_report_restored_after_upgrade': True,
+        'cached_frontend_refresh': frontend_refresh,
         'restored_current_release': True, 'provider_calls': 0}, indent=2))
     print('SHIPPING IMAGE TRANSITION PASSED')
 
