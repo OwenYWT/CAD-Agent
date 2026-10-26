@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import ssl
 import sys
@@ -18,6 +19,43 @@ from botocore.config import Config
 import httpx
 from websockets.client import connect
 from websockets.exceptions import InvalidStatusCode
+
+
+def verify_frontend_cache(client):
+    """Exercise real Nginx conditional requests, including legacy validators."""
+    paths = ('/', '/index.html', '/ci-refresh-route')
+    checks = []
+    entry = None
+    for path in paths:
+        response = client.get(path)
+        assert response.status_code == 200, (path, response.status_code)
+        assert 'no-store' in response.headers.get('cache-control', ''), path
+        assert 'etag' not in response.headers, path
+        if entry is None:
+            entry = response.content
+        assert response.content == entry
+        # Production archives normalize mtime to zero. Distinct releases with
+        # equal HTML length previously generated this same metadata ETag.
+        legacy_etag = f'"0-{len(entry):x}"'
+        for headers in ({'If-None-Match': legacy_etag},
+                        {'If-Modified-Since': 'Thu, 01 Jan 1970 00:00:00 GMT'},
+                        {'If-None-Match': legacy_etag, 'If-Modified-Since': 'Thu, 01 Jan 1970 00:00:00 GMT'}):
+            fresh = client.get(path, headers=headers)
+            assert fresh.status_code == 200 and fresh.content == entry, (path, fresh.status_code)
+        checks.append(path)
+    scripts = re.findall(rb'<script[^>]+src="([^"]+)"', entry)
+    assert scripts
+    for path in scripts:
+        asset = client.get(path.decode())
+        assert asset.status_code == 200 and 'javascript' in asset.headers.get('content-type', '')
+        assert 'immutable' in asset.headers.get('cache-control', '')
+        assert asset.headers.get('x-content-type-options') == 'nosniff'
+    for extension in ('js', 'css'):
+        missing = client.get('/assets/__ci_missing_release__.' + extension)
+        assert missing.status_code == 404 and missing.content != entry
+        assert 'immutable' not in missing.headers.get('cache-control', '')
+    return {'passed': True, 'fresh_entry_routes': checks, 'legacy_validators_return_current_html': True,
+            'hashed_scripts_verified': len(scripts), 'missing_assets_return_404': True}
 
 
 def main(mode):
@@ -46,6 +84,7 @@ def main(mode):
     if mode != 'permissions':
         raise ValueError('unknown delivery phase')
     people = json.loads(private.read_text())
+    frontend_cache = {'origin': verify_frontend_cache(admin)}
     report = Path(os.environ['CAD_CI_DEPLOY_REPORT'])
     browser = json.loads((report.parent/'packaged-browser/report.json').read_text())
     path = '/api/documents/' + browser['fixture']['document_id']
@@ -96,6 +135,7 @@ def main(mode):
     ca = os.environ['CAD_CI_TLS_CA']
     context = ssl.create_default_context(cafile=ca)
     with httpx.Client(base_url=tls, verify=context, timeout=30) as edge:
+        frontend_cache['tls'] = verify_frontend_cache(edge)
         request(edge, 'GET', '/health')
         edge.headers.update(owner.headers)
         assert request(edge, 'GET', path)['head_revision_id'] == saved['head_revision_id']
@@ -141,7 +181,8 @@ def main(mode):
         'roles': ['owner', 'editor', 'viewer', 'outsider', 'anonymous', 'invalid-token', 'revoked-editor'],
         'revoked_invite_cannot_restore_access': True, 'head_unchanged': True,
         'tls_rest': True, 'authenticated_websocket': True, 'anonymous_websocket_denied': True,
-        'private_s3_sigv4': True, 'self_signed_ci_certificate': True, 'monitor_permissions': monitor_status}, indent=2))
+        'private_s3_sigv4': True, 'self_signed_ci_certificate': True, 'monitor_permissions': monitor_status,
+        'frontend_cache': frontend_cache}, indent=2))
     for client in clients.values():
         client.close()
     admin.close()
