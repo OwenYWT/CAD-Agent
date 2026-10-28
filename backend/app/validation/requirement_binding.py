@@ -333,7 +333,21 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
     if request:
         span = request.span('zh' if request['zh'] else 'en')
         subject = re.split(r'[，,。；;\n]', objective[request.end():])[0]
-        if _DESIGN_PRODUCT.search(subject) and not any(
+        # Only the requested product can authorize a delivery count. A plate
+        # in "板上的孔" or "rib on a plate" is a modifier/location, not the
+        # counted subject. Unknown feature counts stay in the inventory.
+        if request['zh']:
+            subject = subject.rsplit('的', 1)[-1]
+            subject = re.split(r'放在|放到|放置|安装|固定在|位于|用于|在', subject, maxsplit=1)[0]
+        else:
+            subject = re.split(r'\b(?:with|on|in|onto|for|that|which|to)\b', subject, maxsplit=1, flags=re.I)[0]
+        products = list(_DESIGN_PRODUCT.finditer(subject))
+        # A substring such as 板 in 板状加强筋 cannot establish the head noun.
+        # Permit a product followed by the existing dimensional grammar too.
+        product_head = any(not (tail := subject[m.end():].strip(' \t.:：')) or any(
+            pattern.match(tail) for pattern in (_SCALAR, _BOX_DIMENSIONS, _SUFFIX_DIMENSION))
+            for m in products)
+        if product_head and not any(
                 r['kind'] in {'hole_count', 'solid_count'} and r['source_span'][0] <= span[0] < r['source_span'][1]
                 for r in requirements):
             design_requests.append({**reference(*span, 'design'), 'count': 1, 'delivery_unit': 'cad_document'})

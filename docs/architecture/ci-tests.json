@@ -2512,7 +2512,13 @@
       "tests/test_design_source_context.py::test_external_unbounded_strict_or_nonlength_input_is_not_silently_reinterpreted[25mm\\xb3]",
       "tests/test_design_source_context.py::test_one_design_request_is_not_a_one_solid_requirement[\\u521b\\u5efa1\\u4e2a\\u957f80mm\\u3001\\u5bbd40mm\\u3001\\u539a8mm\\u7684\\u677f\\uff0c\\u5355\\u4f4d\\uff1amm]",
       "tests/postgres/test_model_jobs.py::test_requirement_error_roundtrip_keeps_code_separate_from_message",
-      "tests/integration/test_temporal_mcadd_workflow.py::test_unbound_source_fails_before_provider_or_native_dispatch_in_real_workflow"
+      "tests/integration/test_temporal_mcadd_workflow.py::test_unbound_source_fails_before_provider_or_native_dispatch_in_real_workflow",
+      "tests/test_design_source_context.py::test_one_design_request_is_not_a_one_solid_requirement[\\u8bbe\\u8ba1\\u4e00\\u4e2a\\u5e262\\u4e2a\\u5b54\\u7684\\u677f\\uff0c\\u957f80mm\\uff0c\\u5b54\\u5f846mm]",
+      "tests/test_design_source_context.py::test_delivery_count_cannot_use_a_modifier_or_location_as_the_requested_product[hole-in-plate]",
+      "tests/test_design_source_context.py::test_delivery_count_cannot_use_a_modifier_or_location_as_the_requested_product[rib-on-plate]",
+      "tests/test_design_source_context.py::test_delivery_count_cannot_use_a_modifier_or_location_as_the_requested_product[rib-at-plate]",
+      "tests/test_design_source_context.py::test_delivery_count_cannot_use_a_modifier_or_location_as_the_requested_product[plate-shaped-rib]",
+      "tests/test_design_source_context.py::test_delivery_count_cannot_use_a_modifier_or_location_as_the_requested_product[english-rib]"
     ],
     "allowed_skips": {
       "tests/integration/test_agent_candidate_seal.py::test_late_workflow_failure_during_cancellation_reaches_a_terminal_state": "real PostgreSQL and MinIO are required",

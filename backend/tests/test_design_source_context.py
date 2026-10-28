@@ -35,6 +35,7 @@ def contract_for(text, extraction):
     '请帮我设计一个板，长80mm、宽40mm、厚8mm',
     'Create a plate 80x40x8 mm',
     '创建1个长80mm、宽40mm、厚8mm的板，单位：mm',
+    '设计一个带2个孔的板，长80mm，孔径6mm',
 ])
 def test_one_design_request_is_not_a_one_solid_requirement(text):
     result = extract_requirements(text)
@@ -55,6 +56,19 @@ def test_design_article_does_not_discharge_a_hole_or_unknown_feature_count():
     solids = extract_requirements('创建两个独立实体')
     assert not solids['unsupported']
     assert solids['requirements'][0]['comparison']['value'] == 2.
+
+
+@pytest.mark.parametrize('text', [
+    '设计一个板上的孔，孔径6mm',
+    '设计一个板上的加强筋，板长80mm',
+    '设计一个加强筋放在板上，板长80mm',
+    '设计一个板状加强筋，长80mm',
+    'Design one rib on a plate, length 80mm',
+], ids=['hole-in-plate', 'rib-on-plate', 'rib-at-plate', 'plate-shaped-rib', 'english-rib'])
+def test_delivery_count_cannot_use_a_modifier_or_location_as_the_requested_product(text):
+    result = extract_requirements(text)
+    assert not result.get('source_context', {}).get('design_requests'), result
+    assert any(r['reason'] == 'count_property_unbound' for r in result['unsupported']), result
 
 
 @pytest.mark.parametrize('text', [
