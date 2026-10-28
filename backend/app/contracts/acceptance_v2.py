@@ -59,7 +59,12 @@ class MeasurementScopeV2(MeasurementScope):
 class RequirementBindingError(ValueError):
     def __init__(self, code: str, message: str):
         self.code = code
+        self.message = message
         super().__init__(code + ': ' + message)
+
+
+class SourceRequirementUnavailable(RequirementBindingError):
+    """A source capability/authority failure cannot be repaired by another LLM call."""
 
 
 class EqualComparison(AcceptanceModel):
@@ -104,6 +109,51 @@ class RangeComparison(AcceptanceModel):
 
 Comparison = Annotated[Union[EqualComparison, LowerComparison, UpperComparison, RangeComparison],
                        Field(discriminator='op')]
+
+
+class SourceReference(AcceptanceModel):
+    reference_id: str = Field(min_length=1)
+    source_input_id: str = Field(min_length=1)
+    source_kind: Literal['user', 'confirmed']
+    source_span: tuple[int, int]
+    source_quote: str = Field(min_length=1)
+
+
+class DesignRequestReference(SourceReference):
+    # A request for one CAD design can contain an assembly of multiple solids.
+    # Delivery is the existing single branch/revision/document transaction;
+    # this is deliberately not a geometric solid-count assertion.
+    count: Literal[1]
+    delivery_unit: Literal['cad_document'] = 'cad_document'
+
+
+class ExternalDimensionReference(SourceReference):
+    property: Literal['plate_thickness']
+    comparison: Comparison
+
+    @model_validator(mode='after')
+    def length_input(self):
+        if self.comparison.unit != 'mm':
+            raise ValueError('external plate thickness requires a length')
+        return self
+
+
+class SourceContextV1(AcceptanceModel):
+    schema_version: Literal['source-context.v1'] = 'source-context.v1'
+    execution_scope: Literal['cad_geometry', 'concept_geometry'] = 'cad_geometry'
+    design_requests: tuple[DesignRequestReference, ...] = ()
+    external_references: tuple[ExternalDimensionReference, ...] = ()
+    unverified_aspects: tuple[Literal['physical_fit', 'clamping_force'], ...] = ()
+
+    @model_validator(mode='after')
+    def bounded_context(self):
+        refs = [r.reference_id for r in (*self.design_requests, *self.external_references)]
+        if len(refs) != len(set(refs)):
+            raise ValueError('source context references must be unique')
+        if self.external_references and (self.execution_scope != 'concept_geometry'
+                or self.unverified_aspects != ('physical_fit', 'clamping_force')):
+            raise ValueError('external clearance does not certify physical fit or clamping force')
+        return self
 
 
 class HoleGroupRef(AcceptanceModel):
@@ -179,6 +229,14 @@ class AcceptanceContractV2(AcceptanceModel):
     verification_limits: tuple[str, ...] = ()
     comparison_policy_id: Literal['occt-confusion-v1'] = COMPARISON_POLICY_ID
     verification_scope: Literal['cad_geometry'] = 'cad_geometry'
+    source_context: SourceContextV1 | None = None
+
+    @model_serializer(mode='wrap')
+    def retain_existing_digest(self, handler):
+        result = handler(self)
+        if self.source_context is None:
+            result.pop('source_context', None)
+        return result
 
     @model_validator(mode='after')
     def provenance(self):
@@ -189,6 +247,10 @@ class AcceptanceContractV2(AcceptanceModel):
         for check in self.checks:
             if check.source_kind != 'assumption' and check.source_quote not in self.objective:
                 raise ValueError(f'checks.{check.check_id}.source_quote is absent from objective')
+        if self.source_context:
+            for ref in (*self.source_context.design_requests, *self.source_context.external_references):
+                if ref.source_quote not in self.objective:
+                    raise ValueError('source context quote is absent from objective')
         grouped = [c.model_dump(mode='json') for c in self.checks if c.hole_group is not None]
         if grouped:
             population_pools(grouped)

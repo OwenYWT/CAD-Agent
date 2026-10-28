@@ -1754,6 +1754,24 @@
     "browser-e2e/browser-hole-populations/trace.zip": {
       "kind": "browser-trace",
       "job": "browser-e2e"
+    },
+    "browser-e2e/browser-source-intake/report.json": {
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "homepage_original_submitted": true,
+        "saved_consent": true,
+        "actual_gap_mm": 25,
+        "review_commit_reload": true,
+        "physical_fit_unverified_retained": true,
+        "provider": "controlled-input",
+        "page_errors": []
+      },
+      "job": "browser-e2e"
+    },
+    "browser-e2e/browser-source-intake/trace.zip": {
+      "kind": "browser-trace",
+      "job": "browser-e2e"
     }
   },
   "required_ci_jobs": [

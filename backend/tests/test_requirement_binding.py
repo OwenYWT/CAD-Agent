@@ -5,14 +5,16 @@ from app.contracts.acceptance_v2 import AcceptanceContractV2
 
 
 def parsed_contract(text, *, comparison=None, kind=None, source_kind='user', verified_state=None):
-    records = extract_requirements(text, verified_state=verified_state)['requirements']
+    extracted = extract_requirements(text, verified_state=verified_state)
+    records = extracted['requirements']
     checks = []
     for record in records:
         checks.append({'check_id': record['requirement_id'], 'binding_ref': record['requirement_id'],
             'kind': kind or record['kind'], 'description': record['property'],
             'source_quote': record['source_quote'], 'source_kind': source_kind,
             'comparison': comparison or record['comparison'], 'scope': record.get('scope', {})})
-    return AcceptanceContractV2.model_validate({'objective': text, 'checks': checks})
+    return AcceptanceContractV2.model_validate({'objective': text, 'checks': checks,
+        **({'source_context': extracted['source_context']} if extracted.get('source_context') else {})})
 
 
 @pytest.mark.parametrize('text,op,value,unit', [
@@ -118,7 +120,7 @@ def test_auto_intake_echo_does_not_create_a_second_unlabelled_requirement_source
     from app.workflows.handlers.planning import requirements_sources
     objective = '创建板，长80 mm、宽55 mm、厚3 mm'
     def sources(dimensions):
-        return requirements_sources(SimpleNamespace(objective=objective,
+        return requirements_sources(SimpleNamespace(objective=objective, output_formats=('step','stl'),
             operation_context=SimpleNamespace(requirement_basis=RequirementBasisV1(
                 target='板', design_scope='geometry', source_kind='user_specification',
                 source_reference='用户需求中指定的设计尺寸', dimensions=dimensions))))
@@ -262,7 +264,7 @@ def test_saved_requirement_basis_is_bound_separately_from_server_instructions():
     from app.domain.requirement_basis import RequirementBasisV1
     from app.workflows.handlers.planning import requirements_objective, requirements_sources
     from app.validation.requirement_binding import extract_source_requirements
-    request = SimpleNamespace(objective='设计夹具', operation_context=SimpleNamespace(requirement_basis=RequirementBasisV1(
+    request = SimpleNamespace(objective='设计夹具', output_formats=('step','stl'), operation_context=SimpleNamespace(requirement_basis=RequirementBasisV1(
         target='工件', design_scope='geometry', source_kind='user_specification',
         source_reference='用户确认', dimensions='夹口25±0.2 mm')))
     objective, sources = requirements_objective(request), requirements_sources(request)

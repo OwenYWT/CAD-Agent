@@ -58,6 +58,23 @@ async def test_idempotent_submission_and_conflicting_input(request_job):
 
 
 @pytest.mark.asyncio
+async def test_requirement_error_roundtrip_keeps_code_separate_from_message(request_job):
+    from app.contracts.acceptance_v2 import RequirementBindingError
+    from app.workflows.errors import planning_error
+    await jobs.submit(request_job)
+    job = await jobs.claim()
+    async def operation(_):
+        raise planning_error(RequirementBindingError('engineering_verification_unavailable', '孔中心距尚不能核验'))
+    await jobs.execute(job, {request_job['operation']: operation})
+    saved = await jobs.read(request_job)
+    assert saved['status'] == 'failed'
+    assert saved['error']['code'] == 'engineering_verification_unavailable'
+    assert saved['error']['message'] == '孔中心距尚不能核验'
+    restored = ApplicationError(saved['error']['message'], type=saved['error']['code'], non_retryable=True)
+    assert str(restored).count('engineering_verification_unavailable') == 1
+
+
+@pytest.mark.asyncio
 async def test_numeric_payload_and_result_survive_real_database_roundtrip(request_job):
     from app.execution.canonical import canonical_sha256
     numbers = {'large': 4e100, 'large_finite_dimension': 1.2345678901234567e20,

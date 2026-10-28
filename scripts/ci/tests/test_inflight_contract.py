@@ -62,6 +62,15 @@ class InflightContracts(unittest.TestCase):
             'blockers': [{'reason': 'customer_billing_contract_unsupported'}]})
         self.assertFalse(probe.inspect_requests([], customer_billing_contract='future-billing')['compatible'])
 
+    def test_retained_source_context_blocks_a_target_that_cannot_read_it(self):
+        self.assertTrue(probe.inspect_requests([], source_context_contracts=['source-context.v1'])['compatible'])
+        self.assertFalse(probe.inspect_requests([], source_context_contracts=['future-context'])['compatible'])
+        from unittest.mock import patch
+        with patch.dict('sys.modules', {'app.contracts.acceptance_v2': None}):
+            result = probe.inspect_requests([], source_context_contracts=['source-context.v1'])
+        self.assertEqual(result, {'compatible': False, 'checked': 0,
+            'blockers': [{'reason': 'source_context_contract_unsupported', 'contract': 'source-context.v1'}]})
+
     def test_unknown_contract_cannot_pass_through_agent_prefix(self):
         request = McadAgentWorkflowV2Request(**{name: uuid4() for name in (
             'workflow_run_id', 'tenant_id', 'project_id', 'principal_id',

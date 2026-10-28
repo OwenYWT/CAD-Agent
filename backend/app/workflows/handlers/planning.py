@@ -34,6 +34,11 @@ def requirements_sources(request) -> list[dict]:
                 if key == 'dimensions' and _dimension_echo(request.objective, value):
                     continue
                 sources.append({'source_input_id':'basis-'+key.replace('_','-'), 'source_kind':'confirmed', 'text':value})
+    # Only saved user consent authorizes concept geometry. This metadata is
+    # supplied by the server, never inferred from a model's proposed contract.
+    for source in sources:
+        source['execution_scope'] = 'concept_geometry' if basis and basis.concept_acknowledged else 'cad_geometry'
+        source['acceptance_domain'] = 'solid' if set(request.output_formats) & {'step', 'stl'} else 'profile'
     return sources
 
 
@@ -230,7 +235,7 @@ async def agent_requirements(payload: dict[str, Any], *, durable_planner: Durabl
             workflow_id=workflow_id,
             step_key=step_key,
             error_code=error.type or "agent_requirements_failed",
-            error_message=str(error),
+            error_message=error.message,
         )
         raise error from exc
     async with tenant_transaction(tenant_id, principal_id) as connection:
@@ -367,7 +372,7 @@ async def agent_plan(payload: dict[str, Any], *, durable_planner: DurableAgentPl
             workflow_id=workflow_id,
             step_key=step_key,
             error_code=error.type or "agent_plan_failed",
-            error_message=str(error),
+            error_message=error.message,
         )
         raise error from exc
     async with tenant_transaction(tenant_id, principal_id) as connection:

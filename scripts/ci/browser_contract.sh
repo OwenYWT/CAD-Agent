@@ -81,6 +81,7 @@ python tests/e2e/monitoring_permissions_browser.py
 kill "$worker_pid"
 wait "$worker_pid" || true
 python tests/e2e/constraint_failure_browser.py
+python tests/e2e/source_intake_browser.py
 python tests/e2e/hole_population_browser.py seed
 python -m app.workers.workflow_worker >> "$report_root/browser-worker.log" 2>&1 &
 worker_pid=$!

@@ -4105,6 +4105,99 @@ async def test_native_stl_only_delivery_keeps_exact_acceptance(required_diameter
 
 
 @pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('gap', [24, 25, 26])
+async def test_original_hook_intake_binds_external_input_and_gates_persisted_candidate(gap):
+    from app.models.workflow_requests import OperationContextV1
+    from app.domain.requirement_basis import RequirementBasisV1
+    from app.workflows.temporal import start_mcad_agent_v2_workflow
+    from app.workflows.agent_v2 import McadAgentWorkflowV2
+    from temporalio.worker import Replayer
+    from tests.source_intake import OBJECTIVE, SourceIntakeRequirements, SourceIntakeOperations
+    owner, project_id, initial = await _seed_project('source-intake')
+    context = OperationContextV1(rule='explicit_rest_operation', source_channel='rest',
+        requested_operation='generate', resolved_operation='generate', submission_modeling_backend='auto',
+        base_revision_id=initial.revision_id, base_source_kind='none',
+        requirement_basis=RequirementBasisV1(target=OBJECTIVE, dimensions=OBJECTIVE,
+            design_scope='physical_fit', concept_acknowledged=True))
+    client = await get_temporal_client()
+    operations = SourceIntakeOperations(gap)
+    async with build_agent_v2_workflow_worker(client, backend=get_execution_backend(),
+            durable_planner=SourceIntakeRequirements(), freecad_operations=operations):
+        workflow_id, handle = await start_mcad_agent_v2_workflow(tenant_id=owner.tenant_id,
+            project_id=project_id, principal_id=owner.principal_id, branch_id=initial.branch_id,
+            expected_base_revision_id=initial.revision_id, operation='generate', modeling_backend='auto',
+            objective=OBJECTIVE, kind='mcad.agent.v2.generate', idempotency_key='intake-' + str(project_id),
+            operation_context=context, require_worker_ready=False)
+        if gap < 25:
+            with pytest.raises(WorkflowFailureError) as error:
+                await handle.result()
+            assert McadAgentWorkflowV2._root_application_error(error.value).type == 'agent_geometry_validation_failed'
+        else:
+            result = await handle.result()
+            assert result['status'] == 'succeeded'
+    assert operations.calls == 1
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        report = await conn.scalar(text("SELECT evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"), {'id':workflow_id})
+        saved = await conn.scalar(text('SELECT request_payload FROM workflow_runs WHERE id=:id'), {'id':workflow_id})
+        assert saved['objective'] == OBJECTIVE and saved['operation_context']['requirement_basis']['concept_acknowledged']
+        contract = report['acceptance_contract']
+        assert contract['source_context']['external_references'][0]['comparison']['value'] == 25
+        assert contract['source_context']['unverified_aspects'] == ['physical_fit', 'clamping_force']
+        assert contract['checks'][0]['comparison'] == {'op':'ge', 'lower':25, 'unit':'mm'}
+        assert report['acceptance']['evidence'][0]['measured'] == [gap]
+        assert report['outcome'] == ('failed' if gap < 25 else 'passed')
+        assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'), {'id':initial.branch_id}) == initial.revision_id
+        assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'), {'id':workflow_id}) == (0 if gap < 25 else 1)
+    if gap >= 25:
+        change_set = UUID(result['change_set_id'])
+        await accept_change_set(tenant_id=owner.tenant_id, reviewer_principal_id=owner.principal_id,
+            change_set_id=change_set, review_note='仅验证概念几何夹口净空，未验证实物适配或夹持力。')
+        committed = await commit_change_set(tenant_id=owner.tenant_id,
+            reviewer_principal_id=owner.principal_id, change_set_id=change_set)
+        assert committed.status == 'committed'
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+            assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'), {'id':initial.branch_id}) == UUID(result['candidate_revision_id'])
+            reread = await conn.scalar(text("SELECT evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"), {'id':workflow_id})
+            assert reread['acceptance_contract'] == contract
+    await Replayer(workflows=[McadAgentWorkflowV2]).replay_workflow(await handle.fetch_history())
+
+
+@pytest.mark.asyncio(loop_scope='module')
+async def test_unbound_source_fails_before_provider_or_native_dispatch_in_real_workflow():
+    from app.models.workflow_requests import OperationContextV1
+    from app.domain.requirement_basis import RequirementBasisV1
+    from app.workflows.temporal import start_mcad_agent_v2_workflow
+    from app.workflows.agent_v2 import McadAgentWorkflowV2
+    owner, project_id, initial = await _seed_project('source-preflight')
+    objective = '设计一个长80mm、宽40mm、厚8mm的板，两个特殊加强筋'
+    context = OperationContextV1(rule='explicit_rest_operation', source_channel='rest',
+        requested_operation='generate', resolved_operation='generate', submission_modeling_backend='auto',
+        base_revision_id=initial.revision_id, base_source_kind='none',
+        requirement_basis=RequirementBasisV1(target=objective, dimensions=objective,
+            design_scope='geometry', source_kind='user_specification', source_reference='用户指定'))
+    client = await get_temporal_client()
+    # The actual Planner runs with no provider credentials. A missed source
+    # preflight would fail as configuration error, not the required diagnostic.
+    async with build_agent_v2_workflow_worker(client, backend=get_execution_backend()):
+        workflow_id, handle = await start_mcad_agent_v2_workflow(tenant_id=owner.tenant_id,
+            project_id=project_id, principal_id=owner.principal_id, branch_id=initial.branch_id,
+            expected_base_revision_id=initial.revision_id, operation='generate', modeling_backend='auto',
+            objective=objective, kind='mcad.agent.v2.generate', idempotency_key='preflight-' + str(project_id),
+            operation_context=context, require_worker_ready=False)
+        with pytest.raises(WorkflowFailureError) as error:
+            await handle.result()
+    cause = McadAgentWorkflowV2._root_application_error(error.value)
+    assert cause.type == 'engineering_verification_unavailable'
+    assert str(cause).count('engineering_verification_unavailable') == 1
+    assert '两个特殊加强筋' in cause.message
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        for table in ('provider_budget_reservations','agent_staging_manifests','agent_generated_sources'):
+            assert await conn.scalar(text(f'SELECT count(*) FROM {table} WHERE workflow_run_id=:id'), {'id':workflow_id}) == 0
+        assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'), {'id':workflow_id}) == 0
+        assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'), {'id':initial.branch_id}) == initial.revision_id
+
+
+@pytest.mark.asyncio(loop_scope='module')
 @pytest.mark.parametrize('explicit_two', [True, False], ids=['explicit-two', 'default-one'])
 async def test_v2_requirements_multi_solid_binding_and_commit(explicit_two, *, return_context=False):
     """Controlled proposals; all execution, independent gates and persistence are real."""

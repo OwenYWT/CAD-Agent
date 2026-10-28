@@ -486,7 +486,7 @@ def run():
                 page.get_by_role('button',name=svg_fixture['title'],exact=False).first.click()
                 svg_view=page.get_by_test_id('svg-viewport')
                 expect(svg_view.get_by_role('img',name='二维工程图预览',exact=True)).to_be_visible()
-                page.wait_for_function('e=>Number(e.dataset.zoom)>0 && e.querySelector("img").naturalWidth>0',arg=svg_view.element_handle())
+                page.wait_for_function('e=>Number(e.dataset.zoom)>0 && (e.querySelector("img")?.naturalWidth ?? 0)>0',arg=svg_view.element_handle())
                 fit=float(svg_view.get_attribute('data-zoom'))
                 page.get_by_role('button',name='放大二维图',exact=True).click();page.get_by_role('button',name='放大二维图',exact=True).click()
                 expect(svg_view).not_to_have_attribute('data-zoom',str(fit))

@@ -11,7 +11,7 @@ import re
 import math
 
 from app.execution.canonical import canonical_sha256
-from app.contracts.acceptance_v2 import RequirementBindingError
+from app.contracts.acceptance_v2 import RequirementBindingError, SourceContextV1, SourceRequirementUnavailable
 from app.validation.source_obligations import (
     RELATION as _RELATION, LOWER as _LOWER, STRICT as _STRICT,
     COUNT_WORDS as _COUNT_WORDS, COUNT_VALUE, CENTERED as _CENTERED,
@@ -78,6 +78,18 @@ _PRESERVATION = re.compile(
     rf'(?:(?:保持|保留)\s*(?P<leading>{_PROPERTY})(?:\s*(?:不变|原值))?|'
     rf'(?P<trailing>{_PROPERTY})\s*(?:保持)?(?:不变|原值)|'
     rf'(?:preserve|keep)\s+(?:the\s+)?(?P<english>{_PROPERTY})(?:\s+(?:unchanged|the same))?)', re.I)
+_DESIGN_REQUEST = re.compile(
+    r'^\s*(?:(?:请|帮我|请帮我|给我|麻烦)\s*)?(?:设计|创建|制作|生成|做)\s*(?P<zh>一\s*个|1\s*个)|'
+    r'^\s*(?:please\s+)?(?:design|create|make|generate)\s+(?P<en>a|an|one)\b', re.I)
+_DESIGN_PRODUCT = re.compile(r'板|盒|长方体|挂钩|外壳|夹具|支架|零件|模型|装配体|组件|'
+    r'\b(?:plate|box|block|hook|enclosure|bracket|part|model|assembly)\b', re.I)
+_CLAMP_PLATE = re.compile(
+    rf'(?:夹在|夹住|夹到|\bclamps?\s+(?:to|onto|on)\s+(?:an?\s+)?)\s*'
+    rf'(?:(?:厚度|板厚|厚)\s*(?:为|是|[:：=])?\s*)?(?P<relation>{_RELATION})?\s*{_DIMENSION_QUANTITY}'
+    r'\s*(?:厚的?|的|thick\s+)?\s*(?:桌板|台面板|desktop\b|tabletop\b|table\s+top\b)', re.I)
+_EXTERNAL_PLATE_CLAUSE = re.compile(
+    r'(?:夹在|夹住|夹到|用于|适配|\bfor\b|\bclamps?\b)[^，,。；;\n]*'
+    r'(?:桌板|台面板|desktop\b|tabletop\b|table\s+top\b)[^，,。；;\n]*', re.I)
 
 
 def _quantity(value, unit):
@@ -89,12 +101,18 @@ def _quantity(value, unit):
 
 
 def extract_requirements(objective: str, *, source_input_id: str = 'objective', source_kind: str = 'user',
-                         verified_state=None) -> dict:
+                         verified_state=None, execution_scope='cad_geometry') -> dict:
     requirements, unsupported, covered = [], [], []
     obligations = inventory(objective, source_input_id=source_input_id)
     comparison_spans = []
     declarations = list(_DECLARED_UNIT.finditer(objective))
     declared = declarations[0] if declarations and len({m['unit'].lower() for m in declarations}) == 1 else None
+    design_requests, external_references, external_spans = [], [], []
+
+    def reference(start, end, label):
+        return {'reference_id': f's-{source_input_id}-{start}-{end}-{label}',
+                'source_input_id': source_input_id, 'source_kind': source_kind,
+                'source_span': [start, end], 'source_quote': objective[start:end]}
 
     def append(start, end, prop, kind, comparison, scope=None, *, identity=None):
         identity = identity or f'r-{source_input_id}-{start}-{end}-{prop}'
@@ -149,6 +167,41 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
             comparison.update(tolerance_minus=minus, tolerance_plus=plus)
         return comparison
 
+    # The receiving plate is an input to the design, not a component whose
+    # thickness may be measured on the generated hook. A confirmed concept can
+    # check necessary clearance; geometry alone never establishes clamping.
+    for match in _CLAMP_PLATE.finditer(objective):
+        external_spans.append(match.span())
+        covered.append(match.span())
+        comparison = dimension_comparison(match)
+        if comparison is None:
+            continue
+        if execution_scope != 'concept_geometry':
+            unsupported.append({'source_span': list(match.span()), 'reason': 'external_fit_confirmation_required'})
+            continue
+        upper = (comparison.get('value', 0) + comparison.get('tolerance_plus', 0)
+                 if comparison['op'] == 'eq' else comparison.get('upper'))
+        if comparison['unit'] != 'mm' or upper is None or upper <= 0:
+            unsupported.append({'source_span': list(match.span()), 'reason': 'external_dimension_bound_required'})
+            continue
+        ref = {**reference(*match.span(), 'external-plate'), 'property': 'plate_thickness',
+               'comparison': comparison}
+        if comparison.get('tolerance_minus') or comparison.get('tolerance_plus'):
+            comparison['tolerance_source_refs'] = [ref['reference_id'] + '-tolerance']
+        external_references.append(ref)
+        append(*match.span(), 'gap', 'planar_gap', {'op': 'ge', 'lower': upper, 'unit': 'mm'})
+        requirements[-1]['derivation'] = {'rule': 'external_plate_clearance.v1', 'source_refs': [ref['reference_id']]}
+
+    # Do not let a different word order fall back to an overall part dimension.
+    # Unrecognized receiving-object assertions stay unverified, even when a
+    # labelled thickness inside that phrase is recognizable by the scalar parser.
+    for clause in _EXTERNAL_PLATE_CLAUSE.finditer(objective):
+        if _EXPLICIT_QUANTITY.search(clause.group()) and not any(
+                clause.start() <= a < b <= clause.end() for a, b in external_spans):
+            unsupported.append({'source_span': list(clause.span()), 'reason': 'external_reference_property_unbound'})
+            external_spans.append(clause.span())
+            covered.append(clause.span())
+
     for match in _COORDINATE_BOX.finditer(objective):
         units = [match[axis+'unit'] for axis in 'XYZ' if match[axis+'unit']]
         unit = units[0] if units and len(set(units)) == 1 else declared['unit'] if not units and declared else None
@@ -169,6 +222,8 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
                                            'component_label':match['label']}
 
     for match in _SUFFIX_DIMENSION.finditer(objective):
+        if any(a <= match.start('value') < b for a, b in external_spans):
+            continue
         raw=match['property'].lower()
         prop={'long':'length','wide':'width','thick':'thickness','high':'height',
               '长':'length','宽':'width','厚':'thickness','高':'height'}[raw]
@@ -274,6 +329,15 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
     throughs = list(re.finditer(r'通孔|贯穿孔|\bthrough[- ]?holes?\b', objective, re.I))
     for through in throughs:
         append(*through.span(), 'hole_through', 'hole_through', {'op': 'eq', 'value': 1., 'unit': 'count'})
+    request = _DESIGN_REQUEST.match(objective)
+    if request:
+        span = request.span('zh' if request['zh'] else 'en')
+        subject = re.split(r'[，,。；;\n]', objective[request.end():])[0]
+        if _DESIGN_PRODUCT.search(subject) and not any(
+                r['kind'] in {'hole_count', 'solid_count'} and r['source_span'][0] <= span[0] < r['source_span'][1]
+                for r in requirements):
+            design_requests.append({**reference(*span, 'design'), 'count': 1, 'delivery_unit': 'cad_document'})
+            covered.append(span)
     quantity_patterns = [_EXPLICIT_QUANTITY, _OTHER_ENGINEERING_QUANTITY]
     if declarations:
         # A global unit authorizes bare values, not the omission of values
@@ -324,7 +388,8 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
         scoped=[r for r in requirements if lo<=r['source_span'][0] and r['source_span'][1]<=hi]
         if not scoped or any(not r['scope'].get('object_ref') for r in scoped):
             unsupported.append({'source_span':list(marker.span()),'reason':'selected_object_scope_unbound'})
-    bind_component_scopes(objective, requirements, unsupported, obligations, source_input_id=source_input_id)
+    bind_component_scopes(objective, requirements, unsupported, obligations, source_input_id=source_input_id,
+                          external_spans=external_spans)
     for through in [r for r in requirements if r['kind'] == 'hole_through']:
         thickness = [r for r in requirements if r['property'] == 'thickness' and r['comparison']['op'] == 'eq'
                      and r['scope'].get('component_region') == through['scope'].get('component_region')]
@@ -334,9 +399,13 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
             requirements[-1]['derivation'] = {'rule': 'through_plate_thickness.v1',
                                              'source_refs': [thickness[0]['requirement_id']]}
     inventory_hole_populations(objective, requirements, obligations, source_input_id=source_input_id)
-    resolve_inventory(obligations, requirements, comparison_spans, unsupported)
+    resolve_inventory(obligations, requirements, comparison_spans, unsupported, design_requests=design_requests)
     return {'schema_version': 'requirement-extraction.v1', 'requirements': requirements,
-            'unsupported': unsupported, 'obligations': obligations}
+            'unsupported': unsupported, 'obligations': obligations,
+            **({'source_context': {'schema_version': 'source-context.v1', 'execution_scope': execution_scope,
+                'design_requests': design_requests, 'external_references': external_references,
+                'unverified_aspects': ['physical_fit', 'clamping_force'] if external_references else []}}
+               if design_requests or external_references else {})}
 
 
 def extract_source_requirements(objective, *, verified_state=None, requirement_sources=None) -> dict:
@@ -349,9 +418,18 @@ def extract_source_requirements(objective, *, verified_state=None, requirement_s
         if source['source_kind'] not in {'user','confirmed'} or source['text'] not in objective:
             raise ValueError('requirement source is not part of the frozen submitted input')
         extracted = extract_requirements(source['text'], source_input_id=source['source_input_id'],
-                                        source_kind=source['source_kind'], verified_state=verified_state)
+                                        source_kind=source['source_kind'], verified_state=verified_state,
+                                        execution_scope=source.get('execution_scope', 'cad_geometry'))
+        if context := extracted.get('source_context'):
+            merged = result.setdefault('source_context', {'schema_version': 'source-context.v1',
+                'execution_scope': 'cad_geometry', 'design_requests': [], 'external_references': [], 'unverified_aspects': []})
+            if context['execution_scope'] == 'concept_geometry':
+                merged['execution_scope'] = 'concept_geometry'
+            for key in ('design_requests', 'external_references', 'unverified_aspects'):
+                merged[key].extend(item for item in context[key] if item not in merged[key])
         result['requirements'].extend(extracted['requirements'])
-        result['unsupported'].extend(extracted['unsupported'])
+        result['unsupported'].extend({**item, 'source_input_id': source['source_input_id']}
+                                     for item in extracted['unsupported'])
         result['obligations'].extend(extracted['obligations'])
         offset = objective.index(source['text'])
         submitted_rows.extend({**r, 'source_span': [offset + value for value in r['source_span']]}
@@ -379,11 +457,32 @@ def bind_source_quotes(objective, acceptance, *, verified_state=None, requiremen
     """
     extracted = extract_source_requirements(objective, verified_state=verified_state,
                                             requirement_sources=requirement_sources)
+    if extracted.get('source_context') and 'source_context' not in acceptance:
+        acceptance['source_context'] = extracted['source_context']
     records = {r['requirement_id']: r for r in extracted['requirements']}
     for check in acceptance.get('checks', []):
         record = records.get(check.get('binding_ref')) if isinstance(check, dict) else None
         if record and check.get('source_kind', 'user') == record['source_kind']:
             check['source_quote'] = record['source_quote']
+
+
+def require_bound_sources(objective, *, verified_state=None, requirement_sources=None):
+    extracted = extract_source_requirements(objective, verified_state=verified_state, requirement_sources=requirement_sources)
+    if extracted['unsupported']:
+        sources = {s['source_input_id']: s['text'] for s in requirement_sources or [
+            {'source_input_id': 'objective', 'text': objective}]}
+        diagnostics = []
+        for item in extracted['unsupported']:
+            source_id = next((o['source_input_id'] for o in extracted['obligations']
+                              if o['obligation_id'] == item.get('obligation_id')), item.get('source_input_id', 'objective'))
+            text = sources.get(source_id, objective)
+            start, end = item['source_span']
+            before = max(text.rfind(c, 0, start) for c in ',，;；。\n') + 1
+            after = min([pos for c in ',，;；。\n' if (pos := text.find(c, end)) >= 0] or [len(text)])
+            diagnostics.append({**item, 'source_quote': text[start:end], 'source_clause': text[before:after]})
+        raise SourceRequirementUnavailable('engineering_verification_unavailable',
+            '当前无法可靠核验以下需求，尚未执行建模：' + str(diagnostics))
+    return extracted
 
 
 def validate_requirement_bindings(objective, contract, verified_state=None, *, confirmed_sources=(), requirement_sources=None) -> dict:
@@ -392,10 +491,10 @@ def validate_requirement_bindings(objective, contract, verified_state=None, *, c
     Preservation requires independent evidence sealed into the exact revision;
     parameter labels and nominal values never substitute for measured geometry.
     """
-    extracted = extract_source_requirements(objective, verified_state=verified_state, requirement_sources=requirement_sources)
-    if extracted['unsupported']:
-        raise RequirementBindingError('engineering_verification_unavailable',
-            'source quantities cannot yet be bound reliably: ' + str(extracted['unsupported']))
+    extracted = require_bound_sources(objective, verified_state=verified_state, requirement_sources=requirement_sources)
+    expected_context = extracted.get('source_context')
+    if contract.source_context != (SourceContextV1.model_validate(expected_context) if expected_context else None):
+        raise RequirementBindingError('requirement_binding_mismatch', 'source context differs from saved user input')
     records = {r['requirement_id']: r for r in extracted['requirements']}
     for source in confirmed_sources:
         if source['source_kind'] != 'confirmed':
@@ -447,4 +546,5 @@ def validate_requirement_bindings(objective, contract, verified_state=None, *, c
             'requirements_digest': canonical_sha256({'objective': objective}),
             'acceptance_digest': contract.digest(), 'bindings': bindings,
             'source_obligations': extracted['obligations'],
+            **({'source_context': expected_context} if expected_context else {}),
             'comparison_policy_id': contract.comparison_policy_id}
