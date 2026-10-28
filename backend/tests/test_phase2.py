@@ -180,6 +180,29 @@ async def test_api_parts_endpoint():
 
 # === Renderer ===
 
+@pytest.mark.parametrize('existing_cache', [False, True], ids=['unset', 'configured'])
+def test_renderer_import_preserves_other_libraries_cache_home(tmp_path, existing_cache):
+    import json
+    import os
+    import subprocess
+    import sys
+
+    env = dict(os.environ, MPLCONFIGDIR=str(tmp_path / 'matplotlib'))
+    if existing_cache:
+        env['XDG_CACHE_HOME'] = str(tmp_path / 'other-libraries')
+    else:
+        env.pop('XDG_CACHE_HOME', None)
+    # A fresh process catches import-time environment changes. On Linux,
+    # Playwright resolves its installed browser through this shared variable.
+    result = subprocess.run([sys.executable, '-c',
+        'import json,os; import app.rendering.renderer; import matplotlib; '
+        'print(json.dumps({"xdg":os.getenv("XDG_CACHE_HOME"),"mpl":matplotlib.get_cachedir()}))'],
+        env=env, check=True, capture_output=True, text=True)
+    actual = json.loads(result.stdout)
+    assert actual['xdg'] == (str(tmp_path / 'other-libraries') if existing_cache else None)
+    assert actual['mpl'] == str(tmp_path / 'matplotlib')
+
+
 def test_cad_renderer_init():
     from app.rendering.renderer import CADRenderer
     renderer = CADRenderer()

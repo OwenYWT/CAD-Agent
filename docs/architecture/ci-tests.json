@@ -1716,6 +1716,8 @@
       "tests/test_phase2.py::test_api_health",
       "tests/test_phase2.py::test_api_parts_endpoint",
       "tests/test_phase2.py::test_cad_renderer_init",
+      "tests/test_phase2.py::test_renderer_import_preserves_other_libraries_cache_home[unset]",
+      "tests/test_phase2.py::test_renderer_import_preserves_other_libraries_cache_home[configured]",
       "tests/test_phase2.py::test_cad_renderer_writes_four_real_views",
       "tests/test_phase2.py::test_dxf_renderer_import",
       "tests/test_phase2.py::test_orchestrator_uses_vector_retriever",

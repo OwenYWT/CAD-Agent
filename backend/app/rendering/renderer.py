@@ -6,7 +6,8 @@ from pathlib import Path
 
 _RENDER_CACHE_DIR = Path(tempfile.gettempdir()) / "cad-agent-render-cache"
 os.environ.setdefault("MPLCONFIGDIR", str(_RENDER_CACHE_DIR / "matplotlib"))
-os.environ.setdefault("XDG_CACHE_HOME", str(_RENDER_CACHE_DIR))
+# Keep writable Matplotlib state local to the renderer. Changing XDG_CACHE_HOME
+# here also redirects unrelated libraries, including Playwright on Linux.
 
 import matplotlib
 import numpy as np
