@@ -9,21 +9,31 @@ from app.contracts.acceptance import AcceptanceContract
 from app.validation.requirement_binding import extract_requirements, validate_requirement_bindings
 
 
-def bind(text):
-    result = extract_requirements(text)
+def bind(text, *, concept=False):
+    from app.validation.requirement_binding import extract_source_requirements
+    sources = [{'source_input_id':'objective', 'source_kind':'user', 'text':text,
+                'execution_scope':'concept_geometry' if concept else 'cad_geometry'}]
+    result = extract_source_requirements(text, requirement_sources=sources)
     checks = [{'check_id': str(index), 'binding_ref': r['requirement_id'], 'kind': r['kind'],
                'description': r['property'], 'source_quote': r['source_quote'],
                'comparison': r['comparison'], 'scope': r['scope'],
                **({'hole_group': r['hole_group']} if r.get('hole_group') else {})}
               for index, r in enumerate(result['requirements'])]
     contract = AcceptanceContractV2.model_validate({'objective': text, 'checks': checks,
-        'verification_limits': [u['reason'] for u in result['unsupported']]})
-    validate_requirement_bindings(text, contract)
+        'verification_limits': [u['reason'] for u in result['unsupported']],
+        **({'source_context':result['source_context']} if result.get('source_context') else {})})
+    validate_requirement_bindings(text, contract, requirement_sources=sources)
     return contract.model_dump(mode='json')
 
 
 def fixtures():
     cases = []
+    clamp = bind('设计一个可夹在 25 mm 桌板上的耳机挂钩', concept=True)
+    for gap, expected in [(24, 'failed'), (25, 'passed'), (26, 'passed')]:
+        cases.append({'model': f'clamp_{gap}', 'contract': clamp, 'expected': expected, 'solids': 1})
+    for name in ('clamp_solid', 'clamp_ambiguous'):
+        cases.append({'model': name, 'contract': clamp, 'expected': 'indeterminate',
+                      'solids': 2 if name == 'clamp_ambiguous' else 1})
     for text, count in [('4个直径6 mm的通孔', 4), ('四个直径6 mm的通孔', 4),
                         ('一个直径6 mm的通孔', 1), ('长度80mm，零个孔', 0)]:
         contract = bind(text)
@@ -119,7 +129,7 @@ def verify_reports(log):
         version = AcceptanceContractV2 if case['contract']['schema_version'] == 'engineering-acceptance.v2' else AcceptanceContract
         contract = version.model_validate(case['contract'])
         assert row['model'] == case['model'] and row['outcome'] == case['expected']
-        solids = 1 if case['model'] == 'one_hole' or case['model'].startswith('mixed_') else 2
+        solids = case.get('solids', 1 if case['model'] == 'one_hole' or case['model'].startswith('mixed_') else 2)
         context = row['measurement_context']
         request = geometry_request_digest(expected_dimensions_mm={}, dimension_tolerance=.05,
             expected_solid_count=solids, acceptance=case['contract'], measurement_context=context)
@@ -158,6 +168,10 @@ def verify_reports(log):
                 else:
                     raise AssertionError((case['model'], mutation, 'uncovered boundary accepted'))
         if row['outcome'] == 'indeterminate':
+            if case['model'].startswith('clamp_'):
+                assert all(r['outcome'] == 'indeterminate' and r['details']['error_code'] == 'acceptance_scope_invalid'
+                           for r in row['report']['acceptance']['evidence'])
+                continue
             incomplete = [r for r in row['report']['acceptance']['evidence']
                           if r['details'].get('reason') == 'hole_inventory_incomplete']
             assert incomplete and all(r['details']['hole_inventory']['complete'] is False for r in incomplete)

@@ -14,7 +14,7 @@ from app.llm import find_provider_exception
 from app.models.schemas import CADPlan, ModificationPlan
 from app.contracts.acceptance import acceptance_tool_schema
 from app.contracts.acceptance_v2 import AcceptanceContractV2
-from app.validation.requirement_binding import extract_source_requirements, validate_requirement_bindings, bind_source_quotes, RequirementBindingError
+from app.validation.requirement_binding import extract_source_requirements, validate_requirement_bindings, bind_source_quotes, RequirementBindingError, require_bound_sources, SourceRequirementUnavailable
 from app.validation.acceptance_preflight import validate_new_acceptance
 
 logger = logging.getLogger(__name__)
@@ -119,6 +119,10 @@ def _v2_requirements_prompt(objective, tool_name, *, verified_state=None, requir
         'For nominal geometry or concept designs, missing manufacturing tolerances do not create a required '
         'fit or motion certification. Keep physical fit, waterproof performance and manufacturing validation '
         'separate from geometry; retain explicit performance requirements as unverified when unsupported. '
+        'Copy supplied source_context exactly. Its design_requests count CAD document deliveries, not solids. '
+        'External plate thickness is an input, not the generated part thickness. For a confirmed concept, '
+        'the derived planar_gap checks necessary clearance only; retain physical_fit and clamping_force '
+        'as unverified in source_context. Do not claim these were certified or ask for the same concept consent again. '
         'Requested STEP/STL/FCStd delivery is enforced by native export, artifact readers and sealing; '
         'it is not an unsupported geometric measurement. Retain the requested output formats in the plan. '
         'Keep all other required features in the design. Unsupported or unbound semantic conditions belong '
@@ -213,6 +217,8 @@ class Planner:
                   if require_acceptance else PLANNER_SYSTEM_PROMPT)
         objective = str(messages[-1]["content"])
         if require_acceptance and acceptance_version == 'engineering-acceptance.v2':
+            if requirement_sources and all(s.get('acceptance_domain') == 'solid' for s in requirement_sources):
+                require_bound_sources(objective, requirement_sources=requirement_sources)
             system += _v2_requirements_prompt(objective, 'submit_cad_plan', requirement_sources=requirement_sources)
         elif require_acceptance:
             system += """\nSubmit the complete requirements using submit_cad_plan. Include design_brief.acceptance={checks:[...], unresolved:[...]}; the server binds objective.
@@ -317,6 +323,8 @@ The submit_cad_plan tool parameters contain the authoritative field definitions 
             except RuntimeError:
                 # Missing credentials / unrecoverable config; propagate, don't mask.
                 raise
+            except SourceRequirementUnavailable:
+                raise
             except Exception as e:
                 if find_provider_exception(e) is not None:
                     logger.warning(
@@ -342,6 +350,9 @@ The submit_cad_plan tool parameters contain the authoritative field definitions 
                                 requirement_sources=None) -> ModificationPlan:
         system = (MODIFICATION_CONTEXT_PROMPT if require_acceptance else MODIFICATION_SYSTEM_PROMPT).format(current_code=current_code)
         if require_acceptance and acceptance_version == 'engineering-acceptance.v2':
+            if requirement_sources and all(s.get('acceptance_domain') == 'solid' for s in requirement_sources):
+                require_bound_sources(str(messages[-1]['content']), verified_state=verified_state,
+                                      requirement_sources=requirement_sources)
             system += _v2_requirements_prompt(str(messages[-1]['content']), 'submit_modification_plan',
                 verified_state=verified_state, requirement_sources=requirement_sources)
         elif require_acceptance:
@@ -412,6 +423,8 @@ The submit_modification_plan tool parameters contain the authoritative field def
                                  requirement_sources=requirement_sources)
                 return plan
             except RuntimeError:
+                raise
+            except SourceRequirementUnavailable:
                 raise
             except Exception as e:
                 if find_provider_exception(e) is not None:

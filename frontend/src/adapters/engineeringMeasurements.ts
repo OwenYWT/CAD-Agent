@@ -4,6 +4,19 @@ function record(value: unknown): RecordValue {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as RecordValue : {};
 }
 
+export function engineeringSourceContext(report: RecordValue) {
+  const context = record(record(report.acceptance_contract).source_context);
+  if (context.schema_version !== 'source-context.v1' || context.execution_scope !== 'concept_geometry') return null;
+  const references = (Array.isArray(context.external_references) ? context.external_references : [])
+    .map(record).filter(r => r.property === 'plate_thickness' && typeof r.source_quote === 'string')
+    .map(r => String(r.source_quote));
+  if (!references.length) return null;
+  const labels: Record<string,string> = {physical_fit:'实物适配',clamping_force:'夹持力'};
+  const unverified = (Array.isArray(context.unverified_aspects) ? context.unverified_aspects : [])
+    .filter((v): v is string => typeof v === 'string').map(v => labels[v] || v);
+  return {scope:'概念几何',references,unverified};
+}
+
 export function engineeringMeasurements(report: RecordValue) {
   const acceptance = record(report.acceptance);
   const contract = record(report.acceptance_contract);

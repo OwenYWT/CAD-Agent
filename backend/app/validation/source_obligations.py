@@ -65,13 +65,18 @@ def inventory(text, *, source_input_id):
     return items
 
 
-def resolve_inventory(items, requirements, comparison_spans, unsupported):
+def resolve_inventory(items, requirements, comparison_spans, unsupported, *, design_requests=()):
     for item in items:
         start, end = item['source_span']
         refs = []
         if item['category'] == 'count':
             refs = [r['requirement_id'] for r in requirements if r['kind'] in {'hole_count', 'solid_count'}
                     and r['source_span'][0] <= start and end <= r['source_span'][1]]
+            if not refs:
+                refs = [r['reference_id'] for r in design_requests
+                        if r['source_span'] == [start, end]]
+                if refs:
+                    item['verification_domain'] = 'cad_document_delivery'
         elif item['category'] == 'feature_position':
             refs = [r['requirement_id'] for r in requirements if r['kind'] == 'hole_position'
                     and r['source_span'][0] <= start and end <= r['source_span'][1]]
@@ -147,7 +152,8 @@ def _component_subjects(text, mentions, declarations):
     return groups
 
 
-def bind_component_scopes(text, requirements, unsupported, obligations, *, source_input_id):
+def bind_component_scopes(text, requirements, unsupported, obligations, *, source_input_id,
+                          external_spans=()):
     """Apply one ownership policy to every property and every extraction path.
 
     Only explicit source bounds authorize a material component selector. Names
@@ -170,7 +176,8 @@ def bind_component_scopes(text, requirements, unsupported, obligations, *, sourc
     # replace "盒体" as the owner inherited by the following hole clause.
     mentions = sorted([*declarations, *((m.start(), m.end(), m.group().lower())
         for m in pattern.finditer(text)
-        if not any(a <= m.start() and m.end() <= b for a, b, _ in declarations))])
+        if not any(a <= m.start() and m.end() <= b for a, b, _ in declarations)
+        and not any(a <= m.start() and m.end() <= b for a, b in external_spans))])
     owners = {name for _, _, name in mentions}
     subjects = _component_subjects(text, mentions, declarations)
     for subject in subjects:

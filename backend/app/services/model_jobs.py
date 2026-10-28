@@ -183,7 +183,8 @@ async def execute(job: dict, operations: ModelHandlers):
             # Leave the fenced lease for takeover once the database recovers.
             raise
         error = {'code': getattr(exc,'type',None) or getattr(exc,'code',None) or type(exc).__name__,
-                 'message': str(exc)[:4000], 'details': list(exc.details) if isinstance(exc,ApplicationError) else []}
+                 'message': (exc.message if isinstance(exc,ApplicationError) else str(exc))[:4000],
+                 'details': list(exc.details) if isinstance(exc,ApplicationError) else []}
         await finish(job,status='failed',error=error)
     finally:
         work.cancel()

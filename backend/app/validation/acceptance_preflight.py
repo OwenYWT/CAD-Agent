@@ -35,9 +35,11 @@ def validate_new_acceptance(contract) -> None:
                     'an exterior probe. Correct the measurement instruction before freezing it.')
         if check.kind == 'planar_gap':
             quote = check.source_quote
+            context = getattr(contract, 'source_context', None)
+            external = context and any(ref.source_quote == quote for ref in context.external_references)
             material = re.search(r'壁厚|板厚|底厚|(?:底板|上盖).*厚|wall\s+thickness|plate\s+thickness', quote, re.I)
             air = re.search(r'间隙|夹口|开口|腔体|空腔|gap|opening|cavity', quote, re.I)
-            if material and not air:
+            if material and not air and not external:
                 raise ValueError(f'{check.check_id}: planar_gap measures empty space, not material '
                     'thickness. Retain the wall requirement and use a supported wall_thickness '
                     'measurement; do not change the model or downgrade coverage to pass.')

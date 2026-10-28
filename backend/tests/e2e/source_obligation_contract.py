@@ -16,7 +16,8 @@ with tempfile.TemporaryDirectory() as directory:
     program.write_text(f'''
 import FreeCAD as App, Part, json, math
 root={str(root)!r}
-for name in ['one_hole','components','oversize','wrong_lid',
+for name in ['clamp_24','clamp_25','clamp_26','clamp_solid','clamp_ambiguous',
+             'one_hole','components','oversize','wrong_lid',
              'distributed_correct','distributed_box_missing','distributed_lid_missing',
              'distributed_box_three','distributed_lid_three',
              'distributed_box_wrong_diameter','distributed_lid_wrong_diameter',
@@ -30,7 +31,15 @@ for name in ['one_hole','components','oversize','wrong_lid',
              'mixed_extra_sphere_blind','mixed_four_blind',
              'grouped_components_correct','grouped_components_box_wrong','grouped_components_lid_wrong']:
     doc=App.newDocument('SourceObligations')
-    if name=='one_hole':
+    if name.startswith('clamp_'):
+        gap = int(name.split('_')[-1]) if name.split('_')[-1].isdigit() else 25
+        shape = Part.makeBox(50,gap+10,20)
+        if name != 'clamp_solid':
+            shape = shape.cut(Part.makeBox(40,gap,20,App.Vector(10,5,0)))
+        shapes = [shape]
+        if name == 'clamp_ambiguous':
+            other = shape.copy(); other.translate(App.Vector(80,0,0)); shapes.append(other)
+    elif name=='one_hole':
         shapes=[Part.makeBox(80,40,8).cut(Part.makeCylinder(3,8,App.Vector(40,20,0)))]
     elif name.startswith('mixed_'):
         diameters={{'mixed_correct':[6,6,4,4], 'mixed_same_diameter':[6,6,6,6], 'mixed_missing':[6,4],
@@ -148,7 +157,7 @@ print('SOURCE_OBLIGATION_MODELS_SAVED')
         context = {'schema_version': 'measurement-context.v1', 'base_revision_id': 'source-obligations',
                    'checkpoint_manifest_id': case['model'], 'artifact_sha256s': [digest]}
         report = validate_geometry_files([{'role': 'final', 'format': 'step', 'path': str(path)}],
-            expected_solid_count=1 if case['model'] == 'one_hole' or case['model'].startswith('mixed_') else 2,
+            expected_solid_count=case.get('solids', 1 if case['model'] == 'one_hole' or case['model'].startswith('mixed_') else 2),
             acceptance=case['contract'], measurement_context=context)
         assert report['outcome'] == case['expected'], (case, report)
         assert hashlib.sha256(path.read_bytes()).hexdigest() == digest

@@ -261,7 +261,7 @@ def test_user_and_confirmed_sources_cannot_freeze_conflicting_hole_populations(d
     from app.domain.requirement_basis import RequirementBasisV1
     from app.workflows.handlers.planning import requirements_objective, requirements_sources
     from app.validation.requirement_binding import extract_source_requirements
-    request = SimpleNamespace(objective='板80×40×8mm，2个直径6mm的通孔。',
+    request = SimpleNamespace(objective='板80×40×8mm，2个直径6mm的通孔。', output_formats=('step','stl'),
         operation_context=SimpleNamespace(requirement_basis=RequirementBasisV1(
             target='板', design_scope='geometry', source_kind='user_specification',
             source_reference='用户确认', dimensions=dimensions)))

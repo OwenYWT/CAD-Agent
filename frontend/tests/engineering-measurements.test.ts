@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { engineeringMeasurements } from '../src/adapters/engineeringMeasurements.ts';
+import { engineeringMeasurements, engineeringSourceContext } from '../src/adapters/engineeringMeasurements.ts';
+
+test('external inputs and unverified physical fit survive a passing geometry report', () => {
+  const report = {acceptance_contract:{source_context:{schema_version:'source-context.v1', execution_scope:'concept_geometry',
+    external_references:[{source_quote:'夹在 25 mm 桌板',property:'plate_thickness'}],
+    unverified_aspects:['physical_fit','clamping_force']}},acceptance:{outcome:'passed'}};
+  const context = engineeringSourceContext(report);
+  assert.deepEqual(context?.references, ['夹在 25 mm 桌板']);
+  assert.deepEqual(context?.unverified, ['实物适配','夹持力']);
+  assert.equal(context?.scope, '概念几何');
+  assert.equal(engineeringSourceContext({}), null);
+});
 
 test('display joins actual evidence to its own criteria by ID, retaining failures and zero', () => {
   const rows=engineeringMeasurements({acceptance_contract:{checks:[

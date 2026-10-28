@@ -13,7 +13,7 @@ def planning_error(exc: Exception) -> ApplicationError:
         return exc
     if isinstance(exc, (ParameterStateError, FreeCADPlanningError, RequirementBindingError, ProviderBudgetError)):
         return ApplicationError(
-            str(exc),
+            exc.message if isinstance(exc, RequirementBindingError) else str(exc),
             type=exc.code,
             non_retryable=True,
         )

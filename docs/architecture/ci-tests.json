@@ -1716,6 +1716,8 @@
       "tests/test_phase2.py::test_api_health",
       "tests/test_phase2.py::test_api_parts_endpoint",
       "tests/test_phase2.py::test_cad_renderer_init",
+      "tests/test_phase2.py::test_renderer_import_preserves_other_libraries_cache_home[unset]",
+      "tests/test_phase2.py::test_renderer_import_preserves_other_libraries_cache_home[configured]",
       "tests/test_phase2.py::test_cad_renderer_writes_four_real_views",
       "tests/test_phase2.py::test_dxf_renderer_import",
       "tests/test_phase2.py::test_orchestrator_uses_vector_retriever",
@@ -2472,7 +2474,51 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_nurbs_blind_bore_cannot_create_candidates[grouped]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_nurbs_blind_bore_cannot_create_candidates[ordinary]",
       "tests/test_hole_populations.py::test_legacy_hole_evidence_cannot_bypass_boundary_coverage",
-      "tests/test_hole_populations.py::test_enclosed_passage_properties_require_every_internal_face_and_never_authorize_counts"
+      "tests/test_hole_populations.py::test_enclosed_passage_properties_require_every_internal_face_and_never_authorize_counts",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_original_hook_intake_binds_external_input_and_gates_persisted_candidate[24]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_original_hook_intake_binds_external_input_and_gates_persisted_candidate[25]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_original_hook_intake_binds_external_input_and_gates_persisted_candidate[26]",
+      "tests/test_design_source_context.py::test_one_design_request_is_not_a_one_solid_requirement[\\u8bbe\\u8ba1\\u4e00\\u4e2a\\u957f80mm\\u3001\\u5bbd40mm\\u3001\\u539a8mm\\u7684\\u677f]",
+      "tests/test_design_source_context.py::test_one_design_request_is_not_a_one_solid_requirement[\\u521b\\u5efa\\u4e00\\u4e2a 100\\xd760\\xd73 mm \\u7684\\u677f]",
+      "tests/test_design_source_context.py::test_one_design_request_is_not_a_one_solid_requirement[\\u8bf7\\u5e2e\\u6211\\u8bbe\\u8ba1\\u4e00\\u4e2a\\u677f\\uff0c\\u957f80mm\\u3001\\u5bbd40mm\\u3001\\u539a8mm]",
+      "tests/test_design_source_context.py::test_one_design_request_is_not_a_one_solid_requirement[Create a plate 80x40x8 mm]",
+      "tests/test_design_source_context.py::test_design_article_does_not_discharge_a_hole_or_unknown_feature_count",
+      "tests/test_design_source_context.py::test_plate_is_an_external_input_and_clearance_is_a_derived_geometry_check[\\u8bbe\\u8ba1\\u4e00\\u4e2a\\u53ef\\u5939\\u5728 25 mm \\u684c\\u677f\\u4e0a\\u7684\\u8033\\u673a\\u6302\\u94a9]",
+      "tests/test_design_source_context.py::test_plate_is_an_external_input_and_clearance_is_a_derived_geometry_check[\\u5236\\u4f5c\\u4e00\\u4e2a\\u5939\\u57282.5\\u5398\\u7c73\\u539a\\u7684\\u684c\\u677f\\u4e0a\\u7684\\u6302\\u94a9]",
+      "tests/test_design_source_context.py::test_plate_is_an_external_input_and_clearance_is_a_derived_geometry_check[\\u8bbe\\u8ba1\\u4e00\\u4e2a\\u8033\\u673a\\u6302\\u94a9\\uff0c\\u5939\\u5728\\u539a\\u5ea6\\u4e3a25\\u6beb\\u7c73\\u7684\\u684c\\u677f\\u4e0a]",
+      "tests/test_design_source_context.py::test_plate_is_an_external_input_and_clearance_is_a_derived_geometry_check[Design a headphone hook that clamps to a 25 mm desktop]",
+      "tests/test_design_source_context.py::test_external_fit_is_not_silently_accepted_without_concept_confirmation",
+      "tests/test_design_source_context.py::test_concept_confirmation_cannot_hide_other_unbound_requirements",
+      "tests/test_design_source_context.py::test_external_dimension_and_derived_predicate_cannot_be_changed_or_omitted",
+      "tests/test_design_source_context.py::test_no_context_preserves_the_existing_v2_wire_and_digest",
+      "tests/test_design_source_context.py::test_unbindable_solid_input_fails_before_any_model_dispatch[generate]",
+      "tests/test_design_source_context.py::test_unbindable_solid_input_fails_before_any_model_dispatch[modify]",
+      "tests/test_design_source_context.py::test_saved_consent_and_output_domain_reach_the_source_binder",
+      "tests/test_design_source_context.py::test_external_material_input_does_not_masquerade_as_hook_material_thickness",
+      "tests/test_design_source_context.py::test_workflow_error_keeps_one_code_and_the_original_diagnostic",
+      "tests/test_design_source_context.py::test_unrecognized_external_word_order_never_becomes_the_generated_part_thickness[\\u8bbe\\u8ba1\\u4e00\\u4e2a\\u53ef\\u5939\\u5728\\u684c\\u677f\\uff08\\u539a25mm\\uff09\\u4e0a\\u7684\\u8033\\u673a\\u6302\\u94a9]",
+      "tests/test_design_source_context.py::test_unrecognized_external_word_order_never_becomes_the_generated_part_thickness[\\u8bbe\\u8ba1\\u4e00\\u4e2a\\u53ef\\u5939\\u5728\\u539a25mm\\u7684\\u684c\\u677f\\u4e0a\\u7684\\u8033\\u673a\\u6302\\u94a9]",
+      "tests/test_design_source_context.py::test_unrecognized_external_word_order_never_becomes_the_generated_part_thickness[\\u8bbe\\u8ba1\\u4e00\\u4e2a\\u7528\\u4e8e\\u539a\\u5ea625mm\\u684c\\u677f\\u7684\\u5939\\u5177]",
+      "tests/test_design_source_context.py::test_unrecognized_external_word_order_never_becomes_the_generated_part_thickness[Design a hook for a desktop of thickness 25mm]",
+      "tests/test_design_source_context.py::test_external_unit_range_tolerance_and_bound_retain_the_input[2.5\\u5398\\u7c73-25]",
+      "tests/test_design_source_context.py::test_external_unit_range_tolerance_and_bound_retain_the_input[0.025m-25]",
+      "tests/test_design_source_context.py::test_external_unit_range_tolerance_and_bound_retain_the_input[20\\u81f325mm-25]",
+      "tests/test_design_source_context.py::test_external_unit_range_tolerance_and_bound_retain_the_input[25\\xb10.2mm-25.2]",
+      "tests/test_design_source_context.py::test_external_unit_range_tolerance_and_bound_retain_the_input[\\u4e0d\\u8d85\\u8fc725mm-25]",
+      "tests/test_design_source_context.py::test_external_unbounded_strict_or_nonlength_input_is_not_silently_reinterpreted[\\u81f3\\u5c1125mm]",
+      "tests/test_design_source_context.py::test_external_unbounded_strict_or_nonlength_input_is_not_silently_reinterpreted[\\u5927\\u4e8e25mm]",
+      "tests/test_design_source_context.py::test_external_unbounded_strict_or_nonlength_input_is_not_silently_reinterpreted[0mm]",
+      "tests/test_design_source_context.py::test_external_unbounded_strict_or_nonlength_input_is_not_silently_reinterpreted[-25mm]",
+      "tests/test_design_source_context.py::test_external_unbounded_strict_or_nonlength_input_is_not_silently_reinterpreted[25mm\\xb3]",
+      "tests/test_design_source_context.py::test_one_design_request_is_not_a_one_solid_requirement[\\u521b\\u5efa1\\u4e2a\\u957f80mm\\u3001\\u5bbd40mm\\u3001\\u539a8mm\\u7684\\u677f\\uff0c\\u5355\\u4f4d\\uff1amm]",
+      "tests/postgres/test_model_jobs.py::test_requirement_error_roundtrip_keeps_code_separate_from_message",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_unbound_source_fails_before_provider_or_native_dispatch_in_real_workflow",
+      "tests/test_design_source_context.py::test_one_design_request_is_not_a_one_solid_requirement[\\u8bbe\\u8ba1\\u4e00\\u4e2a\\u5e262\\u4e2a\\u5b54\\u7684\\u677f\\uff0c\\u957f80mm\\uff0c\\u5b54\\u5f846mm]",
+      "tests/test_design_source_context.py::test_delivery_count_cannot_use_a_modifier_or_location_as_the_requested_product[hole-in-plate]",
+      "tests/test_design_source_context.py::test_delivery_count_cannot_use_a_modifier_or_location_as_the_requested_product[rib-on-plate]",
+      "tests/test_design_source_context.py::test_delivery_count_cannot_use_a_modifier_or_location_as_the_requested_product[rib-at-plate]",
+      "tests/test_design_source_context.py::test_delivery_count_cannot_use_a_modifier_or_location_as_the_requested_product[plate-shaped-rib]",
+      "tests/test_design_source_context.py::test_delivery_count_cannot_use_a_modifier_or_location_as_the_requested_product[english-rib]"
     ],
     "allowed_skips": {
       "tests/integration/test_agent_candidate_seal.py::test_late_workflow_failure_during_cancellation_reaches_a_terminal_state": "real PostgreSQL and MinIO are required",
@@ -2781,7 +2827,12 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_unenumerated_through_holes_cannot_create_candidates[square]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
       "tests/integration/test_temporal_mcadd_workflow.py::test_plus_joined_hole_groups_reach_review_and_commit": "real PostgreSQL, MinIO, Temporal, and Podman are required",
       "tests/integration/test_temporal_mcadd_workflow.py::test_nurbs_blind_bore_cannot_create_candidates[grouped]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
-      "tests/integration/test_temporal_mcadd_workflow.py::test_nurbs_blind_bore_cannot_create_candidates[ordinary]": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      "tests/integration/test_temporal_mcadd_workflow.py::test_nurbs_blind_bore_cannot_create_candidates[ordinary]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_original_hook_intake_binds_external_input_and_gates_persisted_candidate[24]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_original_hook_intake_binds_external_input_and_gates_persisted_candidate[25]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_original_hook_intake_binds_external_input_and_gates_persisted_candidate[26]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/postgres/test_model_jobs.py::test_requirement_error_roundtrip_keeps_code_separate_from_message": "isolated migrated PostgreSQL required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_unbound_source_fails_before_provider_or_native_dispatch_in_real_workflow": "real PostgreSQL, MinIO, Temporal, and Podman are required"
     }
   },
   "durable-core": {
@@ -2903,7 +2954,11 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_unenumerated_through_holes_cannot_create_candidates[square]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_plus_joined_hole_groups_reach_review_and_commit",
       "tests/integration/test_temporal_mcadd_workflow.py::test_nurbs_blind_bore_cannot_create_candidates[grouped]",
-      "tests/integration/test_temporal_mcadd_workflow.py::test_nurbs_blind_bore_cannot_create_candidates[ordinary]"
+      "tests/integration/test_temporal_mcadd_workflow.py::test_nurbs_blind_bore_cannot_create_candidates[ordinary]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_original_hook_intake_binds_external_input_and_gates_persisted_candidate[24]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_original_hook_intake_binds_external_input_and_gates_persisted_candidate[25]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_original_hook_intake_binds_external_input_and_gates_persisted_candidate[26]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_unbound_source_fails_before_provider_or_native_dispatch_in_real_workflow"
     ]
   },
   "frontend": {
@@ -3081,7 +3136,8 @@
       "test::intake retains property, relation and feature context with each dimension",
       "test::excluded assembly features do not turn a nominal design into physical fit",
       "test::a declared unit and labelled dimensions remain intact; long input is not truncated into a specification",
-      "test::group display uses the recorded complete partition and labels the whole inventory"
+      "test::group display uses the recorded complete partition and labels the whole inventory",
+      "test::external inputs and unverified physical fit survive a passing geometry report"
     ]
   },
   "data-integration": {
@@ -3328,7 +3384,8 @@
       "tests/postgres/test_model_jobs.py::test_other_tenant_cannot_read_job",
       "tests/postgres/test_model_jobs.py::test_provider_socket_cancellation_persists_real_usage_state",
       "tests/postgres/test_model_jobs.py::test_real_temporal_wait_and_cancellation",
-      "tests/postgres/test_model_jobs.py::test_real_continue_as_new_keeps_one_job_and_provider_operation"
+      "tests/postgres/test_model_jobs.py::test_real_continue_as_new_keeps_one_job_and_provider_operation",
+      "tests/postgres/test_model_jobs.py::test_requirement_error_roundtrip_keeps_code_separate_from_message"
     ]
   },
   "usage-monitoring": {
@@ -3518,7 +3575,8 @@
       "scripts/ci/tests/test_inflight_contract.py::InflightContracts::test_supported_persistent_budget_contract_is_accepted",
       "scripts/ci/tests/test_inflight_contract.py::InflightContracts::test_unknown_persistent_budget_contract_blocks_old_target",
       "scripts/ci/tests/test_inflight_contract.py::InflightContracts::test_receipt_recovery_is_required_even_without_active_workflows",
-      "scripts/ci/tests/test_inflight_contract.py::InflightContracts::test_customer_billing_cannot_be_bypassed_by_an_idle_application_rollback"
+      "scripts/ci/tests/test_inflight_contract.py::InflightContracts::test_customer_billing_cannot_be_bypassed_by_an_idle_application_rollback",
+      "scripts/ci/tests/test_inflight_contract.py::InflightContracts::test_retained_source_context_blocks_a_target_that_cannot_read_it"
     ]
   },
   "native-runtime": {
