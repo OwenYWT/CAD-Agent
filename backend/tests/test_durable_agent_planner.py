@@ -19,7 +19,7 @@ class PlannerStub:
         self.new_calls = 0
         self.modify_calls = 0
 
-    async def plan_new(self, messages):
+    async def plan_new(self, messages, **_kwargs):
         self.new_calls += 1
         if self.error:
             raise self.error
@@ -34,6 +34,67 @@ class PlannerStub:
             modification_type="dimension_change",
             target_params={"width": 30},
         )
+
+
+@pytest.mark.asyncio
+async def test_solid_output_corrects_misclassified_profile_plan():
+    service, _, _ = _planner(_cad_plan(
+        part_type="profile_2d",
+        dimensions={"length": 100, "width": 100, "height": 100},
+        design_brief=DesignBrief(
+            intent_summary="100 mm cube",
+            artifact_type="profile_2d",
+        ),
+    ))
+
+    result = await service.requirements_generation(
+        "Create one 100 mm cube",
+        output_formats=("step", "stl"),
+    )
+
+    assert result.part_type == "box"
+    assert result.design_brief.artifact_type == "box"
+
+
+@pytest.mark.asyncio
+async def test_cube_intent_corrects_misclassified_cylinder_plan():
+    service, _, _ = _planner(_cad_plan(
+        part_type="cylinder",
+        dimensions={"diameter": 100, "height": 100},
+        features=["base_cylinder:diameter=100,height=100"],
+        design_brief=DesignBrief(
+            intent_summary="100 mm cube",
+            artifact_type="cylinder",
+        ),
+    ))
+
+    result = await service.requirements_generation(
+        "Create one 100 mm cube",
+        output_formats=("step", "stl"),
+    )
+
+    assert result.part_type == "box"
+    assert result.dimensions == {"length": 100.0, "width": 100.0, "height": 100.0}
+    assert result.design_brief.artifact_type == "box"
+
+
+@pytest.mark.asyncio
+async def test_explicit_dxf_request_keeps_profile_plan():
+    service, _, _ = _planner(_cad_plan(
+        part_type="profile_2d",
+        dimensions={"length": 100, "width": 50, "height": 2},
+        design_brief=DesignBrief(
+            intent_summary="DXF profile",
+            artifact_type="profile_2d",
+        ),
+    ))
+
+    result = await service.requirements_generation(
+        "Create a DXF profile",
+        output_formats=("dxf",),
+    )
+
+    assert result.part_type == "profile_2d"
 
 
 class DecomposerStub:

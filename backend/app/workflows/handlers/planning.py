@@ -117,6 +117,7 @@ async def agent_requirements(payload: dict[str, Any], *, durable_planner: Durabl
         elif request.operation == "generate":
             requirements = await durable_planner.requirements_generation(
                 requirements_objective(request),
+                output_formats=request.output_formats,
                 **({'manufacturing_profile': request.manufacturing_profile} if request.manufacturing_profile is not None else {}),
                 **({"require_acceptance": True} if payload.get("engineering_acceptance_v1") else {}),
                 **({'acceptance_version': 'engineering-acceptance.v2'} if payload.get('acceptance_bindings_v2') else {}),
