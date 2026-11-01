@@ -203,6 +203,31 @@ async def test_generator_retries_contract_error_and_returns_typed_plan() -> None
 
 
 @pytest.mark.asyncio
+async def test_generator_explains_discriminated_geometry_shape_after_legacy_line_error() -> None:
+    legacy_plan = _valid_plan()
+    legacy_plan["operations"][1]["args"]["geometry"] = {
+        "line": {"start": {"x": 10, "y": 10}, "end": {"x": 20, "y": 10}}
+    }
+    client = _client([legacy_plan, _valid_plan()])
+    generator = FreeCADOperationGenerator(
+        client=client,
+        provenance_reader=_provenance,
+    )
+
+    await generator.generate(
+        plan=_plan(),
+        requirements={"description": "Cube"},
+        base_state=None,
+        output_formats=("step", "stl"),
+    )
+
+    first_system_prompt = client.completions.kwargs[0]["messages"][0]["content"]
+    retry_instruction = client.completions.kwargs[1]["messages"][-1]["content"]
+    assert '"kind":"line"' in first_system_prompt
+    assert 'Use {"kind":"line"' in retry_instruction
+
+
+@pytest.mark.asyncio
 async def test_compiles_verified_revolved_circle_as_cylinder_without_provider() -> None:
     client = _client([])
     generator = FreeCADOperationGenerator(client=client)

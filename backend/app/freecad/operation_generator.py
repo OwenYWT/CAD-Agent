@@ -137,8 +137,12 @@ Typed actions and args (freecad_execute only):
   Arc sweep is counterclockwise, greater than zero and less than 360 degrees.
   Produces fully constrained editable geometry and construction helpers automatically.
   Never add constraints to these helpers or guess their geometry indexes.
-- sketch.add_geometry: {sketch, geometry}; geometry is line(start/end), circle(center/radius_mm),
-  or rectangle(corner/width_mm/height_mm). Coordinates are numeric millimetres.
+- sketch.add_geometry: {sketch, geometry}; geometry is exactly one tagged object:
+  {"kind":"line","start":{"x":number,"y":number},"end":{"x":number,"y":number}},
+  {"kind":"circle","center":{"x":number,"y":number},"radius_mm":number}, or
+  {"kind":"rectangle","corner":{"x":number,"y":number},"width_mm":number,"height_mm":number}.
+  Coordinates are numeric millimetres. Never wrap these as {"line":...}, {"circle":...},
+  or {"rectangle":...}; the kind discriminator is required.
 - sketch.add_constraint: use freecad_describe_operation for the authoritative kind,
   reference and datum variants. Do not use native negative indices as persistent identities.
 - feature.pad: {name, profile, length_mm, reversed?}
@@ -663,8 +667,12 @@ class FreeCADOperationGenerator:
                                'Call freecad_patch_profile with a corrected local boundary. ' + json.dumps(rejection_differences(last_error), ensure_ascii=False)
                                if profile_context else
                                'Call freecad_patch_cut with a corrected local change. ' + json.dumps(rejection_differences(last_error), ensure_ascii=False)
-                               if cut_context else _INSPECTION_NEXT if base_state is not None and not inspections
-                               else "Call freecad_execute for typed operations or freecad_execute_api for a native program, with corrected arguments using the measured facts already supplied.")
+                               if cut_context else
+                               "For sketch.add_geometry, use a tagged geometry object such as "
+                               'Use {"kind":"line","start":{"x":10,"y":10},'
+                               '"end":{"x":20,"y":10}}; never use {"line":{...}}. '
+                               + (_INSPECTION_NEXT if base_state is not None and not inspections
+                                  else "Call freecad_execute for typed operations or freecad_execute_api for a native program, with corrected arguments using the measured facts already supplied."))
                         ),
                     }
                 )

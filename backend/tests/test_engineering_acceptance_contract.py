@@ -238,12 +238,45 @@ def test_engineering_tool_schema_requires_contract_at_the_actual_runtime_locatio
     for model,name,payload in [(CADPlan,'submit_cad_plan',{'description':'part','part_type':'custom','dimensions':{},'features':[]}),
                                (ModificationPlan,'submit_modification_plan',{'description':'change','modification_type':'dimension_change'})]:
         schema=_planning_format(model,name,True)['tools'][0]['function']['parameters']
-        with pytest.raises(jsonschema.ValidationError):jsonschema.validate(payload,schema)
         if model is CADPlan:
+            # Azure-compatible function schemas cannot express this conditional
+            # requirement at the top level. Planner validation enforces it after
+            # the provider returns the tool payload.
+            jsonschema.validate(payload,schema)
             with pytest.raises(jsonschema.ValidationError):
                 jsonschema.validate({**payload,'acceptance':contract().model_dump(mode='json')},schema)
             jsonschema.validate({**payload,'part_type':'profile_2d'},schema)
             payload['design_brief']={'acceptance':contract().model_dump(mode='json')}
         else:
+            with pytest.raises(jsonschema.ValidationError):jsonschema.validate(payload,schema)
             payload['acceptance']=contract().model_dump(mode='json')
         jsonschema.validate(payload,schema)
+
+
+def test_generate_tool_schema_is_azure_function_compatible_at_the_top_level():
+    from app.agent.planner import _planning_format
+    from app.models.schemas import CADPlan
+
+    schema = _planning_format(
+        CADPlan, 'submit_cad_plan', True, 'engineering-acceptance.v2'
+    )['tools'][0]['function']['parameters']
+
+    assert schema['type'] == 'object'
+    assert not any(key in schema for key in ('allOf', 'anyOf', 'oneOf', 'enum', 'const', 'not'))
+
+
+def test_freecad_tool_schemas_are_azure_function_compatible_at_the_top_level():
+    from app.freecad.agent_tools import tool_schemas
+
+    configurations = (
+        {'has_document': False},
+        {'has_document': True},
+        {'has_document': True, 'constraint_repair': True},
+        {'has_document': True, 'profile_repair': True},
+        {'has_document': True, 'cut_repair': True},
+    )
+    for configuration in configurations:
+        for tool in tool_schemas(**configuration):
+            schema = tool['function']['parameters']
+            assert schema['type'] == 'object'
+            assert not any(key in schema for key in ('allOf', 'anyOf', 'oneOf', 'enum', 'const', 'not'))

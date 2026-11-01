@@ -42,6 +42,11 @@ _BASE_CYLINDER = re.compile(
     r"height=(\d+(?:\.\d+)?)$",
     re.I,
 )
+_BASE_BOX = re.compile(
+    r"^base_box:length=(\d+(?:\.\d+)?),"
+    r"width=(\d+(?:\.\d+)?),height=(\d+(?:\.\d+)?)$",
+    re.I,
+)
 _SOLID_CYLINDER = re.compile(
     r"^cylinder:solid,diameter=(\d+(?:\.\d+)?),"
     r"height=(\d+(?:\.\d+)?)$",
@@ -469,7 +474,54 @@ def compile_common_generation(
         return None
 
     operations: list[dict[str, Any]]
-    if part_type == "plate":
+    if part_type == "box":
+        length = dimensions.get("length")
+        width = dimensions.get("width")
+        height = dimensions.get("height")
+        if length is None or width is None or height is None:
+            return None
+        for feature in features:
+            lowered = feature.lower()
+            if lowered in {"fully_constrained_sketch:true", "sketch:fully_constrained"}:
+                continue
+            declared = _BASE_BOX.fullmatch(lowered)
+            if declared is None or any(
+                not math.isclose(float(value), expected)
+                for value, expected in zip(declared.groups(), (length, width, height))
+            ):
+                return None
+        for constraint in constraints:
+            lowered = constraint.lower()
+            if lowered not in {"fully_constrained_sketch=true", "sketch_fully_constrained=true"}:
+                return None
+        operations = [
+            _op("create-base-sketch", "sketch.create", {"name": "BaseSketch", "plane": "xy"}),
+            _op(
+                "add-base-rectangle",
+                "sketch.add_geometry",
+                {
+                    "sketch": "BaseSketch",
+                    "geometry": {
+                        "kind": "rectangle",
+                        "corner": {"x": 0.0, "y": 0.0},
+                        "width_mm": length,
+                        "height_mm": width,
+                    },
+                },
+            ),
+            *_rectangle_constraints(
+                "BaseSketch",
+                width=length,
+                depth=width,
+                offset=0.0,
+            ),
+            _op(
+                "pad-base",
+                "feature.pad",
+                {"name": "Pad", "profile": "BaseSketch", "length_mm": height},
+            ),
+        ]
+    elif part_type == "plate":
         plate_dimensions = _plate_dimensions(dimensions)
         if plate_dimensions is None or not _plate_semantics_covered(dimensions, features, constraints, plate_dimensions):
             return None

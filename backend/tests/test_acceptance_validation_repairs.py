@@ -97,15 +97,25 @@ async def test_inconclusive_required_image_remains_blocked():
 
 
 @pytest.mark.asyncio
-async def test_freecad_visual_budget_is_used_then_geometry_and_visual_are_rechecked():
+async def test_freecad_required_visual_budget_is_used_then_gates_are_rechecked():
     run = GateRun(visual=("failed", "passed"))
-    result = await run._visual_gate(**arguments("visual", mode="advisory"), expected_dimensions={})
+    result = await run._visual_gate(**arguments("visual", mode="required"), expected_dimensions={})
     assert result["visual"]["outcome"] == "passed"
     assert result["executed"]["staging_manifest_id"] == "new-manifest"
     names = [name for name, _, _ in run.calls]
     assert names.count("agent_v2.repair_operations") == 1
     assert names.count("agent_v2.validate_geometry") == 1
     assert names.count("agent_v2.judge_visual") == 2
+
+
+@pytest.mark.asyncio
+async def test_freecad_advisory_visual_failure_does_not_replace_verified_geometry():
+    run = GateRun(visual=("failed", "failed"))
+    with pytest.raises(ApplicationError, match="visual validation failed") as raised:
+        await run._visual_gate(**arguments("visual", mode="advisory"), expected_dimensions={})
+    assert raised.value.type == "agent_visual_validation_failed"
+    assert [name for name, _, _ in run.calls].count("agent_v2.repair_operations") == 0
+    assert [name for name, _, _ in run.calls].count("agent_v2.execute_freecad") == 0
 
 
 @pytest.mark.asyncio
@@ -136,4 +146,4 @@ async def test_visual_mismatch_cannot_succeed_after_advisory_budget_exhaustion()
     run = GateRun(visual=("failed", "failed"))
     with pytest.raises(ApplicationError):
         await run._visual_gate(**arguments("visual", mode="advisory"), expected_dimensions={})
-    assert [n for n, _, _ in run.calls].count("agent_v2.repair_operations") == 1
+    assert [n for n, _, _ in run.calls].count("agent_v2.repair_operations") == 0

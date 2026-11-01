@@ -81,8 +81,9 @@ _PRESERVATION = re.compile(
 _DESIGN_REQUEST = re.compile(
     r'^\s*(?:(?:请|帮我|请帮我|给我|麻烦)\s*)?(?:设计|创建|制作|生成|做)\s*(?P<zh>一\s*个|1\s*个)|'
     r'^\s*(?:please\s+)?(?:design|create|make|generate)\s+(?P<en>a|an|one)\b', re.I)
-_DESIGN_PRODUCT = re.compile(r'板|盒|长方体|挂钩|外壳|夹具|支架|零件|模型|装配体|组件|'
-    r'\b(?:plate|box|block|hook|enclosure|bracket|part|model|assembly)\b', re.I)
+_DESIGN_PRODUCT = re.compile(r'板|盒|长方体|正方形|正方体|方块|立方体|挂钩|外壳|夹具|支架|零件|模型|装配体|组件|'
+    r'\b(?:plate|box|block|square|cube|rectangle|hook|enclosure|bracket|part|model|assembly)\b', re.I)
+_EQUAL_AXIS_SOLID = re.compile(r'正方体|立方体|\bcube\b', re.I)
 _CLAMP_PLATE = re.compile(
     rf'(?:夹在|夹住|夹到|\bclamps?\s+(?:to|onto|on)\s+(?:an?\s+)?)\s*'
     rf'(?:(?:厚度|板厚|厚)\s*(?:为|是|[:：=])?\s*)?(?P<relation>{_RELATION})?\s*{_DIMENSION_QUANTITY}'
@@ -108,6 +109,7 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
     declarations = list(_DECLARED_UNIT.finditer(objective))
     declared = declarations[0] if declarations and len({m['unit'].lower() for m in declarations}) == 1 else None
     design_requests, external_references, external_spans = [], [], []
+    design_request = _DESIGN_REQUEST.match(objective)
 
     def reference(start, end, label):
         return {'reference_id': f's-{source_input_id}-{start}-{end}-{label}',
@@ -289,6 +291,37 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
             scope = {'axis': {'length': [1, 0, 0], 'width': [0, 1, 0],
                               'height': [0, 0, 1], 'thickness': [0, 0, 1]}[prop]}
         append(*match.span(), prop, kind, comparison, scope)
+    if design_request and _EQUAL_AXIS_SOLID.search(objective[design_request.end():]):
+        length_requirements = [
+            row for row in requirements
+            if row['kind'] == 'overall_dimension' and row['property'] == 'length'
+        ]
+        if len(length_requirements) == 1:
+            length = length_requirements[0]
+            for prop, axis in (('width', [0, 1, 0]), ('height', [0, 0, 1])):
+                existing = [
+                    row for row in requirements
+                    if row['kind'] == 'overall_dimension' and row['property'] == prop
+                ]
+                if existing:
+                    if any(row['comparison'] != length['comparison'] for row in existing):
+                        unsupported.append({
+                            'source_span': list(length['source_span']),
+                            'reason': 'equal_axis_constraint_conflict',
+                        })
+                    continue
+                append(
+                    *length['source_span'],
+                    prop,
+                    'overall_dimension',
+                    dict(length['comparison']),
+                    {'axis': axis},
+                    identity=length['requirement_id'] + '-' + prop,
+                )
+                requirements[-1]['derivation'] = {
+                    'rule': 'equal_axis_solid_edge.v1',
+                    'source_refs': [length['requirement_id']],
+                }
     for match in _COUNT.finditer(objective):
         if any(a <= match.start('count') < b for a, b in covered):
             continue  # A preceding labelled dimension is not the next line's hole count.
@@ -329,7 +362,7 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
     throughs = list(re.finditer(r'通孔|贯穿孔|\bthrough[- ]?holes?\b', objective, re.I))
     for through in throughs:
         append(*through.span(), 'hole_through', 'hole_through', {'op': 'eq', 'value': 1., 'unit': 'count'})
-    request = _DESIGN_REQUEST.match(objective)
+    request = design_request
     if request:
         span = request.span('zh' if request['zh'] else 'en')
         subject = re.split(r'[，,。；;\n]', objective[request.end():])[0]
@@ -474,6 +507,24 @@ def bind_source_quotes(objective, acceptance, *, verified_state=None, requiremen
     if extracted.get('source_context') and 'source_context' not in acceptance:
         acceptance['source_context'] = extracted['source_context']
     records = {r['requirement_id']: r for r in extracted['requirements']}
+    delivery_quotes = {
+        reference['source_quote']
+        for reference in extracted.get('source_context', {}).get('design_requests', [])
+        if reference.get('count') == 1 and reference.get('delivery_unit') == 'cad_document'
+    }
+    if delivery_quotes:
+        acceptance['checks'] = [
+            check for check in acceptance.get('checks', [])
+            if not (
+                check.get('kind') == 'solid_count'
+                and check.get('source_kind', 'user') in {'user', 'confirmed'}
+                and check.get('binding_ref') not in records
+                and check.get('source_quote') in delivery_quotes
+                and check.get('comparison', {}).get('op') == 'eq'
+                and check.get('comparison', {}).get('value') == 1
+                and check.get('comparison', {}).get('unit') == 'count'
+            )
+        ]
     for check in acceptance.get('checks', []):
         record = records.get(check.get('binding_ref')) if isinstance(check, dict) else None
         if record and check.get('source_kind', 'user') == record['source_kind']:

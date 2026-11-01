@@ -30,6 +30,20 @@ def test_compiler_does_not_turn_a_bracket_into_a_plain_box():
     }, output_formats=("step",)) is None
 
 
+def test_compiler_builds_a_box_from_canonical_cube_requirements():
+    result = compile_common_generation({
+        "part_type": "box",
+        "dimensions": {"length": 100, "width": 100, "height": 100},
+        "features": ["base_box:length=100,width=100,height=100"],
+        "constraints": ["sketch_fully_constrained=true"],
+    }, output_formats=("step", "stl"))
+
+    assert result is not None
+    assert any(op.action == "sketch.add_geometry" for op in result.operations)
+    assert any(op.action == "feature.pad" for op in result.operations)
+    assert result.operations[-1].action == "document.export"
+
+
 def test_existing_singular_centered_hole_grammar_remains_supported():
     # Actual persisted output of the existing requirements planner. A singular
     # centered-hole descriptor has one position; an explicit non-one count or

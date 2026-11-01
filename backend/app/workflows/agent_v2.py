@@ -930,10 +930,27 @@ class McadAgentWorkflowV2:
                 plan.get("modeling_backend") is None
                 and request.get("modeling_backend") == "freecad"
             )
-            if freecad and policy["mode"] == "advisory" and not self._validation_repair_v2:
-                # The required geometry gate has already passed. Persist the real
-                # visual mismatch as advisory evidence, but do not risk replacing
-                # a valid typed FreeCAD plan merely to satisfy a non-blocking gate.
+            if freecad and policy["mode"] == "advisory":
+                # Geometry has already passed. An advisory visual mismatch must
+                # not replace a valid typed FreeCAD plan with an unverified rewrite.
+                if gate_blocks(
+                    "visual",
+                    policy["mode"],
+                    visual["outcome"],
+                    stage="workflow",
+                    legacy_visual_workflow=not self._validation_repair_v2,
+                ):
+                    raise ApplicationError(
+                        "Advisory visual validation failed; the verified FreeCAD source was preserved.",
+                        {
+                            "outcome": visual["outcome"],
+                            "evidence_id": visual["evidence_id"],
+                            "repair_count": visual_repairs,
+                            "repair_budget": policy["repair_budget"],
+                        },
+                        type="agent_visual_validation_failed",
+                        non_retryable=True,
+                    )
                 return {**current, "visual": visual}
             visual_repairs += 1
             repair_step_key = (

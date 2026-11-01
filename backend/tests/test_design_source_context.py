@@ -5,7 +5,8 @@ import pytest
 
 from app.contracts.acceptance_v2 import AcceptanceContractV2, RequirementBindingError
 from app.validation.requirement_binding import (
-    extract_requirements, extract_source_requirements, validate_requirement_bindings,
+    bind_source_quotes, extract_requirements, extract_source_requirements,
+    validate_requirement_bindings,
 )
 
 
@@ -45,6 +46,109 @@ def test_one_design_request_is_not_a_one_solid_requirement(text):
     assert len(requests) == 1 and requests[0]['count'] == 1
     assert requests[0]['delivery_unit'] == 'cad_document'
     assert validate_requirement_bindings(text, contract_for(text, result))['source_context'] == result['source_context']
+
+
+@pytest.mark.parametrize('text', [
+    '生成一个边长10cm的正方形',
+    '生成一个边长10cm的正方体',
+])
+def test_basic_shape_design_request_binds_delivery_count(text):
+    result = extract_requirements(text)
+    assert not result['unsupported'], result
+    assert result['source_context']['design_requests'] == [{
+        'reference_id': 's-objective-2-4-design',
+        'source_input_id': 'objective',
+        'source_kind': 'user',
+        'source_span': [2, 4],
+        'source_quote': '一个',
+        'count': 1,
+        'delivery_unit': 'cad_document',
+    }]
+
+
+def test_cube_edge_length_binds_all_three_equal_axes():
+    text = '生成一个边长10cm的正方体'
+    sources = concept_sources(text)
+    result = extract_source_requirements(text, requirement_sources=sources)
+
+    dimensions = {
+        row['property']: row
+        for row in result['requirements']
+        if row['kind'] == 'overall_dimension'
+    }
+
+    assert set(dimensions) == {'length', 'width', 'height'}
+    assert all(
+        row['comparison'] == {'op': 'eq', 'value': 100.0, 'unit': 'mm'}
+        for row in dimensions.values()
+    )
+    assert validate_requirement_bindings(
+        text,
+        contract_for(text, result),
+        requirement_sources=sources,
+    )['status'] == 'bound'
+
+
+@pytest.mark.parametrize('text', [
+    'Create one cube, length 100 mm',
+    '生成一个边长10cm的正方体',
+])
+def test_model_delivery_count_must_not_become_a_solid_count_check(text):
+    extraction = extract_requirements(text)
+    delivery_quote = extraction['source_context']['design_requests'][0]['source_quote']
+    acceptance = {
+        'objective': text,
+        'checks': [
+            {
+                'check_id': row['requirement_id'],
+                'binding_ref': row['requirement_id'],
+                'kind': row['kind'],
+                'description': row['property'],
+                'source_quote': row['source_quote'],
+                'comparison': row['comparison'],
+                'scope': row['scope'],
+            }
+            for row in extraction['requirements']
+        ] + [
+            {
+                'check_id': 'model-solid-count',
+                'binding_ref': 'model-generated-solid-count',
+                'kind': 'solid_count',
+                'description': 'one solid',
+                'source_quote': delivery_quote,
+                'comparison': {'op': 'eq', 'value': 1.0, 'unit': 'count'},
+            },
+        ],
+    }
+
+    bind_source_quotes(text, acceptance)
+    contract = AcceptanceContractV2.model_validate(acceptance)
+
+    assert [check.kind for check in contract.checks] == ['overall_dimension'] * 3
+    assert validate_requirement_bindings(text, contract)['status'] == 'bound'
+
+
+def test_explicit_solid_count_is_not_removed_as_delivery_count():
+    text = 'Create two independent solids'
+    extraction = extract_requirements(text)
+    solid = next(row for row in extraction['requirements'] if row['kind'] == 'solid_count')
+    acceptance = {
+        'objective': text,
+        'checks': [{
+            'check_id': solid['requirement_id'],
+            'binding_ref': solid['requirement_id'],
+            'kind': solid['kind'],
+            'description': 'independent solids',
+            'source_quote': solid['source_quote'],
+            'comparison': solid['comparison'],
+        }],
+    }
+
+    bind_source_quotes(text, acceptance)
+    contract = AcceptanceContractV2.model_validate(acceptance)
+
+    assert [check.kind for check in contract.checks] == ['solid_count']
+    assert validate_requirement_bindings(text, contract)['status'] == 'bound'
 
 
 def test_design_article_does_not_discharge_a_hole_or_unknown_feature_count():

@@ -65,15 +65,7 @@ def _planning_format(model, tool_name, enabled, acceptance_version='engineering-
     if model is CADPlan:
         schema['$defs']['DesignBrief']['properties']['acceptance'] = {'$ref': '#/$defs/' + contract_name}
     schema['additionalProperties']=False
-    if model is CADPlan:
-        # The engineering workflow requires a nested acceptance object for
-        # solids. The legacy/2D CADPlan schema intentionally permits omission.
-        schema.setdefault('allOf',[]).append({
-            'if':{'properties':{'part_type':{'not':{'const':'profile_2d'}}}},
-            'then':{'required':['design_brief'],'properties':{'design_brief':{
-                'type':'object','required':['acceptance'],
-                'properties':{'acceptance':{'type':'object'}}}}}})
-    else:
+    if model is not CADPlan:
         schema.setdefault('required',[]).append('acceptance')
         schema['properties']['acceptance']={
             '$ref':'#/$defs/' + contract_name,
