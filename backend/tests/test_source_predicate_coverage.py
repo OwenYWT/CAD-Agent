@@ -179,6 +179,51 @@ def test_f01_an_external_plate_does_not_authorize_a_passage_on_the_generated_pro
         require_bound_sources(text, requirement_sources=sources)
 
 
+@pytest.mark.parametrize('phrase', ['孔要穿过整块板', '孔须穿透板厚', '孔须打通'])
+@pytest.mark.parametrize('reverse', [False, True])
+def test_f03_saved_fields_jointly_bind_the_same_plate_without_losing_source_authority(phrase, reverse):
+    sources = [
+        {'source_input_id': 'objective', 'source_kind': 'user', 'text': f'孔径6mm，{phrase}。'},
+        {'source_input_id': 'basis-dimensions', 'source_kind': 'confirmed', 'text': '板40×30×12mm'},
+    ]
+    if reverse:
+        sources.reverse()
+    text = '\n'.join(s['text'] for s in sources)
+    result = require_bound_sources(text, requirement_sources=sources)
+    assert Counter((r['kind'], r['comparison'].get('value')) for r in result['requirements']) == Counter([
+        ('overall_dimension', 40.), ('overall_dimension', 30.), ('overall_dimension', 12.),
+        ('hole_diameter', 6.), ('hole_through', 1.), ('hole_depth', 12.)])
+    thickness = next(r for r in result['requirements'] if r['property'] == 'thickness')
+    depth = next(r for r in result['requirements'] if r['kind'] == 'hole_depth')
+    assert thickness['source_input_id'] == 'basis-dimensions'
+    assert depth['source_input_id'] == 'objective'
+    assert depth['source_quote'] == phrase
+    assert depth['derivation']['source_refs'] == [thickness['requirement_id']]
+    contract = proposal_for(text, result, sources=sources)
+    assert validate_requirement_bindings(text, contract, requirement_sources=sources)['status'] == 'bound'
+    omitted = contract.model_copy(update={'checks': tuple(c for c in contract.checks if c.kind != 'hole_through')})
+    with pytest.raises(RequirementBindingError):
+        validate_requirement_bindings(text, omitted, requirement_sources=sources)
+
+
+@pytest.mark.parametrize('objective,dimensions', [
+    ('盖板孔径6mm，孔要穿过整块板。', '板40×30×12mm'),
+    ('孔径6mm，孔要穿过整块板。', '板40×30×12mm，盖板40×30×4mm'),
+    ('孔径6mm，孔要穿过整块板。', '板40×30×12mm，板厚10mm'),
+    ('设计一个夹在12mm桌板上的挂钩，孔径6mm，孔要穿过整块板。', '挂钩40×30×12mm'),
+    ('孔径6mm，孔要穿过未知对象。', '板40×30×12mm'),
+    ('孔径6mm，孔要穿过整块板后进入上盖。', '板40×30×12mm'),
+])
+def test_f03_cross_field_context_cannot_borrow_a_different_or_ambiguous_target(objective, dimensions):
+    sources = [
+        {'source_input_id': 'objective', 'source_kind': 'user', 'text': objective},
+        {'source_input_id': 'basis-dimensions', 'source_kind': 'confirmed', 'text': dimensions},
+    ]
+    text = '\n'.join(s['text'] for s in sources)
+    with pytest.raises(RequirementBindingError, match='engineering_verification_unavailable'):
+        require_bound_sources(text, requirement_sources=sources)
+
+
 @pytest.mark.parametrize('phrase', [
     '通孔', '贯穿孔', '贯穿圆孔', '贯穿圆形孔', '穿透圆孔', '贯穿的圆孔',
     'through hole', 'through-hole', 'through circular hole', 'through round hole',

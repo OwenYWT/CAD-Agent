@@ -2838,7 +2838,31 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[nominal-omitted]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[variant-blind]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[unknown-prefix]",
-      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[request-unknown-prefix]"
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[request-unknown-prefix]",
+      "tests/test_source_predicate_coverage.py::test_f03_saved_fields_jointly_bind_the_same_plate_without_losing_source_authority[False-\\u5b54\\u8981\\u7a7f\\u8fc7\\u6574\\u5757\\u677f]",
+      "tests/test_source_predicate_coverage.py::test_f03_saved_fields_jointly_bind_the_same_plate_without_losing_source_authority[False-\\u5b54\\u987b\\u7a7f\\u900f\\u677f\\u539a]",
+      "tests/test_source_predicate_coverage.py::test_f03_saved_fields_jointly_bind_the_same_plate_without_losing_source_authority[False-\\u5b54\\u987b\\u6253\\u901a]",
+      "tests/test_source_predicate_coverage.py::test_f03_saved_fields_jointly_bind_the_same_plate_without_losing_source_authority[True-\\u5b54\\u8981\\u7a7f\\u8fc7\\u6574\\u5757\\u677f]",
+      "tests/test_source_predicate_coverage.py::test_f03_saved_fields_jointly_bind_the_same_plate_without_losing_source_authority[True-\\u5b54\\u987b\\u7a7f\\u900f\\u677f\\u539a]",
+      "tests/test_source_predicate_coverage.py::test_f03_saved_fields_jointly_bind_the_same_plate_without_losing_source_authority[True-\\u5b54\\u987b\\u6253\\u901a]",
+      "tests/test_source_predicate_coverage.py::test_f03_cross_field_context_cannot_borrow_a_different_or_ambiguous_target[\\u76d6\\u677f\\u5b54\\u5f846mm\\uff0c\\u5b54\\u8981\\u7a7f\\u8fc7\\u6574\\u5757\\u677f\\u3002-\\u677f40\\xd730\\xd712mm]",
+      "tests/test_source_predicate_coverage.py::test_f03_cross_field_context_cannot_borrow_a_different_or_ambiguous_target[\\u5b54\\u5f846mm\\uff0c\\u5b54\\u8981\\u7a7f\\u8fc7\\u6574\\u5757\\u677f\\u3002-\\u677f40\\xd730\\xd712mm\\uff0c\\u76d6\\u677f40\\xd730\\xd74mm]",
+      "tests/test_source_predicate_coverage.py::test_f03_cross_field_context_cannot_borrow_a_different_or_ambiguous_target[\\u5b54\\u5f846mm\\uff0c\\u5b54\\u8981\\u7a7f\\u8fc7\\u6574\\u5757\\u677f\\u3002-\\u677f40\\xd730\\xd712mm\\uff0c\\u677f\\u539a10mm]",
+      "tests/test_source_predicate_coverage.py::test_f03_cross_field_context_cannot_borrow_a_different_or_ambiguous_target[\\u8bbe\\u8ba1\\u4e00\\u4e2a\\u5939\\u572812mm\\u684c\\u677f\\u4e0a\\u7684\\u6302\\u94a9\\uff0c\\u5b54\\u5f846mm\\uff0c\\u5b54\\u8981\\u7a7f\\u8fc7\\u6574\\u5757\\u677f\\u3002-\\u6302\\u94a940\\xd730\\xd712mm]",
+      "tests/test_source_predicate_coverage.py::test_f03_cross_field_context_cannot_borrow_a_different_or_ambiguous_target[\\u5b54\\u5f846mm\\uff0c\\u5b54\\u8981\\u7a7f\\u8fc7\\u672a\\u77e5\\u5bf9\\u8c61\\u3002-\\u677f40\\xd730\\xd712mm]",
+      "tests/test_source_predicate_coverage.py::test_f03_cross_field_context_cannot_borrow_a_different_or_ambiguous_target[\\u5b54\\u5f846mm\\uff0c\\u5b54\\u8981\\u7a7f\\u8fc7\\u6574\\u5757\\u677f\\u540e\\u8fdb\\u5165\\u4e0a\\u76d6\\u3002-\\u677f40\\xd730\\xd712mm]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[split-through-commit]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[split-blind]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[split-omitted]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[target-in-confirmed-field]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[nominal-split-blind]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[different-owner]",
+      "tests/test_design_geometry_meshes.py::test_dfm_reads_named_ascii_stl_and_keeps_touching_shell_boundaries[1-False]",
+      "tests/test_design_geometry_meshes.py::test_dfm_reads_named_ascii_stl_and_keeps_touching_shell_boundaries[2-False]",
+      "tests/test_design_geometry_meshes.py::test_dfm_reads_named_ascii_stl_and_keeps_touching_shell_boundaries[2-True]",
+      "tests/test_design_geometry_meshes.py::test_dfm_preserves_each_scene_instance_and_its_transform",
+      "tests/test_design_geometry_meshes.py::test_dfm_keeps_the_existing_binary_single_mesh_analysis",
+      "tests/test_design_geometry_meshes.py::test_dfm_rejects_an_empty_scene_instead_of_reporting_success"
     ],
     "allowed_skips": {
       "tests/integration/test_agent_candidate_seal.py::test_late_workflow_failure_during_cancellation_reaches_a_terminal_state": "real PostgreSQL and MinIO are required",
@@ -3188,7 +3212,13 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[nominal-omitted]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
       "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[variant-blind]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
       "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[unknown-prefix]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
-      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[request-unknown-prefix]": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[request-unknown-prefix]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[split-through-commit]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[split-blind]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[split-omitted]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[target-in-confirmed-field]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[nominal-split-blind]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[different-owner]": "real PostgreSQL, MinIO, Temporal, and Podman are required"
     }
   },
   "durable-core": {
@@ -3350,7 +3380,13 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[nominal-omitted]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[variant-blind]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[unknown-prefix]",
-      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[request-unknown-prefix]"
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[request-unknown-prefix]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[split-through-commit]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[split-blind]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[split-omitted]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[target-in-confirmed-field]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[nominal-split-blind]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f03_saved_fields_gate_real_candidates[different-owner]"
     ]
   },
   "frontend": {

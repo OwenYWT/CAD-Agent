@@ -174,7 +174,7 @@ def _quantity(value, unit):
 
 
 def extract_requirements(objective: str, *, source_input_id: str = 'objective', source_kind: str = 'user',
-                         verified_state=None, execution_scope='cad_geometry') -> dict:
+                         verified_state=None, execution_scope='cad_geometry', plate_context=None) -> dict:
     requirements, unsupported, covered = [], [], []
     obligations = inventory(objective, source_input_id=source_input_id)
     comparison_spans = []
@@ -460,6 +460,8 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
         predicate = _HOLE_PASSAGE_CLAUSE.fullmatch(phrase)
         if predicate is None:
             continue
+        start = clause.start() + len(clause.group()) - len(clause.group().lstrip())
+        span = (start, start + len(phrase))
         # A target plate must be part of the source, not introduced solely by
         # this assertion. Component identity is checked by the shared scope
         # binder below; it cannot be borrowed from a generated model.
@@ -467,11 +469,11 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
             thicknesses = [r for r in requirements if r['property'] == 'thickness'
                            and r['comparison']['op'] == 'eq']
             components = [r for r in requirements if r['kind'] == 'bounding_box']
-            if (not re.search(r'板|\bplate\b', objective[:clause.start()], re.I)
-                    or len(thicknesses) != 1 or len(components) > 1):
+            local_target = (re.search(r'板|\bplate\b', objective[:clause.start()], re.I)
+                            and len(thicknesses) == 1 and len(components) <= 1)
+            if not local_target and span not in (plate_context or {}):
                 continue
-        start = clause.start() + len(clause.group()) - len(clause.group().lstrip())
-        through_spans.append((start, start + len(phrase)))
+        through_spans.append(span)
     through_spans.extend(m.span() for m in _THROUGH_HOLE.finditer(objective)
         if not any(a <= m.start() and m.end() <= b for a, b in through_spans))
     for span in through_spans:
@@ -554,7 +556,10 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
     for through in [r for r in requirements if r['kind'] == 'hole_through']:
         thickness = [r for r in requirements if r['property'] == 'thickness' and r['comparison']['op'] == 'eq'
                      and r['scope'].get('component_region') == through['scope'].get('component_region')]
-        if len(thickness) == 1 and re.search(r'板|plate', objective, re.I):
+        inherited = (plate_context or {}).get(tuple(through['source_span']))
+        if not thickness and inherited:
+            thickness = [inherited]
+        if len(thickness) == 1 and (inherited or re.search(r'板|plate', objective, re.I)):
             append(*through['source_span'], 'hole_depth', 'hole_depth', dict(thickness[0]['comparison']), dict(through['scope']),
                    identity=through['requirement_id'] + '-depth' if through.get('distribution_ref') else None)
             requirements[-1]['derivation'] = {'rule': 'through_plate_thickness.v1',
@@ -567,6 +572,52 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
                 'design_requests': design_requests, 'external_references': external_references,
                 'unverified_aspects': ['physical_fit', 'clamping_force'] if external_references else []}}
                if design_requests or external_references else {})}
+
+
+def _cross_source_plate_context(index, sources, extractions, verified_state):
+    """Prove a passage against saved fields, then retain their separate authority.
+
+    The joined parse is only a scope/derivation proof. It cannot supply new
+    dimensions, units or tolerances: its thickness must already exist in one
+    individually parsed source with the same scope and comparison.
+    """
+    source = sources[index]
+    others = [i for i in range(len(sources)) if i != index]
+    if (not any(r['property'] == 'thickness' for i in others for r in extractions[i]['requirements'])
+            or any(r['property'] == 'thickness' for r in extractions[index]['requirements'])
+            or not (_HOLE_PASSAGE_CLAUSE.search(source['text']) or _THROUGH_HOLE.search(source['text']))):
+        return {}
+    offsets, text = {}, ''
+    for i in [*others, index]:
+        offsets[i] = len(text)
+        text += sources[i]['text'] + '\n'
+    proof = extract_requirements(text, verified_state=verified_state,
+                                 execution_scope=source.get('execution_scope', 'cad_geometry'))
+    if proof['unsupported']:
+        return {}
+    records = {r['requirement_id']: r for r in proof['requirements']}
+    context = {}
+    for depth in proof['requirements']:
+        derivation = depth.get('derivation', {})
+        start, end = depth['source_span']
+        if (derivation.get('rule') != 'through_plate_thickness.v1'
+                or not offsets[index] <= start < end <= offsets[index] + len(source['text'])
+                or depth['scope'].get('component_region') or depth['scope'].get('object_ref')):
+            continue
+        thickness = records[derivation['source_refs'][0]]
+        # Component selectors require a complete cross-field scope resolver;
+        # this rule only proves the same single, unselected plate.
+        if thickness['scope'].get('component_region') or thickness['scope'].get('object_ref'):
+            continue
+        for i in others:
+            for original in extractions[i]['requirements']:
+                if (original['property'] == 'thickness'
+                        and [offsets[i] + v for v in original['source_span']] == thickness['source_span']
+                        and original['scope'] == thickness['scope']
+                        and {k: v for k, v in original['comparison'].items() if k != 'tolerance_source_refs'}
+                        == {k: v for k, v in thickness['comparison'].items() if k != 'tolerance_source_refs'}):
+                    context[(start - offsets[index], end - offsets[index])] = original
+    return context
 
 
 def extract_source_requirements(objective, *, verified_state=None, requirement_sources=None) -> dict:
@@ -584,12 +635,19 @@ def extract_source_requirements(objective, *, verified_state=None, requirement_s
         return assembly
     result = {'schema_version':'requirement-extraction.v1', 'requirements':[], 'unsupported':[], 'obligations':[]}
     submitted_rows = []
+    extractions = []
     for source in sources:
         if source['source_kind'] not in {'user','confirmed'} or source['text'] not in objective:
             raise ValueError('requirement source is not part of the frozen submitted input')
         extracted = extract_requirements(source['text'], source_input_id=source['source_input_id'],
                                         source_kind=source['source_kind'], verified_state=verified_state,
                                         execution_scope=source.get('execution_scope', 'cad_geometry'))
+        extractions.append(extracted)
+    for index, (source, extracted) in enumerate(zip(sources, extractions)):
+        if len(sources) > 1 and (plate_context := _cross_source_plate_context(index, sources, extractions, verified_state)):
+            extracted = extract_requirements(source['text'], source_input_id=source['source_input_id'],
+                source_kind=source['source_kind'], verified_state=verified_state,
+                execution_scope=source.get('execution_scope', 'cad_geometry'), plate_context=plate_context)
         if context := extracted.get('source_context'):
             merged = result.setdefault('source_context', {'schema_version': 'source-context.v1',
                 'execution_scope': 'cad_geometry', 'design_requests': [], 'external_references': [], 'unverified_aspects': []})

@@ -32,7 +32,15 @@ class DesignGeometryAnalyzer:
     OVERHANG_ANGLE_THRESHOLD = -0.5  # face normal z component
 
     def analyze(self, stl_path: Path) -> DFMGeometryResult:
-        mesh = trimesh.load(stl_path)
+        loaded = trimesh.load(stl_path)
+        # Named STL solid blocks can load as a Scene instead of one mesh.
+        # Freeze every instance transform and concatenate separate shells;
+        # never weld touching parts or drop a non-mesh scene member.
+        parts = list(loaded.dump()) if isinstance(loaded, trimesh.Scene) else [loaded]
+        if not parts or any(not isinstance(part, trimesh.Trimesh) or len(part.faces) == 0
+                            or not np.isfinite(part.vertices).all() for part in parts):
+            raise ValueError('DFM analysis requires a non-empty triangle mesh for every scene member')
+        mesh = parts[0] if len(parts) == 1 else trimesh.util.concatenate(parts)
         result = DFMGeometryResult()
 
         # Basic metrics

@@ -5138,6 +5138,21 @@ async def test_f02_nominal_qualifiers_gate_real_candidates(clause, depth, omit_t
         unbound_clause=clause if expected == 'engineering_verification_unavailable' else None)
 
 
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('objective,dimensions,depth,omit_through,expected', [
+    pytest.param('板，孔径6mm，孔要穿过整块板。', '板40×30×12mm', 12, False, 'passed', id='split-through-commit'),
+    pytest.param('板，孔径6mm，孔要穿过整块板。', '板40×30×12mm', 6, False, 'agent_geometry_validation_failed', id='split-blind'),
+    pytest.param('板，孔径6mm，孔要穿过整块板。', '板40×30×12mm', 6, True, 'requirement_binding_mismatch', id='split-omitted'),
+    pytest.param('孔径6mm，孔须穿透板厚。', '板40×30×12mm', 12, False, 'passed', id='target-in-confirmed-field'),
+    pytest.param('两端开口的圆孔直径6mm。', '板40×30×12mm', 6, False, 'agent_geometry_validation_failed', id='nominal-split-blind'),
+    pytest.param('盖板孔径6mm，孔要穿过整块板。', '板40×30×12mm', 12, False, 'engineering_verification_unavailable', id='different-owner'),
+])
+async def test_f03_saved_fields_gate_real_candidates(objective, dimensions, depth, omit_through, expected):
+    await _native_source_semantics_candidate_contract(objective, depth, 6, omit_through, expected,
+        basis_dimensions=dimensions, commit=expected == 'passed', require_passage_evidence=True,
+        unbound_clause='孔要穿过整块板' if expected == 'engineering_verification_unavailable' else None)
+
+
 async def _native_source_semantics_candidate_contract(objective, depth, diameter, omit_through, expected,
                                                      *, basis_dimensions=None, mixed_holes=None, blind_index=None,
                                                      commit=False, extra_cut=None, require_passage_evidence=False,
