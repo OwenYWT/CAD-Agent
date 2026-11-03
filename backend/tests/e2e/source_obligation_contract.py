@@ -16,6 +16,34 @@ with tempfile.TemporaryDirectory() as directory:
     program.write_text(f'''
 import FreeCAD as App, Part, json, math
 root={str(root)!r}
+# Geometry parameters are independent of fixture contracts and source wording.
+# Reopening both formats proves the intended bore exists with a physical floor
+# in the blind variant; the acceptance gate must distinguish that from passage.
+for size,radius,length,width,height in [(46,2.3,80,40,8),(72,3.6,57,33,13),(60,3.,40,30,12)]:
+    for variant in ('through','rotated','blind','missing','wrong_radius'):
+        name='passage_'+str(size)+'_'+variant
+        actual_radius=radius+.5 if variant=='wrong_radius' else radius
+        depth=height/2 if variant=='blind' else height
+        shape=Part.makeBox(length,width,height)
+        if variant!='missing':
+            shape=shape.cut(Part.makeCylinder(actual_radius,depth,App.Vector(length/2,width/2,0)))
+        assert shape.isValid() and len(shape.Solids)==1
+        expected_volume=length*width*height-(0 if variant=='missing' else math.pi*actual_radius**2*depth)
+        probe=App.Vector(length/2,width/2,height*.75)
+        if variant=='rotated':
+            shape.rotate(App.Vector(0,0,0),App.Vector(1,2,3),37)
+            shape.translate(App.Vector(13,-9,17))
+            probe=App.Rotation(App.Vector(1,2,3),37).multVec(probe)+App.Vector(13,-9,17)
+        doc=App.newDocument('Passage')
+        doc.addObject('Part::Feature','Material').Shape=shape
+        doc.recompute(); doc.saveAs(root+'/'+name+'.FCStd'); App.closeDocument(doc.Name)
+        doc=App.openDocument(root+'/'+name+'.FCStd'); doc.recompute()
+        Part.export(doc.Objects,root+'/'+name+'.step')
+        for measured in (doc.getObject('Material').Shape,Part.read(root+'/'+name+'.step')):
+            assert measured.isValid() and len(measured.Solids)==1
+            assert abs(measured.Volume-expected_volume)<1e-6
+            assert measured.isInside(probe,1e-7,True) == (variant in ('blind','missing'))
+        App.closeDocument(doc.Name)
 for name in ['clamp_24','clamp_25','clamp_26','clamp_solid','clamp_ambiguous',
              'one_hole','components','oversize','wrong_lid',
              'distributed_correct','distributed_box_missing','distributed_lid_missing',

@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { engineeringMeasurements, engineeringSourceContext } from '../src/adapters/engineeringMeasurements.ts';
+import { engineeringMeasurements, engineeringSourceContext, engineeringVerificationNotices } from '../src/adapters/engineeringMeasurements.ts';
+
+test('physical verification notices remain visible after a geometric pass without inventing certification', () => {
+  const notice = {schema_version:'verification-notice.v1', category:'manufacturing_process', status:'unverified',
+    source_refs:[{source_quote:'FDM PLA打印'}], message:'实际打印性能未验证。'};
+  const report = {acceptance_contract:{verification_notices:[notice]}, acceptance:{outcome:'passed'}};
+  assert.deepEqual(engineeringVerificationNotices(report), [{message:'实际打印性能未验证。', references:['FDM PLA打印']}]);
+  assert.deepEqual(engineeringVerificationNotices({}), []);
+  assert.deepEqual(engineeringVerificationNotices({acceptance_contract:{verification_notices:[{...notice,status:'passed'}]}}), []);
+});
 
 test('external inputs and unverified physical fit survive a passing geometry report', () => {
   const report = {acceptance_contract:{source_context:{schema_version:'source-context.v1', execution_scope:'concept_geometry',
@@ -79,4 +88,22 @@ test('group display uses the recorded complete partition and labels the whole in
   assert.equal(failed.measured,'6、4、6、4 mm');
   assert.equal(failed.measuredLabel,'全范围实测（孔组未满足）');
   assert.equal(failed.outcome,'未通过');
+});
+
+test('assembly relationships and counts keep their meaning without invented length units', () => {
+  const report = {acceptance_contract:{schema_version:'engineering-acceptance.v2',checks:[
+    {check_id:'isolation',kind:'assembly_predicate',description:'安装孔与内腔隔离',comparison:{op:'eq',value:1,unit:'count',tolerance_minus:0,tolerance_plus:0}},
+    {check_id:'tabs',kind:'assembly_count',description:'安装耳数量',comparison:{op:'eq',value:4,unit:'count'}},
+    {check_id:'groove',kind:'assembly_dimension',description:'槽宽',comparison:{op:'eq',value:2.4,unit:'mm'}},
+  ]},acceptance:{evidence:[{check_id:'isolation',measured:[0],outcome:'failed'},
+    {check_id:'tabs',measured:[3],outcome:'failed'},{check_id:'groove',measured:[2.4,2.4,2.4,2.4],outcome:'passed'}]}};
+  const rows=engineeringMeasurements(report);
+  assert.equal(rows[0].expected,'满足');assert.equal(rows[0].measured,'未满足');
+  assert.equal(rows[0].outcome,'未通过');assert.equal(rows[0].tolerance,undefined);
+  assert.equal(rows[1].expected,'4');assert.equal(rows[1].measured,'3');
+  assert.equal(rows[2].measured,'2.4、2.4、2.4、2.4 mm');
+  report.acceptance.evidence[0].measured=[];
+  report.acceptance.evidence[0].outcome='indeterminate';
+  assert.equal(engineeringMeasurements(report)[0].measured,'无量测值');
+  assert.equal(engineeringMeasurements(report)[0].outcome,'未验证');
 });

@@ -26,16 +26,70 @@ _COUNT_TOKEN = re.compile(r'(?<![a-zA-Z0-9_.零一二两三四五六七八九十
     r'(?:[−-]?\d+(?:\.\d+)?|[零一二两三四五六七八九十百千]+)\s*(?:个|处|颗|条|只)|'
     r'(?<![a-zA-Z0-9_.])(?:zero|one|two|three|four|five|six|single|[−-]?\d+(?:\.\d+)?)\b(?=\s+(?:(?!mm\b|cm\b|m\b)[a-z-]+\s+){0,6}'
     r'(?:holes?|solids?|legs?|supports?|ribs?|fins?|pins?|posts?|slots?|teeth)\b)', re.I)
-_RESTRICTION = re.compile(r'不(?!变)|无|禁止|避免|排除|仅(?:有|限|允许)?|只(?:有|能|允许)|'
-    r'\b(?:not|no|non[- ]?through|without|except|exclud\w*|omit\w*|avoid\w*|only)\b', re.I)
+_RESTRICTION = re.compile(r'不(?!变)|无|[非未](?=[ \t]*(?:贯穿|穿透|贯通|通孔|打穿))|禁止|避免|排除|仅(?:有|限|允许)?|只(?:有|能|允许)|'
+    r'\b(?:not|no|non[- ]?(?:through|thru|penetrat\w*)|without|except|exclud\w*|omit\w*|avoid\w*|only)\b', re.I)
 _RELATIONSHIP = re.compile(r'均匀|等距|同轴|对称|连通|接触|相交|隔开|分离|'
     r'\b(?:uniform\w*|equally[ -]+spaced|coaxial|symmetric|touch\w*|connected|separated|disjoint)\b', re.I)
 _FEATURE_GROUP = re.compile(r'(?:底部|底面|侧壁|侧面|右侧|左侧|前侧|后侧|顶面|顶板|底板|单侧壁|'
     r'\b(?:bottom|top|left|right|side)[ -]+(?:face|wall)\b)(?=[^，,。；;\n]{0,50}(?:孔|\bhole))', re.I)
 _FEATURE_SEMANTIC = re.compile(r'盲孔|螺纹|沉孔|沉头孔|\b(?:blind|threaded|counterbored?|countersunk)\b', re.I)
+# Inventory the engineering predicate independently of the noun grammar that
+# can lower it into a measurement. Unknown paths/targets must remain unresolved;
+# finding a diameter, count, or depth in the same clause is not coverage.
+_PASSAGE = re.compile(r'通孔|贯穿|穿透|贯通|打穿|打通|穿过|\b(?:through|thru)(?:[- ]?holes?)?\b|\bpenetrat\w*\b', re.I)
+_PASSAGE_SUBJECT = re.compile(r'孔|槽|腔|\b(?:holes?|bores?|slots?|grooves?|channels?)\b', re.I)
 CENTERED = re.compile(r'(?:居中|中心|centered|central)', re.I)
 _DIRECTIVE = re.compile(r'(?:必须|务必|需满足|\bmust(?:\s+have)?\b|\bshall\b)\s*'
                         r'(?P<predicate>[^，,。；;\n]+)', re.I)
+# Discover assertion structure without needing to recognize its action. A new
+# verb after a feature/property must not become invisible just because neither
+# the measurement parser nor _PASSAGE has that verb in its vocabulary.
+_ASSERTION_SUBJECT = re.compile(
+    r'(?:该|此)?(?:圆形孔|圆孔|孔|槽|腔|壁|'
+    r'(?:底板|盖板|上盖|盒体|板)(?:(?:固定|安装)?孔(?:数量|数目|数)?[ \t]*(?:为|[:：=])?)?|'
+    r'圆柱体|圆柱|球体|球|'
+    r'长度|宽度|高度|厚度|壁厚|直径|半径|间隙|体积)|'
+    r'(?:the\s+)?\b(?:holes?|bores?|slots?|grooves?|channels?|cavit(?:y|ies)|walls?|'
+    r'plates?|lids?|boxes?|cylinders?|spheres?|length|width|height|thickness|diameter|radius|gap|volume)\b', re.I)
+_CLAUSE_DIRECTIVE = re.compile(r'(?:必须|务必|需要|需满足|须|需|要|应当|应该|应)\s*(?P<predicate>.+)', re.I)
+_LIST_PREFIX = re.compile(r'(?:[-*•][ \t]+|\d+[、)）][ \t]*|\d+\.(?=\D)[ \t]*)')
+_MATERIAL_NOUN = re.compile(r'(?:底板|盖板|上盖|盒体|板|圆柱(?:体)?|球(?:体)?)(?:几何模型|模型)?|'
+    r'(?:the\s+)?(?:plates?|lids?|boxes?|cylinders?|spheres?)(?:\s+model)?', re.I)
+_CLAUSE_LINK = re.compile(r'修改为|改为|设为|调整为|的|以及|[+＋]|\b(?:with|of|and|is|are|the)\b', re.I)
+
+
+def _assertion_clauses(text, source_input_id):
+    for clause in re.finditer(r'[^，,。；;\n]+', text):
+        raw = clause.group()
+        start = clause.start() + len(raw) - len(raw.lstrip())
+        end = clause.end() - len(raw) + len(raw.rstrip())
+        if marker := _LIST_PREFIX.match(text[start:end]):
+            start += marker.end()
+        phrase = text[start:end]
+        subject = _ASSERTION_SUBJECT.search(phrase)
+        directive = _CLAUSE_DIRECTIVE.fullmatch(phrase)
+        if directive:
+            # This is independent of subject discovery: recognizing a later
+            # dimension must not hide an earlier, unlowered required action.
+            a, b = (start + p for p in directive.span('predicate'))
+            yield {'obligation_id': f'o-{source_input_id}-{a}-{b}-directive',
+                'source_input_id': source_input_id, 'source_span': [a, b],
+                'source_quote': text[a:b], 'category': 'directive'}
+        if subject:
+            # A count, bullet, or polite introduction before the subject does
+            # not make its predicate optional. Other inventories still own
+            # preceding quantities, restrictions, and component identities.
+            subject_end = start + subject.end()
+            start += subject.start()
+            # Naming the requested product is not itself a dimensional
+            # assertion. This exception is an exact noun phrase; any verb,
+            # qualifier, or unknown tail still creates a coverage obligation.
+            if _MATERIAL_NOUN.fullmatch(text[start:end]):
+                continue
+            yield {'obligation_id': f'o-{source_input_id}-{start}-{end}-assertion_clause',
+                'source_input_id': source_input_id, 'source_span': [start, end],
+                'source_quote': text[start:end], 'category': 'assertion_clause',
+                'subject_span': [start, subject_end]}
 
 
 def normalize_relation(text):
@@ -47,7 +101,7 @@ def inventory(text, *, source_input_id):
     relations = list(re.finditer(RELATION, text, re.I))
     positions = [m for m in CENTERED.finditer(text)
                  if re.search(r'孔|hole|bore', text[max(0, m.start()-20):m.end()+30], re.I)]
-    items = []
+    items = list(_assertion_clauses(text, source_input_id))
     for category, matches in [('count', _COUNT_TOKEN.finditer(text)), ('comparison', relations),
                                ('restriction', _RESTRICTION.finditer(text)),
                                ('relationship', _RELATIONSHIP.finditer(text)),
@@ -62,11 +116,31 @@ def inventory(text, *, source_input_id):
             items.append({'obligation_id': f'o-{source_input_id}-{start}-{end}-{category}',
                 'source_input_id': source_input_id, 'source_span': [start, end],
                 'source_quote': text[start:end], 'category': category})
-    return items
+    for match in _PASSAGE.finditer(text):
+        start, end = match.span()
+        lo = max(text.rfind(c, 0, start) for c in ',，;；。\n') + 1
+        hi = min([p for c in ',，;；。\n' if (p := text.find(c, end)) >= 0] or [len(text)])
+        # Chinese passage verbs retain an obligation even with an omitted
+        # subject ("孔径6mm，打穿全部厚度"). English "through" also describes
+        # a process or transport, so require a feature in that clause.
+        if match.group().lower() in {'through', 'thru'} and not _PASSAGE_SUBJECT.search(text[lo:hi]):
+            # A standalone predicate line may refer to a nearby feature. It
+            # remains unresolved until its subject/path can actually be bound.
+            if text[lo:hi].strip().lower() not in {'through', 'thru'} or not _PASSAGE_SUBJECT.search(text):
+                continue
+        items.append({'obligation_id': f'o-{source_input_id}-{start}-{end}-feature_semantic',
+            'source_input_id': source_input_id, 'source_span': [start, end],
+            'source_quote': text[start:end], 'category': 'feature_semantic',
+            'predicate': 'through_passage'})
+    # A strong modal can also be found by the legacy directive scanner. One
+    # original source assertion has one stable identity, whichever discovers it.
+    return list({item['obligation_id']: item for item in items}.values())
 
 
 def resolve_inventory(items, requirements, comparison_spans, unsupported, *, design_requests=()):
-    for item in items:
+    # Clause coverage may use an already validated coordinated subject. Its
+    # presence alone never authorizes distribution or hides an unknown tail.
+    for item in sorted(items, key=lambda item: item['category'] == 'assertion_clause'):
         start, end = item['source_span']
         refs = []
         if item['category'] == 'count':
@@ -80,6 +154,10 @@ def resolve_inventory(items, requirements, comparison_spans, unsupported, *, des
         elif item['category'] == 'feature_position':
             refs = [r['requirement_id'] for r in requirements if r['kind'] == 'hole_position'
                     and r['source_span'][0] <= start and end <= r['source_span'][1]]
+        elif item['category'] == 'feature_semantic' and item.get('predicate') == 'through_passage':
+            refs = [r['requirement_id'] for r in requirements if r['kind'] == 'hole_through'
+                    and r['comparison'] == {'op': 'eq', 'value': 1., 'unit': 'count'}
+                    and r['source_span'][0] <= start and end <= r['source_span'][1]]
         elif item['category'] == 'comparison':
             refs = [r['requirement_id'] for r in requirements
                     if any(a <= start and end <= b and r['source_span'][0] <= a and b <= r['source_span'][1]
@@ -88,6 +166,33 @@ def resolve_inventory(items, requirements, comparison_spans, unsupported, *, des
             relevant = [r for r in requirements if r['source_span'][0] < end and start < r['source_span'][1]]
             if all(character.isspace() or any(r['source_span'][0] <= start + i < r['source_span'][1] for r in relevant)
                    for i, character in enumerate(item['source_quote'])):
+                refs = [r['requirement_id'] for r in relevant]
+        elif item['category'] == 'assertion_clause':
+            relevant = [r for r in requirements if r['source_span'][0] < end and start < r['source_span'][1]]
+            # A bare subject may be completed by an explicitly bound adjacent
+            # dimension; preserve that parser's original subject reference.
+            relevant += [r for r in requirements if r.get('derivation', {}).get('subject_source_span') == [start, end]]
+            spans = [item['subject_span'], *(r['source_span'] for r in relevant)]
+            spans += [o['source_span'] for o in items if o['category'] == 'component_distribution'
+                      and o.get('status') == 'bound']
+            spans += [(start + m.start(), start + m.end()) for m in _CLAUSE_LINK.finditer(item['source_quote'])]
+            # Nominal word order ("diameter 6 mm hole", "10mm厚的板")
+            # retains its subject without treating arbitrary suffix prose as
+            # decoration. The suffix must be the complete terminal noun phrase
+            # and its type must agree with a measured property in this clause.
+            tail_start = max((min(end, r['source_span'][1]) for r in relevant), default=start)
+            tail = item['source_quote'][tail_start-start:].strip()
+            if ((re.fullmatch(r'(?:的)?(?:圆形|圆)?孔|holes?', tail, re.I)
+                    and any(r['kind'].startswith('hole_') for r in relevant))
+                    or (re.fullmatch(r'(?:的)?板|plate', tail, re.I)
+                        and relevant)):
+                spans.append((tail_start, end))
+            if (re.fullmatch(r'上(?:的(?:耳机)?挂钩)?', tail)
+                    and any(r.get('derivation', {}).get('rule') == 'external_plate_clearance.v1' for r in relevant)):
+                spans.append((tail_start, end))
+            if relevant and all(character.isspace() or character in ':：=' or (character == '.' and start+i == end-1)
+                    or any(a <= start + i < b for a, b in spans)
+                    for i, character in enumerate(item['source_quote'])):
                 refs = [r['requirement_id'] for r in relevant]
         elif item['category'] == 'component_distribution':
             relevant = [r for r in requirements if r.get('distribution_ref') == item['obligation_id']]
@@ -108,21 +213,32 @@ def resolve_inventory(items, requirements, comparison_spans, unsupported, *, des
                       'feature_position': 'feature_position_scope_unbound',
                       'component_distribution': 'component_scope_ambiguous',
                       'hole_population': 'feature_group_scope_unbound',
-                      'directive': 'required_clause_unbound'}[item['category']]
+                      'directive': 'required_clause_unbound',
+                      'assertion_clause': 'required_clause_unbound'}[item['category']]
             if item['category'] == 'comparison' and normalize_relation(item['source_quote']) in STRICT:
                 reason = 'strict_boundary_unsupported'
             unsupported.append({'source_span': [start, end], 'reason': reason,
                                 'obligation_id': item['obligation_id']})
 
 
-_OWNER = re.compile(r'内部有效空间|内部空腔|空腔|腔体|盒体|上盖|盖板|底板|底座|支脚|安装柱|凸台|密封槽|'
-    r'长方体|盒|板|(?:零件|部件|组件)[A-Za-z0-9一二三四]+|'
-    r'\b(?:cavity|void|lid|cover|base|foot|boss|groove|plate|box|block)\b', re.I)
-_ROOT_OWNERS = {'盒体', '盒', '板', '长方体', 'plate', 'box', 'block'}
+_OWNER = re.compile(r'内部有效空间|内部空腔|空腔|腔体|盒体(?:底板|底面)?|上盖|盖板|底板|底座|支脚|安装柱|安装耳|加强筋|法兰|凸台|密封槽|'
+    r'长方体|圆柱体|圆柱(?![形面孔])|球体|球(?![形面孔])|盒|板|(?:零件|部件|组件)[A-Za-z0-9一二三四]+|'
+    r'\b(?:cavity|void|lid|cover|base|foot|boss|groove|plate|box|block|cylinder|sphere)\b', re.I)
+_ROOT_OWNERS = {'盒体', '盒', '板', '长方体', 'plate', 'box', 'block', 'cylinder', 'sphere'}
 _VOID_OWNER = re.compile(r'空腔|腔体|内部|cavity|void', re.I)
 _SUBJECT_JOIN = re.compile(r'\s*(?:和|与|以及|及|、|，|,|&|\band\b|或者|或|\bor\b)\s*', re.I)
 _SUBJECT_CHOICE = re.compile(r'或者|或|\bor\b', re.I)
 _DISTRIBUTIVE = re.compile(r'\s*(?:各(?:自)?(?:都)?(?:有)?|均(?:有)?|都(?:有)?|\beach\b(?:\s+(?:have|has))?)', re.I)
+
+
+def _owner_identity(phrase):
+    if re.fullmatch(r'盒体(?:底板|底面)', phrase):
+        return '盒体'
+    if re.fullmatch(r'圆柱(?:体)?|cylinder', phrase, re.I):
+        return 'cylinder'
+    if re.fullmatch(r'球(?:体)?|sphere', phrase, re.I):
+        return 'sphere'
+    return phrase.lower()
 
 
 def _component_subjects(text, mentions, declarations):
@@ -174,7 +290,9 @@ def bind_component_scopes(text, requirements, unsupported, obligations, *, sourc
     pattern = re.compile('|'.join([*(re.escape(name) for name in names), _OWNER.pattern]), re.I)
     # A declaration is one identity. Its descriptive "长方体" must not
     # replace "盒体" as the owner inherited by the following hole clause.
-    mentions = sorted([*declarations, *((m.start(), m.end(), m.group().lower())
+    # A named box's floor is a property of that box, not a second
+    # independently positioned component. Keep the entire owner phrase atomic.
+    mentions = sorted([*declarations, *((m.start(), m.end(), _owner_identity(m.group()))
         for m in pattern.finditer(text)
         if not any(a <= m.start() and m.end() <= b for a, b, _ in declarations)
         and not any(a <= m.start() and m.end() <= b for a, b in external_spans))])
@@ -204,7 +322,8 @@ def bind_component_scopes(text, requirements, unsupported, obligations, *, sourc
                                         'reason': 'component_solid_count_unbound'})
             continue
         start, end = record['source_span']
-        previous = [s for s in subjects if s['end'] <= start]
+        previous = [s for s in subjects if s['end'] <= start
+                    or (s['start'] == start and s['end'] <= end)]
         if not previous:
             if authorities:
                 unsupported.append({'source_span': [start, end], 'reason': 'component_scope_unbound'})

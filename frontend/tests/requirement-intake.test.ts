@@ -53,3 +53,10 @@ test('references are not independent fit verification', () => {
   assert.match(requirementNotice(basis), /适配未验证/);
   assert.match(requirementNotice({...basis, source_kind:'reference'}), /适配未验证/);
 });
+
+test('explicit concept consent retains specified dimensions and reports the physical verification limit', () => {
+  const basis = {...initialRequirementBasis('圆柱体直径40mm，高25mm'), concept_acknowledged:true};
+  assert.equal(basis.source_kind, 'user_specification');
+  assert.match(requirementNotice(basis), /指定尺寸/);
+  assert.match(requirementNotice(basis), /性能.*未验证/);
+});

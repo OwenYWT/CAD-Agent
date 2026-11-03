@@ -8,6 +8,7 @@ from pydantic import BeforeValidator, Field, TypeAdapter, model_validator, model
 from app.contracts.acceptance import AcceptanceModel, AcceptanceContract, MeasurementScope
 from app.contracts.acceptance_comparison import COMPARISON_POLICY_ID
 from app.contracts.hole_populations import population_pools
+from app.contracts.assembly_measurements import assembly_kind
 
 Quantity = Annotated[float, Field(strict=True, ge=0)]
 Unit = Literal['mm', 'mm3', 'count']
@@ -33,6 +34,9 @@ class ComponentRegion(AcceptanceModel):
 
 
 class MeasurementScopeV2(MeasurementScope):
+    assembly_measurement: str | None = None
+    wall_mode: Literal['continuous_normal', 'surface_normal', 'radial', 'local_probe',
+                       'side_walls', 'cavity_floor'] = 'continuous_normal'
     frame: Literal['world', 'bounds_center', 'bounds_min', 'selected_object'] = 'world'
     object_ref: SelectedMeasurementObject | None = None
     component_region: ComponentRegion | None = Field(default=None,
@@ -43,10 +47,17 @@ class MeasurementScopeV2(MeasurementScope):
         result = handler(self)
         if self.component_region is None:
             result.pop('component_region', None)
+        if self.assembly_measurement is None:
+            result.pop('assembly_measurement', None)
         return result
 
     @model_validator(mode='after')
     def coordinate_authority(self):
+        if self.assembly_measurement is not None:
+            assembly_kind(self.assembly_measurement)
+            if (self.frame != 'world' or self.object_ref or self.component_region or self.axis is not None
+                    or self.point_mm is not None or self.centers_mm or self.region_min_mm is not None):
+                raise ValueError('assembly roles require the complete independently inventoried assembly')
         if self.frame=='selected_object' and self.object_ref is None:
             raise ValueError('local measurement coordinates require a frozen user-selected object')
         if self.object_ref is not None and self.frame!='selected_object':
@@ -57,9 +68,10 @@ class MeasurementScopeV2(MeasurementScope):
 
 
 class RequirementBindingError(ValueError):
-    def __init__(self, code: str, message: str):
+    def __init__(self, code: str, message: str, *, details: dict | None = None):
         self.code = code
         self.message = message
+        self.details = details
         super().__init__(code + ': ' + message)
 
 
@@ -156,6 +168,14 @@ class SourceContextV1(AcceptanceModel):
         return self
 
 
+class VerificationNoticeV1(AcceptanceModel):
+    schema_version: Literal['verification-notice.v1'] = 'verification-notice.v1'
+    category: Literal['manufacturing_process', 'water_protection', 'physical_performance']
+    source_refs: tuple[SourceReference, ...] = Field(min_length=1)
+    message: str = Field(min_length=1, max_length=1000)
+    status: Literal['unverified'] = 'unverified'
+
+
 class HoleGroupRef(AcceptanceModel):
     schema_version: Literal['hole-group.v1'] = 'hole-group.v1'
     group_id: str = Field(min_length=1, max_length=512,
@@ -166,7 +186,9 @@ class AcceptanceCheckV2(AcceptanceModel):
     check_id: str = Field(pattern=r'^[a-z0-9][a-z0-9_-]*$')
     kind: Literal['solid_count', 'overall_dimension', 'hole_count', 'hole_diameter',
                   'hole_depth', 'hole_through', 'hole_position', 'wall_thickness', 'volume', 'void_connected',
-                  'surface_clearance', 'planar_gap', 'bounding_box']
+                  'surface_clearance', 'planar_gap', 'bounding_box',
+                  'assembly_dimension', 'assembly_count', 'assembly_predicate',
+                  'cylinder_diameter', 'cylinder_radius', 'cylinder_height', 'sphere_diameter', 'sphere_radius']
     description: str = Field(min_length=1)
     source_quote: str = Field(min_length=1)
     source_kind: Literal['user', 'confirmed', 'assumption'] = 'user'
@@ -188,7 +210,12 @@ class AcceptanceCheckV2(AcceptanceModel):
         if self.required != (self.source_kind != 'assumption'):
             raise ValueError('requiredness must match verified provenance')
         kind, scope, comparison = self.kind, self.scope, self.comparison
-        count = kind in {'solid_count', 'hole_count', 'hole_through', 'void_connected'}
+        count = kind in {'solid_count', 'hole_count', 'hole_through', 'void_connected', 'assembly_count', 'assembly_predicate'}
+        if kind.startswith('assembly_') or scope.assembly_measurement is not None:
+            if assembly_kind(scope.assembly_measurement) != kind:
+                raise ValueError('assembly role does not define this measurement kind')
+            if kind == 'assembly_predicate' and (not isinstance(comparison, EqualComparison) or comparison.value != 1):
+                raise ValueError('assembly relationship requires an exact positive predicate')
         if comparison.unit != ('count' if count else 'mm3' if kind == 'volume' else 'mm'):
             raise ValueError('comparison unit does not match measurement quantity')
         if count:
@@ -212,9 +239,12 @@ class AcceptanceCheckV2(AcceptanceModel):
             raise ValueError('surface clearance requires two explicit face points')
         if kind == 'planar_gap' and (scope.centers_mm or scope.point_mm is not None):
             raise ValueError('planar_gap requires a unique face pair, not guessed surface points')
-        if kind == 'wall_thickness' and scope.wall_mode == 'continuous_normal' and (
+        if kind == 'wall_thickness' and scope.wall_mode in {'continuous_normal', 'side_walls', 'cavity_floor'} and (
                 scope.point_mm is not None or scope.centers_mm or scope.region_min_mm is not None):
             raise ValueError('whole-part wall coverage cannot use local selectors')
+        if kind.startswith(('cylinder_', 'sphere_')) and (
+                scope.point_mm is not None or scope.centers_mm or scope.region_min_mm is not None):
+            raise ValueError('material primitive dimensions require a complete selected solid, not local probes or clips')
         if kind == 'void_connected' and (not isinstance(comparison, EqualComparison)
                 or comparison.value not in {0, 1} or len(scope.centers_mm) < 2 or scope.region_min_mm is None):
             raise ValueError('void connectivity requires exact 0/1, interior probes and region')
@@ -230,12 +260,15 @@ class AcceptanceContractV2(AcceptanceModel):
     comparison_policy_id: Literal['occt-confusion-v1'] = COMPARISON_POLICY_ID
     verification_scope: Literal['cad_geometry'] = 'cad_geometry'
     source_context: SourceContextV1 | None = None
+    verification_notices: tuple[VerificationNoticeV1, ...] = ()
 
     @model_serializer(mode='wrap')
     def retain_existing_digest(self, handler):
         result = handler(self)
         if self.source_context is None:
             result.pop('source_context', None)
+        if not self.verification_notices:
+            result.pop('verification_notices', None)
         return result
 
     @model_validator(mode='after')
@@ -251,6 +284,9 @@ class AcceptanceContractV2(AcceptanceModel):
             for ref in (*self.source_context.design_requests, *self.source_context.external_references):
                 if ref.source_quote not in self.objective:
                     raise ValueError('source context quote is absent from objective')
+        for notice in self.verification_notices:
+            if any(ref.source_quote not in self.objective for ref in notice.source_refs):
+                raise ValueError('verification notice quote is absent from objective')
         grouped = [c.model_dump(mode='json') for c in self.checks if c.hole_group is not None]
         if grouped:
             population_pools(grouped)

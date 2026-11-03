@@ -45,8 +45,8 @@ export default function RequirementCard({ objective, profile, onConfirm, onBack,
     <label>关键尺寸<textarea aria-label="关键尺寸依据" value={basis.dimensions} maxLength={1500} rows={2} placeholder={physical ? "明确数值和单位；不要只填写手机型号" : "例如长 100、宽 60、厚 3 mm"} onChange={e=>set({dimensions:e.target.value,...(!physical ? {source_kind:e.target.value.trim() ? 'user_specification' : 'none',source_reference:e.target.value.trim() ? '用户指定的设计尺寸' : ''} : {})})} /></label>
     {physical ? <details><summary>开孔、装配间隙等关键依据</summary><textarea aria-label="开孔与装配依据" value={basis.fit_notes} maxLength={1000} rows={2} placeholder="例如相机开孔位置与尺寸、装配间隙；没有资料时保留未验证" onChange={e=>set({fit_notes:e.target.value})} /></details> : null}
     <RequirementSummary objective={objective} basis={basis} profile={profile} />
-    {basis.source_kind==='none' ? <label className="ww-requirement-consent"><input aria-label="确认仅生成概念外形" type="checkbox" checked={basis.concept_acknowledged} onChange={e=>set({concept_acknowledged:e.target.checked})} />{physical ? "我确认仅生成概念外形，适配未验证" : "我确认先生成概念模型，缺失尺寸需后续确认"}</label> : null}
+    <label className="ww-requirement-consent"><input aria-label="确认仅生成概念外形" type="checkbox" checked={basis.concept_acknowledged} onChange={e=>set({concept_acknowledged:e.target.checked})} />{basis.source_kind==='none' ? "我确认先生成概念模型，缺失尺寸、适配及性能需后续验证" : "本次仅验收概念几何，保留上述尺寸要求；实物适配及性能另行验证"}</label>
     <div className="mt-3 flex flex-wrap justify-end gap-2"><button className="workspace-button" onClick={onBack} type="button">返回修改</button>
-      <button className="workspace-button workspace-button--primary" disabled={disabled || !basis.target.trim() || !(complete || basis.source_kind==='none' && basis.concept_acknowledged)} onClick={()=>onConfirm(basis)} type="button">{basis.source_kind==='none' ? '按概念外形继续' : '确认并执行'}</button></div>
+      <button className="workspace-button workspace-button--primary" disabled={disabled || !basis.target.trim() || !(complete || basis.source_kind==='none' && basis.concept_acknowledged)} onClick={()=>onConfirm(basis)} type="button">{basis.source_kind==='none' || basis.concept_acknowledged ? '按概念外形继续' : '确认并执行'}</button></div>
   </section>;
 }

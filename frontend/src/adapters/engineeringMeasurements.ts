@@ -4,6 +4,14 @@ function record(value: unknown): RecordValue {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as RecordValue : {};
 }
 
+export function engineeringVerificationNotices(report: RecordValue) {
+  const notices = record(report.acceptance_contract).verification_notices;
+  return (Array.isArray(notices) ? notices : []).map(record)
+    .filter(n => n.schema_version === 'verification-notice.v1' && n.status === 'unverified' && typeof n.message === 'string')
+    .map(n => ({message: String(n.message), references: (Array.isArray(n.source_refs) ? n.source_refs : [])
+      .map(record).filter(r => typeof r.source_quote === 'string').map(r => String(r.source_quote))}));
+}
+
 export function engineeringSourceContext(report: RecordValue) {
   const context = record(record(report.acceptance_contract).source_context);
   if (context.schema_version !== 'source-context.v1' || context.execution_scope !== 'concept_geometry') return null;
@@ -24,7 +32,7 @@ export function engineeringMeasurements(report: RecordValue) {
   return (Array.isArray(acceptance.evidence) ? acceptance.evidence : []).map(record).map(item => {
     const check = checks.find(c => c.check_id === item.check_id);
     const kind = check?.kind;
-    const unit = kind === 'volume' ? 'mm³' : ['solid_count', 'hole_count', 'hole_through', 'void_connected'].includes(String(kind)) ? '' : kind ? 'mm' : '';
+    const unit = kind === 'volume' ? 'mm³' : ['solid_count', 'hole_count', 'hole_through', 'void_connected', 'assembly_count', 'assembly_predicate'].includes(String(kind)) ? '' : kind ? 'mm' : '';
     const scope = record(check?.scope);
     const expected = kind === 'hole_position' ? scope.centers_mm : check?.nominal;
     const comparison = record(check?.comparison);
@@ -57,8 +65,10 @@ export function engineeringMeasurements(report: RecordValue) {
       }
     }
     if (v2 && kind === 'hole_through' && comparison.op === 'eq' && comparison.value === 1) expectedText = '贯通';
+    if (v2 && kind === 'assembly_predicate' && comparison.op === 'eq' && comparison.value === 1) expectedText = '满足';
     const measuredText = kind === 'hole_through'
       ? measured.map(v => v === 1 ? '贯通' : v === 0 ? '未贯通' : '未知').join('、')
+      : kind === 'assembly_predicate' ? measured.map(v => v === 1 ? '满足' : v === 0 ? '未满足' : '未知').join('、')
       : `${measured.join('、')} ${unit}`.trim();
     return {
       id: String(item.check_id ?? ''),
@@ -66,7 +76,7 @@ export function engineeringMeasurements(report: RecordValue) {
       expected: expectedText,
       measured: measured.length ? measuredText : '无量测值',
       measuredLabel,
-      tolerance: kind === 'hole_through' ? undefined : v2 ? comparison.op === 'eq' && finite(comparison.tolerance_minus) && finite(comparison.tolerance_plus)
+      tolerance: ['hole_through', 'assembly_predicate', 'assembly_count'].includes(String(kind)) ? undefined : v2 ? comparison.op === 'eq' && finite(comparison.tolerance_minus) && finite(comparison.tolerance_plus)
         ? `−${comparison.tolerance_minus} / +${comparison.tolerance_plus}` : undefined
         : kind === 'volume' ? check?.tolerance_mm3 : check?.tolerance_mm,
       method: typeof item.method === 'string' ? item.method : '未记录',

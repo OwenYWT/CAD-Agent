@@ -31,3 +31,20 @@ def test_conflicting_counts_fail_before_execution_and_range_is_not_defaulted():
     value['design_brief']['acceptance']['checks'] = [{'kind': 'solid_count', 'required': True,
         'comparison': {'op': 'ge', 'lower': 2, 'unit': 'count'}}]
     assert resolve_solid_count_policy(value)['steps']['model']['expected_solid_count'] is None
+
+
+def test_source_bound_body_and_lid_replace_the_single_part_default():
+    value=plan()
+    check={'kind':'assembly_predicate','required':True,'source_kind':'confirmed',
+           'scope':{'assembly_measurement':'body_lid_fit'},'comparison':{'op':'eq','value':1,'unit':'count'}}
+    value['design_brief']['acceptance']['checks']=[check]
+    assert resolve_solid_count_policy(value)['steps']['model']=={'expected_solid_count':2,'source':'frozen_acceptance'}
+    value['design_brief']['acceptance']['checks']+=plan(1)['design_brief']['acceptance']['checks']
+    with pytest.raises(ValueError,match='conflict'):resolve_solid_count_policy(value)
+
+
+def test_advisory_assembly_roles_cannot_change_component_count_authority():
+    value=plan()
+    value['design_brief']['acceptance']['checks']=[{'kind':'assembly_predicate','required':False,
+        'scope':{'assembly_measurement':'body_lid_fit'},'comparison':{'op':'eq','value':1,'unit':'count'}}]
+    assert resolve_solid_count_policy(value)['steps']['model']['expected_solid_count']==1

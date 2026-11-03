@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator, model_serializer
 from app.contracts.acceptance import AcceptanceContract, AcceptanceMeasurements, acceptance_outcome
 from app.contracts.acceptance_v2 import VersionedAcceptance
+from app.contracts.material_certificates import verify_material_certificate
 
 
 class GeometryBounds(BaseModel):
@@ -110,6 +111,9 @@ def verify_geometry_evidence(report, *, request_sha256, acceptance, expected_sol
         # nor an old worker may authorize an incompletely enumerated inventory.
         for row in report.acceptance.evidence:
             check = checks[row.check_id].model_dump(mode='json')
+            verify_material_certificate(check, row.model_dump(mode='json'))
+            from app.contracts.assembly_measurements import verify_assembly_certificate
+            verify_assembly_certificate(check, row.model_dump(mode='json'))
             if row.outcome == 'indeterminate' or not check['kind'].startswith('hole_') or check.get('hole_group'):
                 continue
             from app.contracts.hole_populations import verify_inventory_coverage, inventory_values, digest

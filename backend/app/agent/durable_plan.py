@@ -32,8 +32,16 @@ class GateMode(str, Enum):
 
 def resolve_solid_count_policy(plan: dict) -> dict:
     """Freeze one step-local count policy; imported counts are applied at runtime."""
-    checks = [c for c in ((plan.get('design_brief') or {}).get('acceptance') or {}).get('checks', [])
+    criteria = ((plan.get('design_brief') or {}).get('acceptance') or {}).get('checks', [])
+    checks = [c for c in criteria
               if c['kind'] == 'solid_count' and c.get('required', True)]
+    # The source-bound body/lid relationship includes two separate material
+    # components. It must survive a provider's generic "simple part" label.
+    # This is resolved before freezing, never by rewriting a saved policy.
+    if any(c['kind'] == 'assembly_predicate' and c.get('required', True)
+           and c.get('scope', {}).get('assembly_measurement') == 'body_lid_fit'
+           for c in criteria):
+        checks = [*checks, {'comparison': {'op': 'eq', 'value': 2}}]
     lower, upper = 0, math.inf
     for check in checks:
         comparison = check.get('comparison') or {'op': 'eq', 'value': check['nominal']}

@@ -14,7 +14,7 @@ from app.llm import find_provider_exception
 from app.models.schemas import CADPlan, ModificationPlan
 from app.contracts.acceptance import acceptance_tool_schema
 from app.contracts.acceptance_v2 import AcceptanceContractV2
-from app.validation.requirement_binding import extract_source_requirements, validate_requirement_bindings, bind_source_quotes, RequirementBindingError, require_bound_sources, SourceRequirementUnavailable
+from app.validation.requirement_binding import extract_source_requirements, validate_requirement_bindings, bind_acceptance_proposal, RequirementBindingError, require_bound_sources, SourceRequirementUnavailable
 from app.validation.acceptance_preflight import validate_new_acceptance
 
 logger = logging.getLogger(__name__)
@@ -62,6 +62,11 @@ def _planning_format(model, tool_name, enabled, acceptance_version='engineering-
     schema['$defs'].update(definitions)
     schema['$defs']['AcceptanceCheck']=check_schema
     contract_name = 'AcceptanceContractV2' if acceptance_version == 'engineering-acceptance.v2' else 'AcceptanceContract'
+    if acceptance_version == 'engineering-acceptance.v2':
+        # The persisted contract is strict, but its server-owned authority is
+        # not an input for a model to invent or copy. Freeze it at admission.
+        schema['$defs'][contract_name]['properties'].pop('source_context', None)
+        schema['$defs'][contract_name]['properties'].pop('verification_notices', None)
     if model is CADPlan:
         schema['$defs']['DesignBrief']['properties']['acceptance'] = {'$ref': '#/$defs/' + contract_name}
     schema['additionalProperties']=False
@@ -119,7 +124,10 @@ def _v2_requirements_prompt(objective, tool_name, *, verified_state=None, requir
         'For nominal geometry or concept designs, missing manufacturing tolerances do not create a required '
         'fit or motion certification. Keep physical fit, waterproof performance and manufacturing validation '
         'separate from geometry; retain explicit performance requirements as unverified when unsupported. '
-        'Copy supplied source_context exactly. Its design_requests count CAD document deliveries, not solids. '
+        'The server attaches source_context from saved inputs; do not output or invent that field. '
+        'The server also attaches sourced verification_notices. Physical certification disclaimers are not '
+        'additional user requirements. Never invent required waterproof or strength conditions from a general enclosure request. '
+        'Its design_requests count CAD document deliveries, not solids. '
         'External plate thickness is an input, not the generated part thickness. For a confirmed concept, '
         'the derived planar_gap checks necessary clearance only; retain physical_fit and clamping_force '
         'as unverified in source_context. Do not claim these were certified or ask for the same concept consent again. '
@@ -306,7 +314,7 @@ The submit_cad_plan tool parameters contain the authoritative field definitions 
                         raise ValueError("requirements must include an explicit acceptance contract at design_brief.acceptance; a top-level acceptance field is not this contract")
                     acceptance["objective"] = objective
                     if acceptance_version == 'engineering-acceptance.v2':
-                        bind_source_quotes(objective, acceptance, requirement_sources=requirement_sources)
+                        bind_acceptance_proposal(objective, acceptance, requirement_sources=requirement_sources)
                 elif require_acceptance:
                     # STEP solid measurements do not apply to a DXF profile.
                     # Preserve the existing 2D gate instead of inventing 3D evidence.
@@ -413,7 +421,7 @@ The submit_modification_plan tool parameters contain the authoritative field def
                         raise ValueError('modification requires an explicit acceptance contract')
                     parsed['acceptance']['objective']=str(messages[-1]['content'])
                     if acceptance_version == 'engineering-acceptance.v2':
-                        bind_source_quotes(str(messages[-1]['content']), parsed['acceptance'],
+                        bind_acceptance_proposal(str(messages[-1]['content']), parsed['acceptance'],
                             verified_state=verified_state, requirement_sources=requirement_sources)
                 plan = self._parse_modification_payload(parsed)
                 if require_acceptance:

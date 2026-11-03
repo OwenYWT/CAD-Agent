@@ -1006,7 +1006,11 @@
     "frontend/src/components/BillingOverview.tsx": "P04",
     "backend/app/validation/acceptance_preflight.py": "M06",
     "backend/app/validation/source_obligations.py": "M06",
-    "backend/app/contracts/hole_populations.py": "P00"
+    "backend/app/contracts/hole_populations.py": "P00",
+    "backend/app/contracts/material_certificates.py": "P00",
+    "backend/app/validation/verification_intent.py": "M06",
+    "backend/app/contracts/assembly_measurements.py": "P00",
+    "backend/app/validation/rectangular_assembly_requirements.py": "M06"
   },
   "required_runtime_reports": {
     "browser-e2e/native-parameters/kernel.log": {
@@ -1772,6 +1776,41 @@
     "browser-e2e/browser-source-intake/trace.zip": {
       "kind": "browser-trace",
       "job": "browser-e2e"
+    },
+    "mcad-core/native/intake-semantics.log": {
+      "kind": "marker",
+      "marker": "CAD_INTAKE_SEMANTICS=",
+      "job": "mcad-core"
+    },
+    "mcad-core/native/intake-semantics-receiver.log": {
+      "kind": "marker",
+      "marker": "CAD_INTAKE_RECEIVER=",
+      "job": "mcad-core"
+    },
+    "browser-e2e/browser-intake-semantics/report.json": {
+      "job": "browser-e2e",
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "source_dimensions_preserved": true,
+        "unverified_performance_visible_after_reload": true,
+        "page_errors": [],
+        "assembly_relationships_visible": true
+      }
+    },
+    "browser-e2e/browser-intake-semantics/trace.zip": {
+      "job": "browser-e2e",
+      "kind": "browser-trace"
+    },
+    "mcad-core/native/rectangular-assembly.log": {
+      "kind": "marker",
+      "marker": "CAD_ASSEMBLY_REPORTS=",
+      "job": "mcad-core"
+    },
+    "mcad-core/native/rectangular-assembly-receiver.log": {
+      "kind": "marker",
+      "marker": "CAD_ASSEMBLY_RECEIVER=",
+      "job": "mcad-core"
     }
   },
   "required_ci_jobs": [
