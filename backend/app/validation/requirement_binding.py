@@ -523,7 +523,10 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
                   and r['kind'] in {'planar_gap','overall_dimension','hole_diameter','hole_depth','hole_count','wall_thickness'}]
         if len(selected)==1 and sum(lo<=other.start() and other.end()<=hi for other,_ in axes)==1:
             selected[0]['scope']={**selected[0]['scope'],'frame':frame,'axis':{'x':[1,0,0],'y':[0,1,0],'z':[0,0,1]}[axis['axis'].lower()]}
-            selected[0]['coordinate_source_span']=list(axis.span())
+            coordinate_start = axis.start()
+            if direction := re.search(r'(?:沿|\balong)[ \t]*$', objective[lo:axis.start()], re.I):
+                coordinate_start = lo + direction.start()
+            selected[0]['coordinate_source_span']=[coordinate_start, axis.end()]
             if frame=='selected_object':
                 selection=(verified_state or {}).get('selection_context') or {}
                 features=selection.get('features') or []
@@ -551,6 +554,9 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
         scoped=[r for r in requirements if lo<=r['source_span'][0] and r['source_span'][1]<=hi]
         if not scoped or any(not r['scope'].get('object_ref') for r in scoped):
             unsupported.append({'source_span':list(marker.span()),'reason':'selected_object_scope_unbound'})
+        else:
+            for record in scoped:
+                record['selection_source_span'] = list(marker.span())
     bind_component_scopes(objective, requirements, unsupported, obligations, source_input_id=source_input_id,
                           external_spans=external_spans)
     for through in [r for r in requirements if r['kind'] == 'hole_through']:

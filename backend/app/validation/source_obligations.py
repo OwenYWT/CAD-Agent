@@ -185,6 +185,11 @@ def resolve_inventory(items, requirements, comparison_spans, unsupported, *, des
             # dimension; preserve that parser's original subject reference.
             relevant += [r for r in requirements if r.get('derivation', {}).get('subject_source_span') == [start, end]]
             spans = [item['subject_span'], *(r['source_span'] for r in relevant)]
+            # A coordinate or selected-body qualifier is covered only after
+            # the binder has proved its frame and frozen object identity. It
+            # cannot discharge any surrounding unknown path or operation.
+            spans += [r[key] for r in relevant for key in ('coordinate_source_span', 'selection_source_span')
+                      if key in r and (r['scope'].get('frame') == 'world' or r['scope'].get('object_ref'))]
             spans += [o['source_span'] for o in items if o['category'] in {'component_distribution', 'count'}
                       and o.get('status') == 'bound']
             if any(r.get('distribution_ref') for r in relevant):
