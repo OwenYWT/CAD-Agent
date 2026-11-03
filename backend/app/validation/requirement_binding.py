@@ -60,7 +60,7 @@ _SCALAR = re.compile(
 # discovery is deliberately broader and independent (source_obligations.py).
 _HOLE_ZH = r'(?:圆形|圆)?孔'
 _HOLE_EN = r'(?:(?:circular|round)[ \t]+)?holes?\b'
-_PASSAGE_ZH = r'(?:贯穿|穿透)(?:的)?'
+_PASSAGE_ZH = r'(?:贯穿|穿透|(?:两端|双端|两头)(?:均|都)?开口)(?:的)?'
 _PASSAGE_EN = r'(?:through|thru)[ -]?'
 _THROUGH_HOLE = re.compile(rf'通孔|{_PASSAGE_ZH}{_HOLE_ZH}|\b{_PASSAGE_EN}{_HOLE_EN}', re.I)
 # A predicative sentence is a complete assertion, not an adjective hit. Never
@@ -70,7 +70,7 @@ _HOLE_PASSAGE_CLAUSE = re.compile(
     r'(?:(?:为|是)[ \t]*通孔|(?:打通|打穿|贯通|贯穿|穿透|穿过)'
     r'(?P<plate>[ \t]*(?:整块板|板厚))?)')
 _COUNT = re.compile(rf'(?P<relation>{_RELATION})?[ \t]*(?<![a-zA-Z0-9_.零一二两三四五六七八九十])(?P<count>{COUNT_VALUE})'
-    r'[ \t]*(?:(?:个|处|M\d+(?:\.\d+)?|圆形|圆|螺钉|安装|固定|线缆|接头|independent|separate|connected|centered|(?:through|thru)[- ]?|circular|round|独立|连通|居中|贯穿|穿透|通|的)[ \t]*)*'
+    r'[ \t]*(?:(?:个|处|M\d+(?:\.\d+)?|圆形|圆|螺钉|安装|固定|线缆|接头|independent|separate|connected|centered|(?:through|thru)[- ]?|circular|round|独立|连通|居中|贯穿|穿透|(?:两端|双端|两头)(?:均|都)?开口|通|的)[ \t]*)*'
     r'(?P<kind>实体|孔|solids?\b|holes?\b)', re.I)
 _LABELLED_COUNT = re.compile(rf'(?P<kind>孔|实体)(?:的)?(?:数量|数目|数)[ \t]*(?:为|[:：=])?[ \t]*'
     rf'(?P<relation>{_RELATION})?[ \t]*(?P<count>{COUNT_VALUE})[ \t]*(?:个|处)?', re.I)
@@ -133,11 +133,11 @@ _DESIGN_REQUEST = re.compile(
 _DESIGN_PRODUCT = re.compile(r'板|盒|长方体|圆柱(?:体)?|球(?:体)?|挂钩|外壳|夹具|支架|零件|模型|装配体|组件|'
     r'\b(?:plate|box|block|cylinder|sphere|hook|enclosure|bracket|part|model|assembly)\b', re.I)
 _CLAMP_PLATE = re.compile(
-    rf'(?:夹在|夹住|夹到|\bclamps?\s+(?:to|onto|on)\s+(?:an?\s+)?)\s*'
+    rf'(?:可?(?:夹在|夹住|夹到)|\bclamps?\s+(?:to|onto|on)\s+(?:an?\s+)?)\s*'
     rf'(?:(?:厚度|板厚|厚)\s*(?:为|是|[:：=])?\s*)?(?P<relation>{_RELATION})?\s*{_DIMENSION_QUANTITY}'
     r'\s*(?:厚的?|的|thick\s+)?\s*(?:桌板|台面板|desktop\b|tabletop\b|table\s+top\b)', re.I)
 _EXTERNAL_PLATE_CLAUSE = re.compile(
-    r'(?:夹在|夹住|夹到|用于|适配|\bfor\b|\bclamps?\b)[^，,。；;\n]*'
+    r'(?:可?(?:夹在|夹住|夹到)|用于|适配|\bfor\b|\bclamps?\b)[^，,。；;\n]*'
     r'(?:桌板|台面板|desktop\b|tabletop\b|table\s+top\b)[^，,。；;\n]*', re.I)
 
 

@@ -114,6 +114,55 @@ def test_f01_directive_inventory_has_unique_original_source_identities():
     assert len(identities) == len(set(identities))
 
 
+@pytest.mark.parametrize('clause', [
+    '两端开口的圆孔直径6mm', '两端均开口的圆孔直径6mm',
+    '双端开口的孔直径6mm', '请创建一个两端开口的圆孔直径6mm',
+])
+def test_f02_nominal_passage_qualifiers_are_frozen_before_the_subject(clause):
+    text = f'板40×30×12mm，{clause}。'
+    result = extract_source_requirements(text)
+    assert not result['unsupported'], result
+    expected = [
+        ('overall_dimension', 40.), ('overall_dimension', 30.), ('overall_dimension', 12.),
+        ('hole_diameter', 6.), ('hole_through', 1.), ('hole_depth', 12.)]
+    if '一个' in clause:
+        expected.append(('hole_count', 1.))
+    assert Counter((r['kind'], r['comparison'].get('value')) for r in result['requirements']) == Counter(expected)
+    contract = proposal_for(text, result)
+    assert validate_requirement_bindings(text, contract)['status'] == 'bound'
+    omitted = contract.model_copy(update={'checks': tuple(c for c in contract.checks if c.kind != 'hole_through')})
+    with pytest.raises(RequirementBindingError):
+        validate_requirement_bindings(text, omitted)
+
+
+@pytest.mark.parametrize('clause', [
+    '一端封闭的圆孔直径6mm', '沿未知路径的圆孔直径6mm',
+    '带未定义轮廓的槽宽度6mm', '经过另一零件的通孔直径6mm',
+    '两端开口且沿曲折路径的圆孔直径6mm', '未知结构圆孔直径6mm',
+    '请创建一个沿未知路径的圆孔直径6mm',
+    '1、沿未知路径的圆孔直径6mm', '两端开口的板厚度12mm',
+    'sealed at one end hole diameter 6mm', 'unknown-profile slot width 6mm',
+    'please create a curved-path through hole diameter 6mm',
+])
+def test_f02_unlowered_nominal_qualifiers_cannot_hide_before_a_known_subject(clause):
+    text = f'板40×30×12mm，{clause}。'
+    result = extract_source_requirements(text)
+    assert result['unsupported'], result
+    with pytest.raises(RequirementBindingError, match='engineering_verification_unavailable') as error:
+        require_bound_sources(text)
+    assert clause in str(error.value)
+
+
+@pytest.mark.parametrize('clause', [
+    '请创建一个通孔直径6mm', '四个直径6mm的通孔',
+    'please create a through hole diameter 6mm', '10mm厚的板',
+])
+def test_f02_supported_request_prefixes_keep_their_measured_meaning(clause):
+    result = extract_source_requirements(clause)
+    assert not result['unsupported'], result
+    assert validate_requirement_bindings(clause, proposal_for(clause, result))['status'] == 'bound'
+
+
 def test_f01_an_unspecified_plate_target_cannot_choose_between_named_components():
     text = ('板坐标范围为 X=0 至 40 mm、Y=0 至 30 mm、Z=0 至 12 mm。'
             '盖板坐标范围为 X=50 至 90 mm、Y=0 至 30 mm、Z=0 至 12 mm。'

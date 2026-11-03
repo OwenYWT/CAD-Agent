@@ -5123,6 +5123,21 @@ async def test_f01_passage_clauses_gate_real_candidates(clause, depth, omit_thro
         unbound_clause=clause if expected == 'engineering_verification_unavailable' else None)
 
 
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('clause,depth,omit_through,expected', [
+    pytest.param('两端开口的圆孔直径6mm', 12, False, 'passed', id='nominal-through-commit'),
+    pytest.param('两端开口的圆孔直径6mm', 6, False, 'agent_geometry_validation_failed', id='nominal-blind'),
+    pytest.param('两端开口的圆孔直径6mm', 6, True, 'requirement_binding_mismatch', id='nominal-omitted'),
+    pytest.param('两端均开口的圆孔直径6mm', 6, False, 'agent_geometry_validation_failed', id='variant-blind'),
+    pytest.param('沿未知路径的圆孔直径6mm', 6, False, 'engineering_verification_unavailable', id='unknown-prefix'),
+    pytest.param('请创建一个沿未知路径的圆孔直径6mm', 6, False, 'engineering_verification_unavailable', id='request-unknown-prefix'),
+])
+async def test_f02_nominal_qualifiers_gate_real_candidates(clause, depth, omit_through, expected):
+    await _native_source_semantics_candidate_contract(f'板40×30×12mm，{clause}。',
+        depth, 6, omit_through, expected, commit=expected == 'passed', require_passage_evidence=True,
+        unbound_clause=clause if expected == 'engineering_verification_unavailable' else None)
+
+
 async def _native_source_semantics_candidate_contract(objective, depth, diameter, omit_through, expected,
                                                      *, basis_dimensions=None, mixed_holes=None, blind_index=None,
                                                      commit=False, extra_cut=None, require_passage_evidence=False,

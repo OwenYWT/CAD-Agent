@@ -36,7 +36,8 @@ _FEATURE_SEMANTIC = re.compile(r'盲孔|螺纹|沉孔|沉头孔|\b(?:blind|threa
 # Inventory the engineering predicate independently of the noun grammar that
 # can lower it into a measurement. Unknown paths/targets must remain unresolved;
 # finding a diameter, count, or depth in the same clause is not coverage.
-_PASSAGE = re.compile(r'通孔|贯穿|穿透|贯通|打穿|打通|穿过|\b(?:through|thru)(?:[- ]?holes?)?\b|\bpenetrat\w*\b', re.I)
+_PASSAGE = re.compile(r'通孔|贯穿|穿透|贯通|打穿|打通|穿过|(?:两端|双端|两头)(?:均|都)?开口|'
+                      r'\b(?:through|thru)(?:[- ]?holes?)?\b|\bpenetrat\w*\b', re.I)
 _PASSAGE_SUBJECT = re.compile(r'孔|槽|腔|\b(?:holes?|bores?|slots?|grooves?|channels?)\b', re.I)
 CENTERED = re.compile(r'(?:居中|中心|centered|central)', re.I)
 _DIRECTIVE = re.compile(r'(?:必须|务必|需满足|\bmust(?:\s+have)?\b|\bshall\b)\s*'
@@ -45,17 +46,24 @@ _DIRECTIVE = re.compile(r'(?:必须|务必|需满足|\bmust(?:\s+have)?\b|\bshal
 # verb after a feature/property must not become invisible just because neither
 # the measurement parser nor _PASSAGE has that verb in its vocabulary.
 _ASSERTION_SUBJECT = re.compile(
-    r'(?:该|此)?(?:圆形孔|圆孔|孔|槽|腔|壁|'
+    r'(?:该|此|当前|这个)?(?:(?:M\d+(?:\.\d+)?[ \t]*)?(?:安装|固定|螺钉|线缆|接头)?(?:圆形孔|圆孔|孔)|槽|腔|壁|'
     r'(?:底板|盖板|上盖|盒体|板)(?:(?:固定|安装)?孔(?:数量|数目|数)?[ \t]*(?:为|[:：=])?)?|'
     r'圆柱体|圆柱|球体|球|'
-    r'长度|宽度|高度|厚度|壁厚|直径|半径|间隙|体积)|'
+    r'(?:模型|外壳)?(?:外部)?(?:总体|整体|总)?(?:长度|宽度|高度|厚度|壁厚|直径|半径|间隙|体积))|'
     r'(?:the\s+)?\b(?:holes?|bores?|slots?|grooves?|channels?|cavit(?:y|ies)|walls?|'
     r'plates?|lids?|boxes?|cylinders?|spheres?|length|width|height|thickness|diameter|radius|gap|volume)\b', re.I)
-_CLAUSE_DIRECTIVE = re.compile(r'(?:必须|务必|需要|需满足|须|需|要|应当|应该|应)\s*(?P<predicate>.+)', re.I)
+_CLAUSE_DIRECTIVE = re.compile(r'(?:必须|务必|需要|需满足|须|需|要|应当|应该|应|'
+                              r'\b(?:must(?:\s+have)?|shall)\b)\s*(?P<predicate>.+)', re.I)
 _LIST_PREFIX = re.compile(r'(?:[-*•][ \t]+|\d+[、)）][ \t]*|\d+\.(?=\D)[ \t]*)')
+_REQUEST_PREFIX = re.compile(
+    r'(?:(?:请(?:帮我|为我)?|帮我|为我)[ \t]*)?(?:设计|创建|生成|制作|做|绘制|添加|增加|开|设置)'
+    r'[ \t]*(?:一个|一块|一种|一些|个)?[ \t]*|'
+    r'(?:please\s+)?(?:create|design|generate|make|add|draw)\s+(?:(?:a|an|the)\s+)?|'
+    r'(?:将|把)(?:当前|这个|该|此)?[ \t]*', re.I)
 _MATERIAL_NOUN = re.compile(r'(?:底板|盖板|上盖|盒体|板|圆柱(?:体)?|球(?:体)?)(?:几何模型|模型)?|'
     r'(?:the\s+)?(?:plates?|lids?|boxes?|cylinders?|spheres?)(?:\s+model)?', re.I)
-_CLAUSE_LINK = re.compile(r'修改为|改为|设为|调整为|的|以及|[+＋]|\b(?:with|of|and|is|are|the)\b', re.I)
+_CLAUSE_LINK = re.compile(r'修改为|改为|设为|调整为|另有|带(?:有)?|的|以及|[+＋、]|'
+                          r'\b(?:with|of|and|is|are|the)\b', re.I)
 
 
 def _assertion_clauses(text, source_input_id):
@@ -65,6 +73,8 @@ def _assertion_clauses(text, source_input_id):
         end = clause.end() - len(raw) + len(raw.rstrip())
         if marker := _LIST_PREFIX.match(text[start:end]):
             start += marker.end()
+        if introduction := _REQUEST_PREFIX.match(text[start:end]):
+            start += introduction.end()
         phrase = text[start:end]
         subject = _ASSERTION_SUBJECT.search(phrase)
         directive = _CLAUSE_DIRECTIVE.fullmatch(phrase)
@@ -76,11 +86,13 @@ def _assertion_clauses(text, source_input_id):
                 'source_input_id': source_input_id, 'source_span': [a, b],
                 'source_quote': text[a:b], 'category': 'directive'}
         if subject:
-            # A count, bullet, or polite introduction before the subject does
-            # not make its predicate optional. Other inventories still own
-            # preceding quantities, restrictions, and component identities.
+            # Nominal qualifiers before a recognized subject carry meaning
+            # too. Preserve the entire assertion, apart from an exact request
+            # introduction; a later diameter must not hide an unknown prefix.
+            subject_start = start + subject.start()
             subject_end = start + subject.end()
-            start += subject.start()
+            if directive:
+                start += directive.start('predicate')
             # Naming the requested product is not itself a dimensional
             # assertion. This exception is an exact noun phrase; any verb,
             # qualifier, or unknown tail still creates a coverage obligation.
@@ -89,7 +101,7 @@ def _assertion_clauses(text, source_input_id):
             yield {'obligation_id': f'o-{source_input_id}-{start}-{end}-assertion_clause',
                 'source_input_id': source_input_id, 'source_span': [start, end],
                 'source_quote': text[start:end], 'category': 'assertion_clause',
-                'subject_span': [start, subject_end]}
+                'subject_span': [subject_start, subject_end]}
 
 
 def normalize_relation(text):
@@ -173,8 +185,11 @@ def resolve_inventory(items, requirements, comparison_spans, unsupported, *, des
             # dimension; preserve that parser's original subject reference.
             relevant += [r for r in requirements if r.get('derivation', {}).get('subject_source_span') == [start, end]]
             spans = [item['subject_span'], *(r['source_span'] for r in relevant)]
-            spans += [o['source_span'] for o in items if o['category'] == 'component_distribution'
+            spans += [o['source_span'] for o in items if o['category'] in {'component_distribution', 'count'}
                       and o.get('status') == 'bound']
+            if any(r.get('distribution_ref') for r in relevant):
+                if marker := _DISTRIBUTIVE.match(item['source_quote']):
+                    spans.append((start + marker.start(), start + marker.end()))
             spans += [(start + m.start(), start + m.end()) for m in _CLAUSE_LINK.finditer(item['source_quote'])]
             # Nominal word order ("diameter 6 mm hole", "10mm厚的板")
             # retains its subject without treating arbitrary suffix prose as

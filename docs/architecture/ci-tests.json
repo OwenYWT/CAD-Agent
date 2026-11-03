@@ -2812,7 +2812,33 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_f01_passage_clauses_gate_real_candidates[unknown-target]",
       "tests/test_source_predicate_coverage.py::test_f01_directive_inventory_has_unique_original_source_identities",
       "tests/test_source_predicate_coverage.py::test_f01_an_unspecified_plate_target_cannot_choose_between_named_components",
-      "tests/test_source_predicate_coverage.py::test_f01_an_external_plate_does_not_authorize_a_passage_on_the_generated_product"
+      "tests/test_source_predicate_coverage.py::test_f01_an_external_plate_does_not_authorize_a_passage_on_the_generated_product",
+      "tests/test_source_predicate_coverage.py::test_f02_nominal_passage_qualifiers_are_frozen_before_the_subject[\\u4e24\\u7aef\\u5f00\\u53e3\\u7684\\u5706\\u5b54\\u76f4\\u5f846mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_nominal_passage_qualifiers_are_frozen_before_the_subject[\\u4e24\\u7aef\\u5747\\u5f00\\u53e3\\u7684\\u5706\\u5b54\\u76f4\\u5f846mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_nominal_passage_qualifiers_are_frozen_before_the_subject[\\u53cc\\u7aef\\u5f00\\u53e3\\u7684\\u5b54\\u76f4\\u5f846mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_nominal_passage_qualifiers_are_frozen_before_the_subject[\\u8bf7\\u521b\\u5efa\\u4e00\\u4e2a\\u4e24\\u7aef\\u5f00\\u53e3\\u7684\\u5706\\u5b54\\u76f4\\u5f846mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_unlowered_nominal_qualifiers_cannot_hide_before_a_known_subject[\\u4e00\\u7aef\\u5c01\\u95ed\\u7684\\u5706\\u5b54\\u76f4\\u5f846mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_unlowered_nominal_qualifiers_cannot_hide_before_a_known_subject[\\u6cbf\\u672a\\u77e5\\u8def\\u5f84\\u7684\\u5706\\u5b54\\u76f4\\u5f846mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_unlowered_nominal_qualifiers_cannot_hide_before_a_known_subject[\\u5e26\\u672a\\u5b9a\\u4e49\\u8f6e\\u5ed3\\u7684\\u69fd\\u5bbd\\u5ea66mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_unlowered_nominal_qualifiers_cannot_hide_before_a_known_subject[\\u7ecf\\u8fc7\\u53e6\\u4e00\\u96f6\\u4ef6\\u7684\\u901a\\u5b54\\u76f4\\u5f846mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_unlowered_nominal_qualifiers_cannot_hide_before_a_known_subject[\\u4e24\\u7aef\\u5f00\\u53e3\\u4e14\\u6cbf\\u66f2\\u6298\\u8def\\u5f84\\u7684\\u5706\\u5b54\\u76f4\\u5f846mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_unlowered_nominal_qualifiers_cannot_hide_before_a_known_subject[\\u672a\\u77e5\\u7ed3\\u6784\\u5706\\u5b54\\u76f4\\u5f846mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_unlowered_nominal_qualifiers_cannot_hide_before_a_known_subject[\\u8bf7\\u521b\\u5efa\\u4e00\\u4e2a\\u6cbf\\u672a\\u77e5\\u8def\\u5f84\\u7684\\u5706\\u5b54\\u76f4\\u5f846mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_unlowered_nominal_qualifiers_cannot_hide_before_a_known_subject[1\\u3001\\u6cbf\\u672a\\u77e5\\u8def\\u5f84\\u7684\\u5706\\u5b54\\u76f4\\u5f846mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_unlowered_nominal_qualifiers_cannot_hide_before_a_known_subject[\\u4e24\\u7aef\\u5f00\\u53e3\\u7684\\u677f\\u539a\\u5ea612mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_unlowered_nominal_qualifiers_cannot_hide_before_a_known_subject[sealed at one end hole diameter 6mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_unlowered_nominal_qualifiers_cannot_hide_before_a_known_subject[unknown-profile slot width 6mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_unlowered_nominal_qualifiers_cannot_hide_before_a_known_subject[please create a curved-path through hole diameter 6mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_supported_request_prefixes_keep_their_measured_meaning[\\u8bf7\\u521b\\u5efa\\u4e00\\u4e2a\\u901a\\u5b54\\u76f4\\u5f846mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_supported_request_prefixes_keep_their_measured_meaning[\\u56db\\u4e2a\\u76f4\\u5f846mm\\u7684\\u901a\\u5b54]",
+      "tests/test_source_predicate_coverage.py::test_f02_supported_request_prefixes_keep_their_measured_meaning[please create a through hole diameter 6mm]",
+      "tests/test_source_predicate_coverage.py::test_f02_supported_request_prefixes_keep_their_measured_meaning[10mm\\u539a\\u7684\\u677f]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[nominal-through-commit]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[nominal-blind]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[nominal-omitted]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[variant-blind]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[unknown-prefix]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[request-unknown-prefix]"
     ],
     "allowed_skips": {
       "tests/integration/test_agent_candidate_seal.py::test_late_workflow_failure_during_cancellation_reaches_a_terminal_state": "real PostgreSQL and MinIO are required",
@@ -3156,7 +3182,13 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_f01_passage_clauses_gate_real_candidates[want-blind]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
       "tests/integration/test_temporal_mcadd_workflow.py::test_f01_passage_clauses_gate_real_candidates[whole-plate-blind]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
       "tests/integration/test_temporal_mcadd_workflow.py::test_f01_passage_clauses_gate_real_candidates[unknown-action]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
-      "tests/integration/test_temporal_mcadd_workflow.py::test_f01_passage_clauses_gate_real_candidates[unknown-target]": "real PostgreSQL, MinIO, Temporal, and Podman are required"
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f01_passage_clauses_gate_real_candidates[unknown-target]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[nominal-through-commit]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[nominal-blind]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[nominal-omitted]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[variant-blind]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[unknown-prefix]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[request-unknown-prefix]": "real PostgreSQL, MinIO, Temporal, and Podman are required"
     }
   },
   "durable-core": {
@@ -3312,7 +3344,13 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_f01_passage_clauses_gate_real_candidates[want-blind]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_f01_passage_clauses_gate_real_candidates[whole-plate-blind]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_f01_passage_clauses_gate_real_candidates[unknown-action]",
-      "tests/integration/test_temporal_mcadd_workflow.py::test_f01_passage_clauses_gate_real_candidates[unknown-target]"
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f01_passage_clauses_gate_real_candidates[unknown-target]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[nominal-through-commit]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[nominal-blind]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[nominal-omitted]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[variant-blind]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[unknown-prefix]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_f02_nominal_qualifiers_gate_real_candidates[request-unknown-prefix]"
     ]
   },
   "frontend": {

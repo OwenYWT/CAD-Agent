@@ -119,6 +119,14 @@ def fixtures():
                                   ('missing', 'failed'), ('wrong_radius', 'failed')):
             cases.append({'model': f'passage_60_{geometry}', 'solids': 1,
                           'contract': contract, 'expected': outcome})
+    for phrase in ('两端开口的圆孔直径6mm', '两端均开口的圆孔直径6mm',
+                   '双端开口的孔直径6mm', '请创建一个两端开口的圆孔直径6mm'):
+        contract = bind(f'板40×30×12mm，{phrase}。')
+        assert any(c['kind'] == 'hole_through' and c['comparison']['value'] == 1 for c in contract['checks'])
+        for geometry, outcome in (('through', 'passed'), ('blind', 'failed'),
+                                  ('missing', 'failed'), ('wrong_radius', 'failed')):
+            cases.append({'model': f'passage_60_{geometry}', 'solids': 1,
+                          'contract': contract, 'expected': outcome})
     rejected = []
     for text in ['长度80mm，两个实体不接触', '长度80mm，两个实体之间应有空气隔开',
                  '长度80mm，不增加其他特征', '长度80mm，避免额外的孔和凸台',
@@ -129,6 +137,8 @@ def fixtures():
                  '板80×40×8mm，直径6mm的通孔，直径4mm的通孔。',
                  '板40×30×12mm，孔径6mm，孔钻到另一个零件里。',
                  '板40×30×12mm，孔径6mm，孔要穿过未知对象。',
+                 '板40×30×12mm，沿未知路径的圆孔直径6mm。',
+                 '板40×30×12mm，一端封闭的圆孔直径6mm。',
                  bounds + '盒体或上盖各有4个直径6mm的通孔。两个独立实体。']:
         try:
             bind(text)
