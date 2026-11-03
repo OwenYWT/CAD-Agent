@@ -2862,7 +2862,9 @@
       "tests/test_design_geometry_meshes.py::test_dfm_reads_named_ascii_stl_and_keeps_touching_shell_boundaries[2-True]",
       "tests/test_design_geometry_meshes.py::test_dfm_preserves_each_scene_instance_and_its_transform",
       "tests/test_design_geometry_meshes.py::test_dfm_keeps_the_existing_binary_single_mesh_analysis",
-      "tests/test_design_geometry_meshes.py::test_dfm_rejects_an_empty_scene_instead_of_reporting_success"
+      "tests/test_design_geometry_meshes.py::test_dfm_rejects_an_empty_scene_instead_of_reporting_success",
+      "tests/test_design_geometry_meshes.py::test_legacy_geometry_gate_handles_named_shells_without_weakening_open_face_rejection[False]",
+      "tests/test_design_geometry_meshes.py::test_legacy_geometry_gate_handles_named_shells_without_weakening_open_face_rejection[True]"
     ],
     "allowed_skips": {
       "tests/integration/test_agent_candidate_seal.py::test_late_workflow_failure_during_cancellation_reaches_a_terminal_state": "real PostgreSQL and MinIO are required",

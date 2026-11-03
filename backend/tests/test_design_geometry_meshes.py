@@ -1,9 +1,11 @@
-"""The advisory analyzer must consume real named STL shells without merging them."""
+"""STL consumers must retain real named shells, open boundaries and transforms."""
+import asyncio
 import numpy as np
 import pytest
 import trimesh
 
 from app.validation.design_analyzer import DesignGeometryAnalyzer
+from app.validation.geometry_validator import GeometryValidator
 
 
 @pytest.mark.parametrize('count,missing_face', [(1, False), (2, False), (2, True)])
@@ -59,3 +61,25 @@ def test_dfm_rejects_an_empty_scene_instead_of_reporting_success(tmp_path):
     path.write_text('solid empty\nendsolid empty\n')
     with pytest.raises(ValueError, match='non-empty triangle mesh'):
         DesignGeometryAnalyzer().analyze(path)
+
+
+@pytest.mark.parametrize('missing_face', [False, True])
+def test_legacy_geometry_gate_handles_named_shells_without_weakening_open_face_rejection(tmp_path, missing_face):
+    blocks = []
+    for index in range(2):
+        part = trimesh.creation.box([10, 10, 10])
+        part.apply_translation([0, 0, index * 10])
+        if missing_face and index == 0:
+            part.update_faces(np.arange(11))
+        lines = trimesh.exchange.stl.export_stl_ascii(part).splitlines()
+        lines[0], lines[-1] = f'solid part_{index}', f'endsolid part_{index}'
+        blocks.append('\n'.join(lines))
+    path = tmp_path / 'legacy.stl'
+    path.write_text('\n'.join(blocks) + '\n')
+    result = asyncio.run(GeometryValidator().validate(path))
+    assert result.passed is (not missing_face)
+    assert bool(result.is_watertight) is (not missing_face)
+    assert result.volume == (0 if missing_face else 2000)
+    if missing_face:
+        assert any(rule.name == 'watertight' and not rule.passed and rule.severity == 'error'
+                   for rule in result.rules)
