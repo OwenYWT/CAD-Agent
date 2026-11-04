@@ -16,6 +16,15 @@ async def wait_for_document(workflow_instance, request: dict):
         if result["status"] != "waiting":
             raise ApplicationError("文档操作已失效，请读取当前版本后重新提交",
                 type=result.get("error_code", "document_operation_rejected"), non_retryable=True)
+        # Historical restores must not wait behind an older document task.
+        # A confirmation-held task can otherwise keep the restore pending for
+        # the full queue timeout with no actionable explanation in the UI.
+        if request.get("revision_restore") is not None:
+            raise ApplicationError(
+                "文档已有任务进行中，请先完成或取消前一个任务，再恢复历史版本",
+                type="document_operation_in_progress",
+                non_retryable=True,
+            )
         try:
             await workflow.wait_condition(lambda: workflow_instance._cancel_reason is not None,
                                           timeout=timedelta(seconds=2))
