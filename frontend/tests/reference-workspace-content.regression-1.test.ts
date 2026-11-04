@@ -31,6 +31,7 @@ test("reference workspace content is backed by real task and artifact evidence",
 
 test("natural-language edits and durable confirmation use server-owned contracts", () => {
   const agent = read("src/components/agent/AgentPanel.tsx");
+  const workspace = read("src/components/workspace/EngineeringWorkspace.tsx");
   const socket = read("src/hooks/useWebSocket.ts");
   const service = read("src/services/clients/tasks.ts");
 
@@ -38,6 +39,9 @@ test("natural-language edits and durable confirmation use server-owned contracts
   assert.match(socket, /panel\?\.result\?\.success \? "modify" : "generate"/);
   assert.match(agent, /panel\.durable\?\.confirmation/);
   assert.match(agent, /confirmDurableTask/);
+  assert.match(agent, /canConfirm/);
+  assert.match(agent, /confirmationPending \|\| !canConfirm/);
+  assert.match(workspace, /canConfirm=\{cloud\.document\?\.can_review/);
   assert.match(service, /\/confirmation`/);
   assert.match(service, /JSON\.stringify\(\{ accepted, note \}\)/);
 });
