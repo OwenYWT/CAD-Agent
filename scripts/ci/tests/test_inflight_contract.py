@@ -71,6 +71,25 @@ class InflightContracts(unittest.TestCase):
         self.assertEqual(result, {'compatible': False, 'checked': 0,
             'blockers': [{'reason': 'source_context_contract_unsupported', 'contract': 'source-context.v1'}]})
 
+    def test_retained_measurement_contract_must_decode_without_changing_its_digest(self):
+        from tests.e2e.intake_semantics_fixture import fixtures
+        from copy import deepcopy
+        contract = fixtures()[0]['contract']
+        self.assertTrue(probe.inspect_requests([], acceptance_contracts=[contract])['compatible'])
+        future = deepcopy(contract)
+        future['checks'][0]['scope']['wall_mode'] = 'future_mode'
+        result = probe.inspect_requests([], acceptance_contracts=[future])
+        self.assertFalse(result['compatible'])
+        self.assertEqual(result['blockers'][0]['reason'], 'acceptance_contract_unsupported')
+        self.assertNotIn(contract['objective'], json.dumps(result))
+        from unittest.mock import patch
+        class LossyDecoder:
+            def model_dump(self, **kwargs):
+                return {**contract, 'checks':[]}
+        with patch('app.contracts.acceptance_v2.decode_acceptance', return_value=LossyDecoder()):
+            result = probe.inspect_requests([], acceptance_contracts=[contract])
+        self.assertFalse(result['compatible'])
+
     def test_unknown_contract_cannot_pass_through_agent_prefix(self):
         request = McadAgentWorkflowV2Request(**{name: uuid4() for name in (
             'workflow_run_id', 'tenant_id', 'project_id', 'principal_id',

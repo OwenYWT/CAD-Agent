@@ -1,0 +1,63 @@
+{
+  "schema_version": "feedback-source.v1",
+  "source_file": "1030-6.xlsx",
+  "source_sha256": "e486ff49627a5e9e6228d2224236fc839c261e22fe4b95299db4e9ff1fddba9b",
+  "source_note": "Exact worksheet text, including list numbering; reported task IDs do not establish equality with saved workflow input. Historical provider receipts are kept separately.",
+  "sheet": "xl/worksheets/sheet1.xml",
+  "cases": [
+    {
+      "feedback_number": 1,
+      "objective_cell": "A1",
+      "dimensions_cell": "A2",
+      "reported_task_cell": "B2",
+      "objective": "1.设计一个带M4安装孔的矩形防水传感器外壳，适合FDM PLA打印。外壳由盒体和上盖组成，M4安装孔设置在外壳四角的外部安装耳上，避免安装孔贯穿内部防水腔。盒体与上盖之间设置密封槽，侧面预留线缆接头孔。",
+      "dimensions": "  外壳总体长度：90 mm\n外壳总体宽度：60 mm\n外壳总体高度：35 mm\n\n盒体外壁厚度：3 mm\n盒体底板厚度：3 mm\n上盖厚度：3 mm\n\n外部安装耳长度：12 mm\n外部安装耳宽度：10 mm\n外部安装耳厚度：3 mm\n\nM4安装孔直径：4.6 mm\nM4安装孔数量：4个\nM4安装孔位于四个外部安装耳中心\n\n密封槽宽度：2.4 mm\n密封槽深度：1.5 mm\n\n线缆接头孔直径：12.5 mm\n线缆接头孔位于外壳短侧面中央",
+      "reported_task_id": "8530609f-7203-430d-8476-6cfb84cd8e42"
+    },
+    {
+      "feedback_number": 2,
+      "objective_cell": "A4",
+      "dimensions_cell": "A5",
+      "reported_task_cell": "B5",
+      "objective": "2.生成适合FDM PLA打印的矩形传感器外壳主体概念模型。",
+      "dimensions": "模型外部总长度：90 mm\n模型外部总宽度：60 mm\n模型外部总高度：35 mm",
+      "reported_task_id": "030b374c-e664-4908-b8a6-49ea781c58b7"
+    },
+    {
+      "feedback_number": 3,
+      "objective_cell": "A7",
+      "dimensions_cell": "A8",
+      "reported_task_cell": "B8",
+      "objective": "3.生成矩形盒状几何概念模型。",
+      "dimensions": "外壳总体长度：80 mm\n外壳总体宽度：55 mm\n外壳总体高度：32 mm\n贯穿圆孔直径：4.5 mm",
+      "reported_task_id": "f217e001-6153-451e-bade-b786c7786272"
+    },
+    {
+      "feedback_number": 4,
+      "objective_cell": "A10",
+      "dimensions_cell": "A11",
+      "reported_task_cell": "B11",
+      "objective": "4生成矩形盒状几何概念模型。模型总体长度为90 mm，模型总体宽度为60 mm，模型总体高度为35 mm。",
+      "dimensions": "模型总体长度：90 mm\n模型总体宽度：60 mm\n模型总体高度：35 mm",
+      "reported_task_id": "ecc64165-2c98-46bc-b656-39a019cdb652"
+    },
+    {
+      "feedback_number": 5,
+      "objective_cell": "A14",
+      "dimensions_cell": "A15",
+      "reported_task_cell": "B15",
+      "objective": "5.生成圆柱体几何模型。圆柱体直径为40 mm，圆柱体高度为25 mm。",
+      "dimensions": "圆柱体直径：40 mm\n圆柱体高度：25 mm",
+      "reported_task_id": "ec2448c1-e3f9-4970-8133-09b6f8acfd14"
+    },
+    {
+      "feedback_number": 6,
+      "objective_cell": "A17",
+      "dimensions_cell": "A18",
+      "reported_task_cell": "B18",
+      "objective": "6.生成圆柱体几何模型。圆柱体半径为20 mm，圆柱体高度为25 mm。",
+      "dimensions": "圆柱体半径：20 mm\n圆柱体高度：25 mm",
+      "reported_task_id": "65e3ab1d-5958-47a9-a606-ec1f2f2c553c"
+    }
+  ]
+}

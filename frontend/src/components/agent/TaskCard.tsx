@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { taskState } from "../../adapters/taskState";
 import { engineeringTaskEventLabel } from "../../utils/engineeringLabels";
 import { getTaskValidationEvidence, type TaskValidationEvidence } from "../../services/clients/tasks";
-import { engineeringMeasurements, engineeringSourceContext } from "../../adapters/engineeringMeasurements";
+import { engineeringMeasurements, engineeringSourceContext, engineeringVerificationNotices } from "../../adapters/engineeringMeasurements";
 import FailureDiagnostic from "./FailureDiagnostic";
 
 const STEP_NAMES:Record<string,string>={agent_requirements:'确认需求依据',agent_decompose:'拆解建模步骤',agent_plan:'制定执行计划',agent_freecad_operations:'构建原生特征',agent_geometry:'校验几何',agent_visual:'检查外观',agent_dfm:'检查制造条件',agent_seal:'准备候选版本'};
@@ -30,6 +30,10 @@ function ValidationEvidenceDetails({taskId,evidenceId}:{taskId:string;evidenceId
         {sourceContext.references.map((quote,i) => <p key={i}>尺寸依据：{quote}</p>)}
         <p>未验证：{sourceContext.unverified.join('、') || '未记录'}。</p>
       </div> : null}
+      {engineeringVerificationNotices(evidence.report).map((notice,i) => <div key={i} data-testid="engineering-verification-notice">
+        <p>未验证：{notice.message}</p>
+        {notice.references.map((quote,j) => <p key={j}>需求依据：{quote}</p>)}
+      </div>)}
       {engineeringMeasurements(evidence.report).map(check => <div key={check.id} className="my-2 border-l-2 pl-2" data-testid="engineering-measurement">
         <strong>{check.description} · {check.outcome}</strong>
         <p>目标：{check.expected}；{check.measuredLabel}：{check.measured}</p>

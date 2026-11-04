@@ -1490,7 +1490,18 @@ def _export_document(document: Any, args: dict[str, Any], *, measurement_formats
         files["verification_step"] = str(path)
     if "stl" in formats:
         path = OUTPUT_ROOT / f"{basename}.stl"
-        target_shape.exportStl(str(path))
+        solids = list(target_shape.Solids)
+        if len(solids) > 1:
+            # STL solid blocks preserve component identity at shared contact
+            # faces. Keep the actual assembled coordinates; never separate,
+            # fuse, or heal bodies merely to make mesh validation pass.
+            import Mesh
+            with path.open('w', encoding='ascii') as stream:
+                for index, solid in enumerate(solids):
+                    mesh = Mesh.Mesh(solid.tessellate(0.1))
+                    mesh.write(Stream=stream, Format='AST', Name=f'component_{index}')
+        else:
+            target_shape.exportStl(str(path))
         files["stl"] = str(path)
     if "dxf" in formats:
         path = OUTPUT_ROOT / f"{basename}.dxf"

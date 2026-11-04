@@ -31,7 +31,12 @@ _COORDINATE_BOX = re.compile(
 _PROPERTIES = {
     '夹口': ('gap', 'planar_gap'), '开口': ('gap', 'planar_gap'), '间隙': ('gap', 'planar_gap'),
     'gap': ('gap', 'planar_gap'), 'opening': ('gap', 'planar_gap'),
-    '壁厚': ('wall_thickness', 'wall_thickness'), 'wall thickness': ('wall_thickness', 'wall_thickness'),
+    '壁厚': ('wall_thickness', 'wall_thickness'), '壁的厚度': ('wall_thickness', 'wall_thickness'),
+    'wall thickness': ('wall_thickness', 'wall_thickness'),
+    **{name: ('side_wall_thickness', 'wall_thickness') for name in
+       ('外壁厚度', '外壁的厚度', '外壁厚', '侧壁厚度', '侧壁的厚度', '侧壁厚', 'side wall thickness', 'sidewall thickness')},
+    **{name: ('cavity_floor_thickness', 'wall_thickness') for name in
+       ('盒体底板厚度', '盒体底面的厚度', '盒体底板厚', '盒体底厚', '盒底厚度', '盒底厚', 'cavity floor thickness')},
     '孔径': ('hole_diameter', 'hole_diameter'), '孔直径': ('hole_diameter', 'hole_diameter'),
     'hole diameter': ('hole_diameter', 'hole_diameter'), 'bore diameter': ('hole_diameter', 'hole_diameter'),
     '孔深': ('hole_depth', 'hole_depth'), 'hole depth': ('hole_depth', 'hole_depth'),
@@ -43,53 +48,121 @@ _PROPERTIES = {
 }
 _PROPERTY = '|'.join(re.escape(p) for p in sorted(_PROPERTIES, key=len, reverse=True))
 _DIMENSION_QUANTITY = (
-    rf'(?P<value>{_NUMBER})\s*(?P<unit1>{_UNIT})?\s*'
-    rf'(?:(?P<range>至|到|[~～–—-]|to)\s*(?P<upper>{_NUMBER})\s*(?P<unit2>{_UNIT})?)?\s*'
-    rf'(?:(?:±|\+/-)\s*(?P<symmetric>{_NUMBER})|\+\s*(?P<plus>{_NUMBER})\s*/\s*[-−]\s*(?P<minus>{_NUMBER}))?\s*'
-    rf'(?P<unit3>{_UNIT})?(?P<suffix>以上|以下)?')
+    rf'(?P<value>{_NUMBER})[ \t]*(?P<unit1>{_UNIT})?[ \t]*'
+    rf'(?:(?P<range>至|到|[~～–—-]|to)[ \t]*(?P<upper>{_NUMBER})[ \t]*(?P<unit2>{_UNIT})?)?[ \t]*'
+    rf'(?:(?:±|\+/-)[ \t]*(?P<symmetric>{_NUMBER})|\+[ \t]*(?P<plus>{_NUMBER})[ \t]*/[ \t]*[-−][ \t]*(?P<minus>{_NUMBER}))?[ \t]*'
+    rf'(?P<unit3>{_UNIT})?(?P<suffix>以上|以下)?\s*')
 _SCALAR = re.compile(
     rf'(?P<prefix>{_RELATION})?\s*(?P<property>{_PROPERTY})\s*(?:改为|修改为|设为|调整为|为|是|[:：=]|of|is|to)?\s*'
     rf'(?P<relation>{_RELATION})?\s*{_DIMENSION_QUANTITY}', re.I)
-_COUNT = re.compile(rf'(?P<relation>{_RELATION})?\s*(?<![a-zA-Z0-9_.零一二两三四五六七八九十])(?P<count>{COUNT_VALUE})'
-    r'\s*(?:(?:个|处|M\d+(?:\.\d+)?|圆形|螺钉|安装|固定|线缆|接头|independent|separate|connected|centered|through[- ]?|独立|连通|居中|贯穿|通)\s*)*'
+# Compose noun phrases once so a circular qualifier cannot retain a diameter
+# while silently dropping the count or the passage predicate. Source obligation
+# discovery is deliberately broader and independent (source_obligations.py).
+_HOLE_ZH = r'(?:圆形|圆)?孔'
+_HOLE_EN = r'(?:(?:circular|round)[ \t]+)?holes?\b'
+_PASSAGE_ZH = r'(?:贯穿|穿透|(?:两端|双端|两头)(?:均|都)?开口)(?:的)?'
+_PASSAGE_EN = r'(?:through|thru)[ -]?'
+_THROUGH_HOLE = re.compile(rf'通孔|{_PASSAGE_ZH}{_HOLE_ZH}|\b{_PASSAGE_EN}{_HOLE_EN}', re.I)
+# A predicative sentence is a complete assertion, not an adjective hit. Never
+# lower a substring of an unknown path, target, negation, or conditional clause.
+_HOLE_PASSAGE_CLAUSE = re.compile(
+    rf'{_HOLE_ZH}[ \t]*(?:(?:必须|务必|需要|应当|应该|须|需|要|应)[ \t]*)?'
+    r'(?:(?:为|是)[ \t]*通孔|(?:打通|打穿|贯通|贯穿|穿透|穿过)'
+    r'(?P<plate>[ \t]*(?:整块板|板厚))?)')
+_COUNT = re.compile(rf'(?P<relation>{_RELATION})?[ \t]*(?<![a-zA-Z0-9_.零一二两三四五六七八九十])(?P<count>{COUNT_VALUE})'
+    r'[ \t]*(?:(?:个|处|M\d+(?:\.\d+)?|圆形|圆|螺钉|安装|固定|线缆|接头|independent|separate|connected|centered|(?:through|thru)[- ]?|circular|round|独立|连通|居中|贯穿|穿透|(?:两端|双端|两头)(?:均|都)?开口|通|的)[ \t]*)*'
     r'(?P<kind>实体|孔|solids?\b|holes?\b)', re.I)
+_LABELLED_COUNT = re.compile(rf'(?P<kind>孔|实体)(?:的)?(?:数量|数目|数)[ \t]*(?:为|[:：=])?[ \t]*'
+    rf'(?P<relation>{_RELATION})?[ \t]*(?P<count>{COUNT_VALUE})[ \t]*(?:个|处)?', re.I)
 _EXPLICIT_QUANTITY = re.compile(rf'(?<![a-zA-Z0-9_.]){_NUMBER}\s*{_UNIT}(?![a-zA-Z])', re.I)
 _OTHER_ENGINEERING_QUANTITY = re.compile(
     rf'(?<![a-zA-Z0-9_.]){_NUMBER}\s*(?:°|度|弧度|deg(?:rees?)?\b|rad(?:ians?)?\b|英寸|inches?\b)|'
-    rf'(?:{_NUMBER}|[一二两三四五六七八九十]+)\s*(?:个|处|颗|条|只)\s*'
+    rf'(?:{_NUMBER}|[一二两三四五六七八九十]+)[ \t]*(?:个|处|颗|条|只)[ \t]*'
     r'(?:支脚|支柱|支撑|槽|孔|实体|齿|筋|凸台|通道|倒角|圆角)|'
-    rf'\b(?:{_NUMBER}|one|two|three|four|five|six)\s+(?:[a-z-]+\s+){{0,2}}'
+    rf'\b(?:{_NUMBER}|one|two|three|four|five|six)[ \t]+(?:[a-z-]+[ \t]+){{0,2}}'
     r'(?:legs?|supports?|ribs?|fins?|pins?|posts?|slots?|teeth|holes?|solids?)\b', re.I)
 _BOX_DIMENSIONS = re.compile(rf'(?P<x>{_NUMBER})\s*[x×*]\s*(?P<y>{_NUMBER})\s*[x×*]\s*(?P<z>{_NUMBER})\s*(?P<unit>{_UNIT})', re.I)
-_DIAMETER = re.compile(rf'(?P<prefix>{_RELATION})?\s*(?:直径|diameter)\s*(?:为|of|=)?\s*'
+_DIAMETER = re.compile(rf'(?P<prefix>{_RELATION})?\s*(?:直径|diameter)\s*(?:改为|修改为|设为|调整为|为|是|of|is|to|[:：=])?\s*'
     rf'(?P<relation>{_RELATION})?\s*{_DIMENSION_QUANTITY}', re.I)
+_RADIUS = re.compile(rf'(?P<prefix>{_RELATION})?[ \t]*(?:半径|radius)[ \t]*(?:改为|修改为|设为|调整为|为|是|of|is|to|[:：=])?[ \t]*'
+    rf'(?P<relation>{_RELATION})?[ \t]*{_DIMENSION_QUANTITY}', re.I)
+_PRIMITIVE = re.compile(r'圆柱(?:体)?|\bcylinder\b|球(?:体)?|\bsphere\b', re.I)
+
+
+def _primitive_subject(text, start, end):
+    """Resolve a named material primitive, never a hole or another feature."""
+    # Quantity source spans retain legacy trailing whitespace for stable IDs.
+    # That whitespace must not move ownership across a newline into a hole.
+    end = start + len(text[start:end].rstrip())
+    start += len(text[start:end]) - len(text[start:end].lstrip())
+    lo = max(text.rfind(c, 0, start) for c in ',，;；。\n') + 1
+    hi = min([p for c in ',，;；。\n' if (p := text.find(c, end)) >= 0] or [len(text)])
+    clause = text[lo:hi]
+    if re.search(r'孔|圆角|槽|\b(?:hole|bore|fillet|slot)\b', clause, re.I):
+        return None
+    def connects(fragment):
+        for pattern in (_SCALAR, _DIAMETER, _RADIUS, _SUFFIX_DIMENSION):
+            fragment = pattern.sub('', fragment)
+        return re.fullmatch(r'(?:\s|的|模型|几何模型|整体|其|它|of\b|with\b|and\b|the\b|model\b|solid\b)*', fragment, re.I)
+    matches = [m for m in _PRIMITIVE.finditer(clause)
+               if (m.end()+lo <= start and connects(text[m.end()+lo:start]))
+               or (m.start()+lo >= end and connects(text[end:m.start()+lo]))]
+    if not matches and connects(text[lo:start]) and not re.search(r'孔|板|盒|盖|支脚|安装耳|\b(?:hole|plate|box|lid|foot)\b', text, re.I):
+        matches = list(_PRIMITIVE.finditer(text))
+    kinds = {'cylinder' if re.search(r'圆柱|cylinder', m.group(), re.I) else 'sphere' for m in matches}
+    return next(iter(kinds)) if len(kinds) == 1 else None
 _HOLE_SIZE = re.compile(rf'(?P<relation>{_RELATION})?\s*{_DIMENSION_QUANTITY}'
-    rf'\s+(?:diameter\s+)?(?:through[- ]?)?holes?\b', re.I)
+    rf'\s+(?:diameter\s+)?(?:{_PASSAGE_EN})?{_HOLE_EN}', re.I)
 _SIZED_HOLE_COUNT = re.compile(rf'(?P<relation>{_RELATION})?\s*\b(?P<count>one|two|three|four|five|six|single|an?|\d+)\s+'
-    rf'(?:centered\s+|central\s+)?{_NUMBER}\s*{_UNIT}\s+(?:diameter\s+)?(?:through[- ]?)?holes?\b', re.I)
+    rf'(?:centered\s+|central\s+)?{_NUMBER}\s*{_UNIT}\s+(?:diameter\s+)?(?:{_PASSAGE_EN})?{_HOLE_EN}', re.I)
 _CHINESE_SIZED_HOLE_COUNT = re.compile(
     rf'(?P<relation>{_RELATION})?\s*(?<![a-zA-Z0-9_.零一二两三四五六七八九十])(?P<count>{COUNT_VALUE})\s*[个处]\s*'
-    rf'(?:孔径|直径)\s*(?:为|[:：=])?\s*(?:{_RELATION})?\s*{_NUMBER}\s*{_UNIT}\s*(?:以上|以下)?\s*的?\s*(?:贯穿|通)?孔', re.I)
+    rf'(?:孔径|直径)\s*(?:为|[:：=])?\s*(?:{_RELATION})?\s*{_NUMBER}\s*{_UNIT}\s*(?:以上|以下)?\s*的?\s*(?:{_PASSAGE_ZH}|通)?{_HOLE_ZH}', re.I)
 _SUFFIX_DIMENSION = re.compile(rf'(?P<relation>{_RELATION})?\s*(?P<value>{_NUMBER})\s*(?P<unit>{_UNIT})\s*'
     r'(?P<property>long\b|wide\b|thick\b|high\b|[长宽厚高](?!度|\s*\d))', re.I)
 _WORLD_AXIS = re.compile(r'(?:世界|world)\s*(?P<axis>[xyz])\s*(?:轴|axis)?', re.I)
 _LOCAL_AXIS = re.compile(r'(?:局部|local)\s*(?P<axis>[xyz])\s*(?:轴|axis)?', re.I)
+_PRESERVED_PROPERTY = _PROPERTY + r'|直径|半径|diameter|radius'
 _PRESERVATION = re.compile(
-    rf'(?:(?:保持|保留)\s*(?P<leading>{_PROPERTY})(?:\s*(?:不变|原值))?|'
-    rf'(?P<trailing>{_PROPERTY})\s*(?:保持)?(?:不变|原值)|'
-    rf'(?:preserve|keep)\s+(?:the\s+)?(?P<english>{_PROPERTY})(?:\s+(?:unchanged|the same))?)', re.I)
+    rf'(?:(?:保持|保留)\s*(?P<leading>{_PRESERVED_PROPERTY})(?:\s*(?:不变|原值))?|'
+    rf'(?P<trailing>{_PRESERVED_PROPERTY})\s*(?:保持)?(?:不变|原值)|'
+    rf'(?:preserve|keep)\s+(?:the\s+)?(?P<english>{_PRESERVED_PROPERTY})(?:\s+(?:unchanged|the same))?)', re.I)
 _DESIGN_REQUEST = re.compile(
     r'^\s*(?:(?:请|帮我|请帮我|给我|麻烦)\s*)?(?:设计|创建|制作|生成|做)\s*(?P<zh>一\s*个|1\s*个)|'
     r'^\s*(?:please\s+)?(?:design|create|make|generate)\s+(?P<en>a|an|one)\b', re.I)
-_DESIGN_PRODUCT = re.compile(r'板|盒|长方体|挂钩|外壳|夹具|支架|零件|模型|装配体|组件|'
-    r'\b(?:plate|box|block|hook|enclosure|bracket|part|model|assembly)\b', re.I)
+_DESIGN_PRODUCT = re.compile(r'板|盒|长方体|圆柱(?:体)?|球(?:体)?|挂钩|外壳|夹具|支架|零件|模型|装配体|组件|'
+    r'\b(?:plate|box|block|cylinder|sphere|hook|enclosure|bracket|part|model|assembly)\b', re.I)
 _CLAMP_PLATE = re.compile(
-    rf'(?:夹在|夹住|夹到|\bclamps?\s+(?:to|onto|on)\s+(?:an?\s+)?)\s*'
+    rf'(?:可?(?:夹在|夹住|夹到)|\bclamps?\s+(?:to|onto|on)\s+(?:an?\s+)?)\s*'
     rf'(?:(?:厚度|板厚|厚)\s*(?:为|是|[:：=])?\s*)?(?P<relation>{_RELATION})?\s*{_DIMENSION_QUANTITY}'
     r'\s*(?:厚的?|的|thick\s+)?\s*(?:桌板|台面板|desktop\b|tabletop\b|table\s+top\b)', re.I)
 _EXTERNAL_PLATE_CLAUSE = re.compile(
-    r'(?:夹在|夹住|夹到|用于|适配|\bfor\b|\bclamps?\b)[^，,。；;\n]*'
+    r'(?:可?(?:夹在|夹住|夹到)|用于|适配|\bfor\b|\bclamps?\b)[^，,。；;\n]*'
     r'(?:桌板|台面板|desktop\b|tabletop\b|table\s+top\b)[^，,。；;\n]*', re.I)
+
+
+def _preceding_hole_subject(text, start, end):
+    """Resolve only an adjacent, complete hole noun phrase, never a product.
+
+    A comma/newline does not change "through circular hole, diameter 6mm".
+    An intervening owner, modifier or ambiguous multi-object clause does. Keep
+    original offsets so the inherited subject remains auditable independently
+    of the dimension's own source quote.
+    """
+    start += len(text[start:end]) - len(text[start:end].lstrip())
+    lo = max(text.rfind(c, 0, start) for c in ',，;；。\n') + 1
+    if not lo or text[lo:start].strip():
+        return None
+    before = text[:lo-1]
+    previous_start = max(before.rfind(c) for c in ',，;；。\n') + 1
+    phrase = before[previous_start:].strip()
+    counted = _COUNT.fullmatch(phrase)
+    if (not _THROUGH_HOLE.fullmatch(phrase) and not re.fullmatch(_HOLE_ZH, phrase)
+            and not re.fullmatch(_HOLE_EN, phrase, re.I)
+            and not (counted and counted['kind'].lower().startswith(('孔', 'hole')))):
+        return None
+    a = previous_start + len(before[previous_start:]) - len(before[previous_start:].lstrip())
+    return [a, a + len(phrase)]
 
 
 def _quantity(value, unit):
@@ -101,7 +174,7 @@ def _quantity(value, unit):
 
 
 def extract_requirements(objective: str, *, source_input_id: str = 'objective', source_kind: str = 'user',
-                         verified_state=None, execution_scope='cad_geometry') -> dict:
+                         verified_state=None, execution_scope='cad_geometry', plate_context=None) -> dict:
     requirements, unsupported, covered = [], [], []
     obligations = inventory(objective, source_input_id=source_input_id)
     comparison_spans = []
@@ -231,18 +304,44 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
         comparison = relation_comparison(match, value, unit)
         if comparison is None:
             continue
-        append(*match.span(),prop,'overall_dimension',comparison,
-            {'axis':{'length':[1,0,0],'width':[0,1,0],'height':[0,0,1],'thickness':[0,0,1]}[prop]})
+        if prop == 'height' and _primitive_subject(objective, *match.span()) == 'cylinder':
+            append(*match.span(),'cylinder_height','cylinder_height',comparison)
+        else:
+            append(*match.span(),prop,'overall_dimension',comparison,
+                {'axis':{'length':[1,0,0],'width':[0,1,0],'height':[0,0,1],'thickness':[0,0,1]}[prop]})
 
     preservation_spans = []
     baseline = (verified_state or {}).get('verified_acceptance')
     for match in _PRESERVATION.finditer(objective):
         preservation_spans.append(match.span())
-        prop, kind = _PROPERTIES[(match['leading'] or match['trailing'] or match['english']).lower()]
-        candidates = [m for m in (baseline or {}).get('measurements', []) if m['kind'] == kind]
+        raw = (match['leading'] or match['trailing'] or match['english']).lower()
+        primitive = _primitive_subject(objective, *match.span())
+        prior_measurements = (baseline or {}).get('measurements', [])
+        radial = {'直径':'diameter','diameter':'diameter','半径':'radius','radius':'radius'}.get(raw)
+        if radial:
+            if primitive is None:
+                measured_primitives = {m['kind'].split('_')[0] for m in prior_measurements
+                    if m['kind'] in {'cylinder_diameter','cylinder_radius','sphere_diameter','sphere_radius'}}
+                primitive = next(iter(measured_primitives)) if len(measured_primitives) == 1 else None
+            prop = kind = (primitive or 'unbound_material') + '_' + radial
+        else:
+            prop, kind = _PROPERTIES[raw]
+            if prop == 'height' and primitive == 'cylinder':
+                prop = kind = 'cylinder_height'
+        scale = 1.
+        candidates = [m for m in prior_measurements if m['kind'] == kind]
+        if radial and primitive and not candidates:
+            alternate = primitive + ('_diameter' if radial == 'radius' else '_radius')
+            candidates = [m for m in prior_measurements if m['kind'] == alternate]
+            scale = .5 if radial == 'radius' else 2.
         if kind == 'overall_dimension':
             axis = {'length':[1,0,0], 'width':[0,1,0], 'height':[0,0,1], 'thickness':[0,0,1]}[prop]
             candidates = [m for m in candidates if m['scope'].get('axis') == axis]
+        # Repeated objective/basis assertions can produce identical sealed
+        # measurements. Their duplication is not a second geometric target.
+        if len(candidates) > 1 and all(m['kind'] == candidates[0]['kind'] and m['scope'] == candidates[0]['scope']
+                and m['values'] == candidates[0]['values'] for m in candidates):
+            candidates = candidates[:1]
         if baseline and baseline.get('revision_id') == (verified_state or {}).get('revision_id') and len(candidates) == 1:
             prior = candidates[0]
             values = prior['values']
@@ -252,10 +351,13 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
                     and max(values) - min(values) <= 1e-7 and not scope.get('region_min_mm')
                     and not scope.get('object_ref') and not scope.get('component_region') and scope.get('frame')!='selected_object'
                     and scope.get('point_mm') is None and not scope.get('centers_mm')):
-                append(*match.span(), prop, kind, {'op':'eq','value':values[0], 'unit':'mm3' if kind=='volume' else 'mm'}, scope)
+                append(*match.span(), prop, kind, {'op':'eq','value':values[0]*scale, 'unit':'mm3' if kind=='volume' else 'mm'}, scope)
                 requirements[-1]['derivation'] = {'rule':'sealed_independent_measurement.v1',
                     **{k:baseline[k] for k in ('revision_id','evidence_id','evidence_sha256','acceptance_digest','artifact_sha256s')},
                     'check_id': prior['check_id']}
+                if scale != 1.:
+                    requirements[-1]['derivation'].update(rule='sealed_material_radius_diameter.v1',
+                        source_kind=prior['kind'], scale=scale)
                 continue
         unsupported.append({'source_span':list(match.span()), 'reason':'preservation_baseline_required'})
     for match in re.finditer(r'不变|保留|保持|preserv\w*|unchanged|remain\s+unchanged|keep\s+.*same', objective, re.I):
@@ -285,11 +387,17 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
         if comparison is None:
             continue
         scope = {}
+        if prop == 'side_wall_thickness':
+            scope = {'wall_mode': 'side_walls'}
+        elif prop == 'cavity_floor_thickness':
+            scope = {'wall_mode': 'cavity_floor'}
+        elif prop == 'height' and _primitive_subject(objective, *match.span()) == 'cylinder':
+            prop = kind = 'cylinder_height'
         if kind == 'overall_dimension':
             scope = {'axis': {'length': [1, 0, 0], 'width': [0, 1, 0],
                               'height': [0, 0, 1], 'thickness': [0, 0, 1]}[prop]}
         append(*match.span(), prop, kind, comparison, scope)
-    for match in _COUNT.finditer(objective):
+    for match in [*_LABELLED_COUNT.finditer(objective), *_COUNT.finditer(objective)]:
         if any(a <= match.start('count') < b for a, b in covered):
             continue  # A preceding labelled dimension is not the next line's hole count.
         raw = match['count'].lower()
@@ -314,21 +422,62 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
                if r.get('property') == 'hole_diameter' or 'reason' in r):
             covered.append(match.span())
             continue
-        clause = re.split(r'[，,。；;\n]', objective[:match.start()])[-1] + objective[match.start():]
-        clause = re.split(r'[，,。；;\n]', clause)[0]
-        if not re.search(r'孔|hole|bore', clause, re.I):
-            continue
+        # Source IDs retain legacy whitespace, but ownership must not cross a
+        # line simply because a quantity regex consumed its leading whitespace.
+        start = match.start() + len(match.group()) - len(match.group().lstrip())
+        end = match.start() + len(match.group().rstrip())
+        lo = max(objective.rfind(c, 0, start) for c in ',，;；。\n') + 1
+        hi = min([p for c in ',，;；。\n' if (p := objective.find(c, end)) >= 0] or [len(objective)])
+        clause = objective[lo:hi]
+        primitive = _primitive_subject(objective, *match.span())
+        inherited_subject = None
+        if not primitive and not re.search(r'孔|hole|bore', clause, re.I):
+            inherited_subject = _preceding_hole_subject(objective, *match.span())
+            if inherited_subject is None:
+                continue
         comparison = dimension_comparison(match)
         if comparison is not None:
-            append(*match.span(), 'hole_diameter', 'hole_diameter', comparison)
+            kind = primitive + '_diameter' if primitive else 'hole_diameter'
+            append(*match.span(), kind, kind, comparison)
+            if inherited_subject is not None:
+                requirements[-1]['derivation'] = {'rule': 'preceding_hole_subject.v1',
+                                                 'subject_source_span': inherited_subject}
+    for match in _RADIUS.finditer(objective):
+        primitive = _primitive_subject(objective, *match.span())
+        if primitive and (comparison := dimension_comparison(match)) is not None:
+            append(*match.span(), primitive + '_radius', primitive + '_radius', comparison)
     for match in _CENTERED.finditer(objective):
         context = objective[max(0, match.start()-20):match.end()+30]
-        if re.search(r'孔|hole|bore', context, re.I) and re.search(r'板|plate', objective, re.I):
+        # An explicit local landmark cannot inherit a plate's global centre.
+        local_owner = re.search(r'(?:安装耳|支脚|凸台|安装柱|密封槽|底座|\b(?:ear|lug|foot|boss|post|groove)\b)[^，,。；;\n]{0,12}$',
+                                objective[:match.start()], re.I)
+        if not local_owner and re.search(r'孔|hole|bore', context, re.I) and re.search(r'板|plate', objective, re.I):
             append(*match.span(), 'hole_position', 'hole_position', {'op': 'eq', 'value': 0., 'unit': 'mm'},
                 {'axis': [0, 0, 1], 'frame': 'bounds_center', 'centers_mm': [[0, 0, 0]]})
-    throughs = list(re.finditer(r'通孔|贯穿孔|\bthrough[- ]?holes?\b', objective, re.I))
-    for through in throughs:
-        append(*through.span(), 'hole_through', 'hole_through', {'op': 'eq', 'value': 1., 'unit': 'count'})
+    through_spans = []
+    for clause in re.finditer(r'[^，,。；;\n]+', objective):
+        phrase = clause.group().strip()
+        predicate = _HOLE_PASSAGE_CLAUSE.fullmatch(phrase)
+        if predicate is None:
+            continue
+        start = clause.start() + len(clause.group()) - len(clause.group().lstrip())
+        span = (start, start + len(phrase))
+        # A target plate must be part of the source, not introduced solely by
+        # this assertion. Component identity is checked by the shared scope
+        # binder below; it cannot be borrowed from a generated model.
+        if predicate['plate']:
+            thicknesses = [r for r in requirements if r['property'] == 'thickness'
+                           and r['comparison']['op'] == 'eq']
+            components = [r for r in requirements if r['kind'] == 'bounding_box']
+            local_target = (re.search(r'板|\bplate\b', objective[:clause.start()], re.I)
+                            and len(thicknesses) == 1 and len(components) <= 1)
+            if not local_target and span not in (plate_context or {}):
+                continue
+        through_spans.append(span)
+    through_spans.extend(m.span() for m in _THROUGH_HOLE.finditer(objective)
+        if not any(a <= m.start() and m.end() <= b for a, b in through_spans))
+    for span in through_spans:
+        append(*span, 'hole_through', 'hole_through', {'op': 'eq', 'value': 1., 'unit': 'count'})
     request = _DESIGN_REQUEST.match(objective)
     if request:
         span = request.span('zh' if request['zh'] else 'en')
@@ -345,7 +494,7 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
         # A substring such as 板 in 板状加强筋 cannot establish the head noun.
         # Permit a product followed by the existing dimensional grammar too.
         product_head = any(not (tail := subject[m.end():].strip(' \t.:：')) or any(
-            pattern.match(tail) for pattern in (_SCALAR, _BOX_DIMENSIONS, _SUFFIX_DIMENSION))
+            pattern.match(tail) for pattern in (_SCALAR, _BOX_DIMENSIONS, _SUFFIX_DIMENSION, _DIAMETER, _RADIUS))
             for m in products)
         if product_head and not any(
                 r['kind'] in {'hole_count', 'solid_count'} and r['source_span'][0] <= span[0] < r['source_span'][1]
@@ -374,7 +523,10 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
                   and r['kind'] in {'planar_gap','overall_dimension','hole_diameter','hole_depth','hole_count','wall_thickness'}]
         if len(selected)==1 and sum(lo<=other.start() and other.end()<=hi for other,_ in axes)==1:
             selected[0]['scope']={**selected[0]['scope'],'frame':frame,'axis':{'x':[1,0,0],'y':[0,1,0],'z':[0,0,1]}[axis['axis'].lower()]}
-            selected[0]['coordinate_source_span']=list(axis.span())
+            coordinate_start = axis.start()
+            if direction := re.search(r'(?:沿|\balong)[ \t]*$', objective[lo:axis.start()], re.I):
+                coordinate_start = lo + direction.start()
+            selected[0]['coordinate_source_span']=[coordinate_start, axis.end()]
             if frame=='selected_object':
                 selection=(verified_state or {}).get('selection_context') or {}
                 features=selection.get('features') or []
@@ -402,12 +554,18 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
         scoped=[r for r in requirements if lo<=r['source_span'][0] and r['source_span'][1]<=hi]
         if not scoped or any(not r['scope'].get('object_ref') for r in scoped):
             unsupported.append({'source_span':list(marker.span()),'reason':'selected_object_scope_unbound'})
+        else:
+            for record in scoped:
+                record['selection_source_span'] = list(marker.span())
     bind_component_scopes(objective, requirements, unsupported, obligations, source_input_id=source_input_id,
                           external_spans=external_spans)
     for through in [r for r in requirements if r['kind'] == 'hole_through']:
         thickness = [r for r in requirements if r['property'] == 'thickness' and r['comparison']['op'] == 'eq'
                      and r['scope'].get('component_region') == through['scope'].get('component_region')]
-        if len(thickness) == 1 and re.search(r'板|plate', objective, re.I):
+        inherited = (plate_context or {}).get(tuple(through['source_span']))
+        if not thickness and inherited:
+            thickness = [inherited]
+        if len(thickness) == 1 and (inherited or re.search(r'板|plate', objective, re.I)):
             append(*through['source_span'], 'hole_depth', 'hole_depth', dict(thickness[0]['comparison']), dict(through['scope']),
                    identity=through['requirement_id'] + '-depth' if through.get('distribution_ref') else None)
             requirements[-1]['derivation'] = {'rule': 'through_plate_thickness.v1',
@@ -422,18 +580,80 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
                if design_requests or external_references else {})}
 
 
+def _cross_source_plate_context(index, sources, extractions, verified_state):
+    """Prove a passage against saved fields, then retain their separate authority.
+
+    The joined parse is only a scope/derivation proof. It cannot supply new
+    dimensions, units or tolerances: its thickness must already exist in one
+    individually parsed source with the same scope and comparison.
+    """
+    source = sources[index]
+    others = [i for i in range(len(sources)) if i != index]
+    if (not any(r['property'] == 'thickness' for i in others for r in extractions[i]['requirements'])
+            or any(r['property'] == 'thickness' for r in extractions[index]['requirements'])
+            or not (_HOLE_PASSAGE_CLAUSE.search(source['text']) or _THROUGH_HOLE.search(source['text']))):
+        return {}
+    offsets, text = {}, ''
+    for i in [*others, index]:
+        offsets[i] = len(text)
+        text += sources[i]['text'] + '\n'
+    proof = extract_requirements(text, verified_state=verified_state,
+                                 execution_scope=source.get('execution_scope', 'cad_geometry'))
+    if proof['unsupported']:
+        return {}
+    records = {r['requirement_id']: r for r in proof['requirements']}
+    context = {}
+    for depth in proof['requirements']:
+        derivation = depth.get('derivation', {})
+        start, end = depth['source_span']
+        if (derivation.get('rule') != 'through_plate_thickness.v1'
+                or not offsets[index] <= start < end <= offsets[index] + len(source['text'])
+                or depth['scope'].get('component_region') or depth['scope'].get('object_ref')):
+            continue
+        thickness = records[derivation['source_refs'][0]]
+        # Component selectors require a complete cross-field scope resolver;
+        # this rule only proves the same single, unselected plate.
+        if thickness['scope'].get('component_region') or thickness['scope'].get('object_ref'):
+            continue
+        for i in others:
+            for original in extractions[i]['requirements']:
+                if (original['property'] == 'thickness'
+                        and [offsets[i] + v for v in original['source_span']] == thickness['source_span']
+                        and original['scope'] == thickness['scope']
+                        and {k: v for k, v in original['comparison'].items() if k != 'tolerance_source_refs'}
+                        == {k: v for k, v in thickness['comparison'].items() if k != 'tolerance_source_refs'}):
+                    context[(start - offsets[index], end - offsets[index])] = original
+    return context
+
+
 def extract_source_requirements(objective, *, verified_state=None, requirement_sources=None) -> dict:
     """Structured sources are supplied by the server, never the tool response."""
     sources = requirement_sources if requirement_sources is not None else [
         {'text':objective, 'source_input_id':'objective', 'source_kind':'user'}]
+    from app.validation.rectangular_assembly_requirements import extract_rectangular_assembly_sources
+    assembly = extract_rectangular_assembly_sources(objective, sources)
+    if assembly is not None:
+        from app.validation.verification_intent import verification_intent
+        intent = verification_intent(sources)
+        assembly['unsupported'].extend(intent['unsupported'])
+        if intent['notices']:
+            assembly['verification_notices'] = intent['notices']
+        return assembly
     result = {'schema_version':'requirement-extraction.v1', 'requirements':[], 'unsupported':[], 'obligations':[]}
     submitted_rows = []
+    extractions = []
     for source in sources:
         if source['source_kind'] not in {'user','confirmed'} or source['text'] not in objective:
             raise ValueError('requirement source is not part of the frozen submitted input')
         extracted = extract_requirements(source['text'], source_input_id=source['source_input_id'],
                                         source_kind=source['source_kind'], verified_state=verified_state,
                                         execution_scope=source.get('execution_scope', 'cad_geometry'))
+        extractions.append(extracted)
+    for index, (source, extracted) in enumerate(zip(sources, extractions)):
+        if len(sources) > 1 and (plate_context := _cross_source_plate_context(index, sources, extractions, verified_state)):
+            extracted = extract_requirements(source['text'], source_input_id=source['source_input_id'],
+                source_kind=source['source_kind'], verified_state=verified_state,
+                execution_scope=source.get('execution_scope', 'cad_geometry'), plate_context=plate_context)
         if context := extracted.get('source_context'):
             merged = result.setdefault('source_context', {'schema_version': 'source-context.v1',
                 'execution_scope': 'cad_geometry', 'design_requests': [], 'external_references': [], 'unverified_aspects': []})
@@ -460,24 +680,43 @@ def extract_source_requirements(objective, *, verified_state=None, requirement_s
             record['hole_group'] = grouped[record['requirement_id']]
     resolve_inventory(cross_source, result['requirements'], [], result['unsupported'])
     result['obligations'].extend(cross_source)
+    from app.validation.verification_intent import verification_intent
+    intent = verification_intent(sources)
+    result['unsupported'].extend(intent['unsupported'])
+    if intent['notices']:
+        result['verification_notices'] = intent['notices']
     return result
 
 
 def bind_source_quotes(objective, acceptance, *, verified_state=None, requirement_sources=None):
-    """The server owns quotes for known v2 references, not model paraphrases.
-
-    Only restore the exact source text. Property, comparison, units, scope and
-    coverage still undergo independent validation and are never repaired here.
-    """
+    """Restore exact text for known references without changing their meaning."""
     extracted = extract_source_requirements(objective, verified_state=verified_state,
                                             requirement_sources=requirement_sources)
-    if extracted.get('source_context') and 'source_context' not in acceptance:
-        acceptance['source_context'] = extracted['source_context']
     records = {r['requirement_id']: r for r in extracted['requirements']}
     for check in acceptance.get('checks', []):
         record = records.get(check.get('binding_ref')) if isinstance(check, dict) else None
         if record and check.get('source_kind', 'user') == record['source_kind']:
             check['source_quote'] = record['source_quote']
+    return extracted
+
+
+def bind_acceptance_proposal(objective, acceptance, *, verified_state=None, requirement_sources=None):
+    """Attach server authority to a NEW, unfrozen model proposal.
+
+    Source context and quotes are derived from saved inputs, not provider output.
+    Property, comparison, units, scope and coverage still undergo independent
+    validation. Never call this on a persisted acceptance contract or evidence.
+    Old provider receipts may contain source_context; it has no authority here.
+    """
+    extracted = bind_source_quotes(objective, acceptance, verified_state=verified_state,
+                                   requirement_sources=requirement_sources)
+    if extracted.get('source_context'):
+        acceptance['source_context'] = extracted['source_context']
+    else:
+        acceptance.pop('source_context', None)
+    from app.validation.verification_intent import bind_verification_intent
+    bind_verification_intent(acceptance, requirement_sources if requirement_sources is not None else [
+        {'source_input_id':'objective','source_kind':'user','text':objective}])
 
 
 def require_bound_sources(objective, *, verified_state=None, requirement_sources=None):
@@ -494,8 +733,16 @@ def require_bound_sources(objective, *, verified_state=None, requirement_sources
             before = max(text.rfind(c, 0, start) for c in ',，;；。\n') + 1
             after = min([pos for c in ',，;；。\n' if (pos := text.find(c, end)) >= 0] or [len(text)])
             diagnostics.append({**item, 'source_quote': text[start:end], 'source_clause': text[before:after]})
-        raise SourceRequirementUnavailable('engineering_verification_unavailable',
-            '当前无法可靠核验以下需求，尚未执行建模：' + str(diagnostics))
+        clauses = list(dict.fromkeys(d['source_clause'] for d in diagnostics))
+        reasons = list(dict.fromkeys(d['reason'] for d in diagnostics))
+        message = '当前无法完整核验这些条件，尚未执行建模：' + '；'.join(c[:120] for c in clauses[:5])
+        message += '。原因：' + '、'.join(reasons[:8])
+        if len(clauses) > 5:
+            message += f'；另有 {len(clauses)-5} 处条件，完整诊断已保存。'
+        # Model jobs persist ApplicationError.details separately from their
+        # 4,000-character public message, including after worker recovery.
+        raise SourceRequirementUnavailable('engineering_verification_unavailable', message,
+            details={'schema_version':'source-diagnostics.v1', 'diagnostics':diagnostics})
     return extracted
 
 
@@ -509,6 +756,8 @@ def validate_requirement_bindings(objective, contract, verified_state=None, *, c
     expected_context = extracted.get('source_context')
     if contract.source_context != (SourceContextV1.model_validate(expected_context) if expected_context else None):
         raise RequirementBindingError('requirement_binding_mismatch', 'source context differs from saved user input')
+    if [n.model_dump(mode='json') for n in contract.verification_notices] != extracted.get('verification_notices', []):
+        raise RequirementBindingError('requirement_binding_mismatch', 'verification notices differ from saved user input')
     records = {r['requirement_id']: r for r in extracted['requirements']}
     for source in confirmed_sources:
         if source['source_kind'] != 'confirmed':
@@ -550,7 +799,7 @@ def validate_requirement_bindings(objective, contract, verified_state=None, *, c
             raise RequirementBindingError('requirement_binding_mismatch', f'{check.check_id}: measurement scope differs from its verified property')
         if (check.hole_group.model_dump(mode='json') if check.hole_group else None) != record.get('hole_group'):
             raise RequirementBindingError('requirement_binding_mismatch', f'{check.check_id}: hole group differs from its counted source phrase')
-        if check.kind == 'wall_thickness' and check.scope.wall_mode != 'continuous_normal':
+        if check.kind == 'wall_thickness' and check.scope.wall_mode not in {'continuous_normal', 'side_walls', 'cavity_floor'}:
             raise RequirementBindingError('requirement_binding_mismatch', 'whole wall requirement cannot be replaced by local coverage')
         covered.add(record['requirement_id'])
         bindings.append({**record, 'check_ids': [check.check_id], 'status': 'bound'})

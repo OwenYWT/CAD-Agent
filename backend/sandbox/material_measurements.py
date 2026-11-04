@@ -1,0 +1,166 @@
+"""Measure complete material primitives and cavity walls from the final BRep.
+
+Selection and construction never use requested dimensions. Every boundary of a
+primitive is accounted for; a matching circular edge alone is not a cylinder.
+"""
+import math
+
+
+def _geometry():
+    try:
+        import feature_verification as geometry
+    except ModuleNotFoundError:
+        from sandbox import feature_verification as geometry
+    return geometry
+
+
+def primitive_dimensions(shape, primitive, tolerance):
+    import cadquery as cq
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+
+    g = _geometry()
+    solids = shape.Solids()
+    if len(solids) != 1 or not shape.isValid() or not solids[0].isValid():
+        raise ValueError('material primitive requires exactly one valid whole solid')
+    faces = solids[0].Faces()
+    types = [f.geomType() for f in faces]
+    if primitive == 'cylinder':
+        if 'CYLINDER' not in types or any(t not in {'CYLINDER', 'PLANE'} for t in types):
+            raise ValueError('complete cylindrical boundary is not certified')
+        lateral = [f for f in faces if f.geomType() == 'CYLINDER']
+        first = BRepAdaptor_Surface(lateral[0].wrapped, True).Cylinder()
+        axis = g._unit(first.Axis().Direction().Coord())
+        origin = g._axis_point(first.Location().Coord(), axis)
+        radius = first.Radius()
+        for face in lateral:
+            surface = BRepAdaptor_Surface(face.wrapped, True)
+            cylinder = surface.Cylinder()
+            if (abs(cylinder.Radius()-radius) > tolerance
+                    or abs(abs(g._dot(g._unit(cylinder.Axis().Direction().Coord()), axis))-1) > 1e-10
+                    or g._distance(g._axis_point(cylinder.Location().Coord(), axis), origin) > tolerance):
+                raise ValueError('cylindrical boundaries are not one coaxial constant-radius exterior')
+            p = surface.Value((surface.FirstUParameter()+surface.LastUParameter())/2,
+                              (surface.FirstVParameter()+surface.LastVParameter())/2).Coord()
+            radial = g._sub(g._axis_point(p, axis), origin)
+            if g._dot(face.normalAt(cq.Vector(*p)).toTuple(), radial) <= 0:
+                raise ValueError('an internal bore cannot certify a material cylinder')
+        caps = [f for f in faces if f.geomType() == 'PLANE']
+        if len(caps) < 2 or any(abs(abs(g._dot(f.normalAt().toTuple(), axis))-1) > 1e-10 for f in caps):
+            raise ValueError('cylinder caps must be perpendicular to its measured axis')
+        positions = [g._dot(f.Center().toTuple(), axis) for f in caps]
+        lo, hi = min(positions), max(positions)
+        height = hi-lo
+        if height <= tolerance or radius <= tolerance:
+            raise ValueError('degenerate material cylinder')
+        for face, at in zip(caps, positions):
+            side = -1 if abs(at-lo) <= tolerance else 1 if abs(at-hi) <= tolerance else 0
+            if not side or side*g._dot(face.normalAt().toTuple(), axis) <= 0 or face.innerWires():
+                raise ValueError('caps have interior boundaries or are not the two exterior ends')
+        expected_areas = [2*math.pi*radius*height, math.pi*radius**2, math.pi*radius**2]
+        actual_areas = [sum(f.Area() for f in lateral),
+            sum(f.Area() for f, at in zip(caps, positions) if abs(at-lo) <= tolerance),
+            sum(f.Area() for f, at in zip(caps, positions) if abs(at-hi) <= tolerance)]
+        if any(abs(a-b) > tolerance*(4*math.pi*radius+2*height) for a,b in zip(actual_areas, expected_areas)):
+            raise ValueError('the whole closed cylinder boundary is incomplete')
+        dimensions = {'diameter':2*radius, 'radius':radius, 'height':height}
+        geometry = {'axis':list(axis), 'origin_mm':list(origin), 'axial_interval_mm':[lo,hi]}
+    elif primitive == 'sphere':
+        if not faces or any(t != 'SPHERE' for t in types):
+            raise ValueError('complete spherical boundary is not certified')
+        first = BRepAdaptor_Surface(faces[0].wrapped, True).Sphere()
+        radius, center = first.Radius(), first.Location().Coord()
+        for face in faces:
+            surface = BRepAdaptor_Surface(face.wrapped, True)
+            sphere = surface.Sphere()
+            p = surface.Value((surface.FirstUParameter()+surface.LastUParameter())/2,
+                              (surface.FirstVParameter()+surface.LastVParameter())/2).Coord()
+            if (abs(sphere.Radius()-radius) > tolerance or g._distance(sphere.Location().Coord(), center) > tolerance
+                    or g._dot(face.normalAt(cq.Vector(*p)).toTuple(), g._sub(p, center)) <= 0):
+                raise ValueError('sphere boundaries do not describe one material exterior')
+        if abs(sum(f.Area() for f in faces)-4*math.pi*radius**2) > 8*math.pi*radius*tolerance:
+            raise ValueError('the whole closed sphere boundary is incomplete')
+        dimensions, geometry = {'diameter':2*radius,'radius':radius}, {'center_mm':list(center)}
+    else:
+        raise ValueError('unsupported material primitive')
+    return dimensions, {'schema_version':'material-primitive.v1', 'primitive':primitive,
+        'dimensions_mm':dimensions, 'geometry':geometry, 'solid_count':1,
+        'face_count':len(faces), 'face_types':types, 'covered_face_indices':list(range(len(faces))),
+        'complete':True, 'selection_uses_nominal':False}
+
+
+def cavity_wall_thickness(shape, mode, tolerance):
+    """Find a unique open rectangular cavity by concave floor/wall adjacency.
+
+    The cavity's actual floor identifies all four side walls, including rotated
+    boxes. A complete opposing boundary and solid material layer certify each
+    thickness. Extra holes cannot be hidden by a volume-error allowance.
+    """
+    import cadquery as cq
+
+    g = _geometry()
+    if len(shape.Solids()) != 1 or not shape.isValid():
+        raise ValueError('cavity wall selection requires one valid whole solid')
+    faces = shape.Faces()
+    candidates = []
+    for floor_index, floor in enumerate(faces):
+        if floor.geomType() != 'PLANE':
+            continue
+        edges = floor.outerWire().Edges()
+        if len(edges) != 4 or any(e.geomType() != 'LINE' for e in edges):
+            continue
+        normal = floor.normalAt()
+        sides = []
+        for edge in edges:
+            adjacent = [(i,f) for i,f in enumerate(faces) if i != floor_index
+                        and any(e.wrapped.IsSame(edge.wrapped) for e in f.Edges())]
+            if len(adjacent) != 1:
+                break
+            i, wall = adjacent[0]
+            if (wall.geomType() != 'PLANE' or abs(wall.normalAt().dot(normal)) > 1e-10
+                    or (wall.Center()-floor.Center()).dot(normal) <= tolerance
+                    or (floor.Center()-wall.Center()).dot(wall.normalAt()) <= tolerance):
+                break
+            sides.append((i,wall,edge))
+        if len(sides) != 4 or len({i for i,_,_ in sides}) != 4:
+            continue
+        if any(abs(sides[i][1].normalAt().dot(sides[(i+1)%4][1].normalAt())) > 1e-10 for i in range(4)):
+            continue
+        height = max((v.Center()-floor.Center()).dot(normal) for v in shape.Vertices())
+        void = cq.Solid.extrudeLinear(floor.outerWire(), [], normal*(height + 10*tolerance))
+        intrusion = g._measurement_common(void, shape, 'cavity_opening')
+        if intrusion is not None and any(s.Volume() > 0 for s in intrusion.Solids()):
+            continue
+        candidates.append((floor_index, floor, sides, height))
+    if len(candidates) != 1:
+        raise ValueError('a unique complete open rectangular cavity could not be identified')
+    floor_index, floor, sides, height = candidates[0]
+    selected = sides if mode == 'side_walls' else [(floor_index,floor,None)]
+    values, certificates = [], []
+    for index, face, edge in selected:
+        if face.innerWires():
+            raise ValueError('cavity wall has an unaccounted inner boundary')
+        if edge is not None:
+            # The floor-adjacent patch alone does not cover a stepped wall or
+            # an open notch. Certify its complete rectangular domain up to the
+            # measured opening, independently of the requested thickness.
+            p, q = edge.startPoint(), edge.endPoint()
+            points = [p,q,q+floor.normalAt()*height,p+floor.normalAt()*height]
+            rectangle = cq.Face.makeFromWires(cq.Wire.makePolygon(points,close=True))
+            for before, after in ((rectangle,face),(face,rectangle)):
+                remainder = g._measurement_boolean(before, after, 'cavity_face_coverage', difference=True)
+                if remainder is not None and any(f.Area() > 0 for f in remainder.Faces()):
+                    raise ValueError('the selected patch does not cover the complete cavity wall')
+        row = {'measured':[], 'details':{}}
+        layer = g._planar_normal_wall(shape, face, face.Center(), tolerance, row)
+        if layer is None:
+            raise ValueError('the entire cavity wall has no complete opposed material layer')
+        missing = g._measurement_boolean(layer, shape, 'cavity_wall_material', difference=True)
+        if missing is not None and any(s.Volume() > 0 for s in missing.Solids()):
+            raise ValueError('the wall contains unaccounted missing material')
+        values.extend(row['measured'])
+        certificates.append({'face_index':index, 'thickness_mm':row['measured'][0],
+            'certified_area_mm2':face.Area(), 'material_complete':True,
+            'inner_boundary_count':0, 'complete_face':True})
+    return values, {'schema_version':'cavity-walls.v1', 'mode':mode, 'floor_face_index':floor_index,
+        'side_face_indices':[i for i,_,_ in sides], 'layers':certificates, 'cavity_height_mm':height,
+        'complete':True, 'selection_uses_nominal':False}

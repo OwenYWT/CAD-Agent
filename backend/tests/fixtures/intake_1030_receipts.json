@@ -1,0 +1,761 @@
+{
+  "source": "Read-only production workflow inputs and stored provider responses, retrieved 2026-10-30. These are historical planning replies, not live-model test results.",
+  "tasks": [
+    {
+      "task_id": "030b374c-e664-4908-b8a6-49ea781c58b7",
+      "objective": "生成适合FDM PLA打印的矩形传感器防护外壳概念模型。",
+      "requirement_basis": {
+        "target": "生成适合FDM PLA打印的矩形传感器防护外壳概念模型。",
+        "purpose": "",
+        "fit_notes": "",
+        "dimensions": "模型总体长度：90 mm\n模型总体宽度：60 mm\n模型总体高度：35 mm",
+        "source_kind": "user_specification",
+        "design_scope": "geometry",
+        "schema_version": "requirement-basis.v1",
+        "source_reference": "用户指定的设计尺寸",
+        "concept_acknowledged": false
+      },
+      "output_formats": [
+        "step",
+        "stl"
+      ],
+      "calls": [
+        {
+          "logical_call_id": "completion-1",
+          "provider": "moonshot",
+          "model": "kimi-k2.7-code",
+          "acceptance": {
+            "schema_version": "engineering-acceptance.v2",
+            "objective": "验证矩形传感器防护外壳概念模型的总体尺寸符合用户指定要求",
+            "comparison_policy_id": "occt-confusion-v1",
+            "verification_scope": "cad_geometry",
+            "checks": [
+              {
+                "check_id": "overall-length-90",
+                "kind": "overall_dimension",
+                "description": "外壳总体长度为 90 mm",
+                "source_quote": "长度：90 mm\n",
+                "binding_ref": "r-basis-dimensions-4-13-length",
+                "source_kind": "confirmed",
+                "comparison": {
+                  "op": "eq",
+                  "value": 90,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    1,
+                    0,
+                    0
+                  ],
+                  "frame": "world"
+                }
+              },
+              {
+                "check_id": "overall-width-60",
+                "kind": "overall_dimension",
+                "description": "外壳总体宽度为 60 mm",
+                "source_quote": "宽度：60 mm\n",
+                "binding_ref": "r-basis-dimensions-17-26-width",
+                "source_kind": "confirmed",
+                "comparison": {
+                  "op": "eq",
+                  "value": 60,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    0,
+                    1,
+                    0
+                  ],
+                  "frame": "world"
+                }
+              },
+              {
+                "check_id": "overall-height-35",
+                "kind": "overall_dimension",
+                "description": "外壳总体高度为 35 mm",
+                "source_quote": "高度：35 mm",
+                "binding_ref": "r-basis-dimensions-30-38-height",
+                "source_kind": "confirmed",
+                "comparison": {
+                  "op": "eq",
+                  "value": 35,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    0,
+                    0,
+                    1
+                  ],
+                  "frame": "world"
+                }
+              }
+            ],
+            "source_context": {
+              "schema_version": "source-context.v1",
+              "execution_scope": "concept_geometry",
+              "design_requests": [
+                {
+                  "reference_id": "req-sensor-enclosure-concept",
+                  "source_input_id": "basis-dimensions",
+                  "source_kind": "user",
+                  "source_span": [
+                    0,
+                    38
+                  ],
+                  "source_quote": "生成适合FDM PLA打印的矩形传感器防护外壳概念模型。",
+                  "count": 1,
+                  "delivery_unit": "cad_document"
+                }
+              ],
+              "external_references": [],
+              "unverified_aspects": [
+                "physical_fit"
+              ]
+            },
+            "verification_limits": [
+              "FDM打印工艺参数（温度、速度、支撑）及成品强度需通过实际打印或切片软件验证",
+              "防水、防尘等功能性防护等级无法仅通过几何尺寸确认"
+            ],
+            "unresolved": []
+          }
+        },
+        {
+          "logical_call_id": "completion-2",
+          "provider": "moonshot",
+          "model": "kimi-k2.7-code",
+          "acceptance": {
+            "schema_version": "engineering-acceptance.v2",
+            "objective": "验证矩形传感器防护外壳概念模型的总体尺寸符合用户指定要求",
+            "comparison_policy_id": "occt-confusion-v1",
+            "verification_scope": "cad_geometry",
+            "checks": [
+              {
+                "check_id": "overall-length-90",
+                "kind": "overall_dimension",
+                "description": "外壳总体长度为 90 mm",
+                "source_quote": "长度：90 mm\n",
+                "binding_ref": "r-basis-dimensions-4-13-length",
+                "source_kind": "confirmed",
+                "comparison": {
+                  "op": "eq",
+                  "value": 90,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    1,
+                    0,
+                    0
+                  ],
+                  "frame": "world"
+                }
+              },
+              {
+                "check_id": "overall-width-60",
+                "kind": "overall_dimension",
+                "description": "外壳总体宽度为 60 mm",
+                "source_quote": "宽度：60 mm\n",
+                "binding_ref": "r-basis-dimensions-17-26-width",
+                "source_kind": "confirmed",
+                "comparison": {
+                  "op": "eq",
+                  "value": 60,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    0,
+                    1,
+                    0
+                  ],
+                  "frame": "world"
+                }
+              },
+              {
+                "check_id": "overall-height-35",
+                "kind": "overall_dimension",
+                "description": "外壳总体高度为 35 mm",
+                "source_quote": "高度：35 mm",
+                "binding_ref": "r-basis-dimensions-30-38-height",
+                "source_kind": "confirmed",
+                "comparison": {
+                  "op": "eq",
+                  "value": 35,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    0,
+                    0,
+                    1
+                  ],
+                  "frame": "world"
+                }
+              }
+            ],
+            "source_context": null,
+            "verification_limits": [
+              "FDM打印工艺参数（温度、速度、支撑）及成品强度需通过实际打印或切片软件验证",
+              "防水、防尘等功能性防护等级无法仅通过几何尺寸确认"
+            ],
+            "unresolved": []
+          }
+        }
+      ]
+    },
+    {
+      "task_id": "f217e001-6153-451e-bade-b786c7786272",
+      "objective": "生成矩形盒状几何概念模型。",
+      "requirement_basis": {
+        "target": "生成矩形盒状几何概念模型。",
+        "purpose": "",
+        "fit_notes": "",
+        "dimensions": "模型总体长度：90 mm\n模型总体宽度：60 mm\n模型总体高度：35 mm",
+        "source_kind": "user_specification",
+        "design_scope": "geometry",
+        "schema_version": "requirement-basis.v1",
+        "source_reference": "用户指定的设计尺寸",
+        "concept_acknowledged": false
+      },
+      "output_formats": [
+        "step",
+        "stl"
+      ],
+      "calls": [
+        {
+          "logical_call_id": "completion-1",
+          "provider": "moonshot",
+          "model": "kimi-k2.7-code",
+          "acceptance": {
+            "schema_version": "engineering-acceptance.v2",
+            "objective": "生成矩形盒状几何概念模型",
+            "comparison_policy_id": "occt-confusion-v1",
+            "verification_scope": "cad_geometry",
+            "source_context": {
+              "schema_version": "source-context.v1",
+              "execution_scope": "cad_geometry",
+              "design_requests": [
+                {
+                  "reference_id": "dr-box-001",
+                  "source_input_id": "basis-dimensions",
+                  "source_kind": "confirmed",
+                  "source_span": [
+                    4,
+                    38
+                  ],
+                  "source_quote": "长度：90 mm\n宽度：60 mm\n高度：35 mm",
+                  "count": 1,
+                  "delivery_unit": "cad_document"
+                }
+              ],
+              "external_references": [],
+              "unverified_aspects": []
+            },
+            "checks": [
+              {
+                "check_id": "overall-length",
+                "kind": "overall_dimension",
+                "description": "模型总体长度为 90 mm",
+                "source_quote": "长度：90 mm",
+                "source_kind": "confirmed",
+                "binding_ref": "r-basis-dimensions-4-13-length",
+                "comparison": {
+                  "op": "eq",
+                  "value": 90,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    1,
+                    0,
+                    0
+                  ]
+                },
+                "required": true
+              },
+              {
+                "check_id": "overall-width",
+                "kind": "overall_dimension",
+                "description": "模型总体宽度为 60 mm",
+                "source_quote": "宽度：60 mm",
+                "source_kind": "confirmed",
+                "binding_ref": "r-basis-dimensions-17-26-width",
+                "comparison": {
+                  "op": "eq",
+                  "value": 60,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    0,
+                    1,
+                    0
+                  ]
+                },
+                "required": true
+              },
+              {
+                "check_id": "overall-height",
+                "kind": "overall_dimension",
+                "description": "模型总体高度为 35 mm",
+                "source_quote": "高度：35 mm",
+                "source_kind": "confirmed",
+                "binding_ref": "r-basis-dimensions-30-38-height",
+                "comparison": {
+                  "op": "eq",
+                  "value": 35,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    0,
+                    0,
+                    1
+                  ]
+                },
+                "required": true
+              }
+            ],
+            "unresolved": [],
+            "verification_limits": []
+          }
+        },
+        {
+          "logical_call_id": "completion-2",
+          "provider": "moonshot",
+          "model": "kimi-k2.7-code",
+          "acceptance": {
+            "schema_version": "engineering-acceptance.v2",
+            "objective": "生成矩形盒状几何概念模型，长度：90 mm，宽度：60 mm，高度：35 mm。",
+            "comparison_policy_id": "occt-confusion-v1",
+            "verification_scope": "cad_geometry",
+            "source_context": {
+              "schema_version": "source-context.v1",
+              "execution_scope": "cad_geometry",
+              "design_requests": [
+                {
+                  "reference_id": "dr-box-001",
+                  "source_input_id": "basis-dimensions",
+                  "source_kind": "confirmed",
+                  "source_span": [
+                    0,
+                    13
+                  ],
+                  "source_quote": "生成矩形盒状几何概念模型",
+                  "count": 1,
+                  "delivery_unit": "cad_document"
+                }
+              ],
+              "external_references": [],
+              "unverified_aspects": []
+            },
+            "checks": [
+              {
+                "check_id": "overall-length",
+                "kind": "overall_dimension",
+                "description": "模型总体长度为 90 mm",
+                "source_quote": "长度：90 mm",
+                "source_kind": "confirmed",
+                "binding_ref": "r-basis-dimensions-4-13-length",
+                "comparison": {
+                  "op": "eq",
+                  "value": 90,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    1,
+                    0,
+                    0
+                  ]
+                },
+                "required": true
+              },
+              {
+                "check_id": "overall-width",
+                "kind": "overall_dimension",
+                "description": "模型总体宽度为 60 mm",
+                "source_quote": "宽度：60 mm",
+                "source_kind": "confirmed",
+                "binding_ref": "r-basis-dimensions-17-26-width",
+                "comparison": {
+                  "op": "eq",
+                  "value": 60,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    0,
+                    1,
+                    0
+                  ]
+                },
+                "required": true
+              },
+              {
+                "check_id": "overall-height",
+                "kind": "overall_dimension",
+                "description": "模型总体高度为 35 mm",
+                "source_quote": "高度：35 mm",
+                "source_kind": "confirmed",
+                "binding_ref": "r-basis-dimensions-30-38-height",
+                "comparison": {
+                  "op": "eq",
+                  "value": 35,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    0,
+                    0,
+                    1
+                  ]
+                },
+                "required": true
+              }
+            ],
+            "unresolved": [],
+            "verification_limits": []
+          }
+        }
+      ]
+    },
+    {
+      "task_id": "ecc64165-2c98-46bc-b656-39a019cdb652",
+      "objective": "生成矩形盒状几何概念模型。模型总体长度为90 mm，模型总体宽度为60 mm，模型总体高度为35 mm。",
+      "requirement_basis": {
+        "target": "生成矩形盒状几何概念模型。模型总体长度为90 mm，模型总体宽度为60 mm，模型总体高度为35 mm。",
+        "purpose": "",
+        "fit_notes": "",
+        "dimensions": "模型总体长度：90 mm\n模型总体宽度：60 mm\n模型总体高度：35 mm",
+        "source_kind": "user_specification",
+        "design_scope": "geometry",
+        "schema_version": "requirement-basis.v1",
+        "source_reference": "用户指定的设计尺寸",
+        "concept_acknowledged": false
+      },
+      "output_formats": [
+        "step",
+        "stl"
+      ],
+      "calls": [
+        {
+          "logical_call_id": "completion-1",
+          "provider": "moonshot",
+          "model": "kimi-k2.7-code",
+          "acceptance": {
+            "schema_version": "engineering-acceptance.v2",
+            "objective": "生成矩形盒状几何概念模型，总体长度为90 mm，总体宽度为60 mm，总体高度为35 mm。",
+            "comparison_policy_id": "occt-confusion-v1",
+            "verification_scope": "cad_geometry",
+            "checks": [
+              {
+                "check_id": "length-objective",
+                "kind": "overall_dimension",
+                "description": "总体长度 90 mm",
+                "source_quote": "长度为90 mm",
+                "binding_ref": "r-objective-17-25-length",
+                "comparison": {
+                  "op": "eq",
+                  "value": 90,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    1,
+                    0,
+                    0
+                  ]
+                },
+                "source_kind": "user"
+              },
+              {
+                "check_id": "width-objective",
+                "kind": "overall_dimension",
+                "description": "总体宽度 60 mm",
+                "source_quote": "宽度为60 mm",
+                "binding_ref": "r-objective-30-38-width",
+                "comparison": {
+                  "op": "eq",
+                  "value": 60,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    0,
+                    1,
+                    0
+                  ]
+                },
+                "source_kind": "user"
+              },
+              {
+                "check_id": "height-objective",
+                "kind": "overall_dimension",
+                "description": "总体高度 35 mm",
+                "source_quote": "高度为35 mm",
+                "binding_ref": "r-objective-43-51-height",
+                "comparison": {
+                  "op": "eq",
+                  "value": 35,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    0,
+                    0,
+                    1
+                  ]
+                },
+                "source_kind": "user"
+              },
+              {
+                "check_id": "length-basis",
+                "kind": "overall_dimension",
+                "description": "总体长度 90 mm（确认依据）",
+                "source_quote": "长度：90 mm",
+                "binding_ref": "r-basis-dimensions-4-13-length",
+                "comparison": {
+                  "op": "eq",
+                  "value": 90,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    1,
+                    0,
+                    0
+                  ]
+                },
+                "source_kind": "confirmed"
+              },
+              {
+                "check_id": "width-basis",
+                "kind": "overall_dimension",
+                "description": "总体宽度 60 mm（确认依据）",
+                "source_quote": "宽度：60 mm",
+                "binding_ref": "r-basis-dimensions-17-26-width",
+                "comparison": {
+                  "op": "eq",
+                  "value": 60,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    0,
+                    1,
+                    0
+                  ]
+                },
+                "source_kind": "confirmed"
+              },
+              {
+                "check_id": "height-basis",
+                "kind": "overall_dimension",
+                "description": "总体高度 35 mm（确认依据）",
+                "source_quote": "高度：35 mm",
+                "binding_ref": "r-basis-dimensions-30-38-height",
+                "comparison": {
+                  "op": "eq",
+                  "value": 35,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    0,
+                    0,
+                    1
+                  ]
+                },
+                "source_kind": "confirmed"
+              }
+            ],
+            "source_context": {
+              "schema_version": "source-context.v1",
+              "execution_scope": "concept_geometry",
+              "design_requests": [
+                {
+                  "reference_id": "req-box-concept",
+                  "source_input_id": "objective",
+                  "source_kind": "user",
+                  "source_span": [
+                    0,
+                    52
+                  ],
+                  "source_quote": "生成矩形盒状几何概念模型。模型总体长度为90 mm，模型总体宽度为60 mm，模型总体高度为35 mm。",
+                  "count": 1
+                }
+              ],
+              "external_references": [],
+              "unverified_aspects": [
+                "physical_fit"
+              ]
+            },
+            "unresolved": [],
+            "verification_limits": []
+          }
+        },
+        {
+          "logical_call_id": "completion-2",
+          "provider": "moonshot",
+          "model": "kimi-k2.7-code",
+          "acceptance": {
+            "schema_version": "engineering-acceptance.v2",
+            "objective": "生成矩形盒状几何概念模型，总体长度为90 mm，总体宽度为60 mm，总体高度为35 mm。",
+            "comparison_policy_id": "occt-confusion-v1",
+            "verification_scope": "cad_geometry",
+            "checks": [
+              {
+                "check_id": "length-objective",
+                "kind": "overall_dimension",
+                "description": "总体长度 90 mm",
+                "source_quote": "长度为90 mm",
+                "binding_ref": "r-objective-17-25-length",
+                "comparison": {
+                  "op": "eq",
+                  "value": 90,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    1,
+                    0,
+                    0
+                  ]
+                },
+                "source_kind": "user"
+              },
+              {
+                "check_id": "width-objective",
+                "kind": "overall_dimension",
+                "description": "总体宽度 60 mm",
+                "source_quote": "宽度为60 mm",
+                "binding_ref": "r-objective-30-38-width",
+                "comparison": {
+                  "op": "eq",
+                  "value": 60,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    0,
+                    1,
+                    0
+                  ]
+                },
+                "source_kind": "user"
+              },
+              {
+                "check_id": "height-objective",
+                "kind": "overall_dimension",
+                "description": "总体高度 35 mm",
+                "source_quote": "高度为35 mm",
+                "binding_ref": "r-objective-43-51-height",
+                "comparison": {
+                  "op": "eq",
+                  "value": 35,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    0,
+                    0,
+                    1
+                  ]
+                },
+                "source_kind": "user"
+              },
+              {
+                "check_id": "length-basis",
+                "kind": "overall_dimension",
+                "description": "总体长度 90 mm（确认依据）",
+                "source_quote": "长度：90 mm",
+                "binding_ref": "r-basis-dimensions-4-13-length",
+                "comparison": {
+                  "op": "eq",
+                  "value": 90,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    1,
+                    0,
+                    0
+                  ]
+                },
+                "source_kind": "confirmed"
+              },
+              {
+                "check_id": "width-basis",
+                "kind": "overall_dimension",
+                "description": "总体宽度 60 mm（确认依据）",
+                "source_quote": "宽度：60 mm",
+                "binding_ref": "r-basis-dimensions-17-26-width",
+                "comparison": {
+                  "op": "eq",
+                  "value": 60,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    0,
+                    1,
+                    0
+                  ]
+                },
+                "source_kind": "confirmed"
+              },
+              {
+                "check_id": "height-basis",
+                "kind": "overall_dimension",
+                "description": "总体高度 35 mm（确认依据）",
+                "source_quote": "高度：35 mm",
+                "binding_ref": "r-basis-dimensions-30-38-height",
+                "comparison": {
+                  "op": "eq",
+                  "value": 35,
+                  "unit": "mm"
+                },
+                "scope": {
+                  "axis": [
+                    0,
+                    0,
+                    1
+                  ]
+                },
+                "source_kind": "confirmed"
+              }
+            ],
+            "source_context": {
+              "schema_version": "source-context.v1",
+              "execution_scope": "concept_geometry",
+              "design_requests": [
+                {
+                  "reference_id": "req-box-concept",
+                  "source_input_id": "objective",
+                  "source_kind": "user",
+                  "source_span": [
+                    0,
+                    51
+                  ],
+                  "source_quote": "生成矩形盒状几何概念模型。模型总体长度为90 mm，模型总体宽度为60 mm，模型总体高度为35 mm。",
+                  "count": 1
+                }
+              ],
+              "external_references": [],
+              "unverified_aspects": [
+                "physical_fit"
+              ]
+            },
+            "unresolved": [],
+            "verification_limits": []
+          }
+        }
+      ]
+    }
+  ]
+}

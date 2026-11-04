@@ -92,7 +92,8 @@
         "backend/tests/test_design_brief.py",
         "backend/tests/test_design_confirmation_gate.py",
         "backend/tests/test_contract_and_brief.py",
-        "frontend/tests/manufacturingProfiles.test.ts"
+        "frontend/tests/manufacturingProfiles.test.ts",
+        "backend/tests/test_requirement_coordinate_coverage.py"
       ]
     },
     {
@@ -385,6 +386,7 @@
       ],
       "tests": [
         "backend/tests/test_dfm_rules.py",
+        "backend/tests/test_design_geometry_meshes.py",
         "backend/tests/test_manufacturing_profile.py",
         "backend/tests/test_printability.py",
         "backend/tests/test_deploy_dfm_knowledge.py",

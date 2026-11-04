@@ -4,7 +4,7 @@ from pathlib import Path
 import trimesh
 
 from app.config import settings
-from app.validation.design_analyzer import DesignGeometryAnalyzer
+from app.validation.design_analyzer import DesignGeometryAnalyzer, load_triangle_mesh
 
 
 @dataclass
@@ -52,7 +52,7 @@ class GeometryValidator:
     async def validate(
         self, stl_path: Path, expected_dimensions: dict | None = None
     ) -> GeometryValidation:
-        mesh = trimesh.load(stl_path)
+        mesh = load_triangle_mesh(stl_path)
         extents = mesh.bounding_box.extents
 
         build_volume = settings.build_volume_mm

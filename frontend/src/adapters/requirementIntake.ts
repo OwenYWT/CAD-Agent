@@ -23,6 +23,9 @@ export function initialRequirementBasis(objective: string): RequirementBasis {
 }
 
 export function requirementNotice(basis?: RequirementBasis | null): string {
+  if (basis?.concept_acknowledged) return basis.source_kind === 'none'
+    ? '概念几何；未提供的尺寸、实物适配及性能均未验证。'
+    : '按指定尺寸生成概念几何；实物适配及性能未验证。';
   if (basis?.design_scope === 'geometry') return basis.source_kind === 'none'
     ? '尺寸尚未明确；概念模型中的默认尺寸需要后续确认。' : '按用户指定尺寸建模；几何与制造检查分别记录。';
   return !basis || basis.source_kind === 'none' ? '概念外形，适配未验证。' : '依据已记录，适配未验证。';

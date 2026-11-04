@@ -174,7 +174,9 @@ class DurableAgentPlanner:
                 object_type=(
                     "profile" if plan.part_type == "profile_2d" else "part"
                 ),
-                label=brief.intent_summary or plan.description,
+                # The display label has a shorter wire limit than the source
+                # brief. Keep the complete objective/brief/criteria below.
+                label=(brief.intent_summary or plan.description)[:240],
                 change="create",
             ),
         )
@@ -271,7 +273,7 @@ class DurableAgentPlanner:
                 AffectedObject(
                     object_id="part-main",
                     object_type="part",
-                    label=brief.intent_summary or plan.description,
+                    label=(brief.intent_summary or plan.description)[:240],
                     change="create",
                 ),
             ),
@@ -308,7 +310,7 @@ class DurableAgentPlanner:
                 AffectedObject(
                     object_id=key,
                     object_type="part",
-                    label=part.name,
+                    label=part.name[:240],
                     change="create",
                 )
             )

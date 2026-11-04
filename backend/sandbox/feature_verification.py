@@ -720,6 +720,7 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
     coverage_cache = {}
     exterior_cache = {}
     population_cache = {}
+    assembly_cache = {}
     grouped_checks = [c for c in checks if c.get('hole_group')]
     if grouped_checks:
         try:
@@ -784,7 +785,23 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                     if scope.get(field) is not None:scope[field]=[v+o for v,o in zip(scope[field],origin)]
                 scope['centers_mm']=[[v+o for v,o in zip(point,origin)] for point in scope.get('centers_mm',[])]
                 row['details']['resolved_frame_origin_mm']=origin
-            if kind == 'bounding_box':
+            if kind.startswith('assembly_'):
+                if shape_id not in assembly_cache:
+                    try:
+                        try:
+                            from rectangular_assembly import measure_rectangular_assembly
+                        except ImportError:
+                            from sandbox.rectangular_assembly import measure_rectangular_assembly
+                        assembly_cache[shape_id] = measure_rectangular_assembly(shape, tolerance)
+                    except Exception as exc:
+                        assembly_cache[shape_id] = exc
+                certificate = assembly_cache[shape_id]
+                if isinstance(certificate, Exception):
+                    raise certificate
+                row['method'] = 'complete_rectangular_assembly_material_and_void_inventory'
+                row['measured'] = certificate['values'][scope['assembly_measurement']]
+                row['details']['rectangular_assembly'] = certificate
+            elif kind == 'bounding_box':
                 if not component_region:
                     raise MeasurementSelectionError('bounding box requires source-authorized component region')
                 bounds = _geometric_bounds(shape)
@@ -849,6 +866,19 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                 row['details']['numerical_tolerance_mm'] = 2*tolerance + sum(
                     math.ulp(v) for v in (bounds[2],bounds[5],bounds[5]-bounds[2]))
                 row['details']['bounds_method'] = 'occt_add_optimal_without_triangulation_or_shape_tolerance_padding'
+            elif kind.startswith(('cylinder_', 'sphere_')):
+                try:
+                    from material_measurements import primitive_dimensions
+                except ModuleNotFoundError:
+                    from sandbox.material_measurements import primitive_dimensions
+                primitive, quantity = kind.split('_', 1)
+                dimensions, certificate = primitive_dimensions(shape, primitive, tolerance)
+                if scope.get('axis') is not None and primitive == 'cylinder' and abs(abs(
+                        _dot(_unit(scope['axis']), certificate['geometry']['axis']))-1) > 1e-10:
+                    raise MeasurementSelectionError('requested axis does not match the complete material cylinder')
+                row['measured'] = [dimensions[quantity]]
+                row['method'] = 'complete_material_primitive_boundary'
+                row['details']['material_primitive'] = certificate
             elif kind.startswith('hole_'):
                 if passages is None:
                     boundary_face_cache[shape_id] = []
@@ -948,7 +978,15 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                         row['measured']=distances
             elif kind == 'wall_thickness':
                 mode = scope.get('wall_mode','continuous_normal')
-                if mode == 'surface_normal' and scope.get('point_mm') is not None:
+                if mode in {'side_walls', 'cavity_floor'}:
+                    try:
+                        from material_measurements import cavity_wall_thickness
+                    except ModuleNotFoundError:
+                        from sandbox.material_measurements import cavity_wall_thickness
+                    row['measured'], certificate = cavity_wall_thickness(shape, mode, tolerance)
+                    row['method'] = 'complete_cavity_boundary_and_opposed_material_layers'
+                    row['details']['cavity_walls'] = certificate
+                elif mode == 'surface_normal' and scope.get('point_mm') is not None:
                     point=cq.Vector(*scope['point_mm']);vertex=cq.Vertex.makeVertex(*scope['point_mm'])
                     faces=[f for f in shape.Faces() if f.distance(vertex)<=tolerance]
                     if len(faces) == 1 and faces[0].geomType() != 'PLANE':

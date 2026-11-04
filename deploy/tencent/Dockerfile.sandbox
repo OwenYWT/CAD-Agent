@@ -29,3 +29,21 @@ COPY backend/app/contracts/hole_populations.py /opt/cad-agent/hole_populations.p
 COPY backend/app/contracts/measurement_binding.py /opt/cad-agent/measurement_binding.py
 COPY backend/sandbox/dfm_validation.py /opt/cad-agent/dfm_validation.py
 COPY backend/sandbox/mesh_normalization.py /opt/cad-agent/mesh_normalization.py
+
+# Keep the complete source inventory aligned with the standard runtime image.
+COPY backend/sandbox/runtime-requirements.txt /opt/cad-agent/runtime-requirements.txt
+COPY backend/sandbox/runtime-lock.json /opt/cad-agent/runtime-lock.json
+COPY backend/sandbox/patch_build123d.py /opt/cad-agent/patch_build123d.py
+COPY backend/sandbox/freecad_cut_diagnostics.py /opt/cad-agent/freecad_cut_diagnostics.py
+COPY backend/sandbox/freecad_api.py /opt/cad-agent/freecad_api.py
+COPY backend/sandbox/freecad_catalog.py /opt/cad-agent/freecad_catalog.py
+COPY backend/sandbox/freecad_bom.py /opt/cad-agent/freecad_bom.py
+COPY backend/sandbox/freecad_cam.py /opt/cad-agent/freecad_cam.py
+COPY backend/app/freecad/topology.py /opt/cad-agent/freecad_topology.py
+COPY backend/sandbox/material_measurements.py /opt/cad-agent/material_measurements.py
+COPY backend/sandbox/rectangular_assembly.py /opt/cad-agent/rectangular_assembly.py
+COPY backend/app/contracts/assembly_measurements.py /opt/cad-agent/assembly_measurements.py
+COPY backend/sandbox/visual_render.py /opt/cad-agent/visual_render.py
+COPY backend/sandbox/dfm_brep.py /opt/cad-agent/dfm_brep.py
+COPY backend/sandbox/runtime_probe.py /opt/cad-agent/runtime_probe.py
+COPY backend/sandbox/freecad_runtime_probe.py /opt/cad-agent/freecad_runtime_probe.py

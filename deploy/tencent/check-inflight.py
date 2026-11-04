@@ -49,7 +49,7 @@ def missing_fields(original, parsed, prefix=''):
 
 
 def inspect_requests(requests, *, require_histories=False, receipt_recovery_contract=None,
-                     customer_billing_contract=None, source_context_contracts=()):
+                     customer_billing_contract=None, source_context_contracts=(), acceptance_contracts=()):
     from app.models.workflow_requests import McadAgentWorkflowV2Request, McadCheckRequest, McadWorkflowRequest
     blockers = []
     for item in requests:
@@ -113,6 +113,18 @@ def inspect_requests(requests, *, require_histories=False, receipt_recovery_cont
             SourceContextV1.model_validate({'schema_version': contract})
         except (ImportError, ValueError):
             blockers.append({'reason': 'source_context_contract_unsupported', 'contract': contract})
+    # Measurement kinds, scope policies and sourced notices can outlive the
+    # workflow. Check the actual target decoder, including exact frozen hashes,
+    # before a rollback makes existing candidates/evidence unreadable.
+    for index, contract in enumerate(acceptance_contracts):
+        try:
+            from app.contracts.acceptance_v2 import decode_acceptance
+            from app.execution.canonical import canonical_sha256
+            parsed = decode_acceptance(contract).model_dump(mode='json')
+            if canonical_sha256(parsed) != canonical_sha256(contract):
+                raise ValueError('frozen contract changed')
+        except (ImportError, ValueError, TypeError, AttributeError):
+            blockers.append({'reason': 'acceptance_contract_unsupported', 'contract_index': index})
     result['compatible'] = not blockers
     return result
 
@@ -166,6 +178,10 @@ async def read():
             UNION SELECT evidence#>>'{acceptance_contract,source_context,schema_version}' AS contract
             FROM agent_validation_evidence WHERE evidence#>'{acceptance_contract,source_context}' IS NOT NULL
         ) retained_context"""))).scalars().all()
+        acceptance_contracts=(await c.execute(text("""SELECT DISTINCT contract FROM (
+            SELECT payload#>'{plan,design_brief,acceptance}' AS contract FROM task_events
+            UNION SELECT evidence->'acceptance_contract' AS contract FROM agent_validation_evidence
+        ) retained_acceptance WHERE jsonb_typeof(contract)='object'"""))).scalars().all()
         if await c.scalar(text("SELECT to_regclass('public.tenant_subscriptions') IS NOT NULL")):
             customer_billing=await c.scalar(text("""SELECT
                 EXISTS(SELECT 1 FROM tenant_subscriptions s JOIN billing_plan_versions p ON p.id=s.plan_version_id
@@ -190,7 +206,7 @@ async def read():
             item.update(temporal_id=identity,history=history.to_json())
     print(json.dumps({'requests':requests,'active_model_jobs':jobs,'receipt_recovery_contract':'provider-receipt-recovery.v1' if pending_receipts else None,
         'customer_billing_contract':'customer-billing.v1' if customer_billing else None,
-        'source_context_contracts':source_context_contracts}))
+        'source_context_contracts':source_context_contracts,'acceptance_contracts':acceptance_contracts}))
 asyncio.run(read())
 '''
     source = subprocess.run([runtime, 'exec', '-i', source_container, 'python', '-'], input=reader,
@@ -206,12 +222,13 @@ asyncio.run(read())
         # this read. Drain it instead of treating that brief gap as quiescence.
         return {'compatible': False, 'checked': len(cohort['requests']), 'target_image': identity,
                 'blockers': [{'reason': 'active_workflows_require_drain', 'workflow_ids': executing}]}
-    wrapper = 'import io,json,sys\nv=json.load(sys.stdin);sys.stdin=io.StringIO(json.dumps({"requests":v["requests"],"require_histories":True,"receipt_recovery_contract":v["receipt_recovery_contract"],"customer_billing_contract":v["customer_billing_contract"],"source_context_contracts":v["source_context_contracts"],"framed":True}));exec(compile(v["probe"],"check-inflight.py","exec"))'
+    wrapper = 'import io,json,sys\nv=json.load(sys.stdin);sys.stdin=io.StringIO(json.dumps({"requests":v["requests"],"require_histories":True,"receipt_recovery_contract":v["receipt_recovery_contract"],"customer_billing_contract":v["customer_billing_contract"],"source_context_contracts":v["source_context_contracts"],"acceptance_contracts":v["acceptance_contracts"],"framed":True}));exec(compile(v["probe"],"check-inflight.py","exec"))'
     target = subprocess.run([runtime, 'run', '--rm', '-i', '--network', 'none', '--read-only', '--entrypoint', 'python', identity, '-c', wrapper],
         input=json.dumps({'probe': Path(__file__).read_text(), 'requests': cohort['requests'],
                           'receipt_recovery_contract':cohort.get('receipt_recovery_contract'),
                           'customer_billing_contract':cohort.get('customer_billing_contract'),
-                          'source_context_contracts':cohort.get('source_context_contracts',[])}), capture_output=True, text=True)
+                          'source_context_contracts':cohort.get('source_context_contracts',[]),
+                          'acceptance_contracts':cohort.get('acceptance_contracts',[])}), capture_output=True, text=True)
     if target.returncode not in {0, 2}:
         raise RuntimeError('Target image compatibility probe did not execute')
     result = parse_response(target.stdout)
@@ -228,7 +245,8 @@ if __name__ == '__main__':
         result = (inspect_requests(data['requests'], require_histories=data.get('require_histories', False),
                                    receipt_recovery_contract=data.get('receipt_recovery_contract'),
                                    customer_billing_contract=data.get('customer_billing_contract'),
-                                   source_context_contracts=data.get('source_context_contracts',()))
+                                   source_context_contracts=data.get('source_context_contracts',()),
+                                   acceptance_contracts=data.get('acceptance_contracts',()))
                   if isinstance(data, dict) else inspect_requests(data))
     else:
         import argparse

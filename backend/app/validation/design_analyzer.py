@@ -8,6 +8,17 @@ import numpy as np
 import trimesh
 
 
+def load_triangle_mesh(path: Path) -> trimesh.Trimesh:
+    """Retain every named shell and transformed instance for backend readers."""
+    loaded = trimesh.load(path)
+    # Never weld touching parts or discard a non-mesh scene member.
+    parts = list(loaded.dump()) if isinstance(loaded, trimesh.Scene) else [loaded]
+    if not parts or any(not isinstance(part, trimesh.Trimesh) or len(part.faces) == 0
+                        or not np.isfinite(part.vertices).all() for part in parts):
+        raise ValueError('Geometry analysis requires a non-empty triangle mesh for every scene member')
+    return parts[0] if len(parts) == 1 else trimesh.util.concatenate(parts)
+
+
 @dataclass
 class DFMGeometryResult:
     min_wall_thickness: float = 0.0
@@ -32,7 +43,7 @@ class DesignGeometryAnalyzer:
     OVERHANG_ANGLE_THRESHOLD = -0.5  # face normal z component
 
     def analyze(self, stl_path: Path) -> DFMGeometryResult:
-        mesh = trimesh.load(stl_path)
+        mesh = load_triangle_mesh(stl_path)
         result = DFMGeometryResult()
 
         # Basic metrics

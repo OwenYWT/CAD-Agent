@@ -92,6 +92,18 @@ def _planner(plan):
     ), decomposer, assembly
 
 
+@pytest.mark.parametrize('native', [False, True])
+def test_long_valid_requirement_summary_does_not_overflow_the_display_label(native):
+    summary = '外壳尺寸与制造条件。' * 35
+    plan = _cad_plan(design_brief=DesignBrief(intent_summary=summary,artifact_type='bracket'))
+    service, _, _ = _planner(plan)
+    result = (service.compose_freecad_generation(summary, plan) if native else
+              service.compose_generation(summary, plan, decomposition=None))
+    assert len(result.affected_objects[0].label) <= 240
+    assert result.objective == summary
+    assert result.design_brief.intent_summary == summary
+
+
 @pytest.mark.asyncio
 async def test_simple_known_part_skips_decomposer_and_source_generation():
     service, decomposer, assembly = _planner(_cad_plan())

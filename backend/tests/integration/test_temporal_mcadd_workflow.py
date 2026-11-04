@@ -4163,6 +4163,123 @@ async def test_original_hook_intake_binds_external_input_and_gates_persisted_can
 
 
 @pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('name', ['fdm','context','diameter','radius','wall','floor'])
+@pytest.mark.parametrize('valid', [True,False], ids=['correct','wrong-geometry'])
+async def test_intake_semantics_admission_native_measurement_and_commit(name, valid):
+    from app.models.workflow_requests import OperationContextV1
+    from app.workflows.temporal import start_mcad_agent_v2_workflow
+    from app.workflows.agent_v2 import McadAgentWorkflowV2
+    from app.services.task_evidence import get_validation_evidence
+    from tests.intake_semantics import intake_case, IntakeSemanticsRequirements, IntakeSemanticsOperations
+    from temporalio.worker import Replayer
+    objective, basis = intake_case(name)
+    owner, project_id, initial = await _seed_project('intake-semantics')
+    context = OperationContextV1(rule='explicit_rest_operation', source_channel='rest',
+        requested_operation='generate', resolved_operation='generate', submission_modeling_backend='auto',
+        base_revision_id=initial.revision_id, base_source_kind='none', requirement_basis=basis)
+    planner, operations = IntakeSemanticsRequirements(name), IntakeSemanticsOperations(name, valid)
+    client = await get_temporal_client()
+    async with build_agent_v2_workflow_worker(client, backend=get_execution_backend(),
+            durable_planner=planner, freecad_operations=operations):
+        workflow_id, handle = await start_mcad_agent_v2_workflow(tenant_id=owner.tenant_id,
+            project_id=project_id, principal_id=owner.principal_id, branch_id=initial.branch_id,
+            expected_base_revision_id=initial.revision_id, operation='generate', modeling_backend='auto',
+            objective=objective, kind='mcad.agent.v2.generate', idempotency_key='semantics-'+str(project_id),
+            operation_context=context, require_worker_ready=False)
+        if valid:
+            result = await handle.result()
+        else:
+            with pytest.raises(WorkflowFailureError) as error:
+                await handle.result()
+            assert McadAgentWorkflowV2._root_application_error(error.value).type == 'agent_geometry_validation_failed'
+    assert len(planner.provider.requests) == 1 and operations.calls == 1
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        evidence = (await conn.execute(text("SELECT id,evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"),
+            {'id':workflow_id})).mappings().one()
+        report = evidence['evidence']
+        assert report['outcome'] == ('passed' if valid else 'failed')
+        assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'), {'id':initial.branch_id}) == initial.revision_id
+        assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'), {'id':workflow_id}) == int(valid)
+        assert not report['acceptance_contract']['verification_limits']
+        if name == 'fdm':
+            assert report['acceptance_contract']['verification_notices'][0]['status'] == 'unverified'
+        if name == 'wall':
+            values = report['acceptance']['evidence'][0]['measured']
+            assert values == ([3]*4 if valid else [1]*4)
+    public = await get_validation_evidence(owner, workflow_id, evidence['id'])
+    assert public['report']['acceptance_contract'] == report['acceptance_contract']
+    if valid:
+        change_set = UUID(result['change_set_id'])
+        await accept_change_set(tenant_id=owner.tenant_id, reviewer_principal_id=owner.principal_id,
+            change_set_id=change_set, review_note='核对本次独立几何测量，视觉及实物性能尚未验证。')
+        committed = await commit_change_set(tenant_id=owner.tenant_id, reviewer_principal_id=owner.principal_id, change_set_id=change_set)
+        assert committed.status == 'committed'
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+            assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'), {'id':initial.branch_id}) == UUID(result['candidate_revision_id'])
+        public = await get_validation_evidence(owner, workflow_id, evidence['id'])
+        assert public['report']['acceptance_contract'] == report['acceptance_contract']
+    await Replayer(workflows=[McadAgentWorkflowV2]).replay_workflow(await handle.fetch_history())
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('variant',['good','wrong_groove','off_center_hole','unknown_missing_material'])
+async def test_complete_assembly_geometry_controls_review_commit_and_replay(variant):
+    from app.models.workflow_requests import OperationContextV1
+    from app.workflows.temporal import start_mcad_agent_v2_workflow
+    from app.workflows.agent_v2 import McadAgentWorkflowV2
+    from app.services.task_evidence import get_validation_evidence
+    from tests.rectangular_assembly import assembly_case,AssemblyRequirements,AssemblyOperations
+    from temporalio.worker import Replayer
+    objective,basis=assembly_case()
+    owner,project_id,initial=await _seed_project('assembly-acceptance')
+    context=OperationContextV1(rule='explicit_rest_operation',source_channel='rest',requested_operation='generate',
+        resolved_operation='generate',submission_modeling_backend='auto',base_revision_id=initial.revision_id,
+        base_source_kind='none',requirement_basis=basis)
+    planner,operations=AssemblyRequirements(),AssemblyOperations(variant)
+    client=await get_temporal_client()
+    async with build_agent_v2_workflow_worker(client,backend=get_execution_backend(),
+            durable_planner=planner,freecad_operations=operations):
+        workflow_id,handle=await start_mcad_agent_v2_workflow(tenant_id=owner.tenant_id,project_id=project_id,
+            principal_id=owner.principal_id,branch_id=initial.branch_id,expected_base_revision_id=initial.revision_id,
+            operation='generate',modeling_backend='auto',objective=objective,kind='mcad.agent.v2.generate',
+            idempotency_key='assembly-'+str(project_id),operation_context=context,require_worker_ready=False)
+        if variant=='good':result=await handle.result()
+        else:
+            with pytest.raises(WorkflowFailureError) as error:await handle.result()
+            assert McadAgentWorkflowV2._root_application_error(error.value).type in {
+                'agent_geometry_validation_failed','engineering_verification_unavailable'}
+    assert len(planner.provider.requests)==1 and operations.calls==1
+    async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+        saved=(await conn.execute(text("SELECT id,evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"),
+            {'id':workflow_id})).mappings().one()
+        report=saved['evidence'];contract=report['acceptance_contract']
+        assert (report['outcome']=='passed')==(variant=='good')
+        assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'),{'id':workflow_id})==int(variant=='good')
+        assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'),{'id':initial.branch_id})==initial.revision_id
+        assert {n['category'] for n in contract['verification_notices']}=={'water_protection','manufacturing_process'}
+        criteria={c['check_id']:c for c in contract['checks']}
+        measured={criteria[e['check_id']]['scope']['assembly_measurement']:e for e in report['acceptance']['evidence']}
+        if variant=='good':
+            assert measured['envelope_height']['measured']==pytest.approx([35])
+            assert measured['mounting_holes_isolated']['measured']==[1]
+            assert measured['groove_width']['measured']==pytest.approx([2.4]*4)
+        elif variant=='wrong_groove':assert measured['groove_depth']['outcome']=='failed'
+        elif variant=='off_center_hole':assert measured['mounting_holes_centered']['outcome']=='failed'
+        else:assert all(e['outcome']=='indeterminate' for e in report['acceptance']['evidence'])
+    public=await get_validation_evidence(owner,workflow_id,saved['id'])
+    assert public['report']['acceptance_contract']==contract
+    if variant=='good':
+        change_set=UUID(result['change_set_id'])
+        await accept_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,change_set_id=change_set,
+            review_note='验收完整装配几何，防水等级和实际打印性能留待实物测试。')
+        committed=await commit_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,change_set_id=change_set)
+        assert committed.status=='committed'
+        public=await get_validation_evidence(owner,workflow_id,saved['id'])
+        assert public['report']['acceptance_contract']==contract
+    await Replayer(workflows=[McadAgentWorkflowV2]).replay_workflow(await handle.fetch_history())
+
+
+@pytest.mark.asyncio(loop_scope='module')
 async def test_unbound_source_fails_before_provider_or_native_dispatch_in_real_workflow():
     from app.models.workflow_requests import OperationContextV1
     from app.domain.requirement_basis import RequirementBasisV1
@@ -4191,6 +4308,9 @@ async def test_unbound_source_fails_before_provider_or_native_dispatch_in_real_w
     assert str(cause).count('engineering_verification_unavailable') == 1
     assert '两个特殊加强筋' in cause.message
     async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        saved_error = await conn.scalar(text("SELECT error FROM model_jobs WHERE workflow_run_id=:id AND operation='agent_v2.requirements'"), {'id':workflow_id})
+        assert saved_error['details'][0]['schema_version'] == 'source-diagnostics.v1'
+        assert any(d['source_clause'] == '两个特殊加强筋' for d in saved_error['details'][0]['diagnostics'])
         for table in ('provider_budget_reservations','agent_staging_manifests','agent_generated_sources'):
             assert await conn.scalar(text(f'SELECT count(*) FROM {table} WHERE workflow_run_id=:id'), {'id':workflow_id}) == 0
         assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'), {'id':workflow_id}) == 0
@@ -4920,6 +5040,20 @@ async def test_native_source_semantics_gate_candidates(objective, depth, diamete
 
 
 @pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('objective,depth,omit_through,expected', [
+    pytest.param('贯穿圆孔直径4.6mm', 12, False, 'passed', id='zh-through-commit'),
+    pytest.param('贯穿圆孔直径4.6mm', 4, False, 'agent_geometry_validation_failed', id='zh-blind-rejected'),
+    pytest.param('through circular hole, diameter 4.6mm', 12, False, 'passed', id='en-through-commit'),
+    pytest.param('through circular hole, diameter 4.6mm', 4, False, 'agent_geometry_validation_failed', id='en-blind-rejected'),
+    pytest.param('贯穿圆孔直径4.6mm', 12, True, 'requirement_binding_mismatch', id='omitted-predicate-rejected'),
+    pytest.param('孔径4.6mm，孔沿曲折路径贯穿', 12, False, 'engineering_verification_unavailable', id='unknown-path-rejected'),
+])
+async def test_source_predicate_coverage_reaches_candidate_gate(objective, depth, omit_through, expected):
+    await _native_source_semantics_candidate_contract(objective, depth, 4.6, omit_through, expected,
+        commit=expected == 'passed', require_passage_evidence=True)
+
+
+@pytest.mark.asyncio(loop_scope='module')
 @pytest.mark.parametrize('dimensions', [
     pytest.param('2个直径4mm的通孔。', id='confirmed-second-group'),
     pytest.param('孔径4mm。', id='confirmed-conflicting-diameter'),
@@ -4972,9 +5106,57 @@ async def test_plus_joined_hole_groups_reach_review_and_commit():
         8, 6, False, 'passed', mixed_holes=[6, 6, 4, 4], commit=True)
 
 
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('clause,depth,omit_through,expected', [
+    pytest.param('孔须打通', 12, False, 'passed', id='original-through-commit'),
+    pytest.param('孔须打通', 6, False, 'agent_geometry_validation_failed', id='original-blind'),
+    pytest.param('孔须打通', 6, True, 'requirement_binding_mismatch', id='omitted-predicate'),
+    pytest.param('孔需打通', 6, False, 'agent_geometry_validation_failed', id='need-blind'),
+    pytest.param('孔要打通', 6, False, 'agent_geometry_validation_failed', id='want-blind'),
+    pytest.param('孔要穿过整块板', 6, False, 'agent_geometry_validation_failed', id='whole-plate-blind'),
+    pytest.param('孔钻到另一个零件里', 6, False, 'engineering_verification_unavailable', id='unknown-action'),
+    pytest.param('孔要穿过未知对象', 6, False, 'engineering_verification_unavailable', id='unknown-target'),
+])
+async def test_f01_passage_clauses_gate_real_candidates(clause, depth, omit_through, expected):
+    await _native_source_semantics_candidate_contract(f'板40×30×12mm，孔径6mm，{clause}。',
+        depth, 6, omit_through, expected, commit=expected == 'passed', require_passage_evidence=True,
+        unbound_clause=clause if expected == 'engineering_verification_unavailable' else None)
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('clause,depth,omit_through,expected', [
+    pytest.param('两端开口的圆孔直径6mm', 12, False, 'passed', id='nominal-through-commit'),
+    pytest.param('两端开口的圆孔直径6mm', 6, False, 'agent_geometry_validation_failed', id='nominal-blind'),
+    pytest.param('两端开口的圆孔直径6mm', 6, True, 'requirement_binding_mismatch', id='nominal-omitted'),
+    pytest.param('两端均开口的圆孔直径6mm', 6, False, 'agent_geometry_validation_failed', id='variant-blind'),
+    pytest.param('沿未知路径的圆孔直径6mm', 6, False, 'engineering_verification_unavailable', id='unknown-prefix'),
+    pytest.param('请创建一个沿未知路径的圆孔直径6mm', 6, False, 'engineering_verification_unavailable', id='request-unknown-prefix'),
+])
+async def test_f02_nominal_qualifiers_gate_real_candidates(clause, depth, omit_through, expected):
+    await _native_source_semantics_candidate_contract(f'板40×30×12mm，{clause}。',
+        depth, 6, omit_through, expected, commit=expected == 'passed', require_passage_evidence=True,
+        unbound_clause=clause if expected == 'engineering_verification_unavailable' else None)
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('objective,dimensions,depth,omit_through,expected', [
+    pytest.param('板，孔径6mm，孔要穿过整块板。', '板40×30×12mm', 12, False, 'passed', id='split-through-commit'),
+    pytest.param('板，孔径6mm，孔要穿过整块板。', '板40×30×12mm', 6, False, 'agent_geometry_validation_failed', id='split-blind'),
+    pytest.param('板，孔径6mm，孔要穿过整块板。', '板40×30×12mm', 6, True, 'requirement_binding_mismatch', id='split-omitted'),
+    pytest.param('孔径6mm，孔须穿透板厚。', '板40×30×12mm', 12, False, 'passed', id='target-in-confirmed-field'),
+    pytest.param('两端开口的圆孔直径6mm。', '板40×30×12mm', 6, False, 'agent_geometry_validation_failed', id='nominal-split-blind'),
+    pytest.param('盖板孔径6mm，孔要穿过整块板。', '板40×30×12mm', 12, False, 'engineering_verification_unavailable', id='different-owner'),
+])
+async def test_f03_saved_fields_gate_real_candidates(objective, dimensions, depth, omit_through, expected):
+    await _native_source_semantics_candidate_contract(objective, depth, 6, omit_through, expected,
+        basis_dimensions=dimensions, commit=expected == 'passed', require_passage_evidence=True,
+        unbound_clause='孔要穿过整块板' if expected == 'engineering_verification_unavailable' else None)
+
+
 async def _native_source_semantics_candidate_contract(objective, depth, diameter, omit_through, expected,
                                                      *, basis_dimensions=None, mixed_holes=None, blind_index=None,
-                                                     commit=False, extra_cut=None):
+                                                     commit=False, extra_cut=None, require_passage_evidence=False,
+                                                     unbound_clause=None):
     """Incident proposals through real Temporal/PG/FreeCAD/STEP/S3 and review.
 
     Only requirements and modeling inputs are controlled. The source binding,
@@ -5115,12 +5297,26 @@ async def _native_source_semantics_candidate_contract(objective, depth, diameter
             assert await conn.scalar(text('SELECT count(*) FROM execution_attempts WHERE workflow_run_id=:id'), values) == 0
             assert await conn.scalar(text("SELECT count(*) FROM model_jobs WHERE workflow_run_id=:id "
                 "AND operation IN ('agent_v2.generate_operations','agent_v2.repair_operations')"), values) == 0
+            if unbound_clause:
+                diagnostic = (await conn.execute(text('SELECT status,error_code,error_message FROM workflow_runs WHERE id=:id'), values)).mappings().one()
+                assert diagnostic['status'] == 'failed'
+                assert diagnostic['error_code'] == expected and unbound_clause in diagnostic['error_message']
+                if os.environ.get('CAD_AGENT_TEST_EVIDENCE_DIR'):
+                    retained = Path(os.environ['CAD_AGENT_TEST_EVIDENCE_DIR']) / str(created.workflow_id)
+                    retained.mkdir(parents=True, exist_ok=True)
+                    (retained/'source-rejection.json').write_text(json.dumps({
+                        'objective': objective, 'diagnostic': dict(diagnostic), 'candidate_count': 0,
+                        'cad_attempt_count': 0, 'head_unchanged': True}, ensure_ascii=False, indent=2))
         else:
             assert len(reports) == 1
             report = reports[0]
             assert report['outcome'] == ('indeterminate' if extra_cut else 'passed' if expected=='passed' else 'failed')
             criteria = {c['check_id']:c for c in report['acceptance_contract']['checks']}
             evidence = {criteria[e['check_id']]['kind']:e for e in report['acceptance']['evidence']}
+            if require_passage_evidence:
+                assert {'hole_diameter', 'hole_through'} <= evidence.keys()
+                assert evidence['hole_through']['measured'] == [int(depth == 12)]
+                assert evidence['hole_diameter']['outcome'] == 'passed'
             observed = [diameter] if mixed_holes is None else mixed_holes
             if 'hole_diameter' in evidence:
                 assert sorted(evidence['hole_diameter']['measured']) == pytest.approx([] if extra_cut else sorted(observed))
@@ -5175,6 +5371,10 @@ async def _native_source_semantics_candidate_contract(objective, depth, diameter
         async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
             assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'),
                                      {'id':initial.branch_id}) != initial.revision_id
+    if require_passage_evidence:
+        from temporalio.worker import Replayer
+        from app.workflows.agent_v2 import McadAgentWorkflowV2
+        await Replayer(workflows=[McadAgentWorkflowV2]).replay_workflow(await handle.fetch_history())
 
 
 @pytest.mark.asyncio(loop_scope='module')
