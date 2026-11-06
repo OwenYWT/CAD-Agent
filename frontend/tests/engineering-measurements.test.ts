@@ -107,3 +107,17 @@ test('assembly relationships and counts keep their meaning without invented leng
   assert.equal(engineeringMeasurements(report)[0].measured,'无量测值');
   assert.equal(engineeringMeasurements(report)[0].outcome,'未验证');
 });
+
+test('cube shape is a measured predicate, distinct from its edge length', () => {
+  const report = {acceptance_contract:{schema_version:'engineering-acceptance.v2',checks:[
+    {check_id:'shape',kind:'cube_shape',comparison:{op:'eq',value:1,unit:'count',tolerance_minus:0,tolerance_plus:0}},
+    {check_id:'edge',kind:'cube_edge',comparison:{op:'eq',value:25,unit:'mm'}},
+  ]},acceptance:{evidence:[{check_id:'shape',measured:[1],outcome:'passed'},
+    {check_id:'edge',measured:[25],outcome:'passed'}]}};
+  const rows = engineeringMeasurements(report);
+  assert.equal(rows[0].expected, '满足'); assert.equal(rows[0].measured, '满足');
+  assert.equal(rows[0].tolerance, undefined); assert.equal(rows[1].measured, '25 mm');
+  report.acceptance.evidence[0].measured = [];
+  report.acceptance.evidence[0].outcome = 'indeterminate';
+  assert.equal(engineeringMeasurements(report)[0].outcome, '未验证');
+});

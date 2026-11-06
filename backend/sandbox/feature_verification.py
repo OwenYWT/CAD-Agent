@@ -866,7 +866,7 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                 row['details']['numerical_tolerance_mm'] = 2*tolerance + sum(
                     math.ulp(v) for v in (bounds[2],bounds[5],bounds[5]-bounds[2]))
                 row['details']['bounds_method'] = 'occt_add_optimal_without_triangulation_or_shape_tolerance_padding'
-            elif kind.startswith(('cylinder_', 'sphere_')):
+            elif kind.startswith(('cylinder_', 'sphere_', 'cube_')):
                 try:
                     from material_measurements import primitive_dimensions
                 except ModuleNotFoundError:
@@ -876,7 +876,7 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                 if scope.get('axis') is not None and primitive == 'cylinder' and abs(abs(
                         _dot(_unit(scope['axis']), certificate['geometry']['axis']))-1) > 1e-10:
                     raise MeasurementSelectionError('requested axis does not match the complete material cylinder')
-                row['measured'] = [dimensions[quantity]]
+                row['measured'] = [1.] if quantity == 'shape' else [dimensions[quantity]]
                 row['method'] = 'complete_material_primitive_boundary'
                 row['details']['material_primitive'] = certificate
             elif kind.startswith('hole_'):

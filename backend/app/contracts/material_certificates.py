@@ -11,21 +11,22 @@ def verify_material_certificate(check, evidence):
     if evidence['outcome'] == 'indeterminate':
         return
     key = None
-    if kind.startswith(('cylinder_', 'sphere_')):
+    if kind.startswith(('cylinder_', 'sphere_', 'cube_')):
         key = 'material_primitive'
         cert = details.get(key) or {}
         primitive, quantity = kind.split('_', 1)
         count = cert.get('face_count')
         dimensions = cert.get('dimensions_mm') or {}
-        allowed = {'CYLINDER','PLANE'} if primitive == 'cylinder' else {'SPHERE'}
+        allowed = {'cylinder': {'CYLINDER','PLANE'}, 'sphere': {'SPHERE'}, 'cube': {'PLANE'}}[primitive]
+        dimension_keys = {'cylinder': {'radius','diameter','height'}, 'sphere': {'radius','diameter'}, 'cube': {'edge'}}[primitive]
         if (cert.get('schema_version') != 'material-primitive.v1' or cert.get('primitive') != primitive
                 or cert.get('solid_count') != 1 or type(count) is not int or count < 1
                 or cert.get('covered_face_indices') != list(range(count))
                 or len(cert.get('face_types', [])) != count or not set(cert['face_types']) <= allowed
-                or set(dimensions) != ({'radius','diameter','height'} if primitive == 'cylinder' else {'radius','diameter'})
+                or set(dimensions) != dimension_keys
                 or not all(_positive(v) for v in dimensions.values())
-                or dimensions['diameter'] != 2*dimensions['radius']
-                or list(evidence['measured']) != [dimensions[quantity]]):
+                or primitive != 'cube' and dimensions['diameter'] != 2*dimensions['radius']
+                or list(evidence['measured']) != ([1.] if quantity == 'shape' else [dimensions[quantity]])):
             raise ValueError('material dimensions lack complete primitive boundary evidence')
         if primitive == 'cylinder':
             geometry = cert.get('geometry') or {}
@@ -34,6 +35,29 @@ def verify_material_certificate(check, evidence):
                     or not all(isinstance(v, (float,int)) and math.isfinite(v) for v in [*axis,*interval])
                     or abs(math.hypot(*axis)-1) > 1e-10 or interval[1]-interval[0] != dimensions['height']):
                 raise ValueError('cylinder dimensions disagree with its complete boundary')
+        if primitive == 'cube':
+            geometry = cert.get('geometry') or {}
+            axes, intervals, pairs = (geometry.get(k, []) for k in ('axes', 'intervals_mm', 'face_axis_pairs'))
+            tolerance = details.get('numerical_tolerance_mm')
+            if (count != 6 or geometry.get('edge_count') != 12 or geometry.get('vertex_count') != 8
+                    or not _positive(tolerance) or tolerance > 1e-7
+                    or geometry.get('inner_boundary_counts') != [0]*6
+                    or geometry.get('boundary_edge_counts') != [4]*6
+                    or len(axes) != 3 or len(intervals) != 3 or len(pairs) != 3
+                    or any(not isinstance(a, list) or len(a) != 3 for a in axes)
+                    or any(not isinstance(p, list) or len(p) != 2 for p in intervals + pairs)
+                    or any(type(i) is not int for pair in pairs for i in pair)
+                    or sorted(i for pair in pairs for i in pair) != list(range(6))
+                    or any(not isinstance(v, (float, int)) or isinstance(v, bool) or not math.isfinite(v)
+                           for row in axes + intervals for v in row)):
+                raise ValueError('cube evidence lacks its complete opposed planar boundary')
+            lengths = [hi-lo for lo, hi in intervals]
+            if (any(abs(math.hypot(*axis)-1) > 1e-10 for axis in axes)
+                    or any(abs(sum(a*b for a,b in zip(axes[i], axes[j]))) > 1e-10
+                           for i in range(3) for j in range(i))
+                    or min(lengths) <= 0 or max(lengths)-min(lengths) > tolerance
+                    or dimensions['edge'] != sum(lengths)/3):
+                raise ValueError('cube edges disagree with its orthogonal measured boundary')
     elif kind == 'wall_thickness' and check.get('scope', {}).get('wall_mode') in {'side_walls','cavity_floor'}:
         key = 'cavity_walls'
         cert = details.get(key) or {}

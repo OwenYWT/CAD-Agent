@@ -7,6 +7,25 @@ from app.execution.canonical import canonical_sha256
 from uuid import uuid4
 
 
+@pytest.mark.parametrize('objective', [
+    '构建一个十厘米的正方体', 'Create a 2.5cm cube',
+    '长方体长100mm宽二十厘米高三十厘米', '创建一个 100×60×3 mm 的板',
+    '圆柱体直径四厘米，高二十五毫米', '球体半径两厘米',
+])
+def test_intake_preview_uses_bound_requirements_instead_of_a_second_numeric_grammar(objective):
+    from app.validation.requirement_binding import preview_requirements
+    result = preview_requirements(objective)
+    assert result == {'dimensions': objective, 'complete': True}
+
+
+@pytest.mark.parametrize('objective', ['创建一个板', '创建100×60×3的板',
+    '正方体，边长十厘米，高五厘米', '板40×30×12mm，孔要沿未知路径打通',
+    '创建一个板，长100或120mm'])
+def test_intake_preview_never_confirms_missing_ambiguous_or_uncovered_input(objective):
+    from app.validation.requirement_binding import preview_requirements
+    assert preview_requirements(objective)['complete'] is False
+
+
 def test_missing_dimensions_require_explicit_concept_consent():
     with pytest.raises(ValidationError):RequirementBasisV1(target='iPhone 手机壳')
     basis=RequirementBasisV1(target='iPhone 手机壳',concept_acknowledged=True)

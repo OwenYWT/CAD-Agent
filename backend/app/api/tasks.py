@@ -40,6 +40,19 @@ logger = logging.getLogger(__name__)
 _TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "timed_out"}
 
 
+class RequirementPreviewRequest(BaseModel):
+    objective: str = Field(min_length=1, max_length=4000)
+
+
+@router.post('/requirements/preview')
+def requirement_preview(
+    request: RequirementPreviewRequest,
+    principal: PrincipalContext = Depends(get_durable_principal),
+):
+    from app.validation.requirement_binding import preview_requirements
+    return preview_requirements(request.objective)
+
+
 def _task_snapshot_marker(
     snapshot: dict,
 ) -> tuple:

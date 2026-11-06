@@ -39,7 +39,7 @@ async def main():
             await page.locator('#account').fill(private['owner']['phone'])
             await page.locator('#password').fill(private['owner']['password'])
             await page.locator('button[type=submit]').click()
-            for name in ('fdm','diameter','assembly','passage'):
+            for name in ('fdm','diameter','assembly','passage','cube','cube_split','chinese_box','sphere_bounds','cylinder_bounds'):
                 objective,basis = assembly_case() if name == 'assembly' else intake_case(name)
                 planner,operations = (AssemblyRequirements(),AssemblyOperations()) if name == 'assembly' else (IntakeSemanticsRequirements(name), IntakeSemanticsOperations(name))
                 async with build_agent_v2_workflow_worker(client, backend=get_execution_backend(),
@@ -48,7 +48,11 @@ async def main():
                     await page.get_by_role('textbox',name='工程需求',exact=True).fill(objective)
                     await page.get_by_role('button',name='开始创建',exact=True).click()
                     intake = page.get_by_role('region',name='执行前需求确认',exact=True)
-                    await intake.get_by_role('textbox',name='关键尺寸依据',exact=True).fill(basis.dimensions)
+                    if name in {'cube', 'chinese_box', 'sphere_bounds', 'cylinder_bounds'}:
+                        await expect(intake.get_by_role('textbox',name='关键尺寸依据',exact=True)).to_have_value(basis.dimensions)
+                        await expect(intake.get_by_role('button',name='确认并执行',exact=True)).to_be_enabled()
+                    else:
+                        await intake.get_by_role('textbox',name='关键尺寸依据',exact=True).fill(basis.dimensions)
                     # Consent remains available with complete dimensions and
                     # does not erase them or silently opt in on submission.
                     consent = intake.get_by_role('checkbox',name='确认仅生成概念外形',exact=True)
@@ -89,6 +93,14 @@ async def main():
                             criteria = {c['check_id']:c['kind'] for c in report['acceptance_contract']['checks']}
                             through = [e for e in report['acceptance']['evidence'] if criteria[e['check_id']] == 'hole_through']
                             assert len(through) == 1 and through[0]['measured'] == [1]
+                        elif name.startswith('cube') or name in {'sphere_bounds', 'cylinder_bounds'}:
+                            kind = name.split('_')[0]+'_shape'
+                            await expect(card.get_by_test_id('engineering-measurement').filter(has_text=kind)).to_contain_text('目标：满足；实测：满足')
+                            if name.startswith('cube'):
+                                await expect(card.get_by_test_id('engineering-measurement').filter(has_text='cube_edge')).to_contain_text('25 mm' if name == 'cube_split' else '100 mm')
+                        elif name == 'chinese_box':
+                            for value in (100, 200, 300):
+                                await expect(card.get_by_test_id('engineering-measurement').filter(has_text=f'{value} mm')).to_have_count(1)
                         else:
                             await expect(card.get_by_test_id('engineering-measurement').filter(has_text='40 mm')).to_have_count(1)
                         await card.get_by_role('button',name='审阅候选与参数变化',exact=True).click()
@@ -101,6 +113,11 @@ async def main():
                         assert document['head_revision_id'] != saved['expected_base_revision_id']
                         await page.reload()
                         await expect(page.get_by_test_id('document-scene')).to_have_attribute('data-revision',document['head_revision_id'],timeout=90000)
+                        if name.startswith('cube') or name in {'sphere_bounds', 'cylinder_bounds'}:
+                            card = page.locator('[data-testid=authoritative-task]:visible')
+                            await card.locator('summary').filter(has_text='检查结果（').click()
+                            await card.get_by_role('button',name='查看检查对象、版本与规则',exact=True).first.click()
+                            await expect(card.get_by_test_id('engineering-measurement').filter(has_text=name.split('_')[0]+'_shape')).to_contain_text('目标：满足；实测：满足')
                         if name in {'fdm','assembly','passage'}:
                             card = page.locator('[data-testid=authoritative-task]:visible')
                             await card.locator('summary').filter(has_text='检查结果（').click()

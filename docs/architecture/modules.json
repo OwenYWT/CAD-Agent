@@ -1010,7 +1010,8 @@
     "backend/app/contracts/material_certificates.py": "P00",
     "backend/app/validation/verification_intent.py": "M06",
     "backend/app/contracts/assembly_measurements.py": "P00",
-    "backend/app/validation/rectangular_assembly_requirements.py": "M06"
+    "backend/app/validation/rectangular_assembly_requirements.py": "M06",
+    "backend/app/validation/quantities.py": "M06"
   },
   "required_runtime_reports": {
     "browser-e2e/native-parameters/kernel.log": {

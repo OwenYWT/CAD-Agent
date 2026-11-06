@@ -7,6 +7,7 @@ span cannot discharge a count, nor can a count discharge a restriction.
 """
 import re
 import json
+from app.validation.quantities import CHINESE_INTEGER
 
 
 RELATION = (r'(?:至少|不小于|不少于|不低于|不超过|至多|不大于|不高于|大于|小于|超过|最小|最大|以上|以下|'
@@ -18,12 +19,12 @@ STRICT = {'大于', '小于', '超过', 'greater than', 'more than', 'less than'
 COUNT_WORDS = {'零': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5, '六': 6,
                '七': 7, '八': 8, '九': 9, '十': 10, 'zero': 0, 'one': 1, 'two': 2, 'three': 3,
                'four': 4, 'five': 5, 'six': 6, 'single': 1, 'a': 1, 'an': 1}
-COUNT_VALUE = r'(?:\d+|[零一二两三四五六七八九十]|\b(?:zero|one|two|three|four|five|six|single|an?)\b)'
-_COUNT_TOKEN = re.compile(r'(?<![a-zA-Z0-9_.零一二两三四五六七八九十])'
+COUNT_VALUE = rf'(?:\d+|{CHINESE_INTEGER}|\b(?:zero|one|two|three|four|five|six|single|an?)\b)'
+_COUNT_TOKEN = re.compile(r'(?<![a-zA-Z0-9_.零〇一二两三四五六七八九十百千万亿点])'
     # A positive sign also separates additive groups. Like COUNT_VALUE, start
     # at the number so the original source span agrees with the binder. Retain
     # minus signs and fractional tokens: neither may bind as a positive integer.
-    r'(?:[−-]?\d+(?:\.\d+)?|[零一二两三四五六七八九十百千]+)\s*(?:个|处|颗|条|只)|'
+    rf'(?:[−-]?\d+(?:\.\d+)?|{CHINESE_INTEGER}(?:点[零〇一二两三四五六七八九]+)?)\s*(?:个|处|颗|条|只)|'
     r'(?<![a-zA-Z0-9_.])(?:zero|one|two|three|four|five|six|single|[−-]?\d+(?:\.\d+)?)\b(?=\s+(?:(?!mm\b|cm\b|m\b)[a-z-]+\s+){0,6}'
     r'(?:holes?|solids?|legs?|supports?|ribs?|fins?|pins?|posts?|slots?|teeth)\b)', re.I)
 _RESTRICTION = re.compile(r'不(?!变)|无|[非未](?=[ \t]*(?:贯穿|穿透|贯通|通孔|打穿))|禁止|避免|排除|仅(?:有|限|允许)?|只(?:有|能|允许)|'
@@ -48,20 +49,22 @@ _DIRECTIVE = re.compile(r'(?:必须|务必|需满足|\bmust(?:\s+have)?\b|\bshal
 _ASSERTION_SUBJECT = re.compile(
     r'(?:该|此|当前|这个)?(?:(?:M\d+(?:\.\d+)?[ \t]*)?(?:安装|固定|螺钉|线缆|接头)?(?:圆形孔|圆孔|孔)|槽|腔|壁|'
     r'(?:底板|盖板|上盖|盒体|板)(?:(?:固定|安装)?孔(?:数量|数目|数)?[ \t]*(?:为|[:：=])?)?|'
-    r'圆柱体|圆柱|球体|球|'
+    r'圆柱体|圆柱|球体|球|正方体|立方体|边长|棱长|边缘|表面|形状|'
     r'(?:模型|外壳)?(?:外部)?(?:总体|整体|总)?(?:长度|宽度|高度|厚度|壁厚|直径|半径|间隙|体积))|'
     r'(?:the\s+)?\b(?:holes?|bores?|slots?|grooves?|channels?|cavit(?:y|ies)|walls?|'
-    r'plates?|lids?|boxes?|cylinders?|spheres?|length|width|height|thickness|diameter|radius|gap|volume)\b', re.I)
+    r'plates?|lids?|boxes?|cylinders?|spheres?|cubes?|edges?|surfaces?|shape|length|width|height|thickness|diameter|radius|gap|volume)\b', re.I)
 _CLAUSE_DIRECTIVE = re.compile(r'(?:必须|务必|需要|需满足|须|需|要|应当|应该|应|'
                               r'\b(?:must(?:\s+have)?|shall)\b)\s*(?P<predicate>.+)', re.I)
 _LIST_PREFIX = re.compile(r'(?:[-*•][ \t]+|\d+[、)）][ \t]*|\d+\.(?=\D)[ \t]*)')
 _REQUEST_PREFIX = re.compile(
-    r'(?:(?:请(?:帮我|为我)?|帮我|为我)[ \t]*)?(?:设计|创建|生成|制作|做|绘制|添加|增加|开|设置)'
+    r'(?:(?:请(?:帮我|为我)?|帮我|为我)[ \t]*)?(?:设计|创建|构建|生成|制作|做|绘制|添加|增加|开|设置)'
     r'[ \t]*(?:一个|一块|一种|一些|个)?[ \t]*|'
-    r'(?:please\s+)?(?:create|design|generate|make|add|draw)\s+(?:(?:a|an|the)\s+)?|'
+    r'(?:please\s+)?(?:create|build|design|generate|make|add|draw)\s+(?:(?:a|an|the)\s+)?|'
     r'(?:将|把)(?:当前|这个|该|此)?[ \t]*', re.I)
-_MATERIAL_NOUN = re.compile(r'(?:底板|盖板|上盖|盒体|板|圆柱(?:体)?|球(?:体)?)(?:几何模型|模型)?|'
-    r'(?:the\s+)?(?:plates?|lids?|boxes?|cylinders?|spheres?)(?:\s+model)?', re.I)
+_MATERIAL_NOUN = re.compile(r'(?:底板|盖板|上盖|盒体|板|圆柱(?:体)?|球(?:体)?|正方体|立方体)(?:几何模型|模型)?|'
+    r'(?:the\s+)?(?:plates?|lids?|boxes?|cylinders?|spheres?|cubes?)(?:\s+model)?', re.I)
+CUBE = re.compile(r'正方体|立方体|\bcube\b', re.I)
+MATERIAL_PRIMITIVE = re.compile(r'正方体|立方体|圆柱(?:体)?|球(?:体)?|\b(?:cube|cylinder|sphere)\b', re.I)
 _CLAUSE_LINK = re.compile(r'修改为|改为|设为|调整为|另有|带(?:有)?|的|以及|[+＋、]|'
                           r'\b(?:with|of|and|is|are|the)\b', re.I)
 
@@ -115,6 +118,7 @@ def inventory(text, *, source_input_id):
                  if re.search(r'孔|hole|bore', text[max(0, m.start()-20):m.end()+30], re.I)]
     items = list(_assertion_clauses(text, source_input_id))
     for category, matches in [('count', _COUNT_TOKEN.finditer(text)), ('comparison', relations),
+                               ('primitive_shape', MATERIAL_PRIMITIVE.finditer(text)),
                                ('restriction', _RESTRICTION.finditer(text)),
                                ('relationship', _RELATIONSHIP.finditer(text)),
                                ('feature_group', _FEATURE_GROUP.finditer(text)),
@@ -166,6 +170,11 @@ def resolve_inventory(items, requirements, comparison_spans, unsupported, *, des
         elif item['category'] == 'feature_position':
             refs = [r['requirement_id'] for r in requirements if r['kind'] == 'hole_position'
                     and r['source_span'][0] <= start and end <= r['source_span'][1]]
+        elif item['category'] == 'primitive_shape':
+            primitive = _owner_identity(item['source_quote'])
+            # A complete primitive dimension already certifies its shape.
+            # A plain bounding-box extent does not, even when all axes match.
+            refs = [r['requirement_id'] for r in requirements if r['kind'].startswith(primitive + '_')]
         elif item['category'] == 'feature_semantic' and item.get('predicate') == 'through_passage':
             refs = [r['requirement_id'] for r in requirements if r['kind'] == 'hole_through'
                     and r['comparison'] == {'op': 'eq', 'value': 1., 'unit': 'count'}
@@ -234,6 +243,7 @@ def resolve_inventory(items, requirements, comparison_spans, unsupported, *, des
                       'component_distribution': 'component_scope_ambiguous',
                       'hole_population': 'feature_group_scope_unbound',
                       'directive': 'required_clause_unbound',
+                      'primitive_shape': 'primitive_shape_unbound',
                       'assertion_clause': 'required_clause_unbound'}[item['category']]
             if item['category'] == 'comparison' and normalize_relation(item['source_quote']) in STRICT:
                 reason = 'strict_boundary_unsupported'
@@ -242,9 +252,9 @@ def resolve_inventory(items, requirements, comparison_spans, unsupported, *, des
 
 
 _OWNER = re.compile(r'内部有效空间|内部空腔|空腔|腔体|盒体(?:底板|底面)?|上盖|盖板|底板|底座|支脚|安装柱|安装耳|加强筋|法兰|凸台|密封槽|'
-    r'长方体|圆柱体|圆柱(?![形面孔])|球体|球(?![形面孔])|盒|板|(?:零件|部件|组件)[A-Za-z0-9一二三四]+|'
-    r'\b(?:cavity|void|lid|cover|base|foot|boss|groove|plate|box|block|cylinder|sphere)\b', re.I)
-_ROOT_OWNERS = {'盒体', '盒', '板', '长方体', 'plate', 'box', 'block', 'cylinder', 'sphere'}
+    r'长方体|正方体|立方体|圆柱体|圆柱(?![形面孔])|球体|球(?![形面孔])|盒|板|(?:零件|部件|组件)[A-Za-z0-9一二三四]+|'
+    r'\b(?:cavity|void|lid|cover|base|foot|boss|groove|plate|box|block|cylinder|sphere|cube)\b', re.I)
+_ROOT_OWNERS = {'盒体', '盒', '板', '长方体', 'plate', 'box', 'block', 'cylinder', 'sphere', 'cube'}
 _VOID_OWNER = re.compile(r'空腔|腔体|内部|cavity|void', re.I)
 _SUBJECT_JOIN = re.compile(r'\s*(?:和|与|以及|及|、|，|,|&|\band\b|或者|或|\bor\b)\s*', re.I)
 _SUBJECT_CHOICE = re.compile(r'或者|或|\bor\b', re.I)
@@ -252,6 +262,8 @@ _DISTRIBUTIVE = re.compile(r'\s*(?:各(?:自)?(?:都)?(?:有)?|均(?:有)?|都(?
 
 
 def _owner_identity(phrase):
+    if CUBE.fullmatch(phrase):
+        return 'cube'
     if re.fullmatch(r'盒体(?:底板|底面)', phrase):
         return '盒体'
     if re.fullmatch(r'圆柱(?:体)?|cylinder', phrase, re.I):
@@ -259,6 +271,12 @@ def _owner_identity(phrase):
     if re.fullmatch(r'球(?:体)?|sphere', phrase, re.I):
         return 'sphere'
     return phrase.lower()
+
+
+def source_owners(text):
+    """Return the same named owners used by component binding, with provenance."""
+    return [{'kind': _owner_identity(m.group()), 'source_span': list(m.span()), 'source_quote': m.group()}
+            for m in _OWNER.finditer(text)]
 
 
 def _component_subjects(text, mentions, declarations):
@@ -444,9 +462,9 @@ def _group_counted_phrases(text, rows, counts):
     return groups
 
 
-def _incompatible_hole_constraints(rows):
+def incompatible_constraints(rows, kinds):
     incompatible = []
-    for kind in ('hole_count', 'hole_diameter', 'hole_depth'):
+    for kind in kinds:
         constraints = [r for r in rows if r['kind'] == kind]
         lower, upper = float('-inf'), float('inf')
         for record in constraints:
@@ -494,7 +512,7 @@ def inventory_hole_populations(text, requirements, obligations, *, source_input_
         if not populations:
             populations = [r for r in rows if r['kind'] == 'hole_through']
         incompatible = [ref for members in (groups.values() if groups else [rows])
-                        for ref in _incompatible_hole_constraints(members)]
+                        for ref in incompatible_constraints(members, ('hole_count', 'hole_diameter', 'hole_depth'))]
         if not populations and not incompatible:
             continue
         start = min(r['source_span'][0] for r in rows)

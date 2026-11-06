@@ -65,10 +65,11 @@ export function engineeringMeasurements(report: RecordValue) {
       }
     }
     if (v2 && kind === 'hole_through' && comparison.op === 'eq' && comparison.value === 1) expectedText = '贯通';
-    if (v2 && kind === 'assembly_predicate' && comparison.op === 'eq' && comparison.value === 1) expectedText = '满足';
+    const predicate = ['assembly_predicate', 'cube_shape', 'sphere_shape', 'cylinder_shape'].includes(String(kind));
+    if (v2 && predicate && comparison.op === 'eq' && comparison.value === 1) expectedText = '满足';
     const measuredText = kind === 'hole_through'
       ? measured.map(v => v === 1 ? '贯通' : v === 0 ? '未贯通' : '未知').join('、')
-      : kind === 'assembly_predicate' ? measured.map(v => v === 1 ? '满足' : v === 0 ? '未满足' : '未知').join('、')
+      : predicate ? measured.map(v => v === 1 ? '满足' : v === 0 ? '未满足' : '未知').join('、')
       : `${measured.join('、')} ${unit}`.trim();
     return {
       id: String(item.check_id ?? ''),
@@ -76,7 +77,7 @@ export function engineeringMeasurements(report: RecordValue) {
       expected: expectedText,
       measured: measured.length ? measuredText : '无量测值',
       measuredLabel,
-      tolerance: ['hole_through', 'assembly_predicate', 'assembly_count'].includes(String(kind)) ? undefined : v2 ? comparison.op === 'eq' && finite(comparison.tolerance_minus) && finite(comparison.tolerance_plus)
+      tolerance: predicate || ['hole_through', 'assembly_count'].includes(String(kind)) ? undefined : v2 ? comparison.op === 'eq' && finite(comparison.tolerance_minus) && finite(comparison.tolerance_plus)
         ? `−${comparison.tolerance_minus} / +${comparison.tolerance_plus}` : undefined
         : kind === 'volume' ? check?.tolerance_mm3 : check?.tolerance_mm,
       method: typeof item.method === 'string' ? item.method : '未记录',

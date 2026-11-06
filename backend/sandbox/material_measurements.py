@@ -64,6 +64,44 @@ def primitive_dimensions(shape, primitive, tolerance):
             raise ValueError('the whole closed cylinder boundary is incomplete')
         dimensions = {'diameter':2*radius, 'radius':radius, 'height':height}
         geometry = {'axis':list(axis), 'origin_mm':list(origin), 'axial_interval_mm':[lo,hi]}
+    elif primitive == 'cube':
+        # Certify the whole six-sided boundary, not a bounding box or a
+        # nominally sized sample. Extra faces, inner wires and curved edges
+        # retain even tiny pockets/cuts as failures of this certificate.
+        if (len(faces) != 6 or any(t != 'PLANE' for t in types)
+                or len(shape.Faces()) != 6 or len(shape.Edges()) != 12 or len(shape.Vertices()) != 8
+                or any(f.innerWires() or len(f.Edges()) != 4
+                       or any(e.geomType() != 'LINE' for e in f.Edges()) for f in faces)):
+            raise ValueError('a cube requires six complete planar quadrilateral exterior faces')
+        axes, pairs = [], []
+        for i, face in enumerate(faces):
+            normal = g._unit(face.normalAt().toTuple())
+            parallel = [j for j, axis in enumerate(axes) if abs(abs(g._dot(axis, normal))-1) <= 1e-10]
+            if parallel:
+                pairs[parallel[0]].append(i)
+            else:
+                if any(abs(g._dot(axis, normal)) > 1e-10 for axis in axes):
+                    raise ValueError('cube faces are not mutually perpendicular')
+                axes.append(normal)
+                pairs.append([i])
+        if len(pairs) != 3 or any(len(pair) != 2 for pair in pairs):
+            raise ValueError('cube faces are not three opposed exterior pairs')
+        intervals = []
+        for axis, pair in zip(axes, pairs):
+            positions = [g._dot(faces[i].Center().toTuple(), axis) for i in pair]
+            lo, hi = min(positions), max(positions)
+            if hi-lo <= tolerance or any((p-(lo+hi)/2)*g._dot(faces[i].normalAt().toTuple(), axis) <= 0
+                                         for i, p in zip(pair, positions)):
+                raise ValueError('cube face pairs do not enclose positive material')
+            intervals.append([lo, hi])
+        lengths = [hi-lo for lo, hi in intervals]
+        if max(lengths)-min(lengths) > tolerance:
+            raise ValueError('the three independently measured cube edges are unequal')
+        dimensions = {'edge': sum(lengths)/3}
+        geometry = {'axes': [list(axis) for axis in axes], 'intervals_mm': intervals,
+                    'face_axis_pairs': pairs, 'edge_count': 12, 'vertex_count': 8,
+                    'inner_boundary_counts': [len(f.innerWires()) for f in faces],
+                    'boundary_edge_counts': [len(f.Edges()) for f in faces]}
     elif primitive == 'sphere':
         if not faces or any(t != 'SPHERE' for t in types):
             raise ValueError('complete spherical boundary is not certified')

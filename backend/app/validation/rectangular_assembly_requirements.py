@@ -5,13 +5,12 @@ assembly. Unsupported wording stays unresolved; a model cannot assign roles,
 authorize an envelope convention, or hide a condition in a dimension label.
 """
 import re
-from decimal import Decimal
+from app.validation.quantities import NUMBER as _NUMBER, number
 
 from app.contracts.assembly_measurements import assembly_kind
 
 _DECLARATION = r'(?:外壳|壳体)(?:由|包括)盒体(?:和|与|及)上盖(?:组成)?'
 _ENVELOPE = r'(?:总体|整体)尺寸包含装配后的盒体和上盖[，,]不包含安装耳'
-_NUMBER = r'(?:\d+(?:\.\d+)?|\.\d+)'
 _DIMENSIONS = {
     r'(?:外壳|壳体)(?:总体|整体|总)?长度':'envelope_length',
     r'(?:外壳|壳体)(?:总体|整体|总)?宽度':'envelope_width',
@@ -81,7 +80,10 @@ def extract_rectangular_assembly_sources(objective, sources):
             for label,measurement in _DIMENSIONS.items():
                 match=re.fullmatch(rf'{label}\s*(?:为|是|[:：=])?\s*(?P<value>{_NUMBER})\s*(?P<unit>mm|毫米|cm|厘米)',phrase,re.I)
                 if match:
-                    value=Decimal(match['value'])*(10 if match['unit'].lower() in {'cm','厘米'} else 1)
+                    try:
+                        value=number(match['value'])*(10 if match['unit'].lower() in {'cm','厘米'} else 1)
+                    except ValueError:
+                        continue  # Keep the complete original clause unresolved.
                     refs=[add(source,start,end,measurement,value)]
                     break
             if not refs:

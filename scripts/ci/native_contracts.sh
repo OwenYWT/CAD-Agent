@@ -57,7 +57,9 @@ invocation=("${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/source_obligatio
 "${invocation[@]}" > "$report/source-obligations-receiver.log" 2>&1
 grep -F 'CAD_SOURCE_RECEIVER_CONTRACT=' "$report/source-obligations-receiver.log"
 "${CAD_CI_PYTHON:-python}" "$root/scripts/ci/step_metadata.py" "$report" source-obligations-receiver "${invocation[@]}"
-invocation=("${common[@]}" -v "$report/intake-semantics.json:/sandbox/input/intake-semantics.json:ro" -e PYTHONPATH=/opt/cad-agent --entrypoint python "$image" /tests/intake_semantics_contract.py)
+mkdir -p "$report/intake-semantics-artifacts"
+chmod 777 "$report/intake-semantics-artifacts"
+invocation=("${common[@]}" -v "$report/intake-semantics-artifacts:/evidence" -e CAD_INTAKE_EVIDENCE_DIR=/evidence -v "$report/intake-semantics.json:/sandbox/input/intake-semantics.json:ro" -e PYTHONPATH=/opt/cad-agent --entrypoint python "$image" /tests/intake_semantics_contract.py)
 "${invocation[@]}" > "$report/intake-semantics.log" 2>&1
 grep -F 'CAD_INTAKE_SEMANTICS=' "$report/intake-semantics.log"
 "${CAD_CI_PYTHON:-python}" "$root/scripts/ci/step_metadata.py" "$report" intake-semantics "${invocation[@]}"

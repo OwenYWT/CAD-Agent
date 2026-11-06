@@ -2,6 +2,13 @@ import { authFetch } from "../../auth";
 import type { DurableTaskEvent, DurableTaskSnapshot } from "../../types";
 import { API_BASE } from "./http";
 import { readJson } from "./http";
+import type { RequirementIntakePreview } from "../../types/requirements";
+
+export async function previewRequirements(objective: string, signal?: AbortSignal): Promise<RequirementIntakePreview> {
+  return readJson(await authFetch(`${API_BASE}/api/tasks/requirements/preview`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({objective}), signal,
+  }), '需求读取失败，可手动填写尺寸后继续');
+}
 
 export async function cancelEngineeringTask(taskId: string): Promise<void> {
   await readJson(await authFetch(`${API_BASE}/api/tasks/${taskId}/cancel`, {method:'POST', headers:{'Content-Type':'application/json'},

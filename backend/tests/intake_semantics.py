@@ -27,8 +27,11 @@ def intake_case(name):
     objective = {'diameter':'生成圆柱体几何模型。圆柱体直径为40 mm，圆柱体高度为25 mm。',
         'radius':'生成圆柱体几何模型。圆柱体半径为20 mm，圆柱体高度为25 mm。',
         'passage':'板40×30×12mm，孔径6mm，孔须打通。',
+        'cube':'构建一个十厘米的正方体', 'cube_rectangular':'构建一个十厘米的正方体',
+        'cube_split':'构建一个正方体', 'chinese_box':'长方体长100mm宽二十厘米高三十厘米',
+        'sphere_bounds':'球体长40mm宽40mm高40mm', 'cylinder_bounds':'圆柱体长40mm宽40mm厚25mm',
         'wall':'盒体外壁厚度：3 mm', 'floor':'盒体底板厚度：3 mm'}[name]
-    basis = RequirementBasisV1(target=objective, dimensions=objective, source_kind='user_specification',
+    basis = RequirementBasisV1(target=objective, dimensions='边长两点五厘米' if name == 'cube_split' else objective, source_kind='user_specification',
         source_reference='用户指定的设计尺寸', design_scope='geometry')
     return objective, basis
 
@@ -66,7 +69,27 @@ class IntakeSemanticsOperations:
         def add(action, **args):
             operations.append({'op_id':'op-'+str(len(operations)), 'action':action, 'args':args})
         add('sketch.create', name='Base')
-        if self.name in {'diameter','radius'}:
+        if self.name in {'sphere_bounds', 'cylinder_bounds'}:
+            shape = ('Part.makeSphere(20)' if self.name == 'sphere_bounds' else 'Part.makeCylinder(20,25)') if self.valid else (
+                'Part.makeBox(40,40,40)' if self.name == 'sphere_bounds' else 'Part.makeBox(40,40,25)')
+            operations.clear()
+            add('api.execute', source="body=document.addObject('PartDesign::Body','Body')\n"
+                "feature=body.newObject('PartDesign::Feature','Primitive')\n"
+                f"feature.Shape={shape}\nbody.Tip=feature\n")
+        elif self.name in {'cube', 'cube_split', 'cube_rectangular', 'chinese_box'}:
+            length, width, height = ((25, 25, 25) if self.name == 'cube_split' else
+                                    (100, 200, 300) if self.name == 'chinese_box' else (100, 100, 100))
+            if not self.valid:
+                if self.name == 'cube_rectangular':
+                    width = 50
+                elif self.name == 'chinese_box':
+                    length += 1
+                else:
+                    length, width, height = length+1, width+1, height+1
+            add('sketch.add_profile', sketch='Base', geometry={'kind':'rectangle', 'corner':{'x':0,'y':0},
+                'width_mm':length, 'height_mm':width})
+            add('feature.pad', name='Pad', profile='Base', length_mm=height)
+        elif self.name in {'diameter','radius'}:
             add('sketch.add_profile', sketch='Base', geometry={'kind':'circle', 'center':{'x':0,'y':0},
                 'radius_mm':20 if self.valid else 21})
             add('feature.pad', name='Pad', profile='Base', length_mm=25)

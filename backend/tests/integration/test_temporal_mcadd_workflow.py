@@ -4163,7 +4163,8 @@ async def test_original_hook_intake_binds_external_input_and_gates_persisted_can
 
 
 @pytest.mark.asyncio(loop_scope='module')
-@pytest.mark.parametrize('name', ['fdm','context','diameter','radius','wall','floor'])
+@pytest.mark.parametrize('name', ['fdm','context','diameter','radius','wall','floor',
+                                 'cube','cube_split','cube_rectangular','chinese_box','sphere_bounds','cylinder_bounds'])
 @pytest.mark.parametrize('valid', [True,False], ids=['correct','wrong-geometry'])
 async def test_intake_semantics_admission_native_measurement_and_commit(name, valid):
     from app.models.workflow_requests import OperationContextV1
@@ -4197,7 +4198,8 @@ async def test_intake_semantics_admission_native_measurement_and_commit(name, va
         evidence = (await conn.execute(text("SELECT id,evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"),
             {'id':workflow_id})).mappings().one()
         report = evidence['evidence']
-        assert report['outcome'] == ('passed' if valid else 'failed')
+        assert report['outcome'] == ('passed' if valid else 'indeterminate'
+                                    if name in {'cube_rectangular', 'sphere_bounds', 'cylinder_bounds'} else 'failed')
         assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'), {'id':initial.branch_id}) == initial.revision_id
         assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'), {'id':workflow_id}) == int(valid)
         assert not report['acceptance_contract']['verification_limits']
@@ -4206,6 +4208,14 @@ async def test_intake_semantics_admission_native_measurement_and_commit(name, va
         if name == 'wall':
             values = report['acceptance']['evidence'][0]['measured']
             assert values == ([3]*4 if valid else [1]*4)
+        if name.startswith('cube'):
+            expected_edge = 25. if name == 'cube_split' else 100.
+            assert sorted((c['kind'], c['comparison']['value']) for c in report['acceptance_contract']['checks']) == [
+                ('cube_edge', expected_edge), ('cube_shape', 1.)]
+        if name == 'chinese_box':
+            assert sorted(c['comparison']['value'] for c in report['acceptance_contract']['checks']) == [100., 200., 300.]
+        if name in {'sphere_bounds', 'cylinder_bounds'}:
+            assert name.split('_')[0]+'_shape' in {c['kind'] for c in report['acceptance_contract']['checks']}
     public = await get_validation_evidence(owner, workflow_id, evidence['id'])
     assert public['report']['acceptance_contract'] == report['acceptance_contract']
     if valid:

@@ -206,6 +206,29 @@ async def _wait_for_status(owner, workflow_id, expected: set[str], timeout=40):
 
 
 @pytest.mark.asyncio(loop_scope="module")
+@pytest.mark.auth
+async def test_requirement_preview_is_authenticated_read_only_and_uses_the_source_binder():
+    transport = httpx.ASGITransport(app=create_app())
+    async with httpx.AsyncClient(transport=transport, base_url='http://test') as api:
+        path = '/api/tasks/requirements/preview'
+        assert (await api.post(path, json={'objective': '构建一个十厘米的正方体'})).status_code == 401
+        for objective, complete in [
+            ('构建一个十厘米的正方体', True), ('长方体长100mm宽二十厘米高三十厘米', True),
+            ('正方体边长100mm，高50mm', False), ('板40×30×12mm，孔要沿未知路径打通', False),
+        ]:
+            response = await api.post(path, headers={'Authorization': f'Bearer {OWNER_KEY}'}, json={'objective': objective})
+            assert response.status_code == 200, response.text
+            assert response.json()['complete'] is complete
+            if complete:
+                assert response.json()['dimensions'] == objective
+        assert (await api.post(path, headers={'Authorization': f'Bearer {OWNER_KEY}'},
+            json={'objective': 'x'*4001})).status_code == 422
+    async with get_database_engine().connect() as conn:
+        for table in ('workflow_runs', 'model_jobs', 'execution_attempts', 'change_sets'):
+            assert await conn.scalar(text(f'SELECT count(*) FROM {table}')) == 0
+
+
+@pytest.mark.asyncio(loop_scope="module")
 async def test_real_change_set_api_accepts_signals_commits_and_reads_revision():
     owner, project_id, initial = await _seed_project()
     temporal = await get_temporal_client()

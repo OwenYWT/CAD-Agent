@@ -1,5 +1,6 @@
 import { initialRequirementBasis, requirementNotice } from "../../adapters/requirementIntake";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { previewRequirements } from "../../services/clients/tasks";
 import type { RequirementBasis } from "../../types/requirements";
 import type { ManufacturingProfile } from "../../types";
 
@@ -28,11 +29,28 @@ export default function RequirementCard({ objective, profile, onConfirm, onBack,
   objective:string; profile?:ManufacturingProfile | null; onConfirm:(basis:RequirementBasis)=>void; onBack:()=>void; disabled?:boolean; initialBasis?:RequirementBasis;
 }) {
   const [basis,setBasis]=useState<RequirementBasis>(()=>initialBasis ? {...initialBasis,target:objective} : initialRequirementBasis(objective));
+  const edited = useRef(false);
+  const [previewError, setPreviewError] = useState('');
+  useEffect(() => {
+    if (initialBasis) return;
+    const controller = new AbortController();
+    previewRequirements(objective, controller.signal).then(preview => {
+      if (!controller.signal.aborted && !edited.current) setBasis(initialRequirementBasis(objective, preview));
+    }).catch(() => {
+      if (!controller.signal.aborted && !edited.current) setPreviewError('需求读取失败，可手动填写尺寸后继续。');
+    });
+    return () => controller.abort();
+  }, [objective, initialBasis]);
   const physical = basis.design_scope !== "geometry";
-  const set=(patch:Partial<RequirementBasis>)=>setBasis(value=>({...value,...patch}));
+  const set=(patch:Partial<RequirementBasis>)=>{
+    edited.current = true;
+    setPreviewError('');
+    setBasis(value=>({...value,...patch}));
+  };
   const complete=basis.source_kind!=='none' && !!basis.dimensions.trim() && !!basis.source_reference.trim();
   return <section className="ww-requirement-card" aria-label="执行前需求确认" data-task-phase="needs_input">
     <h3>{complete ? "确认需求摘要" : "等待补充 · 确认关键条件"}</h3>
+    {previewError ? <p role="status">{previewError}</p> : null}
     <p className="type-caption">只补充影响几何和适配的依据。修改尺寸后，请一并核对目标中的数值和条件。请核对下方制造设置；下列信息会随任务保存。</p>
     <label>目标<textarea aria-label="建模目标" maxLength={1000} rows={2} value={basis.target} onChange={e=>set({target:e.target.value})} /></label>
     <label>建模用途<select aria-label="建模范围" value={basis.design_scope} onChange={e=>set({design_scope:e.target.value as RequirementBasis['design_scope'],source_kind:'none',source_reference:'',concept_acknowledged:false})}><option value="geometry">几何设计（按指定尺寸创建）</option><option value="physical_fit">与实物适配或装配</option></select></label>

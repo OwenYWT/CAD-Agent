@@ -188,7 +188,8 @@ class AcceptanceCheckV2(AcceptanceModel):
                   'hole_depth', 'hole_through', 'hole_position', 'wall_thickness', 'volume', 'void_connected',
                   'surface_clearance', 'planar_gap', 'bounding_box',
                   'assembly_dimension', 'assembly_count', 'assembly_predicate',
-                  'cylinder_diameter', 'cylinder_radius', 'cylinder_height', 'sphere_diameter', 'sphere_radius']
+                  'cylinder_diameter', 'cylinder_radius', 'cylinder_height', 'sphere_diameter', 'sphere_radius',
+                  'cube_edge', 'cube_shape', 'sphere_shape', 'cylinder_shape']
     description: str = Field(min_length=1)
     source_quote: str = Field(min_length=1)
     source_kind: Literal['user', 'confirmed', 'assumption'] = 'user'
@@ -210,7 +211,8 @@ class AcceptanceCheckV2(AcceptanceModel):
         if self.required != (self.source_kind != 'assumption'):
             raise ValueError('requiredness must match verified provenance')
         kind, scope, comparison = self.kind, self.scope, self.comparison
-        count = kind in {'solid_count', 'hole_count', 'hole_through', 'void_connected', 'assembly_count', 'assembly_predicate'}
+        count = kind in {'solid_count', 'hole_count', 'hole_through', 'void_connected', 'assembly_count', 'assembly_predicate',
+                         'cube_shape', 'sphere_shape', 'cylinder_shape'}
         if kind.startswith('assembly_') or scope.assembly_measurement is not None:
             if assembly_kind(scope.assembly_measurement) != kind:
                 raise ValueError('assembly role does not define this measurement kind')
@@ -225,6 +227,11 @@ class AcceptanceCheckV2(AcceptanceModel):
                 raise ValueError('counts do not accept engineering tolerance')
         if kind == 'hole_through' and (not isinstance(comparison, EqualComparison) or comparison.value != 1):
             raise ValueError('hole_through requires an exact unobstructed passage predicate (1)')
+        if kind in {'cube_shape', 'sphere_shape', 'cylinder_shape'} and (
+                not isinstance(comparison, EqualComparison) or comparison.value != 1):
+            raise ValueError('material shape requires its complete primitive boundary (1)')
+        if kind.startswith('cube_') and scope.axis is not None:
+            raise ValueError('cube edges are intrinsic; explicit world-axis extents need separate measurements')
         if kind == 'hole_position':
             if not scope.centers_mm or scope.axis is None:
                 raise ValueError('hole positions require centers and an axis')
@@ -242,7 +249,7 @@ class AcceptanceCheckV2(AcceptanceModel):
         if kind == 'wall_thickness' and scope.wall_mode in {'continuous_normal', 'side_walls', 'cavity_floor'} and (
                 scope.point_mm is not None or scope.centers_mm or scope.region_min_mm is not None):
             raise ValueError('whole-part wall coverage cannot use local selectors')
-        if kind.startswith(('cylinder_', 'sphere_')) and (
+        if kind.startswith(('cylinder_', 'sphere_', 'cube_')) and (
                 scope.point_mm is not None or scope.centers_mm or scope.region_min_mm is not None):
             raise ValueError('material primitive dimensions require a complete selected solid, not local probes or clips')
         if kind == 'void_connected' and (not isinstance(comparison, EqualComparison)
