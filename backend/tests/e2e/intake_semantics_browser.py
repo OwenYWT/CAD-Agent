@@ -22,6 +22,42 @@ from tests.intake_semantics import intake_case, IntakeSemanticsRequirements, Int
 from tests.rectangular_assembly import assembly_case, AssemblyRequirements, AssemblyOperations
 
 
+async def verify_preview_preserves_input(page):
+    # Delay the real request until the user has focused and selected the field.
+    # No response is replaced: this exercises the browser/API scheduling race.
+    objective, basis = intake_case('cube')
+    arrived, release = asyncio.Event(), asyncio.Event()
+    preview_url = '**/api/tasks/requirements/preview'
+
+    async def delay_preview(route):
+        arrived.set()
+        await release.wait()
+        await route.continue_()
+
+    await page.route(preview_url, delay_preview)
+    try:
+        await page.get_by_role('button', name='新建设计', exact=True).click()
+        await page.get_by_role('textbox', name='工程需求', exact=True).fill(objective)
+        await page.get_by_role('button', name='开始创建', exact=True).click()
+        await asyncio.wait_for(arrived.wait(), timeout=30)
+        intake = page.get_by_role('region', name='执行前需求确认', exact=True)
+        dimensions = intake.get_by_role('textbox', name='关键尺寸依据', exact=True)
+        await expect(dimensions).to_have_value('')
+        await dimensions.select_text()
+        async with page.expect_response(preview_url) as pending:
+            release.set()
+        response = await pending.value
+        assert response.status == 200
+        assert await response.json() == {'dimensions': basis.dimensions, 'complete': True}
+        await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        await page.keyboard.insert_text(basis.dimensions)
+        await expect(dimensions).to_have_value(basis.dimensions)
+        await expect(intake.get_by_role('checkbox', name='确认仅生成概念外形', exact=True)).not_to_be_checked()
+    finally:
+        release.set()
+        await page.unroute(preview_url, delay_preview)
+
+
 async def main():
     private = json.loads(Path(os.environ['CAD_NATIVE_E2E_PRIVATE']).read_text())
     out = Path(os.environ['CAD_BROWSER_REPORT_ROOT'])/'browser-intake-semantics'
@@ -39,6 +75,7 @@ async def main():
             await page.locator('#account').fill(private['owner']['phone'])
             await page.locator('#password').fill(private['owner']['password'])
             await page.locator('button[type=submit]').click()
+            await verify_preview_preserves_input(page)
             for name in ('fdm','diameter','assembly','passage','cube','cube_split','chinese_box','sphere_bounds','cylinder_bounds'):
                 objective,basis = assembly_case() if name == 'assembly' else intake_case(name)
                 planner,operations = (AssemblyRequirements(),AssemblyOperations()) if name == 'assembly' else (IntakeSemanticsRequirements(name), IntakeSemanticsOperations(name))

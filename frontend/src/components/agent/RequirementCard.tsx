@@ -48,7 +48,11 @@ export default function RequirementCard({ objective, profile, onConfirm, onBack,
     setBasis(value=>({...value,...patch}));
   };
   const complete=basis.source_kind!=='none' && !!basis.dimensions.trim() && !!basis.source_reference.trim();
-  return <section className="ww-requirement-card" aria-label="执行前需求确认" data-task-phase="needs_input">
+  return <section className="ww-requirement-card" aria-label="执行前需求确认" data-task-phase="needs_input" onFocusCapture={event=>{
+    // Focusing/selecting a field starts editing before its first change event.
+    // A late preview must not replace that value or move the input selection.
+    if (event.target.matches('input, textarea, select')) edited.current = true;
+  }}>
     <h3>{complete ? "确认需求摘要" : "等待补充 · 确认关键条件"}</h3>
     {previewError ? <p role="status">{previewError}</p> : null}
     <p className="type-caption">只补充影响几何和适配的依据。修改尺寸后，请一并核对目标中的数值和条件。请核对下方制造设置；下列信息会随任务保存。</p>
