@@ -568,6 +568,54 @@ class FreeCADOperationGenerator:
         # independently identifies the canonical plan actually executed.
         return replace(result, operation_plan=scoped, source_code=scoped.model_dump_json())
 
+    @staticmethod
+    def _contract_retry_guidance(error: Exception) -> str:
+        differences = rejection_differences(error)
+        invalid_inspection_fields = {
+            str(item.get('field', '')).rsplit('.', 1)[-1]
+            for item in differences
+            if item.get('error_type') == 'extra_forbidden'
+            and str(item.get('field', '')).startswith('operations.')
+            and str(item.get('field', '')).rsplit('.', 1)[-1] in {'objects', 'fields'}
+        }
+        if invalid_inspection_fields:
+            fields = ', '.join(sorted(invalid_inspection_fields))
+            return (
+                f' The operation contains unsupported top-level inspection field(s): {fields}. '
+                'An operation object may contain only op_id, action, and args. '
+                'Do not put objects or fields on an operation. To inspect an existing document, '
+                'call freecad_inspect with objects and fields as tool arguments; otherwise '
+                'return a valid modeling operation without those inspection fields.'
+            )
+        return ''
+
+    @staticmethod
+    def _legacy_inspection_query(raw: Any) -> dict[str, Any] | None:
+        """Recognize the historical inspection-in-operations envelope only."""
+        if (not isinstance(raw, dict)
+                or raw.get('schema_version') != 'freecad-operation-plan.v1'
+                or not isinstance(raw.get('operations'), list)):
+            return None
+        operations = raw['operations']
+        if len(operations) != 1 or not isinstance(operations[0], dict):
+            return None
+        operation = operations[0]
+        if operation.get('action') != 'document.inspect':
+            return None
+        if operation.get('args') not in (None, {}):
+            return None
+        if not isinstance(operation.get('objects'), list) or not isinstance(operation.get('fields'), list):
+            return None
+        allowed = {'op_id', 'action', 'args', 'objects', 'fields', 'offset', 'limit'}
+        if set(operation) - allowed:
+            return None
+        return {
+            'objects': operation['objects'],
+            'fields': operation['fields'],
+            'offset': operation.get('offset', 0),
+            'limit': operation.get('limit', 16),
+        }
+
     async def _complete(
         self,
         *,
@@ -672,7 +720,8 @@ class FreeCADOperationGenerator:
                                'Use {"kind":"line","start":{"x":10,"y":10},'
                                '"end":{"x":20,"y":10}}; never use {"line":{...}}. '
                                + (_INSPECTION_NEXT if base_state is not None and not inspections
-                                  else "Call freecad_execute for typed operations or freecad_execute_api for a native program, with corrected arguments using the measured facts already supplied."))
+                                  else "Call freecad_execute for typed operations or freecad_execute_api for a native program, with corrected arguments using the measured facts already supplied.")
+                               + self._contract_retry_guidance(last_error))
                         ),
                     }
                 )
@@ -783,6 +832,13 @@ class FreeCADOperationGenerator:
                         raise profile_replan.rejected('profile repair requires the local profile patch tool, not a replacement plan')
                     if cut_context:
                         raise ValueError('cut repair requires the local cut patch tool, not a replacement plan')
+                legacy_inspection = (
+                    self._legacy_inspection_query(raw)
+                    if base_state is not None
+                    else None
+                )
+                if legacy_inspection is not None:
+                    raw = {'inspect': legacy_inspection}
                 if isinstance(raw,dict) and set(raw)=={'capability_query'}:
                     query=CapabilityQuery.model_validate(raw['capability_query'])
                     if query in capability_queries:

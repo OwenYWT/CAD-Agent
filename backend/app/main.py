@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app.evaluation.mode import resolve_mode
 from app.db import close_database, database_readiness
 from app.execution.composition import get_execution_backend
 from app.object_store import object_store_readiness
@@ -195,6 +196,7 @@ def create_app() -> FastAPI:
         description="Web application for generating and previewing CAD files from natural language.",
         lifespan=lifespan,
     )
+    app.state.evaluation_mode = resolve_mode()
 
     app.add_middleware(
         CORSMiddleware,

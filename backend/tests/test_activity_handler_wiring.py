@@ -17,6 +17,21 @@ def test_all_activity_wrappers_bind_explicit_dependencies():
         if not isinstance(value, ast.Await) or not isinstance(value.value, ast.Call):
             continue
         call = value.value
+        if (
+            isinstance(call.func, ast.Attribute)
+            and isinstance(call.func.value, ast.Name)
+            and call.func.value.id == "self"
+            and call.func.attr == "_run_observed"
+        ):
+            operation = call.args[2]
+            if not isinstance(operation, ast.Lambda):
+                continue
+            inner_call = operation.body
+            if isinstance(inner_call, ast.Await):
+                inner_call = inner_call.value
+            if not isinstance(inner_call, ast.Call):
+                continue
+            call = inner_call
         if isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name):
             handler = getattr(getattr(activities, call.func.value.id), call.func.attr)
         elif isinstance(call.func, ast.Name):

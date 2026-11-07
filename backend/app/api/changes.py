@@ -29,10 +29,23 @@ from app.services.event_relay import (
     get_task_snapshot,
 )
 from app.workflows.temporal import confirm_mcad_workflow
+from app.evaluation.integration import record_change_set_transition
 
 
 router = APIRouter(prefix="/api/change-sets", tags=["change-sets"])
 logger = logging.getLogger(__name__)
+
+
+def _evaluation_transition_payload(
+    fallback_workflow_id: UUID | None,
+    result,
+) -> dict[str, str]:
+    if isinstance(result, dict):
+        workflow_id = result.get("source_workflow_run_id")
+    else:
+        workflow_id = getattr(result, "source_workflow_run_id", None)
+    workflow_id = workflow_id or fallback_workflow_id
+    return {"workflow_run_id": str(workflow_id)} if workflow_id else {}
 
 
 def _operation_error(exc: Exception) -> HTTPException:
@@ -57,11 +70,11 @@ async def _signal_review(
     if workflow_run_id is None:
         return
     snapshot = await get_task_snapshot(principal, workflow_run_id)
-    if snapshot["status"] in {
-        "succeeded",
-        "failed",
-        "cancelled",
-        "timed_out",
+    if snapshot["status"] not in {
+        "pending",
+        "planning",
+        "running",
+        "waiting_confirmation",
     }:
         # Compatibility workflows finish with a pending-review Change Set.
         # Their review is a control-plane transition and has no live Temporal
@@ -100,6 +113,11 @@ async def accept_change(
             change_set_id=change_set_id,
             review_note=body.note or None,
         )
+        record_change_set_transition(
+            _evaluation_transition_payload(workflow_id, result),
+            "accepted",
+            result,
+        )
         # Persisted review happens first.  If Temporal is transiently unavailable,
         # retrying this endpoint replays the state transition and re-sends the
         # idempotent workflow signal.
@@ -136,6 +154,11 @@ async def reject_change(
             reviewer_principal_id=principal.principal_id,
             change_set_id=change_set_id,
             review_note=body.note,
+        )
+        record_change_set_transition(
+            _evaluation_transition_payload(workflow_id, result),
+            "rejected",
+            result,
         )
         await _signal_review(
             principal,
@@ -174,6 +197,11 @@ async def request_change(
             change_set_id=change_set_id,
             review_note=body.note,
         )
+        record_change_set_transition(
+            _evaluation_transition_payload(workflow_id, result),
+            "changes_requested",
+            result,
+        )
         await _signal_review(
             principal,
             workflow_id,
@@ -200,11 +228,18 @@ async def commit_change(
     principal: PrincipalContext = Depends(get_durable_principal),
 ):
     try:
-        return await commit_change_set(
+        workflow_id = await change_set_workflow_id(principal, change_set_id)
+        result = await commit_change_set(
             tenant_id=principal.tenant_id,
             reviewer_principal_id=principal.principal_id,
             change_set_id=change_set_id,
         )
+        record_change_set_transition(
+            _evaluation_transition_payload(workflow_id, result),
+            "committed",
+            result,
+        )
+        return result
     except Exception as exc:
         raise _operation_error(exc) from exc
 
@@ -216,11 +251,18 @@ async def rollback_change(
     principal: PrincipalContext = Depends(get_durable_principal),
 ):
     try:
-        return await rollback_change_set(
+        workflow_id = await change_set_workflow_id(principal, change_set_id)
+        result = await rollback_change_set(
             tenant_id=principal.tenant_id,
             reviewer_principal_id=principal.principal_id,
             change_set_id=change_set_id,
             review_note=body.note,
         )
+        record_change_set_transition(
+            _evaluation_transition_payload(workflow_id, result),
+            "rolled_back",
+            result,
+        )
+        return result
     except Exception as exc:
         raise _operation_error(exc) from exc

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -27,6 +28,10 @@ from app.models.workflow_requests import (FreeCADRevisionRestoreV1, McadExecutio
 from app.workflows.temporal import (FreeCADStructuredModificationV1, mcad_workflow_request_payload, mcad_agent_v2_request_payload, start_mcad_agent_v2_workflow, start_mcad_workflow)
 from app.services.run_state import IdempotencyConflict
 from app.freecad.selection import SelectionContextV1, SelectionError, needs_selection, freeze_selection
+from app.evaluation.integration import ensure_live_session
+
+
+logger = logging.getLogger(__name__)
 
 
 _MEDIA_TYPES = {
@@ -52,6 +57,47 @@ class WorkspaceIdentity:
     project_id: UUID
     branch_id: UUID
     head_revision_id: UUID
+
+
+def _record_live_submission(
+    workflow_run_id: UUID,
+    *,
+    operation: str,
+    objective: str,
+    idempotency_key: str,
+    expected_base_revision_id: UUID,
+    revision_restore: FreeCADRevisionRestoreV1 | None = None,
+    operation_context: OperationContextV1 | None = None,
+    source_kind: str = "user_task",
+    source_id: str | None = None,
+) -> None:
+    try:
+        ensure_live_session(
+            {
+                "workflow_run_id": str(workflow_run_id),
+                "operation": operation,
+                "objective": objective,
+                "expected_base_revision_id": str(expected_base_revision_id),
+                **(
+                    {"revision_restore": revision_restore.model_dump(mode="json")}
+                    if revision_restore is not None
+                    else {}
+                ),
+                **(
+                    {"operation_context": operation_context.model_dump(mode="json")}
+                    if operation_context is not None
+                    else {}
+                ),
+            },
+            source_kind=source_kind,
+            source_id=source_id or idempotency_key,
+        )
+    except Exception as exc:
+        logger.warning(
+            "live evaluation admission failed for workflow %s: %s",
+            workflow_run_id,
+            type(exc).__name__,
+        )
 
 
 async def recover_session_submission(principal, *, session_id: str, panel_id: str, idempotency_key: str):
@@ -319,6 +365,8 @@ async def submit_durable_workflow(
     expected_state_version: int | None = None,
     selection_context: SelectionContextV1 | None = None,
     requirement_basis: RequirementBasisV1 | None = None,
+    source_kind: str = "user_task",
+    source_id: str | None = None,
 ) -> DurableSubmission:
     normalized_objective = objective.strip()
     # Older clients wrapped bare continuation commands as new design objectives.
@@ -567,6 +615,17 @@ async def submit_durable_workflow(
                 require_confirmation=require_confirmation,
                 commit_after_confirmation=require_confirmation,
             )
+        _record_live_submission(
+            workflow_run_id,
+            operation=operation,
+            objective=normalized_objective,
+            idempotency_key=normalized_idempotency_key,
+            expected_base_revision_id=expected_base_revision_id,
+            revision_restore=revision_restore,
+            operation_context=operation_context,
+            source_kind=source_kind,
+            source_id=source_id,
+        )
         return DurableSubmission(
             workflow_run_id=workflow_run_id,
             handle=handle,
@@ -632,6 +691,17 @@ async def submit_durable_workflow(
             require_confirmation=require_confirmation,
             commit_after_confirmation=require_confirmation,
         )
+    _record_live_submission(
+        workflow_run_id,
+        operation=operation,
+        objective=normalized_objective,
+        idempotency_key=normalized_idempotency_key,
+        expected_base_revision_id=expected_base_revision_id,
+        revision_restore=revision_restore,
+        operation_context=operation_context,
+        source_kind=source_kind,
+        source_id=source_id,
+    )
     return DurableSubmission(
         workflow_run_id=workflow_run_id,
         handle=handle,

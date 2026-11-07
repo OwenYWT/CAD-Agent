@@ -129,7 +129,14 @@ def _candidate_artifact_failures(report: dict) -> tuple[list[dict], list[dict]]:
                         "run": index,
                         "reason": reason,
                     })
-            if int(gate.get("rendered_views") or 0) < 4:
+            if gate.get("source") == "live_report":
+                if gate.get("visual_rendered") is not True:
+                    failures.append({
+                        "case_id": case_id,
+                        "run": index,
+                        "reason": "visual_rendered",
+                    })
+            elif int(gate.get("rendered_views") or 0) < 4:
                 failures.append({
                     "case_id": case_id,
                     "run": index,

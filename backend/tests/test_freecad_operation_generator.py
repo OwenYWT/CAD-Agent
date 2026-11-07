@@ -228,6 +228,102 @@ async def test_generator_explains_discriminated_geometry_shape_after_legacy_line
 
 
 @pytest.mark.asyncio
+async def test_generator_explains_inspection_fields_must_not_be_operation_fields() -> None:
+    malformed = _valid_plan()
+    malformed["operations"][0] = {
+        "op_id": "inspect",
+        "action": "document.inspect",
+        "args": {},
+        "objects": ["Sketch"],
+        "fields": ["geometry", "constraints"],
+    }
+    client = _client([malformed, _valid_plan()])
+    generator = FreeCADOperationGenerator(
+        client=client,
+        provenance_reader=_provenance,
+    )
+
+    result = await generator.generate(
+        plan=_plan(),
+        requirements={"description": "Cylinder"},
+        base_state=None,
+        output_formats=("step", "stl"),
+    )
+
+    assert result.operation_plan.operations[0].action == "sketch.create"
+    retry_instruction = client.completions.kwargs[1]["messages"][-1]["content"]
+    assert "objects" in retry_instruction
+    assert "fields" in retry_instruction
+    assert "freecad_inspect" in retry_instruction
+    assert "operations" in retry_instruction
+
+
+@pytest.mark.asyncio
+async def test_generator_accepts_legacy_inspection_operation_as_read_only_query() -> None:
+    malformed = {
+        "schema_version": "freecad-operation-plan.v1",
+        "document_name": "Model",
+        "operations": [
+            {
+                "op_id": "inspect",
+                "action": "document.inspect",
+                "args": {},
+                "objects": ["Pad"],
+                "fields": ["properties"],
+                "offset": 0,
+                "limit": 16,
+            }
+        ],
+    }
+    valid = {
+        "schema_version": "freecad-operation-plan.v1",
+        "document_name": "Model",
+        "operations": [
+            {
+                "op_id": "set-length",
+                "action": "property.set",
+                "args": {"object": "Pad", "property": "Length", "value": 20, "unit": "mm"},
+            },
+            {
+                "op_id": "export",
+                "action": "document.export",
+                "args": {"formats": ["fcstd", "step"], "basename": "model"},
+            },
+        ],
+    }
+    client = _client([malformed, valid])
+    generator = FreeCADOperationGenerator(client=client, provenance_reader=_provenance)
+
+    result = await generator._complete(
+        user_payload={"task": "modify"},
+        generator_kind="freecad_operations",
+        output_formats=("step",),
+        base_state=_plate_state(),
+    )
+
+    assert result.operation_plan.operations[0].action == "property.set"
+    assert client.completions.calls == 2
+    assert any("inspection_result" in str(message.get("content", ""))
+               for message in client.completions.kwargs[1]["messages"])
+
+
+def test_legacy_inspection_conversion_requires_v1_schema() -> None:
+    raw = {
+        "schema_version": "legacy-inspection",
+        "document_name": "Model",
+        "operations": [{
+            "op_id": "inspect",
+            "action": "document.inspect",
+            "args": {},
+            "objects": ["Pad"],
+            "fields": ["properties"],
+        }],
+    }
+
+    assert FreeCADOperationGenerator._legacy_inspection_query(raw) is None
+
+
+@pytest.mark.asyncio
 async def test_compiles_verified_revolved_circle_as_cylinder_without_provider() -> None:
     client = _client([])
     generator = FreeCADOperationGenerator(client=client)

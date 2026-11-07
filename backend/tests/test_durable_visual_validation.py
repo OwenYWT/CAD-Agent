@@ -124,6 +124,43 @@ def test_completion_receipt_round_trips_through_visual_evidence():
         })
 
 
+def test_completion_provenance_keeps_only_safe_model_tool_call_summaries():
+    response = ChatCompletion.model_validate({
+        "id": "tool-receipt",
+        "object": "chat.completion",
+        "created": 1,
+        "model": "planner",
+        "choices": [{
+            "index": 0,
+            "finish_reason": "tool_calls",
+            "message": {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {
+                        "name": "submit_requirements",
+                        "arguments": '{"length_mm":100}',
+                    },
+                }],
+            },
+        }],
+    })
+
+    provenance = _completion_provenance(
+        params={"model": "planner", "messages": []},
+        response=response,
+        provider="controlled",
+    )
+
+    assert provenance["tool_calls"] == [{
+        "name": "submit_requirements",
+        "arguments_hash": hashlib.sha256(b'{"length_mm":100}').hexdigest(),
+    }]
+    assert "arguments" not in provenance["tool_calls"][0]
+
+
 def test_visual_low_confidence_cannot_be_passed():
     with pytest.raises(ValidationError, match="confidence"):
         VisualJudgment(is_match=True, confidence=0.69)

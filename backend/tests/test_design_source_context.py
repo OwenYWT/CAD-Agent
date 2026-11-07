@@ -239,6 +239,52 @@ def test_no_context_preserves_the_existing_v2_wire_and_digest():
     assert contract.digest() == 'da9b8a05f446678ad3632893bd2234e19ce427c86a137cdfba6607016010e0ea'
 
 
+def test_empty_source_context_is_equivalent_to_omitted_context():
+    text = '将正方体的宽改为20cm，使其变成长方体'
+    result = extract_requirements(text)
+    assert not result['unsupported'], result
+    raw = contract_for(text, result).model_dump(mode='json')
+    raw['source_context'] = {
+        'schema_version': 'source-context.v1',
+        'execution_scope': 'cad_geometry',
+        'design_requests': [],
+        'external_references': [],
+        'unverified_aspects': [],
+    }
+    contract = AcceptanceContractV2.model_validate(raw)
+    assert validate_requirement_bindings(text, contract)['status'] == 'bound'
+
+
+def test_nondefault_execution_scope_is_not_an_empty_source_context():
+    text = 'Change width to 200 mm'
+    result = extract_requirements(text)
+    raw = contract_for(text, result).model_dump(mode='json')
+    raw['source_context'] = {
+        'schema_version': 'source-context.v1',
+        'execution_scope': 'concept_geometry',
+        'design_requests': [],
+        'external_references': [],
+        'unverified_aspects': [],
+    }
+    contract = AcceptanceContractV2.model_validate(raw)
+    with pytest.raises(RequirementBindingError, match='source context differs'):
+        validate_requirement_bindings(text, contract)
+
+
+def test_source_context_is_server_owned_when_model_submits_a_fabricated_context():
+    text = 'Change width to 200 mm'
+    raw = contract_for(text, extract_requirements(text)).model_dump(mode='json')
+    raw['source_context'] = {
+        'schema_version': 'source-context.v1',
+        'execution_scope': 'concept_geometry',
+        'design_requests': [],
+        'external_references': [],
+        'unverified_aspects': [],
+    }
+    bind_source_quotes(text, raw)
+    assert 'source_context' not in raw
+
+
 @pytest.mark.parametrize('operation', ['generate', 'modify'])
 @pytest.mark.asyncio
 async def test_unbindable_solid_input_fails_before_any_model_dispatch(operation):

@@ -1,5 +1,8 @@
 """Compatibility and Temporal registration adapter; business logic lives in handlers."""
 from __future__ import annotations
+import asyncio
+import hashlib
+import time
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -44,6 +47,12 @@ from app.db import tenant_transaction
 from app.repositories.agent_candidates import get_staging_manifest_for_step
 from app.repositories.artifacts import committed_artifact_for_revision
 from app.object_store import download_object
+from app.evaluation.integration import (
+    record_activity_failure,
+    record_activity_result,
+    record_workflow_terminal,
+)
+from app.evaluation.contracts import utc_now
 
 class McadWorkflowActivities:
     def __init__(
@@ -68,6 +77,66 @@ class McadWorkflowActivities:
         self.freecad_operations = freecad_operations or FreeCADOperationGenerator()
 
 
+    async def _run_observed(self, activity_name: str, payload: dict[str, Any], operation):
+        event_id = self._evaluation_event_id(activity_name, payload)
+        started_at = utc_now()
+        started_monotonic = time.perf_counter()
+        try:
+            result = await operation()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            try:
+                record_activity_failure(
+                    payload,
+                    activity_name,
+                    exc,
+                    event_id=event_id,
+                    started_at=started_at,
+                    finished_at=utc_now(),
+                    duration_ms=max(0, round((time.perf_counter() - started_monotonic) * 1000)),
+                )
+            except Exception:
+                pass
+            raise
+        try:
+            record_activity_result(
+                payload,
+                activity_name,
+                result,
+                event_id=event_id,
+                started_at=started_at,
+                finished_at=utc_now(),
+                duration_ms=max(0, round((time.perf_counter() - started_monotonic) * 1000)),
+            )
+        except Exception:
+            pass
+        return result
+
+
+    @staticmethod
+    def _evaluation_event_id(activity_name: str, payload: dict[str, Any]) -> str:
+        workflow_id = str(payload.get("workflow_run_id") or "unknown-workflow")
+        try:
+            activity_context = activity.info()
+            activity_id = activity_context.activity_id
+            attempt = str(activity_context.attempt)
+        except RuntimeError:
+            activity_id = None
+            attempt = str(
+                payload.get("attempt_id")
+                or payload.get("execution_attempt_id")
+                or payload.get("step_key")
+                or "default"
+            )
+        if activity_id:
+            return f"{workflow_id}:{activity_id}:attempt-{attempt}"
+        suffix = hashlib.sha256(
+            f"{activity_name}:{attempt}".encode("utf-8")
+        ).hexdigest()[:16]
+        return f"{workflow_id}:evaluation:{suffix}"
+
+
     async def _freecad_revision_artifact(self, request: McadAgentWorkflowV2Request, artifact_kind: str) -> dict[str, Any]:
         return await revision_inputs._freecad_revision_artifact(request, artifact_kind)
 
@@ -81,63 +150,114 @@ class McadWorkflowActivities:
 
     @activity.defn(name='agent_v2.requirements')
     async def agent_requirements(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await planning.agent_requirements(payload, durable_planner=self.durable_planner)
+        return await self._run_observed(
+            "agent_v2.requirements",
+            payload,
+            lambda: planning.agent_requirements(payload, durable_planner=self.durable_planner),
+        )
 
 
     @activity.defn(name="agent_v2.decompose")
     async def agent_decompose(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await decompose(payload, planner=self.durable_planner)
+        return await self._run_observed(
+            "agent_v2.decompose",
+            payload,
+            lambda: decompose(payload, planner=self.durable_planner),
+        )
 
 
     @activity.defn(name='agent_v2.plan')
     async def agent_plan(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await planning.agent_plan(payload, durable_planner=self.durable_planner)
+        return await self._run_observed(
+            "agent_v2.plan",
+            payload,
+            lambda: planning.agent_plan(payload, durable_planner=self.durable_planner),
+        )
 
 
     @activity.defn(name='agent_v2.allocate_candidate')
     async def agent_allocate_candidate(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await candidates.agent_allocate_candidate(payload)
+        return await self._run_observed(
+            "agent_v2.allocate_candidate",
+            payload,
+            lambda: candidates.agent_allocate_candidate(payload),
+        )
 
 
     @activity.defn(name='agent_v2.terminate_candidate')
     async def agent_terminate_candidate(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await candidates.agent_terminate_candidate(payload)
+        return await self._run_observed(
+            "agent_v2.terminate_candidate",
+            payload,
+            lambda: candidates.agent_terminate_candidate(payload),
+        )
 
 
     @activity.defn(name='agent_v2.generate_source')
     async def agent_generate_source(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await source_generation.agent_generate_source(payload, durable_modeling=self.durable_modeling)
+        return await self._run_observed(
+            "agent_v2.generate_source",
+            payload,
+            lambda: source_generation.agent_generate_source(payload, durable_modeling=self.durable_modeling),
+        )
 
 
     @activity.defn(name='agent_v2.repair_source')
     async def agent_repair_source(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await source_generation.agent_repair_source(payload, durable_repair=self.durable_repair)
+        return await self._run_observed(
+            "agent_v2.repair_source",
+            payload,
+            lambda: source_generation.agent_repair_source(payload, durable_repair=self.durable_repair),
+        )
 
 
     @activity.defn(name='agent_v2.generate_operations')
     async def agent_generate_operations(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await native_generation.agent_generate_operations(payload, freecad_operations=self.freecad_operations)
+        return await self._run_observed(
+            "agent_v2.generate_operations",
+            payload,
+            lambda: native_generation.agent_generate_operations(payload, freecad_operations=self.freecad_operations),
+        )
 
 
     @activity.defn(name='agent_v2.repair_operations')
     async def agent_repair_operations(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await native_generation.agent_repair_operations(payload, freecad_operations=self.freecad_operations)
+        return await self._run_observed(
+            "agent_v2.repair_operations",
+            payload,
+            lambda: native_generation.agent_repair_operations(payload, freecad_operations=self.freecad_operations),
+        )
 
 
     @activity.defn(name='agent_v2.execute_model')
     async def agent_execute_model(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await cad_execution.agent_execute_model(payload, backend=self.backend)
+        return await self._run_observed(
+            "agent_v2.execute_model",
+            payload,
+            lambda: cad_execution.agent_execute_model(payload, backend=self.backend),
+        )
 
 
     @activity.defn(name='agent_v2.execute_freecad')
     async def agent_execute_freecad(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await cad_execution.agent_execute_freecad(payload, backend=self.backend,
-            constraint_validation=NativeConstraintRepairValidation())
+        return await self._run_observed(
+            "agent_v2.execute_freecad",
+            payload,
+            lambda: cad_execution.agent_execute_freecad(
+                payload,
+                backend=self.backend,
+                constraint_validation=NativeConstraintRepairValidation(),
+            ),
+        )
 
 
     @activity.defn(name='agent_v2.validate_geometry')
     async def agent_validate_geometry(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await geometry_validation.agent_validate_geometry(payload, backend=self.backend)
+        return await self._run_observed(
+            "agent_v2.validate_geometry",
+            payload,
+            lambda: geometry_validation.agent_validate_geometry(payload, backend=self.backend),
+        )
 
 
     async def _agent_validation_input(self, *, request: McadAgentWorkflowV2Request, candidate_build_id: UUID, manifest_id: UUID, temp_dir: Path, preferred_format: str='stl') -> tuple[dict[str, Any], ArtifactInput, dict[str, Path]]:
@@ -146,32 +266,56 @@ class McadWorkflowActivities:
 
     @activity.defn(name='agent_v2.render_visual')
     async def agent_render_visual(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await visual_validation.agent_render_visual(payload, backend=self.backend)
+        return await self._run_observed(
+            "agent_v2.render_visual",
+            payload,
+            lambda: visual_validation.agent_render_visual(payload, backend=self.backend),
+        )
 
 
     @activity.defn(name='agent_v2.judge_visual')
     async def agent_judge_visual(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await visual_validation.agent_judge_visual(payload, durable_visual=self.durable_visual)
+        return await self._run_observed(
+            "agent_v2.judge_visual",
+            payload,
+            lambda: visual_validation.agent_judge_visual(payload, durable_visual=self.durable_visual),
+        )
 
 
     @activity.defn(name='agent_v2.repair_visual')
     async def agent_repair_visual(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await visual_validation.agent_repair_visual(payload, durable_visual=self.durable_visual)
+        return await self._run_observed(
+            "agent_v2.repair_visual",
+            payload,
+            lambda: visual_validation.agent_repair_visual(payload, durable_visual=self.durable_visual),
+        )
 
 
     @activity.defn(name='agent_v2.validate_dfm')
     async def agent_validate_dfm(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await dfm_validation.agent_validate_dfm(payload, backend=self.backend)
+        return await self._run_observed(
+            "agent_v2.validate_dfm",
+            payload,
+            lambda: dfm_validation.agent_validate_dfm(payload, backend=self.backend),
+        )
 
 
     @activity.defn(name='agent_v2.generate_bom')
     async def agent_generate_bom(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await bom.agent_generate_bom(payload, backend=self.backend)
+        return await self._run_observed(
+            "agent_v2.generate_bom",
+            payload,
+            lambda: bom.agent_generate_bom(payload, backend=self.backend),
+        )
 
 
     @activity.defn(name='agent_v2.seal_candidate')
     async def agent_seal_candidate(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await candidates.agent_seal_candidate(payload)
+        return await self._run_observed(
+            "agent_v2.seal_candidate",
+            payload,
+            lambda: candidates.agent_seal_candidate(payload),
+        )
 
 
     @activity.defn(name='mcad.prepare_source')
@@ -221,22 +365,58 @@ class McadWorkflowActivities:
 
     @activity.defn(name='mcad.finalize')
     async def finalize(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await review.finalize(payload)
+        result = await self._run_observed(
+            "mcad.finalize",
+            payload,
+            lambda: review.finalize(payload),
+        )
+        try:
+            record_workflow_terminal(payload, result)
+        except Exception:
+            pass
+        return result
 
 
     @activity.defn(name='mcad.record_cancel')
     async def record_cancel(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await lifecycle.record_cancel(payload)
+        result = await self._run_observed(
+            "mcad.record_cancel",
+            payload,
+            lambda: lifecycle.record_cancel(payload),
+        )
+        try:
+            record_workflow_terminal(payload, result)
+        except Exception:
+            pass
+        return result
 
 
     @activity.defn(name='mcad.record_timeout')
     async def record_timeout(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await lifecycle.record_timeout(payload)
+        result = await self._run_observed(
+            "mcad.record_timeout",
+            payload,
+            lambda: lifecycle.record_timeout(payload),
+        )
+        try:
+            record_workflow_terminal(payload, result)
+        except Exception:
+            pass
+        return result
 
 
     @activity.defn(name='mcad.record_failure')
     async def record_failure(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await lifecycle.record_failure(payload)
+        result = await self._run_observed(
+            "mcad.record_failure",
+            payload,
+            lambda: lifecycle.record_failure(payload),
+        )
+        try:
+            record_workflow_terminal(payload, result)
+        except Exception:
+            pass
+        return result
 
 
     @activity.defn(name='document.acquire')

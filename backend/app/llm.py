@@ -60,6 +60,16 @@ def _completion_provenance(
         response_bytes = json.dumps({"content": content, "tool_calls": [
             call.model_dump(mode="json", exclude_none=True) for call in tool_calls
         ]}, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    safe_tool_calls = []
+    for call in tool_calls or ():
+        function = getattr(call, "function", None)
+        name = str(getattr(function, "name", "") or "")
+        arguments = str(getattr(function, "arguments", "") or "")
+        if name:
+            safe_tool_calls.append({
+                "name": name,
+                "arguments_hash": hashlib.sha256(arguments.encode("utf-8")).hexdigest(),
+            })
     usage = getattr(response, "usage", None)
     if usage is None:
         usage_payload: dict[str, Any] = {}
@@ -88,6 +98,7 @@ def _completion_provenance(
             str(getattr(first, "finish_reason", "") or "") or None
         ),
         "usage": usage_payload,
+        **({"tool_calls": safe_tool_calls} if safe_tool_calls else {}),
     }
 
 

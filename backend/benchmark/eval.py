@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import logging
 import platform
@@ -33,8 +34,11 @@ import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import UUID
 
 from app.config import settings
+from app.evaluation.mode import configure_process_mode
+from app.services.cloud_documents import document_snapshot
 from benchmark import metrics as M
 from benchmark.eval_cases import EVAL_CASES, EVAL_CASES_BY_ID, case_set_hash
 
@@ -88,6 +92,20 @@ def _find_stl(request_id: str | None) -> Path | None:
     return _find_artifact(request_id, ".stl")
 
 
+def sha256_file(path: Path) -> str | None:
+    """Return a file digest without inventing provenance for missing files."""
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return None
+    return digest.hexdigest()
+
+
 def _find_artifact(request_id: str | None, suffix: str) -> Path | None:
     if not request_id:
         return None
@@ -116,6 +134,7 @@ def _render(renderer, request_id: str | None, out_dir: Path) -> int:
 def _verify_stl(path: Path | None) -> dict:
     if path is None:
         return {"stl_readable": False, "geometry_nonempty": False}
+    artifact = {"stl_path": str(path), "stl_sha256": sha256_file(path)}
     try:
         import trimesh
 
@@ -126,9 +145,10 @@ def _verify_stl(path: Path | None) -> dict:
             and len(getattr(mesh, "faces", [])) > 0
             for mesh in geometries
         )
-        return {"stl_readable": True, "geometry_nonempty": nonempty}
+        return {**artifact, "stl_readable": True, "geometry_nonempty": nonempty}
     except Exception as exc:
         return {
+            **artifact,
             "stl_readable": False,
             "geometry_nonempty": False,
             "stl_error": f"{type(exc).__name__}: {exc}",
@@ -138,13 +158,15 @@ def _verify_stl(path: Path | None) -> dict:
 def _verify_dxf(path: Path | None) -> dict:
     if path is None:
         return {"dxf_readable": False}
+    artifact = {"dxf_path": str(path), "dxf_sha256": sha256_file(path)}
     try:
         import ezdxf
 
         document = ezdxf.readfile(path)
-        return {"dxf_readable": len(document.modelspace()) > 0}
+        return {**artifact, "dxf_readable": len(document.modelspace()) > 0}
     except Exception as exc:
         return {
+            **artifact,
             "dxf_readable": False,
             "dxf_error": f"{type(exc).__name__}: {exc}",
         }
@@ -153,6 +175,8 @@ def _verify_dxf(path: Path | None) -> dict:
 async def _verify_step(executor, path: Path | None) -> dict:
     if path is None:
         return {"step_readable": False}
+
+    artifact = {"step_path": str(path), "step_sha256": sha256_file(path)}
 
     result = await executor.execute(
         "result = cq.importers.importStep('/sandbox/input/source.step')",
@@ -163,7 +187,7 @@ async def _verify_step(executor, path: Path | None) -> dict:
         readable = result.success and any(
             output.suffix.lower() == ".step" for output in result.files.values()
         )
-        evidence = {"step_readable": readable}
+        evidence = {**artifact, "step_readable": readable}
         if not readable:
             evidence["step_error"] = (
                 f"{result.error_type or 'ArtifactError'}: "
@@ -222,16 +246,18 @@ def _runtime_identity() -> dict:
 
 async def run_eval(
     cases: list[dict], n: int, concurrency: int, use_rag: bool, do_render: bool,
-    run_dir: Path,
+    run_dir: Path, live_context=None,
 ) -> dict:
-    from app.agent.orchestrator import Orchestrator
+    orch = None
+    renderer = None
+    if live_context is None:
+        from app.agent.orchestrator import Orchestrator
 
-    orch = Orchestrator()  # builds real planner/codegen/executor/validators/retriever
-    if not use_rag:
-        orch.retriever = _EmptyRetriever()
-        logger.info("RAG disabled (zero-shot mode)")
-
-    renderer = orch.renderer
+        orch = Orchestrator()  # builds real planner/codegen/executor/validators/retriever
+        if not use_rag:
+            orch.retriever = _EmptyRetriever()
+            logger.info("RAG disabled (zero-shot mode)")
+        renderer = orch.renderer
     sem = asyncio.Semaphore(concurrency)
 
     # one work item per (case, repeat)
@@ -243,6 +269,27 @@ async def run_eval(
             cid = case["id"]
             logger.info(f"[{cid} run {rep+1}/{n}] {case['description'][:40]}")
             t0 = time.time()
+            if live_context is not None:
+                try:
+                    from benchmark.live import run_live_case
+
+                    row = await run_live_case(
+                        case,
+                        context=live_context,
+                        repeat_index=rep + 1,
+                    )
+                except Exception as exc:
+                    row = M.extract_metrics(None, case, wall_time_ms=int((time.time() - t0) * 1000))
+                    row["error"] = f"{type(exc).__name__}: {exc}"
+                    row["live_report_status"] = "error"
+                    row["live_report_error"] = "live benchmark execution failed"
+                results[cid][rep] = row
+                status = "PASS" if row["passed"] else "fail"
+                logger.info(
+                    f"[{cid} run {rep+1}] {status} "
+                    f"(live_status={row.get('live_report_status')}, {row.get('wall_time_ms', 0)}ms)"
+                )
+                return
             response = None
             pipeline_error = None
             try:
@@ -308,6 +355,112 @@ async def run_eval(
     return {"summary": summary, "cases": case_entries}
 
 
+def _parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(description="CAD Agent standard eval harness.")
+    ap.add_argument("--n", type=int, default=3, help="repeats per case (default 3)")
+    ap.add_argument("--cases", default="all", help="'all' or comma-separated ids (P01,X01)")
+    ap.add_argument("--no-rag", action="store_true", help="disable retriever (zero-shot)")
+    ap.add_argument("--concurrency", type=int, default=4, help="parallel generations (default 4)")
+    ap.add_argument("--no-render", action="store_true", help="skip render PNGs (faster)")
+    ap.add_argument("--baseline", default=None, help="baseline report to diff against after run")
+    ap.add_argument(
+        "--live-observe",
+        action="store_true",
+        help="run cases through durable API/Worker execution and link live reports",
+    )
+    ap.add_argument(
+        "--document-id",
+        type=UUID,
+        default=None,
+        help="existing benchmark document UUID; live mode resolves project, branch, and current head",
+    )
+    ap.add_argument("--project-id", type=UUID, default=None, help="existing benchmark project UUID")
+    ap.add_argument("--branch-id", type=UUID, default=None, help="existing benchmark branch UUID")
+    ap.add_argument(
+        "--base-revision-id",
+        type=UUID,
+        default=None,
+        help="existing branch head revision UUID",
+    )
+    ap.add_argument(
+        "--live-timeout",
+        type=float,
+        default=None,
+        help="live report wait timeout in seconds (default: pipeline deadline)",
+    )
+    return ap
+
+
+def _validate_live_arguments(args) -> None:
+    if not args.live_observe:
+        return
+    if args.concurrency != 1:
+        raise SystemExit("--live-observe requires --concurrency 1")
+    document_id = getattr(args, "document_id", None)
+    legacy_ids = tuple(
+        getattr(args, name, None)
+        for name in ("project_id", "branch_id", "base_revision_id")
+    )
+    if document_id is not None and any(value is not None for value in legacy_ids):
+        raise SystemExit(
+            "--live-observe cannot combine --document-id with "
+            "--project-id, --branch-id, or --base-revision-id"
+        )
+    if document_id is not None or all(value is not None for value in legacy_ids):
+        return
+    raise SystemExit(
+        "--live-observe requires --document-id or the legacy "
+        "--project-id, --branch-id, and --base-revision-id"
+    )
+
+
+async def _resolve_live_workspace(
+    *,
+    document_id: UUID | None,
+    project_id: UUID | None,
+    branch_id: UUID | None,
+    base_revision_id: UUID | None,
+    principal,
+) -> tuple[UUID, UUID, UUID]:
+    legacy_ids = (project_id, branch_id, base_revision_id)
+    if document_id is None:
+        if all(value is not None for value in legacy_ids):
+            return project_id, branch_id, base_revision_id
+        raise SystemExit(
+            "--live-observe requires --document-id or the legacy "
+            "--project-id, --branch-id, and --base-revision-id"
+        )
+    if any(value is not None for value in legacy_ids):
+        raise SystemExit(
+            "--live-observe cannot combine --document-id with "
+            "--project-id, --branch-id, or --base-revision-id"
+        )
+
+    try:
+        snapshot = await document_snapshot(principal, document_id)
+    except Exception as exc:
+        raise SystemExit(
+            f"unable to resolve benchmark document {document_id}: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+    resolved: list[UUID] = []
+    for field in ("project_id", "active_branch_id", "head_revision_id"):
+        value = snapshot.get(field) if isinstance(snapshot, dict) else None
+        if not value:
+            raise SystemExit(
+                f"benchmark document snapshot is missing {field}; "
+                "cannot start live evaluation"
+            )
+        try:
+            resolved.append(UUID(str(value)))
+        except (TypeError, ValueError) as exc:
+            raise SystemExit(
+                f"benchmark document snapshot has invalid {field}: {value!r}"
+            ) from exc
+    return resolved[0], resolved[1], resolved[2]
+
+
 def _select_cases(spec: str) -> list[dict]:
     if spec == "all":
         return EVAL_CASES
@@ -321,14 +474,12 @@ def _select_cases(spec: str) -> list[dict]:
 
 
 def main():
-    ap = argparse.ArgumentParser(description="CAD Agent standard eval harness.")
-    ap.add_argument("--n", type=int, default=3, help="repeats per case (default 3)")
-    ap.add_argument("--cases", default="all", help="'all' or comma-separated ids (P01,X01)")
-    ap.add_argument("--no-rag", action="store_true", help="disable retriever (zero-shot)")
-    ap.add_argument("--concurrency", type=int, default=4, help="parallel generations (default 4)")
-    ap.add_argument("--no-render", action="store_true", help="skip render PNGs (faster)")
-    ap.add_argument("--baseline", default=None, help="baseline report to diff against after run")
+    ap = _parser()
     args = ap.parse_args()
+    _validate_live_arguments(args)
+
+    if args.live_observe:
+        configure_process_mode("observe")
 
     if not settings.has_llm_credentials:
         raise SystemExit(f"LLM credentials missing: {settings.llm_credentials_error}")
@@ -339,6 +490,31 @@ def main():
     run_id = f"eval_{ts}_{sha}"
     run_dir = REPORTS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
+
+    live_context = None
+    if args.live_observe:
+        from app.domain.identity import local_anonymous_principal
+        from benchmark.live import LiveBenchmarkContext
+
+        principal = local_anonymous_principal()
+        project_id, branch_id, base_revision_id = asyncio.run(
+            _resolve_live_workspace(
+                document_id=args.document_id,
+                project_id=args.project_id,
+                branch_id=args.branch_id,
+                base_revision_id=args.base_revision_id,
+                principal=principal,
+            )
+        )
+        live_context = LiveBenchmarkContext(
+            principal=principal,
+            project_id=project_id,
+            branch_id=branch_id,
+            expected_base_revision_id=base_revision_id,
+            report_root=REPORTS_DIR,
+            timeout_seconds=args.live_timeout or settings.generate_deadline_s,
+            run_id=run_id,
+        )
 
     meta = {
         "run_id": run_id,
@@ -355,15 +531,24 @@ def main():
         "case_set_hash": case_set_hash(),
         "sandbox_runtime": settings.sandbox_runtime,
         "runtime_identity": _runtime_identity(),
+        "live_observe": args.live_observe,
     }
 
     logger.info(f"Starting {run_id}: {len(cases)} cases x{args.n} "
                 f"(rag={'on' if not args.no_rag else 'off'}, conc={args.concurrency})")
 
     t0 = time.time()
-    payload = asyncio.run(run_eval(
-        cases, args.n, args.concurrency, not args.no_rag, not args.no_render, run_dir,
-    ))
+    payload = asyncio.run(
+        run_eval(
+            cases,
+            args.n,
+            args.concurrency,
+            not args.no_rag,
+            not args.no_render,
+            run_dir,
+            live_context=live_context,
+        )
+    )
     meta["total_wall_s"] = round(time.time() - t0, 1)
 
     report = {"meta": meta, **payload}

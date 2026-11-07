@@ -11,6 +11,8 @@ from temporalio.worker import Worker
 
 from app.workers.usage_interceptor import UsageWorkerInterceptor
 from app.config import settings
+from app.evaluation.integration import observe_model_operation
+from app.evaluation.mode import resolve_mode
 from app.agent.durable_planner import DurableAgentPlanner
 from app.agent.durable_repair import DurableRepairSourceGenerator
 from app.db import database_readiness
@@ -84,6 +86,10 @@ def build_agent_v2_workflow_worker(
     }
     if operations.keys() != DURABLE_OPERATIONS:
         raise RuntimeError('Model operation registration differs from the durable contract')
+    operations = {
+        name: observe_model_operation(name, operation)
+        for name, operation in operations.items()
+    }
     return ModelJobWorker(
         client,
         model_operations=operations,
@@ -95,6 +101,9 @@ def build_agent_v2_workflow_worker(
 
 
 async def run_worker() -> None:
+    evaluation_mode = resolve_mode()
+    # Resolve before worker construction so API and Worker observation modes match.
+    _ = evaluation_mode
     settings.assert_sandbox_config_safe()
     settings.assert_durable_control_plane_config_safe()
     await database_readiness()

@@ -504,8 +504,14 @@ def bind_source_quotes(objective, acceptance, *, verified_state=None, requiremen
     """
     extracted = extract_source_requirements(objective, verified_state=verified_state,
                                             requirement_sources=requirement_sources)
-    if extracted.get('source_context') and 'source_context' not in acceptance:
+    # Source context is server-owned provenance. Never preserve a model-created
+    # context: it can invent a concept scope or external reference that was not
+    # present in the frozen user input. Replace it with the extracted context,
+    # or remove it when the submitted input has no context at all.
+    if extracted.get('source_context'):
         acceptance['source_context'] = extracted['source_context']
+    else:
+        acceptance.pop('source_context', None)
     records = {r['requirement_id']: r for r in extracted['requirements']}
     delivery_quotes = {
         reference['source_quote']
@@ -550,6 +556,23 @@ def require_bound_sources(objective, *, verified_state=None, requirement_sources
     return extracted
 
 
+def _normalize_source_context(context):
+    """Treat an explicitly empty source context as the omitted context.
+
+    The planner schema permits an empty object for an optional context field.
+    It carries no provenance and must not differ from the server's ``None``.
+    Populated contexts remain typed values so all source references are still
+    compared exactly.
+    """
+    if context is None:
+        return None
+    normalized = context if isinstance(context, SourceContextV1) else SourceContextV1.model_validate(context)
+    if (normalized.execution_scope == 'cad_geometry'
+            and not (normalized.design_requests or normalized.external_references or normalized.unverified_aspects)):
+        return None
+    return normalized
+
+
 def validate_requirement_bindings(objective, contract, verified_state=None, *, confirmed_sources=(), requirement_sources=None) -> dict:
     """Bind every recognized explicit condition before CAD dispatch, or reject.
 
@@ -557,8 +580,10 @@ def validate_requirement_bindings(objective, contract, verified_state=None, *, c
     parameter labels and nominal values never substitute for measured geometry.
     """
     extracted = require_bound_sources(objective, verified_state=verified_state, requirement_sources=requirement_sources)
-    expected_context = extracted.get('source_context')
-    if contract.source_context != (SourceContextV1.model_validate(expected_context) if expected_context else None):
+    expected_context_raw = extracted.get('source_context')
+    expected_context = _normalize_source_context(expected_context_raw)
+    submitted_context = _normalize_source_context(contract.source_context)
+    if submitted_context != expected_context:
         raise RequirementBindingError('requirement_binding_mismatch', 'source context differs from saved user input')
     records = {r['requirement_id']: r for r in extracted['requirements']}
     for source in confirmed_sources:
@@ -611,5 +636,5 @@ def validate_requirement_bindings(objective, contract, verified_state=None, *, c
             'requirements_digest': canonical_sha256({'objective': objective}),
             'acceptance_digest': contract.digest(), 'bindings': bindings,
             'source_obligations': extracted['obligations'],
-            **({'source_context': expected_context} if expected_context else {}),
+            **({'source_context': expected_context_raw} if expected_context else {}),
             'comparison_policy_id': contract.comparison_policy_id}
