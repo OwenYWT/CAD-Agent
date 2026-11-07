@@ -67,3 +67,99 @@ python -m benchmark.eval --n 3 --no-rag
 - **只在 `case_set_hash` 一致时**比较聚合指标才有效（compare 会警告）。
 - 改了 case 集 = 旧基线作废，重新建基线。
 - `reports/` 已 gitignore；canonical 基线请手动另存/显式提交。
+
+## Developer-only executable CADTests
+
+The repository also contains a small, offline evaluator for developer and CI use. It reads an existing benchmark JSON report, runs versioned CADTests against the evidence already recorded in that report, and writes a separate UTF-8 JSON report.
+
+```powershell
+python -m benchmark.cad_eval --mode observe `
+  --input reports/eval_<id>.json `
+  --output reports/cad_eval_<id>.json
+```
+
+The command is developer-only and does not instantiate the production orchestrator, call a model provider, start a sandbox, modify a document, or change a task. `--mode disabled` is the default and exits without reading or writing a report. Missing or non-authoritative evidence is reported as `unknown` or `blocked`; it is never converted into a passing engineering result.
+
+## Normal developer observe mode
+
+Use observe mode when developing through the normal frontend workflow. No
+document ID, project ID, branch ID, task ID, or benchmark case is required.
+
+```powershell
+python -m app.workers.run --evaluation-mode observe
+python -m app.run --evaluation-mode observe --port 8000
+```
+
+Then use the frontend normally for create, part edit, review, commit, and
+history restore operations. The real workflow automatically writes one live
+report per workflow under:
+
+```text
+backend/benchmark/reports/live/live_<workflow-id>.json
+backend/benchmark/reports/live/live_<workflow-id>.md
+```
+
+The JSON file is the machine-readable evidence record. The Markdown file is a
+deterministic developer summary of the observed stages, statuses, failures,
+and terminal outcome. It does not invent a stage or replace the business
+workflow result. Normal users do not see this developer-only output.
+
+## Compare live reports
+
+Compare two live reports without rerunning a task:
+
+```powershell
+python -m benchmark.live_compare `
+  reports/live/live_<base-workflow-id>.json `
+  reports/live/live_<candidate-workflow-id>.json
+```
+
+Use `--json` for machine-readable output. Use `--fail-on-drift` in a
+developer check when a normalized call sequence change should fail the
+command. The comparison ignores runtime IDs, timestamps, and duration values;
+it reports added, removed, reordered, retried, status-changed, and
+input/output-hash-changed calls separately.
+
+## Optional live benchmark execution
+
+Use `--live-observe` when the benchmark must exercise the same durable API,
+Temporal workflow, Worker, sandbox, validation, candidate, and report path as a
+real task. This is an optional developer tool for injecting a fixed benchmark
+case into a dedicated existing workspace; it is not the normal acceptance
+path. It never
+creates a project or revision on behalf of the benchmark.
+
+```powershell
+python -m benchmark.eval --live-observe --cases P01 --n 1 --concurrency 1 `
+  --document-id <benchmark-document-uuid>
+```
+
+The API and Worker must already be running with `--evaluation-mode observe`.
+The document must already exist and be a dedicated benchmark document. The
+command reads its current project, active branch, and head revision from the
+real document snapshot before submitting any case. It never creates a project,
+branch, revision, or placeholder UUID.
+
+The benchmark uses `source.kind=benchmark` and `source.id=<case-id>` when it
+enters durable admission, then links each row to the corresponding
+`benchmark/reports/live/live_<workflow-id>.json` report. A missing or unfinished
+live report is recorded as a failed benchmark row and cannot become a pass.
+
+For compatibility with existing scripts, the old explicit workspace form is
+still accepted:
+
+```powershell
+python -m benchmark.eval --live-observe --cases P01 --n 1 --concurrency 1 `
+  --project-id <project-uuid> `
+  --branch-id <branch-uuid> `
+  --base-revision-id <head-revision-uuid>
+```
+
+Do not combine `--document-id` with the three legacy options. Normal frontend
+usage does not require any of these options; they are only for developer live
+evaluation.
+
+Live cases are serialized because one benchmark workspace has one expected
+branch head. The existing direct `benchmark.eval` path remains the default, and
+`benchmark.cad_eval` remains available for compatibility fixtures and existing
+reports.

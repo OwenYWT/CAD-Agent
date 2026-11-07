@@ -16,7 +16,6 @@ from sqlalchemy import text
 from app.db import tenant_transaction
 from app.domain.identity import PrincipalContext
 from app.domain.projects import Permission
-from app.domain.runs import WorkflowStatus
 from app.agent.durable_plan import AgentPlan, ConfirmationPolicy
 from app.execution.canonical import canonical_sha256
 from app.execution.contracts import ExecutionError, ExecutionErrorCategory
@@ -1287,11 +1286,8 @@ async def change_set_workflow_id(
             await connection.execute(
                 text(
                     """
-                    SELECT c.project_id, c.source_workflow_run_id,
-                           w.status AS workflow_status
+                    SELECT c.project_id, c.source_workflow_run_id
                     FROM change_sets c
-                    LEFT JOIN workflow_runs w
-                      ON w.id=c.source_workflow_run_id
                     WHERE c.tenant_id=:tenant_id AND c.id=:change_set_id
                     """
                 ),
@@ -1309,18 +1305,8 @@ async def change_set_workflow_id(
             project_id=row["project_id"],
             permission=permission,
         )
-        # Temporal buffers signals received just before the workflow starts
-        # awaiting confirmation. Include that active window so a review cannot
-        # be persisted without waking the workflow. Closed/cancelling histories
-        # remain reviewable but must not receive another signal.
-        signalable = {
-            WorkflowStatus.PENDING.value,
-            WorkflowStatus.PLANNING.value,
-            WorkflowStatus.RUNNING.value,
-            WorkflowStatus.WAITING_CONFIRMATION.value,
-        }
-        if row["workflow_status"] not in signalable:
-            return None
+        # The source identity remains valid after the Temporal history closes.
+        # Callers decide separately whether the workflow can receive a signal.
         return row["source_workflow_run_id"]
 
 
