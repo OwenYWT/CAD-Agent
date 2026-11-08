@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from app.agent.assembly_planner import AssemblyPlan, AssemblyPlanner
-from app.agent.design_brief import ensure_design_brief
+from app.agent.design_brief import ensure_design_brief, apply_manufacturing_profile_to_brief
 from app.agent.durable_plan import (
     AffectedObject,
     AgentPlan,
@@ -18,7 +18,7 @@ from app.agent.durable_plan import (
 from app.agent.multi_step import BuildPhase, BuildPlan, BuildStep, PlanDecomposer
 from app.agent.orchestrator import requires_design_confirmation
 from app.agent.planner import Planner
-from app.models.schemas import CADPlan, DesignBrief, ModificationPlan
+from app.models.schemas import CADPlan, DesignBrief, ModificationPlan, ManufacturingProfile
 
 
 class DurableAgentPlanner:
@@ -96,10 +96,15 @@ class DurableAgentPlanner:
         )
 
     async def requirements_generation(self, objective: str, *, require_acceptance: bool = False,
-                                       acceptance_version=None, requirement_sources=None) -> CADPlan:
+                                       acceptance_version=None, requirement_sources=None,
+                                       manufacturing_profile=None) -> CADPlan:
         """Run only requirements interpretation; never generate CAD source."""
+        profile = ManufacturingProfile.model_validate(manufacturing_profile) if manufacturing_profile is not None else None
+        # Preferences are context, not additional geometry source assertions.
+        messages = ([{"role": "user", "content": profile.prompt_context()}] if profile else [])
+        messages.append({"role": "user", "content": objective})
         result = await self.planner.plan_new(
-            [{"role": "user", "content": objective}],
+            messages,
             **({"require_acceptance": True} if require_acceptance else {}),
             **({'acceptance_version': acceptance_version} if acceptance_version else {}),
             **({'requirement_sources': requirement_sources} if requirement_sources is not None else {}),
@@ -109,6 +114,9 @@ class DurableAgentPlanner:
                 raise ValueError('new solid requirements must retain their acceptance contract')
             if result.design_brief.acceptance.objective != objective:
                 raise ValueError('acceptance contract objective differs from the submitted requirement')
+        if profile is not None:
+            result.manufacturing_profile = profile
+            apply_manufacturing_profile_to_brief(ensure_design_brief(result), profile)
         return result
 
     async def decompose_generation(
@@ -378,10 +386,14 @@ class DurableAgentPlanner:
         existing_code: str,
         objective: str,
         *, require_acceptance: bool = False, acceptance_version=None, verified_state=None, requirement_sources=None,
+        manufacturing_profile=None,
     ) -> ModificationPlan:
         """Interpret a modification without generating or executing source."""
+        profile = ManufacturingProfile.model_validate(manufacturing_profile) if manufacturing_profile is not None else None
+        messages = ([{"role": "user", "content": profile.prompt_context()}] if profile else [])
+        messages.append({"role": "user", "content": objective})
         result = await self.planner.plan_modification(
-            [{"role": "user", "content": objective}],
+            messages,
             existing_code,
             **({'require_acceptance':True} if require_acceptance else {}),
             **({'acceptance_version': acceptance_version} if acceptance_version else {}),

@@ -124,6 +124,20 @@ def _provenance() -> dict:
 
 
 @pytest.mark.asyncio
+async def test_native_generator_receives_profile_separately_from_geometry():
+    client = _client([_valid_plan()])
+    generator = FreeCADOperationGenerator(client=client, provenance_reader=_provenance)
+    profile = {'process': 'cnc', 'material': 'Aluminum'}
+    await generator.generate(plan=_plan(), requirements={
+        'description': 'Cylinder', 'manufacturing_profile': profile},
+        base_state=None, output_formats=('step', 'stl'))
+    messages = client.completions.kwargs[0]['messages']
+    payload = json.loads(messages[-1]['content'])
+    assert payload['requirements']['manufacturing_profile'] == profile
+    assert payload['agent_plan']['objective'] == _plan().objective
+
+
+@pytest.mark.asyncio
 async def test_generator_preserves_rejection_reason_after_exhausting_repairs():
     reason='unsupported: 没有提供具体的零件描述、尺寸或需继续的设计目标'
     generator=FreeCADOperationGenerator(client=_client([{'error':reason},{'error':reason}]), provenance_reader=_provenance)

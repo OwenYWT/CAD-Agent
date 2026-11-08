@@ -25,7 +25,7 @@ _COUNT_TOKEN = re.compile(r'(?<![a-zA-Z0-9_.零〇一二两三四五六七八九
     # at the number so the original source span agrees with the binder. Retain
     # minus signs and fractional tokens: neither may bind as a positive integer.
     rf'(?:[−-]?\d+(?:\.\d+)?|{CHINESE_INTEGER}(?:点[零〇一二两三四五六七八九]+)?)\s*(?:个|处|颗|条|只)|'
-    r'(?<![a-zA-Z0-9_.])(?:zero|one|two|three|four|five|six|single|[−-]?\d+(?:\.\d+)?)\b(?=\s+(?:(?!mm\b|cm\b|m\b)[a-z-]+\s+){0,6}'
+    r'(?<![a-zA-Z0-9_.])(?:zero|one|two|three|four|five|six|single|[−-]?\d+(?:\.\d+)?)\b(?=\s+(?:(?!(?:mm|cm|m|units?|source|design|drawing)\b)[a-z-]+\s+){0,6}'
     r'(?:holes?|solids?|legs?|supports?|ribs?|fins?|pins?|posts?|slots?|teeth)\b)', re.I)
 _RESTRICTION = re.compile(r'不(?!变)|无|[非未](?=[ \t]*(?:贯穿|穿透|贯通|通孔|打穿))|禁止|避免|排除|仅(?:有|限|允许)?|只(?:有|能|允许)|'
     r'\b(?:not|no|non[- ]?(?:through|thru|penetrat\w*)|without|except|exclud\w*|omit\w*|avoid\w*|only)\b', re.I)
@@ -70,7 +70,7 @@ _CLAUSE_LINK = re.compile(r'修改为|改为|设为|调整为|另有|带(?:有)?
 
 
 def _assertion_clauses(text, source_input_id):
-    for clause in re.finditer(r'[^，,。；;\n]+', text):
+    for clause in re.finditer(r'(?:\.(?=\d)|[^，,。；;.\n])+', text):
         raw = clause.group()
         start = clause.start() + len(raw) - len(raw.lstrip())
         end = clause.end() - len(raw) + len(raw.rstrip())

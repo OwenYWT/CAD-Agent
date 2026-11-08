@@ -3593,10 +3593,11 @@ def _native_tool_request(plan):
 
 class _CurvedPanelToolFixture:
     """Real tool dispatch and native surface construction, controlled LLM input."""
-    def __init__(self):
+    def __init__(self, *, invalid_repair=False):
         from types import SimpleNamespace
         from app.freecad.operation_generator import FreeCADOperationGenerator
         self.calls=0
+        self.invalid_repair = invalid_repair
         self.engine=FreeCADOperationGenerator(client=SimpleNamespace(chat=SimpleNamespace(completions=self)),
             provenance_reader=lambda:{**_controlled_provenance(),'finish_reason':'tool_calls'})
 
@@ -3614,7 +3615,7 @@ class _CurvedPanelToolFixture:
                     " for j,y in enumerate([-10,0,10],1):\n"
                     "  surface.setPole(i,j,App.Vector(x,y,[2,-2,2][i-1]+[2,-2,2][j-1]))\n"
                     "panel=document.addObject('PartDesign::Feature','Panel')\n"
-                    "panel.Shape=surface.toShape().makeOffsetShape(-2,1e-7,fill=True)\n"
+                    f"panel.Shape=surface.toShape().makeOffsetShape({-1 if self.invalid_repair and self.calls > 2 else -2},1e-7,fill=True)\n"
                     + ("panel.Placement.Rotation=App.Rotation(App.Vector(0,0,1),30)\n" if self.calls>2 else '')}},
                 {'op_id':'export','action':'document.export','args':{'formats':['fcstd','step','stl'],'objects':['Panel']}}]}
             args = _native_tool_request(args)
@@ -3634,9 +3635,13 @@ class _CurvedPanelToolFixture:
 
 
 @pytest.mark.asyncio(loop_scope='module')
-@pytest.mark.parametrize('required_thickness,dfm_mode',[(2,'advisory'),(2,'required'),(3,'advisory')])
-async def test_curved_panel_tool_requires_whole_material_thickness_before_commit(required_thickness,dfm_mode):
+@pytest.mark.parametrize('required_thickness,dfm_mode,invalid_repair',[
+    (2,'advisory',False),(2,'required',False),(3,'advisory',False),
+    (2,'advisory',True),(2,'required',True)], ids=[
+        '2-advisory', '2-required', '3-advisory', '2-advisory-invalid-repair', '2-required-invalid-repair'])
+async def test_curved_panel_tool_requires_whole_material_thickness_before_commit(required_thickness,dfm_mode,invalid_repair):
     from app.services.workflow_admission import create_document_workflow
+    from app.workflows.agent_v2 import McadAgentWorkflowV2
     from app.models.schemas import CADPlan,DesignBrief
     from app.contracts.acceptance import AcceptanceContract
     class CurveRequirements(DurableAgentPlanner):
@@ -3668,7 +3673,7 @@ async def test_curved_panel_tool_requires_whole_material_thickness_before_commit
     request=McadAgentWorkflowV2Request(workflow_run_id=created.workflow_id,tenant_id=owner.tenant_id,
         project_id=project_id,principal_id=owner.principal_id,branch_id=initial.branch_id,
         expected_base_revision_id=initial.revision_id,operation='generate',modeling_backend='freecad',objective=objective)
-    client=await get_temporal_client();provider=_CurvedPanelToolFixture()
+    client=await get_temporal_client();provider=_CurvedPanelToolFixture(invalid_repair=invalid_repair)
     async with build_agent_v2_workflow_worker(client,backend=get_execution_backend(),
             durable_planner=CurveRequirements(),durable_visual=_V2PassingVisualStub(),freecad_operations=provider):
         handle=await client.start_workflow('McadAgentWorkflowV2',request.temporal_payload(),
@@ -3682,9 +3687,9 @@ async def test_curved_panel_tool_requires_whole_material_thickness_before_commit
         else:
             with pytest.raises(WorkflowFailureError) as failure:
                 await handle.result()
-            assert failure.value.cause.type==('agent_dfm_validation_failed' if required_thickness==2 else 'agent_geometry_validation_failed')
+            assert failure.value.cause.type==('agent_dfm_validation_failed' if required_thickness==2 and not invalid_repair else 'agent_geometry_validation_failed')
     async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
-        report=await conn.scalar(text("SELECT evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"),{'id':created.workflow_id})
+        report=await conn.scalar(text("SELECT evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry' ORDER BY created_at LIMIT 1"),{'id':created.workflow_id})
         wall=next(e for e in report['acceptance']['evidence'] if e['check_id']=='whole-wall')
         assert wall['method']=='whole_part_certified_normal_layer_coverage'
         assert all(abs(v-2)<1e-7 for v in wall['measured'])
@@ -3692,11 +3697,20 @@ async def test_curved_panel_tool_requires_whole_material_thickness_before_commit
         assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'),{'id':initial.branch_id})==initial.revision_id
         if required_thickness==2:
             reports=(await conn.execute(text("SELECT mode,outcome,evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='dfm'"),{'id':created.workflow_id})).mappings().all()
-            assert len(reports)==2  # Real initial inspection and ineffective repair.
+            assert len(reports)==(1 if invalid_repair else 2)  # Invalid geometry never reaches a second DFM inspection.
             assert all(dfm['mode']==dfm_mode and dfm['outcome']=='failed' for dfm in reports)
             assert all(any(v['rule_id']=='fdm_overhang' for v in dfm['evidence']['violations']) for dfm in reports)
         if not can_commit:
             assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'),{'id':created.workflow_id})==0
+        if can_commit and invalid_repair:
+            risk = await conn.scalar(text('SELECT risk_summary FROM change_sets WHERE source_workflow_run_id=:id'), {'id':created.workflow_id})
+            dfm_risk = next(item for item in risk['items'] if item['gate'] == 'dfm')
+            assert dfm_risk['optional_repair_failure']['error_code'] == 'agent_geometry_validation_failed'
+            sealed_geometry = await conn.scalar(text('''SELECT e.evidence FROM agent_validation_evidence e
+                JOIN agent_seal_evidence s ON s.evidence_id=e.id
+                WHERE e.workflow_run_id=:id AND e.gate='geometry' '''), {'id':created.workflow_id})
+            assert sealed_geometry['outcome'] == 'passed'
+            assert await conn.scalar(text("SELECT count(*) FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry' AND outcome='failed'"), {'id':created.workflow_id}) == 1
     if can_commit:
         from app.services.change_sets import ValidationRequired
         change_set=UUID(result['change_set_id'])
@@ -3707,6 +3721,8 @@ async def test_curved_panel_tool_requires_whole_material_thickness_before_commit
         committed=await commit_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,change_set_id=change_set)
         assert committed.status=='committed'
     assert provider.calls==(3 if required_thickness==2 else 2)
+    from temporalio.worker import Replayer
+    await Replayer(workflows=[McadAgentWorkflowV2]).replay_workflow(await handle.fetch_history())
 
 
 class _NativeToolProgramFixture:
@@ -4164,7 +4180,9 @@ async def test_original_hook_intake_binds_external_input_and_gates_persisted_can
 
 @pytest.mark.asyncio(loop_scope='module')
 @pytest.mark.parametrize('name', ['fdm','context','diameter','radius','wall','floor',
-                                 'cube','cube_split','cube_rectangular','chinese_box','sphere_bounds','cylinder_bounds'])
+                                 'cube','cube_split','cube_rectangular','chinese_box','sphere_bounds','cylinder_bounds',
+                                 'source_context','source_units','source_units_split',
+                                 'source_global','source_global_split','source_global_reverse','source_design_global'])
 @pytest.mark.parametrize('valid', [True,False], ids=['correct','wrong-geometry'])
 async def test_intake_semantics_admission_native_measurement_and_commit(name, valid):
     from app.models.workflow_requests import OperationContextV1
@@ -4205,6 +4223,12 @@ async def test_intake_semantics_admission_native_measurement_and_commit(name, va
         assert not report['acceptance_contract']['verification_limits']
         if name == 'fdm':
             assert report['acceptance_contract']['verification_notices'][0]['status'] == 'unverified'
+        if name == 'source_context':
+            assert report['acceptance_contract']['verification_notices'][0]['status'] == 'unverified'
+        if name.startswith('source_'):
+            checks = [c for c in report['acceptance_contract']['checks'] if c['comparison']['unit'] == 'mm']
+            assert sorted((c['kind'], c['comparison']['value']) for c in checks) == [
+                ('cylinder_height', 25.), ('cylinder_radius', 20.)]
         if name == 'wall':
             values = report['acceptance']['evidence'][0]['measured']
             assert values == ([3]*4 if valid else [1]*4)
@@ -4325,6 +4349,66 @@ async def test_unbound_source_fails_before_provider_or_native_dispatch_in_real_w
             assert await conn.scalar(text(f'SELECT count(*) FROM {table} WHERE workflow_run_id=:id'), {'id':workflow_id}) == 0
         assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'), {'id':workflow_id}) == 0
         assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'), {'id':initial.branch_id}) == initial.revision_id
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('clause,quote', [
+    ('Chamfer 0.3.', '0.3'), ('Unknown curvature 0.3.', '0.3'),
+    ('Unknown curvature 0.3\n', '0.3'), ('Chamfer 0.3 cm.', '0.3 cm'),
+], ids=['chamfer-period', 'unknown-period', 'unknown-newline', 'explicit-unit'])
+@pytest.mark.parametrize('split', [False, True], ids=['objective', 'confirmed'])
+async def test_unbound_quantity_punctuation_blocks_before_dispatch_and_preserves_head(clause, quote, split):
+    from app.models.workflow_requests import OperationContextV1
+    from app.domain.requirement_basis import RequirementBasisV1
+    from app.workflows.temporal import start_mcad_agent_v2_workflow
+    from app.workflows.agent_v2 import McadAgentWorkflowV2
+    from temporalio.worker import Replayer
+
+    owner, project_id, initial = await _seed_project('quantity-punctuation')
+    base = 'All dimensions are in cm. cylinder radius 2, height 2.5. '
+    objective, dimensions = (base, clause) if split else (base + clause, base + clause)
+    context = OperationContextV1(rule='explicit_rest_operation', source_channel='rest',
+        requested_operation='generate', resolved_operation='generate', submission_modeling_backend='auto',
+        base_revision_id=initial.revision_id, base_source_kind='none',
+        requirement_basis=RequirementBasisV1(target=objective, dimensions=dimensions,
+            design_scope='geometry', source_kind='user_specification', source_reference='用户指定'))
+    client = await get_temporal_client()
+    # Use the actual planner with provider credentials disabled. The source
+    # coverage error must precede any provider admission or native execution.
+    async with build_agent_v2_workflow_worker(client, backend=get_execution_backend()):
+        workflow_id, handle = await start_mcad_agent_v2_workflow(tenant_id=owner.tenant_id,
+            project_id=project_id, principal_id=owner.principal_id, branch_id=initial.branch_id,
+            expected_base_revision_id=initial.revision_id, operation='generate', modeling_backend='auto',
+            objective=objective, kind='mcad.agent.v2.generate', idempotency_key='punctuation-' + str(project_id),
+            operation_context=context, require_worker_ready=False)
+        with pytest.raises(WorkflowFailureError) as error:
+            await handle.result()
+    cause = McadAgentWorkflowV2._root_application_error(error.value)
+    assert cause.type == 'engineering_verification_unavailable'
+    assert clause.strip() in cause.message
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        values = {'id': workflow_id}
+        workflow = (await conn.execute(text('SELECT status,error_code,request_payload FROM workflow_runs WHERE id=:id'), values)).mappings().one()
+        assert workflow['status'] == 'failed' and workflow['error_code'] == cause.type
+        assert workflow['request_payload']['operation_context']['requirement_basis']['dimensions'] == context.requirement_basis.dimensions
+        saved_error = await conn.scalar(text("SELECT error FROM model_jobs WHERE workflow_run_id=:id AND operation='agent_v2.requirements'"), values)
+        diagnostics = saved_error['details'][0]['diagnostics']
+        assert any(d['reason'] == 'quantity_property_unbound' and d['source_quote'] == quote for d in diagnostics)
+        counts = {}
+        for table in ('provider_budget_reservations', 'execution_attempts', 'agent_staging_manifests',
+                      'agent_generated_sources', 'agent_validation_evidence', 'change_sets'):
+            counts[table] = await conn.scalar(text(f'SELECT count(*) FROM {table} WHERE workflow_run_id=:id'
+                if table != 'change_sets' else 'SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'), values)
+        assert not any(counts.values())
+        head = await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'), {'id': initial.branch_id})
+        assert head == initial.revision_id
+    await Replayer(workflows=[McadAgentWorkflowV2]).replay_workflow(await handle.fetch_history())
+    if directory := os.environ.get('CAD_AGENT_TEST_EVIDENCE_DIR'):
+        out = Path(directory) / str(workflow_id)
+        out.mkdir(parents=True, exist_ok=True)
+        (out / 'source-rejection.json').write_text(json.dumps({'workflow_id': str(workflow_id),
+            'request': workflow['request_payload'], 'error': saved_error, 'counts': counts,
+            'initial_head': str(initial.revision_id), 'head': str(head), 'replay': 'passed'}, ensure_ascii=False, indent=2))
 
 
 @pytest.mark.asyncio(loop_scope='module')

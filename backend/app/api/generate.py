@@ -51,6 +51,7 @@ async def generate(req: GenerateRequest, request: Request, api_key: str | None =
             manufacturing_profile=req.manufacturing_profile,
             modeling_backend=resolution.modeling_backend,
             operation_context=resolution.operation_context,
+            **({"requirement_basis": req.requirement_basis} if req.requirement_basis is not None else {}),
         )
         response = await wait_for_compatibility_response(
             current_principal(),
@@ -157,10 +158,12 @@ async def modify(req: ModifyRequest, request: Request, api_key: str | None = Dep
             idempotency_key=req.idempotency_key,
             operation="modify",
             objective=req.prompt,
+            **({"manufacturing_profile": req.manufacturing_profile} if req.manufacturing_profile is not None else {}),
             output_formats=req.output_formats,
             code=resolution.existing_code,
             modeling_backend=resolution.modeling_backend,
             operation_context=resolution.operation_context,
+            **({"requirement_basis": req.requirement_basis} if req.requirement_basis is not None else {}),
             **({"expected_state_version": req.expected_state_version} if req.expected_state_version is not None else {}),
             **({"selection_context": req.selection_context} if req.selection_context is not None else {}),
         )

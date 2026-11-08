@@ -60,6 +60,30 @@ def test_explicit_strength_requirement_is_not_replaced_by_an_informational_print
     assert proposal['verification_limits']
 
 
+@pytest.mark.parametrize('limit', ['Manufacturing performance is not certified.',
+                                  'Printing performance has not been verified.',
+                                  'Waterproof performance requires physical testing.'])
+def test_physical_disclaimer_uses_saved_intent_without_blocking_geometric_scope(limit):
+    sources = [{'source_input_id':'objective', 'source_kind':'user',
+                'text':'cylinder radius 20mm, height 25mm. ' + limit}]
+    proposal = {'verification_limits':[limit]}
+    intent.bind_verification_intent(proposal, sources)
+    assert not proposal['verification_limits']
+    assert proposal['verification_notices'][0]['status'] == 'unverified'
+    sources[0]['text'] = 'Waterproof performance is required. ' + limit
+    intent.bind_verification_intent(proposal, sources)
+    assert proposal['verification_limits']
+
+
+@pytest.mark.parametrize('limit', ['Manufacturing performance is not certified and the hole path is unverified.',
+                                  'Manufacturing performance is not certified. The groove cannot be measured.'])
+def test_english_physical_disclaimer_cannot_remove_a_mixed_geometric_limit(limit):
+    proposal = {'verification_limits':[limit]}
+    intent.bind_verification_intent(proposal, [{'source_input_id':'objective', 'source_kind':'user',
+        'text':'cylinder radius 20mm, height 25mm. Manufacturing performance is not certified.'}])
+    assert proposal['verification_limits'] == [limit]
+
+
 def test_omitted_provider_limit_cannot_certify_an_explicit_physical_requirement():
     sources = [{'source_input_id':'objective','source_kind':'user','text':'FDM打印，承重至少2kg'}]
     result = intent.verification_intent(sources)

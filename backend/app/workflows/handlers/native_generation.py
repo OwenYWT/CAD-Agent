@@ -153,7 +153,8 @@ async def agent_generate_operations(payload: dict[str, Any], *, freecad_operatio
                 **({'max_tool_calls': payload['work_budget_policy']['max_normal_tool_calls']}
                    if payload.get('work_budget_policy') else {}),
                 plan=plan,
-                requirements=dict(payload["requirements"]),
+                requirements={**payload["requirements"],
+                    **({'manufacturing_profile': request.manufacturing_profile} if request.manufacturing_profile is not None else {})},
                 base_state=(
                     dict(base_state)
                     if base_state is not None

@@ -12,6 +12,7 @@ import math
 
 from app.execution.canonical import canonical_sha256
 from app.validation.quantities import NUMBER as _NUMBER, CHINESE_INTEGER, number
+from app.validation.verification_intent import non_geometric_clauses
 from app.contracts.acceptance_v2 import RequirementBindingError, SourceContextV1, SourceRequirementUnavailable
 from app.validation.source_obligations import (
     RELATION as _RELATION, LOWER as _LOWER, STRICT as _STRICT,
@@ -21,7 +22,13 @@ from app.validation.source_obligations import (
 )
 
 
-_UNIT = r'(?:mm(?:³|3|\^3)?|cm(?:³|3|\^3)?|m(?:³|3|\^3)?|立方毫米|立方厘米|立方米|毫米|厘米|米)'
+_METRIC_UNIT = r'(?:mm(?:³|3|\^3)?|cm(?:³|3|\^3)?|m(?:³|3|\^3)?|立方毫米|立方厘米|立方米|毫米|厘米|米)'
+_DESIGN_UNIT = r'(?:(?:source(?:\s+design)?|design|drawing)\s+)?units?\b'
+_UNIT = rf'(?:{_METRIC_UNIT}|{_DESIGN_UNIT})'
+_UNIT_DEFINITION = re.compile(
+    rf'(?:^|(?<=[。.;\n:：]))[ \t]*(?P<count>-?{_NUMBER})[ \t]+{_DESIGN_UNIT}'
+    rf'[ \t]*(?:=|equals)[ \t]*(?:exactly[ \t]+)?(?P<value>-?{_NUMBER})[ \t]*'
+    rf'(?P<unit>{_METRIC_UNIT})[ \t]*(?=[。.;\n]|$)', re.I)
 _DECLARED_UNIT = re.compile(rf'(?:单位|units?)\s*[:：=]\s*(?P<unit>{_UNIT})(?![a-zA-Z])', re.I)
 _COORDINATE_BOX = re.compile(
     r'(?P<label>[\w\u4e00-\u9fff]+?)坐标范围(?:为|[:：])?\s*' +
@@ -55,7 +62,7 @@ _DIMENSION_QUANTITY = (
     rf'(?:(?:±|\+/-)[ \t]*(?P<symmetric>{_NUMBER})|\+[ \t]*(?P<plus>{_NUMBER})[ \t]*/[ \t]*[-−][ \t]*(?P<minus>{_NUMBER}))?[ \t]*'
     rf'(?P<unit3>{_UNIT})?(?P<suffix>以上|以下)?\s*')
 _SCALAR = re.compile(
-    rf'(?P<prefix>{_RELATION})?\s*(?P<property>{_PROPERTY})\s*(?:改为|修改为|设为|调整为|为|是|[:：=]|of|is|to)?\s*'
+    rf'(?P<prefix>{_RELATION})?\s*(?P<property>{_PROPERTY})\s*(?:改为|修改为|设为|调整为|保持为?|为|是|[:：=]|of|is|to)?\s*'
     rf'(?P<relation>{_RELATION})?\s*{_DIMENSION_QUANTITY}', re.I)
 # Compose noun phrases once so a circular qualifier cannot retain a diameter
 # while silently dropping the count or the passage predicate. Source obligation
@@ -81,12 +88,12 @@ _OTHER_ENGINEERING_QUANTITY = re.compile(
     rf'(?<![a-zA-Z0-9_.]){_NUMBER}\s*(?:°|度|弧度|deg(?:rees?)?\b|rad(?:ians?)?\b|英寸|inches?\b)|'
     rf'(?:{_NUMBER}|[一二两三四五六七八九十]+)[ \t]*(?:个|处|颗|条|只)[ \t]*'
     r'(?:支脚|支柱|支撑|槽|孔|实体|齿|筋|凸台|通道|倒角|圆角)|'
-    rf'\b(?:{_NUMBER}|one|two|three|four|five|six)[ \t]+(?:[a-z-]+[ \t]+){{0,2}}'
+    rf'\b(?:{_NUMBER}|one|two|three|four|five|six)[ \t]+(?:(?!(?:mm|cm|m|units?|source|design|drawing)\b)[a-z-]+[ \t]+){{0,2}}'
     r'(?:legs?|supports?|ribs?|fins?|pins?|posts?|slots?|teeth|holes?|solids?)\b', re.I)
-_BOX_DIMENSIONS = re.compile(rf'(?P<x>{_NUMBER})\s*[x×*]\s*(?P<y>{_NUMBER})\s*[x×*]\s*(?P<z>{_NUMBER})\s*(?P<unit>{_UNIT})', re.I)
-_DIAMETER = re.compile(rf'(?P<prefix>{_RELATION})?\s*(?:直径|diameter)\s*(?:改为|修改为|设为|调整为|为|是|of|is|to|[:：=])?\s*'
+_BOX_DIMENSIONS = re.compile(rf'(?P<x>{_NUMBER})\s*[x×*]\s*(?P<y>{_NUMBER})\s*[x×*]\s*(?P<z>{_NUMBER})\s*(?P<unit>{_UNIT})?', re.I)
+_DIAMETER = re.compile(rf'(?P<prefix>{_RELATION})?\s*(?:直径|diameter)\s*(?:改为|修改为|设为|调整为|保持为?|为|是|of|is|to|[:：=])?\s*'
     rf'(?P<relation>{_RELATION})?\s*{_DIMENSION_QUANTITY}', re.I)
-_RADIUS = re.compile(rf'(?P<prefix>{_RELATION})?[ \t]*(?:半径|radius)[ \t]*(?:改为|修改为|设为|调整为|为|是|of|is|to|[:：=])?[ \t]*'
+_RADIUS = re.compile(rf'(?P<prefix>{_RELATION})?[ \t]*(?:半径|radius)[ \t]*(?:改为|修改为|设为|调整为|保持为?|为|是|of|is|to|[:：=])?[ \t]*'
     rf'(?P<relation>{_RELATION})?[ \t]*{_DIMENSION_QUANTITY}', re.I)
 _PRIMITIVE = re.compile(r'圆柱(?:体)?|\bcylinder\b|球(?:体)?|\bsphere\b', re.I)
 _NOMINAL_CUBE = re.compile(rf'(?P<prefix>{_RELATION})?\s*{_DIMENSION_QUANTITY}(?:的\s*)?(?:{CUBE.pattern})', re.I)
@@ -140,7 +147,7 @@ _SIZED_HOLE_COUNT = re.compile(rf'(?P<relation>{_RELATION})?\s*\b(?P<count>one|t
 _CHINESE_SIZED_HOLE_COUNT = re.compile(
     rf'(?P<relation>{_RELATION})?\s*(?<![a-zA-Z0-9_.零〇一二两三四五六七八九十百千万亿点])(?P<count>{COUNT_VALUE})\s*[个处]\s*'
     rf'(?:孔径|直径)\s*(?:为|[:：=])?\s*(?:{_RELATION})?\s*{_NUMBER}\s*{_UNIT}\s*(?:以上|以下)?\s*的?\s*(?:{_PASSAGE_ZH}|通)?{_HOLE_ZH}', re.I)
-_SUFFIX_DIMENSION = re.compile(rf'(?P<relation>{_RELATION})?\s*(?P<value>{_NUMBER})\s*(?P<unit>{_UNIT})\s*'
+_SUFFIX_DIMENSION = re.compile(rf'(?P<relation>{_RELATION})?\s*(?P<value>{_NUMBER})\s*(?P<unit>{_UNIT})?\s*'
     rf'(?P<property>long\b|wide\b|thick\b|high\b|[长宽厚高](?!度|\s*{_NUMBER}))', re.I)
 _WORLD_AXIS = re.compile(r'(?:世界|world)\s*(?P<axis>[xyz])\s*(?:轴|axis)?', re.I)
 _LOCAL_AXIS = re.compile(r'(?:局部|local)\s*(?P<axis>[xyz])\s*(?:轴|axis)?', re.I)
@@ -187,18 +194,72 @@ def _preceding_hole_subject(text, start, end):
     return [a, a + len(phrase)]
 
 
-def _quantity(value, unit):
+def _quantity(value, unit, unit_scale=None):
+    if re.fullmatch(_DESIGN_UNIT, unit, re.I):
+        return float(number(value) * unit_scale), 'mm'
     normalized = unit.lower().replace('^', '').replace('³', '3')
+    normalized = {'millimeters': 'mm', 'centimeters': 'cm', 'meters': 'm'}.get(normalized, normalized)
     cubic = '3' in normalized or normalized.startswith('立方')
     base = normalized.replace('3', '').replace('立方', '')
     factor = {'mm': 1, '毫米': 1, 'cm': 10, '厘米': 10, 'm': 1000, '米': 1000}[base]
     return float(number(value) * Decimal(factor) ** (3 if cubic else 1)), 'mm3' if cubic else 'mm'
 
 
+def _design_units(sources):
+    """Collect shared unit authority before context clauses are masked."""
+    definitions, scales, declarations = [], [], []
+    for source in sources:
+        declared = [(m.span(), m['unit']) for m in _DECLARED_UNIT.finditer(source['text'])]
+        declared.extend((row['source_span'], row['declared_unit']) for row in non_geometric_clauses(source['text'])
+                        if 'declared_unit' in row)
+        for (start, end), unit in declared:
+            declarations.append({'unit': unit, 'source_input_id': source['source_input_id'],
+                                 'source_span': [start, end], 'source_quote': source['text'][start:end]})
+        for match in _UNIT_DEFINITION.finditer(source['text']):
+            try:
+                value, unit = _quantity(match['value'], match['unit'])
+                count = number(match['count'])
+                scale = Decimal(str(value)) / count if count > 0 and math.isfinite(value) and value > 0 and unit == 'mm' else None
+            except ValueError:
+                scale = None  # Preserve an invalid definition as a sourced diagnostic.
+            definitions.append({'source_input_id': source['source_input_id'],
+                                'source_span': list(match.span()), 'source_quote': match.group()})
+            scales.append(scale)
+    valid = bool(scales) and None not in scales and len(set(scales)) == 1
+    scale = scales[0] if valid else None
+    conversions = {(_quantity(1, row['unit'], scale) if scale is not None or
+                    not re.fullmatch(_DESIGN_UNIT, row['unit'], re.I) else None) for row in declarations}
+    valid_declarations = len(conversions) == 1 and None not in conversions
+    return {'scale': scale, 'definitions': definitions, 'declarations': declarations,
+            'declared_unit': declarations[0]['unit'] if valid_declarations else None}
+
+
 def extract_requirements(objective: str, *, source_input_id: str = 'objective', source_kind: str = 'user',
-                         verified_state=None, execution_scope='cad_geometry', plate_context=None, primitive_context=None) -> dict:
+                         verified_state=None, execution_scope='cad_geometry', plate_context=None, primitive_context=None,
+                         unit_context=None) -> dict:
     requirements, unsupported, covered = [], [], []
+    source_text = objective
+    unit_context = unit_context or _design_units([{'source_input_id': source_input_id, 'text': objective}])
+    context_spans = [item['source_span'] for item in non_geometric_clauses(objective)]
+    definitions = [row for row in unit_context['definitions'] if row['source_input_id'] == source_input_id]
+    if unit_context['declarations'] and unit_context['declared_unit'] is None:
+        unsupported.extend({'source_span': row['source_span'], 'reason': 'unit_declaration_conflict_or_unbound'}
+                           for row in unit_context['declarations'] if row['source_input_id'] == source_input_id)
+    if unit_context['scale'] is not None:
+        context_spans.extend(row['source_span'] for row in definitions)
+    else:
+        unsupported.extend({'source_span': row['source_span'], 'reason': 'unit_definition_invalid'} for row in definitions)
+    # Mask complete context clauses at their original offsets. Never strip
+    # keywords out of mixed assertions, nor rewrite a saved source quote.
+    for start, end in context_spans:
+        objective = objective[:start] + ' ' * (end - start) + objective[end:]
     obligations = inventory(objective, source_input_id=source_input_id)
+    if unit_context['scale'] is None:
+        metric_declarations = [m.span() for m in _DECLARED_UNIT.finditer(objective)
+                               if not re.fullmatch(_DESIGN_UNIT, m['unit'], re.I)]
+        unsupported.extend({'source_span': list(match.span()), 'reason': 'quantity_unit_unbound'}
+                           for match in re.finditer(rf'(?<![a-zA-Z]){_DESIGN_UNIT}', objective, re.I)
+                           if not any(a <= match.start() and match.end() <= b for a, b in metric_declarations))
     # Validate whole Chinese tokens before any shorter pattern can consume a
     # suffix of an ambiguous number. Original quotes/offsets remain untouched.
     numeric_spans = [m.span() for pattern in (_EXPLICIT_QUANTITY, _SCALAR, _BOX_DIMENSIONS,
@@ -215,28 +276,40 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
                 'unsupported': unsupported, 'obligations': obligations}
     comparison_spans = []
     declarations = list(_DECLARED_UNIT.finditer(objective))
-    declared = declarations[0] if declarations and len({m['unit'].lower() for m in declarations}) == 1 else None
+    declared_unit = unit_context['declared_unit']
     design_requests, external_references, external_spans = [], [], []
 
     def reference(start, end, label):
         return {'reference_id': f's-{source_input_id}-{start}-{end}-{label}',
                 'source_input_id': source_input_id, 'source_kind': source_kind,
-                'source_span': [start, end], 'source_quote': objective[start:end]}
+                'source_span': [start, end], 'source_quote': source_text[start:end]}
 
-    def append(start, end, prop, kind, comparison, scope=None, *, identity=None):
+    def append(start, end, prop, kind, comparison, scope=None, *, identity=None, inherits_unit=False):
         identity = identity or f'r-{source_input_id}-{start}-{end}-{prop}'
         if comparison.get('tolerance_minus') or comparison.get('tolerance_plus'):
             comparison['tolerance_source_refs'] = [identity + '-tolerance']
         requirements.append({'requirement_id': identity, 'source_input_id': source_input_id,
-            'source_kind': source_kind, 'source_span': [start, end], 'source_quote': objective[start:end],
+            'source_kind': source_kind, 'source_span': [start, end], 'source_quote': source_text[start:end],
             'property': prop, 'kind': kind, 'comparison': comparison, 'scope': scope or {},
             'tolerance_source_refs': comparison.get('tolerance_source_refs', [])})
         if kind.startswith(('cylinder_', 'sphere_')) and primitive_context and not source_owners(objective):
             requirements[-1]['derivation'] = {'rule': 'saved_primitive_subject.v1',
                                              'subject_sources': primitive_context['subjects']}
-        if declared and not _EXPLICIT_QUANTITY.search(objective[start:end]) and comparison['unit'] != 'count':
-            requirements[-1]['unit_source_span'] = list(declared.span())
+        inherited = declared_unit and (inherits_unit or not _EXPLICIT_QUANTITY.search(objective[start:end])) and comparison['unit'] != 'count'
+        unit_sources = []
+        if inherited:
+            if declarations:
+                requirements[-1]['unit_source_span'] = list(declarations[0].span())
+            unit_sources.extend({k: v for k, v in row.items() if k != 'unit'} for row in unit_context['declarations'])
+        if (re.search(_DESIGN_UNIT, objective[start:end], re.I) or
+                inherited and re.fullmatch(_DESIGN_UNIT, declared_unit, re.I)) and comparison['unit'] == 'mm':
+            unit_sources.extend(unit_context['definitions'])
+        if unit_sources:
+            requirements[-1]['unit_sources'] = unit_sources
         covered.append((start, end))
+
+    def quantity(value, unit):
+        return _quantity(value, unit, unit_context['scale'])
 
     def relation_comparison(match, value, unit):
         # Every word order goes through the same boundary policy. In
@@ -256,16 +329,16 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
         return {'op': op, {'eq': 'value', 'ge': 'lower', 'le': 'upper'}[op]: value, 'unit': unit}
 
     def dimension_comparison(match):
-        unit = match['unit1'] or match['unit2'] or match['unit3'] or (declared['unit'] if declared else None)
+        unit = match['unit1'] or match['unit2'] or match['unit3'] or declared_unit
         if unit is None:
             unsupported.append({'source_span': list(match.span()), 'reason': 'quantity_unit_unbound'})
             return None
-        value, canonical_unit = _quantity(match['value'], unit)
+        value, canonical_unit = quantity(match['value'], unit)
         comparison = relation_comparison(match, value, canonical_unit)
         if comparison is None:
             return None
         if match['range']:
-            upper, upper_unit = _quantity(match['upper'], match['unit2'] or match['unit3'] or unit)
+            upper, upper_unit = quantity(match['upper'], match['unit2'] or match['unit3'] or unit)
             if comparison['op'] != 'eq' or upper_unit != canonical_unit or upper < value:
                 unsupported.append({'source_span': list(match.span()), 'reason': 'range_relation_conflict'})
                 return None
@@ -274,8 +347,8 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
             if comparison['op'] != 'eq':
                 unsupported.append({'source_span': list(match.span()), 'reason': 'range_tolerance_conflict'})
                 return None
-            minus, _ = _quantity(match['symmetric'] or match['minus'], match['unit3'] or unit)
-            plus, _ = _quantity(match['symmetric'] or match['plus'], match['unit3'] or unit)
+            minus, _ = quantity(match['symmetric'] or match['minus'], match['unit3'] or unit)
+            plus, _ = quantity(match['symmetric'] or match['plus'], match['unit3'] or unit)
             comparison.update(tolerance_minus=minus, tolerance_plus=plus)
         return comparison
 
@@ -333,20 +406,22 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
 
     for match in _COORDINATE_BOX.finditer(objective):
         units = [match[axis+'unit'] for axis in 'XYZ' if match[axis+'unit']]
-        unit = units[0] if units and len(set(units)) == 1 else declared['unit'] if not units and declared else None
-        if unit is None or re.search(r'空腔|腔体|内部|cavity|void', match['label'], re.I):
+        default_unit = declared_unit or (units[0] if units and len(set(units)) == 1 else None)
+        axis_units = [match[axis+'unit'] or default_unit for axis in 'XYZ']
+        if None in axis_units or re.search(r'空腔|腔体|内部|cavity|void', match['label'], re.I):
             unsupported.append({'source_span':list(match.span()), 'reason':
-                'void_component_scope_unbound' if unit else 'quantity_unit_unbound'})
+                'quantity_unit_unbound' if None in axis_units else 'void_component_scope_unbound'})
             covered.append(match.span())
             continue
-        lo = [_quantity(match[axis+'lo'],unit)[0] for axis in 'XYZ']
-        hi = [_quantity(match[axis+'hi'],unit)[0] for axis in 'XYZ']
-        if any(a >= b for a,b in zip(lo,hi)) or _quantity(1,unit)[1] != 'mm':
+        lo = [quantity(match[axis+'lo'],unit)[0] for axis, unit in zip('XYZ', axis_units)]
+        hi = [quantity(match[axis+'hi'],unit)[0] for axis, unit in zip('XYZ', axis_units)]
+        if any(a >= b for a,b in zip(lo,hi)) or any(quantity(1,unit)[1] != 'mm' for unit in axis_units):
             unsupported.append({'source_span':list(match.span()),'reason':'component_bounds_invalid'})
             covered.append(match.span())
             continue
         append(*match.span(), 'component_bounds', 'bounding_box', {'op':'eq','value':0.,'unit':'mm'},
-            {'frame':'world','component_region':{'min_mm':lo,'max_mm':hi}})
+            {'frame':'world','component_region':{'min_mm':lo,'max_mm':hi}},
+            inherits_unit=any(not match[axis+'unit'] for axis in 'XYZ'))
         requirements[-1]['derivation'] = {'rule':'explicit_component_bounds_residual.v1',
                                            'component_label':match['label']}
 
@@ -356,7 +431,10 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
         raw=match['property'].lower()
         prop={'long':'length','wide':'width','thick':'thickness','high':'height',
               '长':'length','宽':'width','厚':'thickness','高':'height'}[raw]
-        value,unit=_quantity(match['value'],match['unit'])
+        if not (unit := match['unit'] or declared_unit):
+            unsupported.append({'source_span': list(match.span()), 'reason': 'quantity_unit_unbound'})
+            continue
+        value,unit=quantity(match['value'],unit)
         comparison = relation_comparison(match, value, unit)
         if comparison is None:
             continue
@@ -418,9 +496,6 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
                         source_kind=prior['kind'], scale=scale)
                 continue
         unsupported.append({'source_span':list(match.span()), 'reason':'preservation_baseline_required'})
-    for match in re.finditer(r'不变|保留|保持|preserv\w*|unchanged|remain\s+unchanged|keep\s+.*same', objective, re.I):
-        if not any(a <= match.start() and match.end() <= b for a,b in preservation_spans):
-            unsupported.append({'source_span':list(match.span()), 'reason':'preservation_baseline_required'})
 
     for match in _BOX_DIMENSIONS.finditer(objective):
         # A triplet is only interpreted as L/W/T for an explicitly named plate
@@ -433,8 +508,11 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
             unsupported.append({'source_span': list(match.span()), 'reason': 'triplet_relation_unbound'})
             covered.append(match.span())
             continue
+        if not (source_unit := match['unit'] or declared_unit):
+            unsupported.append({'source_span': list(match.span()), 'reason': 'quantity_unit_unbound'})
+            continue
         for component, prop, axis in [('x', 'length', [1, 0, 0]), ('y', 'width', [0, 1, 0]), ('z', 'thickness', [0, 0, 1])]:
-            value, unit = _quantity(match[component], match['unit'])
+            value, unit = quantity(match[component], source_unit)
             if cube_refs:
                 append(*match.span(), prop, 'cube_edge', {'op': 'eq', 'value': value, 'unit': unit})
                 requirements[-1]['derivation'] = {'rule': 'cube_equal_edges.v1', 'source_refs': cube_refs}
@@ -566,12 +644,19 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
                 for r in requirements):
             design_requests.append({**reference(*span, 'design'), 'count': 1, 'delivery_unit': 'cad_document'})
             covered.append(span)
+    for match in re.finditer(r'不变|保留|保持|preserv\w*|unchanged|remain\s+unchanged|keep\s+.*same', objective, re.I):
+        # An explicit retained value is a dimensional assertion. Only implicit
+        # preservation needs a sealed prior measurement to supply that value.
+        if not any(a <= match.start() and match.end() <= b for a, b in preservation_spans + covered):
+            unsupported.append({'source_span': list(match.span()), 'reason': 'preservation_baseline_required'})
     quantity_patterns = [_EXPLICIT_QUANTITY, _OTHER_ENGINEERING_QUANTITY]
-    if declarations:
+    if declared_unit:
         # A global unit authorizes bare values, not the omission of values
         # whose property or scope the parser cannot recognize. Identifiers
         # such as M4, PG7 and FDM 3D are not dimensional assertions.
-        quantity_patterns.append(re.compile(rf'(?<![a-zA-Z0-9_.]){_NUMBER}(?![a-zA-Z0-9_.])'))
+        # A sentence-ending dot is a boundary; a dot before another digit is
+        # not. Keep the full decimal token instead of backtracking to a prefix.
+        quantity_patterns.append(re.compile(rf'(?<![a-zA-Z0-9_.]){_NUMBER}(?![a-zA-Z0-9_]|\.\d)'))
     for pattern in quantity_patterns:
         for quantity in pattern.finditer(objective):
             if not any(a <= quantity.start() and quantity.end() <= b for a, b in covered):
@@ -723,12 +808,14 @@ def extract_source_requirements(objective, *, verified_state=None, requirement_s
     result = {'schema_version':'requirement-extraction.v1', 'requirements':[], 'unsupported':[], 'obligations':[]}
     submitted_rows = []
     extractions = []
+    unit_context = _design_units(sources)
     for source in sources:
         if source['source_kind'] not in {'user','confirmed'} or source['text'] not in objective:
             raise ValueError('requirement source is not part of the frozen submitted input')
         extracted = extract_requirements(source['text'], source_input_id=source['source_input_id'],
                                         source_kind=source['source_kind'], verified_state=verified_state,
-                                        execution_scope=source.get('execution_scope', 'cad_geometry'))
+                                        execution_scope=source.get('execution_scope', 'cad_geometry'),
+                                        unit_context=unit_context)
         extractions.append(extracted)
     subjects = [{**mention, 'source_input_id': s['source_input_id']}
                 for s in sources for mention in source_owners(s['text'])]
@@ -745,7 +832,7 @@ def extract_source_requirements(objective, *, verified_state=None, requirement_s
             extracted = extract_requirements(source['text'], source_input_id=source['source_input_id'],
                 source_kind=source['source_kind'], verified_state=verified_state,
                 execution_scope=source.get('execution_scope', 'cad_geometry'), plate_context=plate_context,
-                primitive_context=primitive_context)
+                primitive_context=primitive_context, unit_context=unit_context)
         if context := extracted.get('source_context'):
             merged = result.setdefault('source_context', {'schema_version': 'source-context.v1',
                 'execution_scope': 'cad_geometry', 'design_requests': [], 'external_references': [], 'unverified_aspects': []})

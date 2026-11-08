@@ -8,7 +8,7 @@ import os
 import socket
 import sys
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -755,3 +755,201 @@ async def test_real_generate_runs_llm_inside_temporal_before_podman():
     assert workflow["status"] == "succeeded"
     assert workflow["request_payload"]["operation"] == "generate"
     assert attempt_count >= 4
+
+
+@pytest.mark.asyncio(loop_scope="module")
+@pytest.mark.parametrize('endpoint', ['/api/generate', '/api/generate/async', '/api/batch/generate'])
+async def test_public_generation_routes_preserve_cross_field_basis_and_profile(endpoint):
+    """Controlled proposals, real HTTP parsing, storage, Temporal and FreeCAD."""
+    from app.domain.requirement_basis import RequirementBasisV1
+    from app.models.schemas import ManufacturingProfile
+    from app.workflows.temporal import temporal_agent_v2_workflow_id
+    from tests.intake_semantics import IntakeSemanticsRequirements, IntakeSemanticsOperations
+
+    owner, project_id, initial = await _seed_project()
+    basis = RequirementBasisV1(target='板，孔径6mm，孔要穿过整块板。', dimensions='板40×30×12mm',
+        source_kind='user_specification', source_reference='用户指定的设计尺寸',
+        design_scope='geometry', concept_acknowledged=True)
+    profile = ManufacturingProfile(process='cnc', material='Aluminum').model_dump(mode='json')
+    class Operations(IntakeSemanticsOperations):
+        async def generate(self, **kwargs):
+            assert kwargs['requirements']['manufacturing_profile'] == profile
+            return await super().generate(**kwargs)
+    planner, operations = IntakeSemanticsRequirements('passage'), Operations('passage')
+    temporal = await get_temporal_client()
+    payload = dict(project_id=str(project_id), branch_id=str(initial.branch_id),
+        expected_base_revision_id=str(initial.revision_id), idempotency_key='route-'+str(project_id),
+        prompt=basis.target, requirement_basis=basis.model_dump(mode='json'), manufacturing_profile=profile)
+    headers = {'Authorization': f'Bearer {OWNER_KEY}'}
+    async with build_agent_v2_workflow_worker(temporal, backend=get_execution_backend(),
+            durable_planner=planner, freecad_operations=operations), httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=create_app()), base_url='http://test', timeout=180) as client:
+        response = await client.post(endpoint, headers=headers,
+            json={'items': [payload]} if endpoint == '/api/batch/generate' else payload)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        if endpoint.endswith('/async'):
+            workflow_id = body['task_id']
+            await temporal.get_workflow_handle(temporal_agent_v2_workflow_id(UUID(workflow_id))).result()
+            response = await client.get('/api/tasks/'+workflow_id, headers=headers)
+            assert response.status_code == 200, response.text
+            body = response.json()['result']
+        elif endpoint == '/api/batch/generate':
+            body = body['results'][0]
+        assert body['success'], body
+        workflow_id = UUID(body['workflow_run_id'])
+    assert len(planner.provider.requests) == 1 and operations.calls == 1
+    assert any(ManufacturingProfile.model_validate(profile).prompt_context() in m['content']
+               for m in planner.provider.requests[0]['messages'])
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as connection:
+        saved = await connection.scalar(text('SELECT request_payload FROM workflow_runs WHERE id=:id'), {'id':workflow_id})
+        assert saved['operation_context']['requirement_basis'] == basis.model_dump(mode='json')
+        assert saved['manufacturing_profile'] == profile
+        report = await connection.scalar(text("SELECT evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"), {'id':workflow_id})
+        assert report['outcome'] == 'passed'
+        assert {'hole_through','hole_depth'} <= {c['kind'] for c in report['acceptance_contract']['checks']}
+        assert await connection.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'), {'id':initial.branch_id}) == initial.revision_id
+
+
+@pytest.mark.asyncio(loop_scope='module')
+@pytest.mark.parametrize('profile_mode', ['explicit', 'inherit', 'change'])
+async def test_public_modify_preserves_versioned_profile_through_commit_and_reload(profile_mode):
+    """Controlled planner replies; real native edits, independent gates and storage."""
+    from app.agent.durable_plan import GateMode, ValidationGatePolicy
+    from app.agent.durable_planner import DurableAgentPlanner
+    from app.contracts.acceptance_v2 import AcceptanceContractV2
+    from app.freecad.operation_compiler import compile_common_modification
+    from app.freecad.operation_generator import FreeCADOperationGenerator
+    from app.models.schemas import ManufacturingProfile
+    from app.object_store import get_object
+    from app.validation.requirement_binding import require_bound_sources
+    from app.workflows.temporal import temporal_agent_v2_workflow_id
+    from tests.intake_semantics import IntakeSemanticsRequirements, IntakeSemanticsOperations, intake_case
+    from tests.test_freecad_agent_tools import ProviderTurns, call
+
+    owner, project_id, initial = await _seed_project()
+    objective, basis = intake_case('radius')
+    original = ManufacturingProfile(material='PETG', nozzle_diameter_mm=0.6, layer_height_mm=0.28).model_dump(mode='json')
+    expected = (ManufacturingProfile(material='ABS', nozzle_diameter_mm=0.8, layer_height_mm=0.32).model_dump(mode='json')
+                if profile_mode == 'change' else original)
+    planner_profiles, generator_profiles = [], []
+
+    class Planner(IntakeSemanticsRequirements):
+        async def requirements_modification(self, existing_code, objective, **kwargs):
+            planner_profiles.append(kwargs['manufacturing_profile'])
+            extracted = require_bound_sources(objective, verified_state=kwargs.get('verified_state'),
+                                              requirement_sources=kwargs.get('requirement_sources'))
+            contract = AcceptanceContractV2.model_validate({'objective': objective, 'checks': [
+                {'check_id': r['requirement_id'], 'binding_ref': r['requirement_id'], 'kind': r['kind'],
+                 'source_kind': r['source_kind'], 'source_quote': r['source_quote'], 'description': r['property'],
+                 'comparison': r['comparison'], 'scope': r['scope']} for r in extracted['requirements']]})
+            self.provider = ProviderTurns([call('submit_modification_plan', {'description': objective,
+                'modification_type': 'dimension_change', 'target_params': {'Pad.Length': 30}, 'new_features': [],
+                'acceptance': contract.model_dump(mode='json')})])
+            self.planner._client = self.provider
+            return await DurableAgentPlanner.requirements_modification(self, existing_code, objective, **kwargs)
+
+        def compose_modification(self, *args, **kwargs):
+            plan = super().compose_modification(*args, **kwargs)
+            return plan.model_copy(update={'validation_policy': plan.validation_policy.model_copy(update={
+                'visual': ValidationGatePolicy(mode=GateMode.DISABLED, repair_budget=0),
+                'geometry': ValidationGatePolicy(mode=GateMode.REQUIRED, repair_budget=0)})})
+
+    class Operations(IntakeSemanticsOperations):
+        async def generate(self, **kwargs):
+            generator_profiles.append(kwargs['requirements']['manufacturing_profile'])
+            if kwargs['plan'].operation == 'generate':
+                return await super().generate(**kwargs)
+            assert compile_common_modification(kwargs['requirements'], base_state=kwargs['base_state'],
+                                               output_formats=kwargs['output_formats']) is not None
+            # Exercise the existing typed edit compiler, with no provider call.
+            return await FreeCADOperationGenerator().generate(**kwargs)
+
+    planner, operations = Planner('radius'), Operations('radius')
+    temporal = await get_temporal_client()
+    payload = dict(project_id=str(project_id), branch_id=str(initial.branch_id),
+        expected_base_revision_id=str(initial.revision_id), idempotency_key='profile-base-'+str(project_id),
+        prompt=objective, requirement_basis=basis.model_dump(mode='json'), manufacturing_profile=original)
+    headers = {'Authorization': f'Bearer {OWNER_KEY}'}
+    observations = []
+    async with build_agent_v2_workflow_worker(temporal, backend=get_execution_backend(),
+            durable_planner=planner, freecad_operations=operations), httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=create_app()), base_url='http://test', timeout=180) as client:
+        async def review_commit(workflow_id):
+            async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+                row = (await conn.execute(text('SELECT id,candidate_revision_id FROM change_sets WHERE source_workflow_run_id=:id'),
+                                          {'id': UUID(workflow_id)})).mappings().one()
+            for action in ('accept', 'commit'):
+                response = await client.post(f'/api/change-sets/{row["id"]}/{action}', headers=headers,
+                                             json={'note': '核对独立几何及制造设置；实物性能未验证。'})
+                assert response.status_code == 200, response.text
+            return str(row['candidate_revision_id'])
+
+        response = await client.post('/api/generate', headers=headers, json=payload)
+        assert response.status_code == 200 and response.json()['success'], response.text
+        base_workflow_id = response.json()['workflow_run_id']
+        base_revision = await review_commit(base_workflow_id)
+        goal = '将圆柱高度改为30mm，半径保持20mm。'
+        updated_basis = basis.model_copy(update={'target': goal, 'dimensions': '圆柱体半径20mm，高度30mm',
+                                                 'source_reference': '用户确认的修改后尺寸'})
+        modify = {**payload, 'prompt': goal, 'expected_base_revision_id': base_revision,
+                  'idempotency_key': 'profile-modify-'+str(project_id), 'modeling_backend': 'freecad',
+                  'requirement_basis': updated_basis.model_dump(mode='json')}
+        if profile_mode == 'inherit':
+            modify.pop('manufacturing_profile')
+        else:
+            modify['manufacturing_profile'] = expected
+        response = await client.post('/api/modify', headers=headers, json=modify)
+        assert response.status_code == 200, response.text
+        workflow_id = response.json()['workflow_run_id']
+        if response.json()['needs_confirmation']:
+            confirmation = await client.post(f'/api/tasks/{workflow_id}/confirmation', headers=headers,
+                                              json={'accepted': True, 'note': '确认新尺寸及制造设置。'})
+            assert confirmation.status_code == 200, confirmation.text
+        await temporal.get_workflow_handle(temporal_agent_v2_workflow_id(UUID(workflow_id))).result()
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+            saved = await conn.scalar(text('SELECT request_payload FROM workflow_runs WHERE id=:id'), {'id': UUID(workflow_id)})
+            evidence = {row['gate']: row['evidence'] for row in (await conn.execute(text(
+                "SELECT gate,evidence FROM agent_validation_evidence WHERE workflow_run_id=:id"), {'id': UUID(workflow_id)})).mappings()}
+        assert saved['manufacturing_profile'] == expected
+        assert saved['operation_context']['requirement_basis'] == updated_basis.model_dump(mode='json')
+        assert planner_profiles == [expected] and generator_profiles == [original, expected]
+        assert any(ManufacturingProfile.model_validate(expected).prompt_context() in m['content']
+                   for m in planner.provider.requests[0]['messages'])
+        assert evidence['geometry']['outcome'] == 'passed'
+        assert {(c['kind'], c['comparison']['value']) for c in evidence['geometry']['acceptance_contract']['checks']} == {
+            ('cylinder_height', 30.), ('cylinder_radius', 20.)}
+        assert evidence['dfm']['policy_object']['material'] == expected['material']
+        assert evidence['dfm']['policy_object']['process'] == 'FDM'
+        assert evidence['dfm']['outcome'] != 'indeterminate'
+        revision = await review_commit(workflow_id)
+        for source_revision, profile in [(base_revision, original), (revision, expected)]:
+            reloaded = await client.get(f'/api/documents/{initial.branch_id}/revisions/{source_revision}', headers=headers)
+            assert reloaded.status_code == 200, reloaded.text
+            view = reloaded.json()
+            assert view['manufacturing_profile'] == profile
+            assert view['snapshot']['result']['manufacturing_profile'] == profile
+            assert view['head_revision_id'] == revision
+            observations.append({'revision': source_revision, 'profile': profile})
+        # Repeating the same omitted-profile request after commit reuses its saved inputs.
+        replay = await client.post('/api/modify', headers=headers, json=modify)
+        assert replay.status_code == 200 and replay.json()['workflow_run_id'] == workflow_id, replay.text
+        assert planner_profiles == [expected]
+
+    if directory := os.environ.get('CAD_AGENT_TEST_EVIDENCE_DIR'):
+        out = Path(directory) / ('modify-profile-' + profile_mode)
+        out.mkdir(parents=True, exist_ok=True)
+        files = []
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+            rows = (await conn.execute(text("SELECT artifact_kind,sha256,object_key,revision_id FROM artifacts "
+                "WHERE revision_id IN (:base,:revision) AND artifact_kind IN ('fcstd','step')"),
+                {'base': UUID(base_revision), 'revision': UUID(revision)})).mappings().all()
+        for row in rows:
+            content = await get_object(row['object_key'])
+            assert hashlib.sha256(content).hexdigest() == row['sha256']
+            filename = row['sha256'] + '.' + row['artifact_kind']
+            (out / filename).write_bytes(content)
+            files.append({**dict(row), 'filename': filename})
+        (out / 'evidence.json').write_text(json.dumps({'request': saved, 'evidence': evidence,
+            'reloaded_versions': observations, 'files': files, 'planner_profiles': planner_profiles,
+            'generator_profiles': generator_profiles}, ensure_ascii=False, default=str, indent=2))

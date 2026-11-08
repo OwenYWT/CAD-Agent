@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.agent.design_brief import (
-    ensure_design_brief,
+    ensure_design_brief, apply_manufacturing_profile_to_brief,
 )
 from app.agent.orchestrator import (
     Orchestrator,
@@ -112,7 +112,7 @@ class SourcePreparer:
             # silently turn a DXF-only request into an incompatible 3D job.
             plan.part_type = "profile_2d"
         design_brief = ensure_design_brief(plan)
-        self.orchestrator._apply_manufacturing_profile_to_brief(
+        apply_manufacturing_profile_to_brief(
             design_brief,
             profile,
         )

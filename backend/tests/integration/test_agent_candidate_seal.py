@@ -534,6 +534,15 @@ async def test_cross_candidate_manifest_selection_is_rejected():
 
 @pytest.mark.asyncio(loop_scope="module")
 async def test_superseded_manifest_selection_is_rejected():
+    await _assert_staging_replacement(supersedes=True)
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_optional_repair_preserves_verified_bytes_and_persistent_risk():
+    await _assert_staging_replacement(supersedes=False)
+
+
+async def _assert_staging_replacement(*, supersedes):
     context = await _seed_selection()
     async with tenant_transaction(
         context["owner"].tenant_id,
@@ -627,7 +636,7 @@ async def test_superseded_manifest_selection_is_rejected():
             attempt_id=attempt.attempt_id,
             lease_generation=lease.generation,
             lease_token=lease.token,
-            supersedes_id=context["selected"]["staging_manifest_id"],
+            supersedes_id=context["selected"]["staging_manifest_id"] if supersedes else None,
             manifest={
                 "schema_version": "agent-staging-manifest.v1",
                 "candidate_build_id": str(context["candidate_id"]),
@@ -642,8 +651,30 @@ async def test_superseded_manifest_selection_is_rejected():
                 "runtime_provenance": {"image_digest": "sha256:" + "c" * 64},
             },
         )
-    with pytest.raises(CandidateSealVerificationError, match="stale, consumed"):
-        await _seal(context)
+    if supersedes:
+        with pytest.raises(CandidateSealVerificationError, match="stale, consumed"):
+            await _seal(context)
+        return
+    # A tentative optimization has no passing evidence. Only the previously
+    # validated artifact may be selected, retaining its failed advisory report.
+    failure = {'gate': 'dfm', 'repair_step_key': 'repair-model-main-01',
+               'error_code': 'agent_geometry_validation_failed'}
+    context['selected']['optional_repair_failure'] = failure
+    sealed = await _seal(context)
+    replay = await _seal(context)
+    assert replay.replayed and replay.seal_id == sealed.seal_id
+    assert {a.sha256 for a in sealed.artifacts} == {o['sha256'] for o in context['outputs']}
+    async with tenant_transaction(context['owner'].tenant_id, context['owner'].principal_id) as connection:
+        state = (await connection.execute(text('''
+            SELECT c.risk_summary, c.validation_summary, p.head_revision_id
+            FROM agent_candidate_builds b JOIN change_sets c ON c.id=b.change_set_id
+            JOIN project_branches p ON p.id=b.branch_id WHERE b.id=:id
+        '''), {'id': context['candidate_id']})).mappings().one()
+    assert state['head_revision_id'] == context['initial'].revision_id
+    assert state['validation_summary']['status'] == 'warning'
+    dfm = next(r for r in state['risk_summary']['items'] if r['gate'] == 'dfm')
+    assert dfm['outcome'] == 'failed' and dfm['optional_repair_failure'] == failure
+    assert any('优化未完成' in issue for issue in dfm['issues'])
 
 
 @pytest.mark.asyncio(loop_scope="module")

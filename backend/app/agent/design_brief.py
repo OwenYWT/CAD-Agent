@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.models.schemas import CADPlan, CriticalDimension, DesignBrief
+from app.models.schemas import CADPlan, CriticalDimension, DesignBrief, ManufacturingProfile
 
 _DEFAULT_PRINTABILITY_TARGETS = [
     "几何体应封闭无破面",
@@ -167,3 +167,33 @@ def ensure_design_brief(plan: CADPlan) -> DesignBrief:
     )
     plan.design_brief = brief
     return brief
+
+
+def apply_manufacturing_profile_to_brief(
+    brief: DesignBrief, profile: ManufacturingProfile | None
+) -> None:
+    if not profile:
+        return
+    process_labels = {
+        "fdm": "FDM",
+        "sla": "SLA",
+        "cnc": "CNC",
+        "laser_cut": "激光切割",
+        "generic": "通用工艺",
+    }
+    process_label = process_labels.get(profile.process, profile.process)
+    brief.manufacturing_posture = f"{process_label} {profile.material}".strip()
+    profile_targets = [
+        f"制造工艺：{process_label}",
+        f"材料：{profile.material}",
+    ]
+    if profile.nozzle_diameter_mm is not None:
+        profile_targets.append(f"喷嘴直径：{profile.nozzle_diameter_mm:g} mm")
+    if profile.layer_height_mm is not None:
+        profile_targets.append(f"层高：{profile.layer_height_mm:g} mm")
+    if profile.build_volume_mm:
+        volume = " x ".join(f"{value:g}" for value in profile.build_volume_mm)
+        profile_targets.append(f"成型空间：{volume} mm")
+    for target in profile_targets:
+        if target not in brief.printability_targets:
+            brief.printability_targets.append(target)

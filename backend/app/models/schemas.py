@@ -9,6 +9,7 @@ from app.execution.contracts import ExecutionError
 from app.parameters import CADParameter, extract_parameters
 from app.config import settings
 from app.domain.selection import SelectionContextV1
+from app.domain.requirement_basis import RequirementBasisV1
 
 
 class ManufacturingProfile(BaseModel):
@@ -303,6 +304,7 @@ DurablePrompt = Annotated[
 
 class GenerateRequest(DurableRequestIdentity):
     prompt: DurablePrompt
+    requirement_basis: RequirementBasisV1 | None = None
     manufacturing_profile: ManufacturingProfile | None = None
     output_formats: list[str] = ["step", "stl"]
 
@@ -313,6 +315,8 @@ class ModifyRequest(DurableRequestIdentity):
     code: str | None = Field(default=None, min_length=1, max_length=50000)
     modeling_backend: Literal["auto", "freecad", "cadquery"] = "auto"
     prompt: DurablePrompt
+    requirement_basis: RequirementBasisV1 | None = None
+    manufacturing_profile: ManufacturingProfile | None = None
     output_formats: list[str] = ["step", "stl"]
     expected_state_version: int | None = Field(default=None, ge=0, strict=True)
     selection_context: SelectionContextV1 | None = None

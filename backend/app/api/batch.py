@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from app.api.auth import verify_api_key, rate_limiter
 from app.config import settings
+from app.domain.requirement_basis import RequirementBasisV1
 from app.models.schemas import (
     DurableRequestIdentity,
     DurablePrompt,
@@ -29,6 +30,7 @@ router = APIRouter(prefix="/api", tags=["batch"])
 
 class BatchItem(DurableRequestIdentity):
     prompt: str
+    requirement_basis: RequirementBasisV1 | None = None
     manufacturing_profile: ManufacturingProfile | None = None
     output_formats: list[str] = ["step", "stl"]
 
@@ -46,6 +48,7 @@ class BatchResponse(BaseModel):
 
 class AsyncGenerateRequest(DurableRequestIdentity):
     prompt: DurablePrompt
+    requirement_basis: RequirementBasisV1 | None = None
     manufacturing_profile: ManufacturingProfile | None = None
     output_formats: list[str] = ["step", "stl"]
 
@@ -95,6 +98,7 @@ async def batch_generate(
                 manufacturing_profile=item.manufacturing_profile,
                 modeling_backend=resolution.modeling_backend,
                 operation_context=resolution.operation_context,
+                **({"requirement_basis": item.requirement_basis} if item.requirement_basis is not None else {}),
             )
             return await wait_for_compatibility_response(
                 current_principal(),
@@ -155,6 +159,7 @@ async def generate_async(
         manufacturing_profile=req.manufacturing_profile,
         modeling_backend=resolution.modeling_backend,
         operation_context=resolution.operation_context,
+        **({"requirement_basis": req.requirement_basis} if req.requirement_basis is not None else {}),
     )
     return AsyncTaskStatus(
         task_id=str(submission.workflow_run_id),

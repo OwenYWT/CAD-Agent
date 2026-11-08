@@ -26,6 +26,7 @@ from app.config import settings
 from app.models.workflow_requests import (FreeCADRevisionRestoreV1, McadExecutionRequest, McadOutputRequest, OperationContextV1)
 from app.workflows.temporal import (FreeCADStructuredModificationV1, mcad_workflow_request_payload, mcad_agent_v2_request_payload, start_mcad_agent_v2_workflow, start_mcad_workflow)
 from app.services.run_state import IdempotencyConflict
+from app.services.cloud_documents import revision_design_context
 from app.freecad.selection import SelectionContextV1, SelectionError, needs_selection, freeze_selection
 
 
@@ -457,7 +458,7 @@ async def submit_durable_workflow(
                 text(
                     """
                     SELECT id, project_id, requested_by_principal_id, kind,
-                           request_payload_hash
+                           request_payload_hash, request_payload
                     FROM workflow_runs
                     WHERE tenant_id=:tenant_id
                       AND idempotency_key=:idempotency_key
@@ -469,6 +470,17 @@ async def submit_durable_workflow(
                 },
             )
         ).mappings().one_or_none()
+        if operation == "modify" and manufacturing_profile is None and revision_restore is None:
+            # A retry uses its frozen request, including historical requests
+            # without a profile. A new edit inherits its immutable source's
+            # settings, never today's preferences or a later branch head.
+            design = (existing["request_payload"] if existing is not None else
+                      await revision_design_context(connection, principal.tenant_id, project_id,
+                          operation_context.source_candidate_revision_id or expected_base_revision_id))
+            saved_profile = design.get("manufacturing_profile")
+            normalized_profile = ManufacturingProfile.model_validate(saved_profile) if saved_profile is not None else None
+            request_payload["manufacturing_profile"] = normalized_profile.model_dump(mode="json") if normalized_profile else None
+            payload_hash = canonical_sha256(request_payload)
     if existing is not None:
         legacy_backend = (
             "cadquery"

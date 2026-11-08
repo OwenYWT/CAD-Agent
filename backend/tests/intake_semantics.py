@@ -26,12 +26,26 @@ def intake_case(name):
         return saved['objective'], RequirementBasisV1.model_validate(saved['requirement_basis'])
     objective = {'diameter':'生成圆柱体几何模型。圆柱体直径为40 mm，圆柱体高度为25 mm。',
         'radius':'生成圆柱体几何模型。圆柱体半径为20 mm，圆柱体高度为25 mm。',
+        'source_context':'The dimensions below describe this model. Evaluate geometry only.\n'
+            'cylinder radius 20 mm, height 25 mm. Manufacturing performance is not certified. '
+            'Preserve all specified numeric dimensions.',
+        'source_units':'All linear dimensions and coordinates below are in source design units: '
+            '1 source unit = 50 mm. Angles are in degrees.\ncylinder radius 0.4 units, height 0.5 units',
+        'source_units_split':'cylinder. 1 design unit = 50 mm.',
+        'source_global':'All dimensions are in cm.\ncylinder radius 2, height 2.5. Manufacturing performance is not certified.',
+        'source_global_split':'cylinder. units: cm.',
+        'source_global_reverse':'cylinder radius 2, height 2.5',
+        'source_design_global':'All linear dimensions and coordinates below are in source design units: '
+            '1 source unit = 50 mm. Angles are in degrees.\ncylinder radius 0.4, height 0.5',
         'passage':'板40×30×12mm，孔径6mm，孔须打通。',
         'cube':'构建一个十厘米的正方体', 'cube_rectangular':'构建一个十厘米的正方体',
         'cube_split':'构建一个正方体', 'chinese_box':'长方体长100mm宽二十厘米高三十厘米',
         'sphere_bounds':'球体长40mm宽40mm高40mm', 'cylinder_bounds':'圆柱体长40mm宽40mm厚25mm',
         'wall':'盒体外壁厚度：3 mm', 'floor':'盒体底板厚度：3 mm'}[name]
-    basis = RequirementBasisV1(target=objective, dimensions='边长两点五厘米' if name == 'cube_split' else objective, source_kind='user_specification',
+    basis = RequirementBasisV1(target=objective, dimensions=('边长两点五厘米' if name == 'cube_split' else
+        'radius 0.4 units, height 0.5 units' if name == 'source_units_split' else
+        'radius 2, height 2.5' if name == 'source_global_split' else
+        'All dimensions are in cm.' if name == 'source_global_reverse' else objective), source_kind='user_specification',
         source_reference='用户指定的设计尺寸', design_scope='geometry')
     return objective, basis
 
@@ -89,7 +103,8 @@ class IntakeSemanticsOperations:
             add('sketch.add_profile', sketch='Base', geometry={'kind':'rectangle', 'corner':{'x':0,'y':0},
                 'width_mm':length, 'height_mm':width})
             add('feature.pad', name='Pad', profile='Base', length_mm=height)
-        elif self.name in {'diameter','radius'}:
+        elif self.name in {'diameter','radius','source_context','source_units','source_units_split',
+                           'source_global','source_global_split','source_global_reverse','source_design_global'}:
             add('sketch.add_profile', sketch='Base', geometry={'kind':'circle', 'center':{'x':0,'y':0},
                 'radius_mm':20 if self.valid else 21})
             add('feature.pad', name='Pad', profile='Base', length_mm=25)

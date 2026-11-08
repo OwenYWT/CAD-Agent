@@ -709,6 +709,13 @@ async def seal_agent_candidate(
         raise
 
     validation_summary, risk_summary = build_agent_change_set_evidence(evidence)
+    for selected in selected_manifests:
+        failure = selected.get('optional_repair_failure')
+        if failure:
+            for risk in risk_summary['items']:
+                if risk['gate'] == 'dfm' and risk['evidence_id'] == selected.get('dfm_evidence_id'):
+                    risk['optional_repair_failure'] = failure
+                    risk['issues'].append('制造建议的自动优化未完成，已保留优化前通过几何检查的模型；制造风险仍需审查。')
     candidate_manifest = {
         "schema_version": "mcad-agent-revision-manifest.v1",
         "candidate_build_id": str(candidate_build_id),

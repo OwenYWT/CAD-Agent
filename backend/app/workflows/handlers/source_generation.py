@@ -67,7 +67,8 @@ async def agent_generate_source(payload: dict[str, Any], *, durable_modeling: Du
         generated = await durable_modeling.generate_step_source(
             plan=plan,
             step=step,
-            requirements=dict(payload["requirements"]),
+            requirements={**payload["requirements"],
+                **({'manufacturing_profile': request.manufacturing_profile} if request.manufacturing_profile is not None else {})},
             previous_source=(
                 str(payload["previous_source"])
                 if payload.get("previous_source") is not None

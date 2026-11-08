@@ -365,7 +365,7 @@ class FreeCADOperationGenerator:
             "requirements": {
                 key: value
                 for key, value in requirements.items()
-                if key not in {"design_brief", "manufacturing_profile"}
+                if key != "design_brief"
             },
             "base_freecad_state": bounded_agent_context(base_state) if base_state else None,
             **({"engineering_acceptance": requirements.get('acceptance') or requirements["design_brief"]["acceptance"]}

@@ -29,10 +29,10 @@ ASSEMBLY_DECOMPOSE_PROMPT = """\u4f60\u662f CAD \u88c5\u914d\u4f53\u8bbe\u8ba1\u
 \u89c4\u5219:
 1. \u6bcf\u4e2a\u96f6\u4ef6\u5fc5\u987b\u662f\u53ef\u4ee5\u72ec\u7acb\u5efa\u6a21\u3001\u72ec\u7acb\u4fee\u6539\u7684\u5b9e\u4f53\u3002
 2. \u591a\u4e2a\u5806\u53e0\u3001\u5e76\u6392\u3001\u9635\u5217\u3001\u4e0a\u4e0b\u7ec4\u5408\u7684\u76f8\u540c\u51e0\u4f55\u4f53\uff0c\u4e5f\u8981\u62c6\u6210\u591a\u4e2a\u72ec\u7acb\u96f6\u4ef6\u3002
-3. \u4f7f\u7528\u7b80\u5316\u51e0\u4f55\uff0c\u4e0d\u8981\u5c1d\u8bd5\u7cbe\u786e\u9f7f\u5f62\u3001\u87ba\u7eb9\u6216\u590d\u6742\u66f2\u9762\u3002
+3. 保留用户明确要求的几何特征和精度；不得擅自简化齿形、螺纹或曲面。无法表达的要求须明确报告，不能通过删减要求完成规划。
 4. \u6bcf\u4e2a\u96f6\u4ef6\u7ed9\u51fa name\u3001description\uff08\u542b\u5173\u952e\u5c3a\u5bf8\uff09\u3001dimensions\u3001position [x,y,z] \u548c color\u3002
 5. \u989c\u8272\u4ece\u4ee5\u4e0b\u503c\u9009\u62e9: lightgray, steelblue, orange, green, red, gold, silver\u3002
-6. \u6700\u591a 8 \u4e2a\u96f6\u4ef6\uff0c\u4f18\u5148\u62c6\u5206\u4e3b\u8981\u7ed3\u6784\u4ef6\u3002
+6. 完整列出用户要求的所有独立零件，不得截断、遗漏或合并必要零件。执行资源限制由工作流检查，不通过减少零件数量规避。
 7. \u4f4d\u7f6e\u5750\u6807\u4ee5 mm \u4e3a\u5355\u4f4d\u3002position [x,y,z] \u4e25\u683c\u8868\u793a\u96f6\u4ef6\u8f74\u5411\u5305\u56f4\u76d2\u5e95\u9762\u4e2d\u5fc3\u5728\u88c5\u914d\u5750\u6807\u7cfb\u4e2d\u7684\u76ee\u6807\u70b9\uff1ax/y \u662f\u5e95\u9762\u4e2d\u5fc3\uff0cz \u662f\u5e95\u9762\u9ad8\u5ea6\u3002\u4e0d\u5f97\u628a position \u89e3\u91ca\u4e3a\u5305\u56f4\u76d2\u4e2d\u5fc3\u3002
 8. \u7528\u6237\u660e\u786e\u7ed9\u51fa position \u65f6\u5fc5\u987b\u539f\u6837\u4fdd\u7559\uff1b\u7528\u6237\u672a\u7ed9\u51fa\u65f6\uff0c\u518d\u6309\u5e95\u9762\u4e2d\u5fc3\u8bed\u4e49\u89c4\u5212\u65e0\u91cd\u53e0\u7684\u9ed8\u8ba4\u5e03\u5c40\u3002
 
@@ -76,6 +76,8 @@ class AssemblyPlanner:
         )
 
         last_error: Exception | None = None
+        if plan.manufacturing_profile:
+            user_content += '\n' + plan.manufacturing_profile.prompt_context()
         for attempt in range(2):
             try:
                 messages = [
@@ -136,7 +138,7 @@ class AssemblyPlanner:
                 if not parts:
                     raise ValueError("assembly planner returned no parts")
                 return AssemblyPlan(
-                    parts=parts[:8],
+                    parts=parts,
                     assembly_description=parsed.get(
                         "assembly_description",
                         plan.description,

@@ -10,7 +10,7 @@ from uuid import UUID, uuid5
 from temporalio import workflow
 from app.workflows.document_queue import wait_for_document, release_document
 from temporalio.common import RetryPolicy
-from temporalio.exceptions import ActivityError, ApplicationError, ChildWorkflowError
+from temporalio.exceptions import ActivityError, ApplicationError, ChildWorkflowError, is_cancelled_exception
 from temporalio.workflow import ActivityCancellationType
 from app.workflows.model_job import ModelJobWorkflow
 from app.workflows.model_job_policy import MODEL_OPERATIONS
@@ -61,6 +61,7 @@ class McadAgentWorkflowV2:
         self._plan: dict[str, Any] | None = None
         self._candidate_build_id: str | None = None
         self._validation_repair_v2 = False
+        self._advisory_dfm_recovery_v1 = False
         self._provider_streaming_v1 = False
         self._model_jobs_v1 = False
         self._native_repair_budget = None
@@ -1108,47 +1109,64 @@ class McadAgentWorkflowV2:
                          "repair_count": repair_count, "repair_budget": policy["repair_budget"]},
                         type="agent_dfm_validation_failed", non_retryable=True)
                 return {**current, "dfm": dfm}
-            repair_count += 1
-            repair_index = int(current.get("repair_count", 0)) + 1
-            repair_key = f"dfm-repair-{current['step']['step_key']}-{repair_count:02d}"
-            step_index = 60_000 + plan_step_index * 100 + repair_count
-            report = dfm["report"]
-            failure = {"execution_attempt_id": dfm.get("attempt_id"), "category": "validation",
-                "error_code": "dfm_validation_failed", "runtime_error_type": "DFMError",
-                "error_message": "Measured DFM findings: " + json.dumps({
-                    "metrics": report.get("metrics", {}), "violations": report.get("violations", [])[:32],
-                    "issues": report.get("issues", [])[:32]}, ensure_ascii=False)[:16000]
-                    + ". " + self._design_repair_context(plan)}
-            repaired = await self._activity("agent_v2.repair_operations" if freecad else "agent_v2.repair_source", {
-                **request, "candidate_build_id": candidate_build_id,
-                "source_id": current["generated"]["source_id"], "source_hash": current["generated"]["source_hash"],
-                "repair_step_key": repair_key, "step_index": step_index, "repair_index": repair_index,
-                "gate_repair_index": repair_count, "original_step_key": current["step"]["step_key"],
-                **self._reserve_repair(repair_key, current['step']['step_key'], 'dfm'),
-                "seen_signatures": current.get("seen_signatures", []), "base_state": current.get("base_state"),
-                "failure": failure,
-                **self._checkpoint_execution_context(current),
-            }, suffix=repair_key)
-            generated = {**current["generated"], **repaired}
-            executed = await self._activity("agent_v2.execute_freecad" if freecad else "agent_v2.execute_model", {
-                **request, "candidate_build_id": candidate_build_id, "plan": plan, "step": current["step"],
-                "step_index": step_index, "run_step_key": repair_key,
-                "run_step_kind": "agent_freecad_repair" if freecad else "agent_repair",
-                "source_id": generated["source_id"], "source_hash": generated["source_hash"],
-                "source_code": generated["source_code"], "mode": current["mode"], "timeout_seconds": 180,
-                "supersedes_staging_manifest_id": current["executed"]["staging_manifest_id"],
-                **self._checkpoint_execution_context(current),
-            }, suffix=f"execute-{repair_key}", execution=True)
-            # Evidence for the superseded artifact must never validate new bytes.
-            current = {k: v for k, v in current.items() if k not in {"geometry", "visual", "dfm"}}
-            current.update(generated=generated, executed=executed, repair_count=repair_index,
-                seen_signatures=[*current.get("seen_signatures", []), repaired["signature"]])
-            current = await self._geometry_gate(request=request, plan=plan, candidate_build_id=candidate_build_id,
-                modeled=current, plan_step_index=plan_step_index, expected_dimensions=expected_dimensions,
-                validation_cycle=10 + repair_count)
-            current = await self._visual_gate(request=request, plan=plan, candidate_build_id=candidate_build_id,
-                modeled=current, plan_step_index=plan_step_index, expected_dimensions=expected_dimensions,
-                validation_cycle=10 + repair_count)
+            retain_previous = (self._advisory_dfm_recovery_v1 and policy['mode'] == 'advisory'
+                and (current.get('geometry') or {}).get('outcome') == 'passed'
+                and not gate_blocks('visual', plan['validation_policy']['visual']['mode'],
+                                    (current.get('visual') or {}).get('outcome')))
+            previous = {**current, 'dfm': dfm}
+            # Optional optimization is a separate staging alternative. Do not
+            # supersede verified bytes before its replacement passes all gates.
+            try:
+                repair_count += 1
+                repair_index = int(current.get("repair_count", 0)) + 1
+                repair_key = f"dfm-repair-{current['step']['step_key']}-{repair_count:02d}"
+                step_index = 60_000 + plan_step_index * 100 + repair_count
+                report = dfm["report"]
+                failure = {"execution_attempt_id": dfm.get("attempt_id"), "category": "validation",
+                    "error_code": "dfm_validation_failed", "runtime_error_type": "DFMError",
+                    "error_message": "Measured DFM findings: " + json.dumps({
+                        "metrics": report.get("metrics", {}), "violations": report.get("violations", [])[:32],
+                        "issues": report.get("issues", [])[:32]}, ensure_ascii=False)[:16000]
+                        + ". " + self._design_repair_context(plan)}
+                repaired = await self._activity("agent_v2.repair_operations" if freecad else "agent_v2.repair_source", {
+                    **request, "candidate_build_id": candidate_build_id,
+                    "source_id": current["generated"]["source_id"], "source_hash": current["generated"]["source_hash"],
+                    "repair_step_key": repair_key, "step_index": step_index, "repair_index": repair_index,
+                    "gate_repair_index": repair_count, "original_step_key": current["step"]["step_key"],
+                    **self._reserve_repair(repair_key, current['step']['step_key'], 'dfm'),
+                    "seen_signatures": current.get("seen_signatures", []), "base_state": current.get("base_state"),
+                    "failure": failure,
+                    **self._checkpoint_execution_context(current),
+                }, suffix=repair_key)
+                generated = {**current["generated"], **repaired}
+                executed = await self._activity("agent_v2.execute_freecad" if freecad else "agent_v2.execute_model", {
+                    **request, "candidate_build_id": candidate_build_id, "plan": plan, "step": current["step"],
+                    "step_index": step_index, "run_step_key": repair_key,
+                    "run_step_kind": "agent_freecad_repair" if freecad else "agent_repair",
+                    "source_id": generated["source_id"], "source_hash": generated["source_hash"],
+                    "source_code": generated["source_code"], "mode": current["mode"], "timeout_seconds": 180,
+                    "supersedes_staging_manifest_id": None if retain_previous else current["executed"]["staging_manifest_id"],
+                    **self._checkpoint_execution_context(current),
+                }, suffix=f"execute-{repair_key}", execution=True)
+                # Evidence for the superseded artifact must never validate new bytes.
+                current = {k: v for k, v in current.items() if k not in {"geometry", "visual", "dfm"}}
+                current.update(generated=generated, executed=executed, repair_count=repair_index,
+                    seen_signatures=[*current.get("seen_signatures", []), repaired["signature"]])
+                current = await self._geometry_gate(request=request, plan=plan, candidate_build_id=candidate_build_id,
+                    modeled=current, plan_step_index=plan_step_index, expected_dimensions=expected_dimensions,
+                    validation_cycle=10 + repair_count)
+                current = await self._visual_gate(request=request, plan=plan, candidate_build_id=candidate_build_id,
+                    modeled=current, plan_step_index=plan_step_index, expected_dimensions=expected_dimensions,
+                    validation_cycle=10 + repair_count)
+            except (ActivityError, ChildWorkflowError, ApplicationError) as exc:
+                if not retain_previous or self._cancel_reason is not None or is_cancelled_exception(exc):
+                    raise
+                cause = self._root_application_error(exc)
+                return {**previous, 'optional_repair_failure': {
+                    'gate': 'dfm', 'repair_step_key': repair_key,
+                    'error_code': cause.type if cause else type(exc).__name__,
+                }}
+
 
     @staticmethod
     def _checkpoint_execution_context(modeled):
@@ -1169,6 +1187,7 @@ class McadAgentWorkflowV2:
             self._native_source_solid_count_v1 = workflow.patched('agent-v2-native-source-solid-count-v1')
             self._engineering_acceptance_v1 = workflow.patched("agent-v2-engineering-acceptance-v1")
             self._validation_repair_v2 = workflow.patched("agent-v2-validation-repair-v2")
+            self._advisory_dfm_recovery_v1 = workflow.patched("agent-v2-advisory-dfm-recovery-v1")
             self._provider_streaming_v1 = workflow.patched("agent-v2-provider-streaming-v1")
             self._model_jobs_v1 = workflow.patched("agent-v2-model-jobs-v1")
             self._freecad_checkpoints_v1 = workflow.patched("agent-v2-freecad-checkpoints-v1")
@@ -1538,6 +1557,8 @@ class McadAgentWorkflowV2:
                     "dfm_evidence_id": (
                         item["dfm"]["evidence_id"] if item["dfm"] else None
                     ),
+                    **({'optional_repair_failure': item['optional_repair_failure']}
+                       if item.get('optional_repair_failure') else {}),
                     "bom_evidence_id": (
                         bom_result["evidence_id"]
                         if (

@@ -76,7 +76,8 @@ async def main():
             await page.locator('#password').fill(private['owner']['password'])
             await page.locator('button[type=submit]').click()
             await verify_preview_preserves_input(page)
-            for name in ('fdm','diameter','assembly','passage','cube','cube_split','chinese_box','sphere_bounds','cylinder_bounds'):
+            for name in ('fdm','diameter','assembly','passage','cube','cube_split','chinese_box','sphere_bounds','cylinder_bounds',
+                         'source_global','source_global_split','source_design_global'):
                 objective,basis = assembly_case() if name == 'assembly' else intake_case(name)
                 planner,operations = (AssemblyRequirements(),AssemblyOperations()) if name == 'assembly' else (IntakeSemanticsRequirements(name), IntakeSemanticsOperations(name))
                 async with build_agent_v2_workflow_worker(client, backend=get_execution_backend(),
@@ -138,6 +139,9 @@ async def main():
                         elif name == 'chinese_box':
                             for value in (100, 200, 300):
                                 await expect(card.get_by_test_id('engineering-measurement').filter(has_text=f'{value} mm')).to_have_count(1)
+                        elif name.startswith('source_'):
+                            for kind, value in [('cylinder_radius', 20), ('cylinder_height', 25)]:
+                                await expect(card.get_by_test_id('engineering-measurement').filter(has_text=kind).first).to_contain_text(f'{value} mm')
                         else:
                             await expect(card.get_by_test_id('engineering-measurement').filter(has_text='40 mm')).to_have_count(1)
                         await card.get_by_role('button',name='审阅候选与参数变化',exact=True).click()
@@ -150,6 +154,12 @@ async def main():
                         assert document['head_revision_id'] != saved['expected_base_revision_id']
                         await page.reload()
                         await expect(page.get_by_test_id('document-scene')).to_have_attribute('data-revision',document['head_revision_id'],timeout=90000)
+                        if name.startswith('source_'):
+                            card = page.locator('[data-testid=authoritative-task]:visible')
+                            await card.locator('summary').filter(has_text='检查结果（').click()
+                            await card.get_by_role('button',name='查看检查对象、版本与规则',exact=True).first.click()
+                            for kind, value in [('cylinder_radius', 20), ('cylinder_height', 25)]:
+                                await expect(card.get_by_test_id('engineering-measurement').filter(has_text=kind).first).to_contain_text(f'{value} mm')
                         if name.startswith('cube') or name in {'sphere_bounds', 'cylinder_bounds'}:
                             card = page.locator('[data-testid=authoritative-task]:visible')
                             await card.locator('summary').filter(has_text='检查结果（').click()

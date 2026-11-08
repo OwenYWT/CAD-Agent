@@ -8,7 +8,7 @@ import time
 from app.agent.failure_taxonomy import classify, fix_hint_for, render_prompt_table
 from app.agent.prompts import CODEGEN_SYSTEM_PROMPT, MODIFICATION_PROMPT, ERROR_FIX_PROMPT, EZDXF_CODEGEN_PROMPT, ASSEMBLY_CODEGEN_PROMPT
 from app.config import settings, make_llm_client
-from app.models.schemas import CADPlan, ModificationPlan
+from app.models.schemas import CADPlan, ModificationPlan, ManufacturingProfile
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class CodeGenerator:
     def _format_design_brief_context(plan: CADPlan) -> str:
         brief = plan.design_brief
         if not brief:
-            return ""
+            return plan.manufacturing_profile.prompt_context() if plan.manufacturing_profile else ""
 
         dimension_lines = [
             f"- {item.name}={item.value} {item.unit}: {item.reason}"
@@ -54,6 +54,8 @@ class CodeGenerator:
             sections.append("Printability targets:\n" + "\n".join(f"- {item}" for item in brief.printability_targets))
         if brief.acceptance_criteria:
             sections.append("Acceptance criteria:\n" + "\n".join(f"- {item}" for item in brief.acceptance_criteria))
+        if plan.manufacturing_profile:
+            sections.append(plan.manufacturing_profile.prompt_context())
         return "\n\n".join(sections)
 
     @staticmethod
@@ -182,6 +184,7 @@ class CodeGenerator:
         existing_code: str,
         examples: list[dict],
         conversation: list[dict],
+        *, manufacturing_profile: ManufacturingProfile | None = None,
     ) -> str:
         system = MODIFICATION_PROMPT.format(
             existing_code=existing_code,
@@ -189,6 +192,8 @@ class CodeGenerator:
         )
 
         messages = [{"role": "user", "content": f"修改要求: {plan.description}"}]
+        if manufacturing_profile:
+            messages[0]['content'] += '\n' + manufacturing_profile.prompt_context()
 
         t0 = time.time()
         logger.info("CodeGen.modify LLM call start")
@@ -309,6 +314,7 @@ class CodeGenerator:
         part_description: str,
         part_dimensions: dict,
         examples: list[dict],
+        *, manufacturing_profile: ManufacturingProfile | None = None,
     ) -> str:
         """Generate code for a single part as a function make_{name}() -> cq.Workplane."""
         system = (
@@ -316,7 +322,7 @@ class CodeGenerator:
             "规则:\n"
             "1. 定义函数 make_{name}() 返回 cq.Workplane 对象\n"
             "2. 关键尺寸在函数外定义为变量\n"
-            "3. 用简化几何，不需要精确齿形/螺纹\n"
+            "3. 保留用户明确要求的几何特征与精度，不得擅自简化齿形、螺纹或省略结构\n"
             "4. 代码末尾: result = make_{name}()\n"
             "5. 最后一行: show_object(result)\n"
             "6. 只输出 Python 代码\n"
@@ -330,6 +336,8 @@ class CodeGenerator:
             f"零件描述: {part_description}\n"
             f"尺寸: {part_dimensions}\n"
         )
+        if manufacturing_profile:
+            user_content += '\n' + manufacturing_profile.prompt_context()
 
         t0 = time.time()
         logger.info(f"CodeGen.generate_single_part start: {part_name}")
