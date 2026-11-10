@@ -10,6 +10,9 @@ from uuid import uuid4
 
 from .contracts import EvaluationEvidence, LiveEventStatus, _validate_payload, utc_now
 from .consistency import summarize_tool_calls
+from .complexity_profile import build_complexity_profile, build_quality_matrix
+from .repair_gain import build_repair_gain
+from .resource_cost import build_resource_cost
 from .session import EvaluationSession
 from .writer import markdown_path_for_json, report_path, write_report_payload
 
@@ -141,6 +144,12 @@ class FileEvaluationStore:
         report = self._read(target)
         report["status"] = status
         report["finished_at"] = utc_now()
+        report["repair_gain"] = build_repair_gain(report)
+        report["resource_cost"] = build_resource_cost(report)
+        report["complexity_profile"] = build_complexity_profile(
+            report, repair_gain=report["repair_gain"]
+        )
+        report["quality_matrix"] = build_quality_matrix(report)
         return self._write(target, report)
 
     @staticmethod

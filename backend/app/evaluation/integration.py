@@ -277,6 +277,31 @@ def _tool_call_status(value: Any, *, failure: bool = False) -> str:
     return normalized or "unknown"
 
 
+def _usage_count(value: Any) -> int | None:
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+        return None
+    return int(value)
+
+
+def _safe_model_usage(provenance: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(provenance, Mapping):
+        return None
+    usage = provenance.get("usage")
+    if not isinstance(usage, Mapping):
+        return None
+    details = usage.get("completion_tokens_details")
+    details = details if isinstance(details, Mapping) else {}
+    projected = {
+        "unit": "token",
+        "input": _usage_count(usage.get("prompt_tokens")),
+        "output": _usage_count(usage.get("completion_tokens")),
+        "total": _usage_count(usage.get("total_tokens")),
+        "reasoning": _usage_count(details.get("reasoning_tokens")),
+    }
+    measured = {key: value for key, value in projected.items() if value is not None}
+    return measured if len(measured) > 1 else None
+
+
 def _activity_tool_call(
     *,
     payload: Mapping[str, Any],
@@ -288,6 +313,7 @@ def _activity_tool_call(
     finished_at: str | None,
     duration_ms: int | None,
     evidence_ids: list[str] | None = None,
+    provenance: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     safe_input = {
         key: value
@@ -315,6 +341,9 @@ def _activity_tool_call(
     call.update(_runtime_summary(started_at=started_at, finished_at=finished_at, duration_ms=duration_ms))
     if evidence_ids:
         call["evidence_ids"] = list(evidence_ids)
+    model_usage = _safe_model_usage(provenance)
+    if model_usage is not None:
+        call["model_usage"] = model_usage
     return call
 
 
@@ -443,6 +472,7 @@ def record_activity_result(
         return None
     store = FileEvaluationStore(root or default_report_root())
     evidence = _evidence_from_result(activity_name, result)
+    provenance = _provenance_for_result(activity_name, result)
     try:
         if evidence is not None:
             store.add_evidence(run_id, evidence)
@@ -476,9 +506,9 @@ def record_activity_result(
                 finished_at=finished_at,
                 duration_ms=duration_ms,
                 evidence_ids=[evidence.evidence_id] if evidence else None,
+                provenance=provenance,
             ),
         )
-        provenance = _provenance_for_result(activity_name, result)
         if isinstance(provenance, Mapping):
             for tool_call in _nested_tool_calls(
                 activity_name=activity_name,

@@ -391,6 +391,52 @@ def test_activity_recording_uses_real_provider_tool_call_receipt(monkeypatch, tm
     assert report["tool_calls"][1]["call_kind"] == "model_tool"
 
 
+def test_activity_recording_projects_real_model_usage_without_provider_secrets(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("CAD_EVALUATION_MODE", "observe")
+
+    from app.evaluation.integration import ensure_live_session, record_activity_result
+    from app.evaluation.store import FileEvaluationStore
+
+    payload = {"workflow_run_id": "workflow-model-usage", "step_key": "requirements"}
+    run_id = ensure_live_session(payload, root=tmp_path)
+    record_activity_result(
+        payload,
+        "agent_v2.requirements",
+        {
+            "status": "completed",
+            "provenance": {
+                "provider": "test-provider",
+                "model": "test-model",
+                "usage": {
+                    "prompt_tokens": 17,
+                    "completion_tokens": 5,
+                    "total_tokens": 22,
+                    "completion_tokens_details": {"reasoning_tokens": 2},
+                },
+            },
+        },
+        root=tmp_path,
+        event_id="workflow-model-usage:requirements:1",
+        duration_ms=25,
+    )
+
+    report = json.loads(
+        FileEvaluationStore(tmp_path).path_for(run_id).read_text(encoding="utf-8")
+    )
+    activity_call = report["tool_calls"][0]
+    assert activity_call["model_usage"] == {
+        "unit": "token",
+        "input": 17,
+        "output": 5,
+        "total": 22,
+        "reasoning": 2,
+    }
+    assert "provider" not in activity_call
+    assert "model" not in activity_call
+
+
 def test_non_model_activity_does_not_reuse_stale_provider_tool_receipt(monkeypatch, tmp_path):
     monkeypatch.setenv("CAD_EVALUATION_MODE", "observe")
 
