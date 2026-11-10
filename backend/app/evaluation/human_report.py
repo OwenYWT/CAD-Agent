@@ -495,6 +495,95 @@ def _render_tool_call_summary(report: Mapping[str, Any]) -> list[str]:
     return lines
 
 
+def _render_resource_cost(report: Mapping[str, Any]) -> list[str]:
+    cost = report.get("resource_cost")
+    cost = cost if isinstance(cost, Mapping) else {}
+    duration = cost.get("duration")
+    duration = duration if isinstance(duration, Mapping) else {}
+    calls = cost.get("calls")
+    calls = calls if isinstance(calls, Mapping) else {}
+    repair = cost.get("repair")
+    repair = repair if isinstance(repair, Mapping) else {}
+    usage = cost.get("model_usage")
+    usage = usage if isinstance(usage, Mapping) else {}
+    money = cost.get("monetary_cost")
+    money = money if isinstance(money, Mapping) else {}
+    lines = ["## \u8d44\u6e90\u6210\u672c", ""]
+    if not cost:
+        lines.append("- \u672a\u8bb0\u5f55\u8d44\u6e90\u6210\u672c\u6458\u8981")
+        return lines
+    lines.append(f"- \u603b\u8c03\u7528: {int(calls.get('total') or 0)}")
+    if duration.get("wall_clock_ms") is not None:
+        lines.append(f"- \u7aef\u5230\u7aef\u8017\u65f6: {int(duration['wall_clock_ms'])} ms")
+    if duration.get("activity_duration_ms") is not None:
+        lines.append(f"- \u6d3b\u52a8\u7d2f\u8ba1\u8017\u65f6: {int(duration['activity_duration_ms'])} ms")
+    stages = duration.get("by_stage_ms")
+    if isinstance(stages, Mapping):
+        for stage, value in sorted(stages.items()):
+            lines.append(f"- \u9636\u6bb5 {stage}: {int(value)} ms")
+    if repair.get("call_count"):
+        lines.append(
+            f"- \u4fee\u590d\u6210\u672c: {int(repair['call_count'])} \u6b21 / "
+            f"{int(repair.get('duration_ms') or 0)} ms"
+        )
+    usage_status = str(usage.get("status") or "unavailable")
+    usage_label = {
+        "measured": "\u5df2\u6d4b\u91cf",
+        "partial": "\u90e8\u5206\u53ef\u7528",
+        "unavailable": "\u4e0d\u53ef\u7528",
+    }.get(usage_status, usage_status)
+    usage_values = [
+        f"input={usage['input']}" if usage.get("input") is not None else "",
+        f"output={usage['output']}" if usage.get("output") is not None else "",
+        f"total={usage['total']}" if usage.get("total") is not None else "",
+        f"reasoning={usage['reasoning']}" if usage.get("reasoning") is not None else "",
+    ]
+    usage_detail = ", ".join(item for item in usage_values if item)
+    lines.append(
+        f"- \u6a21\u578b\u7528\u91cf: {usage_label}"
+        + (f" ({usage_detail})" if usage_detail else "")
+    )
+    if money.get("status") == "unavailable":
+        lines.append("- \u8d27\u5e01\u6210\u672c: \u4e0d\u53ef\u7528\uff08\u7f3a\u5c11\u5b9a\u4ef7\u8bc1\u636e\uff09")
+    return lines
+
+
+def _render_complexity_quality(report: Mapping[str, Any]) -> list[str]:
+    profile = report.get("complexity_profile")
+    profile = profile if isinstance(profile, Mapping) else {}
+    matrix = report.get("quality_matrix")
+    matrix = matrix if isinstance(matrix, Mapping) else {}
+    lines = ["## \u590d\u6742\u5ea6\u4e0e\u8d28\u91cf\u77e9\u9635", ""]
+    if not profile and not matrix:
+        lines.append("- \u672a\u8bb0\u5f55\u590d\u6742\u5ea6\u4e0e\u8d28\u91cf\u6458\u8981")
+        return lines
+    lines.append(f"- \u590d\u6742\u5ea6\u603b\u4f53\u72b6\u6001: {profile.get('status', 'unavailable')}")
+    for key in ("text", "geometry", "operation", "engineering", "input_modality"):
+        value = profile.get(key)
+        if not isinstance(value, Mapping):
+            continue
+        label = {
+            "text": "\u6587\u672c",
+            "geometry": "\u51e0\u4f55",
+            "operation": "\u64cd\u4f5c",
+            "engineering": "\u5de5\u7a0b",
+            "input_modality": "\u8f93\u5165\u6a21\u6001",
+        }[key]
+        detail = ""
+        if key == "geometry" and value.get("dimensions_mm"):
+            dimensions = " x ".join(_format_number(item) for item in value["dimensions_mm"])
+            solid_count = value.get("solid_count") or "\u672a\u8bb0\u5f55"
+            face_count = value.get("face_count") or "\u672a\u8bb0\u5f55"
+            detail = f" ({dimensions} mm; \u5b9e\u4f53 {solid_count}; \u9762 {face_count})"
+        lines.append(f"- {label}: {value.get('status', 'unavailable')}{detail}")
+    lines.append(f"- \u8d28\u91cf\u603b\u4f53\u72b6\u6001: {matrix.get('status', 'unavailable')}")
+    for key in ("geometry", "dfm", "visual", "artifact", "lifecycle"):
+        value = matrix.get(key)
+        if isinstance(value, Mapping):
+            lines.append(f"- \u8d28\u91cf {key}: {value.get('status', 'unavailable')}")
+    return lines
+
+
 def _repair_summary(report: Mapping[str, Any]) -> str:
     repairs = []
     for event in _timeline(report):
@@ -629,6 +718,10 @@ def render_human_report(report: Mapping[str, Any]) -> str:
             *_render_dfm_quantitative(report),
             "",
             *_render_stage_duration(report),
+            "",
+            *_render_resource_cost(report),
+            "",
+            *_render_complexity_quality(report),
             "",
             *_render_repair_comparison(report),
             "",
