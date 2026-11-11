@@ -189,12 +189,20 @@ class AcceptanceCheckV2(AcceptanceModel):
                   'surface_clearance', 'planar_gap', 'bounding_box',
                   'assembly_dimension', 'assembly_count', 'assembly_predicate',
                   'cylinder_diameter', 'cylinder_radius', 'cylinder_height', 'sphere_diameter', 'sphere_radius',
-                  'cube_edge', 'cube_shape', 'sphere_shape', 'cylinder_shape']
+                  'annular_segment_diameter', 'annular_segment_height',
+                  'cube_edge', 'cube_shape', 'sphere_shape', 'cylinder_shape'] = Field(description=(
+        'Select the actual measured property. All cylinder_*, sphere_* and cube_* kinds certify a complete '
+        'material primitive, including its entire boundary; they do not apply to a pierced, cut or joined primitive. '
+        'overall_dimension measures the complete selected solid(s) along scope.axis; it is not a component '
+        'dimension unless scope selects that component. hole_through independently checks the complete shaft passage. '
+        'annular_segment_diameter/height measure a complete coaxial annular band selected by a world axis and '
+        'an interior point on that axis. Its axial endpoints come from the actual outer cylindrical face, never '
+        'from target dimensions. Use separate checks at each distinct step; bore passage remains a separate check.'))
     description: str = Field(min_length=1)
     source_quote: str = Field(min_length=1)
     source_kind: Literal['user', 'confirmed', 'assumption'] = 'user'
     required: bool = True
-    binding_ref: str = Field(min_length=1, description='ID from the server extracted requirements; never invent an ID.')
+    binding_ref: str = Field(min_length=1, description='Supplied quotation reference ID, or saved source_input_id when no quotation reference covers the condition; never invent a source.')
     comparison: Comparison
     scope: MeasurementScopeV2 = Field(default_factory=MeasurementScopeV2)
     hole_group: HoleGroupRef | None = None
@@ -211,6 +219,9 @@ class AcceptanceCheckV2(AcceptanceModel):
         if self.required != (self.source_kind != 'assumption'):
             raise ValueError('requiredness must match verified provenance')
         kind, scope, comparison = self.kind, self.scope, self.comparison
+        if kind.startswith('annular_segment_') and (scope.frame != 'world' or scope.axis is None
+                or scope.point_mm is None or scope.centers_mm or scope.region_min_mm is not None):
+            raise ValueError('annular segment requires a world axis and an interior axis point, without clipping regions')
         count = kind in {'solid_count', 'hole_count', 'hole_through', 'void_connected', 'assembly_count', 'assembly_predicate',
                          'cube_shape', 'sphere_shape', 'cylinder_shape'}
         if kind.startswith('assembly_') or scope.assembly_measurement is not None:
@@ -263,7 +274,10 @@ class AcceptanceContractV2(AcceptanceModel):
     objective: str = Field(min_length=1)
     checks: tuple[AcceptanceCheckV2, ...]
     unresolved: tuple[str, ...] = ()
-    verification_limits: tuple[str, ...] = ()
+    verification_limits: tuple[str, ...] = Field(default=(), description=(
+        'Required conditions that the available geometric measurement tools cannot verify. '
+        'Not source-parser diagnostics, export requirements, optional advice or physical-performance disclaimers. '
+        'The server separately records unverified manufacturing/material/waterproof performance from saved user intent.'))
     comparison_policy_id: Literal['occt-confusion-v1'] = COMPARISON_POLICY_ID
     verification_scope: Literal['cad_geometry'] = 'cad_geometry'
     source_context: SourceContextV1 | None = None

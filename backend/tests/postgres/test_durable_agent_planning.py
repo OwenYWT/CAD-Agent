@@ -1,8 +1,11 @@
 """Real PostgreSQL coverage for durable Agent planning activities."""
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -15,6 +18,7 @@ from temporalio.exceptions import ApplicationError
 from app.agent.assembly_planner import AssemblyPlan
 from app.agent.durable_planner import DurableAgentPlanner
 from app.agent.multi_step import BuildPhase, BuildPlan, BuildStep
+from app.agent.planner import Planner
 from app.config import settings
 from app.db import close_database, get_database_engine, tenant_transaction
 from app.domain.identity import user_principal
@@ -116,7 +120,7 @@ async def clean_control_plane():
     yield
 
 
-async def _request() -> McadAgentWorkflowV2Request:
+async def _request(objective="创建带安装孔的支架") -> McadAgentWorkflowV2Request:
     owner = user_principal(f"agent-owner-{uuid4()}")
     project_id = uuid4()
     async with tenant_transaction(
@@ -139,7 +143,7 @@ async def _request() -> McadAgentWorkflowV2Request:
             requested_by_principal_id=owner.principal_id,
             kind="mcad.agent.v2.generate",
             idempotency_key=f"agent-plan-{uuid4()}",
-            request_payload={"objective": "创建带安装孔的支架"},
+            request_payload={"objective": objective},
         )
     return McadAgentWorkflowV2Request(
         workflow_run_id=created.workflow_id,
@@ -149,8 +153,49 @@ async def _request() -> McadAgentWorkflowV2Request:
         branch_id=uuid4(),
         expected_base_revision_id=uuid4(),
         operation="generate",
-        objective="创建带安装孔的支架",
+        objective=objective,
     )
+
+
+@pytest.mark.asyncio(loop_scope="module")
+@pytest.mark.parametrize('verification_limits', [
+    [],
+    ['制造性能、承载能力、材料性能未通过工程分析或实物试验验证，不在本次几何验收范围内。'],
+    ['Required surface relationship has no implemented measurement.'],
+], ids=['no-limits', 'physical-scope-notice', 'unsupported-measurement'])
+async def test_recorded_model_proposal_persists_without_a_source_binding_gate(verification_limits):
+    from openai.types.chat import ChatCompletion
+
+    receipt = json.loads((ROOT / 'tests/fixtures/intake_circle_extrusion_receipt.json').read_text())
+    receipt['proposal']['design_brief']['acceptance']['verification_limits'] = verification_limits
+    request = await _request(receipt['objective'])
+    create = AsyncMock(return_value=ChatCompletion(
+        id=receipt['provider_response_id'], model=receipt['model'], created=1, object='chat.completion',
+        choices=[{'index': 0, 'finish_reason': 'tool_calls', 'message': {
+            'role': 'assistant', 'tool_calls': [{'id': 'recorded-plan', 'type': 'function',
+                'function': {'name': 'submit_cad_plan', 'arguments': json.dumps(receipt['proposal'])}}]}}]))
+    planner = Planner()
+    planner._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    activities = McadWorkflowActivities(backend=object(), durable_planner=DurableAgentPlanner(planner=planner))
+    payload = {**request.temporal_payload(), 'engineering_acceptance_v1': True, 'acceptance_bindings_v2': True}
+
+    result = await activities.agent_requirements(payload)
+    replay = await activities.agent_requirements(payload)
+    assert create.await_count == 1
+    assert create.call_args.kwargs['messages'][-1]['content'] == receipt['objective']
+    assert result['requirements']['dimensions'] == {'radius': 75., 'diameter': 150., 'height': 20.923}
+    assert result['requirements']['design_brief']['acceptance']['verification_limits'] == verification_limits
+    assert result['requirements'] == replay['requirements']
+    assert replay['replayed'] is True
+    assert 'requirement_bindings' not in result and 'binding_digest' not in result
+    assert result['acceptance_version'] == 'engineering-acceptance.v2'
+    assert result['comparison_policy_id'] == 'occt-confusion-v1'
+
+    planned = await activities.agent_plan({**payload, 'requirements': result['requirements'], 'backend_policy_v1': True})
+    acceptance = planned['plan']['design_brief']['acceptance']
+    assert acceptance['checks'] == result['requirements']['design_brief']['acceptance']['checks']
+    assert acceptance['verification_limits'] == verification_limits
+    assert planned['plan']['validation_policy']['geometry']['mode'] == 'required'
 
 
 @pytest.mark.asyncio(loop_scope="module")

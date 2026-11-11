@@ -169,6 +169,7 @@ def bounded_agent_context(state: dict, *, target_names: list[str] | None = None)
                     "dfm": {**{k: v for k, v in dfm.items() if k in {"status", "revision_id", "evidence_id", "reason", "policy_hash"}},
                             "issues": list(dfm.get("issues") or [])[:12], "violations": list(dfm.get("violations") or [])[:12]}},
         "features": [{"name": name, "type_id": by_name[name].get("type_id"),
+                      "global_placement": by_name[name].get("global_placement"),
                       "user_role": annotations.get(name, {}).get("role"),
                       "user_intent": str(annotations.get(name, {}).get("intent") or "")[:500] or None,
                       "annotation_version": annotations.get(name, {}).get("version", 0),

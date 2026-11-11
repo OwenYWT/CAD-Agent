@@ -3529,7 +3529,8 @@ class _RequirementsToolFixture:
 
 
 @pytest.mark.asyncio(loop_scope='module')
-async def test_unsupported_required_measurement_is_not_a_user_confirmation_or_cad_success():
+@pytest.mark.parametrize('wrong_dimension', [False, True])
+async def test_unsupported_measurement_reaches_native_execution_but_cannot_certify_success(wrong_dimension):
     from app.services.workflow_admission import create_document_workflow
     class UnsupportedMeasurement(DurableAgentPlanner):
         async def requirements_generation(self, objective, **kwargs):
@@ -3537,6 +3538,10 @@ async def test_unsupported_required_measurement_is_not_a_user_confirmation_or_ca
                 [{'role':'user','content':objective}],require_acceptance=True)
             acceptance=value.design_brief.acceptance.model_copy(update={
                 'verification_limits':('Controlled unsupported required measurement',)})
+            if wrong_dimension:
+                acceptance=acceptance.model_copy(update={'checks': tuple(
+                    check.model_copy(update={'nominal':9.}) if check.kind=='hole_depth' else check
+                    for check in acceptance.checks)})
             return value.model_copy(update={'design_brief':value.design_brief.model_copy(update={
                 'acceptance':acceptance,'open_questions':[]})})
     owner,project_id,initial=await _seed_project('verification-unavailable')
@@ -3548,21 +3553,41 @@ async def test_unsupported_required_measurement_is_not_a_user_confirmation_or_ca
     request=McadAgentWorkflowV2Request(workflow_run_id=created.workflow_id,tenant_id=owner.tenant_id,
         project_id=project_id,principal_id=owner.principal_id,branch_id=initial.branch_id,
         expected_base_revision_id=initial.revision_id,operation='generate',modeling_backend='freecad',objective=objective)
+    class CountedNativeProgram(_NativeAPIProgramFixture):
+        calls=0
+        async def generate(self, **kwargs):
+            self.calls+=1
+            return await super().generate(**kwargs)
+        async def repair(self, **kwargs):
+            pytest.fail('Editing CAD cannot resolve an unsupported required measurement')
+    native_program=CountedNativeProgram()
     client=await get_temporal_client()
-    async with build_agent_v2_workflow_worker(client,backend=get_execution_backend(),durable_planner=UnsupportedMeasurement()):
+    async with build_agent_v2_workflow_worker(client,backend=get_execution_backend(),
+            durable_planner=UnsupportedMeasurement(),freecad_operations=native_program):
         handle=await client.start_workflow('McadAgentWorkflowV2',request.temporal_payload(),
             id=temporal_agent_v2_workflow_id(created.workflow_id),task_queue=settings.temporal_agent_v2_task_queue)
         with pytest.raises(WorkflowFailureError) as error:
             await handle.result()
         from app.workflows.agent_v2 import McadAgentWorkflowV2
         cause=McadAgentWorkflowV2._root_application_error(error.value)
-        assert cause is not None and cause.type=='engineering_verification_unavailable'
+        assert cause is not None and cause.type=='agent_geometry_validation_failed'
+        assert cause.details[0]['outcome']=='indeterminate'
+        assert native_program.calls==1
     async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
-        assert await conn.scalar(text('SELECT count(*) FROM execution_attempts WHERE workflow_run_id=:id'),{'id':created.workflow_id})==0
+        assert await conn.scalar(text("SELECT count(*) FROM task_events WHERE workflow_run_id=:id AND event_type='agent.requirements.completed'"),{'id':created.workflow_id})==1
+        assert await conn.scalar(text('SELECT count(*) FROM execution_attempts WHERE workflow_run_id=:id'),{'id':created.workflow_id})>0
         assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'),{'id':created.workflow_id})==0
         status=await conn.scalar(text('SELECT status FROM workflow_runs WHERE id=:id'),{'id':created.workflow_id})
         assert status=='failed'
-        assert await conn.scalar(text('SELECT error_code FROM workflow_runs WHERE id=:id'),{'id':created.workflow_id})=='engineering_verification_unavailable'
+        assert await conn.scalar(text('SELECT error_code FROM workflow_runs WHERE id=:id'),{'id':created.workflow_id})=='agent_geometry_validation_failed'
+        assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'),
+            {'id':initial.branch_id})==initial.revision_id
+        report=await conn.scalar(text("SELECT evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"),
+            {'id':created.workflow_id})
+        assert report['acceptance_contract']['verification_limits']==['Controlled unsupported required measurement']
+        measured=next(row for row in report['acceptance']['evidence'] if row['check_id']=='hole-depth')
+        assert measured['measured']==[8.]
+        assert measured['outcome']==('failed' if wrong_dimension else 'passed')
 
 
 class _NativeAPIProgramFixture:
@@ -4179,7 +4204,7 @@ async def test_original_hook_intake_binds_external_input_and_gates_persisted_can
 
 
 @pytest.mark.asyncio(loop_scope='module')
-@pytest.mark.parametrize('name', ['fdm','context','diameter','radius','wall','floor',
+@pytest.mark.parametrize('name', ['fdm','context','diameter','radius','wall','floor','annular',
                                  'cube','cube_split','cube_rectangular','chinese_box','sphere_bounds','cylinder_bounds',
                                  'source_context','source_units','source_units_split',
                                  'source_global','source_global_split','source_global_reverse','source_design_global'])

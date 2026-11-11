@@ -5,10 +5,30 @@ import sys
 import tempfile
 from pathlib import Path
 
+if len(sys.argv) == 3 and sys.argv[1] == '--verify':
+    from app.freecad.inspection import InspectionRequest, inspect_state
+    from app.freecad.semantic_state import bounded_agent_context
+    report = json.loads(next(line.split('=', 1)[1] for line in Path(sys.argv[2]).read_text().splitlines()
+                             if line.startswith('CAD_COORDINATE_CONTRACT=')))
+    for probe in report['inspection_probes']:
+        state = probe['state']
+        name = state['objects'][0]['name']
+        inspected = inspect_state(state, InspectionRequest(objects=[name], fields=['geometry']))
+        context = bounded_agent_context(state, target_names=[name])
+        for row in (inspected['objects'][0], context['features'][0]):
+            matrix = row['global_placement']
+            assert matrix == state['objects'][0]['global_placement']
+            actual = [sum(matrix[i * 4 + j] * probe['local_point'][j] for j in range(3))
+                      + matrix[i * 4 + 3] for i in range(3)]
+            assert math.dist(actual, probe['world_point']) < 1e-7, (actual, probe)
+    print('CAD_COORDINATE_RECEIVER=' + json.dumps({'verified_frames': len(report['inspection_probes'])}))
+    sys.exit(0)
+
 sys.path.insert(0, '/opt/cad-agent')
 import FreeCAD as App
 import Part
 import freecad_entry as runner
+from freecad_state_projector import project_document
 
 
 def near(actual, expected):
@@ -16,6 +36,7 @@ def near(actual, expected):
 
 
 document = App.newDocument('CoordinateContract')
+inspection_probes = []
 try:
     # Retained v1 plans must not silently move during a source replay.
     legacy = [('xy', (0, 0, 10)), ('xz', (0, 0, 10)), ('yz', (0, 10, 0))]
@@ -28,6 +49,7 @@ try:
     body.Placement = App.Placement(App.Vector(7, -3, 11), App.Rotation(App.Vector(1, 1, 1), 37))
     frames = [('xy', (0, 0, 1), (1, 0, 0)),
               ('xz', (0, -1, 0), (1, 0, 0)),
+              ('xz_reverse', (0, 1, 0), (1, 0, 0)),
               ('yz', (1, 0, 0), (0, 1, 0))]
     count = 0
     for label, normal, x_axis in frames:
@@ -43,6 +65,13 @@ try:
             near(sketch.Placement.Rotation.multVec(App.Vector(0, 0, 1)), normal)
             expected_global = body.Placement.multVec(App.Vector(*origin))
             assert (sketch.getGlobalPlacement().Base - expected_global).Length < 1e-7
+            local_point = App.Vector(3, 8, 0)
+            y_axis = App.Vector(*normal).cross(App.Vector(*x_axis))
+            expected_point = body.Placement.multVec(App.Vector(*origin) + App.Vector(*x_axis) * 3 + y_axis * 8)
+            assert (sketch.getGlobalPlacement().multVec(local_point) - expected_point).Length < 1e-7
+            measured = next(o for o in project_document(document)['objects'] if o['name'] == name)
+            inspection_probes.append({'state': {'objects': [measured]},
+                                      'local_point': list(local_point), 'world_point': list(expected_point)})
             count += 1
 finally:
     App.closeDocument(document.Name)
@@ -108,4 +137,5 @@ with tempfile.TemporaryDirectory() as root:
         assert abs(doc.Body.Shape.Volume-math.pi*(100-9)*30)<1e-5
         App.closeDocument(doc.Name)
 print('CAD_COORDINATE_CONTRACT=' + json.dumps({'explicit_frames': count, 'legacy_preserved': 3,
-    'body_transform_verified': True, 'signed_coordinates_cut_export_reopen': 6, 'through_cut_thickness_edits':3}))
+    'body_transform_verified': True, 'signed_coordinates_cut_export_reopen': len(frames) * 2,
+    'through_cut_thickness_edits': len(frames), 'inspection_probes': inspection_probes}))

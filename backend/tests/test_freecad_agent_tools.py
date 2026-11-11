@@ -106,6 +106,20 @@ async def test_invalid_calls_receive_matched_errors_without_execution(bad):
 
 
 @pytest.mark.asyncio
+async def test_sketch_body_collision_is_corrected_through_the_function_tool_protocol():
+    invalid = _valid_plan()
+    invalid['operations'][0]['args']['name'] = 'Body'
+    provider = ProviderTurns([call('freecad_execute', invalid, 'collision')],
+                             [call('freecad_execute', _valid_plan(), 'corrected')])
+    result = await generate(provider)
+    reply = next(m for m in provider.requests[-1]['messages'] if m['role'] == 'tool')
+    assert reply['tool_call_id'] == 'collision'
+    assert json.loads(reply['content'])['executed'] is False
+    assert 'sketch name must differ from its body' in reply['content']
+    assert result.provenance['execution_tool_call']['id'] == 'corrected'
+
+
+@pytest.mark.asyncio
 async def test_duplicate_inspection_is_rejected_without_unbounded_paid_loop():
     query = {"objects": ["Pad"], "fields": ["properties"]}
     provider = ProviderTurns(*[[call("freecad_inspect", query, str(i))] for i in range(3)])

@@ -88,7 +88,7 @@ def bind_measurement_scope(check, *, acceptance_digest, context, artifact_sha256
                        'reason','resolved_frame_origin_mm','axis','overlap_area_mm2','component_selection',
                        'intervening_material_mm3','boolean_volume_tolerance_mm3','feature_count','feature_failure',
                        'hole_inventory_sha256','population_evaluation_sha256', 'material_primitive','cavity_walls',
-                       'rectangular_assembly'}},
+                       'rectangular_assembly','annular_segment'}},
                   'selection_uses_comparison_target': False}}
     reference=(check.get('scope') or {}).get('object_ref')
     if reference is not None:

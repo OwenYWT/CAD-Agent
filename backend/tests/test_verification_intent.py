@@ -93,6 +93,38 @@ def test_omitted_provider_limit_cannot_certify_an_explicit_physical_requirement(
     assert proposal['verification_limits']
 
 
+@pytest.mark.parametrize('limit', [
+    '制造性能（承载、材料、工艺可行性）未通过工程分析或实物试验验证',
+    '制造性能、承载能力和材料强度不在几何验证范围内。',
+    '制造性能、承载能力、材料性能未通过工程分析或实物试验验证，不在本次几何验收范围内。',
+    '材料性能尚未验证',
+])
+def test_chinese_physical_disclaimers_preserve_source_intent_and_geometry(limit):
+    sources = [{'source_input_id': 'objective', 'source_kind': 'user',
+                'text': 'Evaluate geometry only; manufacturing performance is not certified.'}]
+    proposal = {'checks': [{'check_id': 'unchanged-geometry'}], 'verification_limits': [limit]}
+    intent.bind_verification_intent(proposal, sources)
+    assert proposal['verification_limits'] == []
+    assert proposal['checks'] == [{'check_id': 'unchanged-geometry'}]
+    assert proposal['verification_notices'][0]['status'] == 'unverified'
+    sources[0]['text'] = '材料强度必须符合承重要求。' + limit
+    intent.bind_verification_intent(proposal, sources)
+    assert proposal['verification_limits']
+
+
+@pytest.mark.parametrize('limit', [
+    '制造性能（承载、材料、孔径）未通过工程分析或实物试验验证',
+    '材料性能和密封槽深度尚未验证',
+    '制造性能不在几何验证范围内，孔与内腔的隔离尚未验证',
+    '制造性能未通过实物测试验证。轴向尺寸无法测量。',
+])
+def test_chinese_disclaimers_cannot_absorb_unknown_geometric_limits(limit):
+    proposal = {'verification_limits': [limit]}
+    intent.bind_verification_intent(proposal, [{'source_input_id': 'objective', 'source_kind': 'user',
+        'text': 'Evaluate geometry only; manufacturing performance is not certified.'}])
+    assert proposal['verification_limits'] == [limit]
+
+
 def test_sensor_name_is_not_a_requested_temperature_or_load_rating():
     for text in ('温度传感器外壳', '载荷传感器外壳'):
         sources = [{'source_input_id':'objective','source_kind':'user','text':text}]

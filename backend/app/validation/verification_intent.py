@@ -8,7 +8,7 @@ import re
 
 _PRINT = re.compile(r'(?<![A-Za-z0-9_])FDM(?![A-Za-z0-9_])(?:[ \t]+PLA(?![A-Za-z0-9_]))?(?:打印)?|(?<![A-Za-z0-9_])PLA(?![A-Za-z0-9_])(?:打印)?|3D[ \t]*打印|\b3D[ -]printing\b', re.I)
 _WATER = re.compile(r'防水|防尘|\bwaterproof\b|\bdustproof\b|\bIP[0-9X]{2}\b', re.I)
-_PHYSICAL_SPEC = re.compile(r'(?:强度|承重|载荷)(?!传感器)|耐温|(?:工作|使用|环境|最高|最低)温度|无(?:需)?支撑|保证.*打印|\bstrength\b|\bload\b|support[- ]free|\b(?:manufacturing|printing)\s+performance\b|\bprintability\b', re.I)
+_PHYSICAL_SPEC = re.compile(r'(?:强度|承重|承载|载荷)(?!传感器)|制造性能|材料性能|耐温|(?:工作|使用|环境|最高|最低)温度|无(?:需)?支撑|保证.*打印|\bstrength\b|\bload\b|support[- ]free|\b(?:manufacturing|printing)\s+performance\b|\bprintability\b', re.I)
 # Recognize complete disclaimer sentences, not the mere occurrence of a
 # physical word. Mixed or unknown limitations remain blocking. In particular,
 # "waterproof performance AND lid geometry cannot be verified" is not a note.
@@ -53,6 +53,18 @@ _DISCLAIMER_PREDICATE = re.compile(
     r'(?:requires?|needs?|awaits?)\s+(?:physical|real[- ]world)\s+(?:testing|tests|validation)|'
     r'(?:is|are)\s+left\s+for\s+(?:physical|real[- ]world)\s+(?:testing|tests|validation)', re.I)
 
+# Parse a complete physical subject and predicate in Chinese as well as English.
+# Parenthetical lists are physical subjects too; unknown/geometric terms cannot
+# be swallowed by a wildcard and converted into a nonblocking notice.
+_PHYSICAL_SUBJECT_ZH = r'(?:(?:制造|打印|物理|材料|成品)(?:性能|强度)|承载(?:能力)?|承重(?:能力)?|材料|工艺(?:可行性)?)'
+_PHYSICAL_LIST_ZH = _PHYSICAL_SUBJECT_ZH + r'(?:[、，,/和及与]+' + _PHYSICAL_SUBJECT_ZH + r')*'
+_PHYSICAL_SCOPE_ZH = r'不在(?:本次|此次|当前)?(?:CAD)?几何(?:验证|验收)(?:范围)?内'
+_PHYSICAL_TEST_ZH = r'(?:工程分析|仿真分析|实物试验|实物测试|实际测试|实际打印)'
+_PHYSICAL_UNVERIFIED_ZH = r'(?:尚|还)?未(?:通过' + _PHYSICAL_TEST_ZH + r'(?:[、，,/或和及与]+' + _PHYSICAL_TEST_ZH + r')*)?(?:验证|确认|认证|测试)'
+_PHYSICAL_DISCLAIMER_ZH = re.compile(
+    _PHYSICAL_LIST_ZH + r'(?:[（(]' + _PHYSICAL_LIST_ZH + r'[）)])?'
+    r'(?:' + _PHYSICAL_UNVERIFIED_ZH + r'(?:[，,]' + _PHYSICAL_SCOPE_ZH + r')?|' + _PHYSICAL_SCOPE_ZH + r')', re.I)
+
 
 def non_geometric_clauses(text):
     """Return source spans whose complete predicate describes input or scope."""
@@ -63,7 +75,8 @@ def non_geometric_clauses(text):
         start = match.start() + len(raw) - len(raw.lstrip())
         end = start + len(clause)
         subject = _PHYSICAL_DISCLAIMER.match(clause)
-        physical = bool(subject and _DISCLAIMER_PREDICATE.fullmatch(clause[subject.end():].strip()))
+        physical = bool(subject and _DISCLAIMER_PREDICATE.fullmatch(clause[subject.end():].strip())
+                        or _PHYSICAL_DISCLAIMER_ZH.fullmatch(re.sub(r'\s+', '', clause)))
         units = _DIMENSION_UNITS.fullmatch(clause)
         if units or physical or any(pattern.fullmatch(clause) for pattern in
                            (_DOCUMENT_CONTEXT, _GEOMETRY_SCOPE, _INPUT_RETENTION)):

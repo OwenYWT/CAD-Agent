@@ -53,18 +53,18 @@
           "minItems": 3,
           "prefixItems": [
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             }
           ],
@@ -73,8 +73,8 @@
         },
         "rotation_deg": {
           "default": 0,
-          "maximum": 360.0,
-          "minimum": -360.0,
+          "maximum": 360,
+          "minimum": -360,
           "title": "Rotation Deg",
           "type": "number"
         },
@@ -90,18 +90,18 @@
           "minItems": 3,
           "prefixItems": [
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             }
           ],
@@ -137,18 +137,18 @@
           "minItems": 3,
           "prefixItems": [
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             }
           ],
@@ -157,8 +157,8 @@
         },
         "rotation_deg": {
           "default": 0,
-          "maximum": 360.0,
-          "minimum": -360.0,
+          "maximum": 360,
+          "minimum": -360,
           "title": "Rotation Deg",
           "type": "number"
         },
@@ -167,18 +167,18 @@
           "minItems": 3,
           "prefixItems": [
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             }
           ],
@@ -324,8 +324,8 @@
             "radius_mm": {
               "anyOf": [
                 {
-                  "exclusiveMinimum": 0.0,
-                  "maximum": 1000000.0,
+                  "exclusiveMinimum": 0,
+                  "maximum": 1000000,
                   "type": "number"
                 },
                 {
@@ -356,8 +356,8 @@
             },
             "tolerance_mm": {
               "default": 1e-05,
-              "exclusiveMinimum": 0.0,
-              "maximum": 10.0,
+              "exclusiveMinimum": 0,
+              "maximum": 10,
               "title": "Tolerance Mm",
               "type": "number"
             }
@@ -377,20 +377,20 @@
           "additionalProperties": false,
           "properties": {
             "x": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "X",
               "type": "number"
             },
             "y": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "Y",
               "type": "number"
             },
             "z": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "Z",
               "type": "number"
             }
@@ -496,8 +496,8 @@
           "default": null
         },
         "size_mm": {
-          "exclusiveMinimum": 0.0,
-          "maximum": 1000000.0,
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
           "title": "Size Mm",
           "type": "number"
         },
@@ -596,8 +596,8 @@
             "radius_mm": {
               "anyOf": [
                 {
-                  "exclusiveMinimum": 0.0,
-                  "maximum": 1000000.0,
+                  "exclusiveMinimum": 0,
+                  "maximum": 1000000,
                   "type": "number"
                 },
                 {
@@ -628,8 +628,8 @@
             },
             "tolerance_mm": {
               "default": 1e-05,
-              "exclusiveMinimum": 0.0,
-              "maximum": 10.0,
+              "exclusiveMinimum": 0,
+              "maximum": 10,
               "title": "Tolerance Mm",
               "type": "number"
             }
@@ -649,20 +649,20 @@
           "additionalProperties": false,
           "properties": {
             "x": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "X",
               "type": "number"
             },
             "y": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "Y",
               "type": "number"
             },
             "z": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "Z",
               "type": "number"
             }
@@ -715,8 +715,8 @@
           "type": "string"
         },
         "radius_mm": {
-          "exclusiveMinimum": 0.0,
-          "maximum": 1000000.0,
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
           "title": "Radius Mm",
           "type": "number"
         },
@@ -758,14 +758,14 @@
           "additionalProperties": false,
           "properties": {
             "depth_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Depth Mm",
               "type": "number"
             },
             "diameter_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Diameter Mm",
               "type": "number"
             },
@@ -787,14 +787,14 @@
           "additionalProperties": false,
           "properties": {
             "angle_deg": {
-              "exclusiveMaximum": 180.0,
-              "exclusiveMinimum": 0.0,
+              "exclusiveMaximum": 180,
+              "exclusiveMinimum": 0,
               "title": "Angle Deg",
               "type": "number"
             },
             "diameter_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Diameter Mm",
               "type": "number"
             },
@@ -844,8 +844,8 @@
         "depth_mm": {
           "anyOf": [
             {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "type": "number"
             },
             {
@@ -856,8 +856,8 @@
           "title": "Depth Mm"
         },
         "diameter_mm": {
-          "exclusiveMinimum": 0.0,
-          "maximum": 1000000.0,
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
           "title": "Diameter Mm",
           "type": "number"
         },
@@ -907,8 +907,8 @@
           "type": "string"
         },
         "length_mm": {
-          "exclusiveMinimum": 0.0,
-          "maximum": 1000000.0,
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
           "title": "Length Mm",
           "type": "number"
         },
@@ -994,8 +994,8 @@
       "additionalProperties": false,
       "properties": {
         "length_mm": {
-          "exclusiveMinimum": 0.0,
-          "maximum": 1000000.0,
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
           "title": "Length Mm",
           "type": "number"
         },
@@ -1033,8 +1033,8 @@
         "length_mm": {
           "anyOf": [
             {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "type": "number"
             },
             {
@@ -1080,8 +1080,8 @@
       "additionalProperties": false,
       "properties": {
         "angle_deg": {
-          "exclusiveMinimum": 0.0,
-          "maximum": 360.0,
+          "exclusiveMinimum": 0,
+          "maximum": 360,
           "title": "Angle Deg",
           "type": "number"
         },
@@ -1137,8 +1137,8 @@
       "additionalProperties": false,
       "properties": {
         "angle_deg": {
-          "exclusiveMinimum": 0.0,
-          "maximum": 360.0,
+          "exclusiveMinimum": 0,
+          "maximum": 360,
           "title": "Angle Deg",
           "type": "number"
         },
@@ -1464,8 +1464,8 @@
         "value_mm": {
           "anyOf": [
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
@@ -1503,8 +1503,8 @@
               "type": "string"
             },
             "radius_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Radius Mm",
               "type": "number"
             }
@@ -1549,14 +1549,14 @@
           "additionalProperties": false,
           "properties": {
             "x": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "X",
               "type": "number"
             },
             "y": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "Y",
               "type": "number"
             }
@@ -1580,8 +1580,8 @@
               "$ref": "#/$defs/Point2D"
             },
             "height_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Height Mm",
               "type": "number"
             },
@@ -1591,8 +1591,8 @@
               "type": "string"
             },
             "width_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Width Mm",
               "type": "number"
             }
@@ -1664,8 +1664,8 @@
               "type": "string"
             },
             "radius_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Radius Mm",
               "type": "number"
             },
@@ -1701,8 +1701,8 @@
               "type": "string"
             },
             "radius_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Radius Mm",
               "type": "number"
             }
@@ -1719,14 +1719,14 @@
           "additionalProperties": false,
           "properties": {
             "x": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "X",
               "type": "number"
             },
             "y": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "Y",
               "type": "number"
             }
@@ -1750,8 +1750,8 @@
               "$ref": "#/$defs/Point2D"
             },
             "height_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Height Mm",
               "type": "number"
             },
@@ -1761,8 +1761,8 @@
               "type": "string"
             },
             "width_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Width Mm",
               "type": "number"
             }
@@ -1788,8 +1788,8 @@
               "type": "string"
             },
             "radius_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Radius Mm",
               "type": "number"
             },
@@ -1863,20 +1863,20 @@
           "additionalProperties": false,
           "properties": {
             "x": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "X",
               "type": "number"
             },
             "y": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "Y",
               "type": "number"
             },
             "z": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "Z",
               "type": "number"
             }
@@ -1891,25 +1891,26 @@
         },
         "SketchFrame": {
           "additionalProperties": false,
-          "description": "An orthogonal sketch frame expressed in its owning Body's coordinates.",
+          "description": "Body-local frame: p = origin + x * unit(x_axis) + y * (unit(normal) cross unit(x_axis)).\n\nThe owning Body's placement then maps p into world coordinates.",
           "properties": {
             "normal": {
+              "description": "Sketch local +Z in Body coordinates. Local +Y is unit(normal) cross unit(x_axis).",
               "maxItems": 3,
               "minItems": 3,
               "prefixItems": [
                 {
-                  "maximum": 1000000.0,
-                  "minimum": -1000000.0,
+                  "maximum": 1000000,
+                  "minimum": -1000000,
                   "type": "number"
                 },
                 {
-                  "maximum": 1000000.0,
-                  "minimum": -1000000.0,
+                  "maximum": 1000000,
+                  "minimum": -1000000,
                   "type": "number"
                 },
                 {
-                  "maximum": 1000000.0,
-                  "minimum": -1000000.0,
+                  "maximum": 1000000,
+                  "minimum": -1000000,
                   "type": "number"
                 }
               ],
@@ -1917,7 +1918,8 @@
               "type": "array"
             },
             "origin": {
-              "$ref": "#/$defs/Point3D"
+              "$ref": "#/$defs/Point3D",
+              "description": "Sketch origin in owning Body coordinates, in mm."
             },
             "schema_version": {
               "const": "body-frame.v1",
@@ -1926,22 +1928,23 @@
               "type": "string"
             },
             "x_axis": {
+              "description": "Sketch local +X in Body coordinates; normalized by the runtime.",
               "maxItems": 3,
               "minItems": 3,
               "prefixItems": [
                 {
-                  "maximum": 1000000.0,
-                  "minimum": -1000000.0,
+                  "maximum": 1000000,
+                  "minimum": -1000000,
                   "type": "number"
                 },
                 {
-                  "maximum": 1000000.0,
-                  "minimum": -1000000.0,
+                  "maximum": 1000000,
+                  "minimum": -1000000,
                   "type": "number"
                 },
                 {
-                  "maximum": 1000000.0,
-                  "minimum": -1000000.0,
+                  "maximum": 1000000,
+                  "minimum": -1000000,
                   "type": "number"
                 }
               ],
@@ -1981,6 +1984,7 @@
           "default": null
         },
         "name": {
+          "description": "Unique Sketch object name, distinct from its owning Body name.",
           "maxLength": 80,
           "minLength": 1,
           "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
@@ -1989,8 +1993,8 @@
         },
         "offset_mm": {
           "default": 0.0,
-          "maximum": 1000000.0,
-          "minimum": -1000000.0,
+          "maximum": 1000000,
+          "minimum": -1000000,
           "title": "Offset Mm",
           "type": "number"
         },
@@ -2137,8 +2141,8 @@
             "value_mm": {
               "anyOf": [
                 {
-                  "maximum": 1000000.0,
-                  "minimum": -1000000.0,
+                  "maximum": 1000000,
+                  "minimum": -1000000,
                   "type": "number"
                 },
                 {
@@ -2303,8 +2307,8 @@
         "value_mm": {
           "anyOf": [
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {

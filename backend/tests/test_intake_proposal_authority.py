@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.agent.planner import _planning_format
+from app.agent.planner import _planning_format, _v2_requirements_prompt
 from app.contracts.acceptance_v2 import AcceptanceContractV2, RequirementBindingError
 from app.domain.requirement_basis import RequirementBasisV1
 from app.models.schemas import CADPlan, ModificationPlan
@@ -15,6 +15,27 @@ from app.workflows.handlers.planning import requirements_objective, requirements
 
 
 RECEIPTS = json.loads((Path(__file__).parent / 'fixtures/intake_1030_receipts.json').read_text())['tasks']
+
+
+def test_source_parser_gaps_are_not_presented_as_measurement_capability_limits():
+    objective = 'Create three coaxial cylindrical segments and a centered axial through bore of diameter 8 mm.'
+    sources = [{'source_input_id': 'objective', 'source_kind': 'user', 'text': objective},
+               {'source_input_id': 'dimensions', 'source_kind': 'confirmed', 'text': 'Segment heights: 10, 20, 30 mm.'}]
+    objective += '\n' + sources[1]['text']
+    parsed = binding.extract_source_requirements(objective, requirement_sources=sources)
+    assert parsed['unsupported']  # A parser gap exists; the model still receives the full request.
+    prompt = _v2_requirements_prompt(objective, 'submit_cad_plan', requirement_sources=sources)
+    context = json.loads(prompt.split('Saved requirement sources and quotation references:\n', 1)[1])
+    assert context['sources'] == sources
+    assert 'unsupported' not in context and 'obligations' not in context
+    assert all(set(r) == {'binding_ref', 'source_input_id', 'source_kind', 'source_quote'}
+               for r in context['references'])
+    assert {r['binding_ref'] for r in context['references']} == {
+        r.get('requirement_id') or r['obligation_id']
+        for r in [*parsed['requirements'], *parsed['obligations']]}
+    assert all(r['source_kind'] == next(s['source_kind'] for s in sources
+        if s['source_input_id'] == r['source_input_id']) for r in context['references'])
+    assert 'hole_through' in prompt
 
 
 def replay_inputs(task):

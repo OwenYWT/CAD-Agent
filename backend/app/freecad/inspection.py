@@ -64,7 +64,8 @@ def inspect_state(state: dict, request: InspectionRequest) -> dict:
         if obj is None:
             result.append({"name": name, "error": "object_not_found"})
             continue
-        detail = {"name": name, "type_id": obj.get("type_id"), "is_valid": obj.get("is_valid")}
+        detail = {"name": name, "type_id": obj.get("type_id"), "is_valid": obj.get("is_valid"),
+                  "global_placement": obj.get("global_placement")}
         if obj.get("reference_geometry"):
             detail["reference_geometry"] = obj["reference_geometry"]
         for field in dict.fromkeys(request.fields):

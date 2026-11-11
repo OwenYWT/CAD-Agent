@@ -4,13 +4,14 @@ import uuid
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
+from openai import OpenAIError
 
 from app.api.auth import verify_api_key, rate_limiter
 from app.api.error_messages import (
     generation_error_http_status,
     public_generation_error,
 )
-from app.config import settings
+from app.config import make_llm_client, settings
 from app.models.schemas import GenerateRequest, GenerateResponse, ModifyRequest
 from app.principal_context import current_principal
 from app.repositories.revisions import StaleBaseRevision
@@ -28,6 +29,26 @@ from app.services.operation_resolution import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.get('/api/provider/preflight')
+async def provider_preflight(request: Request, api_key: str | None = Depends(verify_api_key)):
+    """Authenticated, non-generating provider check in this API process."""
+    from app.llm import provider_error_details
+    await rate_limiter.check(request, api_key)
+    client = None
+    try:
+        client = make_llm_client()
+        return {**await client.check_connection(), 'scope': 'api_process',
+                'worker_connection_checked': False}
+    except (OpenAIError, RuntimeError) as exc:
+        return JSONResponse(status_code=503, content={
+            'status': 'unavailable', 'scope': 'api_process', 'generation_tested': False,
+            'worker_connection_checked': False, 'error': public_generation_error(exc),
+            'details': provider_error_details(exc)})
+    finally:
+        if client is not None:
+            await client.raw_client.close()
 
 
 @router.post("/api/generate", response_model=GenerateResponse)

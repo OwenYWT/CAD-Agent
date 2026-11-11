@@ -134,12 +134,7 @@ class PlanDecomposer:
                 complexity="simple",
             )
 
-        user_content = (
-            f"零件描述: {plan.description}\n"
-            f"类型: {plan.part_type}\n"
-            f"尺寸: {plan.dimensions}\n"
-            f"特征: {plan.features}\n"
-        )
+        user_content = plan.model_dump_json()
 
         try:
             t0 = time.time()

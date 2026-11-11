@@ -11,7 +11,41 @@ def verify_material_certificate(check, evidence):
     if evidence['outcome'] == 'indeterminate':
         return
     key = None
-    if kind.startswith(('cylinder_', 'sphere_', 'cube_')):
+    if kind.startswith('annular_segment_'):
+        key='annular_segment';cert=details.get(key) or {}
+        dimensions=cert.get('dimensions_mm') or {}
+        axis,point,origin,interval=(cert.get(k,[]) for k in
+            ('axis','axis_point_mm','origin_mm','axial_interval_mm'))
+        tolerance=details.get('numerical_tolerance_mm')
+        if (cert.get('schema_version')!='annular-segment.v1'
+                or set(dimensions)!={'diameter','inner_diameter','height'}
+                or not all(_positive(v) for v in dimensions.values())
+                or len(axis)!=3 or len(point)!=3 or len(origin)!=3 or len(interval)!=2
+                or not _positive(tolerance) or tolerance>1e-7
+                or type(cert.get('outer_face_index')) is not int or cert['outer_face_index']<0
+                or not all(isinstance(v,(float,int)) and not isinstance(v,bool) and math.isfinite(v)
+                    for v in [*axis,*point,*origin,*interval,
+                        cert.get('outer_surface_area_mm2'),cert.get('missing_material_mm3'),
+                        cert.get('excess_material_mm3'),cert.get('boolean_volume_tolerance_mm3')])):
+            raise ValueError('annular segment lacks complete measured material evidence')
+        outer,inner,height=dimensions['diameter']/2,dimensions['inner_diameter']/2,dimensions['height']
+        requested=check['scope'];direction=requested['axis'];length=math.hypot(*direction)
+        along=sum(a*p for a,p in zip(axis,point))
+        volume_tolerance=cert['boolean_volume_tolerance_mm3']
+        expected_tolerance=(2*math.pi*(outer**2-inner**2)+2*math.pi*(outer+inner)*height)*tolerance
+        if (outer<=inner or abs(math.hypot(*axis)-1)>1e-10
+                or any(abs(a-b/length)>1e-10 for a,b in zip(axis,direction))
+                or point!=list(requested['point_mm'])
+                or math.hypot(*(p-along*a-o for p,a,o in zip(point,axis,origin)))>tolerance
+                or not interval[0]+tolerance<along<interval[1]-tolerance
+                or interval[1]-interval[0]!=height
+                or abs(cert['outer_surface_area_mm2']-2*math.pi*outer*height)>tolerance*(4*math.pi*outer+2*height)
+                or not math.isclose(volume_tolerance,expected_tolerance,rel_tol=1e-8,abs_tol=1e-12)
+                or not 0<=cert['missing_material_mm3']<=volume_tolerance
+                or not 0<=cert['excess_material_mm3']<=volume_tolerance
+                or list(evidence['measured'])!=[dimensions[kind.removeprefix('annular_segment_')]]):
+            raise ValueError('annular segment dimensions, selection or complete material differ')
+    elif kind.startswith(('cylinder_', 'sphere_', 'cube_')):
         key = 'material_primitive'
         cert = details.get(key) or {}
         primitive, quantity = kind.split('_', 1)

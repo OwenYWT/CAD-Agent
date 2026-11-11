@@ -1,5 +1,8 @@
 """Product wording and external dimensions must retain distinct authorities."""
 from copy import deepcopy
+import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -136,22 +139,78 @@ def test_no_context_preserves_the_existing_v2_wire_and_digest():
 
 
 @pytest.mark.parametrize('operation', ['generate', 'modify'])
+@pytest.mark.parametrize('text,mutation,error_code', [
+    pytest.param('圆柱半径75mm，高度20.923mm', None, None, id='supported'),
+    pytest.param(
+        'Create a native FreeCAD solid model. All linear dimensions and coordinates below are in '
+        'source design units: 1 source unit = exactly 100 mm. Angles are in degrees.\n\n'
+        'Create a 3D model by extruding a circular sketch. The circle should have a radius of '
+        '0.75 units and the extrusion should be 0.20923 units high.\n\n'
+        'Deliver the native CAD model, STEP and STL. Evaluate geometry only; manufacturing '
+        'performance is not certified.',
+        None, None, id='circular-extrusion'),
+    pytest.param('设计一个板，长80mm，两个特殊加强筋', None, None, id='unbound-feature'),
+    pytest.param('All dimensions are in cm. cylinder radius 2, height 2.5. Chamfer 0.3.',
+                 None, None, id='unbound-quantity'),
+    pytest.param('圆柱半径75mm，高度20.923mm', 'quantity', None, id='changed-quantity'),
+    pytest.param('板40×30×12mm，孔径6mm，孔须打通。', 'through', None, id='omitted-through'),
+    pytest.param('圆柱半径75mm，高度20.923mm', 'negative',
+                 'greater than or equal to 0', id='invalid-number'),
+    pytest.param('壁厚3mm', 'gap', 'planar_gap measures empty space', id='invalid-measurement'),
+    pytest.param('圆柱半径75mm，高度20.923mm', 'missing',
+                 'explicit acceptance contract', id='missing-contract'),
+    pytest.param('圆柱半径75mm，高度20.923mm', 'v1',
+                 'new requirements must use engineering-acceptance.v2', id='wrong-contract-version'),
+])
 @pytest.mark.asyncio
-async def test_unbindable_solid_input_fails_before_any_model_dispatch(operation):
+async def test_model_proposals_keep_structural_checks_without_source_rule_rejection(operation, text, mutation, error_code):
     from app.agent.planner import Planner
-    class NoDispatchPlanner(Planner):
-        @property
-        def client(self):
-            pytest.fail('a deterministic source error must be found before model dispatch')
-    text = '设计一个板，长80mm，两个特殊加强筋'
+
+    sources = concept_sources(text)
+    extracted = extract_source_requirements(text, requirement_sources=sources)
+    criteria = contract_for(text, extracted).model_dump(mode='json')
+    if mutation == 'quantity':
+        criteria['checks'][0]['comparison']['value'] += 1
+    elif mutation == 'through':
+        criteria['checks'] = [c for c in criteria['checks'] if c['kind'] != 'hole_through']
+    elif mutation == 'negative':
+        criteria['checks'][0]['comparison']['value'] = -1
+    elif mutation == 'gap':
+        criteria['checks'][0]['kind'] = 'planar_gap'
+    elif mutation == 'missing':
+        criteria = None
+    elif mutation == 'v1':
+        criteria = {'schema_version': 'engineering-acceptance.v1', 'objective': text,
+                    'checks': [{'check_id': 'solid', 'kind': 'solid_count', 'description': 'one solid',
+                                'source_quote': text, 'nominal': 1}]}
+    payload = ({'description': 'part', 'part_type': 'custom', 'dimensions': {}, 'features': [],
+                'design_brief': {'acceptance': criteria}} if operation == 'generate' else
+               {'description': 'part', 'modification_type': 'dimension_change', 'acceptance': criteria})
+    tool_name = 'submit_cad_plan' if operation == 'generate' else 'submit_modification_plan'
+    create = AsyncMock(return_value=SimpleNamespace(choices=[SimpleNamespace(
+        finish_reason='tool_calls', message=SimpleNamespace(content=None, tool_calls=[SimpleNamespace(
+            id='proposal', function=SimpleNamespace(name=tool_name, arguments=json.dumps(payload)))]))]))
+    planner = Planner()
+    planner._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    messages = [{'role': 'user', 'content': text}]
+    original_messages = deepcopy(messages)
     options = dict(require_acceptance=True, acceptance_version='engineering-acceptance.v2',
-                   requirement_sources=concept_sources(text))
-    planner = NoDispatchPlanner()
-    with pytest.raises(RequirementBindingError, match='两个特殊加强筋'):
-        if operation == 'generate':
-            await planner.plan_new([{'role': 'user', 'content': text}], **options)
-        else:
-            await planner.plan_modification([{'role': 'user', 'content': text}], '{}', **options)
+                   requirement_sources=sources)
+    pending = (planner.plan_new(messages, **options) if operation == 'generate' else
+               planner.plan_modification(messages, '{}', **options))
+    if error_code:
+        with pytest.raises(ValueError, match=error_code):
+            await pending
+    else:
+        plan = await pending
+        accepted = plan.design_brief.acceptance if operation == 'generate' else plan.acceptance
+        assert accepted.objective == text
+        assert [c.model_dump(mode='json') for c in accepted.checks] == criteria['checks']
+    assert create.await_count == (2 if error_code else 1)
+    for call in create.call_args_list:
+        assert call.kwargs['messages'][1:1 + len(original_messages)] == original_messages
+    assert messages == original_messages
+    assert sources == concept_sources(text)
 
 
 def test_saved_consent_and_output_domain_reach_the_source_binder():

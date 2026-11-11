@@ -866,6 +866,15 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                 row['details']['numerical_tolerance_mm'] = 2*tolerance + sum(
                     math.ulp(v) for v in (bounds[2],bounds[5],bounds[5]-bounds[2]))
                 row['details']['bounds_method'] = 'occt_add_optimal_without_triangulation_or_shape_tolerance_padding'
+            elif kind.startswith('annular_segment_'):
+                try:
+                    from material_measurements import annular_segment_dimensions
+                except ModuleNotFoundError:
+                    from sandbox.material_measurements import annular_segment_dimensions
+                dimensions,certificate=annular_segment_dimensions(shape,scope,tolerance)
+                row['measured']=[dimensions[kind.removeprefix('annular_segment_')]]
+                row['method']='complete_observed_annular_segment_material'
+                row['details']['annular_segment']=certificate
             elif kind.startswith(('cylinder_', 'sphere_', 'cube_')):
                 try:
                     from material_measurements import primitive_dimensions

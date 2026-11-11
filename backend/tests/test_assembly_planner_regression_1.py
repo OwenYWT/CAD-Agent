@@ -64,6 +64,29 @@ def _plan() -> CADPlan:
 
 
 @pytest.mark.asyncio
+async def test_assembly_decomposition_receives_the_complete_saved_design():
+    from app.models.schemas import DesignBrief
+    requested = _plan().model_copy(update={
+        'constraints': ['keep parts separate'],
+        'design_brief': DesignBrief(
+            assumptions=['cover bottom is at z=5, centred over the base'],
+            functional_requirements=['cover must not penetrate the cavity'],
+        ),
+    })
+    before = requested.model_dump(mode='json')
+    completions = _CompletionsStub([_response(json.dumps({
+        'parts': [{'name': 'base', 'description': 'base'}],
+        'assembly_description': requested.description,
+    }))])
+    planner = AssemblyPlanner()
+    planner._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    await planner.plan_assembly(requested, allow_fallback=False)
+    supplied = json.loads(completions.calls[0]['messages'][1]['content'])
+    assert supplied == before
+    assert requested.model_dump(mode='json') == before
+
+
+@pytest.mark.asyncio
 async def test_assembly_planner_retries_malformed_json_and_requires_json_mode():
     completions = _CompletionsStub(
         [

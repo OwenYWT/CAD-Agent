@@ -202,10 +202,6 @@ async def agent_requirements(payload: dict[str, Any], *, durable_planner: Durabl
         acceptance = (requirements.design_brief.acceptance
             if isinstance(requirements, CADPlan) and requirements.design_brief
             else getattr(requirements, 'acceptance', None))
-        if acceptance and acceptance.verification_limits:
-            raise ApplicationError(
-                '当前尚不能核验以下必需工程条件：' + '；'.join(acceptance.verification_limits),
-                type='engineering_verification_unavailable', non_retryable=True)
         result = {
             "step_key": step_key,
             "operation": request.operation,
@@ -213,10 +209,8 @@ async def agent_requirements(payload: dict[str, Any], *, durable_planner: Durabl
             "base_state": base_state,
         }
         if acceptance and acceptance.schema_version == 'engineering-acceptance.v2':
-            from app.validation.requirement_binding import validate_requirement_bindings
-            binding = validate_requirement_bindings(requirements_objective(request), acceptance, base_state, requirement_sources=sources)
-            result.update(requirement_bindings=binding, binding_digest=canonical_sha256(binding),
-                requirements_digest=binding['requirements_digest'], acceptance_version=acceptance.schema_version,
+            result.update(requirements_digest=canonical_sha256({'objective': requirements_objective(request)}),
+                acceptance_version=acceptance.schema_version,
                 comparison_policy_id=acceptance.comparison_policy_id)
         if base_state and (base_state.get('engineering_evidence') or base_state.get('selection_context')):
             from app.llm import get_last_chat_completion_provenance

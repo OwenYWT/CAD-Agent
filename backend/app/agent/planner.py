@@ -14,7 +14,7 @@ from app.llm import find_provider_exception
 from app.models.schemas import CADPlan, ModificationPlan
 from app.contracts.acceptance import acceptance_tool_schema
 from app.contracts.acceptance_v2 import AcceptanceContractV2
-from app.validation.requirement_binding import extract_source_requirements, validate_requirement_bindings, bind_acceptance_proposal, RequirementBindingError, require_bound_sources, SourceRequirementUnavailable
+from app.validation.requirement_binding import extract_source_requirements, bind_acceptance_proposal, RequirementBindingError, SourceRequirementUnavailable
 from app.validation.acceptance_preflight import validate_new_acceptance
 
 logger = logging.getLogger(__name__)
@@ -104,12 +104,48 @@ MODIFICATION_SYSTEM_PROMPT = MODIFICATION_CONTEXT_PROMPT + MODIFICATION_JSON_FOR
 
 
 def _v2_requirements_prompt(objective, tool_name, *, verified_state=None, requirement_sources=None):
+    sources = requirement_sources if requirement_sources is not None else [
+        {'source_input_id': 'objective', 'source_kind': 'user', 'text': objective}]
+    extracted = extract_source_requirements(objective, verified_state=verified_state,
+                                           requirement_sources=requirement_sources)
+    source_kinds = {source['source_input_id']: source['source_kind'] for source in sources}
+    # Extraction supplies quotation identities, not modelling instructions or
+    # a capability verdict. In particular, an unparsed phrase can still have
+    # a supported geometric predicate in the tool schema.
+    context = {'sources': sources, 'references': [
+        {'binding_ref': row.get('requirement_id') or row['obligation_id'],
+         **{key: row[key] for key in ('source_input_id', 'source_quote')},
+         'source_kind': source_kinds[row['source_input_id']],
+         **({'hole_group': row['hole_group']} if row.get('hole_group') else {}),
+         **({'tolerance_source_refs': row['comparison']['tolerance_source_refs']}
+            if row.get('comparison', {}).get('tolerance_source_refs') else {})}
+        for row in [*extracted['requirements'], *extracted['obligations']]]}
+    if (verified_state or {}).get('verified_acceptance'):
+        context['verified_acceptance'] = verified_state['verified_acceptance']
     return ('\nSubmit all requirements with ' + tool_name + '. Use engineering-acceptance.v2. '
-        'The server binds objective. Copy binding_ref from the source requirement_id below, retaining property, '
-        'quantity, unit, comparison and authorized tolerance exactly. Cover every extracted requirement. '
+        'The server binds objective. Interpret the complete saved user inputs directly, including every '
+        'dimension, feature and relationship. Quotation references identify saved text; they do not choose '
+        'a measurement kind, coordinate axis, component or scope. A parser gap is not an unavailable CAD capability. '
+        'Use the tool definitions to select measurements and preserve the original quantities and authorized tolerances. '
+        'Use a supplied binding_ref for the relevant quotation, or its saved source_input_id for a condition '
+        'without a quotation reference. Never treat the reference list as the complete requirements list. '
         'cube_shape certifies the complete six-faced, orthogonal, equal-edged material solid; '
         'cube_edge measures its intrinsic edge length. Neither may be replaced by a single bounding-box extent. '
-        'sphere_shape and cylinder_shape likewise certify complete material primitives when radial dimensions are absent. '
+        'All cube_*, sphere_* and cylinder_* checks certify complete material primitives. They are not '
+        'measurements of a base primitive after holes, cuts or joined features have changed its boundary. '
+        'Use the existing feature measurements for such geometry; a coaxial radial wall measurement certifies '
+        'a complete annular material layer, and hole checks separately measure its bore. '
+        'radial wall thickness covers a whole constant-radius passage; a point does not make it a stepped-section measurement. '
+        'For bored stepped shafts, annular_segment_diameter and annular_segment_height select each complete '
+        'observed axial band with an interior point on its axis. Measure every specified segment diameter and height; '
+        'also check the common bore diameter and through passage. Do not substitute overall bounds for segment geometry. '
+        'A component dimension must select that whole component, never the envelope of an assembly. '
+        'Choose a construction representation that preserves the required component identities. '
+        'When the request permits an assembly, keep distinct components as separate native objects and '
+        'select their whole solids with component_region. One CAD document does not imply one fused solid; '
+        'do not invent a fusion requirement that destroys the identities needed for component measurements. '
+        'State a shared coordinate frame in the plan; derive selectors from the specified layout and keep '
+        'any otherwise unconstrained placement choice explicit as an assumption. '
         'Copy each supplied hole_group exactly as well: it identifies a counted source phrase. '
         'All groups in one scope jointly partition the complete measured hole inventory, each hole counted once. '
         'Do not replace hole_group with a guessed region or omit the group count, diameter, depth or through predicate. '
@@ -117,7 +153,7 @@ def _v2_requirements_prompt(objective, tool_name, *, verified_state=None, requir
         'Never put nominal/tolerance_mm into v2. Positive engineering tolerance needs its exact supplied '
         'tolerance_source_refs; absent tolerance means numerical precision only. Do not invent confirmed sources. '
         'Assumptions must be optional and cannot substitute for an explicit requirement. '
-        'Use each supplied scope; do not guess world regions or surface points. A planar_gap needs a unique '
+        'Do not use an arbitrary local sample in place of a whole-part condition. A planar_gap needs a unique '
         'opposing face pair, and whole-part wall requirements need continuous_normal coverage. '
         'hole_position compares zero transverse residual against its authorized centers and axis. '
         'hole_through is a separate exact count predicate (eq 1): the complete round shaft must reach '
@@ -136,18 +172,17 @@ def _v2_requirements_prompt(objective, tool_name, *, verified_state=None, requir
         'as unverified in source_context. Do not claim these were certified or ask for the same concept consent again. '
         'Requested STEP/STL/FCStd delivery is enforced by native export, artifact readers and sealing; '
         'it is not an unsupported geometric measurement. Retain the requested output formats in the plan. '
-        'Keep all other required features in the design. Unsupported or unbound semantic conditions belong '
-        'in verification_limits, never silently dropped or recast as missing user input. '
+        'Keep all other required features in the design. Only required conditions that the actual measurement '
+        'tools cannot verify belong in verification_limits; never copy parser diagnostics into this field. '
+        'Do not silently drop a requirement, replace it with a weaker proxy or recast it as missing user input. '
         'Only missing design information belongs in unresolved and 必须确认 open_questions. '
-        'The tool schema is authoritative. Server extracted source assertions:\n' +
-        json.dumps(extract_source_requirements(objective, verified_state=verified_state,
-            requirement_sources=requirement_sources), ensure_ascii=False))
+        'The tool schema defines measurement capabilities. Saved requirement sources and quotation references:\n' +
+        json.dumps(context, ensure_ascii=False))
 
 
-def _validate_v2(objective, acceptance, *, verified_state=None, requirement_sources=None):
+def _validate_v2(acceptance):
     if not isinstance(acceptance, AcceptanceContractV2):
         raise RequirementBindingError('requirement_binding_mismatch', 'new requirements must use engineering-acceptance.v2')
-    return validate_requirement_bindings(objective, acceptance, verified_state, requirement_sources=requirement_sources)
 
 
 class Planner:
@@ -228,8 +263,6 @@ class Planner:
                   if require_acceptance else PLANNER_SYSTEM_PROMPT)
         objective = str(messages[-1]["content"])
         if require_acceptance and acceptance_version == 'engineering-acceptance.v2':
-            if requirement_sources and all(s.get('acceptance_domain') == 'solid' for s in requirement_sources):
-                require_bound_sources(objective, requirement_sources=requirement_sources)
             system += _v2_requirements_prompt(objective, 'submit_cad_plan', requirement_sources=requirement_sources)
         elif require_acceptance:
             system += """\nSubmit the complete requirements using submit_cad_plan. Include design_brief.acceptance={checks:[...], unresolved:[...]}; the server binds objective.
@@ -326,7 +359,7 @@ The submit_cad_plan tool parameters contain the authoritative field definitions 
                 if require_acceptance and plan.part_type != 'profile_2d':
                     validate_new_acceptance(plan.design_brief.acceptance)
                 if require_acceptance and acceptance_version == 'engineering-acceptance.v2' and plan.part_type != 'profile_2d':
-                    _validate_v2(objective, plan.design_brief.acceptance, requirement_sources=requirement_sources)
+                    _validate_v2(plan.design_brief.acceptance)
 
                 # Preserve the validated semantic classification. Context labels
                 # (e.g. 装配依据) and negations are not assembly requests.
@@ -361,9 +394,6 @@ The submit_cad_plan tool parameters contain the authoritative field definitions 
                                 requirement_sources=None) -> ModificationPlan:
         system = (MODIFICATION_CONTEXT_PROMPT if require_acceptance else MODIFICATION_SYSTEM_PROMPT).format(current_code=current_code)
         if require_acceptance and acceptance_version == 'engineering-acceptance.v2':
-            if requirement_sources and all(s.get('acceptance_domain') == 'solid' for s in requirement_sources):
-                require_bound_sources(str(messages[-1]['content']), verified_state=verified_state,
-                                      requirement_sources=requirement_sources)
             system += _v2_requirements_prompt(str(messages[-1]['content']), 'submit_modification_plan',
                 verified_state=verified_state, requirement_sources=requirement_sources)
         elif require_acceptance:
@@ -430,8 +460,7 @@ The submit_modification_plan tool parameters contain the authoritative field def
                 if require_acceptance:
                     validate_new_acceptance(plan.acceptance)
                 if require_acceptance and acceptance_version == 'engineering-acceptance.v2':
-                    _validate_v2(str(messages[-1]['content']), plan.acceptance, verified_state=verified_state,
-                                 requirement_sources=requirement_sources)
+                    _validate_v2(plan.acceptance)
                 return plan
             except RuntimeError:
                 raise

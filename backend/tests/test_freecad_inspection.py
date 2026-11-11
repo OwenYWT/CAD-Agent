@@ -8,6 +8,23 @@ from app.freecad.operation_generator import FreeCADOperationGenerator
 from tests.test_freecad_operation_generator import _client, _provenance, _valid_plan
 
 
+def test_inspection_exposes_measured_world_placement_without_reframing():
+    from copy import deepcopy
+    from app.freecad.semantic_state import bounded_agent_context
+    state = {'objects': [{'name': 'Profile', 'type_id': 'Sketcher::SketchObject',
+        'global_placement': [1, 0, 0, 7, 0, 0, 1, 8, 0, -1, 0, 9, 0, 0, 0, 1],
+        'shape': {'bounds_mm': {'min': [7, 8, -31], 'max': [22, 8, 9]}},
+        'inspection': {'geometry': {'items': [], 'total': 0}},
+    }, {'name': 'Unknown', 'type_id': 'Part::Feature'}]}
+    before = deepcopy(state)
+    result = inspect_state(state, InspectionRequest(objects=['Profile', 'Unknown'], fields=['geometry']))
+    context = bounded_agent_context(state, target_names=['Profile', 'Unknown'])
+    for objects in (result['objects'], context['features']):
+        assert objects[0]['global_placement'] == state['objects'][0]['global_placement']
+        assert objects[1]['global_placement'] is None
+    assert state == before
+
+
 def test_constraint_inspection_retains_native_expression_ownership():
     from copy import deepcopy
     state={'objects':[{'name':'HoleSketch','type_id':'Sketcher::SketchObject',

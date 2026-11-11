@@ -25,6 +25,8 @@ def intake_case(name):
         saved = RECEIPTS[0 if name == 'fdm' else 1]
         return saved['objective'], RequirementBasisV1.model_validate(saved['requirement_basis'])
     objective = {'diameter':'生成圆柱体几何模型。圆柱体直径为40 mm，圆柱体高度为25 mm。',
+        'annular':'Create three joined coaxial annular segments with diameters 24, 16, 30 mm and '
+            'successive heights 7, 11, 5 mm, and one centered 6 mm axial through bore.',
         'radius':'生成圆柱体几何模型。圆柱体半径为20 mm，圆柱体高度为25 mm。',
         'source_context':'The dimensions below describe this model. Evaluate geometry only.\n'
             'cylinder radius 20 mm, height 25 mm. Manufacturing performance is not certified. '
@@ -60,6 +62,15 @@ class IntakeSemanticsRequirements(IncidentRequirements):
         if self.name in {'fdm','context'}:
             saved = RECEIPTS[0 if self.name == 'fdm' else 1]
             proposal = deepcopy(saved['calls'][-1]['acceptance'])
+        elif self.name=='annular':
+            from tests.e2e.annular_segment_contract import fixtures
+            proposal=fixtures()[0]['contract']
+            proposal['objective']=objective
+            for check in proposal['checks']:check['source_quote']=objective
+            for kind,value,unit in [('hole_diameter',6.,'mm'),('hole_through',1.,'count')]:
+                proposal['checks'].append({'check_id':kind,'kind':kind,'binding_ref':'objective',
+                    'source_quote':objective,'description':kind,'comparison':{'op':'eq','value':value,'unit':unit},
+                    'scope':{'axis':[0,0,1]}})
         else:
             extracted = require_bound_sources(objective, requirement_sources=kwargs.get('requirement_sources'))
             proposal = AcceptanceContractV2.model_validate({'objective':objective, 'checks':[
@@ -83,7 +94,14 @@ class IntakeSemanticsOperations:
         def add(action, **args):
             operations.append({'op_id':'op-'+str(len(operations)), 'action':action, 'args':args})
         add('sketch.create', name='Base')
-        if self.name in {'sphere_bounds', 'cylinder_bounds'}:
+        if self.name=='annular':
+            operations.clear()
+            add('api.execute',source="body=document.addObject('PartDesign::Body','Body')\n"
+                "feature=body.newObject('PartDesign::Feature','Segments')\n"
+                "shape=Part.makeCylinder(12,7).fuse(Part.makeCylinder("
+                f"{8 if self.valid else 9},11,App.Vector(0,0,7))).fuse(Part.makeCylinder(15,5,App.Vector(0,0,18)))\n"
+                "feature.Shape=shape.cut(Part.makeCylinder(3,23)).removeSplitter()\nbody.Tip=feature\n")
+        elif self.name in {'sphere_bounds', 'cylinder_bounds'}:
             shape = ('Part.makeSphere(20)' if self.name == 'sphere_bounds' else 'Part.makeCylinder(20,25)') if self.valid else (
                 'Part.makeBox(40,40,40)' if self.name == 'sphere_bounds' else 'Part.makeBox(40,40,25)')
             operations.clear()

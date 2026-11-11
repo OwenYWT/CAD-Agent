@@ -36,11 +36,16 @@ class Point3D(Point2D):
 
 
 class SketchFrame(FrozenContract):
-    """An orthogonal sketch frame expressed in its owning Body's coordinates."""
+    """Body-local frame: p = origin + x * unit(x_axis) + y * (unit(normal) cross unit(x_axis)).
+
+    The owning Body's placement then maps p into world coordinates.
+    """
     schema_version: Literal["body-frame.v1"] = "body-frame.v1"
-    origin: Point3D
-    normal: tuple[Coordinate, Coordinate, Coordinate]
-    x_axis: tuple[Coordinate, Coordinate, Coordinate]
+    origin: Point3D = Field(description="Sketch origin in owning Body coordinates, in mm.")
+    normal: tuple[Coordinate, Coordinate, Coordinate] = Field(
+        description="Sketch local +Z in Body coordinates. Local +Y is unit(normal) cross unit(x_axis).")
+    x_axis: tuple[Coordinate, Coordinate, Coordinate] = Field(
+        description="Sketch local +X in Body coordinates; normalized by the runtime.")
 
     @model_validator(mode="after")
     def orthogonal_axes(self) -> "SketchFrame":
@@ -162,7 +167,7 @@ class FreeCADAPIArgs(FrozenContract):
 
 
 class SketchCreateArgs(FrozenContract):
-    name: ObjectName
+    name: ObjectName = Field(description='Unique Sketch object name, distinct from its owning Body name.')
     body: ObjectName = Field(default="Body", description=(
         "Owning PartDesign::Body name. sketch.create creates this Body if absent, "
         "reuses it if present, and rejects an existing object of another type. "
@@ -175,6 +180,8 @@ class SketchCreateArgs(FrozenContract):
 
     @model_validator(mode="after")
     def one_placement(self) -> "SketchCreateArgs":
+        if self.name == self.body:
+            raise ValueError('sketch name must differ from its body; both are separate document objects')
         if self.frame is not None and (self.plane != "xy" or self.offset_mm != 0 or self.reversed):
             raise ValueError("explicit frame cannot be combined with legacy plane/offset/reversed")
         return self

@@ -79,6 +79,11 @@ For new sketches use frame: {schema_version:"body-frame.v1",origin:{x,y,z},
 normal:[x,y,z],x_axis:[x,y,z]}. Origin and axes are in the owning Body's coordinates;
 normal and x_axis must be nonzero and orthogonal. Sketch (u,v) maps to
 origin + u*unit(x_axis) + v*(unit(normal) cross unit(x_axis)).
+Derive both in-plane directions before writing sketch coordinates; sketch v is
+not automatically world Z. Choose the normal from the intended u cross v directions.
+Keep the resulting world positions consistent with the frozen acceptance scopes,
+including after a revolve. An opposite normal mirrors the axial placement even
+when diameters, heights and the overall shape are otherwise correct.
 Do not combine frame with legacy plane/offset_mm/reversed. Legacy placement fields
 exist only to replay retained plans; they are not the coordinate interface for new plans.
 Use sketch.add_profile for rectangles and circles: it creates the geometry AND its
@@ -362,11 +367,7 @@ class FreeCADOperationGenerator:
                     for step in plan.steps
                 ],
             },
-            "requirements": {
-                key: value
-                for key, value in requirements.items()
-                if key != "design_brief"
-            },
+            "requirements": requirements,
             "base_freecad_state": bounded_agent_context(base_state) if base_state else None,
             **({"engineering_acceptance": requirements.get('acceptance') or requirements["design_brief"]["acceptance"]}
                if requirements.get('acceptance') or (requirements.get("design_brief") or {}).get("acceptance") else {}),

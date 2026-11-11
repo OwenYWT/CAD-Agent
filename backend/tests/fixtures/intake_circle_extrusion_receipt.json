@@ -1,0 +1,113 @@
+{
+  "case_id": "ctb-00000007",
+  "provider": "moonshot",
+  "model": "kimi-k2.7-code",
+  "provider_response_id": "chatcmpl-6af084f5cefcfd3f47bb6533",
+  "objective": "Create a native FreeCAD solid model. All linear dimensions and coordinates below are in source design units: 1 source unit = exactly 100 mm. Angles are in degrees.\n\nCreate a 3D model by extruding a circular sketch. The circle should have a radius of 0.75 units and the extrusion should be 0.20923 units high.\n\nDeliver the native CAD model, STEP and STL. Evaluate geometry only; manufacturing performance is not certified.",
+  "proposal": {
+    "description": "按 1 源单位 = 100 mm 换算，创建一个半径 0.75 源单位（75 mm）的圆形草图，沿 Z 方向拉伸 0.20923 源单位（20.923 mm），生成实心圆柱体。",
+    "part_type": "cylinder",
+    "dimensions": {
+      "diameter": 150.0,
+      "height": 20.923,
+      "radius": 75.0
+    },
+    "features": [
+      "base_cylinder:diameter=150.0,height=20.923"
+    ],
+    "constraints": [
+      "sketch_fully_constrained=true"
+    ],
+    "modeling_hint": "extrude",
+    "manufacturing_profile": {
+      "process": "fdm",
+      "material": "PLA",
+      "nozzle_diameter_mm": 0.4,
+      "layer_height_mm": 0.2,
+      "build_volume_mm": [
+        200,
+        200,
+        200
+      ]
+    },
+    "design_brief": {
+      "intent_summary": "按给定源单位创建一个实心圆柱体，并输出 FreeCAD 原生模型、STEP 和 STL。",
+      "functional_requirements": [
+        "通过拉伸圆形草图生成实心圆柱体"
+      ],
+      "acceptance_criteria": [
+        "圆柱半径应为 0.75 源单位（75 mm），对应直径 150 mm",
+        "圆柱高度应为 0.20923 源单位（20.923 mm）",
+        "交付 FreeCAD 原生模型（FCStd）、STEP 和 STL",
+        "仅对几何进行评估，不对制造性能（强度、材料、打印可行性等）作认证"
+      ],
+      "critical_dimensions": [
+        {
+          "name": "圆柱直径",
+          "value": 150.0,
+          "unit": "mm",
+          "reason": "由半径 0.75 源单位换算（×100）"
+        },
+        {
+          "name": "圆柱高度",
+          "value": 20.923,
+          "unit": "mm",
+          "reason": "由 0.20923 源单位换算（×100）"
+        }
+      ],
+      "assumptions": [
+        "未添加圆角、倒角、孔洞、抽壳等用户未要求的特征",
+        "模型为实心均质圆柱体，顶部和底部平面均垂直于 Z 轴"
+      ],
+      "open_questions": [],
+      "manufacturing_posture": "面向 3D 打印",
+      "printability_targets": [
+        "圆柱底面平整，可直接置于打印平台，无需额外支撑"
+      ],
+      "acceptance": {
+        "schema_version": "engineering-acceptance.v2",
+        "objective": "创建指定尺寸的实心圆柱体，并输出 FreeCAD 原生模型、STEP 和 STL。",
+        "checks": [
+          {
+            "check_id": "height-z",
+            "kind": "overall_dimension",
+            "description": "圆柱体总高度（Z 方向）应为 20.923 mm。",
+            "source_quote": " 0.20923 units high",
+            "source_kind": "user",
+            "binding_ref": "r-objective-288-307-height",
+            "comparison": {
+              "op": "eq",
+              "value": 20.923,
+              "unit": "mm"
+            },
+            "scope": {
+              "axis": [
+                0,
+                0,
+                1
+              ],
+              "frame": "world"
+            },
+            "required": true
+          },
+          {
+            "check_id": "cylinder-radius",
+            "kind": "cylinder_radius",
+            "description": "圆柱半径应为 75 mm（0.75 源单位）。",
+            "source_quote": "radius of 0.75 units",
+            "source_kind": "user",
+            "binding_ref": "o-objective-215-307-assertion_clause",
+            "comparison": {
+              "op": "eq",
+              "value": 75,
+              "unit": "mm"
+            },
+            "required": true
+          }
+        ],
+        "unresolved": [],
+        "verification_limits": []
+      }
+    }
+  }
+}

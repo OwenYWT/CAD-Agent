@@ -124,6 +124,20 @@ def _provenance() -> dict:
 
 
 @pytest.mark.asyncio
+async def test_object_name_collision_returns_to_existing_tool_correction_loop():
+    invalid = _valid_plan()
+    invalid['operations'][0]['args']['name'] = 'Body'
+    client = _client([invalid, _valid_plan()])
+    generator = FreeCADOperationGenerator(client=client, provenance_reader=_provenance)
+    result = await generator.generate(plan=_plan(), requirements={'description': 'Cylinder'},
+                                      base_state=None, output_formats=('step', 'stl'))
+    assert client.completions.calls == 2
+    assert 'sketch name must differ from its body' in str(client.completions.kwargs[1]['messages'])
+    assert result.operation_plan.operations[0].args['name'] == 'BaseSketch'
+    assert result.operation_plan.operations[1].args['sketch'] == 'BaseSketch'
+
+
+@pytest.mark.asyncio
 async def test_native_generator_receives_profile_separately_from_geometry():
     client = _client([_valid_plan()])
     generator = FreeCADOperationGenerator(client=client, provenance_reader=_provenance)
@@ -135,6 +149,26 @@ async def test_native_generator_receives_profile_separately_from_geometry():
     payload = json.loads(messages[-1]['content'])
     assert payload['requirements']['manufacturing_profile'] == profile
     assert payload['agent_plan']['objective'] == _plan().objective
+
+
+@pytest.mark.asyncio
+async def test_native_generator_retains_design_context_across_checkpoint_turns():
+    from copy import deepcopy
+    requirements = {'description': 'Coaxial sleeve', 'design_brief': {
+        'assumptions': ['profile local y maps to world +Z'],
+        'functional_requirements': ['retain the continuous bore'],
+        'acceptance_criteria': ['all bands share the same axis'],
+    }}
+    before = deepcopy(requirements)
+    for feedback in (None, {'execution_mode': 'checkpoint', 'status': 'succeeded'}):
+        client = _client([_valid_plan()])
+        generator = FreeCADOperationGenerator(client=client, provenance_reader=_provenance)
+        await generator.generate(plan=_plan(), requirements=requirements, base_state=None,
+            output_formats=('step', 'stl'), checkpoint_enabled=True, execution_feedback=feedback)
+        payload = json.loads(client.completions.kwargs[0]['messages'][1]['content'])
+        assert payload['requirements'] == before
+        assert payload['execution_feedback'] == feedback
+    assert requirements == before
 
 
 @pytest.mark.asyncio

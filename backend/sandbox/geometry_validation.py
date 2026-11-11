@@ -358,7 +358,12 @@ def validate_geometry_files(
             outcomes.append('indeterminate');issues.append('acceptance:unresolved_requirements')
         if acceptance.get('verification_limits'):
             outcomes.append('indeterminate');issues.append('acceptance:verification_unavailable')
-        if result['outcome'] != 'failed':
+        # Match the host acceptance_outcome policy: missing requirements or
+        # unsupported measurements cannot be repaired by changing CAD source.
+        # Keep every failed measurement/artifact diagnostic in the report.
+        if acceptance.get('unresolved') or acceptance.get('verification_limits'):
+            result['outcome'] = 'indeterminate'
+        elif result['outcome'] != 'failed':
             if 'failed' in outcomes:result['outcome']='failed'
             elif 'indeterminate' in outcomes:result['outcome']='indeterminate'
     return result

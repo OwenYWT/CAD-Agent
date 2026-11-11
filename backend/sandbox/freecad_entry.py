@@ -236,6 +236,10 @@ def _sketch_create(document: Any, args: dict[str, Any]) -> dict[str, Any]:
         body = document.addObject("PartDesign::Body", body_name)
     if getattr(body, "TypeId", "") != "PartDesign::Body":
         raise FreeCADRunnerError("object_type_mismatch", f"{body_name} is not a PartDesign body")
+    # Body creation also creates Origin and datum objects in the same document
+    # namespace. FreeCAD would otherwise silently rename a conflicting Sketch.
+    if document.getObject(name) is not None:
+        raise FreeCADRunnerError("object_name_conflict", f"object already exists: {name}; choose a distinct sketch name")
     plane = str(args.get("plane", "xy"))
     plane_name = {"xy": "XY_Plane", "xz": "XZ_Plane", "yz": "YZ_Plane"}.get(plane)
     if plane_name is None:

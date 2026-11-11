@@ -1,17 +1,80 @@
 from contextvars import ContextVar
+from dataclasses import dataclass
 import hashlib
 import json
 import logging
+import ssl
 import time
 from typing import Any
 
-from openai import AsyncAzureOpenAI, AsyncOpenAI, OpenAIError, RateLimitError
+from openai import AsyncAzureOpenAI, AsyncOpenAI, DefaultAsyncHttpxClient, OpenAIError, RateLimitError
 from openai.types.chat import ChatCompletion
 
 from app.config import Settings, settings
-from app.contracts.provider_budget import provider_budget_context
+from app.contracts.provider_budget import (
+    ProviderBudgetError, UNSENT_CONNECTION_FAILURES, provider_budget_context,
+)
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _TransportTrace:
+    phase: str = 'unobserved'
+    failure_phase: str | None = None
+    request_headers_started: bool = False
+
+    async def record(self, event, info):
+        self.phase = event
+        if event in {'http11.send_request_headers.started', 'http2.send_request_headers.started'}:
+            # Latch across redirects and connection-pool retries: a later TLS
+            # failure cannot prove an earlier HTTP request was never sent.
+            self.request_headers_started = True
+        if event in {'connection.connect_tcp.started', 'connection.start_tls.started'}:
+            self.failure_phase = None
+        if event.endswith('.failed') and info.get('exception') is not None:
+            self.failure_phase = event
+
+    def evidence(self):
+        return {'phase': self.phase, 'failure_phase': self.failure_phase,
+                'request_headers_started': self.request_headers_started}
+
+
+_transport_trace: ContextVar[_TransportTrace | None] = ContextVar('provider_transport_trace', default=None)
+
+
+async def _observe_provider_request(request):
+    trace = _transport_trace.get()
+    if trace is not None:
+        request.extensions['trace'] = trace.record
+
+
+def _provider_failure(exc, *, attempt, trace):
+    # Exception text, headers and URLs can contain credentials or model input.
+    # Preserve the causal types and OS/TLS reason codes without copying them.
+    chain, seen, current = [], set(), exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        item = {'type': type(current).__name__}
+        if isinstance(current, OSError) and isinstance(current.errno, int):
+            item['errno'] = current.errno
+        if isinstance(current, ssl.SSLError) and getattr(current, 'reason', None):
+            item['ssl_reason'] = current.reason
+        chain.append(item)
+        current = current.__cause__ or current.__context__
+    return {'attempt': attempt, 'error_code': type(exc).__name__, 'cause_chain': chain,
+            'http_status': getattr(exc, 'status_code', None), 'transport': trace.evidence()}
+
+
+def provider_error_details(exc):
+    current, seen = exc, set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        details = getattr(current, 'provider_diagnostics', None)
+        if details:
+            return details
+        current = current.__cause__ or current.__context__
+    return None
 
 
 _QUOTA_MARKERS = (
@@ -195,11 +258,21 @@ class ChatCompletionAdapter:
             logical_call = budget.logical_call_id()
         request_hash = _request_hash(params)
         reset_chat_completion_provenance()
+        failures = []
         for attempt in range(self._settings.llm_max_retries + 1):
             reservation = None
             if budget is not None:
-                reservation = await budget.reserve_attempt(logical_call_id=logical_call, attempt=attempt + 1,
-                    request_digest=request_hash, provider=self._settings.normalized_llm_provider, model=params['model'])
+                try:
+                    reservation = await budget.reserve_attempt(logical_call_id=logical_call, attempt=attempt + 1,
+                        request_digest=request_hash, provider=self._settings.normalized_llm_provider, model=params['model'])
+                except ProviderBudgetError as exc:
+                    if not failures:
+                        raise
+                    cause = ' → '.join(item['type'] for item in failures[-1]['cause_chain'])
+                    raise ProviderBudgetError(exc.code,
+                        f'模型请求失败（{cause}）；重试未能开始：{exc}',
+                        details={'provider_attempts': failures,
+                                 'retry_blocked': {'code': exc.code}}) from exc
                 cached = await budget.claim_dispatch(reservation)
                 if cached is not None:
                     response = ChatCompletion.model_validate(cached)
@@ -211,6 +284,8 @@ class ChatCompletionAdapter:
             started = time.perf_counter()
             provenance = None
             error = None
+            trace = _TransportTrace()
+            trace_token = _transport_trace.set(trace)
             try:
                 response = await self._raw_completions.create(**params)
                 if params.get("stream"):
@@ -245,9 +320,18 @@ class ChatCompletionAdapter:
                 error = exc
                 raise
             finally:
+                _transport_trace.reset(trace_token)
+                if error is not None:
+                    diagnostic = _provider_failure(error, attempt=attempt + 1, trace=trace)
+                    failures.append(diagnostic)
+                    error.provider_diagnostics = {'provider_attempts': list(failures)}
+                    logger.warning('Provider attempt failed: %s', json.dumps(diagnostic))
                 if budget is not None and error is not None:
                     try:
-                        await budget.mark_unknown(reservation, reason=type(error).__name__)
+                        if trace.failure_phase in UNSENT_CONNECTION_FAILURES and not trace.request_headers_started:
+                            await budget.release_unsent(reservation, diagnostics=diagnostic)
+                        else:
+                            await budget.mark_unknown(reservation, reason=type(error).__name__, diagnostics=diagnostic)
                     except Exception:
                         logger.exception('Provider dispatch remains unresolved; reservation retained')
                 await self._usage.finish_call(handle, duration_ms=round((time.perf_counter() - started) * 1000),
@@ -355,6 +439,32 @@ class LLMClientAdapter:
     def max_retries(self) -> int:
         return self._settings.llm_max_retries
 
+    async def check_connection(self) -> dict:
+        """Probe transport and authentication without a generation or reservation.
+
+        A catalogue response is not proof of generation permissions or of a
+        separately deployed worker's connectivity. Bound only this diagnostic
+        GET; generation retains its existing wait policy.
+        """
+        failures = []
+        for attempt in range(self.max_retries + 1):
+            trace = _TransportTrace()
+            token = _transport_trace.set(trace)
+            try:
+                models = await self.raw_client.models.list(timeout=10)
+                return {'status': 'ready', 'provider': self._settings.normalized_llm_provider,
+                        'model': self._settings.llm_model,
+                        'model_listed': any(model.id == self._settings.llm_model for model in models.data),
+                        'generation_tested': False, 'attempts': attempt + 1,
+                        'provider_attempts': failures}
+            except OpenAIError as exc:
+                failures.append(_provider_failure(exc, attempt=attempt + 1, trace=trace))
+                exc.provider_diagnostics = {'provider_attempts': list(failures)}
+                if is_nonretryable_provider_error(exc) or attempt >= self.max_retries:
+                    raise
+            finally:
+                _transport_trace.reset(token)
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self.raw_client, name)
 
@@ -363,6 +473,7 @@ def create_llm_client(llm_settings: Settings = settings, *, sink: UsageSink):
     if not llm_settings.has_llm_credentials:
         raise RuntimeError(llm_settings.llm_credentials_error)
 
+    http_client = DefaultAsyncHttpxClient(timeout=None, event_hooks={'request': [_observe_provider_request]})
     if llm_settings.normalized_llm_provider == "azure":
         raw_client = AsyncAzureOpenAI(
             azure_endpoint=llm_settings.azure_openai_endpoint,
@@ -372,6 +483,7 @@ def create_llm_client(llm_settings: Settings = settings, *, sink: UsageSink):
             # The adapter owns retries so quota/auth/config failures can be
             # rejected immediately instead of being retried blindly by the SDK.
             max_retries=0,
+            http_client=http_client,
         )
     else:
         raw_client = AsyncOpenAI(
@@ -379,6 +491,7 @@ def create_llm_client(llm_settings: Settings = settings, *, sink: UsageSink):
             base_url=llm_settings.llm_base_url,
             timeout=None,
             max_retries=0,
+            http_client=http_client,
         )
 
     return LLMClientAdapter(raw_client, llm_settings, sink=sink)

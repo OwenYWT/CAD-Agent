@@ -164,6 +164,8 @@ def _failure_mapping(result: SandboxResult) -> tuple[ExecutionStatus, ExecutionE
 
 
 _STRUCTURED_ERROR_POLICY: dict[str, tuple[ExecutionErrorCategory, bool]] = {
+    "object_name_conflict": (ExecutionErrorCategory.USER_CODE, False),
+    "object_type_mismatch": (ExecutionErrorCategory.USER_CODE, False),
     "agent_plan_backend_mismatch": (ExecutionErrorCategory.VALIDATION, False),
     "invalid_edge_selection_mode": (ExecutionErrorCategory.USER_INPUT, False),
     "topology_resolution_failed": (ExecutionErrorCategory.VALIDATION, False),

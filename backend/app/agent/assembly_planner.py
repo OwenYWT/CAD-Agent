@@ -69,15 +69,9 @@ class AssemblyPlanner:
         *,
         allow_fallback: bool = True,
     ) -> AssemblyPlan:
-        user_content = (
-            f"\u88c5\u914d\u4f53\u63cf\u8ff0: {plan.description}\n"
-            f"\u5c3a\u5bf8: {plan.dimensions}\n"
-            f"\u7279\u5f81: {plan.features}\n"
-        )
+        user_content = plan.model_dump_json()
 
         last_error: Exception | None = None
-        if plan.manufacturing_profile:
-            user_content += '\n' + plan.manufacturing_profile.prompt_context()
         for attempt in range(2):
             try:
                 messages = [

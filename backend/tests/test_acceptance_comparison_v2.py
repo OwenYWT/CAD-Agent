@@ -13,6 +13,19 @@ def contract(comparison, kind='planar_gap', **extra):
                         'comparison': comparison, **extra}]}
 
 
+@pytest.mark.parametrize('kind', ['annular_segment_diameter', 'annular_segment_height'])
+def test_annular_segment_requires_an_axis_point_without_target_clipping(kind):
+    comparison={'op':'eq','value':12.,'unit':'mm'}
+    valid={'axis':[0,0,1], 'point_mm':[0,0,4]}
+    parsed=AcceptanceContractV2.model_validate(contract(comparison,kind,scope=valid))
+    assert parsed.checks[0].scope.point_mm==(0.,0.,4.)
+    for scope in ({}, {'axis':[0,0,1]}, {'point_mm':[0,0,4]},
+                  {**valid,'region_min_mm':[-12,-12,0],'region_max_mm':[12,12,12]},
+                  {**valid,'centers_mm':[[0,0,4]]}):
+        with pytest.raises(ValidationError,match='annular segment'):
+            AcceptanceContractV2.model_validate(contract(comparison,kind,scope=scope))
+
+
 def test_component_selection_is_explicit_and_preserves_old_contract_wire():
     from app.contracts.acceptance_v2 import MeasurementScopeV2
     original = AcceptanceContractV2.model_validate(contract({'op':'eq','value':5.,'unit':'mm'}))
