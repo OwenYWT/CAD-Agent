@@ -158,12 +158,13 @@ async def _request(objective="创建带安装孔的支架") -> McadAgentWorkflow
 
 
 @pytest.mark.asyncio(loop_scope="module")
-@pytest.mark.parametrize('verification_limits', [
-    [],
-    ['制造性能、承载能力、材料性能未通过工程分析或实物试验验证，不在本次几何验收范围内。'],
-    ['Required surface relationship has no implemented measurement.'],
+@pytest.mark.parametrize('verification_limits,expected_limits', [
+    ([], []),
+    (['制造性能、承载能力、材料性能未通过工程分析或实物试验验证，不在本次几何验收范围内。'], []),
+    (['Required surface relationship has no implemented measurement.'],
+     ['Required surface relationship has no implemented measurement.']),
 ], ids=['no-limits', 'physical-scope-notice', 'unsupported-measurement'])
-async def test_recorded_model_proposal_persists_without_a_source_binding_gate(verification_limits):
+async def test_recorded_model_proposal_persists_without_a_source_binding_gate(verification_limits, expected_limits):
     from openai.types.chat import ChatCompletion
 
     receipt = json.loads((ROOT / 'tests/fixtures/intake_circle_extrusion_receipt.json').read_text())
@@ -184,7 +185,16 @@ async def test_recorded_model_proposal_persists_without_a_source_binding_gate(ve
     assert create.await_count == 1
     assert create.call_args.kwargs['messages'][-1]['content'] == receipt['objective']
     assert result['requirements']['dimensions'] == {'radius': 75., 'diameter': 150., 'height': 20.923}
-    assert result['requirements']['design_brief']['acceptance']['verification_limits'] == verification_limits
+    recorded_acceptance = result['requirements']['design_brief']['acceptance']
+    assert recorded_acceptance['verification_limits'] == expected_limits
+    notices = recorded_acceptance['verification_notices']
+    assert len(notices) == 1
+    assert notices[0]['category'] == 'physical_performance'
+    assert notices[0]['status'] == 'unverified'
+    source = notices[0]['source_refs'][0]
+    assert source['source_input_id'] == 'objective'
+    assert source['source_quote'] == 'manufacturing performance'
+    assert receipt['objective'][slice(*source['source_span'])] == source['source_quote']
     assert result['requirements'] == replay['requirements']
     assert replay['replayed'] is True
     assert 'requirement_bindings' not in result and 'binding_digest' not in result
@@ -194,7 +204,8 @@ async def test_recorded_model_proposal_persists_without_a_source_binding_gate(ve
     planned = await activities.agent_plan({**payload, 'requirements': result['requirements'], 'backend_policy_v1': True})
     acceptance = planned['plan']['design_brief']['acceptance']
     assert acceptance['checks'] == result['requirements']['design_brief']['acceptance']['checks']
-    assert acceptance['verification_limits'] == verification_limits
+    assert acceptance['verification_limits'] == expected_limits
+    assert acceptance['verification_notices'] == notices
     assert planned['plan']['validation_policy']['geometry']['mode'] == 'required'
 
 
