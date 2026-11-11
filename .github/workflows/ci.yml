@@ -227,9 +227,9 @@ jobs:
   mcad-core:
     name: mcad-core
     runs-on: ubuntu-24.04
-    # The expanded real-workflow suite reached case 150/163 at the former
-    # one-hour job limit, before native contracts. Keep every case mandatory.
-    timeout-minutes: 90
+    # The 209-case real-workflow suite reached 99% at 90 minutes, before
+    # native contracts and replay. Keep every case and evidence gate mandatory.
+    timeout-minutes: 120
     needs: build-images
     env:
       CAD_CI_JOB: mcad-core

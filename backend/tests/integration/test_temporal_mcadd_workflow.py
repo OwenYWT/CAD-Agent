@@ -4339,7 +4339,7 @@ async def test_complete_assembly_geometry_controls_review_commit_and_replay(vari
 
 
 @pytest.mark.asyncio(loop_scope='module')
-async def test_unbound_source_fails_before_provider_or_native_dispatch_in_real_workflow():
+async def test_unbound_source_reaches_model_admission_without_native_dispatch():
     from app.models.workflow_requests import OperationContextV1
     from app.domain.requirement_basis import RequirementBasisV1
     from app.workflows.temporal import start_mcad_agent_v2_workflow
@@ -4352,8 +4352,8 @@ async def test_unbound_source_fails_before_provider_or_native_dispatch_in_real_w
         requirement_basis=RequirementBasisV1(target=objective, dimensions=objective,
             design_scope='geometry', source_kind='user_specification', source_reference='用户指定'))
     client = await get_temporal_client()
-    # The actual Planner runs with no provider credentials. A missed source
-    # preflight would fail as configuration error, not the required diagnostic.
+    # Source interpretation belongs to the model. With credentials disabled,
+    # the real planner must reach provider configuration, not a lexical gate.
     async with build_agent_v2_workflow_worker(client, backend=get_execution_backend()):
         workflow_id, handle = await start_mcad_agent_v2_workflow(tenant_id=owner.tenant_id,
             project_id=project_id, principal_id=owner.principal_id, branch_id=initial.branch_id,
@@ -4363,13 +4363,14 @@ async def test_unbound_source_fails_before_provider_or_native_dispatch_in_real_w
         with pytest.raises(WorkflowFailureError) as error:
             await handle.result()
     cause = McadAgentWorkflowV2._root_application_error(error.value)
-    assert cause.type == 'engineering_verification_unavailable'
-    assert str(cause).count('engineering_verification_unavailable') == 1
-    assert '两个特殊加强筋' in cause.message
+    assert cause.type == 'RuntimeError'
+    assert settings.llm_credentials_error in cause.message
     async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
-        saved_error = await conn.scalar(text("SELECT error FROM model_jobs WHERE workflow_run_id=:id AND operation='agent_v2.requirements'"), {'id':workflow_id})
-        assert saved_error['details'][0]['schema_version'] == 'source-diagnostics.v1'
-        assert any(d['source_clause'] == '两个特殊加强筋' for d in saved_error['details'][0]['diagnostics'])
+        job = (await conn.execute(text("SELECT payload,error FROM model_jobs WHERE workflow_run_id=:id AND operation='agent_v2.requirements'"), {'id':workflow_id})).mappings().one()
+        assert job['payload']['objective'] == objective.strip()
+        assert job['payload']['operation_context']['requirement_basis'] == context.requirement_basis.model_dump(mode='json')
+        assert job['error']['code'] == cause.type
+        assert settings.llm_credentials_error in job['error']['message']
         for table in ('provider_budget_reservations','agent_staging_manifests','agent_generated_sources'):
             assert await conn.scalar(text(f'SELECT count(*) FROM {table} WHERE workflow_run_id=:id'), {'id':workflow_id}) == 0
         assert await conn.scalar(text('SELECT count(*) FROM change_sets WHERE source_workflow_run_id=:id'), {'id':workflow_id}) == 0
@@ -4382,7 +4383,7 @@ async def test_unbound_source_fails_before_provider_or_native_dispatch_in_real_w
     ('Unknown curvature 0.3\n', '0.3'), ('Chamfer 0.3 cm.', '0.3 cm'),
 ], ids=['chamfer-period', 'unknown-period', 'unknown-newline', 'explicit-unit'])
 @pytest.mark.parametrize('split', [False, True], ids=['objective', 'confirmed'])
-async def test_unbound_quantity_punctuation_blocks_before_dispatch_and_preserves_head(clause, quote, split):
+async def test_quantity_punctuation_reaches_model_admission_and_preserves_head(clause, quote, split):
     from app.models.workflow_requests import OperationContextV1
     from app.domain.requirement_basis import RequirementBasisV1
     from app.workflows.temporal import start_mcad_agent_v2_workflow
@@ -4398,8 +4399,8 @@ async def test_unbound_quantity_punctuation_blocks_before_dispatch_and_preserves
         requirement_basis=RequirementBasisV1(target=objective, dimensions=dimensions,
             design_scope='geometry', source_kind='user_specification', source_reference='用户指定'))
     client = await get_temporal_client()
-    # Use the actual planner with provider credentials disabled. The source
-    # coverage error must precede any provider admission or native execution.
+    # Keep the original punctuation and cross-field text in the model job.
+    # No provider credentials means no external call or native execution.
     async with build_agent_v2_workflow_worker(client, backend=get_execution_backend()):
         workflow_id, handle = await start_mcad_agent_v2_workflow(tenant_id=owner.tenant_id,
             project_id=project_id, principal_id=owner.principal_id, branch_id=initial.branch_id,
@@ -4409,16 +4410,20 @@ async def test_unbound_quantity_punctuation_blocks_before_dispatch_and_preserves
         with pytest.raises(WorkflowFailureError) as error:
             await handle.result()
     cause = McadAgentWorkflowV2._root_application_error(error.value)
-    assert cause.type == 'engineering_verification_unavailable'
-    assert clause.strip() in cause.message
+    assert cause.type == 'RuntimeError'
+    assert settings.llm_credentials_error in cause.message
     async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
         values = {'id': workflow_id}
         workflow = (await conn.execute(text('SELECT status,error_code,request_payload FROM workflow_runs WHERE id=:id'), values)).mappings().one()
         assert workflow['status'] == 'failed' and workflow['error_code'] == cause.type
         assert workflow['request_payload']['operation_context']['requirement_basis']['dimensions'] == context.requirement_basis.dimensions
-        saved_error = await conn.scalar(text("SELECT error FROM model_jobs WHERE workflow_run_id=:id AND operation='agent_v2.requirements'"), values)
-        diagnostics = saved_error['details'][0]['diagnostics']
-        assert any(d['reason'] == 'quantity_property_unbound' and d['source_quote'] == quote for d in diagnostics)
+        job = (await conn.execute(text("SELECT payload,error FROM model_jobs WHERE workflow_run_id=:id AND operation='agent_v2.requirements'"), values)).mappings().one()
+        assert job['payload']['objective'] == objective.strip()
+        assert job['payload']['operation_context']['requirement_basis'] == context.requirement_basis.model_dump(mode='json')
+        assert quote in (context.requirement_basis.dimensions if split else job['payload']['objective'])
+        saved_error = job['error']
+        assert saved_error['code'] == cause.type
+        assert settings.llm_credentials_error in saved_error['message']
         counts = {}
         for table in ('provider_budget_reservations', 'execution_attempts', 'agent_staging_manifests',
                       'agent_generated_sources', 'agent_validation_evidence', 'change_sets'):
@@ -4431,7 +4436,7 @@ async def test_unbound_quantity_punctuation_blocks_before_dispatch_and_preserves
     if directory := os.environ.get('CAD_AGENT_TEST_EVIDENCE_DIR'):
         out = Path(directory) / str(workflow_id)
         out.mkdir(parents=True, exist_ok=True)
-        (out / 'source-rejection.json').write_text(json.dumps({'workflow_id': str(workflow_id),
+        (out / 'model-admission.json').write_text(json.dumps({'workflow_id': str(workflow_id),
             'request': workflow['request_payload'], 'error': saved_error, 'counts': counts,
             'initial_head': str(initial.revision_id), 'head': str(head), 'replay': 'passed'}, ensure_ascii=False, indent=2))
 
@@ -5131,30 +5136,30 @@ async def test_live_durable_three_edit_trajectory():
 @pytest.mark.parametrize('objective,depth,diameter,omit_through,expected', [
     ('一个孔径6 mm的通孔', 4, 6, False, 'agent_geometry_validation_failed'),
     ('一个孔径6 mm的通孔', 12, 6, False, 'passed'),
-    ('一个孔径6 mm的通孔', 4, 6, True, 'requirement_binding_mismatch'),
-    ('greater than 6 mm diameter hole', 12, 6, False, 'engineering_verification_unavailable'),
-    ('less than 6 mm diameter hole', 12, 6, False, 'engineering_verification_unavailable'),
-    ('a 6 mm diameter hole, not through', 12, 6, False, 'engineering_verification_unavailable'),
+    ('一个孔径6 mm的通孔', 4, 6, True, 'model_contract_only'),
+    ('greater than 6 mm diameter hole', 12, 6, False, 'model_contract_only'),
+    ('less than 6 mm diameter hole', 12, 6, False, 'model_contract_only'),
+    ('a 6 mm diameter hole, not through', 12, 6, False, 'model_contract_only'),
     ('at least 6 mm diameter hole', 12, 6, False, 'passed'),
     ('at least 6 mm diameter hole', 12, 5, False, 'agent_geometry_validation_failed'),
     ('4个直径6 mm的通孔', 12, 6, False, 'agent_geometry_validation_failed'),
     ('四个直径6 mm的通孔', 12, 6, False, 'agent_geometry_validation_failed'),
     ('孔径6mm，零个孔', 12, 6, False, 'agent_geometry_validation_failed'),
-    ('over 6 mm diameter hole', 12, 6, False, 'engineering_verification_unavailable'),
-    ('greater-than 6 mm diameter hole', 12, 6, False, 'engineering_verification_unavailable'),
+    ('over 6 mm diameter hole', 12, 6, False, 'model_contract_only'),
+    ('greater-than 6 mm diameter hole', 12, 6, False, 'model_contract_only'),
     ('孔径6mm以上', 12, 6, False, 'passed'),
     ('孔径6mm以下', 12, 7, False, 'agent_geometry_validation_failed'),
-    ('孔径6mm，两个实体不接触', 12, 6, False, 'engineering_verification_unavailable'),
-    ('孔径6mm，不增加其他特征', 12, 6, False, 'engineering_verification_unavailable'),
-    ('孔径6mm，-1个孔', 12, 6, False, 'engineering_verification_unavailable'),
-    ('盒体40×30×12mm，一个居中通孔，孔径6mm', 12, 6, False, 'engineering_verification_unavailable'),
+    ('孔径6mm，两个实体不接触', 12, 6, False, 'model_contract_only'),
+    ('孔径6mm，不增加其他特征', 12, 6, False, 'model_contract_only'),
+    ('孔径6mm，-1个孔', 12, 6, False, 'model_contract_only'),
+    ('盒体40×30×12mm，一个居中通孔，孔径6mm', 12, 6, False, 'model_contract_only'),
     ('板80×40×8mm，2个直径6mm的通孔，2个直径4mm的通孔。', 12, 6, False, 'agent_geometry_validation_failed'),
     ('板80×40×8mm，2个直径6mm的通孔，2个直径6mm的通孔。', 12, 6, False, 'agent_geometry_validation_failed'),
     ('盒体坐标范围为 X=0 至 80 mm、Y=0 至 55 mm、Z=0 至 32 mm。'
      '上盖坐标范围为 X=90 至 170 mm、Y=0 至 55 mm、Z=0 至 3 mm。'
-     '盒体或上盖各有4个直径6mm的通孔。两个独立实体。', 12, 6, False, 'engineering_verification_unavailable'),
+     '盒体或上盖各有4个直径6mm的通孔。两个独立实体。', 12, 6, False, 'model_contract_only'),
 ])
-async def test_native_source_semantics_gate_candidates(objective, depth, diameter, omit_through, expected):
+async def test_native_model_contract_drives_geometry_and_review(objective, depth, diameter, omit_through, expected):
     await _native_source_semantics_candidate_contract(objective, depth, diameter, omit_through, expected)
 
 
@@ -5164,10 +5169,10 @@ async def test_native_source_semantics_gate_candidates(objective, depth, diamete
     pytest.param('贯穿圆孔直径4.6mm', 4, False, 'agent_geometry_validation_failed', id='zh-blind-rejected'),
     pytest.param('through circular hole, diameter 4.6mm', 12, False, 'passed', id='en-through-commit'),
     pytest.param('through circular hole, diameter 4.6mm', 4, False, 'agent_geometry_validation_failed', id='en-blind-rejected'),
-    pytest.param('贯穿圆孔直径4.6mm', 12, True, 'requirement_binding_mismatch', id='omitted-predicate-rejected'),
-    pytest.param('孔径4.6mm，孔沿曲折路径贯穿', 12, False, 'engineering_verification_unavailable', id='unknown-path-rejected'),
+    pytest.param('贯穿圆孔直径4.6mm', 12, True, 'model_contract_only', id='omitted-predicate-review-rejected'),
+    pytest.param('孔径4.6mm，孔沿曲折路径贯穿', 12, False, 'agent_geometry_validation_failed', id='unknown-path-rejected'),
 ])
-async def test_source_predicate_coverage_reaches_candidate_gate(objective, depth, omit_through, expected):
+async def test_predicate_proposals_are_frozen_and_measured(objective, depth, omit_through, expected):
     await _native_source_semantics_candidate_contract(objective, depth, 4.6, omit_through, expected,
         commit=expected == 'passed', require_passage_evidence=True)
 
@@ -5177,9 +5182,9 @@ async def test_source_predicate_coverage_reaches_candidate_gate(objective, depth
     pytest.param('2个直径4mm的通孔。', id='confirmed-second-group'),
     pytest.param('孔径4mm。', id='confirmed-conflicting-diameter'),
 ])
-async def test_cross_source_hole_populations_stop_before_model_dispatch(dimensions):
+async def test_cross_source_hole_proposals_remain_model_owned(dimensions):
     await _native_source_semantics_candidate_contract('板80×40×8mm，2个直径6mm的通孔。',
-        8, 6, False, 'engineering_verification_unavailable', basis_dimensions=dimensions)
+        8, 6, False, 'model_contract_only', basis_dimensions=dimensions)
 
 
 @pytest.mark.asyncio(loop_scope='module')
@@ -5229,58 +5234,56 @@ async def test_plus_joined_hole_groups_reach_review_and_commit():
 @pytest.mark.parametrize('clause,depth,omit_through,expected', [
     pytest.param('孔须打通', 12, False, 'passed', id='original-through-commit'),
     pytest.param('孔须打通', 6, False, 'agent_geometry_validation_failed', id='original-blind'),
-    pytest.param('孔须打通', 6, True, 'requirement_binding_mismatch', id='omitted-predicate'),
+    pytest.param('孔须打通', 6, True, 'agent_geometry_validation_failed', id='omitted-predicate'),
     pytest.param('孔需打通', 6, False, 'agent_geometry_validation_failed', id='need-blind'),
     pytest.param('孔要打通', 6, False, 'agent_geometry_validation_failed', id='want-blind'),
     pytest.param('孔要穿过整块板', 6, False, 'agent_geometry_validation_failed', id='whole-plate-blind'),
-    pytest.param('孔钻到另一个零件里', 6, False, 'engineering_verification_unavailable', id='unknown-action'),
-    pytest.param('孔要穿过未知对象', 6, False, 'engineering_verification_unavailable', id='unknown-target'),
+    pytest.param('孔钻到另一个零件里', 6, False, 'model_contract_only', id='unknown-action'),
+    pytest.param('孔要穿过未知对象', 6, False, 'model_contract_only', id='unknown-target'),
 ])
-async def test_f01_passage_clauses_gate_real_candidates(clause, depth, omit_through, expected):
+async def test_f01_passage_proposals_preserve_contract_and_geometry_gate(clause, depth, omit_through, expected):
     await _native_source_semantics_candidate_contract(f'板40×30×12mm，孔径6mm，{clause}。',
-        depth, 6, omit_through, expected, commit=expected == 'passed', require_passage_evidence=True,
-        unbound_clause=clause if expected == 'engineering_verification_unavailable' else None)
+        depth, 6, omit_through, expected, commit=expected == 'passed', require_passage_evidence=True)
 
 
 @pytest.mark.asyncio(loop_scope='module')
 @pytest.mark.parametrize('clause,depth,omit_through,expected', [
     pytest.param('两端开口的圆孔直径6mm', 12, False, 'passed', id='nominal-through-commit'),
     pytest.param('两端开口的圆孔直径6mm', 6, False, 'agent_geometry_validation_failed', id='nominal-blind'),
-    pytest.param('两端开口的圆孔直径6mm', 6, True, 'requirement_binding_mismatch', id='nominal-omitted'),
+    pytest.param('两端开口的圆孔直径6mm', 6, True, 'agent_geometry_validation_failed', id='nominal-omitted'),
     pytest.param('两端均开口的圆孔直径6mm', 6, False, 'agent_geometry_validation_failed', id='variant-blind'),
-    pytest.param('沿未知路径的圆孔直径6mm', 6, False, 'engineering_verification_unavailable', id='unknown-prefix'),
-    pytest.param('请创建一个沿未知路径的圆孔直径6mm', 6, False, 'engineering_verification_unavailable', id='request-unknown-prefix'),
+    pytest.param('沿未知路径的圆孔直径6mm', 6, False, 'model_contract_only', id='unknown-prefix'),
+    pytest.param('请创建一个沿未知路径的圆孔直径6mm', 6, False, 'model_contract_only', id='request-unknown-prefix'),
 ])
-async def test_f02_nominal_qualifiers_gate_real_candidates(clause, depth, omit_through, expected):
+async def test_f02_nominal_proposals_preserve_contract_and_geometry_gate(clause, depth, omit_through, expected):
     await _native_source_semantics_candidate_contract(f'板40×30×12mm，{clause}。',
-        depth, 6, omit_through, expected, commit=expected == 'passed', require_passage_evidence=True,
-        unbound_clause=clause if expected == 'engineering_verification_unavailable' else None)
+        depth, 6, omit_through, expected, commit=expected == 'passed', require_passage_evidence=True)
 
 
 @pytest.mark.asyncio(loop_scope='module')
 @pytest.mark.parametrize('objective,dimensions,depth,omit_through,expected', [
     pytest.param('板，孔径6mm，孔要穿过整块板。', '板40×30×12mm', 12, False, 'passed', id='split-through-commit'),
     pytest.param('板，孔径6mm，孔要穿过整块板。', '板40×30×12mm', 6, False, 'agent_geometry_validation_failed', id='split-blind'),
-    pytest.param('板，孔径6mm，孔要穿过整块板。', '板40×30×12mm', 6, True, 'requirement_binding_mismatch', id='split-omitted'),
+    pytest.param('板，孔径6mm，孔要穿过整块板。', '板40×30×12mm', 6, True, 'agent_geometry_validation_failed', id='split-omitted'),
     pytest.param('孔径6mm，孔须穿透板厚。', '板40×30×12mm', 12, False, 'passed', id='target-in-confirmed-field'),
     pytest.param('两端开口的圆孔直径6mm。', '板40×30×12mm', 6, False, 'agent_geometry_validation_failed', id='nominal-split-blind'),
-    pytest.param('盖板孔径6mm，孔要穿过整块板。', '板40×30×12mm', 12, False, 'engineering_verification_unavailable', id='different-owner'),
+    pytest.param('盖板孔径6mm，孔要穿过整块板。', '板40×30×12mm', 12, False, 'model_contract_only', id='different-owner'),
 ])
-async def test_f03_saved_fields_gate_real_candidates(objective, dimensions, depth, omit_through, expected):
+async def test_f03_cross_field_proposals_preserve_contract_and_geometry_gate(objective, dimensions, depth, omit_through, expected):
     await _native_source_semantics_candidate_contract(objective, depth, 6, omit_through, expected,
-        basis_dimensions=dimensions, commit=expected == 'passed', require_passage_evidence=True,
-        unbound_clause='孔要穿过整块板' if expected == 'engineering_verification_unavailable' else None)
+        basis_dimensions=dimensions, commit=expected == 'passed', require_passage_evidence=True)
 
 
 async def _native_source_semantics_candidate_contract(objective, depth, diameter, omit_through, expected,
                                                      *, basis_dimensions=None, mixed_holes=None, blind_index=None,
-                                                     commit=False, extra_cut=None, require_passage_evidence=False,
-                                                     unbound_clause=None):
+                                                     commit=False, extra_cut=None, require_passage_evidence=False):
     """Incident proposals through real Temporal/PG/FreeCAD/STEP/S3 and review.
 
-    Only requirements and modeling inputs are controlled. The source binding,
-    kernel execution, independent measurements, saved Head and candidate writes
-    are real. Visual/DFM checks are disabled, not reported as passing.
+    Only requirements and modeling inputs are controlled. The model owns source
+    interpretation; kernel execution and independent checks of its frozen
+    contract are real. Intentionally incomplete proposals are review-rejected,
+    never called complete user-requirement coverage or committed as successes.
+    Visual/DFM checks are disabled, not reported as passing.
     """
     from app.contracts.acceptance_v2 import AcceptanceContractV2
     from app.freecad.contracts import FreeCADOperationPlan
@@ -5294,9 +5297,10 @@ async def _native_source_semantics_candidate_contract(objective, depth, diameter
         async def requirements_generation(self, objective, **kwargs):
             extracted = extract_source_requirements(objective, requirement_sources=kwargs.get('requirement_sources'))
             records = extracted['requirements']
+            self.source_unsupported = bool(extracted['unsupported'])
             if extracted['unsupported']:
-                # A planner proposes the equality that caused the incident.
-                # The real source validator must refuse it before CAD runs.
+                # Retain the deliberately wrong equality from the old incident.
+                # Admission must not rewrite it into the requested predicate.
                 records = [{'requirement_id':'forged-equality', 'kind':'hole_diameter', 'property':'hole_diameter',
                     'source_quote':objective, 'comparison':{'op':'eq','value':6.,'unit':'mm'}, 'scope':{}}]
             checks = [{'check_id':r['requirement_id'], 'binding_ref':r['requirement_id'], 'kind':r['kind'],
@@ -5305,11 +5309,13 @@ async def _native_source_semantics_candidate_contract(objective, depth, diameter
                 **({'hole_group': r['hole_group']} if r.get('hole_group') else {})}
                 for r in records if not (omit_through and r['kind']=='hole_through')]
             acceptance = AcceptanceContractV2.model_validate({'objective':objective, 'checks':checks})
+            self.proposed_contract = acceptance.model_dump(mode='json')
             return CADPlan(description=objective, part_type='custom', dimensions={}, features=[], constraints=[],
                 design_brief=DesignBrief(intent_summary=objective, artifact_type='custom', acceptance=acceptance))
 
     class Operations:
         async def generate(self, **kwargs):
+            assert kwargs['requirements']['design_brief']['acceptance'] == requirements.proposed_contract
             operations = [
                 {'op_id':'base-sketch','action':'sketch.create','args':{'name':'BaseSketch'}},
                 {'op_id':'base-profile','action':'sketch.add_profile','args':{'sketch':'BaseSketch',
@@ -5392,12 +5398,14 @@ async def _native_source_semantics_candidate_contract(objective, depth, diameter
             'submission_modeling_backend':'auto', 'base_revision_id':initial.revision_id, 'base_source_kind':'none',
             'requirement_basis':{'target':'板', 'design_scope':'geometry', 'source_kind':'user_specification',
                                  'source_reference':'用户确认', 'dimensions':basis_dimensions}})
+    requirements = Requirements()
+    candidate_created = expected in {'passed', 'model_contract_only'}
     client = await get_temporal_client()
     async with build_agent_v2_workflow_worker(client, backend=get_execution_backend(),
-            durable_planner=Requirements(), freecad_operations=Operations()):
+            durable_planner=requirements, freecad_operations=Operations()):
         handle = await client.start_workflow('McadAgentWorkflowV2', request.temporal_payload(),
             id=temporal_agent_v2_workflow_id(created.workflow_id), task_queue=settings.temporal_agent_v2_task_queue)
-        if expected == 'passed':
+        if candidate_created:
             result = await handle.result()
             assert result['status'] == 'succeeded'
         else:
@@ -5411,76 +5419,79 @@ async def _native_source_semantics_candidate_contract(objective, depth, diameter
                                  {'id':initial.branch_id}) == initial.revision_id
         changes = (await conn.execute(text('SELECT id,status FROM change_sets WHERE source_workflow_run_id=:id'), values)).mappings().all()
         reports = (await conn.execute(text("SELECT evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"), values)).scalars().all()
-        if expected in {'engineering_verification_unavailable', 'requirement_binding_mismatch'}:
-            assert not reports and not changes
-            assert await conn.scalar(text('SELECT count(*) FROM execution_attempts WHERE workflow_run_id=:id'), values) == 0
-            assert await conn.scalar(text("SELECT count(*) FROM model_jobs WHERE workflow_run_id=:id "
-                "AND operation IN ('agent_v2.generate_operations','agent_v2.repair_operations')"), values) == 0
-            if unbound_clause:
-                diagnostic = (await conn.execute(text('SELECT status,error_code,error_message FROM workflow_runs WHERE id=:id'), values)).mappings().one()
-                assert diagnostic['status'] == 'failed'
-                assert diagnostic['error_code'] == expected and unbound_clause in diagnostic['error_message']
-                if os.environ.get('CAD_AGENT_TEST_EVIDENCE_DIR'):
-                    retained = Path(os.environ['CAD_AGENT_TEST_EVIDENCE_DIR']) / str(created.workflow_id)
-                    retained.mkdir(parents=True, exist_ok=True)
-                    (retained/'source-rejection.json').write_text(json.dumps({
-                        'objective': objective, 'diagnostic': dict(diagnostic), 'candidate_count': 0,
-                        'cad_attempt_count': 0, 'head_unchanged': True}, ensure_ascii=False, indent=2))
-        else:
-            assert len(reports) == 1
-            report = reports[0]
-            assert report['outcome'] == ('indeterminate' if extra_cut else 'passed' if expected=='passed' else 'failed')
-            criteria = {c['check_id']:c for c in report['acceptance_contract']['checks']}
-            evidence = {criteria[e['check_id']]['kind']:e for e in report['acceptance']['evidence']}
-            if require_passage_evidence:
-                assert {'hole_diameter', 'hole_through'} <= evidence.keys()
-                assert evidence['hole_through']['measured'] == [int(depth == 12)]
+        assert len(reports) == 1
+        report = reports[0]
+        assert AcceptanceContractV2.model_validate(report['acceptance_contract']).model_dump(mode='json') == requirements.proposed_contract
+        if omit_through:
+            assert all(c['kind'] != 'hole_through' for c in report['acceptance_contract']['checks'])
+        assert report['outcome'] == ('indeterminate' if extra_cut else 'passed' if candidate_created else 'failed')
+        criteria = {c['check_id']:c for c in report['acceptance_contract']['checks']}
+        evidence = {criteria[e['check_id']]['kind']:e for e in report['acceptance']['evidence']}
+        if require_passage_evidence and not omit_through and not requirements.source_unsupported:
+            assert {'hole_diameter', 'hole_through'} <= evidence.keys()
+            assert evidence['hole_through']['measured'] == [int(depth == 12)]
+            assert evidence['hole_diameter']['outcome'] == 'passed'
+        observed = [diameter] if mixed_holes is None else mixed_holes
+        if 'hole_diameter' in evidence:
+            assert sorted(evidence['hole_diameter']['measured']) == pytest.approx([] if extra_cut else sorted(observed))
+        if extra_cut == 'nurbs_blind':
+            inventory = evidence['hole_count']['details']['hole_inventory']
+            assert inventory['complete'] is False
+            faces = inventory['coverage']['boundary_faces']
+            assert any(f['surface_type']=='BSPLINE' and f['classification']=='unresolved' for f in faces)
+            assert len(faces) == sum(len(s['face_indices']) for b in inventory['coverage']['source_topology'] for s in b['shells'])
+        if any(c.get('hole_group') for c in criteria.values()):
+            grouped = [r for r in report['acceptance']['evidence'] if criteria[r['check_id']].get('hole_group')]
+            assert len({criteria[r['check_id']]['hole_group']['group_id'] for r in grouped}) == 2
+            for row in grouped:
+                if extra_cut:
+                    assert row['outcome'] == 'indeterminate'
+                    assert row['details']['reason'] == 'hole_inventory_incomplete'
+                    assert row['details']['hole_inventory']['complete'] is False
+                    assert 'population_evaluation' not in row['details']
+                    continue
+                evaluation = row['details']['population_evaluation']
+                assert evaluation['feature_count'] == len(observed)
+                assert evaluation['outcome'] == report['outcome']
+                if candidate_created:
+                    assert sorted(i for indices in evaluation['assignment'].values() for i in indices) == list(range(len(observed)))
+        elif not extra_cut:
+            if 'hole_count' in evidence:
+                assert evidence['hole_count']['measured'] == [1]
+            if 'hole_through' in evidence:
+                assert evidence['hole_through']['measured'] == [int(depth==12)]
                 assert evidence['hole_diameter']['outcome'] == 'passed'
-            observed = [diameter] if mixed_holes is None else mixed_holes
-            if 'hole_diameter' in evidence:
-                assert sorted(evidence['hole_diameter']['measured']) == pytest.approx([] if extra_cut else sorted(observed))
-            if extra_cut == 'nurbs_blind':
-                inventory = evidence['hole_count']['details']['hole_inventory']
-                assert inventory['complete'] is False
-                faces = inventory['coverage']['boundary_faces']
-                assert any(f['surface_type']=='BSPLINE' and f['classification']=='unresolved' for f in faces)
-                assert len(faces) == sum(len(s['face_indices']) for b in inventory['coverage']['source_topology'] for s in b['shells'])
-            if any(c.get('hole_group') for c in criteria.values()):
-                grouped = [r for r in report['acceptance']['evidence'] if criteria[r['check_id']].get('hole_group')]
-                assert len({criteria[r['check_id']]['hole_group']['group_id'] for r in grouped}) == 2
-                for row in grouped:
-                    if extra_cut:
-                        assert row['outcome'] == 'indeterminate'
-                        assert row['details']['reason'] == 'hole_inventory_incomplete'
-                        assert row['details']['hole_inventory']['complete'] is False
-                        assert 'population_evaluation' not in row['details']
-                        continue
-                    evaluation = row['details']['population_evaluation']
-                    assert evaluation['feature_count'] == len(observed)
-                    assert evaluation['outcome'] == report['outcome']
-                    if expected == 'passed':
-                        assert sorted(i for indices in evaluation['assignment'].values() for i in indices) == list(range(len(observed)))
-            elif not extra_cut:
-                if 'hole_count' in evidence:
-                    assert evidence['hole_count']['measured'] == [1]
-                if '通孔' in objective:
-                    assert evidence['hole_through']['measured'] == [int(depth==12)]
-                    assert evidence['hole_diameter']['outcome'] == 'passed'
-            if expected == 'passed':
-                assert len(changes) == 1 and changes[0]['status'] == 'pending_review'
-                for artifact in result['artifacts']:
-                    if artifact['artifact_kind'] in {'fcstd','step'}:
-                        data = await get_object(artifact['object_key'])
-                        assert hashlib.sha256(data).hexdigest() == artifact['sha256']
-            else:
-                assert not changes
-            if os.environ.get('CAD_AGENT_TEST_EVIDENCE_DIR'):
-                retained = Path(os.environ['CAD_AGENT_TEST_EVIDENCE_DIR']) / str(created.workflow_id)
-                retained.mkdir(parents=True, exist_ok=True)
-                retained.joinpath('source-coverage.json').write_text(json.dumps({
-                    'workflow_id': str(created.workflow_id), 'objective': objective, 'report': report,
-                    'candidate_count': len(changes), 'head_revision_id': str(initial.revision_id)}, ensure_ascii=False))
+        if candidate_created:
+            assert len(changes) == 1 and changes[0]['status'] == 'pending_review'
+            for artifact in result['artifacts']:
+                if artifact['artifact_kind'] in {'fcstd','step'}:
+                    data = await get_object(artifact['object_key'])
+                    assert hashlib.sha256(data).hexdigest() == artifact['sha256']
+        else:
+            assert not changes
+        if os.environ.get('CAD_AGENT_TEST_EVIDENCE_DIR'):
+            retained = Path(os.environ['CAD_AGENT_TEST_EVIDENCE_DIR']) / str(created.workflow_id)
+            retained.mkdir(parents=True, exist_ok=True)
+            retained.joinpath('model-contract.json').write_text(json.dumps({
+                'workflow_id': str(created.workflow_id), 'objective': objective, 'report': report,
+                'source_coverage_verified': False, 'incomplete_model_proposal': expected == 'model_contract_only',
+                'candidate_count': len(changes), 'head_revision_id': str(initial.revision_id)}, ensure_ascii=False))
+    if expected == 'model_contract_only':
+        # This is a documented consequence of model-owned interpretation, not
+        # successful acceptance of the user's omitted or conflicting condition.
+        assert not commit and (omit_through or requirements.source_unsupported)
+        from app.services.change_sets import reject_change_set
+        rejected = await reject_change_set(tenant_id=owner.tenant_id, reviewer_principal_id=owner.principal_id,
+            change_set_id=UUID(result['change_set_id']), review_note='测试模型合同故意遗漏或改写原始条件；拒绝候选，不视为用户需求验收通过。')
+        assert rejected.status == 'rejected'
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+            assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'),
+                                     {'id': initial.branch_id}) == initial.revision_id
+        if os.environ.get('CAD_AGENT_TEST_EVIDENCE_DIR'):
+            (retained/'review-rejected.json').write_text(json.dumps({'status': rejected.status,
+                'head_unchanged': True, 'source_coverage_verified': False}))
     if commit:
+        assert expected == 'passed'
         change = UUID(result['change_set_id'])
         await accept_change_set(tenant_id=owner.tenant_id, reviewer_principal_id=owner.principal_id,
             change_set_id=change, review_note='已核对完整孔清单、各组数量与贯穿证据；视觉和制造检查未执行。')
