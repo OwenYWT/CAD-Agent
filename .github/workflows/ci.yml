@@ -329,6 +329,8 @@ jobs:
         cache-dependency-path: frontend/package-lock.json
     - run: |-
         npm ci --prefix frontend
+        # Keep Ubuntu signature verification while its primary DNS is unavailable.
+        printf '%s\n' 'https://mirrors.edge.kernel.org/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
         python -m playwright install --with-deps chromium
     - name: Create isolated data and workflow services
       run: bash scripts/ci/services.sh up
@@ -375,6 +377,8 @@ jobs:
         cache-dependency-path: frontend/package-lock.json
     - run: |-
         npm ci --prefix frontend
+        # Keep Ubuntu signature verification while its primary DNS is unavailable.
+        printf '%s\n' 'https://mirrors.edge.kernel.org/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
         python -m playwright install --with-deps chromium
     - name: Run all deploy contracts
       run: bash scripts/ci/run.sh deploy
