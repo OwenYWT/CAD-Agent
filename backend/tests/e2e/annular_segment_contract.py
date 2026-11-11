@@ -85,7 +85,11 @@ print('ANNULAR_NATIVE_SAVED')
         result=subprocess.run(['/opt/freecad/bin/FreeCADCmd','-c',
             f'exec(compile(open({str(program)!r}).read(),{str(program)!r},"exec"))'],capture_output=True,text=True)
         if os.environ.get('CAD_INTAKE_EVIDENCE_DIR'):
-            shutil.copytree(root,Path(os.environ['CAD_INTAKE_EVIDENCE_DIR'])/'saved-models')
+            retained=Path(os.environ['CAD_INTAKE_EVIDENCE_DIR'])/'saved-models'
+            shutil.copytree(root,retained)
+            # copytree preserves TemporaryDirectory's 0700 mode; the CI uploader
+            # must be able to read these synthetic artifacts outside the container.
+            retained.chmod(0o755)
         assert result.returncode==0 and 'ANNULAR_NATIVE_SAVED' in result.stdout and 'Traceback' not in result.stdout+result.stderr,result.stdout+result.stderr
         reports=[]
         for case in cases:
