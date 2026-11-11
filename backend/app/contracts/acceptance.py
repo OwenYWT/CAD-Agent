@@ -19,7 +19,12 @@ class MeasurementScope(AcceptanceModel):
     axis: tuple[float, float, float] | None = Field(default=None,
         description="Numeric direction vector in the document axes; required for overall_dimension and hole_position. Never a text axis name.")
     point_mm: tuple[float, float, float] | None = None
-    centers_mm: tuple[tuple[float, float, float], ...] = ()
+    centers_mm: tuple[tuple[float, float, float], ...] = Field(default=(), description=(
+        "For hole_position, provide one expected center per distinct selected cylindrical passage, "
+        "matched one-to-one with the measured holes. Position is transverse to scope.axis; "
+        "points at different axial heights of the same hole are not separate hole centers. "
+        "For surface_clearance, provide two surface-interior points, one on each face. "
+        "For void_connected, provide the explicit void points whose connectivity is tested."))
     region_min_mm: tuple[float, float, float] | None = None
     region_max_mm: tuple[float, float, float] | None = None
     wall_mode: Literal["continuous_normal", "surface_normal", "radial", "local_probe"] = "continuous_normal"
