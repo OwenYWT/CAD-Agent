@@ -190,21 +190,24 @@ class AcceptanceContract(AcceptanceModel):
 # alternative. A flat nullable nominal/optional scope plus allOf alone suggested
 # invalid inputs to real providers. Canonical persisted contracts stay unchanged.
 class _AxisScope(MeasurementScope):
-    axis: tuple[float, float, float]
+    axis: tuple[float, float, float] = Field(description=MeasurementScope.model_fields['axis'].description)
 
 
 class _PositionScope(_AxisScope):
-    centers_mm: tuple[tuple[float,float,float], ...] = Field(min_length=1)
+    centers_mm: tuple[tuple[float,float,float], ...] = Field(
+        min_length=1, description=MeasurementScope.model_fields['centers_mm'].description)
 
 
 class _VoidScope(MeasurementScope):
-    centers_mm: tuple[tuple[float,float,float], ...] = Field(min_length=2)
+    centers_mm: tuple[tuple[float,float,float], ...] = Field(
+        min_length=2, description=MeasurementScope.model_fields['centers_mm'].description)
     region_min_mm: tuple[float,float,float]
     region_max_mm: tuple[float,float,float]
 
 
 class _FacePairScope(MeasurementScope):
-    centers_mm: tuple[tuple[float,float,float], ...] = Field(min_length=2,max_length=2)
+    centers_mm: tuple[tuple[float,float,float], ...] = Field(
+        min_length=2, max_length=2, description=MeasurementScope.model_fields['centers_mm'].description)
 
 
 class _ToolCheck(AcceptanceCheck):

@@ -238,6 +238,17 @@ def test_engineering_tool_schema_requires_contract_at_the_actual_runtime_locatio
     for model,name,payload in [(CADPlan,'submit_cad_plan',{'description':'part','part_type':'custom','dimensions':{},'features':[]}),
                                (ModificationPlan,'submit_modification_plan',{'description':'change','modification_type':'dimension_change'})]:
         schema=_planning_format(model,name,True)['tools'][0]['function']['parameters']
+        for kind, wording in [('hole_position', 'matched one-to-one'),
+                              ('surface_clearance', 'one on each face'),
+                              ('void_connected', 'whose connectivity is tested')]:
+            check_ref = schema['$defs']['AcceptanceCheck']['discriminator']['mapping'][kind].split('/')[-1]
+            scope_ref = schema['$defs'][check_ref]['properties']['scope']['$ref'].split('/')[-1]
+            scope = schema['$defs'][scope_ref]
+            assert wording in scope['properties']['centers_mm'].get('description', '')
+            assert 'centers_mm' in scope['required']
+            if kind == 'hole_position':
+                assert 'document axes' in scope['properties']['axis'].get('description', '')
+                assert 'axis' in scope['required']
         with pytest.raises(jsonschema.ValidationError):jsonschema.validate(payload,schema)
         if model is CADPlan:
             with pytest.raises(jsonschema.ValidationError):

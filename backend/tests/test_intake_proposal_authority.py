@@ -85,6 +85,9 @@ def test_new_tool_proposals_do_not_request_server_owned_context(model, name):
     contract = schema['$defs']['AcceptanceContractV2']
     assert 'source_context' not in contract['properties']
     assert contract['additionalProperties'] is False
+    scope = schema['$defs']['MeasurementScopeV2']['properties']
+    assert 'matched one-to-one' in scope['centers_mm']['description']
+    assert 'document axes' in scope['axis']['description']
 
 
 def test_frozen_context_still_rejects_a_different_source_even_if_proposal_admission_exists():
