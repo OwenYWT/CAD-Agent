@@ -41,7 +41,7 @@ class SketchFrame(FrozenContract):
     The owning Body's placement then maps p into world coordinates.
     """
     schema_version: Literal["body-frame.v1"] = "body-frame.v1"
-    origin: Point3D = Field(description="Sketch origin in owning Body coordinates, in mm.")
+    origin: Point3D
     normal: tuple[Coordinate, Coordinate, Coordinate] = Field(
         description="Sketch local +Z in Body coordinates. Local +Y is unit(normal) cross unit(x_axis).")
     x_axis: tuple[Coordinate, Coordinate, Coordinate] = Field(
