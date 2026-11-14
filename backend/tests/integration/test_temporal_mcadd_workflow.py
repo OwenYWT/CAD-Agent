@@ -5880,6 +5880,7 @@ async def test_native_reference_survives_checkpoint_commit_reload_and_selected_m
         else:
             assert catalog['objects']['Hole0']['incarnation']==original['objects']['Hole0']['incarnation']
             assert catalog['uses']==[{'feature':'Chamfer','object_name':'Hole0','reference_id':operations.selected['reference_id']}]
+            tmp_path.chmod(0o755)
             for kind in ('fcstd','step'):
                 value=await get_object(artifacts[kind]['object_key'])
                 assert hashlib.sha256(value).hexdigest()==artifacts[kind]['sha256']
