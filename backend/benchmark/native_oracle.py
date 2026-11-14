@@ -159,6 +159,11 @@ def freeze(case, directory, operations=None):
     identity = {'schema_version':'native-oracle-input.v1', 'case_sha256':sha(case),
                 'operations_sha256':sha(plan),'expected_sha256':sha(oracle)}
     write_json(directory/'input.json',identity)
+    # Match the existing sandbox staging boundary: the kernel runs as a
+    # different UID. Its input mount is read-only; the private parent is kept.
+    for name in ('case.json','operations.json','expected.json','input.json'):
+        (directory/name).chmod(0o644)
+    directory.chmod(0o755)
     return identity
 
 
@@ -222,6 +227,7 @@ def execute_frozen(directory, *, runtime, image, timeout=120):
     case,plan,oracle,identity = read_frozen(directory)
     image_id = subprocess.check_output([runtime,'image','inspect','--format','{{.Id}}',image],text=True).strip()
     output = directory/'output';output.mkdir()
+    output.chmod(0o777)
     name = 'cad-oracle-'+uuid4().hex
     command = [runtime,'run','--rm','--pull=never','--name',name,'--network','none','--read-only',
         '--cap-drop','ALL','--security-opt','no-new-privileges','--memory','2g','--cpus','2','--pids-limit','256',
