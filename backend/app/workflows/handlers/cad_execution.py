@@ -32,7 +32,8 @@ from app.workflows.execution_support import _heartbeat_loop
 from app.workflows.execution_support import _run_backend_with_heartbeats
 from app.workflows.execution_support import _mark_execution_failure
 from app.workflows.revision_inputs import _freecad_revision_artifact
-from app.workflows.checkpoint_inputs import checkpoint_manifest, checkpoint_artifact
+from app.workflows.checkpoint_inputs import checkpoint_manifest, checkpoint_artifact, checkpoint_context
+from app.contracts.native_references import NativeReferenceError, validate_catalog, verify_transition
 from app.workflows.constraint_evidence import (persist_failure_snapshot, load_repair_contract, persist_repair_verification,
     load_profile_contract, persist_profile_verification)
 from app.contracts.constraint_patch import ConstraintRepairValidation
@@ -411,6 +412,7 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
     declarations: list[ArtifactInput] = []
     materialized: dict[str, Path] = {}
     task_inputs: dict[str, str] = {}
+    native_topology = None
     try:
         native_import = request.operation_context.native_import if request.operation_context else None
         if native_import and not payload.get('checkpoint_manifest_id'):
@@ -462,6 +464,23 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
             materialized[artifact_id] = base_path
             task_inputs["base"] = base_path.name
 
+            if payload.get('checkpoint_manifest_id'):
+                base_state, _ = await checkpoint_context(request, candidate_build_id, payload['checkpoint_manifest_id'])
+            else:
+                state_artifact = await _freecad_revision_artifact(request, 'state')
+                state_path = temp_dir / 'base-state.json'
+                state_download = await download_object(str(state_artifact['object_key']), state_path)
+                if (state_download['sha256'] != str(state_artifact['sha256'])
+                        or state_download['size_bytes'] != int(state_artifact['size_bytes'])):
+                    raise ApplicationError('Native reference state failed integrity verification',
+                        type='topology_reference_catalog_invalid', non_retryable=True)
+                base_state = json.loads(state_path.read_text())
+            if base_state.get('native_topology') is not None:
+                try:
+                    native_topology = validate_catalog(base_state['native_topology'], str(artifact['sha256']))
+                except NativeReferenceError as exc:
+                    raise ApplicationError(str(exc), type=exc.code, non_retryable=True) from exc
+
         repair_contract = await load_repair_contract(request,
             source_id=payload['source_id'], source_hash=source_hash)
         profile_contract = await load_profile_contract(request, source_id=payload['source_id'], source_hash=source_hash)
@@ -486,6 +505,8 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
             task['params']['expected_revision_id'] = str(request.operation_context.source_candidate_revision_id)
         if native_import:
             task['params']['import_format'] = native_import.format
+        if native_topology is not None and not native_import:
+            task['params']['native_topology'] = native_topology
         if repair_contract:
             checkpoint_hash = declarations[0].sha256 if declarations else None
             if checkpoint_hash != repair_contract.get('execution_checkpoint_hash', repair_contract['checkpoint_hash']):
@@ -670,6 +691,17 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                     raise ApplicationError(str(exc), type='profile_replan_verification_failed', non_retryable=True) from exc
                 await persist_profile_verification(request, source_id=payload['source_id'], source_hash=source_hash,
                     attempt_id=attempt_id, report=native_report)
+            state_path = outcome.files.get('state')
+            output_catalog = json.loads(state_path.read_text()).get('native_topology') if state_path else None
+            if output_catalog is not None:
+                try:
+                    validate_catalog(output_catalog, hashlib.sha256(outcome.files['fcstd'].read_bytes()).hexdigest())
+                    verify_transition(output_catalog, operation_plan.model_dump(mode='json'), native_topology)
+                except NativeReferenceError as exc:
+                    raise ApplicationError(str(exc), type=exc.code, non_retryable=True) from exc
+            elif native_topology is not None:
+                raise ApplicationError('Native reference metadata was lost during execution',
+                    type='topology_reference_catalog_missing', non_retryable=True)
             upload_heartbeat = asyncio.create_task(
                 _heartbeat_loop(
                     tenant_id=request.tenant_id,

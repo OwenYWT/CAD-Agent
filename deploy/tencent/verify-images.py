@@ -60,10 +60,12 @@ def main():
                            ("sketch_relations.py", "freecad_sketch_relations.py"),
                            ("reference_geometry.py", "freecad_reference_geometry.py"),
                            ("topology.py", "freecad_topology.py"),
+                           ("native_references.py", "freecad_native_references.py"),
                            ("capabilities.json", "freecad-capabilities.json")):
         sandbox["/opt/cad-agent/" + target] = sources["backend/app/freecad/" + source]
     for name in ("geometry_request.py", "acceptance_comparison.py", "hole_populations.py", "measurement_binding.py", "assembly_measurements.py"):
         sandbox["/opt/cad-agent/" + name] = sources["backend/app/contracts/" + name]
+    sandbox["/opt/cad-agent/freecad_native_reference_contracts.py"] = sources["backend/app/contracts/native_references.py"]
     for path, digest in sources.items():
         if path.startswith("third_party/cadskills/skills/"):
             sandbox[path.replace("third_party/cadskills/", "/opt/cadskills/", 1)] = digest

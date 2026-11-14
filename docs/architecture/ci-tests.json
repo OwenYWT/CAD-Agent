@@ -3208,7 +3208,22 @@
       "tests/test_verification_intent.py::test_chinese_physical_disclaimers_preserve_source_intent_and_geometry[\\u5236\\u9020\\u6027\\u80fd\\uff08\\u627f\\u8f7d\\u3001\\u6750\\u6599\\u3001\\u5de5\\u827a\\u53ef\\u884c\\u6027\\uff09\\u672a\\u901a\\u8fc7\\u5de5\\u7a0b\\u5206\\u6790\\u6216\\u5b9e\\u7269\\u8bd5\\u9a8c\\u9a8c\\u8bc1]",
       "tests/test_verification_intent.py::test_chinese_physical_disclaimers_preserve_source_intent_and_geometry[\\u6750\\u6599\\u6027\\u80fd\\u5c1a\\u672a\\u9a8c\\u8bc1]",
       "tests/test_design_brief.py::test_brief_does_not_add_unrequested_manufacturing_or_edge_changes",
-      "tests/test_design_brief.py::test_brief_retains_all_explicit_dimensions_relations_and_questions"
+      "tests/test_design_brief.py::test_brief_retains_all_explicit_dimensions_relations_and_questions",
+      "tests/test_native_references.py::test_native_selector_carries_only_published_identity_and_v1_is_unchanged",
+      "tests/test_native_references.py::test_reference_catalog_and_creation_transition_are_bound_to_source",
+      "tests/test_native_references.py::test_native_inspection_publishes_opaque_selectors_from_verified_state_only",
+      "tests/test_native_references.py::test_native_selector_is_accepted_in_actual_tool_plan",
+      "tests/test_native_oracle.py::test_generated_recipes_are_real_typed_plans_with_independent_expected_values",
+      "tests/test_native_oracle.py::test_blind_and_through_reference_material_and_surface_are_distinct",
+      "tests/test_native_oracle.py::test_metamorphic_scale_translation_and_rotation_keep_the_expected_invariants",
+      "tests/test_native_oracle.py::test_analytic_domain_does_not_extrapolate_invalid_recipes[radius-nan]",
+      "tests/test_native_oracle.py::test_analytic_domain_does_not_extrapolate_invalid_recipes[x-1]",
+      "tests/test_native_oracle.py::test_analytic_domain_does_not_extrapolate_invalid_recipes[depth-13]",
+      "tests/test_native_oracle.py::test_analytic_domain_does_not_extrapolate_invalid_recipes[through-False]",
+      "tests/test_native_oracle.py::test_replay_uses_frozen_operations_not_the_current_compiler",
+      "tests/test_native_oracle.py::test_missing_nan_or_boolean_measurements_cannot_pass",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_reference_survives_checkpoint_commit_reload_and_selected_modify",
+      "tests/test_native_references.py::test_native_selection_uses_complete_verified_catalog_not_display_summary"
     ],
     "allowed_skips": {
       "tests/integration/test_agent_candidate_seal.py::test_late_workflow_failure_during_cancellation_reaches_a_terminal_state": "real PostgreSQL and MinIO are required",
@@ -3627,7 +3642,8 @@
       "tests/postgres/test_provider_transport_failures.py::test_tcp_refused_without_any_http_send_can_retry": "isolated migrated PostgreSQL required",
       "tests/postgres/test_provider_transport_failures.py::test_tls_error_after_redirect_cannot_release_original_send": "isolated migrated PostgreSQL required",
       "tests/postgres/test_provider_transport_failures.py::test_tls_failure_before_http_releases_only_money_and_preserves_diagnostics": "isolated migrated PostgreSQL required",
-      "tests/postgres/test_provider_transport_failures.py::test_transport_evidence_cannot_rewrite_unknown_history": "isolated migrated PostgreSQL required"
+      "tests/postgres/test_provider_transport_failures.py::test_transport_evidence_cannot_rewrite_unknown_history": "isolated migrated PostgreSQL required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_reference_survives_checkpoint_commit_reload_and_selected_modify": "real PostgreSQL, MinIO, Temporal, and Podman are required"
     }
   },
   "durable-core": {
@@ -3841,7 +3857,8 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_intake_semantics_admission_native_measurement_and_commit[correct-annular]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_intake_semantics_admission_native_measurement_and_commit[wrong-geometry-annular]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_unsupported_measurement_reaches_native_execution_but_cannot_certify_success[False]",
-      "tests/integration/test_temporal_mcadd_workflow.py::test_unsupported_measurement_reaches_native_execution_but_cannot_certify_success[True]"
+      "tests/integration/test_temporal_mcadd_workflow.py::test_unsupported_measurement_reaches_native_execution_but_cannot_certify_success[True]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_reference_survives_checkpoint_commit_reload_and_selected_modify"
     ]
   },
   "frontend": {

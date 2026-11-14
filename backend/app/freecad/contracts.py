@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.topology.contracts import FreeCADTopologySelector
+from app.topology.contracts import FreeCADSelector
 
 
 ObjectName = Annotated[
@@ -428,7 +428,7 @@ class FeatureFilletArgs(FrozenContract):
     target: ObjectName
     radius_mm: Millimetres
     use_all_edges: bool = True
-    selector: FreeCADTopologySelector | None = None
+    selector: FreeCADSelector | None = None
 
     @classmethod
     def __get_pydantic_json_schema__(cls, core_schema, handler):
@@ -448,7 +448,7 @@ class FeatureChamferArgs(FrozenContract):
     target: ObjectName
     size_mm: Millimetres
     use_all_edges: bool = True
-    selector: FreeCADTopologySelector | None = None
+    selector: FreeCADSelector | None = None
     edge_scope: Literal["outer", "hole_mouths", "all"] | None = None
 
     @classmethod

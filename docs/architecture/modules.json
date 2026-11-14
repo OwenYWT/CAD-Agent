@@ -664,6 +664,8 @@
     "backend/app/freecad/state_contract.py": "M04",
     "backend/app/freecad/state_projector.py": "M04",
     "backend/app/freecad/topology.py": "M04",
+    "backend/app/freecad/native_references.py": "M04",
+    "backend/app/contracts/native_references.py": "P00",
     "backend/app/fusion360/__init__.py": "M10",
     "backend/app/fusion360/adapter.py": "M10",
     "backend/app/fusion360/agent_api.py": "M10",
@@ -1408,7 +1410,10 @@
         "freecad_cut_diagnostics_contract",
         "freecad_parameter_dependencies_contract",
         "acceptance-comparison-v2",
-        "measurement-binding"
+        "measurement-binding",
+        "freecad_native_reference_contract",
+        "native-oracle",
+        "native-oracle-controls"
       ]
     },
     "deploy-smoke/packaged-browser/report.json": {
@@ -1811,6 +1816,31 @@
     "mcad-core/native/rectangular-assembly-receiver.log": {
       "kind": "marker",
       "marker": "CAD_ASSEMBLY_RECEIVER=",
+      "job": "mcad-core"
+    },
+    "mcad-core/native/freecad_native_reference_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_NATIVE_REFERENCE_CONTRACT=",
+      "job": "mcad-core"
+    },
+    "mcad-core/native/native-oracle/report.json": {
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "planned": 39,
+        "counts": {
+          "passed": 39
+        },
+        "model_calls": 0
+      },
+      "job": "mcad-core"
+    },
+    "mcad-core/native/native-oracle-controls/report.json": {
+      "kind": "json",
+      "fields": {
+        "passed": true,
+        "model_calls": 0
+      },
       "job": "mcad-core"
     }
   },

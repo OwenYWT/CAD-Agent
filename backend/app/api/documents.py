@@ -326,7 +326,8 @@ async def inspect_document(document_id: UUID, body: DocumentInspectionRequest,
             rows = [dict(a) for a in (await conn.execute(text("SELECT * FROM artifacts WHERE id=:id"),
                 {"id": UUID(projection["state"]["artifact_id"])})).mappings()]
         state, digest = await read_verified_state_artifact(rows)
-        return {**inspect_state(state, body.query), "revision_id": str(body.revision_id), "artifact_sha256": digest}
+        return {**inspect_state(state, body.query, revision_id=body.revision_id),
+                "revision_id": str(body.revision_id), "artifact_sha256": digest}
     except Exception as exc:
         raise public_error(exc) from exc
 

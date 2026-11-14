@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 class InspectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     objects: list[str] = Field(min_length=1, max_length=8)
-    fields: list[Literal["properties", "constraints", "geometry", "topology", "dependencies"]] = Field(min_length=1, max_length=5)
+    fields: list[Literal["properties", "constraints", "geometry", "topology", "dependencies", "references"]] = Field(min_length=1, max_length=6)
     offset: int = Field(default=0, ge=0, le=5000, strict=True)
     limit: int = Field(default=16, ge=1, le=32, strict=True)
 
@@ -54,7 +54,7 @@ def validate_constraint_edit_authority(plan: 'FreeCADOperationPlan', state: dict
             )
 
 
-def inspect_state(state: dict, request: InspectionRequest) -> dict:
+def inspect_state(state: dict, request: InspectionRequest, *, revision_id=None) -> dict:
     state = normalize_reference_state(state)
     by_name = {o["name"]: o for o in state.get("objects", [])}
     result = []
@@ -73,6 +73,19 @@ def inspect_state(state: dict, request: InspectionRequest) -> dict:
                 values = [{"name": k, "value": str(v)[:500] if isinstance(v,str) else v}
                           for k,v in obj.get("properties", {}).items()]
                 known = len(values)
+            elif field == 'references':
+                from app.contracts.native_references import selectors
+                catalog = state.get('native_topology')
+                revision = revision_id if revision_id is not None else state.get('revision_id')
+                if not catalog or name not in catalog.get('objects', {}) or revision is None:
+                    detail[field] = {'status': 'unavailable', 'reason': 'no_verified_native_reference_catalog'}
+                    continue
+                bindings = selectors(catalog, name, revision)
+                owner = catalog['objects'].get(name, {})
+                values = [{'selector': selector, **{k: ref[k] for k in ('geometry_type', 'center_mm', 'radius_mm') if k in ref},
+                           'creation': owner['origin']}
+                          for selector, ref in zip(bindings, owner.get('references', []))]
+                known = owner['coverage']['total']
             elif field == "dependencies":
                 values = obj.get("out", [])
                 known = len(values)

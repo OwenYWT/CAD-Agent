@@ -110,6 +110,9 @@ def project_semantic_state(document_id: UUID, state: dict[str, Any], *,
             revision_created=old.get("revision_created") if old else str(revision_id) if revision_id and previous is not None else None,
             last_modified=old.get("last_modified") if old and old.get("content_sha256") == digest else str(revision_id) if revision_id else None,
             topology_bindings=measured_topology_bindings(obj, revision_id))
+        if state.get('native_topology') is not None:
+            from app.contracts.native_references import selectors
+            feature['native_topology_bindings'] = selectors(state['native_topology'], name, revision_id)[:32]
         # Presentation metadata is outside the established feature fingerprint:
         # a projector upgrade cannot manufacture edits to historical geometry.
         structure = obj.get("structure", {})

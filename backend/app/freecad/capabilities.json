@@ -53,18 +53,18 @@
           "minItems": 3,
           "prefixItems": [
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             }
           ],
@@ -73,8 +73,8 @@
         },
         "rotation_deg": {
           "default": 0,
-          "maximum": 360.0,
-          "minimum": -360.0,
+          "maximum": 360,
+          "minimum": -360,
           "title": "Rotation Deg",
           "type": "number"
         },
@@ -90,18 +90,18 @@
           "minItems": 3,
           "prefixItems": [
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             }
           ],
@@ -137,18 +137,18 @@
           "minItems": 3,
           "prefixItems": [
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             }
           ],
@@ -157,8 +157,8 @@
         },
         "rotation_deg": {
           "default": 0,
-          "maximum": 360.0,
-          "minimum": -360.0,
+          "maximum": 360,
+          "minimum": -360,
           "title": "Rotation Deg",
           "type": "number"
         },
@@ -167,18 +167,18 @@
           "minItems": 3,
           "prefixItems": [
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             }
           ],
@@ -252,6 +252,57 @@
     },
     "feature.chamfer": {
       "$defs": {
+        "FreeCADNativeTopologySelector": {
+          "additionalProperties": false,
+          "description": "A server-published native identity; callers cannot supply native names.",
+          "properties": {
+            "backend": {
+              "const": "freecad",
+              "default": "freecad",
+              "title": "Backend",
+              "type": "string"
+            },
+            "object_name": {
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "title": "Object Name",
+              "type": "string"
+            },
+            "reference_id": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Reference Id",
+              "type": "string"
+            },
+            "revision_id": {
+              "format": "uuid",
+              "title": "Revision Id",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "topology-selector.v2",
+              "default": "topology-selector.v2",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "subelement_kind": {
+              "enum": [
+                "face",
+                "edge"
+              ],
+              "title": "Subelement Kind",
+              "type": "string"
+            }
+          },
+          "required": [
+            "revision_id",
+            "object_name",
+            "subelement_kind",
+            "reference_id"
+          ],
+          "title": "FreeCADNativeTopologySelector",
+          "type": "object"
+        },
         "FreeCADTopologySelector": {
           "additionalProperties": false,
           "description": "Persistable native selector, never a raw FaceN/EdgeN reference.",
@@ -324,8 +375,8 @@
             "radius_mm": {
               "anyOf": [
                 {
-                  "exclusiveMinimum": 0.0,
-                  "maximum": 1000000.0,
+                  "exclusiveMinimum": 0,
+                  "maximum": 1000000,
                   "type": "number"
                 },
                 {
@@ -356,8 +407,8 @@
             },
             "tolerance_mm": {
               "default": 1e-05,
-              "exclusiveMinimum": 0.0,
-              "maximum": 10.0,
+              "exclusiveMinimum": 0,
+              "maximum": 10,
               "title": "Tolerance Mm",
               "type": "number"
             }
@@ -377,20 +428,20 @@
           "additionalProperties": false,
           "properties": {
             "x": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "X",
               "type": "number"
             },
             "y": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "Y",
               "type": "number"
             },
             "z": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "Z",
               "type": "number"
             }
@@ -490,14 +541,18 @@
               "$ref": "#/$defs/FreeCADTopologySelector"
             },
             {
+              "$ref": "#/$defs/FreeCADNativeTopologySelector"
+            },
+            {
               "type": "null"
             }
           ],
-          "default": null
+          "default": null,
+          "title": "Selector"
         },
         "size_mm": {
-          "exclusiveMinimum": 0.0,
-          "maximum": 1000000.0,
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
           "title": "Size Mm",
           "type": "number"
         },
@@ -524,6 +579,57 @@
     },
     "feature.fillet": {
       "$defs": {
+        "FreeCADNativeTopologySelector": {
+          "additionalProperties": false,
+          "description": "A server-published native identity; callers cannot supply native names.",
+          "properties": {
+            "backend": {
+              "const": "freecad",
+              "default": "freecad",
+              "title": "Backend",
+              "type": "string"
+            },
+            "object_name": {
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "title": "Object Name",
+              "type": "string"
+            },
+            "reference_id": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Reference Id",
+              "type": "string"
+            },
+            "revision_id": {
+              "format": "uuid",
+              "title": "Revision Id",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "topology-selector.v2",
+              "default": "topology-selector.v2",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "subelement_kind": {
+              "enum": [
+                "face",
+                "edge"
+              ],
+              "title": "Subelement Kind",
+              "type": "string"
+            }
+          },
+          "required": [
+            "revision_id",
+            "object_name",
+            "subelement_kind",
+            "reference_id"
+          ],
+          "title": "FreeCADNativeTopologySelector",
+          "type": "object"
+        },
         "FreeCADTopologySelector": {
           "additionalProperties": false,
           "description": "Persistable native selector, never a raw FaceN/EdgeN reference.",
@@ -596,8 +702,8 @@
             "radius_mm": {
               "anyOf": [
                 {
-                  "exclusiveMinimum": 0.0,
-                  "maximum": 1000000.0,
+                  "exclusiveMinimum": 0,
+                  "maximum": 1000000,
                   "type": "number"
                 },
                 {
@@ -628,8 +734,8 @@
             },
             "tolerance_mm": {
               "default": 1e-05,
-              "exclusiveMinimum": 0.0,
-              "maximum": 10.0,
+              "exclusiveMinimum": 0,
+              "maximum": 10,
               "title": "Tolerance Mm",
               "type": "number"
             }
@@ -649,20 +755,20 @@
           "additionalProperties": false,
           "properties": {
             "x": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "X",
               "type": "number"
             },
             "y": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "Y",
               "type": "number"
             },
             "z": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "Z",
               "type": "number"
             }
@@ -715,8 +821,8 @@
           "type": "string"
         },
         "radius_mm": {
-          "exclusiveMinimum": 0.0,
-          "maximum": 1000000.0,
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
           "title": "Radius Mm",
           "type": "number"
         },
@@ -726,10 +832,14 @@
               "$ref": "#/$defs/FreeCADTopologySelector"
             },
             {
+              "$ref": "#/$defs/FreeCADNativeTopologySelector"
+            },
+            {
               "type": "null"
             }
           ],
-          "default": null
+          "default": null,
+          "title": "Selector"
         },
         "target": {
           "maxLength": 80,
@@ -758,14 +868,14 @@
           "additionalProperties": false,
           "properties": {
             "depth_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Depth Mm",
               "type": "number"
             },
             "diameter_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Diameter Mm",
               "type": "number"
             },
@@ -787,14 +897,14 @@
           "additionalProperties": false,
           "properties": {
             "angle_deg": {
-              "exclusiveMaximum": 180.0,
-              "exclusiveMinimum": 0.0,
+              "exclusiveMaximum": 180,
+              "exclusiveMinimum": 0,
               "title": "Angle Deg",
               "type": "number"
             },
             "diameter_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Diameter Mm",
               "type": "number"
             },
@@ -844,8 +954,8 @@
         "depth_mm": {
           "anyOf": [
             {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "type": "number"
             },
             {
@@ -856,8 +966,8 @@
           "title": "Depth Mm"
         },
         "diameter_mm": {
-          "exclusiveMinimum": 0.0,
-          "maximum": 1000000.0,
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
           "title": "Diameter Mm",
           "type": "number"
         },
@@ -907,8 +1017,8 @@
           "type": "string"
         },
         "length_mm": {
-          "exclusiveMinimum": 0.0,
-          "maximum": 1000000.0,
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
           "title": "Length Mm",
           "type": "number"
         },
@@ -994,8 +1104,8 @@
       "additionalProperties": false,
       "properties": {
         "length_mm": {
-          "exclusiveMinimum": 0.0,
-          "maximum": 1000000.0,
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
           "title": "Length Mm",
           "type": "number"
         },
@@ -1033,8 +1143,8 @@
         "length_mm": {
           "anyOf": [
             {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "type": "number"
             },
             {
@@ -1080,8 +1190,8 @@
       "additionalProperties": false,
       "properties": {
         "angle_deg": {
-          "exclusiveMinimum": 0.0,
-          "maximum": 360.0,
+          "exclusiveMinimum": 0,
+          "maximum": 360,
           "title": "Angle Deg",
           "type": "number"
         },
@@ -1137,8 +1247,8 @@
       "additionalProperties": false,
       "properties": {
         "angle_deg": {
-          "exclusiveMinimum": 0.0,
-          "maximum": 360.0,
+          "exclusiveMinimum": 0,
+          "maximum": 360,
           "title": "Angle Deg",
           "type": "number"
         },
@@ -1464,8 +1574,8 @@
         "value_mm": {
           "anyOf": [
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {
@@ -1503,8 +1613,8 @@
               "type": "string"
             },
             "radius_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Radius Mm",
               "type": "number"
             }
@@ -1549,14 +1659,14 @@
           "additionalProperties": false,
           "properties": {
             "x": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "X",
               "type": "number"
             },
             "y": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "Y",
               "type": "number"
             }
@@ -1580,8 +1690,8 @@
               "$ref": "#/$defs/Point2D"
             },
             "height_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Height Mm",
               "type": "number"
             },
@@ -1591,8 +1701,8 @@
               "type": "string"
             },
             "width_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Width Mm",
               "type": "number"
             }
@@ -1664,8 +1774,8 @@
               "type": "string"
             },
             "radius_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Radius Mm",
               "type": "number"
             },
@@ -1701,8 +1811,8 @@
               "type": "string"
             },
             "radius_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Radius Mm",
               "type": "number"
             }
@@ -1719,14 +1829,14 @@
           "additionalProperties": false,
           "properties": {
             "x": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "X",
               "type": "number"
             },
             "y": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "Y",
               "type": "number"
             }
@@ -1750,8 +1860,8 @@
               "$ref": "#/$defs/Point2D"
             },
             "height_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Height Mm",
               "type": "number"
             },
@@ -1761,8 +1871,8 @@
               "type": "string"
             },
             "width_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Width Mm",
               "type": "number"
             }
@@ -1788,8 +1898,8 @@
               "type": "string"
             },
             "radius_mm": {
-              "exclusiveMinimum": 0.0,
-              "maximum": 1000000.0,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
               "title": "Radius Mm",
               "type": "number"
             },
@@ -1863,20 +1973,20 @@
           "additionalProperties": false,
           "properties": {
             "x": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "X",
               "type": "number"
             },
             "y": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "Y",
               "type": "number"
             },
             "z": {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "title": "Z",
               "type": "number"
             }
@@ -1899,18 +2009,18 @@
               "minItems": 3,
               "prefixItems": [
                 {
-                  "maximum": 1000000.0,
-                  "minimum": -1000000.0,
+                  "maximum": 1000000,
+                  "minimum": -1000000,
                   "type": "number"
                 },
                 {
-                  "maximum": 1000000.0,
-                  "minimum": -1000000.0,
+                  "maximum": 1000000,
+                  "minimum": -1000000,
                   "type": "number"
                 },
                 {
-                  "maximum": 1000000.0,
-                  "minimum": -1000000.0,
+                  "maximum": 1000000,
+                  "minimum": -1000000,
                   "type": "number"
                 }
               ],
@@ -1932,18 +2042,18 @@
               "minItems": 3,
               "prefixItems": [
                 {
-                  "maximum": 1000000.0,
-                  "minimum": -1000000.0,
+                  "maximum": 1000000,
+                  "minimum": -1000000,
                   "type": "number"
                 },
                 {
-                  "maximum": 1000000.0,
-                  "minimum": -1000000.0,
+                  "maximum": 1000000,
+                  "minimum": -1000000,
                   "type": "number"
                 },
                 {
-                  "maximum": 1000000.0,
-                  "minimum": -1000000.0,
+                  "maximum": 1000000,
+                  "minimum": -1000000,
                   "type": "number"
                 }
               ],
@@ -1992,8 +2102,8 @@
         },
         "offset_mm": {
           "default": 0.0,
-          "maximum": 1000000.0,
-          "minimum": -1000000.0,
+          "maximum": 1000000,
+          "minimum": -1000000,
           "title": "Offset Mm",
           "type": "number"
         },
@@ -2140,8 +2250,8 @@
             "value_mm": {
               "anyOf": [
                 {
-                  "maximum": 1000000.0,
-                  "minimum": -1000000.0,
+                  "maximum": 1000000,
+                  "minimum": -1000000,
                   "type": "number"
                 },
                 {
@@ -2306,8 +2416,8 @@
         "value_mm": {
           "anyOf": [
             {
-              "maximum": 1000000.0,
-              "minimum": -1000000.0,
+              "maximum": 1000000,
+              "minimum": -1000000,
               "type": "number"
             },
             {

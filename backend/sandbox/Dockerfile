@@ -128,6 +128,8 @@ COPY backend/app/freecad/sketch_relations.py /opt/cad-agent/freecad_sketch_relat
 COPY backend/sandbox/freecad_constraint_validation.py /opt/cad-agent/freecad_constraint_validation.py
 COPY backend/app/freecad/reference_geometry.py /opt/cad-agent/freecad_reference_geometry.py
 COPY backend/app/freecad/topology.py /opt/cad-agent/freecad_topology.py
+COPY backend/app/freecad/native_references.py /opt/cad-agent/freecad_native_references.py
+COPY backend/app/contracts/native_references.py /opt/cad-agent/freecad_native_reference_contracts.py
 COPY backend/sandbox/geometry_validation.py /opt/cad-agent/geometry_validation.py
 COPY backend/sandbox/feature_verification.py /opt/cad-agent/feature_verification.py
 COPY backend/sandbox/material_measurements.py /opt/cad-agent/material_measurements.py

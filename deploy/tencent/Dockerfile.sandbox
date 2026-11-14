@@ -40,6 +40,8 @@ COPY backend/sandbox/freecad_catalog.py /opt/cad-agent/freecad_catalog.py
 COPY backend/sandbox/freecad_bom.py /opt/cad-agent/freecad_bom.py
 COPY backend/sandbox/freecad_cam.py /opt/cad-agent/freecad_cam.py
 COPY backend/app/freecad/topology.py /opt/cad-agent/freecad_topology.py
+COPY backend/app/freecad/native_references.py /opt/cad-agent/freecad_native_references.py
+COPY backend/app/contracts/native_references.py /opt/cad-agent/freecad_native_reference_contracts.py
 COPY backend/sandbox/material_measurements.py /opt/cad-agent/material_measurements.py
 COPY backend/sandbox/rectangular_assembly.py /opt/cad-agent/rectangular_assembly.py
 COPY backend/app/contracts/assembly_measurements.py /opt/cad-agent/assembly_measurements.py

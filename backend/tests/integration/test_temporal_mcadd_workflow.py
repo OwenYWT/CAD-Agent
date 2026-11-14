@@ -5720,3 +5720,191 @@ async def test_cadquery_modification_requires_semantic_acceptance(proposal):
             change_set_id=change, review_note='确认修改后的真实孔径；视觉和制造检查未执行。')
         assert (await commit_change_set(tenant_id=owner.tenant_id, reviewer_principal_id=owner.principal_id,
                                        change_set_id=change)).status == 'committed'
+
+
+@pytest.mark.asyncio(loop_scope='module')
+async def test_native_reference_survives_checkpoint_commit_reload_and_selected_modify(tmp_path):
+    """Fixed provider plans; real Temporal, object store, reference authority and FreeCAD."""
+    from app.agent.durable_plan import ValidationGatePolicy, GateMode
+    from app.contracts.acceptance_v2 import AcceptanceContractV2
+    from app.contracts.native_references import validate_catalog
+    from app.freecad.contracts import FreeCADOperationPlan
+    from app.freecad.inspection import InspectionRequest, inspect_state
+    from app.freecad.operation_generator import FreeCADOperationGenerationResult
+    from app.models.schemas import CADPlan, DesignBrief, ModificationPlan
+    from app.models.workflow_requests import OperationContextV1
+    from app.services.cloud_documents import document_snapshot
+    from app.services.workflow_admission import create_document_workflow
+    from benchmark.native_oracle import cases, compile_plan
+    from tests.constraint_incident import IncidentRequirements, fixture_provenance
+    from temporalio.worker import Replayer
+    from app.workflows.agent_v2 import McadAgentWorkflowV2
+
+    def acceptance(objective, diameter):
+        return AcceptanceContractV2.model_validate({'objective':objective,'checks':[
+            {'check_id':'count','binding_ref':'count','kind':'hole_count',
+             'comparison':{'op':'eq','value':6,'unit':'count'},'description':'six holes','source_quote':objective},
+            {'check_id':'diameter','binding_ref':'diameter','kind':'hole_diameter',
+             'comparison':{'op':'eq','value':diameter,'unit':'mm'},'description':'hole diameter','source_quote':objective},
+        ]})
+
+    class Requirements(IncidentRequirements):
+        async def requirements_generation(self, objective, **kwargs):
+            return CADPlan(description=objective,part_type='custom',dimensions={},features=[],constraints=[],
+                design_brief=DesignBrief(intent_summary=objective,artifact_type='plate',acceptance=acceptance(objective,6)))
+
+        async def requirements_modification(self, existing_code, objective, **kwargs):
+            proposal=ModificationPlan(description=objective,modification_type='add_feature',
+                target_params={},acceptance=acceptance(objective,8))
+            from types import SimpleNamespace
+            from openai.types.chat import ChatCompletionChunk
+            from app.llm import LLMClientAdapter
+            from app.services import llm_usage
+            from tests.test_llm_stream_integrity import Stream
+            async def create(**request):
+                assert request['stream']
+                return Stream([ChatCompletionChunk(id='native-reference-proposal',created=1,
+                    object='chat.completion.chunk',model='controlled-proposals',choices=[{
+                        'index':0,'delta':{'role':'assistant','tool_calls':[{'index':0,'id':'proposal',
+                            'type':'function','function':{'name':'submit_modification_plan',
+                                'arguments':proposal.model_dump_json()}}]},'finish_reason':'tool_calls'}])])
+            self.planner._client=LLMClientAdapter(SimpleNamespace(chat=SimpleNamespace(
+                completions=SimpleNamespace(create=create))),settings.model_copy(update={
+                    'llm_provider':'controlled-proposals','llm_max_retries':0}),sink=llm_usage)
+            return await super().requirements_modification(existing_code,objective,**kwargs)
+
+        def compose_modification(self, *args, **kwargs):
+            plan=super().compose_modification(*args,**kwargs)
+            off=ValidationGatePolicy(mode=GateMode.DISABLED,repair_budget=0)
+            return plan.model_copy(update={'validation_policy':plan.validation_policy.model_copy(update={
+                'visual':off,'dfm':off,'geometry':plan.validation_policy.geometry.model_copy(update={'repair_budget':0})})})
+
+    class Operations:
+        def __init__(self):
+            self.calls=0
+            self.selected=None
+
+        async def generate(self, **kwargs):
+            self.calls+=1
+            state=kwargs['base_state']
+            if kwargs['plan'].operation=='modify':
+                assert state['selection_context']['topology_selector']==self.selected
+                reply=inspect_state(state,InspectionRequest(objects=['Hole0'],fields=['references'],offset=32,limit=32))
+                assert any(row['selector']==self.selected for row in reply['objects'][0]['references']['items'])
+                raw={'operations':[
+                    {'op_id':'resize','action':'property.set','args':{'object':'Hole0','property':'Diameter','value':8}},
+                    {'op_id':'rim','action':'feature.chamfer','args':{'name':'Chamfer','target':'Hole0','size_mm':.5,
+                        'use_all_edges':False,'selector':self.selected}},
+                    {'op_id':'final','action':'document.export','args':{'formats':['fcstd','step']}}]}
+            elif state is None:
+                raw=compile_plan(cases()[0]);raw['execution_mode']='checkpoint'
+                circle=next(op for op in raw['operations'] if op['op_id']=='hole-0-profile')
+                circle['args']['geometry']['center']={'x':7,'y':7}
+                cut_index=next(i for i,op in enumerate(raw['operations']) if op['action']=='feature.hole')
+                raw['operations'][cut_index:cut_index]=[{'op_id':f'extra-circle-{i}','action':'sketch.add_profile',
+                    'args':{'sketch':'Profile0','geometry':{'kind':'circle','center':{'x':x,'y':y},'radius_mm':3}}}
+                    for i,(x,y) in enumerate(((20,7),(33,7),(7,23),(20,23),(33,23)))]
+                raw['operations'][-1]['args']['formats']=['fcstd']
+            else:
+                validate_catalog(state['native_topology'])
+                assert state['native_topology']['objects']['Hole0']['references']
+                raw={'operations':[{'op_id':'final','action':'document.export','args':{'formats':['fcstd','step']}}]}
+            plan=FreeCADOperationPlan.model_validate(raw);source=plan.model_dump_json()
+            return FreeCADOperationGenerationResult(operation_plan=plan,source_code=source,
+                generator_kind='native-reference-regression',provenance=fixture_provenance(source))
+
+    owner,project_id,initial=await _seed_project('native-reference')
+    client=await get_temporal_client();operations=Operations();base=initial.revision_id
+    original=None
+    for operation in ('generate','modify'):
+        objective=('40x30x12 mm plate with six 6 mm through holes in two rows.' if operation=='generate'
+                   else 'Keep six holes; set Hole0 diameter to 8 mm and chamfer the selected top edge by 0.5 mm.')
+        payload={'objective':objective,'operation':operation,'modeling_backend':'freecad',
+                 'branch_id':str(initial.branch_id),'expected_base_revision_id':str(base),'output_formats':['step']}
+        if operation=='modify':
+            projection=await document_snapshot(owner,initial.branch_id)
+            feature=next(f for f in projection['features'] if f['kernel_name']=='Hole0')
+            async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+                artifact=(await conn.execute(text("SELECT id,sha256 FROM artifacts WHERE revision_id=:id AND artifact_kind='fcstd'"),
+                    {'id':base})).mappings().one()
+            context=OperationContextV1(rule='explicit_rest_operation',source_channel='rest',requested_operation='modify',
+                resolved_operation='modify',requested_modeling_backend='freecad',submission_modeling_backend='freecad',
+                base_revision_id=base,base_source_kind='fcstd_artifact',base_source_id=artifact['id'],base_source_sha256=artifact['sha256'],
+                selection_context={'revision_id':base,'state_version':projection['state_version'],
+                    'feature_ids':[feature['id']],'topology_selector':operations.selected})
+            payload['operation_context']=context.model_dump(mode='json')
+        async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
+            created=await create_document_workflow(conn,tenant_id=owner.tenant_id,project_id=project_id,
+                requested_by_principal_id=owner.principal_id,kind='mcad.agent.v2.'+operation,
+                idempotency_key=f'native-reference-{project_id}-{operation}',request_payload=payload)
+        request=McadAgentWorkflowV2Request(**payload,workflow_run_id=created.workflow_id,tenant_id=owner.tenant_id,
+            project_id=project_id,principal_id=owner.principal_id)
+        async with build_agent_v2_workflow_worker(client,backend=get_execution_backend(),
+                durable_planner=Requirements(),freecad_operations=operations):
+            handle=await client.start_workflow('McadAgentWorkflowV2',request.temporal_payload(),
+                id=temporal_agent_v2_workflow_id(created.workflow_id),task_queue=settings.temporal_agent_v2_task_queue)
+            for _ in range(1800):
+                phase=await handle.query('phase')
+                if phase=='waiting_confirmation':
+                    await confirm_mcad_workflow(created.workflow_id,accepted=True,
+                        note='Confirm the fixed native-reference regression input.',workflow_kind='mcad.agent.v2.'+operation)
+                if phase in {'reviewable','failed','cancelled','timed_out'}:
+                    break
+                await asyncio.sleep(.1)
+            result=await asyncio.wait_for(handle.result(),timeout=30)
+        assert result['status']=='succeeded'
+        artifacts={a['artifact_kind']:a for a in result['artifacts']}
+        state=json.loads(await get_object(artifacts['state']['object_key']))
+        catalog=validate_catalog(state['native_topology'],artifacts['fcstd']['sha256'])
+        change_set=UUID(result['change_set_id'])
+        await accept_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,change_set_id=change_set,
+            review_note='Controlled geometry regression; manufacturing and visual performance were not evaluated.')
+        committed=await commit_change_set(tenant_id=owner.tenant_id,reviewer_principal_id=owner.principal_id,change_set_id=change_set)
+        assert committed.status=='committed'
+        base=UUID(result['candidate_revision_id'])
+        projection=await document_snapshot(owner,initial.branch_id)
+        assert projection['revision_id']==str(base)
+        if operation=='generate':
+            original=catalog
+            from app.api.documents import inspect_document, DocumentInspectionRequest
+            reply=await inspect_document(initial.branch_id,DocumentInspectionRequest(revision_id=base,
+                query=InspectionRequest(objects=['Hole0'],fields=['references'],offset=32,limit=32)),principal=owner)
+            assert reply['artifact_sha256']==artifacts['state']['sha256']
+            selected=[r for r in reply['objects'][0]['references']['items']
+                      if r['selector']['subelement_kind']=='edge' and r['geometry_type']=='Part::GeomCircle'
+                      and r['center_mm']==pytest.approx([33,23,12])]
+            assert len(selected)==1
+            operations.selected=selected[0]['selector']
+            feature=next(f for f in projection['features'] if f['kernel_name']=='Hole0')
+            assert operations.selected not in feature['native_topology_bindings']
+        else:
+            assert catalog['objects']['Hole0']['incarnation']==original['objects']['Hole0']['incarnation']
+            assert catalog['uses']==[{'feature':'Chamfer','object_name':'Hole0','reference_id':operations.selected['reference_id']}]
+            for kind in ('fcstd','step'):
+                value=await get_object(artifacts[kind]['object_key'])
+                assert hashlib.sha256(value).hexdigest()==artifacts[kind]['sha256']
+                (tmp_path/('model.'+kind)).write_bytes(value)
+            code="""import sys
+sys.path.insert(0,'/opt/cad-agent')
+import FreeCAD as App,Part
+from freecad_scene import component_shapes
+d=App.openDocument('/evidence/model.fcstd')
+native=Part.makeCompound([shape for _,shape in component_shapes(d)])
+step=Part.read('/evidence/model.step')
+for shape in (native,step):
+    assert shape.isValid() and not shape.check(True)
+    cones=[f for f in shape.Faces if f.Surface.TypeId=='Part::GeomCone']
+    assert len(cones)==1 and abs(cones[0].Surface.Center.x-33)<1e-7 and abs(cones[0].Surface.Center.y-23)<1e-7
+    cylinders=[f for f in shape.Faces if f.Surface.TypeId=='Part::GeomCylinder']
+    assert len(cylinders)==6 and all(abs(f.Surface.Radius-4)<1e-7 for f in cylinders)
+assert native.cut(step).Volume+step.cut(native).Volume<1e-6
+print('CAD_NATIVE_REFERENCE_SERVICE_READBACK=passed')
+"""
+            process=await asyncio.create_subprocess_exec(settings.sandbox_command,'run','--rm','--network','none',
+                '--read-only','--tmpfs','/tmp:rw,mode=1777,size=1g','-e','PYTHONPATH=/opt/cad-agent',
+                '-v',f'{tmp_path}:/evidence:ro','--entrypoint','/opt/freecad/bin/FreeCADCmd',settings.sandbox_image,
+                '-c',code,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.STDOUT)
+            output,_=await process.communicate()
+            assert process.returncode==0 and b'CAD_NATIVE_REFERENCE_SERVICE_READBACK=passed' in output,output.decode()
+        await Replayer(workflows=[McadAgentWorkflowV2]).replay_workflow(await handle.fetch_history())
+    assert operations.calls==3

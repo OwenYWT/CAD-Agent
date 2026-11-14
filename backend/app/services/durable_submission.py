@@ -27,7 +27,7 @@ from app.models.workflow_requests import (FreeCADRevisionRestoreV1, McadExecutio
 from app.workflows.temporal import (FreeCADStructuredModificationV1, mcad_workflow_request_payload, mcad_agent_v2_request_payload, start_mcad_agent_v2_workflow, start_mcad_workflow)
 from app.services.run_state import IdempotencyConflict
 from app.services.cloud_documents import revision_design_context
-from app.freecad.selection import SelectionContextV1, SelectionError, needs_selection, freeze_selection
+from app.freecad.selection import SelectionContextV1, SelectionError, needs_selection
 
 
 _MEDIA_TYPES = {
@@ -598,12 +598,12 @@ async def submit_durable_workflow(
         if selection_context is None and not operation_context.source_candidate_revision_id and needs_selection(normalized_objective):
             raise SelectionError("请先选择目标特征；这条指令的指代无法唯一确认")
         if selection_context is not None:
-            from app.services.cloud_documents import checkpoint, authorized_document
+            from app.services.cloud_documents import checkpoint, authorized_document, freeze_checkpoint_selection
             projection = await checkpoint(principal, branch_id, expected_base_revision_id)
             async with tenant_transaction(principal.tenant_id, principal.principal_id) as connection:
                 document = await authorized_document(connection, principal, branch_id, Permission.MODIFY_DESIGN)
-            freeze_selection(projection, selection_context, revision_id=document["head_revision_id"],
-                             state_version=document["state_version"], objective=normalized_objective)
+                await freeze_checkpoint_selection(connection, projection, selection_context,
+                    revision_id=document['head_revision_id'], state_version=document['state_version'], objective=normalized_objective)
     if is_agent_v2:
         workflow_run_id, handle = await start_mcad_agent_v2_workflow(
             tenant_id=principal.tenant_id,

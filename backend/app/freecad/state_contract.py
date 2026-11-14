@@ -122,6 +122,9 @@ class FreeCADStateV2(BaseModel):
         identifiers = [parameter.id for parameter in self.parameters]
         if len(identifiers) != len(set(identifiers)):
             raise ValueError("FreeCAD state contains duplicate parameter IDs")
+        if 'native_topology' in (self.model_extra or {}):
+            from app.contracts.native_references import validate_catalog
+            validate_catalog(self.model_extra['native_topology'])
         return self
 
 

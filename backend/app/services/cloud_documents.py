@@ -50,6 +50,22 @@ async def authorized_document(connection, context: PrincipalContext, document_id
     return dict(row)
 
 
+async def freeze_checkpoint_selection(connection, projection, selection, *, revision_id, state_version, objective):
+    """Display summaries are bounded; write authority comes from the full verified state."""
+    from app.freecad.selection import SelectionError, freeze_selection
+    catalog = None
+    if selection.topology_selector and selection.topology_selector.schema_version == 'topology-selector.v2':
+        if not projection.get('state'):
+            raise SelectionError('此版本没有可核验的原生检查点')
+        rows = [dict(row) for row in (await connection.execute(text(
+            'SELECT * FROM artifacts WHERE id=:id AND revision_id=:revision'),
+            {'id': UUID(projection['state']['artifact_id']), 'revision': revision_id})).mappings()]
+        state, _ = await read_verified_state_artifact(rows, expected_sha256=projection['parameter_state_sha256'])
+        catalog = state.get('native_topology')
+    return freeze_selection(projection, selection, revision_id=revision_id, state_version=state_version,
+                            objective=objective, native_catalog=catalog)
+
+
 async def enqueue_operation(connection, *, workflow_id: UUID, tenant_id: UUID,
                             principal_id: UUID, payload: dict, idempotency_key: str,
                             request_hash: str):
@@ -70,13 +86,13 @@ async def enqueue_operation(connection, *, workflow_id: UUID, tenant_id: UUID,
     frozen_arguments = {**payload, "_feature_annotations": await annotation_context(connection, document_id)}
     selection = (payload.get("operation_context") or {}).get("selection_context")
     if selection is not None:
-        from app.freecad.selection import SelectionContextV1, SelectionError, freeze_selection
+        from app.freecad.selection import SelectionContextV1, SelectionError
         projection = await connection.scalar(text("""SELECT projection FROM document_checkpoints
             WHERE document_id=:doc AND revision_id=:revision ORDER BY projector_version DESC LIMIT 1"""),
             {"doc": document_id, "revision": doc["head_revision_id"]})
         if projection is None:
             raise SelectionError("目标检查点尚不可用，不能冻结选择")
-        frozen_arguments["_selection_context"] = freeze_selection(dict(projection),
+        frozen_arguments["_selection_context"] = await freeze_checkpoint_selection(connection, dict(projection),
             SelectionContextV1.model_validate(selection), revision_id=doc["head_revision_id"],
             state_version=doc["state_version"], objective=payload["objective"])
     from app.services.engineering_evidence import engineering_references

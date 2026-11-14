@@ -130,7 +130,7 @@ def missing_failure_inspection(context, inspections):
 _READS = {
     "freecad_discover": (CapabilityQuery, "Look up installed FreeCAD APIs, commands and workbenches. Discovery is not functional verification."),
     "freecad_describe_operation": (OperationQuery, "Read the exact argument schema for a typed modeling operation before using it."),
-    "freecad_inspect": (InspectionRequest, "Read properties, constraints, geometry and topology from the verified current document checkpoint. global_placement is a row-major 4x4 matrix mapping object-local geometry to world coordinates; unavailable measurements remain unknown."),
+    "freecad_inspect": (InspectionRequest, "Read properties, constraints, geometry, topology and native references from the verified current document checkpoint. The references field publishes selectors for the same native edge/face after parameter edits; use only returned selectors. global_placement is a row-major 4x4 matrix mapping object-local geometry to world coordinates; unavailable measurements remain unknown."),
 }
 
 

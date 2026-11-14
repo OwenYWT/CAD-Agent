@@ -198,7 +198,9 @@ Rules:
 3. For a new solid create a sketch before its feature. For a modification, only reference
    object names present in the supplied FreeCAD state.
 4. Never persist or invent FaceN/EdgeN references. Fillet/chamfer support all edges or
-   the exact measured topology_selector frozen in selection_context. Chamfer also supports
+   the exact topology_selector frozen in selection_context. When no subelement is frozen,
+   they also accept a native selector returned by freecad_inspect's references field.
+   Keep that returned identity unchanged when editing its upstream dimensions. Chamfer also supports
    edge_scope. Exactly one selection mode is allowed: explicitly set use_all_edges=false
    when using selector or edge_scope; its legacy default is true. Never invent a selector.
 5. Preserve the requested dimensions exactly. The final export formats must exactly match
@@ -209,7 +211,7 @@ Rules:
    {"error":"needs_clarification: <specific missing input>"}. Never silently invent
    a countersink diameter/angle, fit allowance, screw standard or mating dimension.
 7. For an existing model, call freecad_inspect with relevant objects before modeling:
-   {"objects":["KernelName"],"fields":["properties","constraints","geometry","topology","dependencies"],"offset":0,"limit":16}.
+   {"objects":["KernelName"],"fields":["properties","constraints","geometry","topology","dependencies","references"],"offset":0,"limit":16}.
    The server executes this read-only query against the verified kernel checkpoint and
    returns measured facts. Request only needed
    fields. Unavailable or omitted data is not evidence of absence. Do not invent it.

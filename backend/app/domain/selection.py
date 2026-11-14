@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.topology.contracts import FreeCADTopologySelector
+from app.topology.contracts import FreeCADSelector
 
 
 class SelectionContextV1(BaseModel):
@@ -11,7 +11,7 @@ class SelectionContextV1(BaseModel):
     revision_id: UUID
     state_version: int = Field(ge=0, strict=True)
     feature_ids: tuple[UUID, ...] = Field(min_length=1, max_length=8)
-    topology_selector: FreeCADTopologySelector | None = None
+    topology_selector: FreeCADSelector | None = None
 
     @model_validator(mode="after")
     def unique_targets(self):

@@ -3,7 +3,7 @@ import { inspectDocumentFeature } from "../../services/clients/documents";
 import type { CloudDocument, SemanticFeature, InspectionFieldName, InspectionPage } from "../../types/document";
 
 const FIELDS: Record<InspectionFieldName, string> = {
-  properties: "内核属性", constraints: "草图约束", geometry: "草图几何", topology: "拓扑测量", dependencies: "依赖对象",
+  properties: "内核属性", constraints: "草图约束", geometry: "草图几何", topology: "拓扑测量", dependencies: "依赖对象", references: "原生引用",
 };
 
 export default function FeatureInspection({ document, feature }: { document: CloudDocument; feature: SemanticFeature }) {
