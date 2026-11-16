@@ -81,6 +81,13 @@ def test_runtime_uses_only_official_freecad_114_appimage() -> None:
     assert freecad["version"] == "1.1.4"
     assert freecad["distribution"] == "official-appimage"
     assert freecad["command"] == "/opt/freecad/bin/FreeCADCmd"
+    ci_manifest = json.loads(
+        (ROOT / "docs/architecture/modules.json").read_text(encoding="utf-8")
+    )
+    probe_contract = ci_manifest["required_runtime_reports"][
+        "build-images/runtime-probe.json"
+    ]
+    assert probe_contract["freecad"] == freecad["version"]
     for platform in ("linux/amd64", "linux/arm64"):
         asset = freecad["asset_by_platform"][platform]
         assert asset["filename"] in dockerfile

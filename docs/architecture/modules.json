@@ -1294,7 +1294,7 @@
     "build-images/runtime-probe.json": {
       "job": "build-images",
       "kind": "runtime-probe",
-      "freecad": "1.1.3",
+      "freecad": "1.1.4",
       "operations": [
         "freecad.create_save_reopen_modify",
         "freecad.transaction_abort",
