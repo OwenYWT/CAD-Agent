@@ -1,6 +1,6 @@
 {
   "schema_version": "freecad-api-catalog.v1",
-  "freecad": "1.1.3",
+  "freecad": "1.1.4",
   "gui": true,
   "modules": [
     {
@@ -37387,6 +37387,11 @@
         {
           "name": "TechDraw.removeSvgTags",
           "doc": "string = removeSvgTags(string) -- Removes the opening and closing svg tags\nand other metatags from a svg code, making it embeddable",
+          "members": []
+        },
+        {
+          "name": "TechDraw.scrubEdges",
+          "doc": "scrubbedEdges = scrubEdges(edgeList) -- remove duplicate edges. Also converts partial overlaps into 3 edges as in: scrubEdges([A, B]) = [a shortened A, an edge for overlap region, a shortened B].",
           "members": []
         },
         {

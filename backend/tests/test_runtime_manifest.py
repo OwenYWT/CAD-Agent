@@ -73,12 +73,12 @@ def test_runtime_lock_covers_every_local_mcad_dependency() -> None:
     }
 
 
-def test_runtime_uses_only_official_freecad_113_appimage() -> None:
+def test_runtime_uses_only_official_freecad_114_appimage() -> None:
     lock = _runtime_lock()
     dockerfile = (SANDBOX / "Dockerfile").read_text(encoding="utf-8")
     freecad = lock["freecad"]
 
-    assert freecad["version"] == "1.1.3"
+    assert freecad["version"] == "1.1.4"
     assert freecad["distribution"] == "official-appimage"
     assert freecad["command"] == "/opt/freecad/bin/FreeCADCmd"
     for platform in ("linux/amd64", "linux/arm64"):

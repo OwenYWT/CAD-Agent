@@ -3592,20 +3592,38 @@ async def test_unsupported_measurement_reaches_native_execution_but_cannot_certi
 
 class _NativeAPIProgramFixture:
     """Fixed native program as input; no execution or validation output is faked."""
+    def __init__(self, *, missing_export=False, document_name='Model'):
+        self.missing_export = missing_export
+        self.document_name = document_name
+        self.repairs = 0
+
     async def generate(self,**kwargs):
         from app.freecad.contracts import FreeCADOperationPlan
         from app.freecad.operation_generator import FreeCADOperationGenerationResult
-        plan=FreeCADOperationPlan.model_validate({'operations':[
+        plan=FreeCADOperationPlan.model_validate({'document_name':self.document_name,'operations':[
             {'op_id':'native-program','action':'api.execute','args':{'source':
                 "base=document.addObject('Part::Box','Base')\nbase.Length=60;base.Width=40;base.Height=8\n"
                 "tool=document.addObject('Part::Cylinder','Tool');tool.Radius=3;tool.Height=8\n"
                 "tool.Placement.Base=App.Vector(30,20,0)\n"
                 "cut=document.addObject('Part::Cut','Final');cut.Base=base;cut.Tool=tool\n"}},
-            {'op_id':'export','action':'document.export','args':{'formats':['fcstd','step','stl'],'objects':['Final']}}]})
+            {'op_id':'export','action':'document.export','args':{'formats':['fcstd','step','stl'],
+                'objects':['MissingFinal' if self.missing_export else 'Final']}}]})
         source=plan.model_dump_json()
         return FreeCADOperationGenerationResult(operation_plan=plan,source_code=source,
             generator_kind='controlled_native_api_program',provenance={**_controlled_provenance(),
                 'provider':'controlled-native-program','response_hash':hashlib.sha256(source.encode()).hexdigest()})
+
+    async def repair(self, **kwargs):
+        from app.freecad.operation_generator import FreeCADOperationGenerator
+        from tests.test_freecad_agent_tools import ProviderTurns, call
+        from tests.constraint_incident import fixture_provenance
+        self.repairs += 1
+        assert kwargs['failure']['error_code'] == 'object_not_found'
+        objects = json.loads(kwargs['failure']['details']['available_objects_json'])
+        assert any(obj['name'] == 'Final' for obj in objects)
+        corrected = await _NativeAPIProgramFixture(document_name=self.document_name).generate()
+        provider = ProviderTurns([call('freecad_execute_api', _native_tool_request(json.loads(corrected.source_code)))])
+        return await FreeCADOperationGenerator(client=provider, provenance_reader=fixture_provenance).repair(**kwargs)
 
 
 def _native_tool_request(plan):
@@ -3985,7 +4003,7 @@ async def test_agent_v2_live_freecad_checkpoint_contract():
 
 @pytest.mark.asyncio(loop_scope='module')
 @pytest.mark.parametrize('required_diameter',[6,7])
-@pytest.mark.parametrize('execution_path',['typed','api','tools','tool_repair','checkpoint','checkpoint_repair','requirements_tool'])
+@pytest.mark.parametrize('execution_path',['typed','api','api_named_document','api_export_repair','tools','tool_repair','checkpoint','checkpoint_repair','requirements_tool'])
 async def test_native_engineering_acceptance_gates_commit(required_diameter,execution_path,output_formats=('step','stl')):
     """Real Temporal→FreeCAD→STEP→S3→DB→seal/commit, controlled requirements/vision.
 
@@ -4009,7 +4027,8 @@ async def test_native_engineering_acceptance_gates_commit(required_diameter,exec
     operation_generator = (_LiveCheckpointProvider() if execution_path=='live_checkpoints' else
         _LiveToolProvider() if execution_path=='live_tools' else
         _CheckpointToolFixture(fail_first=execution_path=='checkpoint_repair') if execution_path.startswith('checkpoint') else
-        _NativeAPIProgramFixture() if execution_path=='api' else
+        _NativeAPIProgramFixture(document_name='BEFORE_AFTER_PROGRAM_STATUS_INVOCATION_MODULES_GUI') if execution_path=='api_named_document' else
+        _NativeAPIProgramFixture(missing_export=execution_path=='api_export_repair') if execution_path in {'api','api_export_repair'} else
         _NativeToolProgramFixture(fail_first=execution_path=='tool_repair') if execution_path in {'tools','tool_repair'} else None)
     durable_planner=_EngineeringAcceptancePlanner(required_diameter)
     requirements_provider=None
@@ -4035,6 +4054,8 @@ async def test_native_engineering_acceptance_gates_commit(required_diameter,exec
             assert error.value.cause.type=='agent_geometry_validation_failed'
     if requirements_provider:
         assert requirements_provider.calls==2
+    if execution_path == 'api_export_repair':
+        assert operation_generator.repairs == 1
     async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
         rows=(await conn.execute(text("SELECT id,outcome,evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"),{'id':created.workflow_id})).mappings().all()
         assert len(rows)==1
@@ -4043,6 +4064,9 @@ async def test_native_engineering_acceptance_gates_commit(required_diameter,exec
         assert measured['hole-diameter']['measured']==[6]
         criteria={c['check_id']:c for c in report['acceptance_contract']['checks']}
         assert criteria['hole-diameter'].get('nominal',criteria['hole-diameter'].get('comparison',{}).get('value'))==required_diameter
+        if execution_path == 'api_export_repair':
+            assert await conn.scalar(text("SELECT count(*) FROM execution_attempts WHERE workflow_run_id=:id AND status='failed'"),{'id':created.workflow_id}) == 1
+            assert await conn.scalar(text("SELECT count(*) FROM agent_staging_manifests m JOIN execution_attempts a ON a.id=m.execution_attempt_id WHERE m.workflow_run_id=:id AND a.status<>'succeeded'"),{'id':created.workflow_id}) == 0
         if output_formats==('stl',):
             manifest=await conn.scalar(text('SELECT manifest FROM agent_staging_manifests WHERE workflow_run_id=:id'),{'id':created.workflow_id})
             assert 'step' not in {a['format'] for a in manifest['outputs']}
@@ -4766,7 +4790,7 @@ async def test_constraint_patch_incident_full_chain_and_owned_evidence(connected
 
 
 @pytest.mark.asyncio(loop_scope='module')
-@pytest.mark.parametrize('scenario', ['success', 'wrong-gap', 'budget', 'crossed-incident'])
+@pytest.mark.parametrize('scenario', ['success', 'wrong-gap', 'budget', 'crossed-incident', 'constraint-handoff'])
 async def test_profile_replan_full_chain_preserves_acceptance_and_checkpoints(scenario):
     from tests.profile_replan_scenario import ProfileRequirements, ProfileGenerator
     from tests.e2e.profile_replan_fixture import acceptance
@@ -4776,7 +4800,7 @@ async def test_profile_replan_full_chain_preserves_acceptance_and_checkpoints(sc
     from temporalio.worker import Replayer
     from app.workflows.agent_v2 import McadAgentWorkflowV2
     owner, project_id, initial = await _seed_project('profile-replan')
-    succeeds = scenario in {'success', 'crossed-incident'}
+    succeeds = scenario in {'success', 'crossed-incident', 'constraint-handoff'}
     from tests.e2e.scoped_repair_fixture import prepared
     objective = (prepared()['acceptance'] if scenario == 'crossed-incident' else acceptance())['objective']
     async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
@@ -4800,10 +4824,11 @@ async def test_profile_replan_full_chain_preserves_acceptance_and_checkpoints(sc
                 await handle.result()
             cause = McadAgentWorkflowV2._root_application_error(failed.value)
             assert cause.type == ('agent_freecad_repair_budget_exhausted' if scenario == 'budget' else 'agent_acceptance_scope_invalid')
-    assert generator.repairs == (2 if scenario == 'budget' else 1)
+    assert generator.repairs == (2 if scenario in {'budget', 'constraint-handoff'} else 1)
     diagnostic = await failure_diagnostic(owner, created.workflow_id)
     assert diagnostic['snapshot']['valid_checkpoint'] is False
-    assert diagnostic['snapshot']['failure']['code'] == 'profile_geometry_invalid'
+    assert diagnostic['snapshot']['failure']['code'] == (
+        'sketch_redundant_constraints' if scenario == 'constraint-handoff' else 'profile_geometry_invalid')
     async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
         events = (await conn.execute(text('SELECT event_type,payload FROM task_events WHERE workflow_run_id=:id ORDER BY sequence'),
             {'id': created.workflow_id})).mappings().all()
@@ -4812,6 +4837,9 @@ async def test_profile_replan_full_chain_preserves_acceptance_and_checkpoints(sc
         failures = (await conn.execute(text("SELECT id FROM execution_attempts WHERE workflow_run_id=:id AND status='failed'"),
             {'id': created.workflow_id})).scalars().all()
         assert not set(failures) & {m['execution_attempt_id'] for m in manifests}
+        if scenario == 'constraint-handoff':
+            assert len(failures) == 2
+            assert any(e['event_type'] == 'agent.freecad.constraint_verified' for e in events)
         assert await conn.scalar(text('SELECT head_revision_id FROM project_branches WHERE id=:id'), {'id': initial.branch_id}) == initial.revision_id
         geometry = (await conn.execute(text("SELECT evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry'"),
             {'id': created.workflow_id})).scalars().all()

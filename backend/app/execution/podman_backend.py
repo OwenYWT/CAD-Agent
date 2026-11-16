@@ -124,7 +124,7 @@ def inspect_container_runtime(command: str, image_ref: str) -> RuntimeSnapshot:
     if report.get("freecad_capabilities_sha256") != capability_contract_sha256():
         raise RuntimeError("FreeCAD host/sandbox capability contracts differ; deploy matching backend and sandbox images")
     versions = report.get("versions")
-    if not isinstance(versions, dict) or versions.get("freecad") != "1.1.3":
+    if not isinstance(versions, dict) or versions.get("freecad") != "1.1.4":
         raise RuntimeError("runtime operation probe returned wrong FreeCAD version")
     return RuntimeSnapshot(
         image_digest=_image_digest(inspected),
@@ -164,6 +164,7 @@ def _failure_mapping(result: SandboxResult) -> tuple[ExecutionStatus, ExecutionE
 
 
 _STRUCTURED_ERROR_POLICY: dict[str, tuple[ExecutionErrorCategory, bool]] = {
+    "object_not_found": (ExecutionErrorCategory.USER_CODE, False),
     "object_name_conflict": (ExecutionErrorCategory.USER_CODE, False),
     "object_type_mismatch": (ExecutionErrorCategory.USER_CODE, False),
     "agent_plan_backend_mismatch": (ExecutionErrorCategory.VALIDATION, False),

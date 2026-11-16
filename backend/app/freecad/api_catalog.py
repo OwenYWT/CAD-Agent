@@ -19,7 +19,7 @@ def query_capabilities(query: CapabilityQuery):
     if not path.is_file():
         raise ValueError('native API catalog has not been generated for this release')
     catalog=json.loads(path.read_text())
-    if catalog['freecad']!='1.1.3':
+    if catalog['freecad']!='1.1.4':
         raise ValueError('native API catalog runtime version mismatch')
     if query.category != 'api':
         if query.module is not None:

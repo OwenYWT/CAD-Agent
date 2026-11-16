@@ -35,7 +35,7 @@ from app.llm import (
 )
 
 
-_SYSTEM_PROMPT = """You are the operation planner for a headless FreeCAD 1.1.3 runtime.
+_SYSTEM_PROMPT = """You are the operation planner for a headless FreeCAD 1.1.4 runtime.
 Use the supplied function tools, one call at a time. Use freecad_discover to find
 native capabilities, freecad_describe_operation for exact typed argument schemas,
 and freecad_inspect before modifying an existing object. Call freecad_execute for
@@ -124,7 +124,7 @@ Native program (freecad_execute_api's execute.args):
 - api.execute: {source:string, environment:headless|gui, modules:[Python_module_names]}.
   Use only when typed operations cannot represent a required native capability.
   The plan must contain exactly api.execute followed by document.export. source is
-  real Python executed by FreeCAD 1.1.3, with App, Part, Sketcher and document bound.
+  real Python executed by FreeCAD 1.1.4, with App, Part, Sketcher and document bound.
   For gui, Gui is available under a virtual display. All installed native Python
   APIs may be imported; missing external solvers/plugins must fail explicitly.
   Preserve document identity and use native parametric objects where possible.

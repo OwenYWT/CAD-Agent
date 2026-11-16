@@ -9,5 +9,5 @@ import Sketcher  # noqa: F401
 import Spreadsheet  # noqa: F401
 
 
-if ".".join(App.Version()[:3]) != "1.1.3":
-    raise RuntimeError("extracted FreeCAD runtime is not version 1.1.3")
+if ".".join(App.Version()[:3]) != "1.1.4":
+    raise RuntimeError("extracted FreeCAD runtime is not version 1.1.4")

@@ -223,6 +223,7 @@ async def test_backend_rejects_success_with_missing_required_artifact(tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("error_code,category", [
+    ("object_not_found", ExecutionErrorCategory.USER_CODE),
     ("object_name_conflict", ExecutionErrorCategory.USER_CODE),
     ("object_type_mismatch", ExecutionErrorCategory.USER_CODE),
     ("sketch_conflicting_constraints", ExecutionErrorCategory.VALIDATION),

@@ -1,0 +1,97 @@
+F02 文档名回归修复交接（已完成本地修复与针对性验证，供独立复验）
+
+工作区：/Users/wentao/CAD-Agent-native-reliability
+分支：compare_YWT
+HEAD：2e68cceb91a5375d6e8e0e9ccdeefe2321c67270
+证据目录：/private/tmp/cad-api-template-repair-20261116
+
+问题及根因
+
+API 子进程通过 FCStd 文件名保持文档身份，这项既有修复需要保留。
+错误出在宏生成：先把文档路径填入 BEFORE，再对整个结果连续替换 GUI、MODULES、
+AFTER 等普通字符串，已插入路径里的同名字符被再次解释成占位符。
+因此 GUIBracket 被改成 FalseBracket.FCStd，部分名称还会破坏 Python 语法。
+同一个真实 FreeCAD 1.1.4 内核、同一组输入，在改动宏生成前后得出不同结果，
+说明此次缺陷位于项目的模板渲染层。
+
+修改范围
+
+1. backend/sandbox/freecad_api.py：复用标准库 string.Template，一次性填入参数；
+   路径和模块列表仍用 repr 转成 Python 字面量，填入值不再参加后续替换。
+   保留文档身份、子进程退出码、调用标识、状态文件、父进程重新打开与验收逻辑。
+2. backend/tests/e2e/freecad_api_contract.py：扩展现有原生用例，覆盖 11 种名称，
+   包括全部原占位符及组合；各自在 headless/GUI 环境新建、导出、继续编辑，
+   共 22 次新建和 22 次继续编辑，重读 STEP 检查体积及原 FCStd 字节不变。
+   原有表达式、布尔操作、错误程序、缺失导出对象和文档替换反例均保留。
+3. backend/tests/integration/test_temporal_mcadd_workflow.py：复用既有 API 夹具和
+   工程验收测试，增加组合名称的正反例，覆盖实际 Temporal、FreeCAD、S3、数据库、
+   审核与提交；正例目标孔径 6 mm，反例要求 7 mm 而实际仍为 6 mm。
+4. docs/architecture/ci-tests.json：为这两个服务用例登记 backend、外部服务跳过
+   声明与 durable-core；验收期间补齐的三个既有用例仍在登记中。
+
+本轮是在既有 22 个已修改文件的基础上继续开发，仅上述四个文件增加改动。
+其他 18 个既有修改文件逐字节保持不变，既存未跟踪 QA 文件全部保留。
+业务修复没有增加文档名称特判，也没有放宽几何或保存保护。
+
+真实复现与测试夹具纠正
+
+验收团队 name_matrix.py 原样运行：未修复的 1.1.4 镜像中 2 成功、6 失败；
+新镜像中 8 成功、0 失败。扩展原生回归也先在未修复镜像上失败，路径出现
+FalseBracket.FCStd。脚本源、结果 JSON 和实际模型位于 red/、green/。
+首次扩展原生测试跑到已有 RetainedPlate 继续编辑检查时失败：新增编辑操作
+覆盖了共享输出路径，测试误把编辑后文件作为原始输入，并重复使用操作编号。
+现有 operation_replay_conflict 正确拒绝。测试改从未改动的输入快照复制文件，
+没有修改生产保护。首次失败记录在 native-initial/，完整成功记录另存 native-final/。
+
+运行镜像
+
+localhost/cad-api-template:20261116-fixed
+sha256:51b8997eee201bb0561245aa577285e4675762642f89f17ebc30c6b72cc58586
+Linux ARM64，实际 FreeCAD 1.1.4。基于前轮已验证 1.1.4 镜像复制当前运行脚本；
+未再次更换内核或依赖。宿主探测通过，44 个运行时源文件哈希与工作区一致。
+本地默认别名 cad-agent-sandbox:dev 已切至修复镜像并再次探测通过；原
+localhost/cad-freecad:1.1.4-20261116 镜像保留，未覆盖其冻结验收内容。
+
+已完成结果（各层有重叠，不相加）
+
+- 后端标准 quick CI：2,810 通过，423 跳过，1 项取消选择。
+- Fusion：189 通过，1 项取消选择；CI 合同 61 通过，另有 40 个 subtest。
+- native-runtime：16 通过，零跳过，87.13 秒。
+- native_contracts.sh：完整 45 个步骤通过，每步日志 SHA256 已核对。
+- 验收团队独立名称矩阵：8 个名称全部通过。
+- 真实服务：24 通过、零跳过、200 项取消选择，518.73 秒；这是一轮针对性回归。
+  其中工程验收正反例 18 项、轮廓修复链 5 项、视觉不匹配修复回归 1 项。
+  两条新增名称用例、两条既有导出修复用例及约束移交用例，均在 XML 中确认实际通过。
+  正例完成审核与提交；孔径不合格反例没有候选，原 Head 保持不变。
+  前轮曾发生心跳超时的视觉修复用例在本轮通过，但本轮未重跑全部服务套件。
+- 新增及前轮补登记的 5 个 CI 节点，在 backend / allowed_skips / durable-core 中
+  全部存在；原生运行时 XML 也通过现有 require_test_report.py 检查。
+- 修改文件的静态检查和 git diff --check 通过。
+
+验证边界
+
+本轮使用真实 FreeCAD、数据库、Temporal、对象存储；模型与视觉边界沿用现有
+可控测试输入，没有付费调用，不能宣称真实模型生成成功率或视觉能力获验证。
+本轮不将前轮完整服务运行的结果混入当前结果，也未运行完整 GitHub Actions。
+原两条 BLG 整题仍有非流形 STL 和 L 轮廓问题，此次名称修复不等于这两题关闭。
+没有提交、推送 GitHub 或部署腾讯云；旧镜像与验收证据保留。
+
+主要证据与复跑入口
+
+verification-summary.json：分层结果、运行时摘要、执行过的登记节点；
+red/name-matrix/result.json、green/name-matrix/result.json：同一独立脚本前后对照；
+red-api-contract.log：扩展回归在修复前真实失败；
+native-initial/：测试夹具复用错误的原始失败；
+native-final/steps.json、各步骤日志：45 个成功步骤及命令、SHA256；
+backend-ci/、native-runtime.xml、targeted-services.xml：原始测试报告；
+service-evidence/：真实工作流持久化诊断及提交产物；
+runtime-probe.json、runtime-source-verification.json、default-image-verification.json；
+ci-registration-verification.json、worktree-preservation.json、repair-only.diff。
+
+真实服务执行入口为证据目录中的 run_services.py，选择表达式：
+native_engineering_acceptance_gates_commit or
+profile_replan_full_chain_preserves_acceptance_and_checkpoints or
+agent_v2_visual_mismatch_repairs_and_revalidates_geometry。
+使用独立数据库 cad_api_template_20261116，服务测试串行运行。
+原生运行入口：scripts/ci/native_contracts.sh，以及证据目录 run_native_runtime.py。
+复验请使用新的证据目录，保留本轮及此前报告原文。

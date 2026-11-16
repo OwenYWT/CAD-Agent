@@ -65,6 +65,7 @@ class McadAgentWorkflowV2:
         self._provider_streaming_v1 = False
         self._model_jobs_v1 = False
         self._native_repair_budget = None
+        self._profile_constraint_handoff_v1 = False
         self._repair_accounting_v2 = False
         self._work_accounting = None
         self._solid_count_policy = None
@@ -479,7 +480,8 @@ class McadAgentWorkflowV2:
                     if self._native_repair_budget is None:
                         try:
                             policy = json.loads((failure.get('details') or {}).get('native_repair_policy_json') or '{}')
-                            self._native_repair_budget = NativeRepairBudget(policy)
+                            self._native_repair_budget = NativeRepairBudget(policy,
+                                profile_constraint_handoff=self._profile_constraint_handoff_v1)
                         except (ValueError, TypeError):
                             raise ApplicationError('缺少有效且已保存的原生修复策略。原始错误：' + failure['error_message'],
                                 type='agent_freecad_repair_no_progress', non_retryable=True) from exc
@@ -1195,6 +1197,7 @@ class McadAgentWorkflowV2:
             self._constraint_patches_v1 = workflow.patched("agent-v2-freecad-constraint-patches-v1")
             self._scoped_repair_feedback_v1 = workflow.patched('agent-v2-scoped-repair-feedback-v1')
             progressive_repair_v1 = workflow.patched('agent-v2-progressive-native-repair-v1')
+            self._profile_constraint_handoff_v1 = workflow.patched('agent-v2-profile-constraint-handoff-v1')
             profile_replanning_v1 = workflow.patched('agent-v2-profile-replanning-v1')
             repair_accounting_v2 = workflow.patched('agent-v2-repair-accounting-v2')
             acceptance_bindings_v2 = workflow.patched('agent-v2-acceptance-bindings-v2') and self._engineering_acceptance_v1

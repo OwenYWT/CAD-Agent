@@ -159,7 +159,11 @@ def _object(document: Any, value: object, label: str) -> Any:
     name = _name(value, label)
     obj = document.getObject(name)
     if obj is None:
-        raise FreeCADRunnerError("object_not_found", f"{label} does not exist: {name}")
+        raise FreeCADRunnerError("object_not_found", f"{label} does not exist: {name}",
+            details={"object": name, "document_name": document.Name,
+                     "available_objects_json": json.dumps([
+                         {"name": item.Name, "label": item.Label} for item in document.Objects
+                     ], ensure_ascii=False)})
     return obj
 
 

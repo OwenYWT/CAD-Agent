@@ -1,0 +1,123 @@
+FreeCAD 1.1.4 本地升级交接（完整记录首轮失败与单项复测，未部署线上）
+
+工作区：/Users/wentao/CAD-Agent-native-reliability
+分支：compare_YWT
+基线提交：2e68cceb91a5375d6e8e0e9ccdeefe2321c67270
+证据目录：/private/tmp/cad-freecad-114-20261116
+
+范围与来源
+
+本轮升级的是 CAD-Agent 容器内实际调用的 FreeCAD，由 1.1.3 升至官方稳定版 1.1.4。
+官方发布说明：https://github.com/FreeCAD/FreeCAD/releases/tag/1.1.4
+官方公告：https://blog.freecad.org/2026/09/28/freecad-1-1-4-released/
+保留此前尚未提交的 BLG 修复以及原有 QA 文件，没有重置分支、覆盖补丁或清理未跟踪文件。
+本轮没有调用付费模型，也没有推送 GitHub 或切换腾讯云线上服务。
+
+改动位置
+
+1. backend/sandbox/Dockerfile、runtime-lock.json：锁定官方 1.1.4 的 ARM64/AMD64
+   AppImage 与对应 SHA256。其余依赖版本不变。
+2. backend/sandbox/freecad_build_verify.py、freecad_runtime_probe.py，
+   backend/app/execution/podman_backend.py：构建检查与真实运行时探测对应 1.1.4；
+   使用旧 1.1.3 镜像会被明确拒绝，不能只修改版本显示冒充升级。
+3. backend/app/freecad/api_catalog.json、api_catalog.py、operation_generator.py：
+   从新镜像真实 GUI 环境重新发现 API，并同步查询检查与模型所见运行时版本。
+   目录由 5,257 个符号变为 5,258 个，新增 TechDraw.scrubEdges，没有移除原有条目。
+   发现目录不等同于逐项功能验收；functional_coverage 标记保持不变。
+4. backend/app/freecad/bom_contracts.py：读取真实 1.1.4 BOM，同时继续接受已保存的
+   1.1.3 BOM；保留原始版本来源和 Assembly::BomObject 检查。
+5. backend/tests/test_freecad_bom_contracts.py、test_runtime_manifest.py：增加新旧 BOM
+   读取覆盖，更新官方二进制锁定检查。新版本 BOM 用例修改前失败，修改后通过。
+6. docs/architecture/ci-tests.json：登记版本测试改名，以及此前 BLG 补丁新增的三个
+   集成用例；单元阶段按既有规则声明外部服务跳过，真实服务阶段仍要求执行。
+7. deploy/tencent/README.md：明确增量沙箱 Dockerfile 只复制脚本，不能升级 FreeCAD
+   二进制；发布 1.1.4 必须使用经过验证的新运行时基础镜像，并重新生成 API 目录。
+
+实际运行时
+
+本地完整 ARM64 沙箱：localhost/cad-freecad:1.1.4-20261116
+镜像 ID：afd8690daf606e48c878d3bdb3855992afaf30bf442359772c56664a84ed6d60
+默认本地开发别名：cad-agent-sandbox:dev（此前不存在，已绑定新镜像并通过探测）。
+本机调用仍须设置 SANDBOX_RUNTIME=podman；未更改生产配置。
+
+验证镜像复用已验证的完整旧沙箱依赖，删除原 /opt/freecad 后完整换入校验过的官方
+1.1.4 二进制，再复制当前 44 个运行时源文件；并非给旧内核只改版本号。
+标准多阶段 Dockerfile 已更新，但未在本轮完整重建全部多架构依赖层。
+492 个运行时及现有工具源码文件与工作区逐字节一致，包含此前 BLG 修复。
+
+官方资产校验
+
+FreeCAD_1.1.4-Linux-aarch64-py311.AppImage
+SHA256：675d1a4295b2183e0e1d816a4b5557dcb63aeced4e60aaa28d6c3686f4c71dc9
+FreeCAD_1.1.4-Linux-x86_64-py311.AppImage
+SHA256：f6dc6ba676e5ac96a565ebc8d657232f94c6158e85b4352141bd1a46f6b43434
+两份文件均已实际下载，并对照官方发布元数据核验字节长度及 SHA256。
+
+已完成验证（各层有重叠，不相加）
+
+- 后端标准 quick CI：2,810 通过、421 跳过、1 项取消选择。
+  跳过为该阶段声明的外部服务/原生/付费测试，不能计为执行成功。
+- Fusion：189 通过、1 项取消选择；CI 合同：61 通过，另有 40 个 subtest 通过。
+- 必须执行的 native-runtime：16 通过、零跳过；CI 报告检查通过。
+- 原生 native_contracts.sh：45 个步骤退出码均为 0，完整保留命令及日志摘要。
+- 额外 ARM64 原生脚本：9 通过，覆盖场景、链接、检查、拓扑、草图、检查点、
+  实际 Gmsh/CalculiX、CAM 刀路及发布包。工程样例通过不代表实物性能认证。
+- AMD64 官方内核在本地 Rosetta 挂载环境：12 个原生脚本通过，包括 API/GUI、
+  工具及检查点重放、草图轮廓、孔切除、放样、扫掠、旋转、阵列、相切、场景和发布包。
+  使用本地软件渲染测试环境；不是腾讯云完整 AMD64 部署镜像验收。
+- 1.1.3 FCStd 在 1.1.4 中重开、参数表达式、约束修改、Pad 重算、原生 BOM、
+  回滚、STEP/STL 导出通过；旧源文件 SHA256 保持不变。
+- 12 条冻结发布历史、2 条原始 BLG 任务历史回放通过。
+- 本轮服务套件结束后，动态回放 6 条真实历史通过，覆盖 4 类工作流以及
+  Model Job 引入前后的历史。早先缺少工作流家族的检查记录仍予保留。
+- 原有局部补丁反向适用性检查通过，76,336 个既存未跟踪文件仍保留。
+
+完整服务结果与首轮失败
+
+独立数据库 cad_freecad114_20261116 完整运行 213 个服务用例：
+212 通过、1 失败、零跳过；另有 9 个真实付费模型用例明确取消选择。
+运行耗时 3,799.80 秒。该完整运行退出码为 1，不能声称整套一次全绿。
+
+唯一失败：test_agent_v2_visual_mismatch_repairs_and_revalidates_geometry。
+Temporal 原始历史中，agent_v2.execute_model 的第二次 ActivityTaskStarted（事件 137）
+记录 lastFailure 为 activity Heartbeat timeout，heartbeatTimeout=15s。
+该次执行重试后最终工作流成功，几何验收与候选生成完成；回归在
+assert all(item['status'] == 'succeeded' for item in attempts) 处失败。
+这说明首轮曾有一条非成功执行尝试，不能将其抹去或改为成功。
+
+同一用例在另一独立库 cad_freecad114_recheck_20261116 中复测：
+1 通过、221 取消选择，40.90 秒，退出码 0。没有修改断言、业务逻辑或心跳阈值。
+直接原因已定位为 Temporal 活动心跳超时；保留证据不足以进一步确认导致该次
+心跳中断的底层因素，不将其笼统归因于 FreeCAD 或某一次资源竞争。
+全量服务未再完整重跑，以上为全量首轮与独立单项复测的分别记录。
+
+测试环境问题与边界
+
+初次服务运行遇到 MinIO RequestTimeTooSkewed；时钟重新核对一致后，真实对象
+存储读写删除预检通过。随后 AMD64 大镜像提交层曾短时占满本地 VM 磁盘，导致
+一项复测 XMinioStorageFull；失败构建自动清理后空间恢复，未清理其他服务/数据。
+已停止大镜像构建，AMD64 核验改为挂载主机目录与独立 terminfo 测试卷。
+本机 Rosetta 不支持官方 AMD64 AppImage 的静态启动壳，使用校验后的 SquashFS
+提取；大小写敏感 terminfo 子树保留在 Linux 卷。AMD64 GUI 默认 LLVM 渲染失败，
+临时测试环境 GALLIUM_DRIVER=softpipe 下同一完整 API 用例通过，未修改业务代码。
+Mesa 官方参数说明：https://docs.mesa3d.org/envvars.html#gallium-driver
+
+腾讯云只做了只读检查：磁盘仅约 689 MB 可用，现有沙箱约 8 GB；没有执行清理、
+构建或发布。线上仍未升级，后续部署需具备足够磁盘并完成 AMD64 发布镜像验证。
+本轮没有重跑真实付费模型，因此不声称模型成功率提升，也不声称升级自动解决
+两条 BLG 历史任务中的全部建模问题。
+服务回归采用现有可控规划/模型输入；FreeCAD、数据库、Temporal 与对象存储均为
+实际运行。上述控制输入仅属于测试，未为业务链路增加 Mock 或固定成功路径。
+
+主要证据
+
+verified-assets.json；build-arm64-final.log；runtime-probe.json；
+default-image-verification.json；old-runtime-rejection.json；
+runtime-source-verification.json；catalog-generation-final.log；catalog-comparison.json；
+backend-ci-final/；native-runtime.xml；native/steps.json；extra-native-arm64/results.json；
+extra-native-amd64/results.json；amd64-mounted-version.log；
+durable-core-final.xml；service-visual-repair-recheck.xml；
+visual-repair-temporal-retry-cause.json；visual-repair-timed-out-activity.json；
+legacy/verified.json；released-replay.json；original-history-replay.json；dynamic-replay.json；
+worktree-preservation-check.json；untracked-preservation-check.json；
+verification-summary.json；source-state.json；final-worktree.patch。

@@ -1,0 +1,125 @@
+BLG 原生执行与修复流程：开发交接记录
+日期：2026-11-16
+工作区：/Users/wentao/CAD-Agent-native-reliability
+分支：compare_YWT
+基线 HEAD：2e68cceb91a5375d6e8e0e9ccdeefe2321c67270
+状态：本地修改，尚未提交、推送或部署。本轮没有修改 FreeCAD 版本。
+
+结论与边界
+
+已修复 API 子进程文档身份不一致、缺失对象错误无法进入修复、同一草图的轮廓修复转入约束修复被误判为回退的问题。
+修改使用现有运行器、错误分类、修复预算和 Temporal 版本标记；业务代码没有 BLG 名称、字母轮廓、尺寸或固定成功结果。
+完整服务回归证明合法修复可以继续到独立几何验收、审核和提交；错误尺寸、真正执行回退、重复失败状态和预算耗尽仍被阻断。
+不能据此宣称两个原始 BLG 任务整题通过：原始脚本还有后续几何错误，详见下文。没有发起新的付费模型调用。
+
+一、线上原始证据和根因
+
+1. 任务 e3fc8d2e-36c1-4203-b9d1-9d1ad7f273a2
+
+从实际持久化记录读取到三版 API 计划，依次出现 Unknown document 'Model'、makeBox 参数类型错误、导出 BLG_Solid 不存在。
+最终计划 source_id=0be97cc3-6d44-4781-b4c2-e81f1da04e57 已正确创建内部名称 BLG_Solid 并设置同名 Label；不能归因为只设置 Label。
+运行器却把传入文档保存为 input.FCStd，子进程打开后 Name 为 input。脚本找不到 Model，另建 Model 并在其中建模；运行器最后保存的是原来的空 input 文档。
+object_not_found 又未被纳入结构化错误分类，最终成为 internal，无法进入工作流已有的模型修复流程。
+
+2. 任务 0b2ccb59-577b-4790-92bd-95b7037a7e1a
+
+原始 BSketch 由重叠矩形组成，pad-b 返回 profile_geometry_invalid。模型替换为单一轮廓后，b-cstr-d10 出现冗余约束。
+两次失败属于同一 BSketch、同一消费特征 pad-b，但错误类别由 profile 变为 constraint，旧进度判断认为执行退回到早前操作，在 1/8 次修复后停止。
+轮廓替换后的 B 草图确有冗余尺寸；FreeCAD 的拒绝是正确的。应用错误是提前禁止正常约束修复，而不是求解器应该接受冗余约束。
+原生失败快照 SHA256：
+  1e4fd8d486e42876db8a809c62b6ba6c852a16adc3f534fcd234a51f04d12ff9
+  98de2a550d564ac2b0d1286f920b97d5c8ee6f12fb73b50ffe6a02061473ad23
+
+二、业务代码修改（仅五个文件）
+
+backend/sandbox/freecad_api.py
+  使用实际 document.Name 生成子进程输入文件名，保留传入文档身份。
+  单独保存脚本执行命名空间，避免脚本重新绑定 document 后绕过原有身份检查。
+  已覆盖不同文档名、载入已有 FCStd 后继续 API 操作、GUI、Spreadsheet 表达式、布尔操作和失败脚本回滚。
+
+backend/sandbox/freecad_entry.py
+  object_not_found 附带请求对象、实际文档名以及现有对象 Name/Label，供已有修复链路使用。
+  仍按内部 Name 查找，不用 Label 猜测替代对象。
+
+backend/app/execution/podman_backend.py
+  object_not_found 归入 user_code，允许已有工作流发起模型修复；不作为基础设施故障自动重试。
+
+backend/app/workflows/native_repair.py
+  允许同一草图、同一消费特征从 profile 错误进入 constraint 修复。
+  不提前宣告该特征已成功；仍保留重复物理状态检查、单目标预算、总预算以及真实回退检查。
+
+backend/app/workflows/agent_v2.py
+  通过 agent-v2-profile-constraint-handoff-v1 Temporal 标记启用新行为，保证旧历史按原决策回放。
+  该开关只服务于持久工作流历史，不是新增用户配置或另一套业务入口。
+
+三、回归测试和结果
+
+新增/扩展测试：
+  backend/tests/test_execution_backend.py
+  backend/tests/test_freecad_repair_progress.py
+  backend/tests/e2e/freecad_api_contract.py
+  backend/tests/profile_replan_scenario.py
+  backend/tests/integration/test_temporal_mcadd_workflow.py
+
+最终代码的验证结果，各层独立报告，不合并为一个成功率：
+  后端常规回归：2809 通过、421 跳过、1 deselected。
+  专项真实服务：17 通过、零跳过（轮廓修复 5 项，API/导出修复/工具/检查点 12 项）。
+  原生运行时：4 通过、零跳过。
+  原生脚本：7 组通过（API、工具重放、检查点重放、约束诊断、失败快照、参数化轮廓、局部修复重放）。
+  Temporal 回放：两个原始线上任务历史通过；12 条仓库冻结发布历史通过。
+  修改文件的 Ruff E9/F63/F7/F82 检查、git diff --check 通过。
+
+专项服务真实使用 PostgreSQL、Temporal、MinIO 和 FreeCAD，运行于独立数据库 cad_blg_repair_20261116。
+模型规划/修复输入是明确的受控测试提案，调用真实解析器、补丁编译器、运行器和验收器；不能推导真实 AI 成功率、视觉效果或制造性能。
+没有全量复跑全部真实服务用例，也没有新增浏览器复测。
+最初未指定 APP_ENVIRONMENT=test 的后端运行在启动阶段失败；按项目 CI 测试环境重跑后得到上述最终结果，未为该环境问题修改业务代码。
+
+测试镜像：localhost/cad-blg-repair:20261116
+镜像 ID：a3364681b06f50a0735429149cee8633ece25122f5309e15801345bd22fb2a13
+FreeCAD：1.1.3，linux/arm64；本次改动的两个 sandbox 文件已逐字节核对镜像内容。
+
+四、原任务复放揭示的剩余几何问题（不能忽略）
+
+第一题最终历史脚本未修改即可执行和导出，证实文档交接问题已修复。
+独立重开 FCStd 和 STEP：Name/Label 均为 BLG_Solid；各有一个有效实体，严格 BOP 检查通过；尺寸 92×53×10 mm，体积约 31600 mm³，双向差集体积均为零。
+但是 B 的中间笔画与右侧笔画在 (24,22,z)、(24,32,z) 两条棱线上形成非流形接触。实际 STL 在这两处各有四个三角面共边，不能视为闭合流形网格。
+FreeCAD Mesh 和独立 trimesh 复查均确认该问题；项目现有 STL 验收函数返回 valid=false、not_watertight。这里仅证明独立测量拒绝该文件，未宣称原任务已完整重跑或产生合法候选。
+
+第二题使用实际失败快照和已有约束补丁编译器，对 b-cstr-d10、b-cstr-d11 生成删除冗余尺寸的关系证明；未修改冻结验收条件。
+修复后的原生执行已经越过 B，继续到 pad-l；原始 LSketch 的重叠轮廓被正确拒绝为 profile_geometry_invalid。
+后续字母需要模型正常重规划。没有把 L/G 替换为硬编码轮廓，也没有把无效轮廓当作成功。
+因此本轮完成的是已定位应用层缺陷的修复与回归，不是两个原始任务的新一轮付费 AI 闭环验证。
+
+五、FreeCAD 更新评估
+
+2026-11-16 查询官方 releases/latest，最新稳定版是 1.1.4，发布日期为 2026-09-28。
+官方说明包含 30 多项修复，以及两项可能由恶意 FCStd 文件触发的文件处理安全修复，并建议旧版本用户升级。
+项目支持 FCStd 文件处理，因此建议安排升级到 1.1.4；升级不能替代本轮已定位的应用层代码修复。
+
+项目当前有真实的 1.1.3 版本绑定，不能只替换版本字符串：
+  backend/sandbox/Dockerfile：两种 CPU 架构的 AppImage 下载与 SHA256。
+  backend/sandbox/runtime-lock.json、freecad_build_verify.py：运行时锁定和实际版本探测。
+  backend/app/execution/podman_backend.py：运行时版本验收。
+  backend/app/freecad/api_catalog.py 及现有 API 目录产物：必须由新运行时实测生成。
+  backend/app/freecad/bom_contracts.py：当前只接纳 1.1.3 BOM 来源，升级须验证已保存文件与历史证据。
+  deploy/tencent/Dockerfile.sandbox：增量镜像只复制脚本，沿用原 FreeCAD 二进制；真正升级需要替换基础运行时。
+升级应核验新二进制与校验和，复跑原生几何、导出、旧文件重开、BOM/API 目录和工作流回归后再发布。
+本轮没有构建或测试 1.1.4，不能宣称它已与项目兼容或已部署。
+
+官方来源：
+  https://github.com/FreeCAD/FreeCAD/releases/tag/1.1.4
+  https://blog.freecad.org/2026/09/28/freecad-1-1-4-released/
+
+证据索引
+
+完整本机证据：/private/tmp/cad-blg-repair-20261116
+  verification-summary.json：最终机器可读结果、改动源文件 SHA256。
+  backend-final-tests.xml / .log：常规后端回归。
+  service-handoff.xml / .log：同草图跨错误类别修复及原有负例。
+  service-api-regression.xml / .log：导出修复、工具、检查点正反例。
+  native-runtime.xml / .log、native-suite.json：原生运行时与脚本。
+  original-history-replay.json、released-history-replay.json：历史回放。
+  original-export-replay/：第一题实际历史脚本、FCStd/STEP/STL、重开核验及 STL 拒绝证据。
+  constraint-handoff-replay/、b-constraint-patch.json：第二题约束补丁与继续执行到 L 的证据。
+  runtime-source-verification.json：本次两个 sandbox 文件与运行镜像内容一致。
+线上原始数据库记录和完整历史仅保存在本机私有证据文件，没有加入本交接文件或 Git。

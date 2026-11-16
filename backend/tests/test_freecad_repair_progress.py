@@ -96,6 +96,35 @@ def test_changed_solver_failure_within_same_sketch_shares_its_target_budget():
     assert not budget.resolved_operations
 
 
+def test_profile_repair_can_hand_off_to_constraints_of_its_same_feature():
+    budget = NativeRepairBudget(POLICY, profile_constraint_handoff=True)
+    profile = failure('pad-letter', family='profile', target='Letter')
+    constraint = failure('close-outline', family='constraint', target='Letter')
+    observed = json.loads(constraint['details']['repair_progress_json'])
+    observed['progress_operation_id'] = 'pad-letter'
+    constraint['details']['repair_progress_json'] = json.dumps(observed)
+    assert budget.reserve(profile) == 1
+    assert budget.reserve(constraint) == 1
+    assert budget.used == 2 and not budget.resolved_operations
+    # A different error family does not erase evidence of a repeated state.
+    with pytest.raises(RepairStopped, match='没有几何或求解进展'):
+        budget.reserve(profile)
+
+
+@pytest.mark.parametrize('change', ['legacy-history', 'other-sketch', 'earlier-feature'])
+def test_profile_constraint_handoff_does_not_allow_real_regressions(change):
+    budget = NativeRepairBudget(POLICY, profile_constraint_handoff=change != 'legacy-history')
+    budget.reserve(failure('pad-letter', family='profile', target='Letter'))
+    constraint = failure('close-outline', family='constraint',
+                         target='Other' if change == 'other-sketch' else 'Letter')
+    observed = json.loads(constraint['details']['repair_progress_json'])
+    observed['progress_operation_id'] = 'earlier-pad' if change == 'earlier-feature' else 'pad-letter'
+    constraint['details']['repair_progress_json'] = json.dumps(observed)
+    with pytest.raises(RepairStopped, match='回退'):
+        budget.reserve(constraint)
+    assert budget.used == 1 and not budget.resolved_operations
+
+
 def test_missing_or_mismatched_native_observation_does_not_buy_a_repair():
     budget = NativeRepairBudget(POLICY)
     missing = failure('cut'); missing['details'] = {}
