@@ -35,6 +35,15 @@ def _print_summary(comparison: Mapping[str, Any]) -> None:
     print(f"Status changes: {len(differences['status_changes'])}")
     print(f"Input hash changes: {len(differences['input_hash_changes'])}")
     print(f"Output hash changes: {len(differences['output_hash_changes'])}")
+    conclusion = comparison.get("conclusion") or {}
+    print(f"Conclusion: {conclusion.get('status', 'unknown')}")
+    print(f"Conclusion reason: {conclusion.get('reason', 'unknown')}")
+    print(f"Tool path: {conclusion.get('tool_path', 'unknown')}")
+    print(f"Outcome: {conclusion.get('outcome', 'unknown')}")
+    metrics = comparison.get("evaluation_metrics") or {}
+    print(f"Evaluation metrics: {metrics.get('status', 'unavailable')}")
+    if metrics.get("status") == "not_comparable":
+        print(f"Evaluation metrics reason: {metrics.get('reason', 'unknown')}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
