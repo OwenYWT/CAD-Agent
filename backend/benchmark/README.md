@@ -118,7 +118,19 @@ Use `--json` for machine-readable output. Use `--fail-on-drift` in a
 developer check when a normalized call sequence change should fail the
 command. The comparison ignores runtime IDs, timestamps, and duration values;
 it reports added, removed, reordered, retried, status-changed, and
-input/output-hash-changed calls separately.
+input/output-hash-changed calls separately. The output also includes an
+evidence-based aggregate conclusion:
+
+- `consistent`: the observed tool path and available outcome evidence match;
+- `different`: the tool path, geometry, quality, or lifecycle evidence differs;
+- `unknown`: some evidence exists, but a required comparison dimension is missing;
+- `not_comparable`: neither report contains enough authoritative evidence.
+
+The aggregate conclusion does not use raw input/output hashes as semantic
+identity. Different user-task IDs do not by themselves make the tool-path
+comparison fail. Resource metrics remain diagnostic and are marked
+`not_comparable` when the two reports do not share a benchmark source identity
+and base revision.
 
 ## Optional live benchmark execution
 

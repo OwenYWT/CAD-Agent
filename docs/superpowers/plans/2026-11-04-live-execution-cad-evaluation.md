@@ -276,6 +276,67 @@ python -m app.workers.run --evaluation-mode observe
 
 The exact Worker arguments may preserve the existing worker options; the implementation must add the mode without removing current queue, namespace, or connection configuration.
 
+## Follow-up Roadmap After the Initial Live Evaluation
+
+The initial live evaluation and tool-call comparison are now treated as the
+current baseline. The next short-term work should strengthen the existing
+developer-only comparison without changing the ordinary execution path.
+
+### Short-term: Basic comparison capability (COMPLETED 2026-11-12)
+
+1. Add a developer-readable aggregate comparison conclusion derived only from
+   the existing tool-call, geometry, quality, lifecycle, and resource evidence.
+2. Distinguish `consistent`, `different`, `unknown`, and `not_comparable`
+   without treating missing evidence or different user-task IDs as a failure.
+3. Preserve the existing detailed fields (`structure_match`, sequence
+   differences, retries, status changes, and hash changes) as the evidence
+   source for the conclusion.
+4. Add focused tests for same tool path with different geometry and same
+   geometry with different tool paths; do not add model calls or synthetic
+   success evidence.
+5. Update the developer comparison documentation with the interpretation of
+   strict sequence matching versus structural matching.
+
+Exit criteria for this short-term phase:
+
+```text
+The CLI and JSON report explain the comparison result using real evidence;
+ordinary user execution, candidate selection, validation, Change Set, restore,
+and commit behavior remain unchanged.
+```
+
+Verification completed:
+
+```text
+16 focused consistency tests and 84 live evaluation regression tests passed;
+real paraphrase reports concluded consistent, while the real 10cm/5cm pair
+concluded different with a consistent tool path and changed geometry.
+```
+
+### Deferred: Semantic equivalence signatures (PENDING)
+
+This phase is intentionally deferred and must not be implemented as part of
+the short-term basic comparison work.
+
+1. Add a normalized `requirement_fingerprint` derived from the authoritative
+   requirement or acceptance contract, including normalized geometry type,
+   quantity, dimensions, units, and supported constraints.
+2. Add a safe `semantic_operation_signature` derived from the authoritative
+   normalized CAD operation data, including operation kind, object scope,
+   normalized parameters, and operation order where available.
+3. Compare paraphrased requests independently from raw prompt hashes, while
+   retaining raw input/output hashes as diagnostic evidence.
+4. Report requirement equivalence, operation equivalence, tool-path
+   equivalence, and final-outcome equivalence as separate dimensions.
+5. Return `unknown` or `not_comparable` when authoritative requirement or
+   operation evidence is missing; never infer equivalence from model text,
+   planner labels, or a second model call.
+6. Keep this capability developer-only and out of ordinary task acceptance,
+   candidate ranking, repair selection, history restore, and revision commit.
+
+Status: **PENDING**. This deferred phase begins only after the short-term
+basic comparison phase has its focused tests and real-report acceptance.
+
 ## Exit Criteria
 
 The implementation is complete only when:
