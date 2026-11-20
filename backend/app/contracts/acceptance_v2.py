@@ -8,7 +8,13 @@ from pydantic import BeforeValidator, Field, TypeAdapter, model_validator, model
 from app.contracts.acceptance import AcceptanceModel, AcceptanceContract, MeasurementScope
 from app.contracts.acceptance_comparison import COMPARISON_POLICY_ID
 from app.contracts.hole_populations import population_pools
-from app.contracts.assembly_measurements import assembly_kind
+from app.contracts.assembly_measurements import (
+    ASSEMBLY_COUNTS,
+    ASSEMBLY_DIMENSIONS,
+    ASSEMBLY_PREDICATES,
+    AssemblyMeasurement,
+    assembly_kind,
+)
 
 Quantity = Annotated[float, Field(strict=True, ge=0)]
 Unit = Literal['mm', 'mm3', 'count']
@@ -34,7 +40,7 @@ class ComponentRegion(AcceptanceModel):
 
 
 class MeasurementScopeV2(MeasurementScope):
-    assembly_measurement: str | None = None
+    assembly_measurement: AssemblyMeasurement | None = None
     wall_mode: Literal['continuous_normal', 'surface_normal', 'radial', 'local_probe',
                        'side_walls', 'cavity_floor'] = 'continuous_normal'
     frame: Literal['world', 'bounds_center', 'bounds_min', 'selected_object'] = 'world'
@@ -207,6 +213,55 @@ class AcceptanceCheckV2(AcceptanceModel):
     scope: MeasurementScopeV2 = Field(default_factory=MeasurementScopeV2)
     hole_group: HoleGroupRef | None = None
 
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema, handler):
+        schema = handler.resolve_ref_schema(handler(core_schema))
+        # Runtime validation already enforces these relationships. Advertising
+        # them in the provider schema prevents an avoidable invalid tool call.
+        assembly_scope = {
+            'required': ['assembly_measurement'],
+            'properties': {
+                'assembly_measurement': {},
+                'frame': {'const': 'world'},
+                'axis': {'type': 'null'},
+                'point_mm': {'type': 'null'},
+                'centers_mm': {'maxItems': 0},
+                'region_min_mm': {'type': 'null'},
+                'region_max_mm': {'type': 'null'},
+                'object_ref': {'type': 'null'},
+                'component_region': {'type': 'null'},
+            },
+        }
+        schema.setdefault('allOf', []).extend([
+            # Assembly measurement names are a closed vocabulary whose semantic
+            # role is determined by the name. Keep the provider from pairing a
+            # dimension/count/predicate name with the wrong discriminant; the
+            # runtime validator remains authoritative for persisted payloads.
+            {'if': {'properties': {'kind': {'const': 'assembly_dimension'}}},
+             'then': {'required': ['scope'], 'properties': {'scope': {
+                 **assembly_scope,
+                 'properties': {**assembly_scope['properties'],
+                     'assembly_measurement': {'enum': sorted(ASSEMBLY_DIMENSIONS)}}}}}},
+            {'if': {'properties': {'kind': {'const': 'assembly_count'}}},
+             'then': {'required': ['scope'], 'properties': {'scope': {
+                 **assembly_scope,
+                 'properties': {**assembly_scope['properties'],
+                     'assembly_measurement': {'enum': sorted(ASSEMBLY_COUNTS)}}}}}},
+            {'if': {'properties': {'kind': {'const': 'assembly_predicate'}}},
+             'then': {'required': ['scope'], 'properties': {'scope': {
+                 **assembly_scope,
+                 'properties': {**assembly_scope['properties'],
+                     'assembly_measurement': {'enum': sorted(ASSEMBLY_PREDICATES)}}}}}},
+            {'if': {'properties': {'kind': {'const': 'assembly_dimension'}}},
+             'then': {'properties': {'comparison': {'properties': {'unit': {'const': 'mm'}}}}}},
+            {'if': {'properties': {'kind': {'enum': ['assembly_count', 'assembly_predicate']}}},
+             'then': {'properties': {'comparison': {'properties': {'unit': {'const': 'count'}}}}}},
+            {'if': {'required': ['hole_group']},
+             'then': {'properties': {'kind': {'enum': [
+                 'hole_count', 'hole_diameter', 'hole_depth', 'hole_through']}}}},
+        ])
+        return schema
+
     @model_serializer(mode='wrap')
     def retain_existing_digest(self, handler):
         result = handler(self)
@@ -219,6 +274,10 @@ class AcceptanceCheckV2(AcceptanceModel):
         if self.required != (self.source_kind != 'assumption'):
             raise ValueError('requiredness must match verified provenance')
         kind, scope, comparison = self.kind, self.scope, self.comparison
+        if self.hole_group is not None and kind not in {
+            'hole_count', 'hole_diameter', 'hole_depth', 'hole_through'
+        }:
+            raise ValueError('hole_group applies only to hole population checks')
         if kind.startswith('annular_segment_') and (scope.frame != 'world' or scope.axis is None
                 or scope.point_mm is None or scope.centers_mm or scope.region_min_mm is not None):
             raise ValueError('annular segment requires a world axis and an interior axis point, without clipping regions')

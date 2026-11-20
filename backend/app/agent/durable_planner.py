@@ -19,6 +19,7 @@ from app.agent.multi_step import BuildPhase, BuildPlan, BuildStep, PlanDecompose
 from app.agent.orchestrator import requires_design_confirmation
 from app.agent.planner import Planner
 from app.models.schemas import CADPlan, DesignBrief, ModificationPlan, ManufacturingProfile
+from app.validation.requirement_binding import extract_requirements
 
 
 _CUBE_INTENT_MARKERS = (
@@ -44,7 +45,15 @@ def _cube_edge_from_acceptance(plan: CADPlan) -> float | None:
     if acceptance is None:
         return None
     axis_values: dict[tuple[float, float, float], float] = {}
+    intrinsic_edges: set[float] = set()
     for check in acceptance.checks:
+        if (
+            check.kind == "cube_edge"
+            and check.comparison.op == "eq"
+            and check.comparison.unit == "mm"
+        ):
+            intrinsic_edges.add(float(check.comparison.value))
+            continue
         if check.kind != "overall_dimension" or check.comparison.op != "eq":
             continue
         axis = tuple(float(value) for value in check.scope.axis)
@@ -56,6 +65,10 @@ def _cube_edge_from_acceptance(plan: CADPlan) -> float | None:
         (0.0, 1.0, 0.0),
         (0.0, 0.0, 1.0),
     )]
+    if intrinsic_edges:
+        if len(intrinsic_edges) != 1:
+            raise ValueError("cube acceptance contains conflicting edge dimensions")
+        return intrinsic_edges.pop()
     if any(value is None for value in expected):
         return None
     if len({float(value) for value in expected}) != 1:
@@ -81,13 +94,45 @@ def _cube_edge_from_dimensions(plan: CADPlan) -> float | None:
     return candidates[0]
 
 
-def _normalize_cube_requirements(plan: CADPlan, objective: str) -> CADPlan:
+def _cube_edge_from_objective(objective: str) -> float | None:
+    """Recover an explicit cube edge when the model omits its CAD dimensions.
+
+    The requirement extractor is deterministic and source-bound.  Only one
+    positive exact edge value is accepted; missing, ranged, or conflicting
+    values remain unavailable and are rejected by the normalizer.
+    """
+    extracted = extract_requirements(objective)
+    if extracted.get("unsupported"):
+        return None
+    values = {
+        float(row["comparison"]["value"])
+        for row in extracted.get("requirements", ())
+        if row.get("kind") == "cube_edge"
+        and row.get("comparison", {}).get("op") == "eq"
+        and row.get("comparison", {}).get("unit") == "mm"
+    }
+    if len(values) != 1:
+        return None
+    value = values.pop()
+    return value if value > 0 else None
+
+
+def _normalize_cube_requirements(
+    plan: CADPlan,
+    objective: str,
+    *,
+    source_objective: str | None = None,
+) -> CADPlan:
     if (
         not _has_explicit_cube_intent(objective)
         or plan.part_type in {"box", "profile_2d", "assembly"}
     ):
         return plan
-    edge = _cube_edge_from_acceptance(plan) or _cube_edge_from_dimensions(plan)
+    edge = (
+        _cube_edge_from_acceptance(plan)
+        or _cube_edge_from_dimensions(plan)
+        or _cube_edge_from_objective(source_objective or objective)
+    )
     if edge is None or edge <= 0:
         raise ValueError("cube requirements do not contain one reliable edge dimension")
     canonical_feature = (
@@ -121,6 +166,8 @@ def _normalize_generation_requirements(
     plan: CADPlan,
     objective: str,
     output_formats: tuple[str, ...],
+    *,
+    source_objective: str | None = None,
 ) -> CADPlan:
     if plan.part_type != "profile_2d":
         return plan
@@ -142,7 +189,11 @@ def _normalize_generation_requirements(
             "design_brief": solid_brief,
         }
     )
-    return _normalize_cube_requirements(normalized, objective)
+    return _normalize_cube_requirements(
+        normalized,
+        objective,
+        source_objective=source_objective,
+    )
 
 
 class DurableAgentPlanner:
@@ -226,6 +277,7 @@ class DurableAgentPlanner:
         self,
         objective: str,
         *,
+        source_objective: str | None = None,
         output_formats: tuple[str, ...] = ("step", "stl"),
         require_acceptance: bool = False,
         acceptance_version=None,
@@ -248,8 +300,27 @@ class DurableAgentPlanner:
                 raise ValueError('new solid requirements must retain their acceptance contract')
             if result.design_brief.acceptance.objective != objective:
                 raise ValueError('acceptance contract objective differs from the submitted requirement')
-        normalized = _normalize_generation_requirements(result, objective, output_formats)
-        normalized = _normalize_cube_requirements(normalized, objective)
+        source_objective = source_objective or next(
+            (
+                str(source.get("text"))
+                for source in requirement_sources or ()
+                if source.get("source_input_id") == "objective"
+                and source.get("source_kind") == "user"
+                and source.get("text")
+            ),
+            None,
+        )
+        normalized = _normalize_generation_requirements(
+            result,
+            objective,
+            output_formats,
+            source_objective=source_objective,
+        )
+        normalized = _normalize_cube_requirements(
+            normalized,
+            objective,
+            source_objective=source_objective,
+        )
         if profile is not None:
             normalized.manufacturing_profile = profile
             apply_manufacturing_profile_to_brief(ensure_design_brief(normalized), profile)

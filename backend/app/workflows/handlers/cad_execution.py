@@ -37,6 +37,7 @@ from app.contracts.native_references import NativeReferenceError, validate_catal
 from app.workflows.constraint_evidence import (persist_failure_snapshot, load_repair_contract, persist_repair_verification,
     load_profile_contract, persist_profile_verification)
 from app.contracts.constraint_patch import ConstraintRepairValidation
+from app.sandbox.code_analyzer import analyze_execution_code
 
 async def agent_execute_model(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[str, Any]:
     info = execution_identity()
@@ -74,7 +75,6 @@ async def agent_execute_model(payload: dict[str, Any], *, backend: ExecutionBack
     outcome: MaterializedExecutionOutcome | None = None
     upload_heartbeat: asyncio.Task | None = None
     try:
-        snapshot = await asyncio.to_thread(backend.runtime_snapshot)
         source_code = str(payload["source_code"])
         source_hash = hashlib.sha256(source_code.encode("utf-8")).hexdigest()
         if source_hash != str(payload["source_hash"]):
@@ -83,6 +83,24 @@ async def agent_execute_model(payload: dict[str, Any], *, backend: ExecutionBack
                 type="agent_source_hash_mismatch",
                 non_retryable=True,
             )
+        analysis_warnings = analyze_execution_code(source_code)
+        if analysis_warnings:
+            message = "Static analysis failed: " + "; ".join(analysis_warnings)
+            raise ApplicationError(
+                message,
+                {
+                    "execution_attempt_id": str(attempt_id),
+                    "category": "validation",
+                    "error_code": "static_analysis_failed",
+                    "error_message": message,
+                    "runtime_error_type": "StaticAnalysis",
+                    "details": {"warnings": analysis_warnings},
+                    "evidence": {},
+                },
+                type="static_analysis_failed",
+                non_retryable=True,
+            )
+        snapshot = await asyncio.to_thread(backend.runtime_snapshot)
         outputs = _modeling_outputs(step, str(payload["mode"]))
         spec = ExecutionSpec(
             execution_attempt_id=str(attempt_id),
@@ -474,7 +492,7 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                         or state_download['size_bytes'] != int(state_artifact['size_bytes'])):
                     raise ApplicationError('Native reference state failed integrity verification',
                         type='topology_reference_catalog_invalid', non_retryable=True)
-                base_state = json.loads(state_path.read_text())
+                base_state = json.loads(state_path.read_text(encoding='utf-8'))
             if base_state.get('native_topology') is not None:
                 try:
                     native_topology = validate_catalog(base_state['native_topology'], str(artifact['sha256']))
@@ -686,13 +704,15 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                     raise ApplicationError('profile replan validation evidence is missing',
                         type='profile_replan_verification_failed', non_retryable=True)
                 try:
-                    native_report = constraint_validation.verify_profile_receipt(json.loads(metadata_path.read_text()), profile_contract)
+                    native_report = constraint_validation.verify_profile_receipt(
+                        json.loads(metadata_path.read_text(encoding='utf-8')), profile_contract)
                 except (ValueError, KeyError, TypeError) as exc:
                     raise ApplicationError(str(exc), type='profile_replan_verification_failed', non_retryable=True) from exc
                 await persist_profile_verification(request, source_id=payload['source_id'], source_hash=source_hash,
                     attempt_id=attempt_id, report=native_report)
             state_path = outcome.files.get('state')
-            output_catalog = json.loads(state_path.read_text()).get('native_topology') if state_path else None
+            output_catalog = (json.loads(state_path.read_text(encoding='utf-8')).get('native_topology')
+                              if state_path else None)
             if output_catalog is not None:
                 try:
                     validate_catalog(output_catalog, hashlib.sha256(outcome.files['fcstd'].read_bytes()).hexdigest())

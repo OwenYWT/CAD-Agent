@@ -258,6 +258,74 @@ def _validate_dxf(path: Path, *, role: str) -> dict[str, Any]:
     return result
 
 
+def _solid_count_mismatch(
+    *,
+    artifact_format: str,
+    measured_solid_count: int | None,
+    expected_solid_count: int | None,
+    acceptance: dict[str, Any] | None,
+    step_solid_count: int | None,
+) -> bool:
+    """Apply the frozen solid-count contract, including Assembly STL previews.
+
+    The CadQuery executor preserves Assembly component topology in STEP but
+    exports a fused watertight STL preview when components share a boundary.
+    Such an STL legitimately contains one mesh component even though the STEP
+    and independent assembly certificate contain two solids.  The exception is
+    deliberately narrow and still requires the STEP artifact to contain the
+    expected component count.
+    """
+    if measured_solid_count == expected_solid_count:
+        return False
+    if (
+        artifact_format == "stl"
+        and expected_solid_count == 2
+        and measured_solid_count == 1
+        and step_solid_count == 2
+        and isinstance(acceptance, dict)
+        and any(
+            check.get("kind") == "assembly_predicate"
+            and (check.get("scope") or {}).get("assembly_measurement") == "body_lid_fit"
+            for check in acceptance.get("checks") or ()
+            if isinstance(check, dict)
+        )
+    ):
+        return False
+    return True
+
+
+def _acceptance_issue_strings(
+    acceptance: dict[str, Any], evidence: list[dict[str, Any]]
+) -> list[str]:
+    """Expose required acceptance measurement causes in the durable issue list.
+
+    Acceptance rows intentionally remain ``indeterminate`` when the measurement
+    kernel cannot prove a predicate.  The old report only retained that status,
+    which made source repair blind to the actual cause (for example an oblique
+    planar boundary in a rectangular assembly).  Keep the status strict while
+    carrying the row's diagnostic issues into the repair-facing report.
+    """
+    by_id = {
+        row.get("check_id"): row
+        for row in evidence
+        if isinstance(row, dict) and row.get("check_id")
+    }
+    result: list[str] = []
+    for check in acceptance.get("checks") or ():
+        if not isinstance(check, dict) or not check.get("required", True):
+            continue
+        check_id = check.get("check_id")
+        row = by_id.get(check_id)
+        if not row or row.get("outcome") == "passed":
+            continue
+        row_issues = [str(item) for item in row.get("issues") or () if str(item)]
+        if row_issues:
+            result.extend(f"acceptance:{check_id}:{item}" for item in row_issues)
+        else:
+            result.append(f"acceptance:{check_id}:{row.get('outcome', 'indeterminate')}")
+    return list(dict.fromkeys(result))
+
+
 def validate_geometry_files(
     artifacts: list[dict[str, str]],
     *,
@@ -282,10 +350,6 @@ def validate_geometry_files(
         path = Path(item["path"])
         try:
             report = supported[artifact_format](path, role=role)
-            if expected_solid_count is not None and artifact_format in {"step", "stl"}:
-                if report["solid_count"] != expected_solid_count:
-                    report["valid"] = False
-                    report["issues"].append("solid_count_mismatch")
             error = _dimension_error(tuple(report["dimensions_mm"]), expected)
             report["max_dimension_error"] = error
             if error is not None and error > dimension_tolerance:
@@ -297,6 +361,28 @@ def validate_geometry_files(
             report["issues"].append(f"parse_failed:{type(exc).__name__}")
         reports.append(report)
         issues.extend(f"{role}:{issue}" for issue in report["issues"])
+    step_solid_count = next(
+        (
+            report["solid_count"]
+            for report in reports
+            if report["format"] == "step"
+        ),
+        None,
+    )
+    if expected_solid_count is not None:
+        for report in reports:
+            if report["format"] not in {"step", "stl"}:
+                continue
+            if _solid_count_mismatch(
+                artifact_format=report["format"],
+                measured_solid_count=report["solid_count"],
+                expected_solid_count=expected_solid_count,
+                acceptance=acceptance,
+                step_solid_count=step_solid_count,
+            ):
+                report["valid"] = False
+                report["issues"].append("solid_count_mismatch")
+                issues.append(f"{report['role']}:solid_count_mismatch")
     outcome = (
         "indeterminate"
         if any(not item["parseable"] for item in reports)
@@ -352,8 +438,7 @@ def validate_geometry_files(
         result['acceptance_contract'] = acceptance
         by_id = {e['check_id']:e for e in evidence}
         outcomes = [by_id[c['check_id']]['outcome'] for c in acceptance['checks'] if c['required']]
-        issues.extend('acceptance:'+c['check_id']+':'+by_id[c['check_id']]['outcome']
-                      for c in acceptance['checks'] if c['required'] and by_id[c['check_id']]['outcome']!='passed')
+        issues.extend(_acceptance_issue_strings(acceptance, evidence))
         if acceptance.get('unresolved'):
             outcomes.append('indeterminate');issues.append('acceptance:unresolved_requirements')
         if acceptance.get('verification_limits'):

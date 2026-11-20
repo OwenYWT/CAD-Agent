@@ -37,6 +37,227 @@ async def test_kernel_and_dfm_repair_require_complete_streamed_code(monkeypatch,
     assert calls[0]["stream_options"] == {"include_usage": True}
 
 
+@pytest.mark.asyncio
+async def test_single_part_prompt_requires_attached_features_to_overlap_parent():
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="def make_part_01():\n    return result"),
+            finish_reason="stop",
+        )])
+
+    generator = CodeGenerator()
+    generator._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    await generator.generate_single_part(
+        "part_01",
+        "矩形外壳盒体，四角有外部安装耳，安装耳必须与盒体连接",
+        {"envelope_length": 90.0},
+        [],
+    )
+
+    prompt = calls[0]["messages"][0]["content"]
+    assert "必须与主体实体有实际体积重叠" in prompt
+    assert "不得使用正向间隙" in prompt
+
+
+@pytest.mark.asyncio
+async def test_single_part_prompt_prevents_body_derived_double_subtraction():
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="def make_part_01():\n    return result"),
+            finish_reason="stop",
+        )])
+
+    generator = CodeGenerator()
+    generator._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    await generator.generate_single_part(
+        "part_01",
+        "Open rectangular enclosure with a blind seal groove",
+        {"length": 90.0, "width": 60.0, "height": 32.0},
+        [],
+    )
+
+    prompt = calls[0]["messages"][0]["content"]
+    assert "cutBlind() already returns the modified parent body" in prompt
+    assert "assign that return value directly" in prompt
+
+
+@pytest.mark.asyncio
+async def test_static_analysis_repair_prompt_explains_double_subtraction():
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="result = repaired"),
+            finish_reason="stop",
+        )])
+
+    generator = CodeGenerator()
+    generator._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    await generator.fix_error(
+        "result = result - groove_cut",
+        {
+            "type": "StaticAnalysis",
+            "message": (
+                "A body-derived cutBlind result already applies the subtraction "
+                "to its parent body"
+            ),
+        },
+    )
+
+    prompt = calls[0]["messages"][0]["content"]
+    assert "cutBlind() already returns the modified parent body" in prompt
+    assert "Never subtract that returned body from its parent again" in prompt
+
+
+@pytest.mark.asyncio
+async def test_geometry_repair_prompt_explains_disconnected_solid_count_failure():
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="result = repaired"),
+            finish_reason="stop",
+        )])
+
+    generator = CodeGenerator()
+    generator._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    await generator.fix_error(
+        "result = source",
+        {
+            "type": "GeometryError",
+            "message": "artifact-00:solid_count_mismatch; expected 2, got 5",
+        },
+    )
+
+    prompt = calls[0]["messages"][0]["content"]
+    assert "solid_count_mismatch" in prompt
+    assert "不得使用正向间隙" in prompt
+    assert "保持上盖作为独立装配件" in prompt
+
+
+@pytest.mark.asyncio
+async def test_repair_prompt_handles_non_coplanar_face_selection():
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="result = repaired"),
+            finish_reason="stop",
+        )])
+
+    generator = CodeGenerator()
+    generator._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    await generator.fix_error(
+        "result = body.faces('\\|Y').workplane().hole(4)",
+        {
+            "type": "UserCodeError",
+            "message": "Selected faces must be co-planar.",
+        },
+    )
+
+    prompt = calls[0]["messages"][0]["content"]
+    assert "Selected faces must be co-planar" in prompt
+    assert "single co-planar face" in prompt
+    assert "do not use .faces(\"|Y\")" in prompt
+    assert "Workplane.cleanup()" in prompt
+
+
+@pytest.mark.asyncio
+async def test_single_part_prompt_prevents_non_coplanar_workplanes():
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="def make_part_01():\n    return result"),
+            finish_reason="stop",
+        )])
+
+    generator = CodeGenerator()
+    generator._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    await generator.generate_single_part("part_01", "box", {"length": 10.0}, [])
+
+    prompt = calls[0]["messages"][0]["content"]
+    assert "single co-planar face" in prompt
+    assert "do not use .faces(\"|Y\")" in prompt
+    assert "Workplane.cleanup()" in prompt
+
+
+@pytest.mark.asyncio
+async def test_rectangular_assembly_repair_prompt_preserves_axis_aligned_tabs():
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="result = repaired"),
+            finish_reason="stop",
+        )])
+
+    generator = CodeGenerator()
+    generator._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    await generator.fix_error(
+        "result = assembly",
+        {
+            "type": "GeometryError",
+            "message": (
+                "Geometry validation failed: unclassified oblique planar boundary "
+                "in rectangular assembly"
+            ),
+        },
+    )
+
+    prompt = calls[0]["messages"][0]["content"]
+    assert "axis-aligned" in prompt
+    assert "45" in prompt
+    assert "rectangular assembly" in prompt
+
+
+@pytest.mark.asyncio
+async def test_single_part_prompt_keeps_rectangular_tabs_axis_aligned():
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="def make_part_01():\n    return result"),
+            finish_reason="stop",
+        )])
+
+    generator = CodeGenerator()
+    generator._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    await generator.generate_single_part("part_01", "rectangular enclosure with tabs", {}, [])
+
+    prompt = calls[0]["messages"][0]["content"]
+    assert "axis-aligned" in prompt
+    assert "45" in prompt
+
+
 @pytest.mark.parametrize(
     "category,error_code",
     [

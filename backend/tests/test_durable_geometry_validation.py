@@ -13,7 +13,11 @@ from app.validation.durable_geometry import (
     geometry_failure,
     indeterminate_geometry_report,
 )
-from sandbox.geometry_validation import validate_geometry_files
+from sandbox.geometry_validation import (
+    _acceptance_issue_strings,
+    _solid_count_mismatch,
+    validate_geometry_files,
+)
 
 
 def _write_box(tmp_path, dimensions=(20, 10, 4)):
@@ -34,6 +38,68 @@ def test_valid_stl_solid_passes_with_measured_dimensions(tmp_path):
     assert all(item.valid for item in validated.artifacts)
     assert validated.artifacts[0].solid_count == 1
     assert validated.artifacts[0].is_watertight is True
+
+
+def test_touching_assembly_stl_preview_can_be_fused_when_step_keeps_two_solids():
+    acceptance = {
+        "checks": [
+            {
+                "kind": "assembly_predicate",
+                "scope": {"assembly_measurement": "body_lid_fit"},
+            }
+        ]
+    }
+
+    assert not _solid_count_mismatch(
+        artifact_format="stl",
+        measured_solid_count=1,
+        expected_solid_count=2,
+        acceptance=acceptance,
+        step_solid_count=2,
+    )
+
+
+def test_fused_stl_preview_does_not_hide_missing_step_component():
+    acceptance = {
+        "checks": [
+            {
+                "kind": "assembly_predicate",
+                "scope": {"assembly_measurement": "body_lid_fit"},
+            }
+        ]
+    }
+
+    assert _solid_count_mismatch(
+        artifact_format="stl",
+        measured_solid_count=1,
+        expected_solid_count=2,
+        acceptance=acceptance,
+        step_solid_count=1,
+    )
+
+
+def test_acceptance_issue_strings_preserve_measurement_root_cause():
+    acceptance = {
+        "checks": [
+            {"check_id": "assembly-envelope-length", "required": True},
+            {"check_id": "body-lid-fit", "required": True},
+        ]
+    }
+    evidence = [
+        {
+            "check_id": "assembly-envelope-length",
+            "outcome": "indeterminate",
+            "issues": [
+                "measurement_error:ValueError:unclassified oblique planar boundary in rectangular assembly"
+            ],
+        },
+        {"check_id": "body-lid-fit", "outcome": "passed", "issues": []},
+    ]
+
+    assert _acceptance_issue_strings(acceptance, evidence) == [
+        "acceptance:assembly-envelope-length:measurement_error:ValueError:"
+        "unclassified oblique planar boundary in rectangular assembly"
+    ]
 
 
 def test_stl_duplicate_triangle_is_normalized_without_filling_holes(tmp_path):

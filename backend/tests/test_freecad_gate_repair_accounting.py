@@ -23,6 +23,21 @@ class GeometrySequence(GateRun):
         return {'outcome': outcome, 'report': report, 'evidence_id': str(len(self.calls))}
 
 
+class FailedGeometrySequence(GeometrySequence):
+    async def _activity(self, name, payload, **kwargs):
+        result = await super()._activity(name, payload, **kwargs)
+        if name == 'agent_v2.validate_geometry':
+            result['report'].update(
+                issues=['width axis mismatch'],
+                expected_dimensions_mm={'width': 200.0},
+            )
+            result['report']['artifacts'][0].update(
+                dimensions_mm=[100.0, 100.0, 200.0],
+                issues=['expected width 200.0 mm'],
+            )
+        return result
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize('native_repairs', [0, 1, 2, 5])
 async def test_geometry_has_its_own_budget_after_native_repairs(native_repairs):
@@ -63,6 +78,27 @@ async def test_legacy_geometry_accounting_is_unchanged():
     with pytest.raises(ApplicationError):
         await flow._geometry_gate(**args, expected_dimensions={})
     assert len(flow.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_geometry_failure_exposes_report_diagnostics_in_application_error():
+    flow = FailedGeometrySequence(['failed', 'failed'])
+    args = arguments('geometry', budget=1)
+    with pytest.raises(ApplicationError, match='width axis mismatch') as raised:
+        await flow._geometry_gate(**args, expected_dimensions={})
+    assert raised.value.type == 'agent_geometry_validation_failed'
+    details = raised.value.details[0]
+    assert details['report_issues'] == ['width axis mismatch']
+    assert details['expected_dimensions_mm'] == {'width': 200.0}
+    assert details['measured_artifacts'][0]['dimensions_mm'] == [100.0, 100.0, 200.0]
+
+
+def test_modification_target_dimensions_reach_geometry_gate_contract():
+    from app.workflows.agent_v2 import _expected_geometry_dimensions
+
+    assert _expected_geometry_dimensions({
+        'target_params': {'width': 200.0, 'Pad.Length': 200.0},
+    }) == {'width': 200.0}
 
 
 def test_total_budget_and_stage_counters_are_distinct_and_replay_deterministic():

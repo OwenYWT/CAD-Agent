@@ -79,6 +79,52 @@ async def test_cube_intent_corrects_misclassified_cylinder_plan():
 
 
 @pytest.mark.asyncio
+async def test_cube_intent_recovers_edge_from_user_text_when_model_omits_dimensions():
+    service, _, _ = _planner(_cad_plan(
+        part_type="custom",
+        dimensions={},
+        features=[],
+        design_brief=DesignBrief(
+            intent_summary="100 mm cube",
+            artifact_type="custom",
+        ),
+    ))
+
+    result = await service.requirements_generation(
+        "生成边长 10cm 的正方体",
+        output_formats=("step", "stl"),
+    )
+
+    assert result.part_type == "box"
+    assert result.dimensions == {"length": 100.0, "width": 100.0, "height": 100.0}
+
+
+@pytest.mark.asyncio
+async def test_cube_intent_uses_objective_source_when_planning_context_is_appended():
+    service, _, _ = _planner(_cad_plan(
+        part_type="custom",
+        dimensions={},
+        features=[],
+        design_brief=DesignBrief(intent_summary="100 mm cube", artifact_type="custom"),
+    ))
+
+    objective = (
+        "生成边长 10cm 的正方体\n\n"
+        "目标：生成边长 10cm 的正方体\n"
+        "用途：\n"
+        "尺寸来源类型：user_specification；来源：用户需求中指定的设计尺寸\n"
+        "用户明确尺寸：生成边长 10cm 的正方体"
+    )
+    result = await service.requirements_generation(
+        objective,
+        source_objective="生成边长 10cm 的正方体",
+        output_formats=("step", "stl"),
+    )
+
+    assert result.dimensions == {"length": 100.0, "width": 100.0, "height": 100.0}
+
+
+@pytest.mark.asyncio
 async def test_explicit_dxf_request_keeps_profile_plan():
     service, _, _ = _planner(_cad_plan(
         part_type="profile_2d",

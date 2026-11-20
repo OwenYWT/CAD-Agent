@@ -48,7 +48,7 @@ class StepAnalyzer:
             return StepAnalysisResult(error="Sandbox produced no analysis.json")
 
         try:
-            data = json.loads(analysis_file.read_text())
+            data = json.loads(analysis_file.read_text(encoding='utf-8'))
         except (json.JSONDecodeError, OSError) as e:
             return StepAnalysisResult(error=f"Failed to parse analysis output: {e}")
 

@@ -18,7 +18,7 @@ from app.validation.source_obligations import (
     RELATION as _RELATION, LOWER as _LOWER, STRICT as _STRICT,
     COUNT_WORDS as _COUNT_WORDS, COUNT_VALUE, CENTERED as _CENTERED,
     inventory, normalize_relation, resolve_inventory, bind_component_scopes, inventory_hole_populations,
-    CUBE, source_owners, incompatible_constraints,
+    CUBE, source_owners, incompatible_constraints, is_shape_transition,
 )
 
 
@@ -354,8 +354,14 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
             comparison.update(tolerance_minus=minus, tolerance_plus=plus)
         return comparison
 
+    shape_transition = is_shape_transition(objective)
     for match in CUBE.finditer(objective):
-        append(*match.span(), 'cube_shape', 'cube_shape', {'op': 'eq', 'value': 1., 'unit': 'count'})
+        # In a conversion request the cube names the before-state. Requiring
+        # cube_shape=1 in the final acceptance would contradict the requested
+        # rectangular result and tempts the planner to submit the invalid
+        # cube_shape=0 workaround rejected by AcceptanceCheckV2.
+        if not shape_transition:
+            append(*match.span(), 'cube_shape', 'cube_shape', {'op': 'eq', 'value': 1., 'unit': 'count'})
     cube_refs = [r['requirement_id'] for r in requirements if r['kind'] == 'cube_shape']
     cube_refs = (cube_refs if _single_cube_subject(objective) else
                  (primitive_context or {}).get('cube_shape_refs', []) if not source_owners(objective) else [])

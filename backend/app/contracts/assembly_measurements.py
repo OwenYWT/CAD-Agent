@@ -4,6 +4,7 @@ Names define quantities, never geometry selected by nominal dimensions or CAD
 labels. The independent BRep inventory supplies all values and relationships.
 """
 import math
+from typing import Literal
 
 ASSEMBLY_DIMENSIONS = frozenset({
     'envelope_length','envelope_width','envelope_height','side_wall_thickness',
@@ -16,6 +17,19 @@ ASSEMBLY_PREDICATES = frozenset({
     'mounting_holes_isolated','groove_at_interface','connector_through',
     'connector_short_side_centered','envelope_excludes_tabs',
 })
+
+# Keep the provider-facing contract closed over the same names used by the
+# independent measurement worker.  A plain ``str`` here lets a model invent a
+# plausible label that only fails after the tool call has already been made.
+AssemblyMeasurement = Literal[
+    'envelope_length', 'envelope_width', 'envelope_height', 'side_wall_thickness',
+    'floor_thickness', 'lid_thickness', 'tab_length', 'tab_width', 'tab_thickness',
+    'mounting_hole_diameter', 'connector_diameter', 'groove_width', 'groove_depth',
+    'tab_count', 'mounting_hole_count',
+    'body_lid_fit', 'tabs_at_corners', 'mounting_holes_on_tabs',
+    'mounting_holes_centered', 'mounting_holes_isolated', 'groove_at_interface',
+    'connector_through', 'connector_short_side_centered', 'envelope_excludes_tabs',
+]
 
 
 def assembly_kind(measurement):

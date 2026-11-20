@@ -47,6 +47,8 @@ def inspect_container_runtime(command: str, image_ref: str) -> RuntimeSnapshot:
         [command, "image", "inspect", image_ref],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=15,
     )
     if inspected_process.returncode != 0:
@@ -88,6 +90,8 @@ def inspect_container_runtime(command: str, image_ref: str) -> RuntimeSnapshot:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=300,
     )
     if probe.returncode != 0:

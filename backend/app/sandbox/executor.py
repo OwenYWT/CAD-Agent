@@ -63,6 +63,8 @@ class PodmanRuntime:
             [self.command, "image", "exists", self.image_ref],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         if result.returncode != 0:
             raise RuntimeError(
@@ -120,6 +122,8 @@ class PodmanRuntime:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         if cancel_event is not None:
             with self._active_lock:
@@ -147,6 +151,8 @@ class PodmanRuntime:
                 [self.command, "rm", "-f", container_name],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=2,
             )
         except Exception:
@@ -549,7 +555,7 @@ class CadQueryExecutor:
                 work_dir=work_dir,
             )
 
-        result_data = json.loads(result_path.read_text())
+        result_data = json.loads(result_path.read_text(encoding="utf-8"))
 
         if result_data["status"] == "success":
             files = {}

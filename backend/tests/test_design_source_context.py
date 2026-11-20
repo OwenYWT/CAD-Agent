@@ -9,7 +9,7 @@ import pytest
 from app.contracts.acceptance_v2 import AcceptanceContractV2, RequirementBindingError
 from app.validation.requirement_binding import (
     bind_source_quotes, extract_requirements, extract_source_requirements,
-    validate_requirement_bindings,
+    require_bound_sources, validate_requirement_bindings,
 )
 
 
@@ -51,11 +51,8 @@ def test_one_design_request_is_not_a_one_solid_requirement(text):
     assert validate_requirement_bindings(text, contract_for(text, result))['source_context'] == result['source_context']
 
 
-@pytest.mark.parametrize('text', [
-    '生成一个边长10cm的正方形',
-    '生成一个边长10cm的正方体',
-])
-def test_basic_shape_design_request_binds_delivery_count(text):
+def test_basic_shape_design_request_binds_delivery_count():
+    text = '生成一个边长10cm的正方体'
     result = extract_requirements(text)
     assert not result['unsupported'], result
     assert result['source_context']['design_requests'] == [{
@@ -69,22 +66,29 @@ def test_basic_shape_design_request_binds_delivery_count(text):
     }]
 
 
-def test_cube_edge_length_binds_all_three_equal_axes():
+@pytest.mark.parametrize('text', [
+    '帮我生成一个立方体，它的边长是10cm',
+    'Create one cube with edge length 100 mm',
+    'Create one cube, length 100 mm',
+])
+def test_equivalent_cube_design_wording_binds_delivery_and_geometry(text):
+    result = require_bound_sources(text)
+    assert not result['unsupported']
+    assert [(row['kind'], row['comparison']['value']) for row in result['requirements']] == [
+        ('cube_shape', 1.0),
+        ('cube_edge', 100.0),
+    ]
+
+
+def test_cube_edge_length_binds_intrinsic_shape_and_edge():
     text = '生成一个边长10cm的正方体'
     sources = concept_sources(text)
     result = extract_source_requirements(text, requirement_sources=sources)
 
-    dimensions = {
-        row['property']: row
-        for row in result['requirements']
-        if row['kind'] == 'overall_dimension'
-    }
-
-    assert set(dimensions) == {'length', 'width', 'height'}
-    assert all(
-        row['comparison'] == {'op': 'eq', 'value': 100.0, 'unit': 'mm'}
-        for row in dimensions.values()
-    )
+    assert [(row['kind'], row['comparison']) for row in result['requirements']] == [
+        ('cube_shape', {'op': 'eq', 'value': 1.0, 'unit': 'count'}),
+        ('cube_edge', {'op': 'eq', 'value': 100.0, 'unit': 'mm'}),
+    ]
     assert validate_requirement_bindings(
         text,
         contract_for(text, result),
@@ -127,7 +131,7 @@ def test_model_delivery_count_must_not_become_a_solid_count_check(text):
     bind_source_quotes(text, acceptance)
     contract = AcceptanceContractV2.model_validate(acceptance)
 
-    assert [check.kind for check in contract.checks] == ['overall_dimension'] * 3
+    assert [check.kind for check in contract.checks] == ['cube_shape', 'cube_edge']
     assert validate_requirement_bindings(text, contract)['status'] == 'bound'
 
 
@@ -259,7 +263,7 @@ def test_empty_source_context_is_equivalent_to_omitted_context():
 
 
 def test_nondefault_execution_scope_is_not_an_empty_source_context():
-    text = 'Change width to 200 mm'
+    text = 'Create a plate width 200 mm'
     result = extract_requirements(text)
     raw = contract_for(text, result).model_dump(mode='json')
     raw['source_context'] = {
@@ -275,8 +279,9 @@ def test_nondefault_execution_scope_is_not_an_empty_source_context():
 
 
 def test_source_context_is_server_owned_when_model_submits_a_fabricated_context():
-    text = 'Change width to 200 mm'
-    raw = contract_for(text, extract_requirements(text)).model_dump(mode='json')
+    text = 'Create a plate width 200 mm'
+    extracted = extract_requirements(text)
+    raw = contract_for(text, extracted).model_dump(mode='json')
     raw['source_context'] = {
         'schema_version': 'source-context.v1',
         'execution_scope': 'concept_geometry',
@@ -285,7 +290,7 @@ def test_source_context_is_server_owned_when_model_submits_a_fabricated_context(
         'unverified_aspects': [],
     }
     bind_source_quotes(text, raw)
-    assert 'source_context' not in raw
+    assert raw['source_context'] == extracted['source_context']
 
 
 @pytest.mark.parametrize('operation', ['generate', 'modify'])
