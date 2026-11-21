@@ -34,24 +34,14 @@ def main():
         if os.path.exists(mode_path):
             exec_mode = open(mode_path).read().strip().lower()
 
-        # Pre-import allowed modules
-        import build123d as b3d
-        import cadquery as cq
         import math
         import numpy as np
 
-        _ALLOWED_ROOTS = {
-            "build123d", "b3d", "cadquery", "cq", "math", "numpy", "np",
-            # OCP (OpenCascade) modules — needed for STEP geometry analysis
-            "OCP",
+        cad_modules = {
+            "build123d": "build123d", "b3d": "build123d",
+            "cadquery": "cadquery", "cq": "cadquery",
         }
-
-        # Pre-imported module shortcuts (returned directly for simple imports)
         _PRE_IMPORTED = {
-            "build123d": b3d,
-            "b3d": b3d,
-            "cadquery": cq,
-            "cq": cq,
             "math": math,
             "numpy": np,
             "np": np,
@@ -60,11 +50,11 @@ def main():
         # Try to import ezdxf if available (for 2D DXF generation)
         try:
             import ezdxf as _ezdxf
-            _ALLOWED_ROOTS.add("ezdxf")
             _PRE_IMPORTED["ezdxf"] = _ezdxf
         except ImportError:
             pass
 
+        _ALLOWED_ROOTS = _PRE_IMPORTED.keys() | cad_modules.keys() | {"OCP"}
         _DENIED_MODULES = frozenset({
             "os", "sys", "subprocess", "pathlib", "builtins", "importlib",
             "inspect", "socket", "ctypes", "shutil", "signal", "pickle",
@@ -86,7 +76,17 @@ def main():
             # For simple top-level imports, return pre-imported if available
             if root in _PRE_IMPORTED:
                 return _PRE_IMPORTED[root]
-            return _real_import(name, globals, locals, fromlist, level)
+            return _real_import(cad_modules.get(name, name), globals, locals, fromlist, level)
+
+        class SandboxGlobals(dict):
+            # Preserve prebound CAD names in user functions without loading
+            # either kernel into tasks that only need NumPy or DXF.
+            def __missing__(self, name):
+                if name not in cad_modules:
+                    raise KeyError(name)
+                module = _safe_import(name)
+                self[name] = module
+                return module
 
         # Restricted builtins — no __import__, eval, exec, compile, open
         safe_builtins = {
@@ -138,22 +138,9 @@ def main():
         def show_object(obj, name="result", **kwargs):
             shown_objects[name] = obj
 
-        # Build safe globals
-        safe_globals = {
-            "__builtins__": safe_builtins,
-            "build123d": b3d,
-            "b3d": b3d,
-            "cq": cq,
-            "cadquery": cq,
-            "math": math,
-            "numpy": np,
-            "np": np,
-            "show_object": show_object,
-        }
-
-        # Also make ezdxf available if it was imported
-        if "ezdxf" in _PRE_IMPORTED:
-            safe_globals["ezdxf"] = _PRE_IMPORTED["ezdxf"]
+        safe_globals = SandboxGlobals(
+            _PRE_IMPORTED, __builtins__=safe_builtins, show_object=show_object
+        )
 
         # In analysis mode, provide json module for structured output
         if exec_mode == "analysis":
@@ -202,11 +189,12 @@ def main():
                 raise ValueError("No result found. Code must call show_object(result) or define a 'result' variable.")
 
             # Export each result object
+            b3d = sys.modules.get("build123d")
             for name, obj in shown_objects.items():
                 step_path = f"/sandbox/output/{name}.step"
                 stl_path = f"/sandbox/output/{name}.stl"
 
-                if isinstance(obj, b3d.Shape):
+                if b3d is not None and isinstance(obj, b3d.Shape):
                     # build123d uses the same OCP kernel but has its own shape
                     # wrapper and exporters. Keep this path native so generated
                     # build123d code is not coerced through CadQuery internals.
@@ -214,7 +202,10 @@ def main():
                     files[f"{name}.step"] = step_path
                     b3d.export_stl(obj, stl_path)
                     files[f"{name}.stl"] = stl_path
-                elif isinstance(obj, cq.Assembly):
+                    continue
+
+                import cadquery as cq
+                if isinstance(obj, cq.Assembly):
                     # Preserve component bodies and hierarchy in STEP.  STL has
                     # no assembly/component topology; coincident faces between
                     # touching closed components become a non-manifold mesh if

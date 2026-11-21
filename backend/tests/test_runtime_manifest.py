@@ -214,7 +214,10 @@ async def test_real_sandbox_build123d_exports_step_and_stl() -> None:
 
     result = await executor.execute(
         "from build123d import Box\n"
-        "result = Box(12, 8, 4)\n",
+        "def make_box():\n"
+        "    assert b3d.Box is build123d.Box is Box\n"
+        "    return Box(12, 8, 4)\n"
+        "result = make_box()\n",
         timeout_s=60,
     )
 
