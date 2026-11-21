@@ -65,6 +65,8 @@ class PodmanRuntime:
             [self.command, "image", "exists", self.image_ref],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         if result.returncode != 0:
             raise RuntimeError(
@@ -122,6 +124,8 @@ class PodmanRuntime:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         if cancel_event is not None:
             with self._active_lock:
@@ -149,6 +153,8 @@ class PodmanRuntime:
                 [self.command, "rm", "-f", container_name],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=2,
             )
         except Exception:
@@ -543,10 +549,15 @@ class CadQueryExecutor:
         result_path = output_dir / "result.json"
         try:
             limit = 4 * 1024 * 1024  # control metadata, distinct from declared CAD artifacts
-            fd = os.open(result_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            # Compare the opened file to the entry even on hosts without O_NOFOLLOW.
+            declared = result_path.lstat()
+            if not stat.S_ISREG(declared.st_mode):
+                raise ValueError("expected a regular result file")
+            flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+            fd = os.open(result_path, flags)
             with os.fdopen(fd, "rb") as stream:
                 info = os.fstat(fd)
-                if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
+                if not os.path.samestat(declared, info) or not stat.S_ISREG(info.st_mode) or info.st_size > limit:
                     raise ValueError("expected a bounded regular result file")
                 raw = stream.read(limit + 1)
             if len(raw) > limit:

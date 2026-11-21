@@ -3,6 +3,7 @@ Tests for CadQueryExecutor: SandboxResult structure, mode file writing,
 timeout handling, container cleanup.
 Unit tests mock Docker — no actual container required.
 """
+import os
 import json
 import asyncio
 import threading
@@ -148,7 +149,7 @@ class TestContainerCleanup:
 
         def fake_run(image, detach, volumes, **kwargs):
             for hp, bi in volumes.items():
-                if bi["bind"] == "/tmp/output":
+                if bi["bind"] == "/sandbox/output":
                     result = {"status": "success", "files": {}}
                     Path(hp, "result.json").write_text(json.dumps(result))
             return mock_container
@@ -178,6 +179,26 @@ class TestContainerCleanup:
 # === No result.json ===
 
 class TestMissingResult:
+    def test_utf8_result_json_is_read_without_windows_locale_decoding(self, tmp_path, monkeypatch):
+        # The Windows host has neither of these POSIX open flags.
+        monkeypatch.delattr(os, "O_NOFOLLOW", raising=False)
+        monkeypatch.delattr(os, "O_NONBLOCK", raising=False)
+        executor = CadQueryExecutor()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        result = {
+            "status": "error",
+            "error_type": "RuntimeError",
+            "error_message": "FreeCAD 输出包含中文：尺寸更新失败",
+        }
+        (output_dir / "result.json").write_bytes(
+            json.dumps(result, ensure_ascii=False).encode("utf-8")
+        )
+
+        parsed = executor._read_result(output_dir, tmp_path, 0.0)
+
+        assert parsed.error_message == result["error_message"]
+
     def test_missing_result_json(self):
         executor = CadQueryExecutor(runtime_name="docker")
         mock_container = MagicMock()
@@ -196,6 +217,36 @@ class TestMissingResult:
 # === Podman runtime ===
 
 class TestPodmanRuntime:
+    def test_podman_subprocess_output_uses_utf8_with_replacement(self, monkeypatch):
+        import app.sandbox.executor as executor_module
+
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        class FakePopen:
+            returncode = 0
+
+            def __init__(self, cmd, **kwargs):
+                calls.append((cmd, kwargs))
+
+            def communicate(self, timeout=None):
+                return "", ""
+
+        monkeypatch.setattr(executor_module.subprocess, "run", fake_run)
+        monkeypatch.setattr(executor_module.subprocess, "Popen", FakePopen)
+
+        runtime = executor_module.PodmanRuntime("cad-agent-sandbox:test")
+        runtime.run(Path("input"), Path("output"), timeout_s=1)
+        runtime._force_remove("cad-agent-test")
+
+        process_options = [kwargs for _, kwargs in calls]
+        assert len(process_options) == 3
+        assert all(options.get("encoding") == "utf-8" for options in process_options)
+        assert all(options.get("errors") == "replace" for options in process_options)
+
     @pytest.mark.asyncio
     async def test_cancel_waits_until_physical_podman_execution_is_stopped(self):
         started = threading.Event()
@@ -238,7 +289,7 @@ class TestPodmanRuntime:
         calls = []
         input_dirs_seen = []
 
-        def fake_run(cmd, capture_output=True, text=True, timeout=None):
+        def fake_run(cmd, capture_output=True, text=True, timeout=None, **kwargs):
             calls.append(cmd)
             if cmd[:3] == ["podman", "image", "exists"]:
                 return MagicMock(returncode=0, stdout="", stderr="")
@@ -284,7 +335,7 @@ class TestPodmanRuntime:
         original_runtime = settings.sandbox_runtime
         settings.sandbox_runtime = "podman"
 
-        def fake_run(cmd, capture_output=True, text=True, timeout=None):
+        def fake_run(cmd, capture_output=True, text=True, timeout=None, **kwargs):
             return MagicMock(returncode=1, stdout="", stderr="missing")
 
         monkeypatch.setattr(executor_module.subprocess, "run", fake_run)
@@ -302,7 +353,7 @@ class TestPodmanRuntime:
         original_runtime = settings.sandbox_runtime
         settings.sandbox_runtime = "podman"
 
-        def fake_run(cmd, capture_output=True, text=True, timeout=None):
+        def fake_run(cmd, capture_output=True, text=True, timeout=None, **kwargs):
             if cmd[:3] == ["podman", "image", "exists"]:
                 return MagicMock(returncode=0, stdout="", stderr="")
 

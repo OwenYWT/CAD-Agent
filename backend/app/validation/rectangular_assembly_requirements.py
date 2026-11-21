@@ -9,8 +9,9 @@ from app.validation.quantities import NUMBER as _NUMBER, number
 
 from app.contracts.assembly_measurements import assembly_kind
 
-_DECLARATION = r'(?:外壳|壳体)(?:由|包括)盒体(?:和|与|及)上盖(?:组成)?'
+_DECLARATION = r'(?:外壳|壳体)\s*(?:[，,：:]\s*)?(?:由|包括)盒体(?:和|与|及)上盖(?:组成)?'
 _ENVELOPE = r'(?:总体|整体)尺寸包含装配后的盒体和上盖[，,]不包含安装耳'
+_INLINE_ENVELOPE = r'(?:外壳|壳体)(?:总体|整体)尺寸\s*(?:为|是)'
 _DIMENSIONS = {
     r'(?:外壳|壳体)(?:总体|整体|总)?长度':'envelope_length',
     r'(?:外壳|壳体)(?:总体|整体|总)?宽度':'envelope_width',
@@ -40,8 +41,12 @@ _MANUFACTURING = re.compile(r'适合(?:FDM\s*PLA|FDM|PLA)打印',re.I)
 
 def extract_rectangular_assembly_sources(objective, sources):
     """Return None for other capabilities; never reinterpret frozen contracts."""
-    if (not any(re.search(_DECLARATION,s['text']) for s in sources)
-            or not any(re.search(_ENVELOPE,s['text']) for s in sources)):
+    if not any(re.search(_DECLARATION,s['text']) for s in sources):
+        return None
+    inline_source = next((s for s in sources if re.search(_INLINE_ENVELOPE, s['text'])), None)
+    if inline_source is not None and not any(re.search(_ENVELOPE,s['text']) for s in sources):
+        return _extract_inline_assembly(inline_source)
+    if not any(re.search(_ENVELOPE,s['text']) for s in sources):
         return None
     requirements, obligations, unsupported = [], [], []
     envelope_refs = []
@@ -124,3 +129,106 @@ def extract_rectangular_assembly_sources(objective, sources):
                 'reason':'assembly_quantity_conflict'} for r in rows)
     return {'schema_version':'requirement-extraction.v1','requirements':requirements,
             'unsupported':unsupported,'obligations':obligations}
+
+
+def _extract_inline_assembly(source):
+    """Parse the compact Chinese form used by the UI's normal design prompt.
+
+    The older parser intentionally requires an explicit envelope convention for
+    multiline specifications.  In the compact form, "外壳总体尺寸" followed by
+    separately described external ears is the user's explicit body/lid envelope;
+    keep that interpretation source-bound instead of asking the LLM to invent
+    assembly measurement labels.
+    """
+    text = source['text']
+    requirements, refs = [], {}
+
+    def add(start, end, measurement, value):
+        identity = f"r-{source['source_input_id']}-{start}-{end}-assembly-{measurement}"
+        kind = assembly_kind(measurement)
+        requirements.append({
+            'requirement_id': identity, 'source_input_id': source['source_input_id'],
+            'source_kind': source['source_kind'], 'source_span': [start, end],
+            'source_quote': text[start:end], 'property': measurement, 'kind': kind,
+            'comparison': {'op': 'eq', 'value': float(value),
+                           'unit': 'mm' if kind == 'assembly_dimension' else 'count'},
+            'scope': {'assembly_measurement': measurement},
+            'derivation': {'rule': 'rectangular_assembly_inline.v1'},
+        })
+        refs.setdefault(measurement, []).append(identity)
+        return identity
+
+    def value(raw, unit):
+        return number(raw) * (10 if unit.lower() in {'cm', '厘米'} else 1)
+
+    envelope = re.search(
+        rf'{_INLINE_ENVELOPE}\s*'
+        rf'(?P<length>{_NUMBER})\s*(?P<length_unit>mm|毫米|cm|厘米)长[、,]\s*'
+        rf'(?P<width>{_NUMBER})\s*(?P<width_unit>mm|毫米|cm|厘米)宽[、,]\s*'
+        rf'(?P<height>{_NUMBER})\s*(?P<height_unit>mm|毫米|cm|厘米)高', text, re.I)
+    if envelope:
+        for name, measurement in [('length', 'envelope_length'),
+                                  ('width', 'envelope_width'), ('height', 'envelope_height')]:
+            add(envelope.start(name), envelope.end(f'{name}_unit') + 1,
+                measurement, value(envelope[name], envelope[f'{name}_unit']))
+        add(envelope.start(), envelope.end(), 'envelope_excludes_tabs', 1)
+
+    scalar_patterns = [
+        (r'盒体外壁(?:厚度|厚)\s*(?P<v>{n})\s*(?P<u>mm|毫米|cm|厘米)'.format(n=_NUMBER), 'side_wall_thickness'),
+        (r'(?:盒体)?底板(?:厚度|厚)\s*(?P<v>{n})\s*(?P<u>mm|毫米|cm|厘米)'.format(n=_NUMBER), 'floor_thickness'),
+        (r'上盖(?:厚度|厚)\s*(?P<v>{n})\s*(?P<u>mm|毫米|cm|厘米)'.format(n=_NUMBER), 'lid_thickness'),
+        (r'(?:密封槽宽|宽)\s*(?P<v>{n})\s*(?P<u>mm|毫米|cm|厘米)(?:的密封槽)?'.format(n=_NUMBER), 'groove_width'),
+        (r'(?:密封槽深|深)\s*(?P<v>{n})\s*(?P<u>mm|毫米|cm|厘米)(?:的密封槽)?'.format(n=_NUMBER), 'groove_depth'),
+        (r'直径\s*(?P<v>{n})\s*(?P<u>mm|毫米|cm|厘米)的M?\d*安装通孔'.format(n=_NUMBER), 'mounting_hole_diameter'),
+        (r'直径\s*(?P<v>{n})\s*(?P<u>mm|毫米|cm|厘米)的线缆接头孔'.format(n=_NUMBER), 'connector_diameter'),
+    ]
+    for pattern, measurement in scalar_patterns:
+        match = re.search(pattern, text, re.I)
+        if match:
+            add(match.start(), match.end(), measurement, value(match['v'], match['u']))
+
+    tabs = re.search(
+        rf'(?:每个)?(?:外部)?安装耳长\s*(?P<length>{_NUMBER})\s*(?P<lu>mm|毫米|cm|厘米)'
+        rf'[、,]\s*宽\s*(?P<width>{_NUMBER})\s*(?P<wu>mm|毫米|cm|厘米)'
+        rf'[、,]\s*厚\s*(?P<thickness>{_NUMBER})\s*(?P<tu>mm|毫米|cm|厘米)', text, re.I)
+    if tabs:
+        for name, measurement in [('length', 'tab_length'), ('width', 'tab_width'),
+                                  ('thickness', 'tab_thickness')]:
+            add(tabs.start(name), tabs.end(f'{name[0]}u') if name != 'thickness' else tabs.end('tu'),
+                measurement, value(tabs[name], tabs[f'{name[0]}u' if name != 'thickness' else 'tu']))
+    tab_corners = re.search(r'四角增加(?:外部)?安装耳', text)
+    if tab_corners:
+        add(tab_corners.start(), tab_corners.end(), 'tab_count', 4)
+        add(tab_corners.start(), tab_corners.end(), 'tabs_at_corners', 1)
+    hole_each = re.search(r'安装耳中心各有一个[^。；;]*安装通孔', text)
+    if hole_each:
+        add(hole_each.start(), hole_each.end(), 'mounting_hole_count', 4)
+        add(hole_each.start(), hole_each.end(), 'mounting_holes_centered', 1)
+        add(hole_each.start(), hole_each.end(), 'mounting_holes_on_tabs', 1)
+    isolated = re.search(r'(?:不能|不得|避免)贯穿内部防水腔', text)
+    if isolated:
+        add(isolated.start(), isolated.end(), 'mounting_holes_isolated', 1)
+    declaration = re.search(_DECLARATION, text)
+    if declaration:
+        add(declaration.start(), declaration.end(), 'body_lid_fit', 1)
+    groove = re.search(r'盒体与上盖之间设置[^。；;]*密封槽', text)
+    if groove:
+        add(groove.start(), groove.end(), 'groove_at_interface', 1)
+    connector = re.search(r'外壳短侧面中央设置[^。；;]*接头孔', text)
+    if connector:
+        add(connector.start(), connector.end(), 'connector_short_side_centered', 1)
+        add(connector.start(), connector.end(), 'connector_through', 1)
+
+    # A compact request is accepted only when every required family was found;
+    # otherwise it falls back to the generic parser and remains visible as an
+    # unresolved requirement instead of being silently weakened.
+    required = {'envelope_length', 'envelope_width', 'envelope_height', 'body_lid_fit',
+                'side_wall_thickness', 'floor_thickness', 'lid_thickness', 'tab_length',
+                'tab_width', 'tab_thickness', 'mounting_hole_diameter', 'connector_diameter',
+                'groove_width', 'groove_depth'}
+    if not required <= set(refs):
+        return None
+    return {
+        'schema_version': 'requirement-extraction.v1',
+        'requirements': requirements, 'unsupported': [], 'obligations': [],
+    }

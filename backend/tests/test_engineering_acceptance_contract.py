@@ -29,6 +29,36 @@ def contract(**change):
     return AcceptanceContract.model_validate(data)
 
 
+def test_assembly_measurement_scope_frame_is_server_normalized_to_world():
+    from app.agent.planner import _normalize_assembly_scope_frames
+
+    payload = {
+        "design_brief": {
+            "acceptance": {
+                "checks": [
+                    {
+                        "kind": "assembly_dimension",
+                        "scope": {
+                            "assembly_measurement": "groove_depth",
+                            "frame": "assembly",
+                        },
+                    },
+                    {
+                        "kind": "overall_dimension",
+                        "scope": {"frame": "invalid-relative-frame"},
+                    },
+                ]
+            }
+        }
+    }
+
+    _normalize_assembly_scope_frames(payload)
+
+    checks = payload["design_brief"]["acceptance"]["checks"]
+    assert checks[0]["scope"]["frame"] == "world"
+    assert checks[1]["scope"]["frame"] == "invalid-relative-frame"
+
+
 def test_missing_and_duplicate_evidence_never_pass():
     c = contract()
     good = MeasurementEvidence(check_id="connected", outcome="passed", method="brep_solids", measured=(1,))
@@ -172,6 +202,177 @@ async def test_planner_repairs_against_actual_validation_feedback_without_weaken
 
 
 @pytest.mark.asyncio
+async def test_new_plan_repairs_invalid_measurement_scope_frame():
+    import json
+    from types import SimpleNamespace
+    from app.agent.planner import Planner
+
+    objective = "创建一个整体零件"
+    acceptance = {
+        "objective": objective,
+        "checks": [{
+            "check_id": "connected",
+            "kind": "solid_count",
+            "description": "One connected solid",
+            "source_quote": objective,
+            "nominal": 1,
+            "scope": {"frame": "world"},
+        }],
+    }
+    invalid = {
+        "description": objective,
+        "part_type": "box",
+        "dimensions": {"length": 10, "width": 10, "height": 10},
+        "features": [],
+        "constraints": [],
+        "design_brief": {
+            "intent_summary": objective,
+            "artifact_type": "box",
+            "acceptance": json.loads(json.dumps(acceptance)),
+        },
+    }
+    invalid["design_brief"]["acceptance"]["checks"][0]["scope"]["frame"] = "assembly"
+    corrected = json.loads(json.dumps(invalid))
+    corrected["design_brief"]["acceptance"] = acceptance
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        payload = invalid if len(calls) == 1 else corrected
+        return SimpleNamespace(choices=[SimpleNamespace(
+            finish_reason="stop",
+            message=SimpleNamespace(content=json.dumps(payload)),
+        )])
+
+    planner = Planner()
+    planner._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+
+    result = await planner.plan_new(
+        [{"role": "user", "content": objective}],
+        require_acceptance=True,
+    )
+
+    assert result.design_brief.acceptance.checks[0].scope.frame == "world"
+    assert len(calls) == 2
+    feedback = calls[1]["messages"][-1]["content"]
+    assert "design_brief.acceptance.checks.0.scope.frame" in feedback
+    assert "world" in feedback and "bounds_center" in feedback
+    assert "scope.frame must be exactly one of" in feedback
+
+
+@pytest.mark.asyncio
+async def test_v2_modification_repairs_illegal_bounding_box_for_ordinary_width_change():
+    import json
+    from types import SimpleNamespace
+    from app.agent.planner import Planner
+
+    objective = 'Change the width to 20 mm'
+    valid_acceptance = {
+        'schema_version': 'engineering-acceptance.v2',
+        'objective': objective,
+        'checks': [{
+            'check_id': 'width',
+            'kind': 'overall_dimension',
+            'description': 'overall width',
+            'source_quote': objective,
+            'binding_ref': 'objective',
+            'comparison': {'op': 'eq', 'value': 20.0, 'unit': 'mm'},
+            'scope': {'axis': [0, 1, 0]},
+        }],
+    }
+    invalid_acceptance = json.loads(json.dumps(valid_acceptance))
+    invalid_acceptance['checks'][0].update({
+        'check_id': 'bounds',
+        'kind': 'bounding_box',
+        'comparison': {'op': 'eq', 'value': 0.0, 'unit': 'mm'},
+        'scope': {},
+    })
+    payloads = [
+        {'description': 'part', 'modification_type': 'dimension_change',
+         'target_params': {'width': '20 mm'}, 'acceptance': invalid_acceptance},
+        {'description': 'part', 'modification_type': 'dimension_change',
+         'target_params': {'width': '20 mm'}, 'acceptance': valid_acceptance},
+    ]
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        content = json.dumps(payloads[len(calls) - 1])
+        return SimpleNamespace(choices=[SimpleNamespace(
+            finish_reason='stop', message=SimpleNamespace(content=content))])
+
+    planner = Planner()
+    planner._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+    result = await planner.plan_modification(
+        [{'role': 'user', 'content': objective}], '{}',
+        require_acceptance=True, acceptance_version='engineering-acceptance.v2')
+
+    assert result.acceptance.checks[0].kind == 'overall_dimension'
+    assert len(calls) == 2
+    system_prompt = calls[0]['messages'][0]['content']
+    assert 'bounding_box' in system_prompt
+    assert 'component_region' in system_prompt
+    assert 'ordinary length, width, height' in system_prompt
+    feedback = calls[1]['messages'][-1]['content']
+    assert 'bounding_box' in feedback
+    assert 'component_region' in feedback
+    assert 'ordinary length, width, height' in feedback
+
+
+@pytest.mark.asyncio
+async def test_v1_modification_rejects_width_bound_to_the_pad_z_axis():
+    import json
+    from types import SimpleNamespace
+    from app.agent.planner import Planner
+
+    objective = '将正方体的宽改为 20cm，使其变成长方体'
+    wrong = {
+        'schema_version': 'engineering-acceptance.v1',
+        'objective': objective,
+        'checks': [{
+            'check_id': 'width-z',
+            'kind': 'overall_dimension',
+            'description': '修改后的宽度',
+            'source_quote': objective,
+            'nominal': 200.0,
+            'scope': {'axis': [0, 0, 1]},
+        }],
+    }
+    corrected = json.loads(json.dumps(wrong))
+    corrected['checks'][0].update(check_id='width-y', scope={'axis': [0, 1, 0]})
+    payloads = [
+        {'description': '修改正方体宽度', 'modification_type': 'dimension_change',
+         'target_params': {'Pad.Length': '20 cm'}, 'acceptance': wrong},
+        {'description': '修改正方体宽度', 'modification_type': 'dimension_change',
+         'target_params': {'width': '20 cm'}, 'acceptance': corrected},
+    ]
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            finish_reason='stop', message=SimpleNamespace(
+                content=json.dumps(payloads[len(calls) - 1]))
+        )])
+
+    planner = Planner()
+    planner._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+    result = await planner.plan_modification(
+        [{'role': 'user', 'content': objective}], '{}', require_acceptance=True)
+
+    assert result.acceptance.checks[0].scope.axis == (0.0, 1.0, 0.0)
+    assert len(calls) == 2
+    assert 'width' in calls[1]['messages'][-1]['content'].lower()
+    assert 'semantic' in calls[1]['messages'][-1]['content'].lower()
+
+
+@pytest.mark.asyncio
 async def test_failed_planner_preserves_field_diagnostic_without_echoing_input_value():
     import json
     from types import SimpleNamespace
@@ -249,12 +450,217 @@ def test_engineering_tool_schema_requires_contract_at_the_actual_runtime_locatio
             if kind == 'hole_position':
                 assert 'document axes' in scope['properties']['axis'].get('description', '')
                 assert 'axis' in scope['required']
-        with pytest.raises(jsonschema.ValidationError):jsonschema.validate(payload,schema)
         if model is CADPlan:
+            # Azure-compatible function schemas cannot express this conditional
+            # requirement at the top level. Planner validation enforces it after
+            # the provider returns the tool payload.
+            jsonschema.validate(payload,schema)
             with pytest.raises(jsonschema.ValidationError):
                 jsonschema.validate({**payload,'acceptance':contract().model_dump(mode='json')},schema)
             jsonschema.validate({**payload,'part_type':'profile_2d'},schema)
             payload['design_brief']={'acceptance':contract().model_dump(mode='json')}
         else:
+            with pytest.raises(jsonschema.ValidationError):jsonschema.validate(payload,schema)
             payload['acceptance']=contract().model_dump(mode='json')
         jsonschema.validate(payload,schema)
+
+
+def test_generate_tool_schema_is_azure_function_compatible_at_the_top_level():
+    from app.agent.planner import _planning_format
+    from app.models.schemas import CADPlan
+
+    schema = _planning_format(
+        CADPlan, 'submit_cad_plan', True, 'engineering-acceptance.v2'
+    )['tools'][0]['function']['parameters']
+
+    assert schema['type'] == 'object'
+    assert not any(key in schema for key in ('allOf', 'anyOf', 'oneOf', 'enum', 'const', 'not'))
+
+
+def test_freecad_tool_schemas_are_azure_function_compatible_at_the_top_level():
+    from app.freecad.agent_tools import tool_schemas
+
+    configurations = (
+        {'has_document': False},
+        {'has_document': True},
+        {'has_document': True, 'constraint_repair': True},
+        {'has_document': True, 'profile_repair': True},
+        {'has_document': True, 'cut_repair': True},
+    )
+    for configuration in configurations:
+        for tool in tool_schemas(**configuration):
+            schema = tool['function']['parameters']
+            assert schema['type'] == 'object'
+            assert not any(key in schema for key in ('allOf', 'anyOf', 'oneOf', 'enum', 'const', 'not'))
+
+
+def test_v2_tool_schema_exposes_assembly_measurement_enum_and_units():
+    import jsonschema
+    from app.agent.planner import _planning_format
+    from app.models.schemas import CADPlan
+    from app.contracts.assembly_measurements import (
+        ASSEMBLY_COUNTS, ASSEMBLY_DIMENSIONS, ASSEMBLY_PREDICATES,
+    )
+
+    schema = _planning_format(
+        CADPlan, 'submit_cad_plan', True, 'engineering-acceptance.v2'
+    )['tools'][0]['function']['parameters']
+    definitions = schema['$defs']
+    measurement = definitions['MeasurementScopeV2']['properties']['assembly_measurement']
+    assert set(measurement['anyOf'][0]['enum']) == (
+        set(ASSEMBLY_DIMENSIONS) | set(ASSEMBLY_COUNTS) | set(ASSEMBLY_PREDICATES)
+    )
+    assert any(
+        rule.get('if', {}).get('properties', {}).get('kind', {}).get('const') == 'assembly_dimension'
+        and rule.get('then', {}).get('properties', {}).get('comparison', {}).get('properties', {}).get('unit', {}).get('const') == 'mm'
+        for rule in definitions['AcceptanceCheckV2'].get('allOf', [])
+    )
+    invalid = {
+        'description': 'assembly', 'part_type': 'custom', 'dimensions': {}, 'features': [],
+        'design_brief': {'acceptance': {
+            'schema_version': 'engineering-acceptance.v2', 'objective': 'assembly',
+            'checks': [{
+                'check_id': 'bad', 'kind': 'assembly_dimension', 'description': 'bad',
+                'source_quote': 'assembly', 'binding_ref': 'objective',
+                'comparison': {'op': 'eq', 'value': 1.0, 'unit': 'count'},
+                'scope': {'assembly_measurement': 'not_a_measurement'},
+            }],
+        }},
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(invalid, schema)
+
+
+def test_v2_tool_schema_rejects_assembly_measurement_kind_mismatch():
+    import jsonschema
+    from app.agent.planner import _planning_format
+    from app.models.schemas import CADPlan
+
+    schema = _planning_format(
+        CADPlan, 'submit_cad_plan', True, 'engineering-acceptance.v2'
+    )['tools'][0]['function']['parameters']
+    payload = {
+        'description': 'assembly', 'part_type': 'custom', 'dimensions': {}, 'features': [],
+        'design_brief': {'acceptance': {
+            'schema_version': 'engineering-acceptance.v2', 'objective': 'assembly',
+            'checks': [{
+                'check_id': 'bad', 'kind': 'assembly_count', 'description': 'bad',
+                'source_quote': 'assembly', 'binding_ref': 'objective',
+                'comparison': {'op': 'eq', 'value': 90.0, 'unit': 'count'},
+                'scope': {'assembly_measurement': 'envelope_length'},
+            }],
+        }},
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(payload, schema)
+
+
+def test_planner_correction_feedback_explains_assembly_measurement_roles():
+    from app.agent.planner import _correction_messages
+
+    feedback = _correction_messages(
+        None,
+        ValueError('assembly role does not define this measurement kind'),
+    )
+    message = feedback[-1]['content']
+    assert 'assembly_dimension' in message
+    assert 'envelope_length' in message
+    assert 'assembly_count' in message
+    assert 'tab_count' in message
+    assert 'assembly_predicate' in message
+    assert 'body_lid_fit' in message
+
+
+def test_v2_tool_schema_rejects_local_selectors_on_assembly_measurements():
+    import jsonschema
+    from app.agent.planner import _planning_format
+    from app.models.schemas import CADPlan
+
+    schema = _planning_format(
+        CADPlan, 'submit_cad_plan', True, 'engineering-acceptance.v2'
+    )['tools'][0]['function']['parameters']
+    payload = {
+        'description': 'assembly', 'part_type': 'custom', 'dimensions': {}, 'features': [],
+        'design_brief': {'acceptance': {
+            'schema_version': 'engineering-acceptance.v2', 'objective': 'assembly',
+            'checks': [{
+                'check_id': 'bad', 'kind': 'assembly_dimension', 'description': 'bad',
+                'source_quote': 'assembly', 'binding_ref': 'objective',
+                'comparison': {'op': 'eq', 'value': 90.0, 'unit': 'mm'},
+                'scope': {
+                    'assembly_measurement': 'envelope_length',
+                    'axis': [1.0, 0.0, 0.0],
+                },
+            }],
+        }},
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(payload, schema)
+
+
+def test_planner_correction_feedback_explains_complete_assembly_scope():
+    from app.agent.planner import _correction_messages
+
+    feedback = _correction_messages(
+        None,
+        ValueError('assembly roles require the complete independently inventoried assembly'),
+    )
+    message = feedback[-1]['content']
+    assert 'complete independently inventoried assembly' in message
+    assert 'axis' in message
+    assert 'point_mm' in message
+    assert 'centers_mm' in message
+    assert 'component_region' in message
+
+
+def test_v2_tool_schema_rejects_hole_group_on_assembly_checks():
+    import jsonschema
+    from app.agent.planner import _planning_format
+    from app.models.schemas import CADPlan
+
+    schema = _planning_format(
+        CADPlan, 'submit_cad_plan', True, 'engineering-acceptance.v2'
+    )['tools'][0]['function']['parameters']
+    payload = {
+        'description': 'assembly', 'part_type': 'custom', 'dimensions': {}, 'features': [],
+        'design_brief': {'acceptance': {
+            'schema_version': 'engineering-acceptance.v2', 'objective': 'assembly',
+            'checks': [{
+                'check_id': 'bad', 'kind': 'assembly_count', 'description': 'bad',
+                'source_quote': 'assembly', 'binding_ref': 'objective',
+                'comparison': {'op': 'eq', 'value': 4.0, 'unit': 'count'},
+                'scope': {'assembly_measurement': 'mounting_hole_count'},
+                'hole_group': {'schema_version': 'hole-group.v1', 'group_id': 'mounting-holes'},
+            }],
+        }},
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(payload, schema)
+
+
+def test_planner_correction_feedback_explains_hole_group_authority():
+    from app.agent.planner import _correction_messages
+
+    feedback = _correction_messages(
+        None,
+        ValueError('unsupported hole population predicate or authority'),
+    )
+    message = feedback[-1]['content']
+    assert 'hole_group' in message
+    assert 'assembly_count' in message
+    assert 'assembly_predicate' in message
+    assert 'hole_count' in message
+
+
+def test_v2_planner_prompt_declares_assembly_measurement_kind_mapping():
+    from app.agent.planner import _v2_requirements_prompt
+
+    prompt = _v2_requirements_prompt('design an enclosure assembly', 'submit_cad_plan')
+    assert 'assembly_dimension' in prompt
+    assert 'envelope_length' in prompt
+    assert 'assembly_count' in prompt
+    assert 'tab_count' in prompt
+    assert 'assembly_predicate' in prompt
+    assert 'body_lid_fit' in prompt
+    assert "scope.frame must be exactly one of" in prompt
+    assert "'world', 'bounds_center', 'bounds_min', 'selected_object'" in prompt

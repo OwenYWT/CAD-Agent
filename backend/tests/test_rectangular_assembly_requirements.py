@@ -104,6 +104,48 @@ def test_concept_geometry_confirmation_does_not_certify_physical_waterproofing()
     assert any(x['reason']=='physical_performance_not_verified' for x in result['unsupported'])
 
 
+def test_realistic_comma_separated_enclosure_request_is_recognized_as_an_assembly():
+    objective = (
+        '设计一个适合FDM PLA打印的矩形防水传感器外壳，由盒体和上盖组成。'
+        '外壳总体尺寸为90mm长、60mm宽、35mm高。'
+        '盒体外壁厚度3mm，底板厚度3mm，上盖厚度3mm。'
+        '四角增加外部安装耳，每个安装耳长12mm、宽10mm、厚3mm；'
+        '安装耳中心各有一个直径4.6mm的M4安装通孔，不能贯穿内部防水腔。'
+        '盒体与上盖之间设置宽2.4mm、深1.5mm的密封槽。'
+        '外壳短侧面中央设置直径12.5mm的线缆接头孔。'
+    )
+    sources = [{'source_input_id': 'objective', 'source_kind': 'user', 'text': objective,
+                'execution_scope': 'concept_geometry'}]
+
+    result = extract_source_requirements(objective, requirement_sources=sources)
+
+    measurements = {
+        row['scope'].get('assembly_measurement')
+        for row in result['requirements']
+        if row['scope'].get('assembly_measurement')
+    }
+    assert {'envelope_length', 'envelope_width', 'envelope_height'} <= measurements
+    assert {'tab_length', 'tab_width', 'tab_thickness', 'groove_width', 'groove_depth'} <= measurements
+    assert {'mounting_hole_diameter', 'connector_diameter'} <= measurements
+    assert 'assembly_clause_unbound' not in {item['reason'] for item in result['unsupported']}
+
+    proposal = {
+        'schema_version': 'engineering-acceptance.v2',
+        'objective': objective,
+        'verification_notices': result.get('verification_notices', []),
+        'checks': [{
+            'check_id': row['requirement_id'], 'kind': row['kind'],
+            'description': row['property'], 'source_quote': row['source_quote'],
+            'binding_ref': row['requirement_id'], 'source_kind': row['source_kind'],
+            'comparison': row['comparison'], 'scope': row['scope'],
+        } for row in result['requirements']],
+    }
+    contract = AcceptanceContractV2.model_validate(proposal)
+    assert validate_requirement_bindings(
+        objective, contract, requirement_sources=sources
+    )['status'] == 'bound'
+
+
 @pytest.mark.parametrize('extra',['密封槽沿复杂曲线变化','安装孔偏离安装耳中心2mm',
     '上盖与盒体间隙0.2mm','另有两个隔舱','安装耳厚度不少于4mm'])
 def test_unimplemented_or_conflicting_assembly_conditions_remain_visible(extra):

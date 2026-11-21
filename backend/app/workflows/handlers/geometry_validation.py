@@ -60,6 +60,8 @@ async def agent_validate_geometry(payload: dict[str, Any], *, backend: Execution
         measurement_context = {'schema_version':'measurement-context.v1',
             'base_revision_id':str(request.expected_base_revision_id), 'checkpoint_manifest_id':str(manifest_id),
             'artifact_sha256s':[item['sha256'] for item in bound_outputs]}
+        if expected_solid_count == 2 and bound_manifest.get('modeling_backend') in {'freecad', 'cadquery'}:
+            measurement_context['modeling_backend'] = bound_manifest['modeling_backend']
         references=[c.scope.object_ref.model_dump(mode='json') for c in acceptance.checks if c.scope.object_ref is not None]
         if references:
             async with tenant_transaction(request.tenant_id,request.principal_id) as connection:

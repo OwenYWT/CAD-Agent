@@ -3,6 +3,18 @@ import hashlib
 import json
 
 
+def is_body_lid_stl(artifact_format, expected_count, acceptance):
+    return (artifact_format == 'stl' and expected_count == 2
+            and any(check.get('kind') == 'assembly_predicate'
+                    and (check.get('scope') or {}).get('assembly_measurement') == 'body_lid_fit'
+                    for check in (acceptance or {}).get('checks', ())))
+
+
+def is_fused_assembly_preview(artifact_format, expected_count, step_count, acceptance, measurement_context):
+    return (expected_count == step_count and (measurement_context or {}).get('modeling_backend') == 'cadquery'
+            and is_body_lid_stl(artifact_format, expected_count, acceptance))
+
+
 def geometry_request_digest(*, expected_dimensions_mm, dimension_tolerance,
                             expected_solid_count=None, acceptance=None, measurement_context=None):
     request = {

@@ -8,7 +8,13 @@ from pydantic import BeforeValidator, Field, TypeAdapter, model_validator, model
 from app.contracts.acceptance import AcceptanceModel, AcceptanceContract, MeasurementScope
 from app.contracts.acceptance_comparison import COMPARISON_POLICY_ID
 from app.contracts.hole_populations import population_pools
-from app.contracts.assembly_measurements import ASSEMBLY_DIMENSIONS, ASSEMBLY_COUNTS, ASSEMBLY_PREDICATES, assembly_kind
+from app.contracts.assembly_measurements import (
+    ASSEMBLY_COUNTS,
+    ASSEMBLY_DIMENSIONS,
+    ASSEMBLY_PREDICATES,
+    AssemblyMeasurement,
+    assembly_kind,
+)
 from app.contracts.machined_feature_values import principal_axis
 
 Quantity = Annotated[float, Field(strict=True, ge=0)]
@@ -38,9 +44,7 @@ class ComponentRegion(AcceptanceModel):
 
 
 class MeasurementScopeV2(MeasurementScope):
-    assembly_measurement: Annotated[str, Field(json_schema_extra={
-        'enum': sorted(ASSEMBLY_DIMENSIONS | ASSEMBLY_COUNTS | ASSEMBLY_PREDICATES)
-    })] | None = None
+    assembly_measurement: AssemblyMeasurement | None = None
     wall_mode: Literal['continuous_normal', 'surface_normal', 'radial', 'local_probe',
                        'side_walls', 'cavity_floor'] = 'continuous_normal'
     frame: Literal['world', 'bounds_center', 'bounds_min', 'selected_object'] = 'world'
@@ -238,10 +242,16 @@ class AcceptanceCheckV2(AcceptanceModel):
 
         schema['allOf'] = [
             when(kind, scope={'required': ['assembly_measurement'], 'properties': {
-                'assembly_measurement': {'enum': sorted(names)}}})
+                'assembly_measurement': {'enum': sorted(names)}, 'frame': {'const': 'world'},
+                'axis': {'type': 'null'}, 'point_mm': {'type': 'null'}, 'centers_mm': {'maxItems': 0},
+                'region_min_mm': {'type': 'null'}, 'region_max_mm': {'type': 'null'},
+                'object_ref': {'type': 'null'}, 'component_region': {'type': 'null'}}},
+                comparison={'properties': {'unit': {'const': 'mm' if kind == 'assembly_dimension' else 'count'}}})
             for kind, names in [('assembly_dimension', ASSEMBLY_DIMENSIONS), ('assembly_count', ASSEMBLY_COUNTS),
                                 ('assembly_predicate', ASSEMBLY_PREDICATES)]
         ] + [
+            {'if': {'required': ['hole_group'], 'properties': {'hole_group': {'type': 'object'}}},
+             'then': {'properties': {'kind': {'enum': ['hole_count', 'hole_diameter', 'hole_depth', 'hole_through']}}}},
             when('hole_through', comparison={'properties': {
                 'op': {'const': 'eq'}, 'value': {'const': 1}, 'unit': {'const': 'count'}}}),
             # The default empty scope is also valid for planar_gap.
@@ -288,6 +298,10 @@ class AcceptanceCheckV2(AcceptanceModel):
         if self.required != (self.source_kind != 'assumption'):
             raise ValueError('requiredness must match verified provenance')
         kind, scope, comparison = self.kind, self.scope, self.comparison
+        if self.hole_group is not None and kind not in {
+            'hole_count', 'hole_diameter', 'hole_depth', 'hole_through'
+        }:
+            raise ValueError('hole_group applies only to hole population checks')
         if kind.startswith(('annular_segment_', 'solid_segment_')) and (scope.frame != 'world' or scope.axis is None
                 or scope.point_mm is None or scope.centers_mm or scope.region_min_mm is not None):
             raise ValueError('annular segment requires a world axis and an interior axis point, without clipping regions')

@@ -95,6 +95,19 @@ test('waiting for confirmation has no execution spinner', () => {
   assert.equal(s.getActivePanel().isGenerating,false);
 });
 
+test('historical restore reports a document operation conflict instead of waiting forever', () => {
+  const p=panel();const s=useSessionStore.getState();
+  s.applyDurableSnapshot({...snapshot('restore-task','failed'), kind:'mcad.agent.v2.modify',
+    request_payload:{...snapshot('restore-task','failed').request_payload, revision_restore:{source_revision_id:'history'}} ,
+    error_code:'document_operation_in_progress',
+    error_message:'文档已有任务进行中'},p.id);
+  const state=taskState(s.getActivePanel());
+  assert.equal(state.phase,'failed');
+  assert.equal(state.running,false);
+  assert.equal(state.title,'文档已有任务进行中');
+  assert.equal(state.errorCode,'document_operation_in_progress');
+});
+
 test('old workflow snapshot and events cannot overwrite a new retry', () => {
   const p=panel();const s=useSessionStore.getState();s.applyDurableSnapshot(snapshot('task-1','failed'),p.id);
   s.beginGeneration();s.setDurableWorkflowStarted({workflow_run_id:'task-2',project_id:'project',branch_id:'branch',expected_base_revision_id:'base',panel_id:p.id,status:'pending'});

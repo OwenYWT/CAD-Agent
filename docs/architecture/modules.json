@@ -111,12 +111,14 @@
         "app.execution.canonical",
         "app.workflows.native_repair",
         "app.services.provider_budgets",
-        "app.workflows.work_accounting"
+        "app.workflows.work_accounting",
+        "app.evaluation.integration"
       ],
       "allowed_dependencies": [
         "P00",
         "P01",
-        "M12"
+        "M12",
+        "M11"
       ]
     },
     "M04": {
@@ -270,7 +272,11 @@
       ],
       "public": [
         "app.services.llm_usage",
-        "app.services.monitor_queries"
+        "app.services.monitor_queries",
+        "app.evaluation.contracts",
+        "app.evaluation.mode",
+        "app.evaluation.session",
+        "app.evaluation.store"
       ],
       "allowed_dependencies": [
         "P00",
@@ -314,7 +320,8 @@
         "app.dfm.configuration",
         "app.services.capability_actions",
         "app.temporal_client",
-        "app.principal_context"
+        "app.principal_context",
+        "app.sandbox.code_analyzer"
       ],
       "allowed_dependencies": [
         "P00",
@@ -1025,7 +1032,22 @@
     "frontend/src/services/clients/invites.ts": "P04",
     "frontend/src/services/clients/manufacturing.ts": "M08",
     "frontend/src/services/clients/capabilities.ts": "M10",
-    "frontend/src/types/dfm.ts": "P00"
+    "frontend/src/types/dfm.ts": "P00",
+    "backend/app/evaluation/__init__.py": "M11",
+    "backend/app/evaluation/baseline.py": "M11",
+    "backend/app/evaluation/complexity_profile.py": "M11",
+    "backend/app/evaluation/consistency.py": "M11",
+    "backend/app/evaluation/contracts.py": "M11",
+    "backend/app/evaluation/human_report.py": "M11",
+    "backend/app/evaluation/integration.py": "M03",
+    "backend/app/evaluation/mode.py": "M11",
+    "backend/app/evaluation/repair_gain.py": "M11",
+    "backend/app/evaluation/resource_cost.py": "M11",
+    "backend/app/evaluation/session.py": "M11",
+    "backend/app/evaluation/store.py": "M11",
+    "backend/app/evaluation/writer.py": "M11",
+    "backend/app/run.py": "P02",
+    "backend/app/workers/run.py": "P02"
   },
   "required_runtime_reports": {
     "browser-e2e/native-parameters/kernel.log": {

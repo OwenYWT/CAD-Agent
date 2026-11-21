@@ -42,6 +42,11 @@ _BASE_CYLINDER = re.compile(
     r"height=(\d+(?:\.\d+)?)$",
     re.I,
 )
+_BASE_BOX = re.compile(
+    r"^base_box:length=(\d+(?:\.\d+)?),"
+    r"width=(\d+(?:\.\d+)?),height=(\d+(?:\.\d+)?)$",
+    re.I,
+)
 _SOLID_CYLINDER = re.compile(
     r"^cylinder:solid,diameter=(\d+(?:\.\d+)?),"
     r"height=(\d+(?:\.\d+)?)$",
@@ -337,6 +342,60 @@ def _find_property_target(
     return candidates[0] if len(candidates) == 1 else None
 
 
+def _find_sketch_dimension_target(
+    key: str,
+    objects: list[dict[str, Any]],
+) -> tuple[str, int, str] | None:
+    """Resolve semantic box dimensions to their driving sketch constraints.
+
+    FreeCAD pads expose their extrusion as ``Length`` (the document Z axis),
+    which is not the same thing as a user's ``width``.  Only use a recorded,
+    driving line-length constraint whose line orientation matches the semantic
+    axis; otherwise the caller must leave the request for the inspected
+    provider instead of guessing.
+    """
+    normalized = re.sub(r"[^a-z0-9\u4e00-\u9fff]", "", key.lower())
+    axis = (
+        "x" if normalized in {"length", "long", "长度", "长"}
+        else "y" if normalized in {"width", "wide", "宽度", "宽"}
+        else None
+    )
+    if axis is None:
+        return None
+    candidates: list[tuple[str, int, str]] = []
+    for item in objects:
+        if item.get("type_id") != "Sketcher::SketchObject":
+            continue
+        inspection = dict(item.get("inspection") or {})
+        geometry = {
+            int(row["index"]): row
+            for row in (dict(geometry) for geometry in (inspection.get("geometry") or {}).get("items", ()))
+            if "index" in row
+        }
+        for constraint in (inspection.get("constraints") or {}).get("items", ()):
+            constraint = dict(constraint)
+            constraint_type = constraint.get("type")
+            if constraint_type not in {"Distance", "DistanceX", "DistanceY"} or constraint.get("driving") is False:
+                continue
+            line = geometry.get(constraint.get("first"))
+            if constraint_type == "DistanceX":
+                orientation = "x"
+            elif constraint_type == "DistanceY":
+                orientation = "y"
+            elif not line:
+                continue
+            else:
+                start, end = line.get("start"), line.get("end")
+                if not isinstance(start, dict) or not isinstance(end, dict):
+                    continue
+                dx = abs(float(end.get("x", 0)) - float(start.get("x", 0)))
+                dy = abs(float(end.get("y", 0)) - float(start.get("y", 0)))
+                orientation = "x" if dx > dy else "y" if dy > dx else None
+            if orientation == axis:
+                candidates.append((str(item["name"]), int(constraint["index"]), str(constraint_type)))
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def _body_tip(objects: list[dict[str, Any]]) -> str | None:
     names = {str(item.get("name")) for item in objects}
     for item in objects:
@@ -387,6 +446,19 @@ def compile_common_modification(
         normalized = re.sub(r"[^a-z0-9\u4e00-\u9fff]", "", str(key).lower())
         if "chamfer" in normalized or "倒角" in normalized:
             features.append(f"chamfer:size={value:g}")
+            continue
+        sketch_target = _find_sketch_dimension_target(str(key), objects)
+        if sketch_target is not None:
+            sketch, constraint_index, expected_type = sketch_target
+            args = {
+                "sketch": sketch,
+                "constraint_index": constraint_index,
+                "expected_type": expected_type,
+                "value_mm": value,
+            }
+            operations.append(
+                _op(_semantic_id("set-sketch-dimension", args), "sketch.set_constraint", args)
+            )
             continue
         target = _find_property_target(str(key), objects)
         if target is None:
@@ -469,7 +541,54 @@ def compile_common_generation(
         return None
 
     operations: list[dict[str, Any]]
-    if part_type == "plate":
+    if part_type == "box":
+        length = dimensions.get("length")
+        width = dimensions.get("width")
+        height = dimensions.get("height")
+        if length is None or width is None or height is None:
+            return None
+        for feature in features:
+            lowered = feature.lower()
+            if lowered in {"fully_constrained_sketch:true", "sketch:fully_constrained"}:
+                continue
+            declared = _BASE_BOX.fullmatch(lowered)
+            if declared is None or any(
+                not math.isclose(float(value), expected)
+                for value, expected in zip(declared.groups(), (length, width, height))
+            ):
+                return None
+        for constraint in constraints:
+            lowered = constraint.lower()
+            if lowered not in {"fully_constrained_sketch=true", "sketch_fully_constrained=true"}:
+                return None
+        operations = [
+            _op("create-base-sketch", "sketch.create", {"name": "BaseSketch", "plane": "xy"}),
+            _op(
+                "add-base-rectangle",
+                "sketch.add_geometry",
+                {
+                    "sketch": "BaseSketch",
+                    "geometry": {
+                        "kind": "rectangle",
+                        "corner": {"x": 0.0, "y": 0.0},
+                        "width_mm": length,
+                        "height_mm": width,
+                    },
+                },
+            ),
+            *_rectangle_constraints(
+                "BaseSketch",
+                width=length,
+                depth=width,
+                offset=0.0,
+            ),
+            _op(
+                "pad-base",
+                "feature.pad",
+                {"name": "Pad", "profile": "BaseSketch", "length_mm": height},
+            ),
+        ]
+    elif part_type == "plate":
         plate_dimensions = _plate_dimensions(dimensions)
         if plate_dimensions is None or not _plate_semantics_covered(dimensions, features, constraints, plate_dimensions):
             return None

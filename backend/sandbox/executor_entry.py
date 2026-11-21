@@ -224,20 +224,9 @@ def main():
                     obj.save(step_path)
                     files[f"{name}.step"] = step_path
                     try:
-                        compound = obj.toCompound()
-                        preview_shape = compound
-                        solids = list(compound.Solids())
-                        if len(solids) > 1:
-                            preview_shape = solids[0]
-                            for solid in solids[1:]:
-                                preview_shape = preview_shape.fuse(solid)
-                        if not preview_shape.isValid():
-                            raise ValueError("assembly preview fusion produced invalid geometry")
-                        cq.exporters.export(
-                            cq.Workplane().add(preview_shape),
-                            stl_path,
-                            exportType="STL",
-                        )
+                        from mesh_normalization import export_fused_step_preview
+
+                        export_fused_step_preview(step_path, stl_path)
                         files[f"{name}.stl"] = stl_path
                     except Exception as e:
                         print(f"Warning: STL export for assembly failed: {e}")

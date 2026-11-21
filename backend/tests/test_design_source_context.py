@@ -8,7 +8,8 @@ import pytest
 
 from app.contracts.acceptance_v2 import AcceptanceContractV2, RequirementBindingError
 from app.validation.requirement_binding import (
-    extract_requirements, extract_source_requirements, validate_requirement_bindings,
+    bind_source_quotes, extract_requirements, extract_source_requirements,
+    require_bound_sources, validate_requirement_bindings,
 )
 
 
@@ -48,6 +49,113 @@ def test_one_design_request_is_not_a_one_solid_requirement(text):
     assert len(requests) == 1 and requests[0]['count'] == 1
     assert requests[0]['delivery_unit'] == 'cad_document'
     assert validate_requirement_bindings(text, contract_for(text, result))['source_context'] == result['source_context']
+
+
+def test_basic_shape_design_request_binds_delivery_count():
+    text = '生成一个边长10cm的正方体'
+    result = extract_requirements(text)
+    assert not result['unsupported'], result
+    assert result['source_context']['design_requests'] == [{
+        'reference_id': 's-objective-2-4-design',
+        'source_input_id': 'objective',
+        'source_kind': 'user',
+        'source_span': [2, 4],
+        'source_quote': '一个',
+        'count': 1,
+        'delivery_unit': 'cad_document',
+    }]
+
+
+@pytest.mark.parametrize('text', [
+    '帮我生成一个立方体，它的边长是10cm',
+    'Create one cube with edge length 100 mm',
+    'Create one cube, length 100 mm',
+])
+def test_equivalent_cube_design_wording_binds_delivery_and_geometry(text):
+    result = require_bound_sources(text)
+    assert not result['unsupported']
+    assert [(row['kind'], row['comparison']['value']) for row in result['requirements']] == [
+        ('cube_shape', 1.0),
+        ('cube_edge', 100.0),
+    ]
+
+
+def test_cube_edge_length_binds_intrinsic_shape_and_edge():
+    text = '生成一个边长10cm的正方体'
+    sources = concept_sources(text)
+    result = extract_source_requirements(text, requirement_sources=sources)
+
+    assert [(row['kind'], row['comparison']) for row in result['requirements']] == [
+        ('cube_shape', {'op': 'eq', 'value': 1.0, 'unit': 'count'}),
+        ('cube_edge', {'op': 'eq', 'value': 100.0, 'unit': 'mm'}),
+    ]
+    assert validate_requirement_bindings(
+        text,
+        contract_for(text, result),
+        requirement_sources=sources,
+    )['status'] == 'bound'
+
+
+@pytest.mark.parametrize('text', [
+    'Create one cube, length 100 mm',
+    '生成一个边长10cm的正方体',
+])
+def test_model_delivery_count_must_not_become_a_solid_count_check(text):
+    extraction = extract_requirements(text)
+    delivery_quote = extraction['source_context']['design_requests'][0]['source_quote']
+    acceptance = {
+        'objective': text,
+        'checks': [
+            {
+                'check_id': row['requirement_id'],
+                'binding_ref': row['requirement_id'],
+                'kind': row['kind'],
+                'description': row['property'],
+                'source_quote': row['source_quote'],
+                'comparison': row['comparison'],
+                'scope': row['scope'],
+            }
+            for row in extraction['requirements']
+        ] + [
+            {
+                'check_id': 'model-solid-count',
+                'binding_ref': 'model-generated-solid-count',
+                'kind': 'solid_count',
+                'description': 'one solid',
+                'source_quote': delivery_quote,
+                'comparison': {'op': 'eq', 'value': 1.0, 'unit': 'count'},
+            },
+        ],
+    }
+
+    bind_source_quotes(text, acceptance)
+    contract = AcceptanceContractV2.model_validate(acceptance)
+
+    assert [check.kind for check in contract.checks] == ['cube_shape', 'cube_edge']
+    assert validate_requirement_bindings(text, contract)['status'] == 'bound'
+
+
+def test_explicit_solid_count_is_not_removed_as_delivery_count():
+    text = 'Create two independent solids'
+    extraction = extract_requirements(text)
+    solid = next(row for row in extraction['requirements'] if row['kind'] == 'solid_count')
+    acceptance = {
+        'objective': text,
+        'checks': [{
+            'check_id': solid['requirement_id'],
+            'binding_ref': solid['requirement_id'],
+            'kind': solid['kind'],
+            'description': 'independent solids',
+            'source_quote': solid['source_quote'],
+            'comparison': solid['comparison'],
+        }],
+    }
+
+    bind_source_quotes(text, acceptance)
+    contract = AcceptanceContractV2.model_validate(acceptance)
+
+    assert [check.kind for check in contract.checks] == ['solid_count']
+    assert validate_requirement_bindings(text, contract)['status'] == 'bound'
 
 
 def test_design_article_does_not_discharge_a_hole_or_unknown_feature_count():
@@ -136,6 +244,53 @@ def test_no_context_preserves_the_existing_v2_wire_and_digest():
     assert 'source_context' not in contract.model_dump(mode='json')
     # Computed by the unchanged contract class from main 0680fbf1.
     assert contract.digest() == 'da9b8a05f446678ad3632893bd2234e19ce427c86a137cdfba6607016010e0ea'
+
+
+def test_empty_source_context_is_equivalent_to_omitted_context():
+    text = '将正方体的宽改为20cm，使其变成长方体'
+    result = extract_requirements(text)
+    assert not result['unsupported'], result
+    raw = contract_for(text, result).model_dump(mode='json')
+    raw['source_context'] = {
+        'schema_version': 'source-context.v1',
+        'execution_scope': 'cad_geometry',
+        'design_requests': [],
+        'external_references': [],
+        'unverified_aspects': [],
+    }
+    contract = AcceptanceContractV2.model_validate(raw)
+    assert validate_requirement_bindings(text, contract)['status'] == 'bound'
+
+
+def test_nondefault_execution_scope_is_not_an_empty_source_context():
+    text = 'Create a plate width 200 mm'
+    result = extract_requirements(text)
+    raw = contract_for(text, result).model_dump(mode='json')
+    raw['source_context'] = {
+        'schema_version': 'source-context.v1',
+        'execution_scope': 'concept_geometry',
+        'design_requests': [],
+        'external_references': [],
+        'unverified_aspects': [],
+    }
+    contract = AcceptanceContractV2.model_validate(raw)
+    with pytest.raises(RequirementBindingError, match='source context differs'):
+        validate_requirement_bindings(text, contract)
+
+
+def test_source_context_is_server_owned_when_model_submits_a_fabricated_context():
+    text = 'Create a plate width 200 mm'
+    extracted = extract_requirements(text)
+    raw = contract_for(text, extracted).model_dump(mode='json')
+    raw['source_context'] = {
+        'schema_version': 'source-context.v1',
+        'execution_scope': 'concept_geometry',
+        'design_requests': [],
+        'external_references': [],
+        'unverified_aspects': [],
+    }
+    bind_source_quotes(text, raw)
+    assert raw['source_context'] == extracted['source_context']
 
 
 @pytest.mark.parametrize('operation', ['generate', 'modify'])

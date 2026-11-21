@@ -251,6 +251,127 @@ async def test_generator_retries_contract_error_and_returns_typed_plan() -> None
 
 
 @pytest.mark.asyncio
+async def test_generator_explains_discriminated_geometry_shape_after_legacy_line_error() -> None:
+    legacy_plan = _valid_plan()
+    legacy_plan["operations"][1]["args"]["geometry"] = {
+        "line": {"start": {"x": 10, "y": 10}, "end": {"x": 20, "y": 10}}
+    }
+    client = _client([legacy_plan, _valid_plan()])
+    generator = FreeCADOperationGenerator(
+        client=client,
+        provenance_reader=_provenance,
+    )
+
+    await generator.generate(
+        plan=_plan(),
+        requirements={"description": "Cube"},
+        base_state=None,
+        output_formats=("step", "stl"),
+    )
+
+    first_system_prompt = client.completions.kwargs[0]["messages"][0]["content"]
+    retry_instruction = client.completions.kwargs[1]["messages"][-1]["content"]
+    assert '"kind":"line"' in first_system_prompt
+    assert 'Use {"kind":"line"' in retry_instruction
+
+
+@pytest.mark.asyncio
+async def test_generator_explains_inspection_fields_must_not_be_operation_fields() -> None:
+    malformed = _valid_plan()
+    malformed["operations"][0] = {
+        "op_id": "inspect",
+        "action": "document.inspect",
+        "args": {},
+        "objects": ["Sketch"],
+        "fields": ["geometry", "constraints"],
+    }
+    client = _client([malformed, _valid_plan()])
+    generator = FreeCADOperationGenerator(
+        client=client,
+        provenance_reader=_provenance,
+    )
+
+    result = await generator.generate(
+        plan=_plan(),
+        requirements={"description": "Cylinder"},
+        base_state=None,
+        output_formats=("step", "stl"),
+    )
+
+    assert result.operation_plan.operations[0].action == "sketch.create"
+    retry_instruction = client.completions.kwargs[1]["messages"][-1]["content"]
+    assert "objects" in retry_instruction
+    assert "fields" in retry_instruction
+    assert "freecad_inspect" in retry_instruction
+    assert "operations" in retry_instruction
+
+
+@pytest.mark.asyncio
+async def test_generator_accepts_legacy_inspection_operation_as_read_only_query() -> None:
+    malformed = {
+        "schema_version": "freecad-operation-plan.v1",
+        "document_name": "Model",
+        "operations": [
+            {
+                "op_id": "inspect",
+                "action": "document.inspect",
+                "args": {},
+                "objects": ["Pad"],
+                "fields": ["properties"],
+                "offset": 0,
+                "limit": 16,
+            }
+        ],
+    }
+    valid = {
+        "schema_version": "freecad-operation-plan.v1",
+        "document_name": "Model",
+        "operations": [
+            {
+                "op_id": "set-length",
+                "action": "property.set",
+                "args": {"object": "Pad", "property": "Length", "value": 20, "unit": "mm"},
+            },
+            {
+                "op_id": "export",
+                "action": "document.export",
+                "args": {"formats": ["fcstd", "step"], "basename": "model"},
+            },
+        ],
+    }
+    client = _client([malformed, valid])
+    generator = FreeCADOperationGenerator(client=client, provenance_reader=_provenance)
+
+    result = await generator._complete(
+        user_payload={"task": "modify"},
+        generator_kind="freecad_operations",
+        output_formats=("step",),
+        base_state=_plate_state(),
+    )
+
+    assert result.operation_plan.operations[0].action == "property.set"
+    assert client.completions.calls == 2
+    assert any("inspection_result" in str(message.get("content", ""))
+               for message in client.completions.kwargs[1]["messages"])
+
+
+def test_legacy_inspection_conversion_requires_v1_schema() -> None:
+    raw = {
+        "schema_version": "legacy-inspection",
+        "document_name": "Model",
+        "operations": [{
+            "op_id": "inspect",
+            "action": "document.inspect",
+            "args": {},
+            "objects": ["Pad"],
+            "fields": ["properties"],
+        }],
+    }
+
+    assert FreeCADOperationGenerator._legacy_inspection_query(raw) is None
+
+
+@pytest.mark.asyncio
 async def test_compiles_verified_revolved_circle_as_cylinder_without_provider() -> None:
     client = _client([])
     generator = FreeCADOperationGenerator(client=client)
@@ -579,3 +700,100 @@ async def test_actual_provider_wording_retains_protected_hole_scope(requirements
         requirements=requirements, base_state=base, output_formats=("step",),
     )
     assert next(op.typed_args().edge_scope for op in result.operation_plan.operations if op.action=="feature.chamfer") == "outer"
+
+
+def test_common_modification_maps_width_to_the_sketch_y_dimension_not_pad_height():
+    from app.freecad.operation_compiler import compile_common_modification
+
+    state = {
+        "schema_version": "freecad-state.v2",
+        "document": "Model",
+        "objects": [
+            {
+                "name": "Sketch",
+                "type_id": "Sketcher::SketchObject",
+                "inspection": {
+                    "geometry": {
+                        "items": [
+                            {"index": 0, "type": "Part::GeomLineSegment",
+                             "start": {"x": 0, "y": 0, "z": 0},
+                             "end": {"x": 100, "y": 0, "z": 0}},
+                            {"index": 1, "type": "Part::GeomLineSegment",
+                             "start": {"x": 100, "y": 0, "z": 0},
+                             "end": {"x": 100, "y": 100, "z": 0}},
+                        ]
+                    },
+                    "constraints": {
+                        "items": [
+                            {"index": 0, "type": "Distance", "first": 0,
+                             "value": 100.0, "driving": True},
+                            {"index": 1, "type": "Distance", "first": 1,
+                             "value": 100.0, "driving": True},
+                        ]
+                    },
+                },
+            },
+            {
+                "name": "Pad",
+                "type_id": "PartDesign::Pad",
+                "properties": {"Length": "100.00 mm"},
+                "shape": {"solids": 1},
+            },
+        ],
+    }
+
+    plan = compile_common_modification(
+        {"target_params": {"width": 200}},
+        base_state=state,
+        output_formats=("step", "stl"),
+    )
+
+    assert plan is not None
+    assert [operation.action for operation in plan.operations] == [
+        "sketch.set_constraint",
+        "document.export",
+    ]
+    args = plan.operations[0].typed_args()
+    assert (args.sketch, args.constraint_index, args.expected_type, args.value_mm) == (
+        "Sketch", 1, "Distance", 200.0
+    )
+
+
+def test_common_modification_maps_width_when_native_sketch_uses_distance_y():
+    from app.freecad.operation_compiler import compile_common_modification
+
+    state = {
+        "schema_version": "freecad-state.v2",
+        "document": "Model",
+        "objects": [{
+            "name": "Sketch",
+            "type_id": "Sketcher::SketchObject",
+            "inspection": {
+                "geometry": {"items": [{
+                    "index": 1,
+                    "type": "Part::GeomLineSegment",
+                    "start": {"x": 100, "y": 0, "z": 0},
+                    "end": {"x": 100, "y": 100, "z": 0},
+                }]},
+                "constraints": {"items": [{
+                    "index": 4, "type": "DistanceY", "first": 1,
+                    "value": 100.0, "driving": True,
+                }]},
+            },
+        }, {
+            "name": "Pad", "type_id": "PartDesign::Pad",
+            "properties": {"Length": "100.00 mm"}, "shape": {"solids": 1},
+        }],
+    }
+
+    plan = compile_common_modification(
+        {"target_params": {"width": 200}},
+        base_state=state,
+        output_formats=("step",),
+    )
+
+    assert plan is not None
+    args = plan.operations[0].typed_args()
+    assert (args.sketch, args.constraint_index, args.expected_type, args.value_mm) == (
+        "Sketch", 4, "DistanceY", 200.0
+    )

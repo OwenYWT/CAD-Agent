@@ -145,6 +145,53 @@ def _bbox(response):
     return None
 
 
+def _solid_count(response) -> int | None:
+    """Read an explicit solid count when an authoritative response exposes it."""
+    for source in (_get_inspect(response), _get_validation(response)):
+        value = getattr(source, "solid_count", None) if source is not None else None
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+    return None
+
+
+def _valid_solid(response) -> bool | None:
+    """Read only an explicitly named valid-solid check, never an aggregate verdict."""
+    for source in (_get_inspect(response), _get_validation(response)):
+        if source is None:
+            continue
+        value = getattr(source, "valid_solid", None)
+        if isinstance(value, bool):
+            return value
+        for check in getattr(source, "checks", ()) or ():
+            name = str(getattr(check, "name", "")).casefold()
+            if name in {"valid_solid", "geometry_valid", "solid_valid"}:
+                status = str(getattr(check, "status", "")).casefold()
+                if status in {"pass", "fail"}:
+                    return status == "pass"
+    return None
+
+
+def _evidence(response) -> dict:
+    bbox = _bbox(response)
+    extents = _bbox_extents(bbox)
+    solid_count = _solid_count(response)
+    valid_solid = _valid_solid(response)
+    return {
+        "bbox_extents_mm": extents,
+        "watertight": _watertight(response),
+        "printable": _printable(response),
+        "solid_count": solid_count,
+        "valid_solid": valid_solid,
+        "authority": {
+            "bbox_extents_mm": "independent_geometry" if extents is not None else "unavailable",
+            "watertight": "independent_geometry" if _watertight(response) is not None else "unavailable",
+            "printable": "independent_geometry" if _printable(response) is not None else "unavailable",
+            "solid_count": "independent_geometry" if solid_count is not None else "unavailable",
+            "valid_solid": "independent_geometry" if valid_solid is not None else "unavailable",
+        },
+    }
+
+
 def _has_2d_output(response) -> bool:
     files = getattr(response, "files", None) or {}
     return any(k in files for k in ("dxf", "svg"))
@@ -168,6 +215,14 @@ def extract_metrics(response, case: dict, wall_time_ms: int | None = None) -> di
             "dfm_score": None, "attempts": 0, "one_shot": False,
             "exec_time_ms": 0, "wall_time_ms": wall_time_ms or 0,
             "error": "pipeline raised / None response", "passed": False,
+            "evidence": {
+                "bbox_extents_mm": None,
+                "watertight": None,
+                "printable": None,
+                "solid_count": None,
+                "valid_solid": None,
+                "authority": {},
+            },
         }
 
     executed = bool(getattr(response, "success", False))
@@ -240,6 +295,7 @@ def extract_metrics(response, case: dict, wall_time_ms: int | None = None) -> di
         "wall_time_ms": wall_time_ms if wall_time_ms is not None else 0,
         "error": error,
         "passed": passed,
+        "evidence": _evidence(response),
     }
 
 

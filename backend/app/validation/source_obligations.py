@@ -65,8 +65,30 @@ _MATERIAL_NOUN = re.compile(r'(?:底板|盖板|上盖|盒体|板|圆柱(?:体)?|
     r'(?:the\s+)?(?:plates?|lids?|boxes?|cylinders?|spheres?|cubes?)(?:\s+model)?', re.I)
 CUBE = re.compile(r'正方体|立方体|\bcube\b', re.I)
 MATERIAL_PRIMITIVE = re.compile(r'正方体|立方体|圆柱(?:体)?|球(?:体)?|\b(?:cube|cylinder|sphere)\b', re.I)
-_CLAUSE_LINK = re.compile(r'修改为|改为|设为|调整为|另有|带(?:有)?|的|以及|[+＋、]|'
+_SHAPE_TRANSITION = re.compile(
+    r'(?:正方体|立方体|\bcube\b)[^。；;\n]{0,100}('
+    r'(?:变成|变为|改成|改为|成为|转为|转变为)\s*(?:一个|一個)?\s*长方体|'
+    r'\b(?:become|turn\s+into|convert\s+(?:it\s+)?to)\s+(?:a\s+)?'
+    r'(?:rectangular\s+prism|cuboid|rectangular\s+box))'
+    r'|(?:变成|变为|改成|改为|成为|转为|转变为)\s*(?:一个|一個)?\s*长方体[^。；;\n]{0,100}'
+    r'(?:正方体|立方体|\bcube\b)'
+    r'|\b(?:become|turn\s+into|convert\s+(?:it\s+)?to)\s+(?:a\s+)?'
+    r'(?:rectangular\s+prism|cuboid|rectangular\s+box)[^.;\n]{0,100}\b(?:cube)\b',
+    re.I,
+)
+_CLAUSE_LINK = re.compile(r'修改为|改为|设为|调整为|另有|带(?:有)?|(?:它|其)的|的|以及|[+＋、]|'
                           r'\b(?:with|of|and|is|are|the)\b', re.I)
+
+
+def is_shape_transition(text: str) -> bool:
+    """Return whether a source explicitly changes a cube into a box-like solid.
+
+    A named source primitive is normally a final acceptance requirement.  In a
+    modification such as ``正方体的宽改为20cm，使其变成长方体`` it is instead
+    the before-state, so the final contract must measure the changed dimension
+    and must not require the resulting solid to remain a cube.
+    """
+    return bool(_SHAPE_TRANSITION.search(text))
 
 
 def _assertion_clauses(text, source_input_id):
@@ -150,7 +172,12 @@ def inventory(text, *, source_input_id):
             'predicate': 'through_passage'})
     # A strong modal can also be found by the legacy directive scanner. One
     # original source assertion has one stable identity, whichever discovers it.
-    return list({item['obligation_id']: item for item in items}.values())
+    result = list({item['obligation_id']: item for item in items}.values())
+    if is_shape_transition(text):
+        for item in result:
+            if item['category'] in {'primitive_shape', 'assertion_clause'}:
+                item['shape_transition'] = True
+    return result
 
 
 def resolve_inventory(items, requirements, comparison_spans, unsupported, *, design_requests=()):
@@ -175,6 +202,12 @@ def resolve_inventory(items, requirements, comparison_spans, unsupported, *, des
             # A complete primitive dimension already certifies its shape.
             # A plain bounding-box extent does not, even when all axes match.
             refs = [r['requirement_id'] for r in requirements if r['kind'].startswith(primitive + '_')]
+            if item.get('shape_transition') and primitive == 'cube':
+                # The cube is the before-state of a requested conversion. The
+                # changed final dimension is the source-bound evidence for the
+                # transition; no final cube_shape check is required.
+                refs = [r['requirement_id'] for r in requirements
+                        if r['kind'] == 'overall_dimension']
         elif item['category'] == 'feature_semantic' and item.get('predicate') == 'through_passage':
             refs = [r['requirement_id'] for r in requirements if r['kind'] == 'hole_through'
                     and r['comparison'] == {'op': 'eq', 'value': 1., 'unit': 'count'}
@@ -194,6 +227,13 @@ def resolve_inventory(items, requirements, comparison_spans, unsupported, *, des
             # dimension; preserve that parser's original subject reference.
             relevant += [r for r in requirements if r.get('derivation', {}).get('subject_source_span') == [start, end]]
             spans = [item['subject_span'], *(r['source_span'] for r in relevant)]
+            spans += [r['source_span'] for r in design_requests
+                      if start <= r['source_span'][0] and r['source_span'][1] <= end
+                      and r.get('count') == 1 and r.get('delivery_unit') == 'cad_document']
+            if item.get('shape_transition'):
+                # The original primitive noun is a baseline selector rather
+                # than a final geometric predicate in a shape conversion.
+                spans.append(item['subject_span'])
             # A coordinate or selected-body qualifier is covered only after
             # the binder has proved its frame and frozen object identity. It
             # cannot discharge any surrounding unknown path or operation.
@@ -411,7 +451,8 @@ def bind_component_scopes(text, requirements, unsupported, obligations, *, sourc
         elif (owner not in _ROOT_OWNERS and not (
                 owner in {'上盖', '盖板', 'lid', 'cover'} and len(owners) == 1
                 and all(r['source_span'][0] >= mentions[0][0] for r in requirements))) or len(owners) > 1 or authorities:
-            reason = 'component_scope_unbound'
+            if not (is_shape_transition(text) and owner == 'cube'):
+                reason = 'component_scope_unbound'
         if reason:
             unsupported.append({'source_span': [owner_start, end], 'reason': reason})
     requirements[:] = expanded

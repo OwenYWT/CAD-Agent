@@ -43,6 +43,44 @@ _CONTROL_RETRY = RetryPolicy(
 )
 
 
+def _expected_geometry_dimensions(requirements: dict[str, Any]) -> dict[str, float]:
+    """Collect geometry dimensions for both generation and semantic edits.
+
+    Generated plans store dimensions under ``dimensions`` while modification
+    plans store changed semantic dimensions under ``target_params``.  Keeping
+    this normalization at the workflow boundary prevents modification tasks
+    from entering the geometry gate with an empty expected-dimension set.
+    Provider-specific identifiers such as ``Pad.Length`` are deliberately not
+    promoted to overall dimensions here.
+    """
+    result: dict[str, float] = {}
+    for key, value in dict(requirements.get("dimensions") or {}).items():
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        if numeric > 0:
+            result[str(key)] = numeric
+    semantic_aliases = {
+        "length": "length",
+        "width": "width",
+        "height": "height",
+        "thickness": "thickness",
+    }
+    for key, value in dict(requirements.get("target_params") or {}).items():
+        normalized = str(key).strip().lower()
+        semantic = semantic_aliases.get(normalized)
+        if semantic is None:
+            continue
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        if numeric > 0:
+            result[semantic] = numeric
+    return result
+
+
 def required_gate_blocks(mode: str, outcome: str) -> bool:
     """One policy rule shared by visual and DFM workflow gates."""
     if mode not in {"required", "advisory"}:
@@ -61,6 +99,7 @@ class McadAgentWorkflowV2:
         self._plan: dict[str, Any] | None = None
         self._candidate_build_id: str | None = None
         self._validation_repair_v2 = False
+        self._preserve_advisory_visual = False
         self._advisory_dfm_recovery_v1 = False
         self._provider_streaming_v1 = False
         self._model_jobs_v1 = False
@@ -763,15 +802,42 @@ class McadAgentWorkflowV2:
                 }
             geometry_used = self._stage_used(step['step_key'], 'geometry', repair_count)
             if selection_errors or measurement_errors or geometry["outcome"] != "failed" or geometry_used >= geometry_budget:
+                report = geometry.get("report") or {}
+                measured_artifacts = [
+                    {
+                        "format": item.get("format"),
+                        "dimensions_mm": item.get("dimensions_mm"),
+                        "issues": item.get("issues"),
+                    }
+                    for item in report.get("artifacts") or ()
+                ]
+                diagnostic_message = (
+                    "Geometry validation failed. Issues: "
+                    + ("; ".join(report.get("issues") or ()) or "unspecified")
+                    + ". Expected dimensions: "
+                    + str(report.get("expected_dimensions_mm") or {})
+                    + ". Measured artifacts: "
+                    + str(measured_artifacts)
+                    + ". Verification evidence: "
+                    + summarize_verification_evidence(verification_evidence)
+                    + ". Feature evidence: "
+                    + summarize_feature_evidence(feature_result.evidence)
+                )
                 raise ApplicationError(
                     ('验收测量对象无法可靠定位；保留冻结要求，不能通过改写模型绕过。'
                      + '；'.join(row['check_id'] + ': ' + '; '.join(row.get('issues', [])) for row in selection_errors))
                     if selection_errors else '独立测量内核未能完成；保留模型和冻结要求，不能通过 CAD 修复绕过。'
-                    if measurement_errors else "Required geometry validation did not pass.",
+                    if measurement_errors else diagnostic_message,
                     {
                         "outcome": geometry["outcome"],
                         "evidence_id": geometry["evidence_id"],
                         "staging_manifest_id": executed["staging_manifest_id"],
+                        "report_issues": list(report.get("issues") or ()),
+                        "expected_dimensions_mm": dict(report.get("expected_dimensions_mm") or {}),
+                        "measured_artifacts": measured_artifacts,
+                        "verification_evidence": geometry.get("verification_evidence") or [],
+                        "feature_evidence": geometry.get("feature_evidence") or {},
+                        "failure_message": diagnostic_message,
                         **({'budget_name': 'geometry:' + step['step_key'], 'budget_used': geometry_used,
                             'budget_limit': geometry_budget, 'work_accounting': self._accounting().snapshot()}
                            if self._repair_accounting_v2 else {}),
@@ -968,10 +1034,29 @@ class McadAgentWorkflowV2:
                 plan.get("modeling_backend") is None
                 and request.get("modeling_backend") == "freecad"
             )
-            if freecad and policy["mode"] == "advisory" and not self._validation_repair_v2:
-                # The required geometry gate has already passed. Persist the real
-                # visual mismatch as advisory evidence, but do not risk replacing
-                # a valid typed FreeCAD plan merely to satisfy a non-blocking gate.
+            if freecad and policy["mode"] == "advisory" and (
+                self._preserve_advisory_visual or not self._validation_repair_v2
+            ):
+                # Geometry has already passed. An advisory visual mismatch must
+                # not replace a valid typed FreeCAD plan with an unverified rewrite.
+                if gate_blocks(
+                    "visual",
+                    policy["mode"],
+                    visual["outcome"],
+                    stage="workflow",
+                    legacy_visual_workflow=not self._validation_repair_v2,
+                ):
+                    raise ApplicationError(
+                        "Advisory visual validation failed; the verified FreeCAD source was preserved.",
+                        {
+                            "outcome": visual["outcome"],
+                            "evidence_id": visual["evidence_id"],
+                            "repair_count": visual_repairs,
+                            "repair_budget": policy["repair_budget"],
+                        },
+                        type="agent_visual_validation_failed",
+                        non_retryable=True,
+                    )
                 return {**current, "visual": visual}
             visual_repairs += 1
             repair_step_key = (
@@ -1224,6 +1309,7 @@ class McadAgentWorkflowV2:
             all_3d_acceptance_v1 = workflow.patched('agent-v2-all-3d-acceptance-v1') and acceptance_bindings_v2
             solid_count_policy_v2 = workflow.patched('agent-v2-solid-count-policy-v2')
             self._gate_native_recovery = workflow.patched('agent-v2-gate-native-recovery-v1')
+            self._preserve_advisory_visual = workflow.patched('agent-v2-preserve-advisory-visual-v1')
             self._phase = "requirements"
             requirements = await self._activity(
                 "agent_v2.requirements",
@@ -1500,12 +1586,7 @@ class McadAgentWorkflowV2:
                     }
                 )
             self._phase = "validating:geometry"
-            expected_dimensions = {
-                str(key): float(value)
-                for key, value in dict(
-                    requirements_payload.get("dimensions") or {}
-                ).items()
-            }
+            expected_dimensions = _expected_geometry_dimensions(requirements_payload)
             validated: list[dict[str, Any]] = []
             for plan_step_index, item in enumerate(modeled):
                 if not item["step"].get("output_formats"):

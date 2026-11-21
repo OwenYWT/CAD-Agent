@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import re
 import time
 from pydantic import ValidationError
@@ -14,10 +15,72 @@ from app.llm import find_provider_exception
 from app.models.schemas import CADPlan, ModificationPlan
 from app.contracts.acceptance import acceptance_tool_schema
 from app.contracts.acceptance_v2 import AcceptanceContractV2
-from app.validation.requirement_binding import extract_source_requirements, bind_acceptance_proposal, RequirementBindingError, SourceRequirementUnavailable
-from app.validation.acceptance_preflight import validate_new_acceptance
+from app.validation.requirement_binding import (
+    extract_source_requirements,
+    is_shape_transition,
+    bind_acceptance_proposal,
+    RequirementBindingError,
+    SourceRequirementUnavailable,
+)
+from app.validation.acceptance_preflight import (
+    validate_new_acceptance,
+    validate_v1_source_dimension_axes,
+    validate_modification_dimension_targets,
+)
 
 logger = logging.getLogger(__name__)
+
+
+_SEMANTIC_DIMENSION_ALIASES = {
+    "length": {"length", "lengthmm", "long"},
+    "width": {"width", "widthmm", "wide"},
+    "height": {"height", "heightmm", "high"},
+    "thickness": {"thickness", "thicknessmm", "thick"},
+}
+
+
+def _normalize_assembly_scope_frames(payload: dict) -> None:
+    """Apply the coordinate authority fixed by the assembly measurement contract.
+
+    Assembly measurements inventory the complete final assembly and therefore
+    always run in the document/world frame.  Provider labels such as
+    ``assembly`` or ``global`` carry no additional authority and otherwise fail
+    before the independently bound requirements can be validated.  Non-assembly
+    scopes remain untouched so unsupported frames are still rejected.
+    """
+    acceptance = payload.get("acceptance")
+    if not isinstance(acceptance, dict):
+        brief = payload.get("design_brief")
+        acceptance = brief.get("acceptance") if isinstance(brief, dict) else None
+    if not isinstance(acceptance, dict):
+        return
+    for check in acceptance.get("checks") or ():
+        if not isinstance(check, dict):
+            continue
+        scope = check.get("scope")
+        if isinstance(scope, dict) and scope.get("assembly_measurement") is not None:
+            scope["frame"] = "world"
+
+
+def _normalize_shape_transition_acceptance(payload: dict, objective: str) -> None:
+    """Remove source-primitive checks that contradict an explicit conversion.
+
+    In a request such as "change a cube's width and make it a rectangular
+    prism", ``cube_shape`` and ``cube_edge`` describe the before-state. They
+    are not final requirements and cannot be repaired by changing their
+    comparison to zero. The final contract is already covered by the changed
+    ``overall_dimension`` requirement.
+    """
+    if not is_shape_transition(objective):
+        return
+    acceptance = payload.get("acceptance")
+    if not isinstance(acceptance, dict) or not isinstance(acceptance.get("checks"), list):
+        return
+    acceptance["checks"] = [
+        check for check in acceptance["checks"]
+        if not isinstance(check, dict)
+        or check.get("kind") not in {"cube_shape", "cube_edge"}
+    ]
 
 
 def _validation_feedback(error: Exception) -> str:
@@ -33,9 +96,84 @@ def _validation_feedback(error: Exception) -> str:
 
 
 def _correction_messages(content, error, message=None):
-    feedback = ("The previous response failed contract validation: " + _validation_feedback(error)
+    validation_feedback = _validation_feedback(error)
+    feedback = ("The previous response failed contract validation: " + validation_feedback
         + ". Return a corrected complete response. Preserve the original request, "
           "exact requested values and required checks; do not remove requirements to pass validation.")
+    if 'bounding_box' in validation_feedback:
+        feedback += (
+            " For this bounding_box error: bounding_box is valid only when the saved user input "
+            "explicitly authorizes a whole component_region with min_mm and max_mm and the check "
+            "compares zero residual. Do not use bounding_box for ordinary length, width, height, "
+            "cube edge, or other dimension changes; use the matching overall_dimension or cube_edge "
+            "measurement instead."
+        )
+    if '.scope.frame' in validation_feedback or 'scope.frame' in validation_feedback:
+        allowed_frames = ["world", "bounds_center", "bounds_min"]
+        if "'selected_object'" in validation_feedback or "selected_object" in validation_feedback:
+            allowed_frames.append("selected_object")
+        feedback += (
+            " The measurement scope frame is a closed enum: scope.frame must be exactly one of "
+            + ", ".join(repr(item) for item in allowed_frames)
+            + ". Do not use labels such as 'assembly', 'global', 'local', 'body', or 'component'. "
+            "Use 'world' for explicit document coordinates, 'bounds_center' or 'bounds_min' for "
+            "relative geometry, and 'selected_object' only with a frozen object_ref."
+        )
+    if 'material shape requires its complete primitive boundary' in validation_feedback:
+        feedback += (
+            " For this shape transition: when the request changes an original cube into a "
+            "rectangular prism, do not encode the transition as cube_shape=0 or another "
+            "non-eq comparison. Omit the final cube_shape check and bind the changed "
+            "dimension to the matching overall_dimension measurement."
+        )
+    if 'unknown assembly measurement' in validation_feedback:
+        from app.contracts.assembly_measurements import (
+            ASSEMBLY_COUNTS, ASSEMBLY_DIMENSIONS, ASSEMBLY_PREDICATES,
+        )
+        allowed = ', '.join(sorted(ASSEMBLY_DIMENSIONS | ASSEMBLY_COUNTS | ASSEMBLY_PREDICATES))
+        feedback += (
+            ' For assembly checks, use only these exact measurement names: '
+            f'{allowed}. Do not invent synonyms or use an assembly label as a free-form string.'
+        )
+    if 'assembly role does not define this measurement kind' in validation_feedback:
+        from app.contracts.assembly_measurements import (
+            ASSEMBLY_COUNTS, ASSEMBLY_DIMENSIONS, ASSEMBLY_PREDICATES,
+        )
+        feedback += (
+            ' For assembly checks, the measurement name determines the required kind: '
+            f'assembly_dimension accepts only {", ".join(sorted(ASSEMBLY_DIMENSIONS))}; '
+            f'assembly_count accepts only {", ".join(sorted(ASSEMBLY_COUNTS))}; '
+            f'assembly_predicate accepts only {", ".join(sorted(ASSEMBLY_PREDICATES))}. '
+            'Keep the comparison unit consistent with that kind (mm for dimensions, count for counts and predicates).'
+        )
+    if 'assembly roles require the complete independently inventoried assembly' in validation_feedback:
+        feedback += (
+            ' For every assembly check, use the complete independently inventoried assembly only: '
+            'keep scope.frame as world and provide assembly_measurement, but leave axis, point_mm, '
+            'centers_mm, region_min_mm, region_max_mm, object_ref, and component_region unset. '
+            'Do not attach a local selector or component region to an assembly measurement.'
+        )
+    if 'unsupported hole population predicate or authority' in validation_feedback:
+        feedback += (
+            ' For hole population checks, use hole_group only on hole_count, hole_diameter, '
+            'hole_depth, or hole_through checks that describe one complete counted hole group. '
+            'Do not attach hole_group to assembly_count or assembly_predicate: assembly measurements '
+            'such as mounting_hole_count, mounting_holes_centered, and mounting_holes_isolated '
+            'already use the complete assembly inventory and require no hole_group.'
+        )
+    semantic_match = re.search(
+        r"target_params\.(length|width|height|thickness): .*?semantic ['\"]([^'\"]+)['\"] parameter",
+        validation_feedback,
+        re.I,
+    )
+    if semantic_match:
+        property_name = semantic_match.group(1).lower()
+        feedback += (
+            f" For this semantic dimension error: target_params must contain exactly the "
+            f"semantic key '{property_name}' with the requested numeric value. Do not use "
+            "Pad.Length, Sketch constraints, feature labels, or multiple aliases for that "
+            "dimension; those are not interchangeable with the semantic parameter."
+        )
     calls = getattr(message, 'tool_calls', None) or []
     if calls:
         assistant = {'role':'assistant', 'content':getattr(message, 'content', None),
@@ -70,15 +208,7 @@ def _planning_format(model, tool_name, enabled, acceptance_version='engineering-
     if model is CADPlan:
         schema['$defs']['DesignBrief']['properties']['acceptance'] = {'$ref': '#/$defs/' + contract_name}
     schema['additionalProperties']=False
-    if model is CADPlan:
-        # The engineering workflow requires a nested acceptance object for
-        # solids. The legacy/2D CADPlan schema intentionally permits omission.
-        schema.setdefault('allOf',[]).append({
-            'if':{'properties':{'part_type':{'not':{'const':'profile_2d'}}}},
-            'then':{'required':['design_brief'],'properties':{'design_brief':{
-                'type':'object','required':['acceptance'],
-                'properties':{'acceptance':{'type':'object'}}}}}})
-    else:
+    if model is not CADPlan:
         schema.setdefault('required',[]).append('acceptance')
         schema['properties']['acceptance']={
             '$ref':'#/$defs/' + contract_name,
@@ -98,12 +228,15 @@ def _planning_content(message, tool_name, enabled):
 
 MODIFICATION_CONTEXT_PROMPT = '你是一个 CAD 修改需求分析专家。请分析用户对已有零件的修改请求。\n\n当前可编辑模型上下文（可能是 MCAD 源码，也可能是结构化 FreeCAD 状态）:\n```\n{current_code}\n```\n\n'
 
-MODIFICATION_JSON_FORMAT = '将修改请求解析为 JSON（不要输出其他任何文字）:\n{{\n    "description": "修改描述",\n    "modification_type": "dimension_change|add_feature|remove_feature|redesign",\n    "target_params": {{"param_name": new_value}},\n    "new_features": ["feature description"]\n}}'
+MODIFICATION_JSON_FORMAT = '将修改请求解析为 JSON（不要输出其他任何文字）:\n{{\n    "description": "修改描述",\n    "modification_type": "dimension_change|add_feature|remove_feature|redesign",\n    "target_params": {{"param_name": new_value}},\n    "new_features": ["feature description"]\n}}\nFor a named dimension change, target_params must use exactly the semantic key length, width, height, or thickness with its requested numeric value. Do not use Pad.Length, Sketch constraint names, feature labels, or multiple aliases to represent a semantic dimension.'
 
 MODIFICATION_SYSTEM_PROMPT = MODIFICATION_CONTEXT_PROMPT + MODIFICATION_JSON_FORMAT
 
 
 def _v2_requirements_prompt(objective, tool_name, *, verified_state=None, requirement_sources=None):
+    from app.contracts.assembly_measurements import (
+        ASSEMBLY_COUNTS, ASSEMBLY_DIMENSIONS, ASSEMBLY_PREDICATES,
+    )
     sources = requirement_sources if requirement_sources is not None else [
         {'source_input_id': 'objective', 'source_kind': 'user', 'text': objective}]
     extracted = extract_source_requirements(objective, verified_state=verified_state,
@@ -122,7 +255,14 @@ def _v2_requirements_prompt(objective, tool_name, *, verified_state=None, requir
         for row in [*extracted['requirements'], *extracted['obligations']]]}
     if (verified_state or {}).get('verified_acceptance'):
         context['verified_acceptance'] = verified_state['verified_acceptance']
-    return ('\nSubmit all requirements with ' + tool_name + '. Use engineering-acceptance.v2. '
+    transition_guidance = ''
+    if is_shape_transition(objective):
+        transition_guidance = (
+            'This is an explicit shape transition: the cube is the before-state, not a final '
+            'cube_shape requirement. Do not submit cube_shape or cube_shape=0; bind the changed '
+            'dimension to overall_dimension for the rectangular-prism result. '
+        )
+    return (transition_guidance + '\nSubmit all requirements with ' + tool_name + '. Use engineering-acceptance.v2. '
         'The server binds objective. Interpret the complete saved user inputs directly, including every '
         'dimension, feature and relationship. Quotation references identify saved text; they do not choose '
         'a measurement kind, coordinate axis, component or scope. A parser gap is not an unavailable CAD capability. '
@@ -135,11 +275,23 @@ def _v2_requirements_prompt(objective, tool_name, *, verified_state=None, requir
         'measurements of a base primitive after holes, cuts or joined features have changed its boundary. '
         'Use the existing feature measurements for such geometry; a coaxial radial wall measurement certifies '
         'a complete annular material layer, and hole checks separately measure its bore. '
+        'For assembly checks, use the exact measurement-to-kind mapping: '
+        f'assembly_dimension = {", ".join(sorted(ASSEMBLY_DIMENSIONS))}; '
+        f'assembly_count = {", ".join(sorted(ASSEMBLY_COUNTS))}; '
+        f'assembly_predicate = {", ".join(sorted(ASSEMBLY_PREDICATES))}. '
+        'Do not pair a name from one group with another kind, and use mm for dimensions and count for counts/predicates. '
+        "scope.frame must be exactly one of 'world', 'bounds_center', 'bounds_min', 'selected_object'. "
+        "Assembly measurements always use 'world'; never emit 'assembly', 'global', 'local', 'body', or 'component'. "
+        "Use 'selected_object' only when a frozen object_ref is supplied. "
         'radial wall thickness covers a whole constant-radius passage; a point does not make it a stepped-section measurement. '
         'For bored stepped shafts, annular_segment_diameter and annular_segment_height select each complete '
         'observed axial band with an interior point on its axis. Measure every specified segment diameter and height; '
         'also check the common bore diameter and through passage. Do not substitute overall bounds for segment geometry. '
         'A component dimension must select that whole component, never the envelope of an assembly. '
+        'A bounding_box check is valid only when the saved user input explicitly authorizes a whole '
+        'component_region with min_mm and max_mm and the comparison is zero residual. Never use '
+        'bounding_box for ordinary length, width, height, cube-edge or other dimension changes; '
+        'use the matching overall_dimension or cube_edge measurement instead. '
         'Choose a construction representation that preserves the required component identities. '
         'When the request permits an assembly, keep distinct components as separate native objects and '
         'select their whole solids with component_region. One CAD document does not imply one fused solid; '
@@ -208,7 +360,26 @@ class Planner:
                 if match is not None:
                     unit = (match.group(2) or "").lower()
                     value = float(match.group(1)) * unit_scales[unit]
-            params[str(key)] = value
+            normalized_key = re.sub(r"[^a-z0-9]", "", str(key).lower())
+            canonical_key = next(
+                (
+                    semantic
+                    for semantic, aliases in _SEMANTIC_DIMENSION_ALIASES.items()
+                    if normalized_key in aliases
+                ),
+                str(key),
+            )
+            if canonical_key in params:
+                try:
+                    equivalent = math.isclose(float(params[canonical_key]), float(value))
+                except (TypeError, ValueError):
+                    equivalent = params[canonical_key] == value
+                if not equivalent:
+                    raise ValueError(
+                        f"conflicting values supplied for semantic dimension {canonical_key!r}"
+                    )
+                continue
+            params[canonical_key] = value
         normalized["target_params"] = params
         return ModificationPlan(**normalized)
 
@@ -344,6 +515,7 @@ The submit_cad_plan tool parameters contain the authoritative field definitions 
                         text = text[:-3]
                     text = text.strip()
                 parsed = json.loads(text)
+                _normalize_assembly_scope_frames(parsed)
                 if require_acceptance and parsed.get("part_type") != "profile_2d":
                     acceptance = (parsed.get("design_brief") or {}).get("acceptance")
                     if not isinstance(acceptance, dict):
@@ -358,6 +530,11 @@ The submit_cad_plan tool parameters contain the authoritative field definitions 
                 plan = self._parse_plan_payload(parsed)
                 if require_acceptance and plan.part_type != 'profile_2d':
                     validate_new_acceptance(plan.design_brief.acceptance)
+                    validate_v1_source_dimension_axes(
+                        plan.design_brief.acceptance,
+                        objective,
+                        requirement_sources=requirement_sources,
+                    )
                 if require_acceptance and acceptance_version == 'engineering-acceptance.v2' and plan.part_type != 'profile_2d':
                     _validate_v2(plan.design_brief.acceptance)
 
@@ -449,7 +626,12 @@ The submit_modification_plan tool parameters contain the authoritative field def
                         text = text[:-3]
                     text = text.strip()
                 parsed = json.loads(text)
+                _normalize_assembly_scope_frames(parsed)
                 if require_acceptance:
+                    _normalize_shape_transition_acceptance(
+                        parsed,
+                        str(messages[-1]['content']),
+                    )
                     if not isinstance(parsed.get('acceptance'),dict):
                         raise ValueError('modification requires an explicit acceptance contract')
                     parsed['acceptance']['objective']=str(messages[-1]['content'])
@@ -457,8 +639,20 @@ The submit_modification_plan tool parameters contain the authoritative field def
                         bind_acceptance_proposal(str(messages[-1]['content']), parsed['acceptance'],
                             verified_state=verified_state, requirement_sources=requirement_sources)
                 plan = self._parse_modification_payload(parsed)
+                validate_modification_dimension_targets(
+                    plan,
+                    str(messages[-1]['content']),
+                    verified_state=verified_state,
+                    requirement_sources=requirement_sources,
+                )
                 if require_acceptance:
                     validate_new_acceptance(plan.acceptance)
+                    validate_v1_source_dimension_axes(
+                        plan.acceptance,
+                        str(messages[-1]['content']),
+                        verified_state=verified_state,
+                        requirement_sources=requirement_sources,
+                    )
                 if require_acceptance and acceptance_version == 'engineering-acceptance.v2':
                     _validate_v2(plan.acceptance)
                 return plan

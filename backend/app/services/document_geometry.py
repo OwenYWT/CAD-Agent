@@ -90,7 +90,7 @@ async def build_document_scene(context, document_id, revision_id, scene_task, ex
         if measured['sha256'] != source['sha256'] or measured['size_bytes'] != source['size_bytes']:
             raise ValueError('场景来源 FCStd 完整性校验失败')
         files = await execute_scene(source, known, Path(directory))
-        scene = validate_scene(json.loads(files['scene'].read_text()))
+        scene = validate_scene(json.loads(files['scene'].read_text(encoding='utf-8')))
         scene['lineage_id'] = projection.get('lineage_id', str(document_id))
         created = []
         with zipfile.ZipFile(files['meshes']) as archive:

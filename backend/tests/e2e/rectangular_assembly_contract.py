@@ -70,6 +70,12 @@ for case in cases:
     doc.recompute();doc.saveAs(root+'/'+case['name']+'.FCStd');App.closeDocument(doc.Name)
     reopened=App.openDocument(root+'/'+case['name']+'.FCStd')
     Part.export([reopened.getObject('Body'),reopened.getObject('Lid')],root+'/'+case['name']+'.step')
+    if v=='good':
+        import shutil, sys
+        sys.path.insert(0,'/opt/cad-agent')
+        from freecad_entry import _export_document
+        native=_export_document(reopened,dict(formats=['stl','step'],basename='NativeAssembly'))
+        for ext in ('step','stl'):shutil.copyfile(native[ext],root+'/'+case['name']+'-native.'+ext)
     App.closeDocument(reopened.Name)
 print('CAD_ASSEMBLY_NATIVE_READY')
 '''
@@ -93,4 +99,39 @@ print('CAD_ASSEMBLY_NATIVE_READY')
         assert hashlib.sha256(path.read_bytes()).hexdigest()==digest
         reports.append({**case,'report':report,'context':context})
         print('CAD_ASSEMBLY_CASE='+json.dumps({'name':case['name'],'outcome':report['outcome']}),flush=True)
+    # Execute the public CadQuery exporter, then validate the delivered bytes independently.
+    from executor_entry import main as execute_model
+    import trimesh
+    fixture = next(case for case in cases if case['variant'] == 'good')
+    source = root / (fixture['name'] + '.step')
+    Path('/sandbox/input/input.py').write_text(
+        f"import cadquery as cq\nparts=cq.importers.importStep({str(source)!r}).val().Solids()\n"
+        "result=cq.Assembly()\nfor i,part in enumerate(parts): result.add(part,name='part'+str(i))\n")
+    execute_model()
+    output = Path('/sandbox/output')
+    assert json.loads((output/'result.json').read_text())['status'] == 'success'
+    contract = dict(fixture['contract'], checks=[check for check in fixture['contract']['checks']
+                    if check['scope'].get('assembly_measurement') == 'body_lid_fit'])
+    assert len(contract['checks']) == 1
+    preview_reports = []
+    for name, backend, expected in [('matching', 'cadquery', 'passed'), ('native-parts', 'freecad', 'passed'),
+                                    ('native-fused', 'freecad', 'failed'),
+                                    ('displaced', 'cadquery', 'failed')]:
+        step, stl = output/'result.step', output/'result.stl'
+        if name == 'native-parts':
+            step, stl = (root/(fixture['name']+'-native.'+ext) for ext in ('step','stl'))
+        if name == 'displaced':
+            mesh = trimesh.load_mesh(stl)
+            mesh.apply_translation((7, 0, 0))
+            mesh.export(stl)
+        context = {'schema_version':'measurement-context.v1','base_revision_id':'assembly-source',
+                   'checkpoint_manifest_id':'preview-' + name, 'modeling_backend':backend,
+                   'artifact_sha256s':[hashlib.sha256(p.read_bytes()).hexdigest() for p in (step, stl)]}
+        artifacts = [dict(role=p.suffix[1:], format=p.suffix[1:], path=str(p)) for p in (step, stl)]
+        report = validate_geometry_files(artifacts, acceptance=contract, measurement_context=context, expected_solid_count=2)
+        # The sealed groove is a second mesh shell even though the preview is a single solid.
+        assert [a['solid_count'] for a in report['artifacts']] == [2, 2], (name, report['artifacts'])
+        assert report['outcome'] == expected, (name, report['issues'])
+        preview_reports.append(dict(name=name, contract=contract, context=context, report=report))
+    print('CAD_ASSEMBLY_PREVIEW_REPORTS='+json.dumps(preview_reports))
     print('CAD_ASSEMBLY_REPORTS='+json.dumps(reports,ensure_ascii=False))
