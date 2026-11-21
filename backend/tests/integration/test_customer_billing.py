@@ -34,6 +34,11 @@ pytestmark = [
 
 
 @pytest.fixture
+def job_database_url():
+    return DATABASE_URL
+
+
+@pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(settings, "database_url", DATABASE_URL)
     monkeypatch.setattr(settings, "durable_control_plane_enabled", True)

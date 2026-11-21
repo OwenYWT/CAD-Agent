@@ -1,31 +1,23 @@
 import { useState } from "react";
-import { authFetch } from "../../auth";
-import { API_BASE, readJson } from "../../services/clients/http";
+import { getFailureDiagnostic, getTakeoverBaseline, type Diagnostic } from "../../services/clients/tasks";
 import { previewSketch, sketchBounds } from "../../adapters/sketchPreview";
-import type { SketchGeometry, SketchConstraint } from "../../types/sketch";
 import { WorkspaceDialog } from "../common/WorkspaceOverlay";
 
-interface Diagnostic {
-  sha256: string; base_revision_id: string; task_status: string;
-  requirement_bindings?:Array<{sketch:string;logical_constraint_id:string;dimension_role:string;geometry_index:number;check_id:string;source_kind:string;binding_status:string}>;protection_note?:string;
-  snapshot: { failed_operation_id: string; valid_checkpoint: false; failure: { code: string; message: string };
-    operations: { operation_id: string; status: string }[];
-    sketches: { name: string; geometry: SketchGeometry[]; constraints: (SketchConstraint & { logical_id: string; origin: string; operation_id: string | null })[]; solver: Record<string, unknown> }[] };
-}
+
 export default function FailureDiagnostic({ taskId, canModify, onRecover }: { taskId: string; canModify: boolean; onRecover?: (featureId?:string) => void }) {
   const [open, setOpen] = useState(false), [data, setData] = useState<Diagnostic | null>(null);
   const [pending, setPending] = useState(false), [error, setError] = useState("");
   const [selection,setSelection]=useState<{sketch:string;geometry:number[]}|null>(null);
   const load = async () => {
     setOpen(true); setPending(true); setError("");
-    try { const result = await readJson<Diagnostic>(await authFetch(`${API_BASE}/api/tasks/${taskId}/diagnostic`), "失败现场读取失败");
+    try { const result = await getFailureDiagnostic(taskId);
       if (result.snapshot.valid_checkpoint !== false) throw new Error("诊断不能作为有效模型"); setData(result);setSelection(null);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "失败现场读取失败"); } finally { setPending(false); }
   };
   const takeover = async () => {
     setPending(true); setError("");
     try {
-      const baseline=await readJson<{sketches:Array<{name:string;feature_id:string|null}>}>(await authFetch(`${API_BASE}/api/tasks/${taskId}/takeover-baseline`), "暂时不能接管");
+      const baseline=await getTakeoverBaseline(taskId);
       const editable=baseline.sketches.find(s=>s.feature_id);
       if (!editable?.feature_id) {setError('失败草图不在有效基线中。请基于原需求重新规划几何；不能把失败现场保存为模型。');return;}
       setOpen(false);onRecover?.(editable.feature_id);

@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { DFMRuleData } from "../types";
-import { authFetch } from "../auth";
-import { API_BASE, readJson } from "../services/clients/http";
+import { loadRuleSets, updateRule, type RuleSet } from "../services/clients/manufacturing";
 import { guardDraft, useDraftGuardStore } from "../stores/draftGuard";
 import { useMutationReceipt } from '../hooks/useMutationReceipt';
 
 const PROCESS_LABELS: Record<string, string> = { CNC: "CNC 加工", FDM: "FDM 打印", SLA: "SLA 打印", injection_mold: "注塑成型", sheet_metal: "钣金加工" };
-interface RuleSet { id: string; name: string; process: string; rules: DFMRuleData[] }
 
 function RuleRow({ rule, onSaved }: { rule: DFMRuleData; onSaved: (rule: DFMRuleData) => void }) {
   // Server readback advances the baseline, never the user's later edits.
@@ -30,9 +28,7 @@ function RuleRow({ rule, onSaved }: { rule: DFMRuleData; onSaved: (rule: DFMRule
     setUncertainUpdate(body);
     let failure = '';
     try {
-      const saved = await readJson<DFMRuleData>(await authFetch(`${API_BASE}/api/dfm/rules/${encodeURIComponent(rule.id)}`, {
-        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-      }), "规则保存失败");
+      const saved = await updateRule(rule.id, body);
       if (!saved || saved.id !== rule.id) throw new Error("规则保存结果无效");
     } catch (reason) { failure = reason instanceof Error ? reason.message : "规则保存失败"; }
     try { await reconcile(body, failure); }
@@ -41,7 +37,7 @@ function RuleRow({ rule, onSaved }: { rule: DFMRuleData; onSaved: (rule: DFMRule
   const reconcile = async (body: Record<string, number | boolean>, failure = '') => {
     setPending(true);
     try {
-      const sets = await readJson<RuleSet[]>(await authFetch(`${API_BASE}/api/dfm/rules`), '规则结果核对失败');
+      const sets = await loadRuleSets();
       if (!Array.isArray(sets)) throw new Error('规则列表格式无效');
       const actual = sets.flatMap(set => set.rules).find(item => item.id === rule.id && item.process === rule.process);
       if (!actual) throw new Error('未找到待核对规则');
@@ -99,7 +95,7 @@ export default function DFMRuleConfig({ embedded = false }: { embedded?: boolean
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
-    void authFetch(`${API_BASE}/api/dfm/rules`, { signal: controller.signal }).then(response => readJson<RuleSet[]>(response, "规则加载失败")).then(data => {
+    void loadRuleSets(controller.signal).then(data => {
       if (!Array.isArray(data)) throw new Error("规则列表格式无效");
       if (controller.signal.aborted) return;
       setRuleSets(data); setActiveProcess(previous => data.some(item => item.process === previous) ? previous : data[0]?.process || "");

@@ -54,12 +54,8 @@ case "$command" in
     if [[ $selection == backend || $selection == all ]]; then
       cd "$root/backend"
       export DURABLE_CONTROL_PLANE_ENABLED=false MOONSHOT_API_KEY= DASHSCOPE_API_KEY= AZURE_OPENAI_API_KEY=
-      stage backend-lint "$python" -m ruff check --select E9,F63,F7,F82 \
-        --per-file-ignores 'app/contracts/constraint_patch.py:F821' \
-        app/contracts/constraint_patch.py app/freecad/failure_snapshot.py app/freecad/constraint_relationships.py \
-        app/freecad/constraint_patch.py app/workflows/constraint_evidence.py \
-        app/workflows/handlers/native_generation.py app/workflows/handlers/cad_execution.py
-      stage backend-types "$python" -m mypy --strict app/domain/identity.py app/domain/projects.py
+      stage backend-lint "$python" -m ruff check --select E9,F601,F63,F7,F82 app
+      stage backend-types "$python" -m mypy --strict app/domain/identity.py app/domain/projects.py app/execution/canonical.py
       stage backend "$python" -m pytest -p scripts.ci.pytest_contract -m 'not docker and not llm and not fusion_e2e' -q --junitxml="$report/backend.xml"
       "$python" "$root/scripts/ci/require_test_report.py" "$report/backend.xml" --suite backend
       cd "$root"

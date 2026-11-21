@@ -7,7 +7,6 @@ from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import text as sql_text
 
 from app.agent import run_store
-from app.agent.conversation import ConversationContext
 from app.api.auth import verify_ws_token, get_ws_user_id, rate_limiter, websocket_auth_token
 from app.api.error_messages import public_generation_error
 from app.models.schemas import DurableRequestIdentity
@@ -54,11 +53,6 @@ class MissingBaseRevisionError(ModifyPartValidationError):
 class PartContextMismatchError(ModifyPartValidationError):
     pass
 
-from collections import OrderedDict
-
-_MAX_SESSIONS = 500
-sessions: "OrderedDict[str, dict[str, ConversationContext]]" = OrderedDict()
-
 _SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9\-]{1,128}$")
 
 
@@ -67,22 +61,6 @@ def _submission_outcome(exc):
         ValueError, PermissionError, KeyError, StaleBaseRevision,
         IdempotencyConflict, TemporalWorkerUnavailable,
     )) else "unknown"
-
-
-def _get_context(session_id: str, panel_id: str) -> ConversationContext:
-    """Bounded UI context cache; never owns execution or product state."""
-    if session_id not in sessions:
-        sessions[session_id] = {}
-        while len(sessions) > _MAX_SESSIONS:
-            sessions.popitem(last=False)
-    else:
-        sessions.move_to_end(session_id)
-    panel_map = sessions[session_id]
-    if panel_id not in panel_map:
-        panel_map[panel_id] = ConversationContext(
-            session_id=f"{session_id}/{panel_id}"
-        )
-    return panel_map[panel_id]
 
 
 def _durable_identity_payload(data: dict) -> dict:

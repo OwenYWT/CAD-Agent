@@ -4,8 +4,7 @@
 #   docker build -f backend/sandbox/Dockerfile -t cad-agent-sandbox:dev .
 # Then: docker compose up -d
 #
-# NOTE: backend mounts the host docker.sock to run sandbox containers (sibling mode).
-# This exposes the host Docker to the backend process — use only on a trusted host.
+# The workflow worker owns the container engine for sibling sandbox execution.
 
 services:
   postgres:
@@ -103,8 +102,8 @@ services:
       dockerfile: backend/Dockerfile
     env_file: ./backend/.env
     environment:
+      FORWARDED_ALLOW_IPS: "172.30.251.2"
       APP_ENVIRONMENT: ${APP_ENVIRONMENT:-development}
-      # the sandbox image lives on the HOST docker, reachable via the mounted socket
       # Production must override this with registry/path@sha256:<digest>.
       SANDBOX_IMAGE: ${SANDBOX_IMAGE:-cad-agent-sandbox:dev}
       DURABLE_CONTROL_PLANE_ENABLED: ${DURABLE_CONTROL_PLANE_ENABLED:-true}
@@ -121,6 +120,7 @@ services:
       HISTORY_DB_PATH: /app/data/history.db
       # Sibling kernel containers must see the same absolute input/output paths.
       TMPDIR: ${SANDBOX_WORK_DIR:-/tmp/cad-agent-work}
+    networks: [default, ingress]
     depends_on:
       postgres:
         condition: service_healthy
@@ -131,7 +131,6 @@ services:
       migrate:
         condition: service_completed_successfully
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - cad_data:/app/data
       - ${SANDBOX_WORK_DIR:-/tmp/cad-agent-work}:${SANDBOX_WORK_DIR:-/tmp/cad-agent-work}
     expose:
@@ -182,6 +181,9 @@ services:
     build: ./frontend
     ports:
       - "8080:80"
+    networks:
+      ingress:
+        ipv4_address: 172.30.251.2
     depends_on:
       backend:
         condition: service_healthy
@@ -191,3 +193,9 @@ volumes:
   cad_data:
   postgres_data:
   minio_data:
+
+networks:
+  ingress:
+    ipam:
+      config:
+        - subnet: 172.30.251.0/28

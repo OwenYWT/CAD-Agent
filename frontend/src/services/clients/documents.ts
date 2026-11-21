@@ -146,3 +146,26 @@ export async function deleteHistoryProject(sessionId: string): Promise<void> {
   const response = await authFetch(`${API_BASE}/api/history/sessions/${sessionId}`, { method: "DELETE" });
   if (!response.ok) throw new Error("删除项目失败，请重试");
 }
+
+import type { DurableTaskSubmittedEvent } from "../../types/nativeImport";
+
+export async function submitNativeImport(body: FormData): Promise<DurableTaskSubmittedEvent> {
+  return readJson(await authFetch(`${API_BASE}/api/documents/imports`, {method: "POST", body}), "导入提交失败");
+}
+
+export async function recoverNativeImport(session: string, panel: string, key: string, signal: AbortSignal): Promise<DurableTaskSubmittedEvent | null> {
+  const params = new URLSearchParams({session_id: session, panel_id: panel, idempotency_key: key});
+  const response = await authFetch(`${API_BASE}/api/documents/imports/receipt?${params}`, {signal});
+  return response.status === 404 ? null : readJson(response, "导入状态查询失败");
+}
+
+export interface Relation {sketch:string;kind:'horizontal'|'vertical'|'coincident'|'equal';first:{geometry_index:number;point_position?:number};second?:{geometry_index:number;point_position?:number}}
+export interface Change {action:'add'|'delete'|'replace';logical_id:string;constraint?:Relation}
+
+export async function updateSketchRelations(base: CloudDocument, feature: SemanticFeature, key: string, leaseToken: string, changes: Change[]) {
+  return await readJson<{workflow_run_id:string}>(await authFetch(`${API_BASE}/api/documents/${base.document_id}/operations`,{
+        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'native.update',
+          expected_base_revision_id:base.head_revision_id,expected_state_version:base.state_version,idempotency_key:key,lease_token:leaseToken,
+          objective:`修改草图 ${feature.label} 的受保护几何关系`,modification:{expected_state_sha256:base.parameter_state_sha256,
+            native_edits:[{action:'sketch.patch_relations',args:{sketch:feature.kernel_name,expected_constraints_sha256:feature.sketch_constraints_sha256,changes:changes}}]}})}),'关系修改提交失败');
+}

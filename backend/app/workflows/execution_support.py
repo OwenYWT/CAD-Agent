@@ -558,14 +558,14 @@ async def _stored_validation_attempt_result(
     }
 
 
-async def _await_provider_operation(operation):
+async def _await_provider_operation(operation, stage="provider_operation"):
     """Keep long streamed planning calls cancellable and detect dead workers."""
     if not activity.in_activity():
         return await operation
 
     async def heartbeat():
         while True:
-            activity.heartbeat({"stage": "provider_operation"})
+            activity.heartbeat({"stage": stage})
             await asyncio.sleep(3)
 
     beat = asyncio.create_task(heartbeat())

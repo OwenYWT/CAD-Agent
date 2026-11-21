@@ -37,12 +37,9 @@ class SourceGenerationResult:
 
 def _default_retriever() -> Retriever:
     if settings.example_retriever.strip().lower() == "vector":
-        try:
-            from app.examples.vector_retriever import VectorExampleRetriever
+        from app.examples.vector_retriever import VectorExampleRetriever
 
-            return VectorExampleRetriever()
-        except Exception:
-            pass
+        return VectorExampleRetriever()
     return ExampleRetriever()
 
 

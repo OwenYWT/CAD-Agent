@@ -24,7 +24,7 @@ from app.workflows.activities import McadWorkflowActivities
 from app.workflows.modeling import DurableModelingSourceGenerator
 from app.workflows.agent_v2 import McadAgentWorkflowV2
 from app.validation.durable_visual import DurableVisualValidator
-from app.workflows.definitions import McadCheckWorkflow, McadDurableWorkflow
+from app.workflows.definitions import McadCheckWorkflow, McadDurableWorkflow, NativeWorkerWorkflow
 from app.services.workflow_dispatch import run_dispatcher, dispatcher_readiness
 from app.services.model_jobs import submit_activity, read_activity, cancel_activity
 from app.workers.model_job_worker import ModelJobWorker
@@ -41,7 +41,7 @@ def build_workflow_worker(
     return Worker(
         client,
         task_queue=settings.temporal_task_queue,
-        workflows=[McadDurableWorkflow, McadCheckWorkflow],
+        workflows=[McadDurableWorkflow, McadCheckWorkflow, NativeWorkerWorkflow],
         activities=activities.registered(),
         interceptors=[UsageWorkerInterceptor()],
     )

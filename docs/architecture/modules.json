@@ -42,7 +42,8 @@
         "app.workflows.handlers.candidates",
         "app.workflows.handlers.review",
         "app.services.candidate_continuation",
-        "app.services.document_imports"
+        "app.services.document_imports",
+        "app.services.document_sharing"
       ],
       "allowed_dependencies": [
         "P00",
@@ -216,7 +217,8 @@
         "app.freecad.engineering_contracts",
         "app.workflows.handlers.engineering",
         "frontend/src/services/clients/engineering",
-        "app.workflows.handlers.engineering"
+        "app.workflows.handlers.engineering",
+        "frontend/src/services/clients/manufacturing"
       ],
       "allowed_dependencies": [
         "P00",
@@ -251,7 +253,8 @@
         "app.fusion360",
         "app.onshape",
         "app.tools",
-        "frontend/src/services/clients/onshape"
+        "frontend/src/services/clients/onshape",
+        "frontend/src/services/clients/capabilities"
       ],
       "allowed_dependencies": [
         "P00",
@@ -308,7 +311,10 @@
         "app.runtime",
         "app.model_job_context",
         "app",
-        "app.dfm.configuration"
+        "app.dfm.configuration",
+        "app.services.capability_actions",
+        "app.temporal_client",
+        "app.principal_context"
       ],
       "allowed_dependencies": [
         "P00",
@@ -1010,10 +1016,16 @@
     "backend/app/validation/source_obligations.py": "M06",
     "backend/app/contracts/hole_populations.py": "P00",
     "backend/app/contracts/material_certificates.py": "P00",
+    "backend/app/contracts/machined_feature_values.py": "P00",
     "backend/app/validation/verification_intent.py": "M06",
     "backend/app/contracts/assembly_measurements.py": "P00",
     "backend/app/validation/rectangular_assembly_requirements.py": "M06",
-    "backend/app/validation/quantities.py": "M06"
+    "backend/app/validation/quantities.py": "M06",
+    "backend/app/services/capability_actions.py": "P01",
+    "frontend/src/services/clients/invites.ts": "P04",
+    "frontend/src/services/clients/manufacturing.ts": "M08",
+    "frontend/src/services/clients/capabilities.ts": "M10",
+    "frontend/src/types/dfm.ts": "P00"
   },
   "required_runtime_reports": {
     "browser-e2e/native-parameters/kernel.log": {
@@ -1248,7 +1260,8 @@
         "McadAgentWorkflowV2",
         "McadDurableWorkflow",
         "McadCheckWorkflow",
-        "ModelJobWorkflow"
+        "ModelJobWorkflow",
+        "NativeWorkerWorkflow"
       ],
       "pre_post_model_jobs": true
     },
@@ -1399,6 +1412,8 @@
         "freecad_tool_replay_contract",
         "freecad_checkpoint_replay_contract",
         "feature-measurements",
+        "machined-features",
+        "machined-features-receiver",
         "curved-surfaces",
         "engineering",
         "freecad_product_acceptance_contract",
@@ -1413,7 +1428,8 @@
         "measurement-binding",
         "freecad_native_reference_contract",
         "native-oracle",
-        "native-oracle-controls"
+        "native-oracle-controls",
+        "freecad_bom_geometry_contract"
       ]
     },
     "deploy-smoke/packaged-browser/report.json": {
@@ -1691,6 +1707,16 @@
       "marker": "CAD_PROFILE_REPLAN_CONTRACT=",
       "job": "mcad-core"
     },
+    "mcad-core/native/machined-features.log": {
+      "kind": "marker",
+      "marker": "CAD_MACHINED_FEATURES=",
+      "job": "mcad-core"
+    },
+    "mcad-core/native/machined-features-receiver.log": {
+      "kind": "marker",
+      "marker": "CAD_MACHINED_RECEIVER=",
+      "job": "mcad-core"
+    },
     "mcad-core/native/freecad_scoped_repair_contract.log": {
       "kind": "marker",
       "marker": "CAD_SCOPED_REPAIR_CONTRACT=",
@@ -1841,6 +1867,11 @@
         "passed": true,
         "model_calls": 0
       },
+      "job": "mcad-core"
+    },
+    "mcad-core/native/freecad_bom_geometry_contract.log": {
+      "kind": "marker",
+      "marker": "CAD_BOM_GEOMETRY_CONTRACT=",
       "job": "mcad-core"
     }
   },

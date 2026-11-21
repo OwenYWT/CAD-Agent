@@ -509,3 +509,33 @@ async def test_real_podman_backend_exports_step_and_stl():
     assert outcome.result.status is ExecutionStatus.SUCCEEDED
     assert set(outcome.files) == {"step", "stl"}
     assert all(path.exists() and path.stat().st_size > 0 for path in outcome.files.values())
+
+def test_output_role_is_exact_or_unambiguous(tmp_path):
+    primary, extra = (tmp_path / name for name in ("primary.step", "extra.step"))
+    for part in (primary, extra):
+        part.write_bytes(part.name.encode())
+    spec = _spec(outputs=(OutputDeclaration(name="step", media_type="model/step"),))
+    for items in ({"other": extra, "step": primary}, {"step": primary, "other": extra}):
+        paths, _ = PodmanExecutionBackend._verified_outputs(spec, items)
+        assert paths["step"] == primary
+    with pytest.raises(ValueError, match="ambiguous"):
+        PodmanExecutionBackend._verified_outputs(spec, {"first": primary, "second": extra})
+
+
+def test_runtime_failure_is_coalesced_then_recovers(monkeypatch):
+    import app.execution.podman_backend as runtime
+    now, calls = [10.0], []
+    def inspect():
+        calls.append(True)
+        if len(calls) == 1:
+            raise RuntimeError("engine temporarily unavailable")
+        return _runtime_snapshot()
+    monkeypatch.setattr(runtime, "monotonic", lambda: now[0])
+    backend = PodmanExecutionBackend(image_ref="test", runtime_inspector=inspect)
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="temporarily unavailable"):
+            backend.runtime_snapshot()
+    assert len(calls) == 1
+    now[0] += runtime.settings.dependency_readiness_timeout_s + 1
+    assert backend.runtime_snapshot() == _runtime_snapshot()
+    assert len(calls) == 2

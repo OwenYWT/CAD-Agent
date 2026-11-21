@@ -1,4 +1,6 @@
 import hashlib
+import json
+from uuid import UUID, uuid4
 from functools import lru_cache
 from typing import Any
 
@@ -9,7 +11,9 @@ from app.api.auth import rate_limiter, verify_api_key
 from app.config import settings
 from app.db import tenant_transaction
 from app.principal_context import current_principal
-from app.repositories.audit import append_audit_record
+from app.repositories.audit import append_audit_record, consume_tool_confirmation
+from app.execution.canonical import canonical_sha256
+from app.services.authentication import can_access_shared_onshape
 from app.storage import auth as auth_store
 from app.tools import (
     PluginLoader,
@@ -22,19 +26,33 @@ from app.tools import (
 router = APIRouter(prefix="/api/agent/tools", tags=["agent-tools"])
 
 
+def _confirmation_fingerprint(tool: str, arguments: dict | str, context: ToolContext) -> str:
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except ValueError:
+            pass  # The tool executor reports invalid arguments through its normal result.
+    return canonical_sha256([tool, arguments, context.user_id, context.session_id,
+                             context.panel_id, context.request_id])
+
+
 async def _audit_agent_tool(
     result: ToolExecutionResult,
     arguments: dict[str, Any],
     context: ToolContext,
 ) -> None:
+    fingerprint = _confirmation_fingerprint(result.tool_name, arguments, context) if result.needs_confirmation else None
     if not settings.durable_control_plane_enabled:
+        if fingerprint:
+            result.confirmation_id = uuid4()
+            await auth_store.save_tool_confirmation(str(result.confirmation_id), fingerprint)
         return
     principal = current_principal()
     async with tenant_transaction(
         principal.tenant_id,
         principal.principal_id,
     ) as connection:
-        await append_audit_record(
+        audit_id = await append_audit_record(
             connection,
             tenant_id=principal.tenant_id,
             actor_principal_id=principal.principal_id,
@@ -43,6 +61,7 @@ async def _audit_agent_tool(
             target_id=result.tool_name,
             payload={
                 "arguments": arguments,
+                **({"fingerprint": fingerprint} if fingerprint else {}),
                 "request_id": context.request_id,
                 "session_id": context.session_id,
                 "panel_id": context.panel_id,
@@ -50,6 +69,8 @@ async def _audit_agent_tool(
                 "error_type": result.error_type,
             },
         )
+        if fingerprint:
+            result.confirmation_id = audit_id
 
 
 class AgentToolRuntime:
@@ -117,6 +138,7 @@ def _get_orchestrator() -> AgentToolRuntime:
 class AgentToolExecuteRequest(BaseModel):
     arguments: dict[str, Any] | str = Field(default_factory=dict)
     confirmed: bool = False
+    confirmation_id: UUID | None = None
     request_id: str | None = Field(None, min_length=1, max_length=128)
     session_id: str | None = Field(None, min_length=1, max_length=128)
     panel_id: str | None = Field(None, min_length=1, max_length=128)
@@ -131,22 +153,14 @@ def _owner_key(api_key: str | None) -> str | None:
     return f"api-key:{digest}"
 
 
-async def _can_access_shared_onshape(api_key: str | None) -> bool:
-    if not api_key or not api_key.startswith("user:"):
-        return True
-    user = await auth_store.get_user(api_key.split(":", 1)[1])
-    return bool(user and user.get("is_admin"))
-
-
 async def _tool_context(
     api_key: str | None,
     *,
     request_id: str | None = None,
     session_id: str | None = None,
     panel_id: str | None = None,
-    confirmed: bool = False,
 ) -> ToolContext:
-    shared_access = await _can_access_shared_onshape(api_key)
+    shared_access = await can_access_shared_onshape(api_key)
     return ToolContext(
         request_id=request_id,
         session_id=session_id or "agent-tools-api",
@@ -156,7 +170,6 @@ async def _tool_context(
         role="admin" if shared_access else "user",
         allow_shared_onshape=shared_access,
         enabled_plugins={"onshape"},
-        confirmed=confirmed,
     )
 
 
@@ -187,8 +200,16 @@ async def execute_agent_tool(
         request_id=req.request_id,
         session_id=req.session_id,
         panel_id=req.panel_id,
-        confirmed=req.confirmed,
     )
+    if req.confirmed and req.confirmation_id:
+        fingerprint = _confirmation_fingerprint(tool_name, req.arguments, context)
+        if settings.durable_control_plane_enabled:
+            principal = current_principal()
+            async with tenant_transaction(principal.tenant_id, principal.principal_id) as conn:
+                context.confirmed = await consume_tool_confirmation(
+                    conn, principal.tenant_id, principal.principal_id, req.confirmation_id, fingerprint)
+        else:
+            context.confirmed = await auth_store.consume_tool_confirmation(str(req.confirmation_id), fingerprint)
     result = await _get_orchestrator().execute_agent_tool(
         tool_name,
         req.arguments,

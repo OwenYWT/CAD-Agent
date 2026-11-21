@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -67,6 +68,7 @@ class ToolExecutionResult(BaseModel):
     error_message: str | None = None
     duration_ms: int = 0
     needs_confirmation: bool = False
+    confirmation_id: UUID | None = None
     confirmation_message: str | None = None
     confirmation: ConfirmationPolicy | None = None
     layer: PluginLayer | None = None

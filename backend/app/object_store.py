@@ -5,6 +5,8 @@ import asyncio
 import hashlib
 from pathlib import Path
 import time
+import os
+import tempfile
 import uuid
 from functools import partial
 
@@ -122,7 +124,11 @@ async def get_object(key: str) -> bytes:
         body.close()
 
 
-async def download_object(key: str, destination: str | Path) -> dict:
+class ObjectIntegrityError(ValueError):
+    pass
+
+
+async def download_object(key: str, destination: str | Path, *, expected_size: int | None = None) -> dict:
     """Stream one immutable object to disk and return measured integrity facts."""
     target = Path(destination)
 
@@ -137,6 +143,8 @@ async def download_object(key: str, destination: str | Path) -> dict:
         try:
             with target.open("wb") as handle:
                 while chunk := body.read(8 * 1024 * 1024):
+                    if expected_size is not None and size_bytes + len(chunk) > expected_size:
+                        raise ObjectIntegrityError("stored artifact exceeds its registered size")
                     handle.write(chunk)
                     digest.update(chunk)
                     size_bytes += len(chunk)
@@ -148,7 +156,26 @@ async def download_object(key: str, destination: str | Path) -> dict:
             "sha256": digest.hexdigest(),
         }
 
-    return await asyncio.to_thread(_download)
+    transfer = asyncio.create_task(asyncio.to_thread(_download))
+    try:
+        return await asyncio.shield(transfer)
+    except asyncio.CancelledError:
+        # Keep the temporary path alive until the SDK stops writing.
+        await asyncio.gather(transfer, return_exceptions=True)
+        raise
+
+
+async def download_verified_object(metadata, destination: Path) -> None:
+    """Publish a verified file atomically, including for concurrent cache fills."""
+    with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as handle:
+        temporary = Path(handle.name)
+    try:
+        facts = await download_object(metadata["object_key"], temporary, expected_size=metadata["size_bytes"])
+        if facts["size_bytes"] != metadata["size_bytes"] or facts["sha256"] != metadata["sha256"]:
+            raise ObjectIntegrityError("stored artifact failed checksum verification")
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 async def sha256_object(key: str, *, chunk_size: int = 8 * 1024 * 1024) -> dict:

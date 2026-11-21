@@ -94,14 +94,17 @@ test('assembly relationships and counts keep their meaning without invented leng
   const report = {acceptance_contract:{schema_version:'engineering-acceptance.v2',checks:[
     {check_id:'isolation',kind:'assembly_predicate',description:'安装孔与内腔隔离',comparison:{op:'eq',value:1,unit:'count',tolerance_minus:0,tolerance_plus:0}},
     {check_id:'tabs',kind:'assembly_count',description:'安装耳数量',comparison:{op:'eq',value:4,unit:'count'}},
+    {check_id:'slots',kind:'rectangular_opening_count',description:'贯穿槽数',comparison:{op:'eq',value:2,unit:'count',tolerance_minus:0,tolerance_plus:0}},
     {check_id:'groove',kind:'assembly_dimension',description:'槽宽',comparison:{op:'eq',value:2.4,unit:'mm'}},
   ]},acceptance:{evidence:[{check_id:'isolation',measured:[0],outcome:'failed'},
-    {check_id:'tabs',measured:[3],outcome:'failed'},{check_id:'groove',measured:[2.4,2.4,2.4,2.4],outcome:'passed'}]}};
+    {check_id:'tabs',measured:[3],outcome:'failed'},{check_id:'groove',measured:[2.4,2.4,2.4,2.4],outcome:'passed'},
+    {check_id:'slots',measured:[2],outcome:'passed'}]}};
   const rows=engineeringMeasurements(report);
   assert.equal(rows[0].expected,'满足');assert.equal(rows[0].measured,'未满足');
   assert.equal(rows[0].outcome,'未通过');assert.equal(rows[0].tolerance,undefined);
   assert.equal(rows[1].expected,'4');assert.equal(rows[1].measured,'3');
   assert.equal(rows[2].measured,'2.4、2.4、2.4、2.4 mm');
+  assert.equal(rows[3].expected,'2');assert.equal(rows[3].measured,'2');assert.equal(rows[3].tolerance,undefined);
   report.acceptance.evidence[0].measured=[];
   report.acceptance.evidence[0].outcome='indeterminate';
   assert.equal(engineeringMeasurements(report)[0].measured,'无量测值');

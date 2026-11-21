@@ -211,18 +211,33 @@ def test_rate_limiter_ignores_xff_by_default(monkeypatch):
         headers = {"x-forwarded-for": "9.9.9.9"}
         client = type("C", (), {"host": "10.0.0.1"})()
 
-    monkeypatch.setattr(settings, "trust_proxy_headers", False)
     rl = RateLimiter()
     assert rl._client_key(Req(), None) == "ip:10.0.0.1"
 
 
-def test_rate_limiter_uses_xff_when_trusted(monkeypatch):
+@pytest.mark.asyncio
+async def test_trusted_ingress_separates_client_limits_and_ignores_untrusted_prefixes():
+    from starlette.requests import Request
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
     from app.api.auth import RateLimiter
 
-    class Req:
-        headers = {"x-forwarded-for": "9.9.9.9, 10.0.0.1"}
-        client = type("C", (), {"host": "10.0.0.1"})()
+    keys = []
+    async def capture(scope, receive, send):
+        keys.append(RateLimiter()._client_key(Request(scope), None))
 
-    monkeypatch.setattr(settings, "trust_proxy_headers", True)
-    rl = RateLimiter()
-    assert rl._client_key(Req(), None) == "ip:9.9.9.9"  # first hop = real client
+    ingress = ProxyHeadersMiddleware(capture, trusted_hosts=["172.30.251.2"])
+    for client in ("192.0.2.2", "192.0.2.3"):
+        await ingress({"type": "http", "client": ("172.30.251.2", 80),
+                       "headers": [(b"x-forwarded-for", client.encode())]}, None, None)
+    assert keys == ["ip:192.0.2.2", "ip:192.0.2.3"]
+
+
+def test_window_capacity_preserves_active_counters_and_expires_idle_keys():
+    from app.services.authentication import AttemptWindows
+    windows = AttemptWindows(60, capacity=2)
+    windows.record("a", 1, 0)
+    windows.record("b", 1, 1)
+    assert windows.full("new", 1, 59)
+    assert windows.full("a", 1, 59)
+    assert not windows.full("new", 1, 61)
+    assert not windows

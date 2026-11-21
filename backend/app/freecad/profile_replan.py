@@ -5,6 +5,7 @@ not grant permission to change an accepted checkpoint, feature or requirement.
 """
 from copy import deepcopy
 import json
+import math
 
 from app.contracts.acceptance_v2 import decode_acceptance
 from app.freecad.constraint_patch import construction_geometry
@@ -42,6 +43,14 @@ def _bounds(geometry):
             continue
         if item['type'] == 'Part::GeomLineSegment':
             points.extend([item['start'], item['end']])
+        elif item['type'] == 'Part::GeomArcOfCircle':
+            points.extend((item['start'], item['end']))
+            x, y = item['center'][:2]
+            start = math.atan2(item['start'][1] - y, item['start'][0] - x)
+            for quadrant in range(4):
+                angle = quadrant * math.pi / 2
+                if (angle - start) % math.tau <= item['sweep_rad']:
+                    points.append([x + item['radius_mm'] * math.cos(angle), y + item['radius_mm'] * math.sin(angle)])
         elif item['type'] == 'Part::GeomCircle':
             points.extend([[c + sign * item['radius_mm'] for c in item['center'][:2]]
                            for sign in (-1, 1)])

@@ -14,7 +14,7 @@ def _geometry():
     return geometry
 
 
-def annular_segment_dimensions(shape, scope, tolerance):
+def annular_segment_dimensions(shape, scope, tolerance, *, solid=False):
     """Select an observed cylindrical band, then certify its entire material.
 
     The axis point chooses a face, not a sample thickness or a target-sized cut.
@@ -51,7 +51,7 @@ def annular_segment_dimensions(shape, scope, tolerance):
     if len(candidates)!=1:
         raise ValueError('axis point does not select exactly one complete annular segment')
     index,face,origin,lo,hi,radius=candidates[0]
-    holes=[hole for hole in g._cylindrical_voids(shape,tolerance)
+    holes=[] if solid else [hole for hole in g._cylindrical_voids(shape,tolerance)
         if hole['complete'] and abs(abs(g._dot(hole['axis'],axis))-1)<1e-10
         and g._distance(g._axis_point(hole['origin'],axis),origin)<=tolerance
         and all(s['radius'] is not None for s in hole['segments'])
@@ -60,12 +60,14 @@ def annular_segment_dimensions(shape, scope, tolerance):
                 for t in [hole['start'],hole['end']])<=lo+tolerance
         and max(g._dot(tuple(o+a*t for o,a in zip(hole['origin'],hole['axis'])),axis)
                 for t in [hole['start'],hole['end']])>=hi-tolerance]
-    if len(holes)!=1 or holes[0]['diameter']/2>=radius-tolerance:
+    if not solid and (len(holes)!=1 or holes[0]['diameter']/2>=radius-tolerance):
         raise ValueError('annular segment lacks one complete coaxial constant-radius bore')
-    inner=holes[0]['diameter']/2;height=hi-lo
+    inner=0.0 if solid else holes[0]['diameter']/2
+    height=hi-lo
     start=cq.Vector(*(o+a*lo for o,a in zip(origin,axis)));direction=cq.Vector(*axis)
-    layer=cq.Solid.makeCylinder(radius,height,start,direction).cut(
-        cq.Solid.makeCylinder(inner,height,start,direction))
+    layer=cq.Solid.makeCylinder(radius,height,start,direction)
+    if not solid:
+        layer=layer.cut(cq.Solid.makeCylinder(inner,height,start,direction))
     # Cover all actual material in the observed axial interval, not only the
     # expected ring. A disconnected boss/bridge cannot hide outside the ring.
     reach=shape.BoundingBox().DiagonalLength+g._distance(start.toTuple(),shape.Center().toTuple())
@@ -76,10 +78,10 @@ def annular_segment_dimensions(shape, scope, tolerance):
     volume_tolerance=layer.Area()*tolerance
     absent=sum(abs(s.Volume()) for s in missing.Solids())
     extra=sum(abs(s.Volume()) for s in excess.Solids())
-    if absent>volume_tolerance or extra>volume_tolerance:
+    if (solid and (missing.Solids() or excess.Solids())) or absent>volume_tolerance or extra>volume_tolerance:
         raise ValueError('annular segment has missing or excess material')
     dimensions={'diameter':2*radius,'inner_diameter':2*inner,'height':height}
-    return dimensions, {'schema_version':'annular-segment.v1','complete':True,
+    return dimensions, {'schema_version':'solid-segment.v1' if solid else 'annular-segment.v1','complete':True,
         'selection_uses_nominal':False,'dimensions_mm':dimensions,'axis':list(axis),
         'axis_point_mm':list(point),'origin_mm':list(origin),'axial_interval_mm':[lo,hi],
         'outer_face_index':index,'outer_surface_area_mm2':face.Area(),

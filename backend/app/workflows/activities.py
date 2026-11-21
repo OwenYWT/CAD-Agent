@@ -189,6 +189,28 @@ class McadWorkflowActivities:
         return await legacy_modeling.execute(payload, backend=self.backend)
 
 
+    @activity.defn(name="capability.execute")
+    async def capability_execute(self, command: dict) -> dict:
+        from app.domain.identity import PrincipalContext, PrincipalKind, TenantKind
+        from app.principal_context import bind_principal
+        from app.services.capability_actions import perform_action, uses_native_worker
+        from uuid import UUID
+
+        if not uses_native_worker(command["capability"], command["action"]):
+            raise ValueError("action does not run on the native worker")
+        bind_principal(PrincipalContext(UUID(command["tenant_id"]), UUID(command["principal_id"]),
+                                        TenantKind(command["tenant_kind"]), PrincipalKind(command["kind"]),
+                                        command["subject"]))
+        return await _await_provider_operation(perform_action(
+            command["owner"], command["capability"], command["action"], command["params"],
+            command["request_id"], self.backend), stage="capability.execute")
+
+    @activity.defn(name="runtime.inspect")
+    async def inspect_runtime(self, unused: None) -> dict:
+        import asyncio
+        snapshot = await _await_provider_operation(asyncio.to_thread(self.backend.runtime_snapshot), stage="runtime.inspect")
+        return {"image_digest": snapshot.image_digest, "platform": snapshot.platform, "versions": snapshot.versions}
+
     @activity.defn(name='engineering.compute')
     async def engineering_compute(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await engineering.engineering_compute(payload, backend=self.backend)
@@ -259,6 +281,8 @@ class McadWorkflowActivities:
             self.check,
             self.engineering_compute,
             self.scene_compute,
+            self.capability_execute,
+            self.inspect_runtime,
             self.validate,
             self.wait_confirmation,
             self.resume_after_confirmation,

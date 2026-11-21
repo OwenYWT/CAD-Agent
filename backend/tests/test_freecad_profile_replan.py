@@ -153,3 +153,24 @@ async def test_local_profile_repair_preserves_an_unchanged_downstream_chamfer():
         source_code=before.model_dump_json(), failure=failure, diagnostic=snapshot,
         profile_context=ctx, base_state=None, output_formats=('step', 'stl'))
     assert result.operation_plan.operations[-2] == before.operations[-2]
+
+
+@pytest.mark.asyncio
+async def test_profile_can_reread_documentation_after_a_rejected_patch():
+    from tests.test_freecad_scoped_replan import local_proposal
+    before, snapshot, failure = inputs()
+    ctx = context()
+    good = local_proposal(ctx)
+    wrong = deepcopy(good)
+    wrong['sketch'] = 'Another'
+    describe = {'action':'sketch.add_geometry'}
+    client = ProviderTurns([call('freecad_describe_operation', describe, 'first')],
+                           [call('freecad_patch_profile', wrong, 'wrong')],
+                           [call('freecad_describe_operation', describe, 'again')],
+                           [call('freecad_patch_profile', good, 'correct')])
+    result = await FreeCADOperationGenerator(client=client, provenance_reader=_provenance).repair(
+        source_code=before.model_dump_json(), failure=failure, diagnostic=snapshot, profile_context=ctx,
+        base_state=None, output_formats=('step','stl'))
+    assert result.provenance['profile_replan']['sketch'] == ctx['sketch']
+    reads = {m['tool_call_id']: m['content'] for m in client.requests[-1]['messages'] if m.get('role') == 'tool'}
+    assert reads['first'] == reads['again']

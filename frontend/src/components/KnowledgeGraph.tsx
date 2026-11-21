@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { authFetch } from "../auth";
-import { API_BASE, readJson } from "../services/clients/http";
+import { listNodes, loadMaterials, recommendProcesses, createSupplier, deleteSupplier, findSupplier,
+  type KGNode, type ProcessRecommendation, type MaterialInfo } from "../services/clients/manufacturing";
 import { WorkspaceDialog } from "./common/WorkspaceOverlay";
 import { useMutationReceipt } from '../hooks/useMutationReceipt';
 
-interface KGNode { id: string; type: string; name: string; properties: Record<string, unknown>; customer_id: string }
-interface ProcessRecommendation { process_id: string; process_name: string; material_id: string | null; material_name: string | null; constraints: Record<string, unknown>; score: number; notes: string[] }
-interface MaterialInfo { material: KGNode; constraints: Record<string, unknown> }
 type Resource = "processes" | "materials" | "suppliers" | "recommend";
 type LoadState = { pending: boolean; error: string; loaded: boolean };
 const empty: LoadState = { pending: false, error: "", loaded: false };
@@ -36,12 +33,12 @@ export default function KnowledgeGraph({ embedded = false, recommendationDraft, 
   const [mutationError, setMutationError] = useState("");
   const mutationLock = useRef(false);
   const [uncertainMutation, setUncertainMutation] = useMutationReceipt<{ action: 'create' | 'delete'; target: KGNode }>('supplier');
-  const load = useCallback(async <T,>(resource: Resource, path: string, apply: (data: T) => void, options?: RequestInit) => {
+  const load = useCallback(async <T,>(resource: Resource, request: (signal: AbortSignal) => Promise<T>, apply: (data: T) => void) => {
     requests.current[resource]?.abort();
     const controller = new AbortController(); requests.current[resource] = controller;
     setStates(previous => ({ ...previous, [resource]: { ...previous[resource], pending: true, error: "" } }));
     try {
-      const data = await readJson<T>(await authFetch(API_BASE + path, { ...options, signal: controller.signal }), "请求失败，请重试");
+      const data = await request(controller.signal);
       if (controller.signal.aborted) return;
       if (!Array.isArray(data)) throw new Error("返回的数据格式无效");
       apply(data);
@@ -52,11 +49,11 @@ export default function KnowledgeGraph({ embedded = false, recommendationDraft, 
     }
   }, []);
   useEffect(() => { const current = requests.current; return () => Object.values(current).forEach(controller => controller?.abort()); }, []);
-  const fetchProcesses = useCallback(() => load<KGNode[]>("processes", "/api/knowledge/nodes?type=process", data => {
+  const fetchProcesses = useCallback(() => load<KGNode[]>("processes", signal => listNodes("process", signal), data => {
     setProcesses(data); setActiveProcess(previous => data.some(item => item.id === previous) ? previous : data[0]?.id || "");
   }), [load]);
-  const fetchMaterials = useCallback((id: string) => load<MaterialInfo[]>("materials", `/api/knowledge/process/${encodeURIComponent(id)}/materials`, setMaterials), [load]);
-  const fetchSuppliers = useCallback(() => load<KGNode[]>("suppliers", "/api/knowledge/nodes?type=supplier", setSuppliers), [load]);
+  const fetchMaterials = useCallback((id: string) => load<MaterialInfo[]>("materials", signal => loadMaterials(id, signal), setMaterials), [load]);
+  const fetchSuppliers = useCallback(() => load<KGNode[]>("suppliers", signal => listNodes("supplier", signal), setSuppliers), [load]);
   useEffect(() => { if (open) void fetchProcesses(); }, [open, fetchProcesses]);
   useEffect(() => { if (open && tab === "processes" && activeProcess) { setMaterials([]); void fetchMaterials(activeProcess); } }, [open, tab, activeProcess, fetchMaterials]);
   useEffect(() => { if (open && tab === "suppliers") void fetchSuppliers(); }, [open, tab, fetchSuppliers]);
@@ -65,7 +62,7 @@ export default function KnowledgeGraph({ embedded = false, recommendationDraft, 
     if (dimension !== null && (!Number.isFinite(dimension) || dimension <= 0)) {
       setStates(previous => ({ ...previous, recommend: { ...previous.recommend, error: "最大尺寸必须为有效正数" } })); return;
     }
-    void load<ProcessRecommendation[]>("recommend", "/api/knowledge/recommend", setRecommendations, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ max_dimension: dimension, material: recMat.trim() || null }) });
+    void load<ProcessRecommendation[]>("recommend", signal => recommendProcesses(dimension, recMat.trim() || null, signal), setRecommendations);
   };
   const handleAddSupplier = async () => {
     const name = supplierName.trim();
@@ -75,7 +72,7 @@ export default function KnowledgeGraph({ embedded = false, recommendationDraft, 
     const receipt = { action: 'create' as const, target }; setUncertainMutation(receipt);
     let failure = '';
     try {
-      const saved = await readJson<KGNode>(await authFetch(`${API_BASE}/api/knowledge/nodes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(target) }), "供应商创建失败");
+      const saved = await createSupplier(target);
       if (saved.id !== target.id) throw new Error("供应商创建结果无效");
     } catch (reason) { failure = reason instanceof Error ? reason.message : "供应商创建失败"; }
     try { await reconcileSupplier(receipt, failure); }
@@ -87,7 +84,7 @@ export default function KnowledgeGraph({ embedded = false, recommendationDraft, 
     const receipt = { action: 'delete' as const, target: supplier }; setUncertainMutation(receipt);
     let failure = '';
     try {
-      const response = await readJson<{ ok: boolean }>(await authFetch(`${API_BASE}/api/knowledge/nodes/${encodeURIComponent(supplier.id)}?customer_id=${encodeURIComponent(supplier.customer_id)}`, { method: "DELETE" }), "供应商删除失败");
+      const response = await deleteSupplier(supplier);
       if (response.ok !== true) throw new Error("供应商删除未获确认");
     } catch (reason) { failure = reason instanceof Error ? reason.message : "供应商删除失败"; }
     try { await reconcileSupplier(receipt, failure); }
@@ -96,8 +93,7 @@ export default function KnowledgeGraph({ embedded = false, recommendationDraft, 
   const reconcileSupplier = async (receipt: NonNullable<typeof uncertainMutation>, failure = '') => {
     setMutation('verify');
     try {
-      const response = await authFetch(`${API_BASE}/api/knowledge/nodes/${encodeURIComponent(receipt.target.id)}?customer_id=${encodeURIComponent(receipt.target.customer_id)}`);
-      const actual = response.status === 404 ? null : await readJson<KGNode>(response, '供应商结果核对失败');
+      const actual = await findSupplier(receipt.target);
       if (actual && (actual.id !== receipt.target.id || actual.type !== 'supplier' || actual.customer_id !== receipt.target.customer_id)) throw new Error('供应商结果身份不匹配');
       const applied = receipt.action === 'delete' ? actual === null : actual?.name === receipt.target.name;
       if (applied) {

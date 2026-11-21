@@ -6,13 +6,12 @@ import { Canvas } from "@react-three/fiber";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box3, BufferGeometry, Color, InstancedMesh, Matrix4, Vector3, Plane } from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import { authFetch } from "../../auth";
+import { fetchArtifact } from "../../services/clients/downloads";
 import { canvasEvents } from "./canvasEvents";
 import { readDocumentScene, SceneJobError } from "../../services/sceneService";
 import type { CloudDocument, SelectionContext } from "../../types/document";
 import type { DocumentScene, SceneInstance, SceneLOD, SceneMesh } from "../../types/scene";
 
-const API = import.meta.env.VITE_API_BASE || "";
 const CACHE_BYTES = 128 * 1024 * 1024;
 type GeometryEntry = { geometry: BufferGeometry; bytes: number };
 
@@ -82,7 +81,7 @@ export default function DocumentSceneViewer({ documentId, revisionId, selectedId
     async function mesh(item: SceneMesh): Promise<GeometryEntry> {
       const existing = cache.current.get(item.sha256);
       if (existing) return existing;
-      const response = await authFetch(API + item.url, { signal: controller.signal });
+      const response = await fetchArtifact(item.url, controller.signal);
       if (!response.ok) throw new Error(`部件网格读取失败 (${response.status})`);
       const buffer = await response.arrayBuffer();
       const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", buffer)), (b) => b.toString(16).padStart(2, "0")).join("");

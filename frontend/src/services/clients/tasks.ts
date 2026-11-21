@@ -88,3 +88,20 @@ export async function getTaskValidationEvidence(taskId:string,evidenceId:string)
     `${API_BASE}/api/tasks/${encodeURIComponent(taskId)}/validations/${encodeURIComponent(evidenceId)}`,
   ),'检查证据读取失败');
 }
+
+import type { SketchGeometry, SketchConstraint } from "../../types/sketch";
+export interface Diagnostic {
+  sha256: string; base_revision_id: string; task_status: string;
+  requirement_bindings?:Array<{sketch:string;logical_constraint_id:string;dimension_role:string;geometry_index:number;check_id:string;source_kind:string;binding_status:string}>;protection_note?:string;
+  snapshot: { failed_operation_id: string; valid_checkpoint: false; failure: { code: string; message: string };
+    operations: { operation_id: string; status: string }[];
+    sketches: { name: string; geometry: SketchGeometry[]; constraints: (SketchConstraint & { logical_id: string; origin: string; operation_id: string | null })[]; solver: Record<string, unknown> }[] };
+}
+
+export async function getFailureDiagnostic(taskId: string): Promise<Diagnostic> {
+  return readJson(await authFetch(`${API_BASE}/api/tasks/${encodeURIComponent(taskId)}/diagnostic`), "失败现场读取失败");
+}
+
+export async function getTakeoverBaseline(taskId: string): Promise<{ sketches: Array<{name: string; feature_id: string | null}> }> {
+  return readJson(await authFetch(`${API_BASE}/api/tasks/${encodeURIComponent(taskId)}/takeover-baseline`), "暂时不能接管");
+}

@@ -124,13 +124,15 @@ def legacy_cadquery_history(request, monkeypatch):
     }
     legacy_validation_tests = source_history_tests | {
         "test_agent_v2_assembly_executes_parts_then_combine_with_source_edges",
+        "test_repaired_assembly_binds_bom_to_sealed_geometry",
     }
     legacy_requirement_tests = legacy_validation_tests | {
+        "test_optional_assembly_optimization_rechecks_bom_before_sealing",
         "test_agent_v2_plan_waits_before_candidate_source_or_execution",
         "test_agent_v2_assembly_partial_failure_preserves_successful_part",
         "test_agent_v2_assembly_cancel_stops_active_parts_before_execution",
     }
-    if request.node.name not in legacy_requirement_tests:
+    if request.node.originalname not in legacy_requirement_tests:
         return
     from temporalio import workflow
 
@@ -141,11 +143,11 @@ def legacy_cadquery_history(request, monkeypatch):
             return False
         # Retain one genuine pre-model-job command history for the replay gate.
         # Other V2 cases keep the new child-workflow path enabled.
-        if change_id == "agent-v2-model-jobs-v1" and request.node.name == "test_agent_v2_confirmed_plan_seals_reviewable_candidate":
+        if change_id == "agent-v2-model-jobs-v1" and request.node.originalname == "test_agent_v2_confirmed_plan_seals_reviewable_candidate":
             return False
-        if change_id == "agent-v2-backend-policy-v1" and request.node.name in source_history_tests:
+        if change_id == "agent-v2-backend-policy-v1" and request.node.originalname in source_history_tests:
             return False
-        if change_id == "agent-v2-validation-repair-v2" and request.node.name in legacy_validation_tests:
+        if change_id == "agent-v2-validation-repair-v2" and request.node.originalname in legacy_validation_tests:
             return False
         return original(change_id)
 
@@ -2642,12 +2644,12 @@ async def test_agent_v2_complex_steps_survive_worker_restart_without_regeneratio
     assert selected_steps == ["model-02-secondary"]
 
 
-async def _run_assembly_case(*, fail_step: str | None):
+async def _run_assembly_case(*, fail_step: str | None, modeling=None, **worker_options):
     owner, project_id, initial = await _seed_project(
         f"agent-v2-assembly-{fail_step or 'success'}"
     )
     client = await get_temporal_client()
-    modeling = _V2AssemblyModelingStub(fail_step=fail_step)
+    modeling = modeling or _V2AssemblyModelingStub(fail_step=fail_step)
     planner = DurableAgentPlanner(
         planner=_V2AssemblyPlannerStub(),
         decomposer=_V2DecomposerStub(),
@@ -2683,6 +2685,7 @@ async def _run_assembly_case(*, fail_step: str | None):
         backend=get_execution_backend(),
         durable_planner=planner,
         durable_modeling=modeling,
+        **worker_options,
     ):
         handle = await client.start_workflow(
             "McadAgentWorkflowV2",
@@ -2803,6 +2806,123 @@ async def test_agent_v2_assembly_executes_parts_then_combine_with_source_edges()
     } == {"bom-json", "bom-csv"}
     assert bom_artifacts == ["bom_csv", "bom_json"]
     assert sealed_bom_evidence == 1
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_repaired_assembly_binds_bom_to_sealed_geometry():
+    from dataclasses import replace
+
+    class CorrectAssemblyAfterMeasurement(_V2AssemblyModelingStub):
+        async def generate_step_source(self, *, step, **kwargs):
+            result = await super().generate_step_source(step=step, **kwargs)
+            if step.kind != 'assembly_combine':
+                return result
+            self.correct = result
+            wrong = "import cadquery as cq\nresult = cq.Workplane('XY').box(12,20,8)\n"
+            return replace(result, source_code=wrong, provenance={**result.provenance,
+                           'response_hash': hashlib.sha256(wrong.encode()).hexdigest()})
+
+        async def repair(self, *, failure, decision, **kwargs):
+            assert failure['error_code'] == 'geometry_validation_failed'
+            return DurableRepairResult(source_code=self.correct.source_code, failure_class=decision.failure_class,
+                                       strategy=decision.strategy, provenance=self.correct.provenance)
+
+    provider = CorrectAssemblyAfterMeasurement()
+    owner, workflow_id, _ = await _run_assembly_case(fail_step=None, modeling=provider, durable_repair=provider)
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        rows = (await conn.execute(text("SELECT gate, outcome, staging_manifest_id, evidence FROM "
+            "agent_validation_evidence WHERE workflow_run_id=:id ORDER BY created_at,id"), {'id': workflow_id})).mappings().all()
+        sealed = await conn.scalar(text("SELECT sm.staging_manifest_id FROM agent_seal_manifests sm "
+            "JOIN agent_candidate_seals s ON s.id=sm.seal_id JOIN agent_candidate_builds b ON b.id=s.candidate_build_id "
+            "WHERE b.workflow_run_id=:id AND sm.plan_step_key='combine'"), {'id': workflow_id})
+    old, new = [row for row in rows if row['gate'] == 'geometry']
+    bom, = [row for row in rows if row['gate'] == 'bom']
+    assert old['outcome'] == 'failed' and old['staging_manifest_id'] != sealed
+    assert new['outcome'] == bom['outcome'] == 'passed'
+    assert sealed == new['staging_manifest_id'] == bom['staging_manifest_id']
+    assert bom['evidence']['source_manifest_id'] == str(sealed)
+
+
+@pytest.mark.asyncio(loop_scope="module")
+@pytest.mark.parametrize("repair", ["resize", "displace"])
+async def test_optional_assembly_optimization_rechecks_bom_before_sealing(repair):
+    from dataclasses import replace
+
+    class WidenSupport(_V2AssemblyModelingStub):
+        async def generate_step_source(self, *, step, **kwargs):
+            result = await super().generate_step_source(step=step, **kwargs)
+            if step.step_key == 'part-01':
+                # Full-size foot with a narrow support under the lid. The unmodified
+                # component and assembly agree, with a real overhang on the lid.
+                shape = "cq.Workplane('XY').box(30, 20, .5).union(cq.Workplane('XY').box(5, 5, 4.5).translate((0,0,2.5)))"
+                source = result.source_code.replace("cq.Workplane('XY').box(30, 20, 5)", shape)
+                assert source != result.source_code
+                return replace(result, source_code=source, provenance={**result.provenance,
+                               'response_hash': hashlib.sha256(source.encode()).hexdigest()})
+            return result
+
+        async def repair(self, *, source_code, failure, decision):
+            assert failure['error_code'] == 'dfm_validation_failed'
+            # This changes stock in the assembled file without changing the component.
+            if repair == 'resize':
+                changed = source_code.replace('box(5, 5, 4.5)', 'box(8, 8, 4.5)')
+            else:
+                changed = source_code.replace('translate((0,0,2.5))', 'translate((7,0,2.5))')
+            assert changed != source_code
+            return DurableRepairResult(source_code=changed, failure_class=decision.failure_class,
+                                       strategy=decision.strategy, provenance=_controlled_provenance())
+
+    provider = WidenSupport()
+    owner, wid, _ = await _run_assembly_case(fail_step=None, modeling=provider, durable_repair=provider,
+                                             durable_visual=_V2PassingVisualStub())
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        attempts = (await conn.execute(text("SELECT a.status,a.error_code FROM execution_attempts a "
+            "JOIN step_runs s ON s.id=a.step_run_id WHERE s.workflow_run_id=:id AND s.kind='agent_bom' "
+            "ORDER BY s.step_index"), {'id': wid})).mappings().all()
+        change = (await conn.execute(text("SELECT risk_summary,id FROM change_sets WHERE source_workflow_run_id=:id"),
+                                    {'id': wid})).mappings().one()
+        geometry = (await conn.execute(text("""
+            SELECT e.staging_manifest_id, e.outcome, output->>'sha256' AS step_sha256
+            FROM agent_validation_evidence e
+            JOIN agent_staging_manifests m ON m.id = e.staging_manifest_id
+            CROSS JOIN LATERAL jsonb_array_elements(m.manifest->'outputs') AS output
+            WHERE e.workflow_run_id = :id AND e.gate = 'geometry' AND output->>'format' = 'step'
+            ORDER BY e.created_at, e.id
+        """), {'id': wid})).mappings().all()
+        bom_id = await conn.scalar(text("SELECT staging_manifest_id FROM agent_validation_evidence "
+            "WHERE workflow_run_id=:id AND gate='bom' AND outcome='passed'"), {'id': wid})
+    assert [row['outcome'] for row in geometry] == ['passed', 'passed']
+    assert geometry[0]['staging_manifest_id'] == bom_id != geometry[1]['staging_manifest_id']
+    assert [(row['status'],row['error_code']) for row in attempts] == [('failed','bom_source_geometry_mismatch'),('succeeded',None)]
+    risk = next(r for r in change['risk_summary']['items'] if r['gate'] == 'dfm')
+    assert risk['optional_repair_failure']['error_code'] == 'bom_source_geometry_mismatch'
+    await accept_change_set(tenant_id=owner.tenant_id, reviewer_principal_id=owner.principal_id,
+                            change_set_id=change['id'], review_note='保留已核对的装配；悬垂风险已知。')
+    committed = await commit_change_set(tenant_id=owner.tenant_id, reviewer_principal_id=owner.principal_id,
+                                        change_set_id=change['id'])
+    assert committed.status == 'committed'
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        saved = (await conn.execute(text("""
+            SELECT c.candidate_revision_id, b.head_revision_id, a.object_key, a.sha256
+            FROM change_sets c JOIN project_branches b ON b.id = c.branch_id
+            JOIN artifacts a ON a.revision_id = b.head_revision_id AND a.artifact_kind = 'step'
+            WHERE c.id = :change
+        """), {'change': change['id']})).mappings().one()
+    saved_digest = hashlib.sha256(await get_object(saved['object_key'])).hexdigest()
+    assert saved['head_revision_id'] == saved['candidate_revision_id']
+    assert saved_digest == saved['sha256'] == geometry[0]['step_sha256'] != geometry[1]['step_sha256']
+    if evidence_dir := os.getenv('CAD_AGENT_TEST_EVIDENCE_DIR'):
+        from pathlib import Path
+        Path(evidence_dir).mkdir(parents=True, exist_ok=True)
+        (Path(evidence_dir) / f'assembly-rollback-{repair}.json').write_text(json.dumps({
+            'workflow_id': str(wid), 'status': committed.status, 'head': str(saved['head_revision_id']),
+            'bom_attempts': [dict(row) for row in attempts], 'original_step_sha256': geometry[0]['step_sha256'],
+            'rejected_step_sha256': geometry[1]['step_sha256'], 'saved_step_sha256': saved_digest,
+        }, indent=2))
+    from temporalio.worker import Replayer
+    from app.workflows.agent_v2 import McadAgentWorkflowV2
+    handle = (await get_temporal_client()).get_workflow_handle(temporal_agent_v2_workflow_id(wid))
+    await Replayer(workflows=[McadAgentWorkflowV2]).replay_workflow(await handle.fetch_history())
 
 
 @pytest.mark.asyncio(loop_scope="module")
@@ -4973,7 +5093,7 @@ async def test_multiple_cuts_and_constraints_repair_from_retained_plan_then_comm
     assert generator.repairs == [
         ('pocket-throat', 'subtractive_feature_no_effect'), ('pocket-clamp', 'subtractive_feature_no_effect'),
         ('pocket-screw', 'subtractive_feature_no_effect'), ('pocket-tip', 'sketch_under_constrained'),
-        ('pocket-tip', 'subtractive_feature_no_effect')]
+        ('pocket-tip', 'subtractive_feature_no_effect')] + ([('export-final', 'invalid_export')] if geometry_failure else [])
     async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
         geometries = (await conn.execute(text("SELECT evidence FROM agent_validation_evidence WHERE workflow_run_id=:id AND gate='geometry' ORDER BY created_at,id"),
             {'id': created.workflow_id})).scalars().all()
@@ -4992,7 +5112,7 @@ async def test_multiple_cuts_and_constraints_repair_from_retained_plan_then_comm
             {'id': created.workflow_id})).scalars().all()
         manifests = (await conn.execute(text('SELECT execution_attempt_id FROM agent_staging_manifests WHERE workflow_run_id=:id'),
             {'id': created.workflow_id})).scalars().all()
-        assert len(failures) == 5 and not set(failures) & set(manifests)
+        assert len(failures) == 5 + int(geometry_failure) and not set(failures) & set(manifests)
         verified = (await conn.execute(text("SELECT payload FROM task_events WHERE workflow_run_id=:id AND event_type='agent.freecad.constraint_verified'"),
             {'id': created.workflow_id})).scalars().all()
     assert verified, 'constraint repair must retain independent native verification'

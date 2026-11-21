@@ -40,7 +40,6 @@ def durable_ws(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "api_keys", [])
     monkeypatch.setattr(rate_limiter, "rpm", 0)
     asyncio.run(history.close_db())
-    ws_api.sessions.clear()
     calls: dict[str, list] = {
         "workspace": [],
         "submit": [],
@@ -108,7 +107,6 @@ def durable_ws(tmp_path, monkeypatch):
         panel_sessions=panel_sessions,
     )
     asyncio.run(history.close_db())
-    ws_api.sessions.clear()
     rate_limiter._windows.clear()
 
 
@@ -414,7 +412,7 @@ def test_restore_context_cannot_inject_product_state(client, durable_ws):
         message = socket.receive_json()
 
     assert message["data"]["error"]["type"] == "ValidationError"
-    assert "session-context" not in ws_api.sessions
+    assert not any(durable_ws.calls.values())
 
 
 def test_legacy_resume_is_resubmitted_as_durable_execute(

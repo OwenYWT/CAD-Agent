@@ -1,5 +1,9 @@
 """Shared fixtures and pytest configuration for CAD Agent tests."""
+import os
+
 import pytest
+
+os.environ.setdefault("APP_ENVIRONMENT", "test")
 
 from app.config import settings
 
@@ -26,3 +30,8 @@ def _auth_off_by_default(request, monkeypatch):
     if request.node.get_closest_marker("auth"):
         return
     monkeypatch.setattr(settings, "auth_required", False, raising=False)
+
+
+@pytest.fixture
+def job_database_url():
+    return os.environ["CAD_MODEL_JOB_TEST_DATABASE_URL"]

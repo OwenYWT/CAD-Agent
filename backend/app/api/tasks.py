@@ -25,6 +25,7 @@ from app.models.schemas import (
     TaskCancellationRequest,
     TaskConfirmationRequest,
 )
+from app.services.document_sharing import workspace_principal
 from app.services.event_relay import (
     ConfirmationProjectionInvalid,
     CursorExpired,
@@ -311,6 +312,13 @@ async def durable_task_websocket(
     if principal is None:
         await websocket.close(code=1013, reason="Durable principal unavailable")
         return
+    workspace = websocket.query_params.get("workspace")
+    if workspace:
+        try:
+            principal = await workspace_principal(principal, UUID(workspace))
+        except (PermissionError, ValueError):
+            await websocket.close(code=4003, reason="Workspace access denied")
+            return
     try:
         cursor = int(websocket.query_params.get("after_sequence", "0"))
         if cursor < 0:
@@ -383,9 +391,16 @@ async def durable_task_websocket(
                 })
                 await websocket.close(code=1000)
                 return
-            await asyncio.sleep(0.5)
+            try:
+                message = await asyncio.wait_for(websocket.receive(), timeout=0.5)
+                if message["type"] == "websocket.disconnect":
+                    return
+            except asyncio.TimeoutError:
+                pass
     except WebSocketDisconnect:
         return
+    except (KeyError, PermissionError):
+        await websocket.close(code=4003, reason="Task access revoked")
     except Exception:
         logger.exception("Durable task WebSocket failed")
         try:

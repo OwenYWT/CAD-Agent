@@ -90,3 +90,25 @@ def test_total_budget_and_stage_counters_are_distinct_and_replay_deterministic()
             accounting.reserve_checkpoint('third')
         for_replay.append(accounting.snapshot())
     assert for_replay[0] == for_replay[1]
+
+
+@pytest.mark.asyncio
+async def test_native_failure_after_gate_repair_uses_the_same_recovery_and_manifest():
+    class FailedExport(GeometrySequence):
+        async def _activity(self, name, payload, **kwargs):
+            if name == 'agent_v2.execute_freecad' and not any(n == name for n, _, _ in self.calls):
+                self.calls.append((name, payload, kwargs))
+                raise ApplicationError('select final Body', {'category':'user_code', 'error_code':'invalid_export'},
+                                       type='invalid_export')
+            return await super()._activity(name, payload, **kwargs)
+
+    flow = FailedExport(['failed','passed'])
+    flow._gate_native_recovery = True
+    args = arguments('geometry')
+    args['modeled']['repair_count'] = 5
+    result = await flow._geometry_gate(**args, expected_dimensions={})
+    repairs = [p for n,p,_ in flow.calls if n == 'agent_v2.repair_operations']
+    executions = [p for n,p,_ in flow.calls if n == 'agent_v2.execute_freecad']
+    assert [(p['repair_index'], p['gate_repair_index']) for p in repairs] == [(6,1),(7,1)]
+    assert [p['supersedes_staging_manifest_id'] for p in executions] == ['old-manifest','old-manifest']
+    assert result['repair_count'] == 7 and result['executed']['staging_manifest_id'] == 'new-manifest'

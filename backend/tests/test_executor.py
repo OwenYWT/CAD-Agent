@@ -84,7 +84,7 @@ class TestModeFileWriting:
         assert executor._execute_sync("code").success
 
     def test_3d_mode_writes_mode_file(self):
-        executor = CadQueryExecutor()
+        executor = CadQueryExecutor(runtime_name="docker")
 
         mock_container = MagicMock()
         mock_container.wait.return_value = {"StatusCode": 0}
@@ -113,7 +113,7 @@ class TestModeFileWriting:
         assert mode_file.read_text() == "3d"
 
     def test_2d_mode_writes_mode_file(self):
-        executor = CadQueryExecutor()
+        executor = CadQueryExecutor(runtime_name="docker")
 
         input_dirs_seen = []
 
@@ -142,7 +142,7 @@ class TestModeFileWriting:
 
 class TestContainerCleanup:
     def test_container_removed_on_success(self):
-        executor = CadQueryExecutor()
+        executor = CadQueryExecutor(runtime_name="docker")
         mock_container = MagicMock()
         mock_container.wait.return_value = {"StatusCode": 0}
 
@@ -160,7 +160,7 @@ class TestContainerCleanup:
         mock_container.remove.assert_called_once_with(force=True)
 
     def test_container_removed_on_timeout(self):
-        executor = CadQueryExecutor()
+        executor = CadQueryExecutor(runtime_name="docker")
         mock_container = MagicMock()
         from requests.exceptions import ReadTimeout
         mock_container.wait.side_effect = ReadTimeout("timeout")
@@ -179,7 +179,7 @@ class TestContainerCleanup:
 
 class TestMissingResult:
     def test_missing_result_json(self):
-        executor = CadQueryExecutor()
+        executor = CadQueryExecutor(runtime_name="docker")
         mock_container = MagicMock()
         mock_container.wait.return_value = {"StatusCode": 0}
 
@@ -188,7 +188,8 @@ class TestMissingResult:
 
         result = executor._execute_sync("code")
         assert not result.success
-        assert result.error_type == "RuntimeError"
+        assert result.error_type == "SandboxProtocolError"
+        assert result.error_code == "sandbox_protocol_error"
         assert "No result.json" in result.error_message
 
 

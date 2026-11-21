@@ -327,6 +327,16 @@ def _sketch_add_geometry(document: Any, args: dict[str, Any]) -> dict[str, Any]:
                 )
             )
         )
+    elif kind == "arc":
+        center = App.Vector(*_point(geometry["center"], "center"), 0)
+        radius = _number(geometry["radius_mm"], "radius_mm", positive=True)
+        start = _number(geometry["start_angle_deg"], "start_angle_deg")
+        end = _number(geometry["end_angle_deg"], "end_angle_deg")
+        if not 0 < end - start < 360:
+            raise FreeCADRunnerError("invalid_geometry", "arc sweep must be between zero and 360 degrees")
+        curve = Part.ArcOfCircle(Part.Circle(center, App.Vector(0, 0, 1), radius),
+                                 math.radians(start), math.radians(end))
+        indexes.append(int(sketch.addGeometry(curve, construction)))
     elif kind == "rectangle":
         x, y = _point(geometry.get("corner"), "rectangle.corner")
         width = _number(geometry.get("width_mm"), "width_mm", positive=True)
@@ -356,22 +366,19 @@ def _sketch_add_curve_profile(document: Any, args: dict[str, Any]) -> dict[str, 
     sketch = _object(document, args["sketch"], "sketch")
     center = App.Vector(*_point(geometry["center"], "center"), 0)
     radius = _number(geometry["radius_mm"], "radius_mm", positive=True)
-    circle = Part.Circle(center, App.Vector(0, 0, 1), radius)
     kind = geometry["kind"]
     if kind == "arc":
         start = _number(geometry["start_angle_deg"], "start_angle_deg")
         end = _number(geometry["end_angle_deg"], "end_angle_deg")
-        if not 0 < end-start < 360:
-            raise FreeCADRunnerError("invalid_geometry", "arc sweep must be between zero and 360 degrees")
-        base = sketch.addGeometry(Part.ArcOfCircle(circle, math.radians(start), math.radians(end)), False)
-        indexes = [base]
+        indexes = _sketch_add_geometry(document, args)["geometry_indexes"]
+        base = indexes[0]
         radial_targets = [(base, 1, start), (base, 2, end)]
     else:
         sides = geometry["sides"]
         if not isinstance(sides, int) or isinstance(sides, bool) or sides < 3:
             raise FreeCADRunnerError("invalid_geometry", "polygon requires at least three sides")
         angle = _number(geometry.get("rotation_deg", 0), "rotation_deg")
-        base = sketch.addGeometry(circle, True)
+        base = sketch.addGeometry(Part.Circle(center, App.Vector(0, 0, 1), radius), True)
         points = [center + App.Vector(radius*math.cos(math.radians(angle)+i*2*math.pi/sides),
                    radius*math.sin(math.radians(angle)+i*2*math.pi/sides), 0) for i in range(sides)]
         indexes = list(sketch.addGeometry([Part.LineSegment(points[i], points[(i+1)%sides]) for i in range(sides)], False))
@@ -1163,11 +1170,14 @@ def _document_export(_document: Any, args: dict[str, Any]) -> dict[str, Any]:
         names=args['objects']
         if not isinstance(names,list) or not names or len(set(names))!=len(names):
             raise FreeCADRunnerError('invalid_export','export objects must be a nonempty unique list')
-        body_children={o.Name for body in _document.Objects if body.TypeId=='PartDesign::Body' for o in body.Group}
+        body_children = {o.Name: body.Name for body in _document.Objects if body.TypeId == 'PartDesign::Body' for o in body.Group}
+        export_roots = {name: body_children[name] for name in names if name in body_children}
+        if export_roots and set(formats) != {'fcstd'}:
+            roots = json.dumps(export_roots, ensure_ascii=False)
+            raise FreeCADRunnerError('invalid_export', f'select the owning Body for each intermediate feature: {roots}',
+                                     details={'export_roots_json': roots})
         for name in names:
             obj=_object(_document,name,'export object')
-            if obj.Name in body_children and set(formats) != {'fcstd'}:
-                raise FreeCADRunnerError('invalid_export','select the final Body, not an intermediate feature')
             shape=getattr(obj,'Shape',None)
             if set(formats) != {'fcstd'} and (shape is None or shape.isNull() or not shape.Solids):
                 raise FreeCADRunnerError('invalid_export','selected export object has no final solid')

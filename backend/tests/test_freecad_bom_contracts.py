@@ -87,3 +87,41 @@ def test_bom_document_reads_current_and_saved_native_versions(version):
             columns=document.columns,
             rows=(),
         )
+
+
+def test_bom_selects_the_delivered_manifest_for_each_logical_step():
+    from app.workflows.handlers.bom import _select_bom_inputs
+    from temporalio.exceptions import ApplicationError
+
+    def row(key):
+        return {'id': uuid4(), 'manifest': {'plan_step_key': key}}
+
+    old, repaired, optional, part, new_part = (row(key) for key in ('combine', 'combine', 'combine', 'leg', 'leg'))
+    rows = [old, part, repaired, new_part, optional]
+    chosen = {'combine': str(repaired['id']), 'leg': str(new_part['id'])}
+    assert _select_bom_inputs(rows, ['combine', 'leg'], chosen) == {'combine': repaired, 'leg': new_part}
+    for wrong in ({**chosen, 'leg': str(old['id'])}, {**chosen, 'combine': str(uuid4())}):
+        with pytest.raises(ApplicationError, match='missing'):
+            _select_bom_inputs(rows, ['combine', 'leg'], wrong)
+    with pytest.raises(ApplicationError, match='ambiguous'):
+        _select_bom_inputs(rows, ['combine', 'leg'], {'combine': str(repaired['id'])})
+
+
+@pytest.mark.asyncio
+async def test_assembly_bom_never_waives_integrity_or_a_second_geometry_mismatch():
+    from app.workflows.agent_v2 import McadAgentWorkflowV2
+    from temporalio.exceptions import ApplicationError
+
+    original = {'executed': {'staging_manifest_id': 'original'}}
+    optimized = {'executed': {'staging_manifest_id': 'optional'}, 'previous_dfm_assembly': (original, 'dfm-01')}
+    for code, expected in [('bom_input_integrity_failed', ['optional']),
+                           ('bom_source_geometry_mismatch', ['optional', 'original'])]:
+        flow = McadAgentWorkflowV2()
+        seen = []
+        async def fail(name, payload, **kwargs):
+            seen.append(payload['staging_manifest_id'])
+            raise ApplicationError(code, type=code)
+        flow._activity = fail
+        with pytest.raises(ApplicationError, match=code):
+            await flow._assembly_bom({}, optimized, {})
+        assert seen == expected

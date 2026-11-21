@@ -1,3 +1,5 @@
+import { getDurableTaskSnapshot } from "../services/clients/tasks";
+import { EngineeringApiError } from "../services/clients/http";
 import { dispatchSessionMessage } from "../controllers/sessionMessages";
 import type { RequirementBasis } from "../types/requirements";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -226,6 +228,8 @@ export function useWebSocket() {
       );
       const cursor = panel?.durable?.lastEventSequence || 0;
       const query = new URLSearchParams({ after_sequence: String(cursor) });
+      const workspace = new URLSearchParams(window.location.search).get("workspace");
+      if (workspace) query.set("workspace", workspace);
       const authProtocol = webSocketAuthProtocol(token);
       const socket = new WebSocket(
         `${protocol}//${host}/ws/tasks/${durableWorkflowRunId}?${query}`,
@@ -276,10 +280,27 @@ export function useWebSocket() {
           setError("持久任务事件解析失败", activePanelId);
         }
       };
-      socket.onclose = (event) => {
+      socket.onclose = async (event) => {
         if (disposed || durableWsRef.current !== socket) return;
         durableWsRef.current = null;
         if (event.code === 1000) return;
+        if (event.code === 4003) {
+          setError("当前登录或工作区无权订阅此任务", activePanelId);
+          return;
+        }
+        // Browsers hide a rejected handshake behind code 1006. The snapshot
+        // endpoint distinguishes permission loss from a network interruption.
+        if (event.code === 1006) {
+          try { await getDurableTaskSnapshot(durableWorkflowRunId); }
+          catch (error) {
+            if (disposed || durableWsRef.current) return;
+            if (error instanceof EngineeringApiError && [401, 403, 404].includes(error.httpStatus ?? 0)) {
+              setError("当前登录或工作区无权订阅此任务", activePanelId);
+              return;
+            }
+          }
+          if (disposed || durableWsRef.current) return;
+        }
         if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
           setError("持久任务事件连接已断开，请刷新后重试", activePanelId);
           return;

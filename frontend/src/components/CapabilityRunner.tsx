@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { authFetch } from "../auth";
+import { uploadCapabilityFile, executeCapability, type RunResult } from "../services/clients/capabilities";
+import { downloadEngineeringArtifact } from "../services/clients/downloads";
 import { useCapabilities } from "../hooks/useCapabilities";
 import { useI18n } from "../i18n/I18nContext";
 import type { CapabilityId } from "../types";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 const PARAM_TEMPLATES: Record<string, Record<string, unknown>> = {
   "cad/generate": { input: "uploads/<id>/model.py", output: "model.step" },
@@ -41,18 +41,7 @@ const PARAM_TEMPLATES: Record<string, Record<string, unknown>> = {
 
 const UPLOAD_KEYS = ["input", "source", "profile", "gcode", "config", "template_project", "right"];
 
-interface RunResult {
-  status: "succeeded" | "blocked" | "failed" | "dry_run";
-  capability: string;
-  action: string;
-  request_id: string;
-  data?: unknown;
-  files?: Array<{ name: string; url?: string; sha256?: string; size_bytes?: number }>;
-  checks?: Array<Record<string, unknown>>;
-  command_preview?: string[];
-  blocked_reasons?: string[];
-  error?: string;
-}
+
 
 const STATUS_STYLE: Record<RunResult["status"], string> = {
   succeeded: "bg-emerald-50 text-emerald-800",
@@ -121,11 +110,7 @@ export default function CapabilityRunner() {
     setUploading(true);
     setError(null);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      const response = await authFetch(`${API_BASE}/api/capability-artifacts`, { method: "POST", body: form });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.detail || `上传失败（HTTP ${response.status}）`);
+      const body = await uploadCapabilityFile(file);
       updateUploadedInput(body.input);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "上传失败");
@@ -149,14 +134,7 @@ export default function CapabilityRunner() {
     setResult(null);
     setError(null);
     try {
-      const response = await authFetch(`${API_BASE}/api/capability-actions/${capability.id}/${action.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ params }),
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.detail || `运行失败（HTTP ${response.status}）`);
-      setResult(body as RunResult);
+      setResult(await executeCapability(capability.id, action.id, params));
       setParamsText(JSON.stringify(stripSecrets(params), null, 2));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "运行失败");
@@ -169,14 +147,7 @@ export default function CapabilityRunner() {
     if (!file.url) return;
     setError(null);
     try {
-      const response = await authFetch(`${API_BASE}${file.url}`);
-      if (!response.ok) throw new Error(`下载失败（HTTP ${response.status}）`);
-      const url = URL.createObjectURL(await response.blob());
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = file.name;
-      anchor.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      await downloadEngineeringArtifact(file.url, file.name);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "下载失败");
     }

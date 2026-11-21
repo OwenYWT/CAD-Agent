@@ -1,6 +1,7 @@
 """Native negative controls for every profile consumer, plus save/reopen geometry."""
 import copy
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -9,7 +10,7 @@ sys.path.insert(0, '/opt/cad-agent')
 sys.path.append('/tests')
 from profile_replan_fixture import failed_plan, proposal
 import freecad_entry as runner
-from freecad_constraint_validation import validate_profile, ConstraintVerificationError
+from freecad_constraint_validation import validate_profile, verify_replanned_profile, ConstraintVerificationError
 
 report = {'rejected': [], 'valid_boundaries': []}
 with tempfile.TemporaryDirectory() as folder:
@@ -75,6 +76,36 @@ with tempfile.TemporaryDirectory() as folder:
         finally:
             runner.App.closeDocument(doc.Name)
         report['valid_boundaries'].append({'offset': offset, 'gap': gap, 'parameter_edit_reopened': True})
+    curved = json.loads(Path('/sandbox/input/scoped-repair.json').read_text())['curved_boundary']
+    invalid_export = copy.deepcopy(curved['plan'])
+    invalid_export['operations'][-1]['args']['objects'] = ['HookBody']
+    try:
+        run(invalid_export)
+    except runner.FreeCADRunnerError as exc:
+        assert exc.code == 'invalid_export' and json.loads(exc.details['export_roots_json']) == {'HookBody': 'Body'}
+    else:
+        raise AssertionError('exported an intermediate PartDesign feature')
+    result = run(curved['plan'])
+    doc = runner.App.openDocument(result['files']['fcstd'])
+    try:
+        shape = runner.Part.read(result['files']['step'])
+        assert shape.isValid() and len(shape.Solids) == 1
+        assert abs(shape.Volume - (24*35 + math.pi*12**2/2)*40) < 1e-5
+        contract = {'sketch': 'hook_profile', 'execution_checkpoint_hash': None, 'closed_profile': True,
+                    'construction_geometry': curved['geometry'], 'resource_policy': {
+                    'max_parameter_probes': 128, 'perturbation_fraction': 0.01}}
+        proof = verify_replanned_profile(doc, contract, runner._validate_document)
+        assert proof['saved_reopened'] and len(proof['parameter_probes']) == 8
+        report['editable_semicircular_boundary_probes'] = len(proof['parameter_probes'])
+        contract['construction_geometry'][0]['sweep_rad'] /= 2
+        try:
+            verify_replanned_profile(doc, contract, runner._validate_document)
+        except ConstraintVerificationError as exc:
+            assert 'sweep' in str(exc)
+        else:
+            raise AssertionError('accepted an altered protected arc sweep')
+    finally:
+        runner.App.closeDocument(doc.Name)
     # Open sweep paths also need topology checks; one connected wire alone is
     # insufficient when non-adjacent segments cross.
     doc = runner.App.newDocument('PathTopology')

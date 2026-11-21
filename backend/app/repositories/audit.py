@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -75,3 +75,20 @@ async def append_audit_record(
         },
     )
     return audit_id
+
+async def consume_tool_confirmation(connection: AsyncConnection, tenant_id: UUID, actor: UUID,
+                                    receipt: UUID, fingerprint: str) -> bool:
+    # The accepted record has one deterministic identity per issued receipt. Only
+    # one concurrent transaction can consume it, even on different API replicas.
+    used = await connection.scalar(text("""
+        INSERT INTO audit_records (id, tenant_id, actor_principal_id, action, target_type, target_id, payload)
+        SELECT :used, tenant_id, actor_principal_id, 'agent_tool.confirmed', target_type, target_id,
+               jsonb_build_object('receipt', id)
+        FROM audit_records
+        WHERE id=:receipt AND tenant_id=:tenant AND actor_principal_id=:actor
+          AND action='agent_tool.consent_required' AND payload->>'fingerprint'=:fingerprint
+          AND occurred_at > now() - interval '5 minutes'
+        ON CONFLICT (id) DO NOTHING RETURNING id
+    """), {"used": uuid5(receipt, "confirmed"), "receipt": receipt, "tenant": tenant_id,
+           "actor": actor, "fingerprint": fingerprint})
+    return used is not None

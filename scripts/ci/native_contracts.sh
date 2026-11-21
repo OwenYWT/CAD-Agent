@@ -10,9 +10,10 @@ mkdir -p "$report"
 "${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/source_obligation_fixture.py" "$report/source-obligations.json"
 "${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/intake_semantics_fixture.py" "$report/intake-semantics.json"
 "${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/annular_segment_contract.py" --fixtures "$report/annular-segments.json"
+"${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/machined_feature_contract.py" --fixtures "$report/machined-features.json"
 "${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/rectangular_assembly_fixture.py" "$report/rectangular-assembly.json"
 common=("$runtime" run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,mode=1777,size=2g --tmpfs /sandbox/input:rw,mode=777 --tmpfs /sandbox/output:rw,mode=777 -v "$root/backend/tests/e2e:/tests:ro" -v "$report/scoped-repair.json:/sandbox/input/scoped-repair.json:ro" -v "$report/parameter-dependency.json:/sandbox/input/parameter-dependency.json:ro")
-for script in freecad_cut_diagnostics_contract freecad_scoped_repair_contract freecad_profile_replan_contract freecad_constraint_diagnostics freecad_constraint_failure_snapshot freecad_constraint_profile_contract freecad_constraint_parameter_contract freecad_parameter_dependencies_contract freecad_native_reference_contract freecad_product_acceptance_contract freecad_step_import_contract freecad_reference_fixture chamfer_scope_geometry freecad_coordinate_contract freecad_profile_contract freecad_curve_profile_contract freecad_hole_cut_contract freecad_loft_contract freecad_sweep_contract freecad_revolve_contract freecad_pattern_contract freecad_tangency_contract freecad_repair_replay_contract freecad_api_contract freecad_tool_replay_contract freecad_checkpoint_replay_contract; do
+for script in freecad_bom_geometry_contract freecad_cut_diagnostics_contract freecad_scoped_repair_contract freecad_profile_replan_contract freecad_constraint_diagnostics freecad_constraint_failure_snapshot freecad_constraint_profile_contract freecad_constraint_parameter_contract freecad_parameter_dependencies_contract freecad_native_reference_contract freecad_product_acceptance_contract freecad_step_import_contract freecad_reference_fixture chamfer_scope_geometry freecad_coordinate_contract freecad_profile_contract freecad_curve_profile_contract freecad_hole_cut_contract freecad_loft_contract freecad_sweep_contract freecad_revolve_contract freecad_pattern_contract freecad_tangency_contract freecad_repair_replay_contract freecad_api_contract freecad_tool_replay_contract freecad_checkpoint_replay_contract; do
   retention=()
   if [[ "$script" == freecad_parameter_dependencies_contract ]]; then
     mkdir -p "$report/parameter-dependency-artifacts"
@@ -70,6 +71,14 @@ invocation=("${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/annular_segment_
 "${invocation[@]}" > "$report/annular-segments-receiver.log" 2>&1
 grep -F 'CAD_ANNULAR_RECEIVER=' "$report/annular-segments-receiver.log"
 "${CAD_CI_PYTHON:-python}" "$root/scripts/ci/step_metadata.py" "$report" annular-segments-receiver "${invocation[@]}"
+invocation=("${common[@]}" -v "$report/machined-features.json:/sandbox/input/cases.json:ro" -e PYTHONPATH=/opt/cad-agent --entrypoint python "$image" /tests/machined_feature_contract.py /sandbox/input/cases.json)
+"${invocation[@]}" > "$report/machined-features.log" 2>&1
+grep -F 'CAD_MACHINED_FEATURES=' "$report/machined-features.log"
+"${CAD_CI_PYTHON:-python}" "$root/scripts/ci/step_metadata.py" "$report" machined-features "${invocation[@]}"
+invocation=("${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/machined_feature_contract.py" --verify "$report/machined-features.log")
+"${invocation[@]}" > "$report/machined-features-receiver.log" 2>&1
+grep -F 'CAD_MACHINED_RECEIVER=' "$report/machined-features-receiver.log"
+"${CAD_CI_PYTHON:-python}" "$root/scripts/ci/step_metadata.py" "$report" machined-features-receiver "${invocation[@]}"
 invocation=("${common[@]}" -e PYTHONPATH=/opt/cad-agent --entrypoint python "$image" /tests/component_measurement_contract.py)
 "${invocation[@]}" > "$report/component-measurement.log" 2>&1
 grep -F 'CAD_COMPONENT_MEASUREMENT_CONTRACT=' "$report/component-measurement.log"

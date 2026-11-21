@@ -143,7 +143,7 @@ Typed actions and args (freecad_execute only):
   Produces fully constrained editable geometry and construction helpers automatically.
   Never add constraints to these helpers or guess their geometry indexes.
 - sketch.add_geometry: {sketch, geometry}; geometry is line(start/end), circle(center/radius_mm),
-  or rectangle(corner/width_mm/height_mm). Coordinates are numeric millimetres.
+  rectangle(corner/width_mm/height_mm), or arc(center/radius_mm/start_angle_deg/end_angle_deg). Coordinates are numeric millimetres.
 - sketch.add_constraint: use freecad_describe_operation for the authoritative kind,
   reference and datum variants. Do not use native negative indices as persistent identities.
 - feature.pad: {name, profile, length_mm, reversed?}
@@ -425,10 +425,15 @@ class FreeCADOperationGenerator:
                 'current_operation_plan': current.model_dump(mode='json'),
                 'execution_failure': profile_context['snapshot']['failure'], 'failed_sketch': target,
                 'frozen_acceptance': profile_context['acceptance'], 'construction_bounds': profile_context['bounds'],
+                'profile_intersections': json.loads(profile_context['snapshot']['failure']['details'].get(
+                    'profile_intersections_json', '{}')),
                 'instruction': 'Replan only the diagnosed uncommitted sketch boundary and its constraints. '
                     'Preserve its frame, original outer bounds, all other operations, feature dimensions, '
                     'operation IDs for unchanged operations and exports. Do not use native Python. '
-                    'Use a valid material boundary instead of touching/overlapping nested loops. '
+                    'Use the reported geometry indices and local intersections to rebuild the intended exterior. '
+                    'For a connected arc and line boundary use sketch.add_geometry with kind arc, then constrain '
+                    'its endpoints (1=start, 2=end, 3=center). It adds one arc. The fully dimensioned add_profile '
+                    'arc also inserts two construction lines and angular drivers and is unsuitable for this local patch. '
                     'Preserve the frozen requirements. Use connected endpoints and dependent geometric '
                     'relations, not independent dimensions on every endpoint. Each editable parameter '
                     'will be perturbed in both directions and downstream features recomputed. '
@@ -556,13 +561,13 @@ class FreeCADOperationGenerator:
             # The compiler used already-persisted operation identities. Hashing
             # them again would rewrite every protected operation on a checkpoint.
             return result
-        return self._scope_result(result, base_state)
+        return self._scope_result(result, base_state, previous=current)
 
     @staticmethod
-    def _scope_result(result, base_state):
+    def _scope_result(result, base_state, previous=None):
         if base_state is None:
             return result
-        scoped = scope_plan_to_base(result.operation_plan, base_state)
+        scoped = scope_plan_to_base(result.operation_plan, base_state, previous=previous)
         # Provider provenance remains the raw response evidence; source_hash
         # independently identifies the canonical plan actually executed.
         return replace(result, operation_plan=scoped, source_code=scoped.model_dump_json())
@@ -763,7 +768,8 @@ class FreeCADOperationGenerator:
                     else:
                         evidence = read_tool(name, arguments, state=base_state)
                         identity = json.dumps(evidence, sort_keys=True, ensure_ascii=False)
-                        if identity in capability_results:
+                        # The bounded profile-repair loop may reread the same schema after a rejection.
+                        if identity in capability_results and not profile_context:
                             raise ValueError("capability lookup repeated without new information")
                         capability_results.add(identity)
                         tool_evidence.append({"call": pending_call, "result": evidence})
@@ -830,13 +836,14 @@ class FreeCADOperationGenerator:
                 if constraint_context or profile_context:
                     pass  # Compiler constructs an immutable copy of every unrelated operation.
                 elif user_payload.get('task') == 'repair':
-                    from app.freecad.constraint_repair import validate_constraint_repair, validate_subtractive_repair
+                    from app.freecad.constraint_repair import validate_constraint_repair, validate_subtractive_repair, validate_retained_operations
                     before = FreeCADOperationPlan.model_validate(user_payload['current_operation_plan'])
                     failure = user_payload['execution_failure']
                     if before == operation_plan:
                         raise ValueError('FreeCAD operation repair returned an unchanged plan')
                     if before.execution_mode != operation_plan.execution_mode:
                         raise ValueError('repair cannot change checkpoint/final execution intent')
+                    validate_retained_operations(before, operation_plan, failure)
                     validate_constraint_repair(before, operation_plan, failure)
                     validate_subtractive_repair(before, operation_plan, failure)
                     validate_chamfer_repair(

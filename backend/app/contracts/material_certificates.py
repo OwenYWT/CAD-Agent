@@ -11,15 +11,21 @@ def verify_material_certificate(check, evidence):
     if evidence['outcome'] == 'indeterminate':
         return
     key = None
-    if kind.startswith('annular_segment_'):
-        key='annular_segment';cert=details.get(key) or {}
+    if kind.startswith(('annular_segment_', 'solid_segment_')):
+        solid = kind.startswith('solid_segment_')
+        key = 'solid_segment' if solid else 'annular_segment'
+        cert = details.get(key) or {}
         dimensions=cert.get('dimensions_mm') or {}
+        bore = dimensions.get('inner_diameter')
+        valid_bore = (type(bore) in {int, float} and bore == 0) if solid else _positive(bore)
         axis,point,origin,interval=(cert.get(k,[]) for k in
             ('axis','axis_point_mm','origin_mm','axial_interval_mm'))
         tolerance=details.get('numerical_tolerance_mm')
-        if (cert.get('schema_version')!='annular-segment.v1'
+        if (cert.get('schema_version')!=('solid-segment.v1' if solid else 'annular-segment.v1')
+                or solid and evidence['method'] != 'complete_observed_solid_segment_material'
                 or set(dimensions)!={'diameter','inner_diameter','height'}
-                or not all(_positive(v) for v in dimensions.values())
+                or not all(_positive(dimensions[k]) for k in ('diameter','height'))
+                or not valid_bore
                 or len(axis)!=3 or len(point)!=3 or len(origin)!=3 or len(interval)!=2
                 or not _positive(tolerance) or tolerance>1e-7
                 or type(cert.get('outer_face_index')) is not int or cert['outer_face_index']<0
@@ -43,8 +49,16 @@ def verify_material_certificate(check, evidence):
                 or not math.isclose(volume_tolerance,expected_tolerance,rel_tol=1e-8,abs_tol=1e-12)
                 or not 0<=cert['missing_material_mm3']<=volume_tolerance
                 or not 0<=cert['excess_material_mm3']<=volume_tolerance
-                or list(evidence['measured'])!=[dimensions[kind.removeprefix('annular_segment_')]]):
+                or solid and (cert['missing_material_mm3'] != 0 or cert['excess_material_mm3'] != 0)
+                or list(evidence['measured'])!=[dimensions[kind.rsplit('_',1)[1]]]):
             raise ValueError('annular segment dimensions, selection or complete material differ')
+    elif kind == 'fillet_radius' or kind.startswith(('rectangular_opening_', 'semicircular_cut_', 'notched_tube_')):
+        from app.contracts.machined_feature_values import feature_values
+        key = 'machined_feature'
+        cert = details.get(key) or {}
+        if (evidence['method'] != 'complete_machined_solid_reconstruction' or
+                list(evidence['measured']) != feature_values(check, cert, details['numerical_tolerance_mm'])):
+            raise ValueError('machined feature differs from its material certificate')
     elif kind.startswith(('cylinder_', 'sphere_', 'cube_')):
         key = 'material_primitive'
         cert = details.get(key) or {}

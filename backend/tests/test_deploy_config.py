@@ -3,7 +3,7 @@
 Angle: DEPLOY CONFIG. Hermetic — no Docker, no real LLM, no network.
 Covers:
   1. Settings parses env vars (MOONSHOT_API_KEY, CORS_ORIGINS JSON list, API_KEYS,
-     BUILD_VOLUME_MM, MIN_WALL_MM, TRUST_PROXY_HEADERS).
+     BUILD_VOLUME_MM, MIN_WALL_MM).
   2. make_llm_client raises without key, sets timeout/retries with key.
   3. _startup_self_check reports missing-key + docker problems; /ready reflects them.
   4. docker-compose.yml is valid YAML with backend+frontend + docker.sock + cad_data.
@@ -44,7 +44,7 @@ def test_settings_defaults_are_safe(monkeypatch):
     """Fresh defaults: no auth, no key, sane print gate."""
     # Clear any env that could leak in.
     for k in ("MOONSHOT_API_KEY", "DASHSCOPE_API_KEY", "VISION_MODEL", "CORS_ORIGINS", "API_KEYS",
-              "BUILD_VOLUME_MM", "MIN_WALL_MM", "TRUST_PROXY_HEADERS", "DEFAULT_INVITE_CODES"):
+              "BUILD_VOLUME_MM", "MIN_WALL_MM", "DEFAULT_INVITE_CODES"):
         monkeypatch.delenv(k, raising=False)
     s = Settings(_env_file=None)
     assert s.dashscope_api_key is None
@@ -56,7 +56,6 @@ def test_settings_defaults_are_safe(monkeypatch):
     assert s.api_keys == []
     assert s.default_invite_codes == []  # access codes must be deployment-owned secrets
     assert s.has_llm_credentials is False
-    assert s.trust_proxy_headers is False
     assert s.cors_origins == ["http://localhost:5173", "http://127.0.0.1:5173"]
     assert s.build_volume_mm == pytest.approx(256.0)
     assert s.min_wall_mm == pytest.approx(0.8)
@@ -95,16 +94,6 @@ def test_settings_parses_print_gate_floats(monkeypatch):
     assert s.build_volume_mm == pytest.approx(180.0)
     assert isinstance(s.build_volume_mm, float)
     assert s.min_wall_mm == pytest.approx(1.2)
-
-
-@pytest.mark.parametrize("raw,expected", [
-    ("true", True), ("True", True), ("1", True),
-    ("false", False), ("False", False), ("0", False),
-])
-def test_settings_parses_trust_proxy_headers_bool(monkeypatch, raw, expected):
-    monkeypatch.setenv("TRUST_PROXY_HEADERS", raw)
-    s = Settings(_env_file=None)
-    assert s.trust_proxy_headers is expected
 
 
 def test_settings_env_is_case_insensitive(monkeypatch):
@@ -152,17 +141,19 @@ def test_make_llm_client_importable_from_module():
 # 3. _startup_self_check + /ready
 # ---------------------------------------------------------------------------
 
-def test_startup_self_check_reports_missing_key(monkeypatch):
+@pytest.mark.asyncio
+async def test_runtime_probe_reports_missing_key(monkeypatch):
     from app import config, main
     monkeypatch.setattr(config.settings, "dashscope_api_key", None)
     monkeypatch.setattr(config.settings, "moonshot_api_key", None)
     monkeypatch.setattr(config.settings, "llm_provider", "moonshot")
     backend = type("Backend", (), {"runtime_snapshot": lambda self: object()})()
-    problems = main._startup_self_check(backend)
+    problems = await main._runtime_problems(backend)
     assert any("MOONSHOT_API_KEY" in p for p in problems)
 
 
-def test_startup_self_check_reports_docker_problem(monkeypatch):
+@pytest.mark.asyncio
+async def test_runtime_probe_reports_docker_problem(monkeypatch):
     """An unavailable execution backend degrades readiness with its real error."""
     from app import config, main
     monkeypatch.setattr(config.settings, "llm_provider", "moonshot")
@@ -172,11 +163,12 @@ def test_startup_self_check_reports_docker_problem(monkeypatch):
         (),
         {"runtime_snapshot": lambda self: (_ for _ in ()).throw(RuntimeError("runtime down"))},
     )()
-    problems = main._startup_self_check(backend)
+    problems = await main._runtime_problems(backend)
     assert any("ExecutionBackend" in p and "runtime down" in p for p in problems)
 
 
-def test_startup_self_check_reports_execution_backend_timeout(monkeypatch):
+@pytest.mark.asyncio
+async def test_runtime_probe_reports_execution_backend_timeout(monkeypatch):
     """A stuck runtime must degrade readiness instead of blocking API startup."""
     from app import config, main
 
@@ -187,14 +179,15 @@ def test_startup_self_check_reports_execution_backend_timeout(monkeypatch):
         (),
         {"runtime_snapshot": lambda self: (_ for _ in ()).throw(TimeoutError("runtime probe timed out"))},
     )()
-    problems = main._startup_self_check(backend)
+    problems = await main._runtime_problems(backend)
     assert any(
         "ExecutionBackend" in problem and "timed out" in problem
         for problem in problems
     )
 
 
-def test_startup_self_check_clean_when_key_and_docker_ok(monkeypatch):
+@pytest.mark.asyncio
+async def test_runtime_probe_clean_when_key_and_docker_ok(monkeypatch):
     """When the key and shared execution backend are healthy, readiness is clean."""
     from app import config, main
 
@@ -202,15 +195,17 @@ def test_startup_self_check_clean_when_key_and_docker_ok(monkeypatch):
     monkeypatch.setattr(config.settings, "moonshot_api_key", "sk-present")
 
     backend = type("Backend", (), {"runtime_snapshot": lambda self: object()})()
-    problems = main._startup_self_check(backend)
+    problems = await main._runtime_problems(backend)
     assert problems == []
 
 
-def test_ready_endpoint_reflects_problems():
+def test_ready_endpoint_reflects_problems(monkeypatch):
     """/ready returns 503 + problem list when startup_problems are set on state."""
     from app.main import app
+    from app.config import settings
     with TestClient(app) as client:
-        app.state.startup_problems = ["MOONSHOT_API_KEY is required — test"]
+        monkeypatch.setattr(settings, "llm_provider", "moonshot")
+        monkeypatch.setattr(settings, "moonshot_api_key", None)
         resp = client.get("/ready")
         assert resp.status_code == 503
         body = resp.json()
@@ -218,10 +213,13 @@ def test_ready_endpoint_reflects_problems():
         assert any("MOONSHOT_API_KEY" in p for p in body["problems"])
 
 
-def test_ready_endpoint_ok_when_no_problems():
+def test_ready_endpoint_ok_when_no_problems(monkeypatch):
     from app.main import app
     with TestClient(app) as client:
-        app.state.startup_problems = []
+        from app.config import settings
+        monkeypatch.setattr(settings, "llm_provider", "moonshot")
+        monkeypatch.setattr(settings, "moonshot_api_key", "test-only")
+        monkeypatch.setattr(app.state.execution_backend, "runtime_snapshot", lambda: object())
         resp = client.get("/ready")
         assert resp.status_code == 200
         assert resp.json()["status"] == "ready"
@@ -252,13 +250,13 @@ def test_compose_is_valid_yaml_with_services():
     assert "frontend" in services
 
 
-def test_compose_backend_mounts_docker_sock_and_cad_data():
+def test_only_workflow_worker_mounts_engine_and_backend_keeps_cad_data():
     data = yaml.safe_load(COMPOSE.read_text())
     backend = data["services"]["backend"]
     volumes = backend.get("volumes", [])
-    joined = "\n".join(volumes)
-    # sibling-container mode: host docker socket must be mounted
-    assert "/var/run/docker.sock:/var/run/docker.sock" in joined
+    for name, service in data["services"].items():
+        has_engine = any("/var/run/docker.sock" in mount for mount in service.get("volumes", []))
+        assert has_engine == (name == "workflow-worker")
     # named volume for persistent data
     assert any(v.startswith("cad_data:") for v in volumes), volumes
 
@@ -413,3 +411,19 @@ def test_tencent_monitor_preserves_dedicated_reader_configuration():
     assert services['monitoring']['env_file']=='./monitor.env'
     assert services['monitoring']['env_file']!=services['backend']['env_file']
     assert 'monitor.env' in (root/'.gitignore').read_text().splitlines()
+
+@pytest.mark.parametrize("cloud", [False, True])
+def test_trusted_proxy_addresses_match_deployed_ingress(cloud):
+    path = COMPOSE.parent / "deploy/tencent/compose.yml" if cloud else COMPOSE
+    compose = yaml.safe_load(path.read_text())
+    services = compose["services"]
+    trusted = set(services["backend"]["environment"]["FORWARDED_ALLOW_IPS"].split(","))
+    address = services["frontend"]["networks"]["ingress"]["ipv4_address"]
+    expected = {address}
+    if cloud:
+        import ipaddress
+        subnet = ipaddress.ip_network(compose["networks"]["ingress"]["ipam"]["config"][0]["subnet"])
+        expected.add(str(subnet.network_address + 1))
+    assert trusted == expected
+    assert set(services["frontend"]["networks"]) == {"ingress"}
+    assert set(services["backend"]["networks"]) == {"ingress", "default"}

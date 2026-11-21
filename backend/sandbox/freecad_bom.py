@@ -11,7 +11,6 @@ from typing import Any
 
 import Assembly  # noqa: F401
 import FreeCAD as App
-import Import
 import Part
 
 
@@ -37,32 +36,36 @@ def _input(task: dict[str, Any], role: str) -> Path:
     return path
 
 
-def _shapes(document) -> list[Any]:
-    solid_objects = [
-        obj for obj in document.Objects
-        if getattr(obj, "Shape", None) is not None
-        and not obj.Shape.isNull()
-        and len(obj.Shape.Solids) > 0
-    ]
-    solid_names = {str(obj.Name) for obj in solid_objects}
-    # FreeCAD's STEP importer exposes an assembly compound and its component
-    # features simultaneously. Counting both doubles the solid count and
-    # volume. Geometry evidence must therefore use the leaf shapes that carry
-    # the actual component solids, while retaining a lone root for flat STEP.
-    leaves = [
-        obj
-        for obj in solid_objects
-        if not any(
-            str(getattr(child, "Name", "")) in solid_names
-            and child is not obj
-            for child in getattr(
-                obj,
-                "OutListRecursive",
-                getattr(obj, "OutList", ()),
-            )
-        )
-    ]
-    return [obj.Shape for obj in leaves]
+def _read_solids(path: Path):
+    # Read the transferred STEP shape, including each occurrence's placement.
+    solids = Part.read(str(path)).Solids
+    if any(not solid.isValid() or solid.Volume <= 0 for solid in solids):
+        raise BOMError("bom_generation_failed", "STEP contains invalid component geometry")
+    return solids
+
+
+def _same_placed_solids(expected, actual):
+    """Match each occurrence once, independent of STEP traversal order."""
+    remaining = list(actual)
+    for source in expected:
+        box = source.BoundBox
+        for index, candidate in enumerate(remaining):
+            other = candidate.BoundBox
+            if not all(_close(getattr(box, key), getattr(other, key))
+                       for key in ("XMin", "YMin", "ZMin", "XMax", "YMax", "ZMax")):
+                continue
+            for left, right in ((source, candidate), (candidate, source)):
+                residue = left.cut(right)
+                if residue.isNull() or not residue.isValid():
+                    raise BOMError("bom_generation_failed", "could not compare component material")
+                if residue.Solids:
+                    break
+            else:
+                remaining.pop(index)
+                break
+        else:
+            return False
+    return not remaining
 
 
 def _measure(shapes: list[Any]) -> tuple[int, tuple[float, float, float], float]:
@@ -139,10 +142,7 @@ def run_bom(task: dict[str, Any]) -> dict[str, Any]:
                 or any(not isinstance(value, (int, float)) or not math.isfinite(float(value)) for value in position)
             ):
                 raise BOMError("bom_generation_failed", "invalid BOM component")
-            imported = App.newDocument(f"Import_{step_key.replace('-', '_')}")
-            Import.insert(str(_input(task, role)), imported.Name)
-            imported.recompute()
-            shapes = _shapes(imported)
+            shapes = _read_solids(_input(task, role))
             if not shapes:
                 raise BOMError("bom_source_not_assembly", f"component has no solid: {step_key}")
             local_box = Part.makeCompound(shapes).BoundBox
@@ -159,7 +159,7 @@ def run_bom(task: dict[str, Any]) -> dict[str, Any]:
             placement_offset = target_anchor.sub(local_anchor)
             container = document.addObject("App::Part", f"Part_{step_key.replace('-', '_')}")
             container.Label = spreadsheet_literal(label)
-            container.Placement.Base = placement_offset
+            container.Placement = App.Placement(placement_offset, App.Rotation())
             for index, shape in enumerate(shapes, start=1):
                 feature = document.addObject("Part::Feature", f"Shape_{step_key.replace('-', '_')}_{index}")
                 feature.Shape = shape.copy()
@@ -168,21 +168,17 @@ def run_bom(task: dict[str, Any]) -> dict[str, Any]:
                 placed.translate(placement_offset)
                 component_shapes.append(placed)
             expected_labels.append(label)
-            App.closeDocument(imported.Name)
 
-        combined = App.newDocument("CombinedCheck")
-        Import.insert(str(_input(task, "assembly")), combined.Name)
-        combined.recompute()
-        combined_shapes = _shapes(combined)
+        combined_shapes = _read_solids(_input(task, "assembly"))
         if not combined_shapes:
             raise BOMError("bom_source_not_assembly", "combine STEP has no solid")
         measured_components = _measure(component_shapes)
         measured_combine = _measure(combined_shapes)
-        App.closeDocument(combined.Name)
         if (
             measured_components[0] != measured_combine[0]
             or any(not _close(a, b) for a, b in zip(measured_components[1], measured_combine[1]))
             or not _close(measured_components[2], measured_combine[2])
+            or not _same_placed_solids(component_shapes, combined_shapes)
         ):
             raise BOMError(
                 "bom_source_geometry_mismatch",

@@ -162,3 +162,33 @@ async def test_cut_repair_against_checkpoint_preserves_all_persisted_operation_i
         base_state={'objects': []}, output_formats=('fcstd', 'step'))
     assert [op.op_id for op in result.operation_plan.operations] == [op.op_id for op in before.operations]
     assert result.operation_plan.operations[-1] == before.operations[-1]
+
+
+def test_gate_repair_preserves_successful_cut_settings_and_allows_other_geometry_edits():
+    from app.freecad.constraint_repair import validate_retained_operations
+    before = FreeCADOperationPlan.model_validate(plan())
+    failure = {'error_code':'geometry_validation_failed', 'retained_cut_fields':{'cut':{'reversed':True}}}
+    alternative = plan()
+    alternative['operations'][0]['args']['length_mm'] = 31
+    validate_retained_operations(before, FreeCADOperationPlan.model_validate(alternative), failure)
+    alternative['operations'][0]['args']['reversed'] = False
+    with pytest.raises(ValueError, match='previously repaired cut'):
+        validate_retained_operations(before, FreeCADOperationPlan.model_validate(alternative), failure)
+
+
+def test_invalid_export_repairs_only_the_reported_child_and_preserves_other_roots():
+    from app.execution.podman_backend import _STRUCTURED_ERROR_POLICY
+    from app.freecad.constraint_repair import validate_retained_operations
+    raw = plan()
+    raw['operations'][-1]['args']['objects'] = ['Pad', 'Pocket', 'LidPad', 'Bracket']
+    old = FreeCADOperationPlan.model_validate(raw)
+    failure = {'error_code':'invalid_export', 'details':{
+        'export_roots_json': '{"Pad":"Base","Pocket":"Base","LidPad":"Lid"}'}}
+    category, _ = _STRUCTURED_ERROR_POLICY['invalid_export']
+    assert decide_repair(category=category.value, error_code='invalid_export', error_message='select final Body',
+                         runtime_error_type='StructuredExecutionError', repair_count=0, seen_signatures=()).repairable
+    raw['operations'][-1]['args']['objects'] = ['Base', 'Lid', 'Bracket']
+    validate_retained_operations(old, FreeCADOperationPlan.model_validate(raw), failure)
+    raw['operations'][-1]['args']['objects'] = ['Base']
+    with pytest.raises(ValueError, match='only replace'):
+        validate_retained_operations(old, FreeCADOperationPlan.model_validate(raw), failure)

@@ -7,7 +7,7 @@ is content-addressed with SHA-256 metadata.
 
 from __future__ import annotations
 
-import hashlib
+from app.execution.canonical import sha256_file
 import mimetypes
 import os
 import re
@@ -29,16 +29,6 @@ def _is_within(path: Path, root: Path) -> bool:
         return True
     except ValueError:
         return False
-
-
-def sha256_file(path: str | Path, *, chunk_size: int = 1024 * 1024) -> str:
-    """Return a streaming SHA-256 digest for *path*."""
-
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for chunk in iter(lambda: handle.read(chunk_size), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 class ArtifactStore:

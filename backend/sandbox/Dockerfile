@@ -132,6 +132,8 @@ COPY backend/app/freecad/native_references.py /opt/cad-agent/freecad_native_refe
 COPY backend/app/contracts/native_references.py /opt/cad-agent/freecad_native_reference_contracts.py
 COPY backend/sandbox/geometry_validation.py /opt/cad-agent/geometry_validation.py
 COPY backend/sandbox/feature_verification.py /opt/cad-agent/feature_verification.py
+COPY backend/sandbox/machined_features.py /opt/cad-agent/machined_features.py
+COPY backend/app/contracts/machined_feature_values.py /opt/cad-agent/machined_feature_values.py
 COPY backend/sandbox/material_measurements.py /opt/cad-agent/material_measurements.py
 COPY backend/sandbox/rectangular_assembly.py /opt/cad-agent/rectangular_assembly.py
 COPY backend/app/contracts/assembly_measurements.py /opt/cad-agent/assembly_measurements.py

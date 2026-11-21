@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-import hashlib
+import asyncio
 import json
 import subprocess
-from dataclasses import dataclass
+import threading
+from time import monotonic
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Mapping
+from app.execution.canonical import sha256_file
+from typing import Callable, Mapping, cast, get_args
 
+from app.config import settings
 from app.freecad.contracts import capability_contract_sha256
-from app.execution.backend import MaterializedExecutionOutcome
+from app.execution.backend import MaterializedExecutionOutcome, RuntimeSnapshot
 from app.execution.canonical import canonical_sha256
 from app.execution.contracts import (
     ArtifactOutput,
@@ -21,16 +24,10 @@ from app.execution.contracts import (
     ExecutionResult,
     ExecutionSpec,
     ExecutionStatus,
+    RuntimePlatform,
     RuntimeProvenance,
 )
 from app.sandbox.executor import CadQueryExecutor, SandboxResult
-
-
-@dataclass(frozen=True)
-class RuntimeSnapshot:
-    image_digest: str
-    platform: str
-    versions: dict[str, str]
 
 
 def _image_digest(inspected: dict) -> str:
@@ -55,12 +52,9 @@ def inspect_container_runtime(command: str, image_ref: str) -> RuntimeSnapshot:
             or f"{command} could not inspect {image_ref}"
         )
     inspected = json.loads(inspected_process.stdout)[0]
-    architecture = inspected.get("Architecture")
-    operating_system = inspected.get("Os")
-    if architecture not in {"amd64", "arm64"} or operating_system != "linux":
-        raise RuntimeError(
-            f"unsupported runtime platform: {operating_system}/{architecture}"
-        )
+    platform = f"{inspected.get('Os')}/{inspected.get('Architecture')}"
+    if platform not in get_args(RuntimePlatform):
+        raise RuntimeError(f"unsupported runtime platform: {platform}")
 
     probe = subprocess.run(
         [
@@ -128,7 +122,7 @@ def inspect_container_runtime(command: str, image_ref: str) -> RuntimeSnapshot:
         raise RuntimeError("runtime operation probe returned wrong FreeCAD version")
     return RuntimeSnapshot(
         image_digest=_image_digest(inspected),
-        platform=f"linux/{architecture}",
+        platform=cast(RuntimePlatform, platform),
         versions={str(key): str(value) for key, value in versions.items()},
     )
 
@@ -165,6 +159,7 @@ def _failure_mapping(result: SandboxResult) -> tuple[ExecutionStatus, ExecutionE
 
 _STRUCTURED_ERROR_POLICY: dict[str, tuple[ExecutionErrorCategory, bool]] = {
     "object_not_found": (ExecutionErrorCategory.USER_CODE, False),
+    "invalid_export": (ExecutionErrorCategory.USER_CODE, False),
     "object_name_conflict": (ExecutionErrorCategory.USER_CODE, False),
     "object_type_mismatch": (ExecutionErrorCategory.USER_CODE, False),
     "agent_plan_backend_mismatch": (ExecutionErrorCategory.VALIDATION, False),
@@ -231,11 +226,27 @@ class PodmanExecutionBackend:
             lambda: inspect_container_runtime(command, image_ref)
         )
         self._runtime_snapshot: RuntimeSnapshot | None = None
+        self._runtime_failure: str | None = None
+        self._probe_after = 0.0
+        self._probe_lock = threading.Lock()
 
     def runtime_snapshot(self) -> RuntimeSnapshot:
-        if self._runtime_snapshot is None:
-            self._runtime_snapshot = self._runtime_inspector()
-        return self._runtime_snapshot
+        with self._probe_lock:
+            if monotonic() < self._probe_after:
+                if self._runtime_snapshot is not None:
+                    return self._runtime_snapshot
+                raise RuntimeError(self._runtime_failure)
+            try:
+                snapshot = self._runtime_inspector()
+            except Exception as exc:
+                self._runtime_snapshot = None
+                self._runtime_failure = str(exc)
+                self._probe_after = monotonic() + settings.dependency_readiness_timeout_s
+                raise
+            self._runtime_snapshot = snapshot
+            self._runtime_failure = None
+            self._probe_after = monotonic() + 60
+            return snapshot
 
     async def execute(
         self,
@@ -247,7 +258,7 @@ class PodmanExecutionBackend:
         del lease  # local delivery has no remote transport envelope
         started_at = datetime.now(timezone.utc)
         try:
-            snapshot = self.runtime_snapshot()
+            snapshot = await asyncio.to_thread(self.runtime_snapshot)
         except Exception as exc:
             result = self._control_failure(
                 spec,
@@ -300,7 +311,7 @@ class PodmanExecutionBackend:
             return MaterializedExecutionOutcome(result=result, files={}, work_dir=None)
 
         try:
-            extra_files = self._validated_inputs(spec, materialized_inputs or {})
+            extra_files = await asyncio.to_thread(self._validated_inputs, spec, materialized_inputs or {})
         except Exception as exc:
             result = ExecutionResult(
                 execution_attempt_id=spec.execution_attempt_id,
@@ -380,7 +391,7 @@ class PodmanExecutionBackend:
             )
 
         try:
-            files, outputs = self._verified_outputs(spec, sandbox_result.files)
+            files, outputs = await asyncio.to_thread(self._verified_outputs, spec, sandbox_result.files)
         except Exception as exc:
             result = ExecutionResult(
                 execution_attempt_id=spec.execution_attempt_id,
@@ -481,10 +492,9 @@ class PodmanExecutionBackend:
                 )
             if not path.is_file() or path.is_symlink():
                 raise ValueError(f"input artifact is not a regular file: {artifact_id}")
-            data = path.read_bytes()
-            if len(data) != declaration.size_bytes:
+            if path.stat().st_size != declaration.size_bytes:
                 raise ValueError(f"input artifact size mismatch: {artifact_id}")
-            if hashlib.sha256(data).hexdigest() != declaration.sha256:
+            if sha256_file(path) != declaration.sha256:
                 raise ValueError(f"input artifact hash mismatch: {artifact_id}")
             extra_files[filename] = path
         return extra_files
@@ -496,17 +506,16 @@ class PodmanExecutionBackend:
     ) -> tuple[dict[str, Path], list[ArtifactOutput]]:
         normalized: dict[str, Path] = {}
         outputs: list[ArtifactOutput] = []
+        roles = {item.name for item in spec.outputs}
         for declaration in spec.outputs:
-            path = next(
-                (
-                    candidate
-                    for name, candidate in produced.items()
-                    if name == declaration.name
-                    or Path(name).suffix.lower() == f".{declaration.name.lower()}"
-                    or candidate.suffix.lower() == f".{declaration.name.lower()}"
-                ),
-                None,
-            )
+            path = produced.get(declaration.name)
+            if path is None:
+                suffix = f".{declaration.name.lower()}"
+                matches = {candidate for name, candidate in produced.items()
+                           if name not in roles and (Path(name).suffix.lower() == suffix or candidate.suffix.lower() == suffix)}
+                if len(matches) > 1:
+                    raise ValueError(f"ambiguous output for declared role: {declaration.name}")
+                path = next(iter(matches), None)
             if path is None:
                 if declaration.required:
                     raise ValueError(f"required output was not produced: {declaration.name}")
@@ -518,7 +527,7 @@ class PodmanExecutionBackend:
                 raise ValueError(f"output is empty: {declaration.name}")
             if declaration.max_size_bytes is not None and size > declaration.max_size_bytes:
                 raise ValueError(f"output exceeds declared size: {declaration.name}")
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            digest = sha256_file(path)
             normalized[declaration.name] = path
             outputs.append(
                 ArtifactOutput(

@@ -38,6 +38,13 @@ def prepared():
         verify_contract(plan, contract, acceptance, context['checkpoint_hash'])
         result[name] = {'plan': plan.model_dump(mode='json'), 'profile_replan': contract,
                         'profile_acceptance_hash': contract['acceptance_hash']}
+    from tests.e2e.profile_replan_fixture import failed_plan, rounded_end_boundary
+    from app.freecad.constraint_patch import construction_geometry
+    curved = failed_plan()
+    curved['operations'][1:3] = rounded_end_boundary('hook_profile', 17, 12, 35)
+    curved['operations'][-1]['args']['formats'] = ['fcstd', 'step']
+    result['curved_boundary'] = {'plan': curved,
+        'geometry': construction_geometry(FreeCADOperationPlan.model_validate(curved), 'hook_profile', None)}
     return result
 
 

@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import stat
 import subprocess
 import tempfile
 import threading
@@ -503,7 +505,9 @@ class CadQueryExecutor:
                     if isinstance(logs, bytes):
                         logs = logs.decode("utf-8", errors="replace")
                     exit_code = completion.get("StatusCode") if isinstance(completion, dict) else None
-                    return SandboxResult(success=False, files={}, error_type="RuntimeError",
+                    return SandboxResult(success=False, files={},
+                        error_type="SandboxProtocolError" if exit_code == 0 else "RuntimeError",
+                        error_code="sandbox_protocol_error" if exit_code == 0 else None,
                         error_message=f"No result.json produced; sandbox exited ({exit_code}): {str(logs)[-2000:]}",
                         traceback=None, execution_time_ms=int((time.time()-start_time)*1000), work_dir=work_dir)
             except Exception as exc:
@@ -536,28 +540,54 @@ class CadQueryExecutor:
     def _read_result(self, output_dir: Path, work_dir: Path, start_time: float) -> SandboxResult:
         elapsed = int((time.time() - start_time) * 1000)
 
-        # Read result
         result_path = output_dir / "result.json"
-        if not result_path.exists():
+        try:
+            limit = 4 * 1024 * 1024  # control metadata, distinct from declared CAD artifacts
+            fd = os.open(result_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, "rb") as stream:
+                info = os.fstat(fd)
+                if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
+                    raise ValueError("expected a bounded regular result file")
+                raw = stream.read(limit + 1)
+            if len(raw) > limit:
+                raise ValueError("sandbox result exceeded its limit")
+            result_data = json.loads(raw)
+            if not isinstance(result_data, dict) or result_data.get("status") not in ("success", "error"):
+                raise ValueError("invalid sandbox result status")
+            files = {}
+            structured = result_data.get("error")
+            if result_data["status"] == "success":
+                entries = result_data.get("files")
+                if not isinstance(entries, dict):
+                    raise ValueError("invalid sandbox output declaration")
+                for role, value in entries.items():
+                    if not isinstance(value, str) or not role or not value or chr(0) in value:
+                        raise ValueError("invalid sandbox output name")
+                    path = Path(value)
+                    if path.name in ("", ".", "..") or path.parent not in (Path("."), Path("/sandbox/output")):
+                        raise ValueError("invalid sandbox output path")
+                    output = output_dir / path.name
+                    if not stat.S_ISREG(output.lstat().st_mode):
+                        raise ValueError("declared output must be a regular file")
+                    files[role] = output
+            elif structured is not None:
+                if (not isinstance(structured, dict) or structured.get("schema_version") != "mcad-error.v1"
+                        or not isinstance(structured.get("code"), str) or not isinstance(structured.get("message"), str)
+                        or not isinstance(structured.get("details", {}), dict)):
+                    raise ValueError("invalid structured sandbox error")
+            elif not all(isinstance(result_data.get(key), str) for key in ("error_type", "error_message")):
+                raise ValueError("invalid sandbox error description")
+            if result_data.get("traceback") is not None and not isinstance(result_data["traceback"], str):
+                raise ValueError("invalid sandbox traceback")
+        except (OSError, ValueError, RecursionError) as exc:
             return SandboxResult(
-                success=False,
-                files={},
-                error_type="RuntimeError",
-                error_message="No result.json produced by sandbox",
-                traceback=None,
-                execution_time_ms=elapsed,
-                work_dir=work_dir,
+                success=False, files={}, error_type="SandboxProtocolError",
+                error_code="sandbox_protocol_error",
+                error_message=f"Invalid sandbox result: {type(exc).__name__}",
+                traceback=None, execution_time_ms=elapsed, work_dir=work_dir,
             )
 
-        result_data = json.loads(result_path.read_text())
-
         if result_data["status"] == "success":
-            files = {}
-            for name, container_path in result_data["files"].items():
-                # Map container path to host path
-                local_path = output_dir / Path(container_path).name
-                if local_path.exists():
-                    files[name] = local_path
             return SandboxResult(
                 success=True,
                 files=files,
@@ -567,32 +597,14 @@ class CadQueryExecutor:
                 execution_time_ms=elapsed,
                 work_dir=work_dir,
             )
-        else:
-            structured = result_data.get("error")
-            if not isinstance(structured, dict):
-                structured = {}
-            is_structured = (
-                structured.get("schema_version") == "mcad-error.v1"
-                and isinstance(structured.get("code"), str)
-                and isinstance(structured.get("message"), str)
-                and isinstance(structured.get("details", {}), dict)
-            )
-            return SandboxResult(
-                success=False,
-                files={},
-                error_type=(
-                    result_data.get("error_type")
-                    if not is_structured
-                    else "StructuredExecutionError"
-                ),
-                error_message=(
-                    structured.get("message")
-                    if is_structured
-                    else result_data.get("error_message")
-                ),
-                traceback=result_data.get("traceback"),
-                execution_time_ms=elapsed,
-                work_dir=work_dir,
-                error_code=(structured.get("code") if is_structured else None),
-                error_details=(dict(structured) if is_structured else {}),
-            )
+        return SandboxResult(
+            success=False,
+            files={},
+            error_type="StructuredExecutionError" if structured is not None else result_data["error_type"],
+            error_message=structured["message"] if structured is not None else result_data["error_message"],
+            traceback=result_data.get("traceback"),
+            execution_time_ms=elapsed,
+            work_dir=work_dir,
+            error_code=structured["code"] if structured is not None else None,
+            error_details=dict(structured) if structured is not None else {},
+        )

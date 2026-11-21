@@ -83,10 +83,8 @@ def isolated_websocket_history(tmp_path, monkeypatch):
     monkeypatch.setattr(ws_api, "submit_durable_workflow", submit)
     monkeypatch.setattr(identity_repository, "reconcile_principal", reconcile)
     asyncio.run(history.close_db())
-    ws_api.sessions.clear()
     yield submissions
     asyncio.run(history.close_db())
-    ws_api.sessions.clear()
 
 
 def test_execute_code_submits_persisted_workflow_identity(

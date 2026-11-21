@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 Identifier = Annotated[str, Field(min_length=1, max_length=200)]
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 ImageDigest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
+RuntimePlatform = Literal["linux/amd64", "linux/arm64"]
 JsonPrimitive = str | int | float | bool | None
 ErrorDetailValue = JsonPrimitive | list[str] | list[int]
 
@@ -77,7 +78,7 @@ class OutputDeclaration(FrozenContract):
 
 class RuntimeRequirement(FrozenContract):
     image_digest: ImageDigest
-    platform: Literal["linux/amd64", "linux/arm64"]
+    platform: RuntimePlatform
     sandbox_tier: str | None = Field(default=None, max_length=100)
 
 
@@ -168,7 +169,7 @@ class ExecutionError(FrozenContract):
 
 class RuntimeProvenance(FrozenContract):
     image_digest: ImageDigest
-    platform: Literal["linux/amd64", "linux/arm64"]
+    platform: RuntimePlatform
     versions: dict[str, str] = Field(default_factory=dict)
     input_hash: Sha256
     code_hash: Sha256

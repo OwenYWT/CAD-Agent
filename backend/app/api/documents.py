@@ -2,24 +2,24 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 from sqlalchemy import text
 from starlette.websockets import WebSocketDisconnect
 
+from app.api.files import FileUploadForm, VerifiedArtifactResponse, read_upload_form
 from app.api.auth import get_current_user, get_durable_principal, resolve_ws_principal, verify_ws_token, websocket_auth_token, rate_limiter
 from app.services.document_sharing import create_review_invite, accept_review_invite, workspace_principal, project_members, change_project_member
 from app.services.feature_annotations import save_annotation
 from app.services.feature_leases import FeatureLeaseConflict, acquire_feature_lease, release_feature_lease, assert_operation_lease_access
 from app.services.document_rebase import resolve_parameter_rebase
-from app.services.document_geometry import scene_mesh
+from app.services.document_geometry import scene_mesh_artifact
 from app.services.scene_jobs import request_scene
 from app.services.document_branches import list_document_branches, fork_document, compare_branches, merge_document
 from app.services.document_engineering import submit_engineering, engineering_tasks, engineering_result
@@ -34,7 +34,6 @@ from app.domain.projects import Permission
 from app.freecad.state_contract import ParameterStateError, compile_parameter_operation_plan, read_verified_state_artifact
 from app.freecad.inspection import InspectionRequest, inspect_state
 from app.freecad.selection import SelectionContextV1
-from app.object_store import get_object
 from app.repositories.revisions import StaleBaseRevision
 from app.services.cloud_documents import (DocumentConflict, authorized_document, checkpoint, document_snapshot, document_revision_view,
     document_events, collaboration_snapshot, touch_presence, add_comment)
@@ -51,16 +50,24 @@ from app.services.document_operations import submit_document_operation
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 
-@router.post('/imports', status_code=202)
-async def upload_native_document(file: UploadFile = File(...), session_id: str = Form(...),
-        panel_id: str = Form(...), idempotency_key: str = Form(...), manufacturing_profile: str | None = Form(None),
-        principal: PrincipalContext = Depends(get_durable_principal)):
+class NativeImportForm(FileUploadForm):
+    session_id: str
+    panel_id: str
+    idempotency_key: str
+    manufacturing_profile: str | None = None
+
+
+@router.post('/imports', status_code=202, openapi_extra=NativeImportForm.openapi_body())
+async def upload_native_document(request: Request, principal: PrincipalContext = Depends(get_durable_principal)):
     from app.services.document_imports import import_document
-    payload = await file.read(64*1024*1024+1)
+
     try:
-        profile = json.loads(manufacturing_profile) if manufacturing_profile else None
-        return await import_document(principal,session_id=session_id,panel_id=panel_id,filename=file.filename or '',
-            payload=payload,idempotency_key=idempotency_key,manufacturing_profile=profile)
+        async with read_upload_form(request, NativeImportForm) as form:
+            payload = await form.file.read(64 * 1024 * 1024 + 1)
+            profile = json.loads(form.manufacturing_profile) if form.manufacturing_profile else None
+            return await import_document(principal, session_id=form.session_id, panel_id=form.panel_id,
+                filename=form.file.filename or '', payload=payload,
+                idempotency_key=form.idempotency_key, manufacturing_profile=profile)
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
     except DocumentConflict as exc:
@@ -254,7 +261,7 @@ async def branches(document_id: UUID, principal: PrincipalContext = Depends(get_
 @router.post("/{document_id}/branches", status_code=202)
 async def create_branch(document_id: UUID, body: BranchRequest, request: Request,
                         principal: PrincipalContext = Depends(get_durable_principal)):
-    await rate_limiter.check(request)
+    await rate_limiter.check(request, str(principal.principal_id))
     try:
         return await fork_document(principal, document_id, **body.model_dump())
     except Exception as exc:
@@ -272,7 +279,7 @@ async def compare(document_id: UUID, source_document_id: UUID, principal: Princi
 @router.post("/{document_id}/merges", status_code=202)
 async def merge(document_id: UUID, body: MergeRequest, request: Request,
                 principal: PrincipalContext = Depends(get_durable_principal)):
-    await rate_limiter.check(request)
+    await rate_limiter.check(request, str(principal.principal_id))
     try:
         return await merge_document(principal,document_id,**body.model_dump())
     except Exception as exc:
@@ -351,7 +358,7 @@ async def comment(document_id: UUID, body: CommentRequest, principal: PrincipalC
 
 @router.post("/{document_id}/operations", status_code=202)
 async def operation(document_id: UUID, body: OperationRequest, request: Request, principal: PrincipalContext = Depends(get_durable_principal)):
-    await rate_limiter.check(request)
+    await rate_limiter.check(request, str(principal.principal_id))
     try:
         return await submit_document_operation(document_id, body, principal)
     except Exception as exc:
@@ -361,7 +368,7 @@ async def operation(document_id: UUID, body: OperationRequest, request: Request,
 @router.post('/{document_id}/releases', status_code=202)
 async def publish_release(document_id: UUID, body: ReleaseSubmission, request: Request,
                           principal: PrincipalContext = Depends(get_durable_principal)):
-    await rate_limiter.check(request)
+    await rate_limiter.check(request, str(principal.principal_id))
     try:
         return await submit_release(principal, document_id, body)
     except Exception as exc:
@@ -387,7 +394,7 @@ async def released_evidence(document_id: UUID, release_id: UUID, principal: Prin
 @router.post('/{document_id}/engineering', status_code=202)
 async def compute(document_id: UUID, body: EngineeringSubmission, request: Request,
                   principal: PrincipalContext = Depends(get_durable_principal)):
-    await rate_limiter.check(request)
+    await rate_limiter.check(request, str(principal.principal_id))
     try:
         return await submit_engineering(principal, document_id, body)
     except Exception as exc:
@@ -421,10 +428,7 @@ async def artifact(document_id: UUID, artifact_id: UUID, principal: PrincipalCon
                 raise KeyError(artifact_id)
             if row["artifact_kind"] not in {"state", "stl", "engineering_report", "engineering_field", "release_bom_json", "release_manifest"}:
                 await authorized_document(conn, principal, document_id, Permission.EXPORT_ARTIFACT)
-        payload = await get_object(row["object_key"])
-        if len(payload) != row["size_bytes"] or hashlib.sha256(payload).hexdigest() != row["sha256"]:
-            raise HTTPException(503, detail="文档文件校验失败")
-        return Response(payload, media_type=row["content_type"], headers={"ETag": f'"{row["sha256"]}"', "Cache-Control": "private, max-age=3600"})
+        return VerifiedArtifactResponse(row, headers={"Cache-Control": "private, max-age=3600"})
     except Exception as exc:
         raise public_error(exc) from exc
 
@@ -447,7 +451,7 @@ class SceneRetryRequest(BaseModel):
 @router.post('/{document_id}/scenes/{revision_id}/retry')
 async def retry_scene(document_id: UUID, revision_id: UUID, body: SceneRetryRequest, response: Response,
                       request: Request, principal: PrincipalContext = Depends(get_durable_principal)):
-    await rate_limiter.check(request)
+    await rate_limiter.check(request, str(principal.principal_id))
     try:
         scene = await request_scene(principal, document_id, revision_id, retry_workflow_id=body.workflow_run_id)
         response.status_code = 200 if scene.get('schema_version') == 'cad-scene.v1' else 202
@@ -459,8 +463,8 @@ async def retry_scene(document_id: UUID, revision_id: UUID, body: SceneRetryRequ
 @router.get('/{document_id}/scenes/{revision_id}/meshes/{sha256}')
 async def get_scene_mesh(document_id: UUID, revision_id: UUID, sha256: str, principal: PrincipalContext = Depends(get_durable_principal)):
     try:
-        payload = await scene_mesh(principal, document_id, revision_id, sha256)
-        return Response(payload, media_type='model/stl', headers={'ETag':f'"{sha256}"', 'Cache-Control':'private, max-age=3600'})
+        artifact = await scene_mesh_artifact(principal, document_id, revision_id, sha256)
+        return VerifiedArtifactResponse(artifact, headers={'Cache-Control': 'private, max-age=3600'})
     except Exception as exc:
         raise public_error(exc) from exc
 

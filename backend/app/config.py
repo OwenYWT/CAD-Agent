@@ -134,11 +134,6 @@ class Settings(BaseSettings):
     # auto-created (the safe default). Set to a strong value to provision admin.
     admin_password: str = ""
     rate_limit_per_minute: int = 30
-    # Behind a trusted reverse proxy / tunnel (nginx, cloudflared), the direct client
-    # IP is the proxy's, so all users share one rate-limit bucket. Enable ONLY when a
-    # trusted proxy sets X-Forwarded-For (otherwise the header is spoofable).
-    trust_proxy_headers: bool = False
-
     # Autodesk Fusion 360 connector. Backend and Add-in use different Runtime
     # credentials; real values belong in deployment-owned secret files/env only.
     fusion_runtime_url: str = "http://127.0.0.1:8765"

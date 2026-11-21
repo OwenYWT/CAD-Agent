@@ -953,3 +953,45 @@ async def test_public_modify_preserves_versioned_profile_through_commit_and_relo
         (out / 'evidence.json').write_text(json.dumps({'request': saved, 'evidence': evidence,
             'reloaded_versions': observations, 'files': files, 'planner_profiles': planner_profiles,
             'generator_profiles': generator_profiles}, ensure_ascii=False, default=str, indent=2))
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_cad_skills_worker_inspects_owned_upload_and_replays_result(tmp_path, monkeypatch):
+    from app.temporal_client import worker_runtime_snapshot
+
+    monkeypatch.setattr(settings, "file_storage_dir", str(tmp_path))
+    source = ROOT / "tests/e2e/fixtures/native_failures/disconnected_lip.step"
+    headers = {"Authorization": f"Bearer {OWNER_KEY}"}
+    async with build_workflow_worker(await get_temporal_client()), httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=create_app()), base_url="http://test", headers=headers) as client:
+        snapshot = await worker_runtime_snapshot()
+        assert snapshot.image_digest.startswith("sha256:")
+        upload = await client.post("/api/capability-artifacts", files={"file": (source.name, source.read_bytes())})
+        assert upload.status_code == 201, upload.text
+        payload = {"request_id": str(uuid4()), "params": {"input": upload.json()["input"], "operation": "refs"}}
+        endpoint = "/api/capability-actions/cad/inspect"
+        action = await client.post(endpoint, json=payload)
+        assert action.status_code == 200, action.text
+        result = action.json()
+        assert result["status"] == "succeeded", result
+        artifact = result["files"][0]
+        downloaded = await client.get(artifact["url"])
+        assert downloaded.status_code == 200 and downloaded.json()
+        assert (await client.post(endpoint, json=payload)).json() == result
+        payload["params"]["topology"] = True
+        assert (await client.post(endpoint, json=payload)).status_code == 409
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_tool_confirmation_is_spent_once_across_database_transactions():
+    import asyncio
+    from app.repositories.audit import append_audit_record, consume_tool_confirmation
+    owner = api_key_principal(OWNER_KEY)
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        await ensure_principal(conn, owner)
+        receipt = await append_audit_record(conn, tenant_id=owner.tenant_id, actor_principal_id=owner.principal_id,
+            action="agent_tool.consent_required", target_type="agent_tool", target_id="write",
+            payload={"fingerprint": "expected"})
+    async def consume(fingerprint):
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+            return await consume_tool_confirmation(conn, owner.tenant_id, owner.principal_id, receipt, fingerprint)
+    assert not await consume("changed")
+    assert sorted(await asyncio.gather(consume("expected"), consume("expected"))) == [False, True]

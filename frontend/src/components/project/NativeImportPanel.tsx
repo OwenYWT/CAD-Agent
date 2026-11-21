@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { authFetch } from '../../auth';
-import { API_BASE, EngineeringApiError, readJson } from '../../services/clients/http';
+import { submitNativeImport, recoverNativeImport } from '../../services/clients/documents';
+import { EngineeringApiError } from '../../services/clients/http';
 import type { DurableTaskSubmittedEvent, ManufacturingProfile } from '../../types/nativeImport';
 
 export default function NativeImportPanel({sessionId,panelId,profile,onImported}: {
@@ -15,10 +15,10 @@ export default function NativeImportPanel({sessionId,panelId,profile,onImported}
   useEffect(()=>{
     if (!receiptKey) return;
     const controller=new AbortController();
-    void authFetch(`${API_BASE}/api/documents/imports/receipt?${new URLSearchParams({session_id:sessionId,panel_id:panelId,idempotency_key:receiptKey})}`,{signal:controller.signal})
-      .then(async response=>{
-        if (response.status===404) {sessionStorage.removeItem(storageKey);setReceiptKey(null);return;}
-        const receipt=await readJson<DurableTaskSubmittedEvent>(response,'导入状态查询失败');
+    void recoverNativeImport(sessionId,panelId,receiptKey,controller.signal)
+      .then(receipt=>{
+        if (controller.signal.aborted) return;
+        if (!receipt) {sessionStorage.removeItem(storageKey);setReceiptKey(null);return;}
         if (!controller.signal.aborted) {sessionStorage.removeItem(storageKey);setReceiptKey(null);onResult(receipt);}
       }).catch((e:unknown)=>{if (!controller.signal.aborted) setError(e instanceof Error?e.message:'原请求状态未知，请查询原请求');});
     return ()=>controller.abort();
@@ -31,7 +31,7 @@ export default function NativeImportPanel({sessionId,panelId,profile,onImported}
     const body=new FormData();body.set('file',file);body.set('session_id',sessionId);body.set('panel_id',panelId);
     body.set('idempotency_key',key);body.set('manufacturing_profile',JSON.stringify(profile));
     try {
-      const receipt=await readJson<DurableTaskSubmittedEvent>(await authFetch(`${API_BASE}/api/documents/imports`,{method:'POST',body}),'导入提交失败');
+      const receipt=await submitNativeImport(body);
       sessionStorage.removeItem(storageKey);onImported(receipt);
     } catch(e) {
       if (e instanceof EngineeringApiError && e.httpStatus!==undefined && e.httpStatus<500) sessionStorage.removeItem(storageKey);

@@ -1,5 +1,4 @@
-"""PERSISTENCE angle: sqlite history (sessions/panels/messages) + feedback + the
-in-memory LRU session cache in websocket.py.
+"""PERSISTENCE angle: sqlite history (sessions/panels/messages) and feedback.
 
 Hermetic: no Docker, no LLM, no network. Each test gets a fresh temp DB by
 monkeypatching settings.history_db_path and resetting the module-level _db
@@ -12,7 +11,6 @@ import pytest_asyncio
 
 from app.config import settings
 from app.storage import history
-import app.api.websocket as ws
 
 
 @pytest_asyncio.fixture
@@ -263,59 +261,3 @@ async def test_gathered_writes_share_connection(temp_db):
     assert len(msgs) == 20
     # All distinct contents present (ordering across gather is not guaranteed).
     assert {m["content"] for m in msgs} == {f"c{i}" for i in range(20)}
-
-
-# --------------------------------------------------------------------------
-# LRU in-memory session cache in websocket.py
-# --------------------------------------------------------------------------
-
-@pytest.fixture
-def clean_ws_sessions(monkeypatch):
-    """Reset the module-level OrderedDict before/after; keep _MAX_SESSIONS patchable."""
-    ws.sessions.clear()
-    yield
-    ws.sessions.clear()
-
-
-def test_get_context_returns_same_context_for_same_keys(clean_ws_sessions):
-    c1 = ws._get_context("sess", "panel")
-    c2 = ws._get_context("sess", "panel")
-    assert c1 is c2
-    assert c1.session_id == "sess/panel"
-
-    # Different panel -> different context object.
-    c3 = ws._get_context("sess", "other")
-    assert c3 is not c1
-    assert c3.session_id == "sess/other"
-
-
-def test_lru_evicts_oldest_session(clean_ws_sessions, monkeypatch):
-    monkeypatch.setattr(ws, "_MAX_SESSIONS", 3)
-
-    ws._get_context("s0", "p")
-    ws._get_context("s1", "p")
-    ws._get_context("s2", "p")
-    assert list(ws.sessions.keys()) == ["s0", "s1", "s2"]
-
-    # Adding a 4th over capacity evicts the least-recently-used (s0).
-    ws._get_context("s3", "p")
-    assert "s0" not in ws.sessions
-    assert list(ws.sessions.keys()) == ["s1", "s2", "s3"]
-
-
-def test_lru_access_marks_recently_used(clean_ws_sessions, monkeypatch):
-    monkeypatch.setattr(ws, "_MAX_SESSIONS", 3)
-
-    ws._get_context("s0", "p")
-    ws._get_context("s1", "p")
-    ws._get_context("s2", "p")
-
-    # Re-access s0 -> moves it to the most-recent end.
-    ws._get_context("s0", "p")
-    assert list(ws.sessions.keys()) == ["s1", "s2", "s0"]
-
-    # Now adding s3 should evict s1 (now the oldest), not s0.
-    ws._get_context("s3", "p")
-    assert "s1" not in ws.sessions
-    assert "s0" in ws.sessions
-    assert list(ws.sessions.keys()) == ["s2", "s0", "s3"]

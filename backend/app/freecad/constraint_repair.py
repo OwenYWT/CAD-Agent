@@ -14,6 +14,30 @@ SKETCH_FAILURES = frozenset({
 })
 
 
+def validate_retained_operations(before, after, failure):
+    """Compare against the executed source by operation identity, including on a provider retry."""
+    operations = {op.op_id: op for op in after.operations}
+    originals = {op.op_id: op for op in before.operations}
+    for op_id, fields in failure.get('retained_cut_fields', {}).items():
+        op = operations.get(op_id)
+        original = originals.get(op_id)
+        if (original is None or op is None or op.action != original.action
+                or op.args.get('name') != original.args.get('name')
+                or any(op.args.get(key) != value for key, value in fields.items())):
+            raise RepairRejected('operation_repair_rejected', f'previously repaired cut field changed: {op_id}',
+                                 operation_differences(before.operations, after.operations))
+    details = failure.get('details') or {}
+    if failure.get('error_code') == 'invalid_export' and details.get('export_roots_json'):
+        roots = json.loads(details['export_roots_json'])
+        export = before.operations[-1]
+        selected = export.args.get('objects') or []
+        expected = list(dict.fromkeys(roots.get(name, name) for name in selected))
+        allowed = export.model_copy(update={'args': {**export.args, 'objects': expected}})
+        if after != before.model_copy(update={'operations': (*before.operations[:-1], allowed)}):
+            raise RepairRejected('operation_repair_rejected', 'only replace the intermediate export object with its owning Body',
+                                 operation_differences(before.operations, after.operations))
+
+
 def validate_subtractive_repair(before: FreeCADOperationPlan, after: FreeCADOperationPlan,
                                 failure: dict) -> None:
     """Preserve feature dimensions; placement repair needs independent acceptance."""

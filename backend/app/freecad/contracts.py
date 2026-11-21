@@ -124,7 +124,7 @@ class RegularPolygonGeometry(FrozenContract):
 
 
 SketchGeometry = Annotated[
-    LineGeometry | CircleGeometry | RectangleGeometry,
+    LineGeometry | CircleGeometry | RectangleGeometry | ArcGeometry,
     Field(discriminator="kind"),
 ]
 
@@ -197,20 +197,23 @@ class SketchAddProfileArgs(FrozenContract):
     geometry: Annotated[CircleGeometry | RectangleGeometry | ArcGeometry | RegularPolygonGeometry, Field(discriminator="kind")]
 
 
+SketchConstraintKind = Literal[
+    "horizontal",
+    "vertical",
+    "distance_x",
+    "distance_y",
+    "distance",
+    "radius",
+    "diameter",
+    "coincident",
+    "equal",
+    "point_on_object",
+]
+
+
 class SketchAddConstraintArgs(FrozenContract):
     sketch: ObjectName
-    kind: Literal[
-        "horizontal",
-        "vertical",
-        "distance_x",
-        "distance_y",
-        "distance",
-        "radius",
-        "diameter",
-        "coincident",
-        "equal",
-        "point_on_object",
-    ]
+    kind: SketchConstraintKind
     first: ConstraintReference
     second: ConstraintReference | SketchOriginReference | SketchAxisReference | None = None
     value_mm: Coordinate | None = None

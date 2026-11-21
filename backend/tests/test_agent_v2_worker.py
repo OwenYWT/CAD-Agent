@@ -29,6 +29,7 @@ def test_v1_and_v2_workers_use_distinct_queues_and_workflow_types(monkeypatch):
     assert [item.__name__ for item in captured[0]["workflows"]] == [
         "McadDurableWorkflow",
         "McadCheckWorkflow",
+        "NativeWorkerWorkflow",
     ]
     assert [item.__name__ for item in captured[1]["workflows"]] == [
         "McadAgentWorkflowV2",

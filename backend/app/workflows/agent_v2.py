@@ -69,6 +69,7 @@ class McadAgentWorkflowV2:
         self._repair_accounting_v2 = False
         self._work_accounting = None
         self._solid_count_policy = None
+        self._gate_native_recovery = False
 
     def _accounting(self) -> WorkAccounting:
         if self._work_accounting is None:
@@ -407,8 +408,6 @@ class McadAgentWorkflowV2:
         base_state: dict[str, Any] | None,
         turn_index: int | None = None,
     ) -> dict[str, Any]:
-        profile_repair_count = 0
-        cut_operation_repairs: dict[str, int] = {}
         generation_step = ({**step, "step_key": f"tool-{turn_index}-{step['step_key'][:80]}"}
                            if turn_index is not None else step)
         generated = await self._activity(
@@ -424,10 +423,26 @@ class McadAgentWorkflowV2:
             },
             suffix=f"generate-operations-{generation_step['step_key']}",
         )
-        repair_count = 0
-        seen_signatures: list[str] = []
-        run_step_key = str(generation_step["step_key"])
-        run_step_kind = "agent_freecad_operations"
+        return await self._execute_freecad_operations(
+            request=request, plan=plan, candidate_build_id=candidate_build_id, step=step,
+            generated=generated, base_state=base_state, run_step_key=generation_step['step_key'],
+            step_index=step_index, repair_count=0, seen_signatures=[],
+            suffix=f"execute-freecad-{generation_step['step_key']}", timeout=180,
+        )
+
+    async def _execute_freecad_operations(
+        self, *, request, plan, candidate_build_id, step, generated, base_state, run_step_key,
+        step_index, repair_count, seen_signatures, suffix, timeout, execution_context=None,
+    ):
+        # Local native attempts have their own limit. repair_count is the audit sequence
+        # across native repairs and validation gates and must never be reset.
+        original_step_key = run_step_key
+        initial_count = repair_count
+        profile_repair_count = 0
+        cut_operation_repairs = {}
+        retained_fields = dict(generated.get('retained_cut_fields', {}))
+        pending_cut_fields = {}
+        run_step_kind = "agent_freecad_repair" if execution_context is not None else "agent_freecad_operations"
         run_step_index = step_index
         while True:
             try:
@@ -445,17 +460,21 @@ class McadAgentWorkflowV2:
                         "source_hash": generated["source_hash"],
                         "source_code": generated["source_code"],
                         "mode": "3d",
-                        "timeout_seconds": 180,
+                        "timeout_seconds": timeout,
+                        **(execution_context or {}),
                     },
-                    suffix=(
-                        f"execute-freecad-{generation_step['step_key']}"
-                        if repair_count == 0
-                        else f"execute-freecad-repair-{generation_step['step_key']}-{repair_count:02d}"
-                    ),
+                    suffix=(suffix if repair_count == initial_count else
+                            f"execute-freecad-repair-{original_step_key}-{repair_count:02d}"),
                     execution=True,
                 )
                 if request.get('progressive_repair_v1') and self._native_repair_budget is not None:
                     self._native_repair_budget.succeeded()
+                if pending_cut_fields:
+                    for op in json.loads(generated['source_code'])['operations']:
+                        fields = {k: v for k, v in pending_cut_fields.get(op['op_id'], {}).items()
+                                  if op['args'].get(k) == v}
+                        if fields:
+                            retained_fields[op['op_id']] = {**retained_fields.get(op['op_id'], {}), **fields}
                 break
             except Exception as exc:
                 if request.get("revision_restore") is not None or (request.get('operation_context') or {}).get('native_import'):
@@ -493,12 +512,14 @@ class McadAgentWorkflowV2:
                     budget = 2  # Legacy histories retain the original transaction-wide policy.
                 if profile_failure:
                     budget = int((failure.get('details') or {}).get('profile_replan_max_attempts', 2))
-                if not progressive and (profile_repair_count if profile_failure else repair_count) >= budget:
+                if not progressive and (profile_repair_count if profile_failure else repair_count - initial_count) >= budget:
                     raise
                 failure["error_message"] = (
                     f"{failure['error_message']}\n"
                     f"{self._design_repair_context(plan)}"
                 )
+                if retained_fields:
+                    failure['retained_cut_fields'] = retained_fields
                 repair_index = repair_count + 1
                 if getattr(self, "_engineering_acceptance_v1", False):
                     failure["engineering_acceptance"] = (plan.get("design_brief") or {}).get("acceptance")
@@ -512,8 +533,9 @@ class McadAgentWorkflowV2:
                         "source_hash": generated["source_hash"],
                         "failure": failure,
                         "repair_index": repair_index,
-                        **self._reserve_repair(f"native:{generation_step['step_key']}:{repair_index}", step['step_key'], 'native'),
-                        "original_step_key": generation_step["step_key"],
+                        **({'gate_repair_index': repair_index - initial_count} if initial_count else {}),
+                        **self._reserve_repair(f"native:{original_step_key}:{repair_index}", step['step_key'], 'native'),
+                        "original_step_key": original_step_key,
                         "step_index": repair_step_index,
                         "seen_signatures": seen_signatures,
                         "base_state": base_state,
@@ -523,9 +545,18 @@ class McadAgentWorkflowV2:
                         **({'target_repair_index': target_repair_index,
                             'native_repair_policy': self._native_repair_budget.policy} if progressive else {}),
                     },
-                    suffix=f"repair-operations-{generation_step['step_key']}-{repair_index:02d}",
+                    suffix=f"repair-operations-{original_step_key}-{repair_index:02d}",
                 )
                 seen_signatures.append(str(repaired["signature"]))
+                if self._gate_native_recovery and cut_failure:
+                    # The scoped cut compiler changes only direction or its private sketch frame.
+                    # Keep the fields that actually changed, including across activity replays.
+                    old = {op['op_id']: op for op in json.loads(generated['source_code'])['operations']}
+                    for op in json.loads(repaired['source_code'])['operations']:
+                        changed = {key: value for key, value in op['args'].items()
+                                   if old[op['op_id']]['args'].get(key) != value}
+                        if changed:
+                            pending_cut_fields.setdefault(op['op_id'], {}).update(changed)
                 generated = {**generated, **repaired}
                 run_step_key = str(repaired["repair_step_key"])
                 run_step_kind = "agent_freecad_repair"
@@ -538,7 +569,7 @@ class McadAgentWorkflowV2:
                     cut_operation_repairs[key] = cut_operation_repairs.get(key, 0) + 1
         return {
             "step": step,
-            "generated": generated,
+            "generated": {**generated, **({'retained_cut_fields': retained_fields} if retained_fields else {})},
             "executed": executed,
             "repair_count": repair_count,
             "seen_signatures": seen_signatures,
@@ -563,6 +594,31 @@ class McadAgentWorkflowV2:
             # next model job loads its verified state from this accepted manifest.
             request = {**request, "checkpoint_manifest_id": result["executed"]["staging_manifest_id"]}
             index += 1
+
+    async def _execute_gate_repair(self, *, request, plan, candidate_build_id, modeled, repaired,
+                                   step_index, repair_count, run_key, run_kind, suffix, timeout,
+                                   freecad, supersedes):
+        generated = {**modeled['generated'], **repaired}
+        seen = list(modeled.get('seen_signatures') or ())
+        if repaired.get('signature'):
+            seen.append(repaired['signature'])
+        context = self._checkpoint_execution_context(modeled)
+        if freecad and self._gate_native_recovery:
+            result = await self._execute_freecad_operations(
+                request={**request, **context}, plan=plan, candidate_build_id=candidate_build_id,
+                step=modeled['step'], generated=generated, base_state=modeled.get('base_state'),
+                run_step_key=run_key, step_index=step_index, repair_count=repair_count,
+                seen_signatures=seen, suffix=suffix, timeout=timeout,
+                execution_context={'supersedes_staging_manifest_id': supersedes})
+            return {**modeled, **result}
+        executed = await self._activity('agent_v2.execute_freecad' if freecad else 'agent_v2.execute_model', {
+            **request, 'candidate_build_id': candidate_build_id, 'plan': plan, 'step': modeled['step'],
+            'step_index': step_index, 'run_step_key': run_key, 'run_step_kind': run_kind,
+            'source_id': generated['source_id'], 'source_hash': generated['source_hash'],
+            'source_code': generated['source_code'], 'mode': modeled['mode'], 'timeout_seconds': timeout,
+            'supersedes_staging_manifest_id': supersedes, **context}, suffix=suffix, execution=True)
+        return {**modeled, 'generated': generated, 'executed': executed,
+                'repair_count': repair_count, 'seen_signatures': seen}
 
     async def _geometry_gate(
         self,
@@ -771,6 +827,8 @@ class McadAgentWorkflowV2:
                     expected_dimensions_mm=expected_dimensions,
                 ),
             }
+            if generated.get('retained_cut_fields'):
+                failure['retained_cut_fields'] = generated['retained_cut_fields']
             repair_step_index = 10_000 + plan_step_index * 10 + repair_index
             freecad = plan.get("modeling_backend") == "freecad" or (
                 plan.get("modeling_backend") is None
@@ -800,38 +858,15 @@ class McadAgentWorkflowV2:
                 },
                 suffix=f"repair-geometry-{step['step_key']}-{repair_index:02d}",
             )
-            seen_signatures.append(str(repaired["signature"]))
-            generated = {**generated, **repaired}
-            repair_count = repair_index
-            executed = await self._activity(
-                (
-                    "agent_v2.execute_freecad"
-                    if freecad
-                    else "agent_v2.execute_model"
-                ),
-                {
-                    **request,
-                    "candidate_build_id": candidate_build_id,
-                    "plan": plan,
-                    "step": step,
-                    "step_index": repair_step_index,
-                    "run_step_key": repaired["repair_step_key"],
-                    "run_step_kind": (
-                        "agent_freecad_repair" if freecad else "agent_repair"
-                    ),
-                    "source_id": generated["source_id"],
-                    "source_hash": generated["source_hash"],
-                    "source_code": generated["source_code"],
-                    "mode": modeled["mode"],
-                    "timeout_seconds": 120,
-                    "supersedes_staging_manifest_id": executed[
-                        "staging_manifest_id"
-                    ],
-                    **self._checkpoint_execution_context(modeled),
-                },
-                suffix=f"execute-geometry-repair-{step['step_key']}-{repair_index:02d}",
-                execution=True,
-            )
+            modeled = await self._execute_gate_repair(
+                request=request, plan=plan, candidate_build_id=candidate_build_id,
+                modeled={**modeled, 'generated': generated, 'seen_signatures': seen_signatures},
+                repaired=repaired, step_index=repair_step_index, repair_count=repair_index,
+                run_key=repaired['repair_step_key'], run_kind='agent_freecad_repair' if freecad else 'agent_repair',
+                suffix=f"execute-geometry-repair-{step['step_key']}-{repair_index:02d}", timeout=120,
+                freecad=freecad, supersedes=executed['staging_manifest_id'])
+            generated, executed = modeled['generated'], modeled['executed']
+            repair_count, seen_signatures = modeled['repair_count'], modeled['seen_signatures']
 
     async def _model_step_outcome(self, **kwargs: Any) -> dict[str, Any]:
         try:
@@ -966,6 +1001,7 @@ class McadAgentWorkflowV2:
                             "execution_attempt_id": rendered.get("attempt_id"),
                             "category": "validation",
                             "error_code": "visual_validation_failed",
+                            **({'retained_cut_fields': current['generated']['retained_cut_fields']} if current['generated'].get('retained_cut_fields') else {}),
                             "error_message": (
                                 "Visual validation issues: "
                                 + "; ".join(judgment.get("issues") or ())
@@ -994,49 +1030,15 @@ class McadAgentWorkflowV2:
                     },
                     suffix=repair_step_key,
                 )
-            generated = {**current["generated"], **repaired}
-            executed = await self._activity(
-                (
-                    "agent_v2.execute_freecad"
-                    if freecad
-                    else "agent_v2.execute_model"
-                ),
-                {
-                    **request,
-                    "candidate_build_id": candidate_build_id,
-                    "plan": plan,
-                    "step": current["step"],
-                    "step_index": 40_000 + plan_step_index * 10 + validation_cycle * 100 + visual_repairs,
-                    "run_step_key": repair_step_key,
-                    "run_step_kind": (
-                        "agent_freecad_repair"
-                        if freecad
-                        else "agent_visual_repair"
-                    ),
-                    "source_id": generated["source_id"],
-                    "source_hash": generated["source_hash"],
-                    "source_code": generated["source_code"],
-                    "mode": current["mode"],
-                    "timeout_seconds": 120,
-                    "supersedes_staging_manifest_id": current["executed"][
-                        "staging_manifest_id"
-                    ],
-                    **self._checkpoint_execution_context(current),
-                },
-                suffix=f"execute-{repair_step_key}",
-                execution=True,
-            )
+            current = await self._execute_gate_repair(
+                request=request, plan=plan, candidate_build_id=candidate_build_id, modeled=current,
+                repaired=repaired, step_index=40_000 + plan_step_index * 10 + validation_cycle * 100 + visual_repairs,
+                repair_count=repair_index, run_key=repair_step_key,
+                run_kind='agent_freecad_repair' if freecad else 'agent_visual_repair',
+                suffix=f'execute-{repair_step_key}', timeout=120,
+                freecad=freecad, supersedes=current['executed']['staging_manifest_id'])
             current = await self._geometry_gate(
-                request=request,
-                plan=plan,
-                candidate_build_id=candidate_build_id,
-                modeled={
-                    **current,
-                    "generated": generated,
-                    "executed": executed,
-                    "repair_count": repair_index,
-                    "seen_signatures": [*current.get("seen_signatures", []), *([repaired["signature"]] if repaired.get("signature") else [])],
-                },
+                request=request, plan=plan, candidate_build_id=candidate_build_id, modeled=current,
                 plan_step_index=plan_step_index,
                 expected_dimensions=expected_dimensions,
                 validation_cycle=validation_cycle * 10 + visual_repairs,
@@ -1124,7 +1126,9 @@ class McadAgentWorkflowV2:
                 repair_key = f"dfm-repair-{current['step']['step_key']}-{repair_count:02d}"
                 step_index = 60_000 + plan_step_index * 100 + repair_count
                 report = dfm["report"]
-                failure = {"execution_attempt_id": dfm.get("attempt_id"), "category": "validation",
+                failure = {**({'retained_cut_fields': current['generated']['retained_cut_fields']}
+                              if current['generated'].get('retained_cut_fields') else {}),
+                           "execution_attempt_id": dfm.get("attempt_id"), "category": "validation",
                     "error_code": "dfm_validation_failed", "runtime_error_type": "DFMError",
                     "error_message": "Measured DFM findings: " + json.dumps({
                         "metrics": report.get("metrics", {}), "violations": report.get("violations", [])[:32],
@@ -1140,26 +1144,20 @@ class McadAgentWorkflowV2:
                     "failure": failure,
                     **self._checkpoint_execution_context(current),
                 }, suffix=repair_key)
-                generated = {**current["generated"], **repaired}
-                executed = await self._activity("agent_v2.execute_freecad" if freecad else "agent_v2.execute_model", {
-                    **request, "candidate_build_id": candidate_build_id, "plan": plan, "step": current["step"],
-                    "step_index": step_index, "run_step_key": repair_key,
-                    "run_step_kind": "agent_freecad_repair" if freecad else "agent_repair",
-                    "source_id": generated["source_id"], "source_hash": generated["source_hash"],
-                    "source_code": generated["source_code"], "mode": current["mode"], "timeout_seconds": 180,
-                    "supersedes_staging_manifest_id": None if retain_previous else current["executed"]["staging_manifest_id"],
-                    **self._checkpoint_execution_context(current),
-                }, suffix=f"execute-{repair_key}", execution=True)
-                # Evidence for the superseded artifact must never validate new bytes.
+                current = await self._execute_gate_repair(
+                    request=request, plan=plan, candidate_build_id=candidate_build_id, modeled=current,
+                    repaired=repaired, step_index=step_index, repair_count=repair_index, run_key=repair_key,
+                    run_kind='agent_freecad_repair' if freecad else 'agent_repair', suffix=f'execute-{repair_key}',
+                    timeout=180, freecad=freecad, supersedes=None if retain_previous else current['executed']['staging_manifest_id'])
                 current = {k: v for k, v in current.items() if k not in {"geometry", "visual", "dfm"}}
-                current.update(generated=generated, executed=executed, repair_count=repair_index,
-                    seen_signatures=[*current.get("seen_signatures", []), repaired["signature"]])
                 current = await self._geometry_gate(request=request, plan=plan, candidate_build_id=candidate_build_id,
                     modeled=current, plan_step_index=plan_step_index, expected_dimensions=expected_dimensions,
                     validation_cycle=10 + repair_count)
                 current = await self._visual_gate(request=request, plan=plan, candidate_build_id=candidate_build_id,
                     modeled=current, plan_step_index=plan_step_index, expected_dimensions=expected_dimensions,
                     validation_cycle=10 + repair_count)
+                if self._gate_native_recovery and retain_previous and current['step']['kind'] == 'assembly_combine':
+                    current['previous_dfm_assembly'] = (previous, repair_key)
             except (ActivityError, ChildWorkflowError, ApplicationError) as exc:
                 if not retain_previous or self._cancel_reason is not None or is_cancelled_exception(exc):
                     raise
@@ -1169,6 +1167,28 @@ class McadAgentWorkflowV2:
                     'error_code': cause.type if cause else type(exc).__name__,
                 }}
 
+    async def _assembly_bom(self, request, assembly, component_ids):
+        original_id = assembly['executed']['staging_manifest_id']
+        while True:
+            manifest_id = assembly['executed']['staging_manifest_id']
+            suffix = 'native-bom' if manifest_id == original_id else f'native-bom-{manifest_id}'
+            try:
+                bom = await self._activity('agent_v2.generate_bom', {
+                    **request, 'candidate_build_id': self._candidate_build_id, 'plan': self._plan,
+                    'staging_manifest_id': manifest_id,
+                    **({'component_manifest_ids': component_ids} if self._gate_native_recovery else {}),
+                    **({'validation_step_key': suffix} if manifest_id != original_id else {}),
+                }, suffix=suffix, execution=True)
+                return assembly, bom
+            except (ActivityError, ChildWorkflowError, ApplicationError) as exc:
+                previous = assembly.get('previous_dfm_assembly')
+                cause = self._root_application_error(exc)
+                if (previous is None or self._cancel_reason is not None or is_cancelled_exception(exc)
+                        or cause is None or cause.type != 'bom_source_geometry_mismatch'):
+                    raise
+                prior, repair_key = previous
+                assembly = {**prior, 'optional_repair_failure': {
+                    'gate': 'dfm', 'repair_step_key': repair_key, 'error_code': cause.type}}
 
     @staticmethod
     def _checkpoint_execution_context(modeled):
@@ -1203,6 +1223,7 @@ class McadAgentWorkflowV2:
             acceptance_bindings_v2 = workflow.patched('agent-v2-acceptance-bindings-v2') and self._engineering_acceptance_v1
             all_3d_acceptance_v1 = workflow.patched('agent-v2-all-3d-acceptance-v1') and acceptance_bindings_v2
             solid_count_policy_v2 = workflow.patched('agent-v2-solid-count-policy-v2')
+            self._gate_native_recovery = workflow.patched('agent-v2-gate-native-recovery-v1')
             self._phase = "requirements"
             requirements = await self._activity(
                 "agent_v2.requirements",
@@ -1527,23 +1548,13 @@ class McadAgentWorkflowV2:
                 )
             bom_result: dict[str, Any] | None = None
             if native_bom_v1 and self._plan["model_kind"] == "assembly":
-                combine_manifest_id = next(
-                    item["executed"]["staging_manifest_id"]
-                    for item in fully_validated
-                    if item["step"]["kind"] == "assembly_combine"
-                )
+                combine_index = next(i for i, item in enumerate(fully_validated)
+                                     if item["step"]["kind"] == "assembly_combine")
+                component_ids = {item['step']['step_key']: item['executed']['staging_manifest_id']
+                                 for item in [*modeled, *fully_validated] if item['step']['kind'] == 'assembly_part'}
                 self._phase = "validating:bom"
-                bom_result = await self._activity(
-                    "agent_v2.generate_bom",
-                    {
-                        **request,
-                        "candidate_build_id": self._candidate_build_id,
-                        "staging_manifest_id": combine_manifest_id,
-                        "plan": self._plan,
-                    },
-                    suffix="native-bom",
-                    execution=True,
-                )
+                fully_validated[combine_index], bom_result = await self._assembly_bom(
+                    request, fully_validated[combine_index], component_ids)
             manifests = [
                 {
                     "step_key": item["step"]["step_key"],

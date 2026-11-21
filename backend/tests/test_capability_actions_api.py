@@ -104,3 +104,14 @@ def test_bambu_network_is_deployment_blocked_by_default(client):
     assert body["status"] == "blocked"
     assert body["blocked_reasons"]
     assert "do-not-log-me" not in str(body)
+
+def test_rejected_upload_does_not_parse_form(monkeypatch, client):
+    from starlette.requests import Request
+    monkeypatch.setattr(settings, "auth_required", True)
+    monkeypatch.setattr(settings, "api_keys", ["configured-service-key"])
+    def unexpected(*args, **kwargs):
+        raise AssertionError("unauthenticated request entered multipart parsing")
+    monkeypatch.setattr(Request, "form", unexpected)
+    for path in ("/api/capability-artifacts", "/api/documents/imports"):
+        response = client.post(path, files={"file": ("part.step", b"ordinary upload")})
+        assert response.status_code == 401

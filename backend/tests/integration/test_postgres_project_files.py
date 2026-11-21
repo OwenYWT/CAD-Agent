@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import os
+import secrets
 from pathlib import Path
 from uuid import uuid4
 
+import httpx
 import pytest
 import pytest_asyncio
 from alembic import command
 from alembic.config import Config
 
-from app.api.files import download_file
+from app.main import create_app
+from app.storage import auth
 from app.config import settings
 from app.db import close_database
 from app.domain.identity import user_principal
@@ -65,9 +68,12 @@ async def database_engine_lifecycle(migrated_database):
 
 
 @pytest.mark.asyncio(loop_scope="module")
-async def test_generated_bytes_commit_idempotently_and_download_after_local_delete():
+async def test_generated_bytes_commit_idempotently_and_download_after_local_delete(monkeypatch):
+    monkeypatch.setattr(settings, "auth_required", True)
+    monkeypatch.setattr(settings, "auth_token_secret", secrets.token_hex(32))
     suffix = uuid4().hex
-    user_id = f"artifact-user-{suffix}"
+    user = await auth.create_user(f"19{secrets.randbelow(10**9):09d}", secrets.token_urlsafe(24), "invite_code")
+    user_id = user["id"]
     request_id = f"request-{suffix}"
     context = await reconcile_principal(user_principal(user_id))
     bind_principal(context)
@@ -85,12 +91,12 @@ async def test_generated_bytes_commit_idempotently_and_download_after_local_dele
     assert metadata and await get_object(metadata["object_key"]) == payload
 
     local.unlink()
-    response = await download_file(
-        request_id,
-        "result.step",
-        _credential=f"user:{user_id}",
-    )
-    assert response.body == payload
+    token = await auth.create_session_token(user_id)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app()), base_url="http://test") as client:
+        response = await client.get(f"/api/files/{request_id}/result.step", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert response.content == payload
+    assert int(response.headers["content-length"]) == len(payload)
     assert response.headers["etag"] == f'"{metadata["sha256"]}"'
     hydrated = await hydrate_project_files(
         request_id,

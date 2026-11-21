@@ -58,6 +58,36 @@ def test_enabled_durable_control_plane_requires_every_dependency(override, expec
     assert any(expected in problem for problem in problems)
 
 
+@pytest.mark.asyncio
+async def test_scene_can_use_last_verified_worker_image_while_readiness_fails(monkeypatch):
+    from types import SimpleNamespace
+    from app import temporal_client as runtime
+
+    now = [10.0]
+    available = True
+    calls = []
+    async def inspect(_):
+        calls.append(None)
+        if not available:
+            raise TimeoutError()
+        return {"image_digest": "sha256:" + "a" * 64, "platform": "linux/arm64", "versions": {}}
+
+    monkeypatch.setattr(runtime, "_last_runtime_observation", None)
+    monkeypatch.setattr(runtime, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    monkeypatch.setattr(runtime, "run_worker_command", inspect)
+    observed = await runtime.worker_runtime_snapshot()
+    assert await runtime.worker_runtime_snapshot(allow_last_observation=True) == observed
+    assert len(calls) == 1
+    available = False
+    now[0] += 60
+    with pytest.raises(runtime.TemporalWorkerUnavailable):
+        await runtime.worker_runtime_snapshot()
+    assert await runtime.worker_runtime_snapshot(allow_last_observation=True) == observed
+    monkeypatch.setattr(runtime.settings, "sandbox_image", "new-deployment")
+    with pytest.raises(runtime.TemporalWorkerUnavailable):
+        await runtime.worker_runtime_snapshot(allow_last_observation=True)
+
+
 def test_development_requires_the_only_supported_durable_write_path():
     settings = _settings(
         durable_control_plane_enabled=False,

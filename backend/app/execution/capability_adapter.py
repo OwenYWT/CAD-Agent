@@ -4,10 +4,12 @@ from __future__ import annotations
 from app.config import settings
 
 import hashlib
+import asyncio
 import json
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from app.execution.canonical import sha256_file
 from typing import Any, Mapping
 
 from app.execution.backend import ExecutionBackend, MaterializedExecutionOutcome
@@ -54,12 +56,12 @@ class CapabilityExecutionAdapter:
         expected_base_revision_id: str | None = None,
         declared_outputs: Mapping[str, str] | None = None,
     ) -> CapabilityExecutionOutcome:
-        snapshot = self.backend.runtime_snapshot()
+        snapshot = await asyncio.to_thread(self.backend.runtime_snapshot)
         materialized: dict[str, Path] = {}
         declarations: list[ArtifactInput] = []
         task_inputs: dict[str, str] = {}
         for role, path in sorted(inputs.items()):
-            data = path.read_bytes()
+            digest = await asyncio.to_thread(sha256_file, path)
             artifact_id = f"input-{uuid.uuid4()}"
             filename = f"{role}-{path.name}"
             materialized[artifact_id] = path
@@ -68,8 +70,8 @@ class CapabilityExecutionAdapter:
                 ArtifactInput(
                     artifact_id=artifact_id,
                     filename=filename,
-                    sha256=hashlib.sha256(data).hexdigest(),
-                    size_bytes=len(data),
+                    sha256=digest,
+                    size_bytes=path.stat().st_size,
                     media_type="application/octet-stream",
                 )
             )

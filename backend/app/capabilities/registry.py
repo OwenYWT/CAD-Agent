@@ -125,30 +125,17 @@ def _vendored_dependency(skill_id: str) -> CapabilityDependency:
     return _dependency("vendored-runtime", "Pinned cadskills runtime", "vendored", True, available, detail)
 
 
-def _cad_dependencies() -> list[CapabilityDependency]:
-    return [
-        _execution_backend_dependency(
-            "cad-runtime",
-            "Unified STEP CAD execution runtime",
-        )
-    ]
-
-
-def _dxf_dependencies() -> list[CapabilityDependency]:
-    return [
-        _execution_backend_dependency(
-            "dxf-runtime",
-            "Unified ezdxf execution runtime",
-        )
-    ]
-
-
 def _execution_backend_dependency(
     dependency_id: str,
     label: str,
+    *,
+    snapshot=None,
 ) -> CapabilityDependency:
     try:
-        snapshot = get_execution_backend().runtime_snapshot()
+        if isinstance(snapshot, Exception):
+            raise snapshot
+        if snapshot is None:
+            snapshot = get_execution_backend().runtime_snapshot()
     except Exception as exc:
         return _dependency(
             dependency_id,
@@ -230,15 +217,6 @@ def _viewer_dependencies() -> list[CapabilityDependency]:
             "The package defines the documented agent:start reuse/activation launcher."
             if launcher_available
             else "Optional reuse/activation launcher is absent; the adapter can still start the bundled server directly.",
-        ),
-    ]
-
-
-def _implicit_dependencies() -> list[CapabilityDependency]:
-    return [
-        _execution_backend_dependency(
-            "implicit-runtime",
-            "Unified implicit-CAD execution runtime",
         ),
     ]
 
@@ -349,7 +327,7 @@ _SPECS: tuple[dict[str, Any], ...] = (
         ],
         "accepts": ["text/plain", ".py", ".step", ".stp"],
         "produces": [".py", ".step", ".stp", ".stl", ".3mf", ".glb", ".png", ".gif"],
-        "dependencies": _cad_dependencies,
+        "native_dependency": ("cad-runtime", "Unified STEP CAD execution runtime"),
     },
     {
         "id": "dxf",
@@ -361,7 +339,7 @@ _SPECS: tuple[dict[str, Any], ...] = (
         "actions": [_action("generate", "Generate DXF"), _action("validate", "Validate DXF geometry", "read_only")],
         "accepts": ["text/plain", ".py", ".step", ".stp", ".dxf"],
         "produces": [".py", ".dxf"],
-        "dependencies": _dxf_dependencies,
+        "native_dependency": ("dxf-runtime", "Unified ezdxf execution runtime"),
     },
     {
         "id": "cad-viewer",
@@ -385,7 +363,7 @@ _SPECS: tuple[dict[str, Any], ...] = (
         "actions": [_action("snapshot", "Render implicit model snapshot"), _action("export", "Export implicit model mesh")],
         "accepts": ["text/plain", ".implicit.js", ".implicit.mjs"],
         "produces": [".implicit.js", ".implicit.mjs", ".glb", ".stl", ".3mf", ".png", ".gif"],
-        "dependencies": _implicit_dependencies,
+        "native_dependency": ("implicit-runtime", "Unified implicit-CAD execution runtime"),
     },
     {
         "id": "gcode",
@@ -508,9 +486,10 @@ _DISPLAY_ORDER = {
 }
 
 
-def _build_manifest(spec: dict[str, Any]) -> CapabilityManifest:
-    dependency_factory = spec["dependencies"]
-    dependencies = [_vendored_dependency(spec["id"]), *dependency_factory()]
+def _build_manifest(spec: dict[str, Any], snapshot=None) -> CapabilityManifest:
+    runtime = ([_execution_backend_dependency(*spec["native_dependency"], snapshot=snapshot)]
+               if "native_dependency" in spec else spec["dependencies"]())
+    dependencies = [_vendored_dependency(spec["id"]), *runtime]
     blocked_reasons = [dependency.detail for dependency in dependencies if dependency.required and dependency.available is False]
     actions = [action.model_copy() for action in spec["actions"]]
     if blocked_reasons:
@@ -536,7 +515,7 @@ def _build_manifest(spec: dict[str, Any]) -> CapabilityManifest:
             action.blocked_reason for action in actions if action.blocked_reason
         ))
     return CapabilityManifest(
-        **{key: value for key, value in spec.items() if key not in {"actions", "dependencies"}},
+        **{key: value for key, value in spec.items() if key not in {"actions", "dependencies", "native_dependency"}},
         actions=actions,
         dependencies=dependencies,
         available=not blocked_reasons and has_available_action,
@@ -545,15 +524,19 @@ def _build_manifest(spec: dict[str, Any]) -> CapabilityManifest:
     )
 
 
-def list_capabilities() -> list[CapabilityManifest]:
+def list_capabilities(snapshot=None) -> list[CapabilityManifest]:
     """Return all manifests in stable display order with fresh availability."""
     specs = sorted(_SPECS, key=lambda spec: _DISPLAY_ORDER[spec["id"]])
-    return [_build_manifest(spec) for spec in specs]
+    return [_build_manifest(spec, snapshot) for spec in specs]
 
 
-def get_capability(capability_id: str) -> CapabilityManifest | None:
+def get_capability(capability_id: str, snapshot=None) -> CapabilityManifest | None:
     """Return one manifest by its exact, case-sensitive public identifier."""
     for spec in _SPECS:
         if spec["id"] == capability_id:
-            return _build_manifest(spec)
+            return _build_manifest(spec, snapshot)
     return None
+
+
+def has_capability(capability_id: str) -> bool:
+    return any(spec["id"] == capability_id for spec in _SPECS)

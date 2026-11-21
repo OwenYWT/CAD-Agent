@@ -7,10 +7,10 @@ from pathlib import Path
 from temporalio.client import Client
 from temporalio.worker import Replayer
 from app.workflows.agent_v2 import McadAgentWorkflowV2
-from app.workflows.definitions import McadDurableWorkflow, McadCheckWorkflow
+from app.workflows.definitions import McadDurableWorkflow, McadCheckWorkflow, NativeWorkerWorkflow
 from app.workflows.model_job import ModelJobWorkflow
 
-WORKFLOW_TYPES = {cls.__name__: cls for cls in (McadAgentWorkflowV2, McadDurableWorkflow, McadCheckWorkflow, ModelJobWorkflow)}
+WORKFLOW_TYPES = {cls.__name__: cls for cls in (McadAgentWorkflowV2, McadDurableWorkflow, McadCheckWorkflow, ModelJobWorkflow, NativeWorkerWorkflow)}
 
 async def main(output, workflow_types=None):
     types = {name: WORKFLOW_TYPES[name] for name in (workflow_types or WORKFLOW_TYPES)}

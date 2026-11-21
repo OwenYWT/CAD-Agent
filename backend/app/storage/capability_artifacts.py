@@ -1,14 +1,15 @@
 """Immutable PostgreSQL/S3 persistence for CAD capability inputs and outputs."""
 from __future__ import annotations
 
-import hashlib
+import asyncio
 import mimetypes
 from pathlib import Path
 from uuid import uuid5
 
 from app.db import tenant_transaction
 from app.domain.identity import IDENTITY_NAMESPACE
-from app.object_store import get_object, put_file, sha256_object
+from app.object_store import download_verified_object, put_file, sha256_object
+from app.execution.canonical import sha256_file
 from app.principal_context import current_principal
 from sqlalchemy import text
 
@@ -24,13 +25,8 @@ async def commit(
     if scope not in {"uploads", "runs"}:
         raise ValueError("invalid capability artifact scope")
     context = current_principal()
-    digest = hashlib.sha256()
-    size = 0
-    with path.open("rb") as handle:
-        while chunk := handle.read(8 * 1024 * 1024):
-            digest.update(chunk)
-            size += len(chunk)
-    sha256 = digest.hexdigest()
+    size = path.stat().st_size
+    sha256 = await asyncio.to_thread(sha256_file, path)
     object_key = (
         f"capabilities/tenants/{context.tenant_id}/{scope}/"
         f"{request_id}/{sha256}/{filename}"
@@ -169,16 +165,11 @@ async def hydrate_reference(reference: str, owner_root: Path) -> None:
     target = (owner_root / scope / request_id / filename).resolve()
     if not target.is_relative_to(owner_root.resolve()):
         raise ValueError("capability artifact path escaped owner workspace")
-    if target.is_file():
+    if (target.is_file() and target.stat().st_size == metadata["size_bytes"]
+            and await asyncio.to_thread(sha256_file, target) == metadata["sha256"]):
         return
     target.parent.mkdir(parents=True, exist_ok=True)
-    payload = await get_object(metadata["object_key"])
-    if (
-        len(payload) != metadata["size_bytes"]
-        or hashlib.sha256(payload).hexdigest() != metadata["sha256"]
-    ):
-        raise RuntimeError("capability artifact download verification failed")
-    target.write_bytes(payload)
+    await download_verified_object(metadata, target)
 
 
 async def hydrate_values(value, owner_root: Path) -> None:

@@ -1596,6 +1596,42 @@
     },
     "sketch.add_geometry": {
       "$defs": {
+        "ArcGeometry": {
+          "additionalProperties": false,
+          "properties": {
+            "center": {
+              "$ref": "#/$defs/Point2D"
+            },
+            "end_angle_deg": {
+              "title": "End Angle Deg",
+              "type": "number"
+            },
+            "kind": {
+              "const": "arc",
+              "title": "Kind",
+              "type": "string"
+            },
+            "radius_mm": {
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "title": "Radius Mm",
+              "type": "number"
+            },
+            "start_angle_deg": {
+              "title": "Start Angle Deg",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "center",
+            "radius_mm",
+            "start_angle_deg",
+            "end_angle_deg"
+          ],
+          "title": "ArcGeometry",
+          "type": "object"
+        },
         "CircleGeometry": {
           "additionalProperties": false,
           "properties": {
@@ -1722,6 +1758,7 @@
         "geometry": {
           "discriminator": {
             "mapping": {
+              "arc": "#/$defs/ArcGeometry",
               "circle": "#/$defs/CircleGeometry",
               "line": "#/$defs/LineGeometry",
               "rectangle": "#/$defs/RectangleGeometry"
@@ -1737,6 +1774,9 @@
             },
             {
               "$ref": "#/$defs/RectangleGeometry"
+            },
+            {
+              "$ref": "#/$defs/ArcGeometry"
             }
           ],
           "title": "Geometry"

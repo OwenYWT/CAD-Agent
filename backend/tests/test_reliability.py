@@ -1,4 +1,4 @@
-"""Reliability behaviors: overall deadline, sessions LRU bound, request-id logging,
+"""Reliability behaviors: overall deadline, request-id logging,
 LLM client factory timeouts. All hermetic (no Docker, no LLM)."""
 import asyncio
 import logging
@@ -21,32 +21,6 @@ def test_request_id_filter_injects_attr():
     set_request_id("req-abc")
     assert RequestIdFilter().filter(rec) is True
     assert rec.request_id == "req-abc"
-
-
-# === sessions LRU bound (#18) ===
-
-def test_sessions_lru_eviction(monkeypatch):
-    from app.api import websocket
-    monkeypatch.setattr(websocket, "_MAX_SESSIONS", 3)
-    websocket.sessions.clear()
-    for i in range(5):
-        websocket._get_context(f"s{i}", "default")
-    # only the last 3 survive; oldest two evicted
-    assert len(websocket.sessions) == 3
-    assert "s0" not in websocket.sessions and "s1" not in websocket.sessions
-    assert "s4" in websocket.sessions
-
-
-def test_sessions_lru_marks_recent(monkeypatch):
-    from app.api import websocket
-    monkeypatch.setattr(websocket, "_MAX_SESSIONS", 3)
-    websocket.sessions.clear()
-    for i in range(3):
-        websocket._get_context(f"s{i}", "default")
-    websocket._get_context("s0", "default")   # touch s0 → now most-recent
-    websocket._get_context("s3", "default")   # push over cap → evicts s1 (oldest), not s0
-    assert "s0" in websocket.sessions
-    assert "s1" not in websocket.sessions
 
 
 # === LLM client factory timeouts (#17/#23) ===

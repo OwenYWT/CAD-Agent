@@ -8,10 +8,14 @@ from pydantic import BeforeValidator, Field, TypeAdapter, model_validator, model
 from app.contracts.acceptance import AcceptanceModel, AcceptanceContract, MeasurementScope
 from app.contracts.acceptance_comparison import COMPARISON_POLICY_ID
 from app.contracts.hole_populations import population_pools
-from app.contracts.assembly_measurements import assembly_kind
+from app.contracts.assembly_measurements import ASSEMBLY_DIMENSIONS, ASSEMBLY_COUNTS, ASSEMBLY_PREDICATES, assembly_kind
+from app.contracts.machined_feature_values import principal_axis
 
 Quantity = Annotated[float, Field(strict=True, ge=0)]
 Unit = Literal['mm', 'mm3', 'count']
+_COUNT_KINDS = frozenset({'rectangular_opening_count', 'solid_count', 'hole_count', 'hole_through',
+                          'void_connected', 'assembly_count', 'assembly_predicate',
+                          'cube_shape', 'sphere_shape', 'cylinder_shape'})
 
 
 class SelectedMeasurementObject(AcceptanceModel):
@@ -34,7 +38,9 @@ class ComponentRegion(AcceptanceModel):
 
 
 class MeasurementScopeV2(MeasurementScope):
-    assembly_measurement: str | None = None
+    assembly_measurement: Annotated[str, Field(json_schema_extra={
+        'enum': sorted(ASSEMBLY_DIMENSIONS | ASSEMBLY_COUNTS | ASSEMBLY_PREDICATES)
+    })] | None = None
     wall_mode: Literal['continuous_normal', 'surface_normal', 'radial', 'local_probe',
                        'side_walls', 'cavity_floor'] = 'continuous_normal'
     frame: Literal['world', 'bounds_center', 'bounds_min', 'selected_object'] = 'world'
@@ -189,14 +195,30 @@ class AcceptanceCheckV2(AcceptanceModel):
                   'surface_clearance', 'planar_gap', 'bounding_box',
                   'assembly_dimension', 'assembly_count', 'assembly_predicate',
                   'cylinder_diameter', 'cylinder_radius', 'cylinder_height', 'sphere_diameter', 'sphere_radius',
-                  'annular_segment_diameter', 'annular_segment_height',
+                  'annular_segment_diameter', 'annular_segment_height', 'solid_segment_diameter', 'solid_segment_height',
+                  'fillet_radius', 'rectangular_opening_count', 'rectangular_opening_bounds',
+                  'semicircular_cut_diameter', 'semicircular_cut_position',
+                  'notched_tube_outer_diameter', 'notched_tube_bore_diameter', 'notched_tube_wall_thickness',
                   'cube_edge', 'cube_shape', 'sphere_shape', 'cylinder_shape'] = Field(description=(
-        'Select the actual measured property. All cylinder_*, sphere_* and cube_* kinds certify a complete '
+        'bounding_box compares zero residual against all six world-coordinate bounds of one whole solid. '
+        'For an axis-aligned rectangular prism centered at a specified world position, derive min/max '
+        'as center minus/plus half the given dimensions and use scope.component_region. '
+        'All cylinder_*, sphere_* and cube_* kinds certify a complete '
         'material primitive, including its entire boundary; they do not apply to a pierced, cut or joined primitive. '
         'overall_dimension measures the complete selected solid(s) along scope.axis; it is not a component '
         'dimension unless scope selects that component. hole_through independently checks the complete shaft passage. '
         'annular_segment_diameter/height measure a complete coaxial annular band selected by a world axis and '
-        'an interior point on that axis. Its axial endpoints come from the actual outer cylindrical face, never '
+        'an interior point on that axis. solid_segment_diameter/height use the same selector on a solid circular step. '
+        'fillet_radius verifies all twelve edges of a world-axis rectangular block, or all four edges parallel '
+        'to scope.axis for an extruded rounded rectangle. rectangular_opening_count inventories every straight '
+        'rectangular through-opening in a world-axis rectangular plate along scope.axis; rectangular_opening_bounds '
+        'compares all six world bounds with region_min_mm/max_mm (eq 0 mm), selecting the opening by its interior midpoint. '
+        'semicircular_cut_diameter and semicircular_cut_position certify a single through semicircular edge notch '
+        'on a rectangular plate or a transverse half-cylinder cut on a tube. Supply the cutter axis; position compares '
+        'zero transverse residual to point_mm on the intended cut axis. notched_tube_outer_diameter, '
+        'notched_tube_bore_diameter and notched_tube_wall_thickness measure the tubular stock along scope.axis '
+        'with that complete cut accounted for and its bore open end to end. '
+        'For segment measurements the axial endpoints come from the actual outer cylindrical face, never '
         'from target dimensions. Use separate checks at each distinct step; bore passage remains a separate check.'))
     description: str = Field(min_length=1)
     source_quote: str = Field(min_length=1)
@@ -206,6 +228,53 @@ class AcceptanceCheckV2(AcceptanceModel):
     comparison: Comparison
     scope: MeasurementScopeV2 = Field(default_factory=MeasurementScopeV2)
     hole_group: HoleGroupRef | None = None
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema, handler):
+        schema = handler.resolve_ref_schema(super().__get_pydantic_json_schema__(core_schema, handler))
+        def when(kind, **properties):
+            return {'if': {'properties': {'kind': {'const': kind}}},
+                    'then': {'properties': properties, 'required': list(properties)}}
+
+        schema['allOf'] = [
+            when(kind, scope={'required': ['assembly_measurement'], 'properties': {
+                'assembly_measurement': {'enum': sorted(names)}}})
+            for kind, names in [('assembly_dimension', ASSEMBLY_DIMENSIONS), ('assembly_count', ASSEMBLY_COUNTS),
+                                ('assembly_predicate', ASSEMBLY_PREDICATES)]
+        ] + [
+            when('hole_through', comparison={'properties': {
+                'op': {'const': 'eq'}, 'value': {'const': 1}, 'unit': {'const': 'count'}}}),
+            # The default empty scope is also valid for planar_gap.
+            {'if': {'properties': {'kind': {'const': 'planar_gap'}}}, 'then': {'properties': {
+                'scope': {'properties': {'centers_mm': {'maxItems': 0}, 'point_mm': {'type':'null'}}}}}},
+            when('void_connected', scope={'required': ['centers_mm', 'region_min_mm', 'region_max_mm'],
+                 'description': 'Use at least two distinct void points strictly inside the region on all axes, excluding its boundary.',
+                 'properties': {'centers_mm': {'minItems': 2, 'uniqueItems': True},
+                                'region_min_mm': {'type':'array'}, 'region_max_mm': {'type':'array'}}}),
+        ]
+        for kind, fields in (
+            ('rectangular_opening_count', ['axis']),
+            ('rectangular_opening_bounds', ['axis', 'region_min_mm', 'region_max_mm']),
+            ('semicircular_cut_position', ['axis', 'point_mm']),
+            ('semicircular_cut_diameter', ['axis']),
+            ('notched_tube_outer_diameter', ['axis']), ('notched_tube_bore_diameter', ['axis']),
+            ('notched_tube_wall_thickness', ['axis']), ('solid_segment_diameter', ['axis', 'point_mm']),
+            ('solid_segment_height', ['axis', 'point_mm']),
+        ):
+            schema['allOf'].append(when(kind, scope={'required': fields, 'properties': {
+                'frame': {'const': 'world'}, **{field: {'type': 'array'} for field in fields}}}))
+        # The tool sees the same measurement dimensions and discrete quantities
+        # the server enforces when it freezes the returned plan.
+        schema['allOf'].append({
+            'if': {'properties': {'kind': {'enum': sorted(_COUNT_KINDS)}}},
+            'then': {'properties': {'comparison': {'properties': {
+                'unit': {'const': 'count'}, **{key: {'type': 'integer'} for key in ('value', 'lower', 'upper')},
+                'tolerance_minus': {'const': 0}, 'tolerance_plus': {'const': 0}}}}},
+            'else': {'if': {'properties': {'kind': {'const': 'volume'}}},
+                     'then': {'properties': {'comparison': {'properties': {'unit': {'const': 'mm3'}}}}},
+                     'else': {'properties': {'comparison': {'properties': {'unit': {'const': 'mm'}}}}}},
+        })
+        return schema
 
     @model_serializer(mode='wrap')
     def retain_existing_digest(self, handler):
@@ -219,11 +288,24 @@ class AcceptanceCheckV2(AcceptanceModel):
         if self.required != (self.source_kind != 'assumption'):
             raise ValueError('requiredness must match verified provenance')
         kind, scope, comparison = self.kind, self.scope, self.comparison
-        if kind.startswith('annular_segment_') and (scope.frame != 'world' or scope.axis is None
+        if kind.startswith(('annular_segment_', 'solid_segment_')) and (scope.frame != 'world' or scope.axis is None
                 or scope.point_mm is None or scope.centers_mm or scope.region_min_mm is not None):
             raise ValueError('annular segment requires a world axis and an interior axis point, without clipping regions')
-        count = kind in {'solid_count', 'hole_count', 'hole_through', 'void_connected', 'assembly_count', 'assembly_predicate',
-                         'cube_shape', 'sphere_shape', 'cylinder_shape'}
+        count = kind in _COUNT_KINDS
+        if kind in {'fillet_radius', 'rectangular_opening_count', 'rectangular_opening_bounds',
+                    'semicircular_cut_diameter', 'semicircular_cut_position'} or kind.startswith('notched_tube_'):
+            if (scope.frame != 'world' or scope.centers_mm or scope.object_ref
+                    or kind != 'fillet_radius' and scope.axis is None
+                    or (kind == 'rectangular_opening_bounds') != (scope.region_min_mm is not None)
+                    or (kind == 'semicircular_cut_position') != (scope.point_mm is not None)):
+                raise ValueError(f'{kind} requires its world feature scope')
+            if (kind in {'rectangular_opening_bounds','semicircular_cut_position'} and
+                    (not isinstance(comparison, EqualComparison) or comparison.value != 0)):
+                raise ValueError(f'{kind} compares zero position residual')
+            if kind=='rectangular_opening_bounds' and any(a >= b for a,b in zip(scope.region_min_mm,scope.region_max_mm)):
+                raise ValueError('opening bounds must enclose positive volume')
+            if scope.axis is not None and (kind == 'fillet_radius' or kind.startswith('rectangular_opening_')):
+                principal_axis(scope.axis)
         if kind.startswith('assembly_') or scope.assembly_measurement is not None:
             if assembly_kind(scope.assembly_measurement) != kind:
                 raise ValueError('assembly role does not define this measurement kind')

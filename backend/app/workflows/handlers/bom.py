@@ -21,24 +21,36 @@ from app.execution.contracts import ArtifactInput, ExecutionError, ExecutionSour
 from app.freecad.bom_contracts import FreeCADBOMDocumentV1, FreeCADBOMRequestV1
 from app.object_store import download_object, put_file
 from app.workflows.inputs import _uuid, _agent_v2_request
-from app.workflows.handlers.legacy_modeling import plan
 from app.workflows.execution_support import _prepare_agent_validation_attempt
 from app.workflows.execution_support import _run_backend_with_heartbeats
 from app.workflows.execution_support import _mark_execution_failure
 from app.workflows.validation_support import _record_agent_validation_outcome
+
+def _select_bom_inputs(rows, step_keys, manifest_ids):
+    selected = {}
+    for key in step_keys:
+        matches = [row for row in rows if row['manifest']['plan_step_key'] == key
+                   and (key not in manifest_ids or str(row['id']) == manifest_ids[key])]
+        if len(matches) != 1:
+            reason = 'ambiguous' if matches else 'missing'
+            raise ApplicationError(f'assembly BOM input {key} is {reason}',
+                                   type=f'bom_input_{reason}', non_retryable=True)
+        selected[key] = matches[0]
+    return selected
+
 
 async def agent_generate_bom(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[str, Any]:
     info = execution_identity()
     request = _agent_v2_request(payload)
     plan = AgentPlan.model_validate(payload["plan"])
     candidate_build_id = _uuid(payload, "candidate_build_id")
-    step_key = "agent-native-bom"
+    step_key = payload.get("validation_step_key", "agent-native-bom")
     attempt_id, step_id, lease_token, lease_generation = (
         await _prepare_agent_validation_attempt(
             payload,
             temporal_attempt=info.attempt,
             step_key=step_key,
-            step_index=None if payload.get("checkpoint_enabled") else 60_000,
+            step_index=None if payload.get("checkpoint_enabled") or "validation_step_key" in payload else 60_000,
             step_kind="agent_bom",
         )
     )
@@ -88,14 +100,10 @@ async def agent_generate_bom(payload: dict[str, Any], *, backend: ExecutionBacke
                     await connection.execute(
                         text(
                             """
-                            SELECT m.id, s.step_key,
+                            SELECT m.id,
                                    m.execution_attempt_id,
                                    m.manifest, m.manifest_hash
                             FROM agent_staging_manifests AS m
-                            JOIN step_runs AS s
-                              ON s.tenant_id=m.tenant_id
-                             AND s.workflow_run_id=m.workflow_run_id
-                             AND s.id=m.step_run_id
                             WHERE m.tenant_id=:tenant_id
                               AND m.candidate_build_id=:candidate_build_id
                               AND m.workflow_run_id=:workflow_id
@@ -122,31 +130,20 @@ async def agent_generate_bom(payload: dict[str, Any], *, backend: ExecutionBacke
             "assembly BOM inputs could not be loaded",
             type="bom_input_query_failed",
         ) from exc
-    by_step: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        by_step.setdefault(str(row["step_key"]), []).append(row)
-    combine_step = next(
-        step for step in plan.steps if step.kind == "assembly_combine"
-    )
+    combine_step = next(step for step in plan.steps if step.kind == "assembly_combine")
     part_steps = [step for step in plan.steps if step.kind == "assembly_part"]
-    required_steps = [combine_step.step_key, *(step.step_key for step in part_steps)]
-    if any(len(by_step.get(step_key, ())) != 1 for step_key in required_steps):
-        error_code = (
-            "bom_input_ambiguous"
-            if any(len(by_step.get(key, ())) > 1 for key in required_steps)
-            else "bom_input_missing"
-        )
-        await fail_preflight(
-            code=error_code,
-            message="assembly BOM inputs are missing or ambiguous",
-            category="artifact",
-        )
-        raise ApplicationError(
-            "assembly BOM inputs are missing or ambiguous",
-            type=error_code,
-            non_retryable=True,
-        )
-    selected = {key: by_step[key][0] for key in required_steps}
+    manifest_ids = {combine_step.step_key: str(_uuid(payload, 'staging_manifest_id'))}
+    try:
+        if 'component_manifest_ids' in payload:
+            components = payload['component_manifest_ids']
+            if set(components) != {step.step_key for step in part_steps}:
+                raise ApplicationError('assembly BOM component selections differ from plan',
+                                       type='bom_input_missing', non_retryable=True)
+            manifest_ids.update(components)
+        selected = _select_bom_inputs(rows, [combine_step.step_key, *(s.step_key for s in part_steps)], manifest_ids)
+    except ApplicationError as exc:
+        await fail_preflight(code=exc.type, message=exc.message, category='artifact')
+        raise
     temp_dir = Path(tempfile.mkdtemp(prefix="agent_bom_"))
     outcome: MaterializedExecutionOutcome | None = None
     try:
@@ -251,7 +248,9 @@ async def agent_generate_bom(payload: dict[str, Any], *, backend: ExecutionBacke
             project_id=str(request.project_id),
             expected_base_revision_id=str(request.expected_base_revision_id),
             idempotency_key=(
-                f"agent-v2:bom:{request.workflow_run_id}:attempt:{info.attempt}"
+                f"agent-v2:bom:{request.workflow_run_id}:"
+                + (f"{step_id}:" if "validation_step_key" in payload else "")
+                + f"attempt:{info.attempt}"
             ),
             capability="mcad.freecad",
             operation="bom",

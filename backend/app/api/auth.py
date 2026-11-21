@@ -3,7 +3,7 @@ import logging
 import time
 from base64 import urlsafe_b64decode
 from binascii import Error as Base64Error
-from collections import defaultdict
+from app.services.authentication import AttemptWindows
 
 from fastapi import Request, HTTPException, Depends, WebSocket
 from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
@@ -225,54 +225,28 @@ async def resolve_ws_principal(token: str | None) -> PrincipalContext | None:
 class RateLimiter:
     """Simple in-memory sliding-window rate limiter per API key / IP."""
 
-    _MAX_KEYS = 10000  # prevent unbounded growth
-
     def __init__(self, rpm: int | None = None):
-        self.rpm = rpm or settings.rate_limit_per_minute
-        self._windows: dict[str, list[float]] = defaultdict(list)
-        self._last_cleanup = time.time()
+        self.rpm = settings.rate_limit_per_minute if rpm is None else rpm
+        self._windows = AttemptWindows(60)
 
     def _client_key(self, request: Request | WebSocket, api_key: str | None) -> str:
         if api_key:
             fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
             return f"key-sha256:{fingerprint}"
-        # Behind a trusted proxy, the real client IP is the first X-Forwarded-For hop;
-        # otherwise request.client.host is the proxy itself (one shared bucket for all).
-        if settings.trust_proxy_headers:
-            xff = request.headers.get("x-forwarded-for")
-            if xff:
-                real_ip = xff.split(",")[0].strip()
-                if real_ip:
-                    return f"ip:{real_ip}"
         client = getattr(request, "client", None)
         return f"ip:{client.host}" if client else "ip:unknown"
-
-    def _cleanup_stale_keys(self):
-        """Remove keys with no recent activity to bound memory."""
-        now = time.time()
-        if now - self._last_cleanup < 60:
-            return
-        self._last_cleanup = now
-        cutoff = now - 120
-        stale = [k for k, v in self._windows.items() if not v or v[-1] < cutoff]
-        for k in stale:
-            del self._windows[k]
 
     async def check(self, request: Request | WebSocket, api_key: str | None = None):
         if self.rpm <= 0:
             return
-        self._cleanup_stale_keys()
         key = self._client_key(request, api_key)
-        now = time.time()
-        window = self._windows[key]
-        cutoff = now - 60
-        self._windows[key] = [t for t in window if t > cutoff]
-        if len(self._windows[key]) >= self.rpm:
+        now = time.monotonic()
+        if self._windows.full(key, self.rpm, now):
             raise HTTPException(
                 status_code=429,
                 detail=f"Rate limit exceeded ({self.rpm} requests/minute)",
             )
-        self._windows[key].append(now)
+        self._windows.record(key, self.rpm, now)
 
 
 rate_limiter = RateLimiter()

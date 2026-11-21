@@ -1,7 +1,6 @@
 """Read-only scene work uses the existing Workflow/Attempt/dispatch authority."""
 from __future__ import annotations
 
-import asyncio
 import hashlib
 from uuid import UUID
 
@@ -9,7 +8,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.db import tenant_transaction
-from app.execution.composition import get_execution_backend
+from app.temporal_client import worker_runtime_snapshot
 from app.services.cloud_documents import authorized_document, checkpoint
 from app.services.document_geometry import _public_scene
 from app.services.run_state import create_workflow
@@ -24,8 +23,7 @@ async def request_scene(context, document_id: UUID, revision_id: UUID, *, retry_
     projection = await checkpoint(context, document_id, revision_id)
     if not projection['fcstd']:
         raise ValueError('此版本没有原生 FCStd，无法生成部件场景')
-    # An image inspection resolves development tags; this never starts a kernel.
-    runtime = (await asyncio.to_thread(get_execution_backend().runtime_snapshot)).image_digest
+    runtime = (await worker_runtime_snapshot(allow_last_observation=True)).image_digest
     identity = {'doc': document_id, 'revision': revision_id, 'runtime': runtime, 'schema': SCENE_SCHEMA}
     key = hashlib.sha256(f'{context.tenant_id}:{document_id}:{revision_id}:{runtime}:{SCENE_SCHEMA}'.encode()).hexdigest()
     dispatch = None
