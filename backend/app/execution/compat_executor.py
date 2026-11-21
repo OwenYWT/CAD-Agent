@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import asyncio
 import tempfile
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
+from app.execution.canonical import sha256_file
 
 from app.config import settings
 from app.execution.backend import ExecutionBackend
@@ -120,7 +122,7 @@ class CompatibilityExecutor:
         extra_files: dict[str, Path] | None = None,
     ) -> SandboxResult:
         try:
-            snapshot = self.backend.runtime_snapshot()
+            snapshot = await asyncio.to_thread(self.backend.runtime_snapshot)
         except Exception:
             work_dir = Path(tempfile.mkdtemp(prefix="cad_compat_"))
             return SandboxResult(
@@ -145,15 +147,15 @@ class CompatibilityExecutor:
         materialized_inputs: dict[str, Path] = {}
         inputs = []
         for filename, path in (extra_files or {}).items():
-            data = path.read_bytes()
+            digest = await asyncio.to_thread(sha256_file, path)
             artifact_id = f"input-{uuid.uuid4()}"
             materialized_inputs[artifact_id] = path
             inputs.append(
                 ArtifactInput(
                     artifact_id=artifact_id,
                     filename=filename,
-                    sha256=hashlib.sha256(data).hexdigest(),
-                    size_bytes=len(data),
+                    sha256=digest,
+                    size_bytes=path.stat().st_size,
                     media_type="application/octet-stream",
                 )
             )

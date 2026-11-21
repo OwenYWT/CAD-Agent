@@ -393,7 +393,7 @@ def project_document(document: Any) -> dict[str, Any]:
     }
 
 
-def project_saved_document(document: Any, path: str | Path) -> dict[str, Any]:
+def project_saved_document(document: Any, path: str | Path, *, native_references=None) -> dict[str, Any]:
     """Project the actual FCStd checkpoint, including its persisted topology.
 
     OCC's in-memory BRep flags differ after FCStd persistence. Comparing an
@@ -409,6 +409,8 @@ def project_saved_document(document: Any, path: str | Path) -> dict[str, Any]:
         restored = App.openDocument(str(copy_path))
         try:
             state = project_document(restored)
+            if native_references is not None:
+                state['native_topology'] = native_references.project(restored, hashlib.sha256(copy_path.read_bytes()).hexdigest())
             state["document"] = str(document.Name)
             for obj in state["objects"]:
                 if obj.get("geometry_sha256"):

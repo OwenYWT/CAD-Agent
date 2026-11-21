@@ -92,7 +92,7 @@ def test_agent_tools_api_executes_with_request_context(monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "success"
-    assert body["summary"]["confirmed"] is True
+    assert body["summary"]["confirmed"] is False
     assert fake.context.request_id == "req-1"
     assert fake.context.session_id == "session-1"
     assert fake.context.panel_id == "panel-1"
@@ -119,3 +119,41 @@ def test_production_agent_tool_write_requires_confirmation(monkeypatch):
     body = response.json()
     assert body["status"] == "consent_required"
     assert body["needs_confirmation"] is True
+
+def test_confirmation_receipt_is_bound_to_arguments_and_single_use(monkeypatch, tmp_path):
+    import asyncio
+    from app.storage import auth
+    from app.config import settings
+    from app.integrations.onshape import OnshapeService
+
+    calls = []
+    from app.models.schemas import OnshapeDocumentResponse
+    async def record_create(self, request):
+        calls.append(request.name)
+        return OnshapeDocumentResponse(id="test", name=request.name)
+
+    asyncio.run(auth.close_db())
+    monkeypatch.setattr(settings, "history_db_path", str(tmp_path / "history.db"))
+    monkeypatch.setattr(OnshapeService, "create_document", record_create)
+    url = "/api/agent/tools/onshape_create_document/execute"
+    try:
+        with TestClient(create_test_app()) as client:
+            pending = client.post(url, json={"arguments": {"name": "original"}, "confirmed": True}).json()
+            assert pending["needs_confirmation"] and not calls
+            consent = {"confirmed": True, "confirmation_id": pending["confirmation_id"]}
+            assert client.post(url, json={**consent, "arguments":{"name":"different"}}).json()["needs_confirmation"]
+            approved = client.post(url, json={**consent, "arguments":{"name":"original"}}).json()
+            assert approved["status"] == "success", approved
+            assert client.post(url, json={**consent, "arguments":{"name":"original"}}).json()["needs_confirmation"]
+            assert len(calls) == 1
+    finally:
+        asyncio.run(auth.close_db())
+
+def test_service_key_does_not_inherit_shared_onshape_admin(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "api_keys", ["service-test-key"])
+    monkeypatch.setattr(settings, "auth_required", True)
+    with TestClient(create_test_app()) as client:
+        listing = client.get("/api/agent/tools", headers={"X-API-Key": "service-test-key"})
+    assert listing.status_code == 200
+    assert "onshape_create_document" not in {tool["name"] for tool in listing.json()["tools"]}

@@ -35,7 +35,7 @@ from app.llm import (
 )
 
 
-_SYSTEM_PROMPT = """You are the operation planner for a headless FreeCAD 1.1.3 runtime.
+_SYSTEM_PROMPT = """You are the operation planner for a headless FreeCAD 1.1.4 runtime.
 Use the supplied function tools, one call at a time. Use freecad_discover to find
 native capabilities, freecad_describe_operation for exact typed argument schemas,
 and freecad_inspect before modifying an existing object. Call freecad_execute for
@@ -79,6 +79,11 @@ For new sketches use frame: {schema_version:"body-frame.v1",origin:{x,y,z},
 normal:[x,y,z],x_axis:[x,y,z]}. Origin and axes are in the owning Body's coordinates;
 normal and x_axis must be nonzero and orthogonal. Sketch (u,v) maps to
 origin + u*unit(x_axis) + v*(unit(normal) cross unit(x_axis)).
+Derive both in-plane directions before writing sketch coordinates; sketch v is
+not automatically world Z. Choose the normal from the intended u cross v directions.
+Keep the resulting world positions consistent with the frozen acceptance scopes,
+including after a revolve. An opposite normal mirrors the axial placement even
+when diameters, heights and the overall shape are otherwise correct.
 Do not combine frame with legacy plane/offset_mm/reversed. Legacy placement fields
 exist only to replay retained plans; they are not the coordinate interface for new plans.
 Use sketch.add_profile for rectangles and circles: it creates the geometry AND its
@@ -119,7 +124,7 @@ Native program (freecad_execute_api's execute.args):
 - api.execute: {source:string, environment:headless|gui, modules:[Python_module_names]}.
   Use only when typed operations cannot represent a required native capability.
   The plan must contain exactly api.execute followed by document.export. source is
-  real Python executed by FreeCAD 1.1.3, with App, Part, Sketcher and document bound.
+  real Python executed by FreeCAD 1.1.4, with App, Part, Sketcher and document bound.
   For gui, Gui is available under a virtual display. All installed native Python
   APIs may be imported; missing external solvers/plugins must fail explicitly.
   Preserve document identity and use native parametric objects where possible.
@@ -137,8 +142,13 @@ Typed actions and args (freecad_execute only):
   Arc sweep is counterclockwise, greater than zero and less than 360 degrees.
   Produces fully constrained editable geometry and construction helpers automatically.
   Never add constraints to these helpers or guess their geometry indexes.
-- sketch.add_geometry: {sketch, geometry}; geometry is line(start/end), circle(center/radius_mm),
-  or rectangle(corner/width_mm/height_mm). Coordinates are numeric millimetres.
+- sketch.add_geometry: {sketch, geometry}; geometry is exactly one tagged object:
+  {"kind":"line","start":{"x":number,"y":number},"end":{"x":number,"y":number}},
+  {"kind":"circle","center":{"x":number,"y":number},"radius_mm":number},
+  {"kind":"rectangle","corner":{"x":number,"y":number},"width_mm":number,"height_mm":number}, or
+  {"kind":"arc","center":{"x":number,"y":number},"radius_mm":number,"start_angle_deg":number,"end_angle_deg":number}.
+  Coordinates are numeric millimetres. Never wrap these as {"line":...}, {"circle":...},
+  {"rectangle":...}, or {"arc":...}; the kind discriminator is required.
 - sketch.add_constraint: use freecad_describe_operation for the authoritative kind,
   reference and datum variants. Do not use native negative indices as persistent identities.
 - feature.pad: {name, profile, length_mm, reversed?}
@@ -193,7 +203,9 @@ Rules:
 3. For a new solid create a sketch before its feature. For a modification, only reference
    object names present in the supplied FreeCAD state.
 4. Never persist or invent FaceN/EdgeN references. Fillet/chamfer support all edges or
-   the exact measured topology_selector frozen in selection_context. Chamfer also supports
+   the exact topology_selector frozen in selection_context. When no subelement is frozen,
+   they also accept a native selector returned by freecad_inspect's references field.
+   Keep that returned identity unchanged when editing its upstream dimensions. Chamfer also supports
    edge_scope. Exactly one selection mode is allowed: explicitly set use_all_edges=false
    when using selector or edge_scope; its legacy default is true. Never invent a selector.
 5. Preserve the requested dimensions exactly. The final export formats must exactly match
@@ -204,7 +216,7 @@ Rules:
    {"error":"needs_clarification: <specific missing input>"}. Never silently invent
    a countersink diameter/angle, fit allowance, screw standard or mating dimension.
 7. For an existing model, call freecad_inspect with relevant objects before modeling:
-   {"objects":["KernelName"],"fields":["properties","constraints","geometry","topology","dependencies"],"offset":0,"limit":16}.
+   {"objects":["KernelName"],"fields":["properties","constraints","geometry","topology","dependencies","references"],"offset":0,"limit":16}.
    The server executes this read-only query against the verified kernel checkpoint and
    returns measured facts. Request only needed
    fields. Unavailable or omitted data is not evidence of absence. Do not invent it.
@@ -362,11 +374,7 @@ class FreeCADOperationGenerator:
                     for step in plan.steps
                 ],
             },
-            "requirements": {
-                key: value
-                for key, value in requirements.items()
-                if key not in {"design_brief", "manufacturing_profile"}
-            },
+            "requirements": requirements,
             "base_freecad_state": bounded_agent_context(base_state) if base_state else None,
             **({"engineering_acceptance": requirements.get('acceptance') or requirements["design_brief"]["acceptance"]}
                if requirements.get('acceptance') or (requirements.get("design_brief") or {}).get("acceptance") else {}),
@@ -422,10 +430,15 @@ class FreeCADOperationGenerator:
                 'current_operation_plan': current.model_dump(mode='json'),
                 'execution_failure': profile_context['snapshot']['failure'], 'failed_sketch': target,
                 'frozen_acceptance': profile_context['acceptance'], 'construction_bounds': profile_context['bounds'],
+                'profile_intersections': json.loads(profile_context['snapshot']['failure']['details'].get(
+                    'profile_intersections_json', '{}')),
                 'instruction': 'Replan only the diagnosed uncommitted sketch boundary and its constraints. '
                     'Preserve its frame, original outer bounds, all other operations, feature dimensions, '
                     'operation IDs for unchanged operations and exports. Do not use native Python. '
-                    'Use a valid material boundary instead of touching/overlapping nested loops. '
+                    'Use the reported geometry indices and local intersections to rebuild the intended exterior. '
+                    'For a connected arc and line boundary use sketch.add_geometry with kind arc, then constrain '
+                    'its endpoints (1=start, 2=end, 3=center). It adds one arc. The fully dimensioned add_profile '
+                    'arc also inserts two construction lines and angular drivers and is unsuitable for this local patch. '
                     'Preserve the frozen requirements. Use connected endpoints and dependent geometric '
                     'relations, not independent dimensions on every endpoint. Each editable parameter '
                     'will be perturbed in both directions and downstream features recomputed. '
@@ -553,16 +566,64 @@ class FreeCADOperationGenerator:
             # The compiler used already-persisted operation identities. Hashing
             # them again would rewrite every protected operation on a checkpoint.
             return result
-        return self._scope_result(result, base_state)
+        return self._scope_result(result, base_state, previous=current)
 
     @staticmethod
-    def _scope_result(result, base_state):
+    def _scope_result(result, base_state, previous=None):
         if base_state is None:
             return result
-        scoped = scope_plan_to_base(result.operation_plan, base_state)
+        scoped = scope_plan_to_base(result.operation_plan, base_state, previous=previous)
         # Provider provenance remains the raw response evidence; source_hash
         # independently identifies the canonical plan actually executed.
         return replace(result, operation_plan=scoped, source_code=scoped.model_dump_json())
+
+    @staticmethod
+    def _contract_retry_guidance(error: Exception) -> str:
+        differences = rejection_differences(error)
+        invalid_inspection_fields = {
+            str(item.get('field', '')).rsplit('.', 1)[-1]
+            for item in differences
+            if item.get('error_type') == 'extra_forbidden'
+            and str(item.get('field', '')).startswith('operations.')
+            and str(item.get('field', '')).rsplit('.', 1)[-1] in {'objects', 'fields'}
+        }
+        if invalid_inspection_fields:
+            fields = ', '.join(sorted(invalid_inspection_fields))
+            return (
+                f' The operation contains unsupported top-level inspection field(s): {fields}. '
+                'An operation object may contain only op_id, action, and args. '
+                'Do not put objects or fields on an operation. To inspect an existing document, '
+                'call freecad_inspect with objects and fields as tool arguments; otherwise '
+                'return a valid modeling operation without those inspection fields.'
+            )
+        return ''
+
+    @staticmethod
+    def _legacy_inspection_query(raw: Any) -> dict[str, Any] | None:
+        """Recognize the historical inspection-in-operations envelope only."""
+        if (not isinstance(raw, dict)
+                or raw.get('schema_version') != 'freecad-operation-plan.v1'
+                or not isinstance(raw.get('operations'), list)):
+            return None
+        operations = raw['operations']
+        if len(operations) != 1 or not isinstance(operations[0], dict):
+            return None
+        operation = operations[0]
+        if operation.get('action') != 'document.inspect':
+            return None
+        if operation.get('args') not in (None, {}):
+            return None
+        if not isinstance(operation.get('objects'), list) or not isinstance(operation.get('fields'), list):
+            return None
+        allowed = {'op_id', 'action', 'args', 'objects', 'fields', 'offset', 'limit'}
+        if set(operation) - allowed:
+            return None
+        return {
+            'objects': operation['objects'],
+            'fields': operation['fields'],
+            'offset': operation.get('offset', 0),
+            'limit': operation.get('limit', 16),
+        }
 
     async def _complete(
         self,
@@ -663,8 +724,13 @@ class FreeCADOperationGenerator:
                                'Call freecad_patch_profile with a corrected local boundary. ' + json.dumps(rejection_differences(last_error), ensure_ascii=False)
                                if profile_context else
                                'Call freecad_patch_cut with a corrected local change. ' + json.dumps(rejection_differences(last_error), ensure_ascii=False)
-                               if cut_context else _INSPECTION_NEXT if base_state is not None and not inspections
-                               else "Call freecad_execute for typed operations or freecad_execute_api for a native program, with corrected arguments using the measured facts already supplied.")
+                               if cut_context else
+                               "For sketch.add_geometry, use a tagged geometry object such as "
+                               'Use {"kind":"line","start":{"x":10,"y":10},'
+                               '"end":{"x":20,"y":10}}; never use {"line":{...}}. '
+                               + (_INSPECTION_NEXT if base_state is not None and not inspections
+                                  else "Call freecad_execute for typed operations or freecad_execute_api for a native program, with corrected arguments using the measured facts already supplied.")
+                               + self._contract_retry_guidance(last_error))
                         ),
                     }
                 )
@@ -760,7 +826,8 @@ class FreeCADOperationGenerator:
                     else:
                         evidence = read_tool(name, arguments, state=base_state)
                         identity = json.dumps(evidence, sort_keys=True, ensure_ascii=False)
-                        if identity in capability_results:
+                        # The bounded profile-repair loop may reread the same schema after a rejection.
+                        if identity in capability_results and not profile_context:
                             raise ValueError("capability lookup repeated without new information")
                         capability_results.add(identity)
                         tool_evidence.append({"call": pending_call, "result": evidence})
@@ -775,6 +842,13 @@ class FreeCADOperationGenerator:
                         raise profile_replan.rejected('profile repair requires the local profile patch tool, not a replacement plan')
                     if cut_context:
                         raise ValueError('cut repair requires the local cut patch tool, not a replacement plan')
+                legacy_inspection = (
+                    self._legacy_inspection_query(raw)
+                    if base_state is not None
+                    else None
+                )
+                if legacy_inspection is not None:
+                    raw = {'inspect': legacy_inspection}
                 if isinstance(raw,dict) and set(raw)=={'capability_query'}:
                     query=CapabilityQuery.model_validate(raw['capability_query'])
                     if query in capability_queries:
@@ -827,13 +901,14 @@ class FreeCADOperationGenerator:
                 if constraint_context or profile_context:
                     pass  # Compiler constructs an immutable copy of every unrelated operation.
                 elif user_payload.get('task') == 'repair':
-                    from app.freecad.constraint_repair import validate_constraint_repair, validate_subtractive_repair
+                    from app.freecad.constraint_repair import validate_constraint_repair, validate_subtractive_repair, validate_retained_operations
                     before = FreeCADOperationPlan.model_validate(user_payload['current_operation_plan'])
                     failure = user_payload['execution_failure']
                     if before == operation_plan:
                         raise ValueError('FreeCAD operation repair returned an unchanged plan')
                     if before.execution_mode != operation_plan.execution_mode:
                         raise ValueError('repair cannot change checkpoint/final execution intent')
+                    validate_retained_operations(before, operation_plan, failure)
                     validate_constraint_repair(before, operation_plan, failure)
                     validate_subtractive_repair(before, operation_plan, failure)
                     validate_chamfer_repair(

@@ -83,20 +83,28 @@ def verify_initial_geometry_basis(page, api, out):
     evidence that every feature in these requests has been modeled or verified.
     """
     rows = []
-    for prompt, edited_dimensions in [
-        ('创建顶部开口盒体，长 80 mm、宽 55 mm、高 32 mm；内部腔体长 74 mm、宽 49 mm、深 29 mm。', None),
-        ('创建长 80 mm、宽 55 mm、高 32 mm 的盒体。不包含上盖、装配结构、配合间隙和螺纹。', None),
-        ('单位：mm\n外壳外尺寸：长 80，宽 55，高 32\n壁厚：3', None),
+    for prompt, edited_dimensions, automatic_complete in [
+        ('创建顶部开口盒体，长 80 mm、宽 55 mm、高 32 mm；内部腔体长 74 mm、宽 49 mm、深 29 mm。', None, False),
+        ('创建长 80 mm、宽 55 mm、高 32 mm 的盒体。不包含上盖、装配结构、配合间隙和螺纹。', None, False),
+        ('单位：mm\n外壳外尺寸：长 80，宽 55，高 32\n壁厚：3', None, True),
         ('创建长80mm、宽40mm、厚8mm的板，保留一个直径6mm的居中通孔。',
-         '长度80mm；宽度40mm；厚度8mm；孔径6mm'),
+         '长度80mm；宽度40mm；厚度8mm；孔径6mm', False),
     ]:
         page.get_by_role('button', name='新建设计', exact=True).click()
         page.get_by_role('textbox', name='工程需求', exact=True).fill(prompt)
         page.get_by_role('button', name='开始创建', exact=True).click()
         card = page.get_by_role('region', name='执行前需求确认', exact=True)
         expect(card.get_by_role('textbox', name='关键尺寸依据', exact=True)).to_have_value(prompt)
-        if edited_dimensions:
-            card.get_by_role('textbox', name='关键尺寸依据', exact=True).fill(edited_dimensions)
+        if not automatic_complete:
+            # An uncovered feature cannot become automatically confirmed just
+            # because the prompt contains three dimensions. This test verifies
+            # explicit input admission, not that those features can be verified.
+            expect(card.get_by_role('button', name='按概念外形继续', exact=True)).to_be_disabled()
+            expect(card.get_by_role('checkbox', name='确认仅生成概念外形', exact=True)).not_to_be_checked()
+        if edited_dimensions or not automatic_complete:
+            dimensions = card.get_by_role('textbox', name='关键尺寸依据', exact=True)
+            dimensions.clear()
+            dimensions.fill(edited_dimensions or prompt)
         expect(card.get_by_role('textbox', name='建模目标', exact=True)).to_have_value(prompt)
         if '\n' in prompt:
             # Exercise the target editor too: a single-line input normalizes
@@ -132,6 +140,7 @@ def verify_initial_geometry_basis(page, api, out):
             raise AssertionError('New design intake did not reach cancelled state')
         assert snapshot['request_payload'] == accepted
         rows.append({'workflow_id': task, 'dimensions': basis['dimensions'],
+                     'automatic_complete': automatic_complete,
                      'cancelled_before_provider_execution': True})
     (out / 'initial-geometry-intake.json').write_text(json.dumps({'passed': True,
         'classification': 'REAL_BROWSER_WEBSOCKET_DURABLE_ADMISSION', 'cases': rows,

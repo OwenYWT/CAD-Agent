@@ -1,13 +1,14 @@
 import { cancelEngineeringTask } from "../../services/clients/tasks";
 import { downloadEngineeringArtifact } from "../../services/clients/downloads";
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import type { CloudDocument } from '../../types/document';
 import type { BoundaryPlane, EngineeringTaskSummary, EngineeringResult, EngineeringField, LinearStaticTask, CamToolpath } from '../../types/engineeringTask';
 import { listEngineeringTasks, submitEngineeringTask, readEngineeringResult, readEngineeringField, readCamToolpath } from '../../services/clients/engineering';
-import EngineeringFieldViewer from '../viewer/EngineeringFieldViewer';
-import CamToolpathViewer from '../viewer/CamToolpathViewer';
 import ContourMillingForm from './ContourMillingForm';
 import { engineeringSourceLabel } from '../../adapters/documentView';
+const EngineeringFieldViewer = lazy(() => import('../viewer/EngineeringFieldViewer'));
+const CamToolpathViewer = lazy(() => import('../viewer/CamToolpathViewer'));
+
 
 const active = (status: string) => ['pending','planning','running','cancelling'].includes(status);
 const statuses: Record<string,string> = {pending:'排队中',planning:'准备计算',running:'正在计算',cancelling:'正在取消',cancelled:'已取消',failed:'计算失败',timed_out:'计算超时',succeeded:'计算完成'};
@@ -41,7 +42,7 @@ function Result({documentId,taskId,viewedRevision,headRevision,canExport}: {docu
   };
   if (report.kind==='contour_milling' && field.schema_version==='cad-cam-toolpath.v1') return <div className="mt-3" data-testid="cam-result" data-workflow={taskId} data-revision={result.source_revision_id}>
     <p className="type-caption" data-testid="engineering-source-version">{sourceLabel}</p>
-    <CamToolpathViewer field={field} cuttingLength={report.tool.cutting_length_mm}/>
+    <Suspense fallback={<p>正在加载刀路</p>}><CamToolpathViewer field={field} cuttingLength={report.tool.cutting_length_mm}/></Suspense>
     <dl className="my-3 grid grid-cols-2 gap-1 type-caption"><dt>轴向层数</dt><dd>{report.passes}</dd><dt>路径段数</dt><dd>{report.segments}</dd>
       <dt>目标最小径向间隙</dt><dd>{report.minimum_target_clearance_mm.toPrecision(5)} mm</dd><dt>进给路径长度</dt><dd>{report.feed_path_length_mm.toFixed(2)} mm</dd>
       <dt>进给时间</dt><dd>{report.feed_time_seconds.toFixed(1)} s（不含快移）</dd><dt>本工序未加工内环</dt><dd>{report.internal_loops_not_machined}</dd></dl>
@@ -57,7 +58,7 @@ function Result({documentId,taskId,viewedRevision,headRevision,canExport}: {docu
   return <div className="mt-3" data-testid="engineering-result" data-workflow={taskId} data-revision={result.source_revision_id}>
     <p className="type-caption" data-testid="engineering-source-version">{sourceLabel}</p>
     <p className="my-2 type-caption">{report.nodes.toLocaleString()} 节点 · {report.elements.toLocaleString()} 二次四面体 · {report.solver.name} {report.solver.version}</p>
-    <EngineeringFieldViewer field={field} />
+    <Suspense fallback={<p>正在加载场结果</p>}><EngineeringFieldViewer field={field} /></Suspense>
     <dl className="my-3 grid grid-cols-2 gap-1 type-caption"><dt>最大位移</dt><dd>{report.maximum.displacement_mm.toPrecision(6)} mm</dd>
       <dt>最大等效应力</dt><dd>{report.maximum.von_mises_mpa.toPrecision(6)} MPa</dd><dt>反力相对不平衡</dt><dd>{report.force_balance_relative_error.toExponential(2)}</dd></dl>
     <p className="type-caption">{report.scope}</p>

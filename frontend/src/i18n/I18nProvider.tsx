@@ -694,6 +694,7 @@ const ZH_EN_PAIRS: ReadonlyArray<readonly [string, string]> = [
   ["草图几何", "Sketch geometry"],
   ["拓扑测量", "Topology measurements"],
   ["依赖对象", "Dependencies"],
+  ["原生引用", "Native references"],
   ["内核细节", "Kernel details"],
   ["读取中…", "Reading\u2026"],
   ["查看失败草图与求解诊断", "View failed sketch and solver diagnostics"],

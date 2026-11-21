@@ -567,8 +567,6 @@ def test_legacy_users_migration_preserves_rows(auth_env):
 # --------------------------------------------------------------------------- #
 
 def test_ws_rejects_session_owned_by_other_user(client, durable_ws):
-    import app.api.websocket as ws_mod
-    ws_mod.sessions.clear()
     a = _register(client, "13800000031")
     b = _register(client, "13800000032")
     # A owns sess-owned-by-A
@@ -581,8 +579,6 @@ def test_ws_rejects_session_owned_by_other_user(client, durable_ws):
 
 
 def test_ws_allows_owner_and_new_session(client, durable_ws):
-    import app.api.websocket as ws_mod
-    ws_mod.sessions.clear()
     a = _register(client, "13800000033")
     # A attaches to a brand-new session id (no row yet) -> allowed (no disconnect at
     # handshake). We send nothing and close immediately; reaching the body is enough.
@@ -608,10 +604,8 @@ def test_ws_rejects_panel_owned_by_another_session_for_same_user(
     client,
     durable_ws,
 ):
-    import app.api.websocket as ws_mod
     from starlette.websockets import WebSocketDisconnect
 
-    ws_mod.sessions.clear()
     account = _register(client, "13800000034")
     asyncio.run(history_store.create_panel(
         "panel-session-owner",

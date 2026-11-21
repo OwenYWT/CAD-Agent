@@ -463,3 +463,64 @@ async def test_real_websocket_replay_reconnect_slow_consumer_auth_and_retention(
                 assert expired.json()["detail"]["code"] == "event_cursor_expired"
     finally:
         await _stop_api(api)
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_shared_task_membership_disconnect_and_revocation(monkeypatch):
+    import uvicorn
+    from sqlalchemy import event
+    from app.main import create_app
+    from app.repositories.identity import reconcile_authenticated_user
+    from app.services.document_sharing import create_review_invite, accept_review_invite, change_project_member, workspace_principal
+    from app.services.run_state import create_workflow
+    from app.storage import auth
+
+    owner, project, branch = await _seed_project()
+    user = await auth.create_user(f"13{uuid4().int % 10**9:09d}", "test-password-1234", "invite")
+    member = await reconcile_authenticated_user(user)
+    token = await auth.create_session_token(user["id"])
+    invitation = await create_review_invite(owner, branch.branch_id, role="editor")
+    await accept_review_invite(member, branch.branch_id, owner.tenant_id, invitation["token"])
+    shared = await workspace_principal(member, owner.tenant_id)
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        pending = await create_workflow(conn, tenant_id=owner.tenant_id, project_id=project,
+            requested_by_principal_id=owner.principal_id, kind="generate", idempotency_key=str(uuid4()),
+            request_payload={"branch_id": str(branch.branch_id), "expected_base_revision_id": str(branch.revision_id)})
+    workflow_id = pending.workflow_id
+    port = _available_port()
+    server = uvicorn.Server(uvicorn.Config(create_app(), host="127.0.0.1", port=port, lifespan="off", log_level="warning"))
+    queries = []
+    def count_queries(conn, cursor, statement, params, context, executemany):
+        if "workflow_runs" in statement and "SELECT" in statement:
+            queries.append(True)
+    engine = get_database_engine().sync_engine
+    event.listen(engine, "before_cursor_execute", count_queries)
+    running = asyncio.create_task(server.serve())
+    try:
+        async with asyncio.timeout(10):
+            while not server.started:
+                await asyncio.sleep(.02)
+        headers = {"Authorization": f"Bearer {token}", "X-Workspace-Tenant": str(owner.tenant_id)}
+        route = f"/api/tasks/{workflow_id}"
+        uri = f"ws://127.0.0.1:{port}/ws/tasks/{workflow_id}?workspace={owner.tenant_id}"
+        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", headers=headers) as client:
+            assert (await client.get(route + "/snapshot")).status_code == 200
+            assert (await client.get(route)).status_code == 200
+            async with websockets.connect(uri, subprotocols=[_auth_protocol(token)]) as socket:
+                assert (await _recv_json(socket))["type"] == "task_snapshot"
+            await asyncio.sleep(.6)  # let a query already in flight finish
+            before = len(queries)
+            await asyncio.sleep(1.2)
+            assert len(queries) == before
+            async with websockets.connect(uri, subprotocols=[_auth_protocol(token)]) as socket:
+                assert (await _recv_json(socket))["type"] == "task_snapshot"
+                await change_project_member(owner, branch.branch_id, shared.principal_id, expected_role="editor")
+                await asyncio.wait_for(socket.wait_closed(), timeout=5)
+                assert socket.close_code == 4003
+            assert (await client.get(route + "/snapshot")).status_code in {403,404}
+            with pytest.raises(InvalidHandshake):
+                async with websockets.connect(uri, subprotocols=[_auth_protocol(token)]):
+                    pass
+    finally:
+        server.should_exit = True
+        await running
+        event.remove(engine, "before_cursor_execute", count_queries)

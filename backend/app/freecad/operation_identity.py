@@ -5,7 +5,7 @@ import json
 from app.freecad.contracts import FreeCADOperationPlan
 
 
-def scope_plan_to_base(plan: FreeCADOperationPlan, base_state: dict) -> FreeCADOperationPlan:
+def scope_plan_to_base(plan: FreeCADOperationPlan, base_state: dict, *, previous: FreeCADOperationPlan | None = None) -> FreeCADOperationPlan:
     """A retry retains IDs; a later edit (including A→B→A) gets new IDs.
 
     FCStd stores all previous operation IDs. Property names or requested values
@@ -17,8 +17,12 @@ def scope_plan_to_base(plan: FreeCADOperationPlan, base_state: dict) -> FreeCADO
     validate_selected_operations(plan, base_state)
     base = hashlib.sha256(json.dumps(base_state, sort_keys=True, ensure_ascii=False,
                                     separators=(",", ":")).encode()).hexdigest()
+    existing = {op.op_id for op in previous.operations} if previous else set()
     operations = []
     for operation in plan.operations:
+        if operation.op_id in existing:
+            operations.append(operation)
+            continue
         payload = json.dumps(operation.model_dump(mode="json"), sort_keys=True,
                              ensure_ascii=False, separators=(",", ":"))
         identity = hashlib.sha256((base + "\0" + payload).encode()).hexdigest()[:24]

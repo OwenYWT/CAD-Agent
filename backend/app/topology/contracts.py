@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from app.geometry_ir.contracts import Axis
 
@@ -54,6 +54,23 @@ class FreeCADTopologySelector(FrozenContract):
         if self.geometry == "circular" and self.radius_mm is None:
             raise ValueError("circular selectors require radius_mm")
         return self
+
+
+class FreeCADNativeTopologySelector(FrozenContract):
+    """A server-published native identity; callers cannot supply native names."""
+
+    schema_version: Literal['topology-selector.v2'] = 'topology-selector.v2'
+    backend: Literal['freecad'] = 'freecad'
+    revision_id: UUID
+    object_name: str = Field(min_length=1, max_length=80, pattern=r'^[A-Za-z_][A-Za-z0-9_]*$')
+    subelement_kind: Literal['face', 'edge']
+    reference_id: str = Field(pattern=r'^[0-9a-f]{64}$')
+
+
+# v1 historically permits an omitted schema_version. Keep that input contract;
+# explicit v2 and reference_id still select a distinct, extra-forbid shape.
+FreeCADSelector = FreeCADTopologySelector | FreeCADNativeTopologySelector
+FREECAD_SELECTOR = TypeAdapter(FreeCADSelector)
 
 
 class SurfaceType(str, Enum):

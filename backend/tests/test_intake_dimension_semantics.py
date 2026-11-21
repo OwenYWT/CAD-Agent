@@ -4,6 +4,144 @@ import pytest
 from app.validation.requirement_binding import extract_requirements
 
 
+@pytest.mark.parametrize('text,expected', [
+    ('长方体长十厘米宽二十厘米高三十厘米', [100., 200., 300.]),
+    ('长方体长100mm宽二十厘米高三十厘米', [100., 200., 300.]),
+    ('板长一百零五毫米，宽两厘米，厚一点五毫米', [105., 20., 1.5]),
+    ('板一百×二十×三毫米', [100., 20., 3.]),
+])
+def test_chinese_quantities_preserve_property_ownership_and_original_spans(text, expected):
+    result = extract_requirements(text)
+    assert not result['unsupported'], result
+    rows = result['requirements']
+    assert [r['comparison']['value'] for r in rows] == expected
+    assert [r['scope']['axis'] for r in rows] == [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+    for row in rows:
+        a, b = row['source_span']
+        assert row['source_quote'] == text[a:b]
+
+
+@pytest.mark.parametrize('text', ['宽一百二毫米', '宽十十毫米', '宽一百零毫米', '未支持尺寸二十五厘米'])
+def test_ambiguous_or_unbound_chinese_quantities_cannot_disappear(text):
+    assert extract_requirements(text)['unsupported']
+
+
+def test_chinese_relations_tolerances_and_counts_use_numeric_values_without_losing_qualifiers():
+    rows = extract_requirements('长度十至十二厘米，宽度二十毫米±零点五毫米，十一个孔')
+    assert not rows['unsupported'], rows
+    comparisons = {r['property']: r['comparison'] for r in rows['requirements']}
+    assert comparisons['length'] == {'op': 'range', 'lower': 100., 'upper': 120., 'unit': 'mm'}
+    assert comparisons['width']['value'] == 20. and comparisons['width']['tolerance_minus'] == .5
+    assert comparisons['hole_count'] == {'op': 'eq', 'value': 11., 'unit': 'count'}
+
+
+def test_chinese_number_words_in_narrative_are_not_misread_as_quantities():
+    result = extract_requirements('板40×30×12mm。万一打印失败请联系我。')
+    assert not result['unsupported'], result
+
+
+@pytest.mark.parametrize('text', ['长方体长半厘米，宽20mm，高30mm',
+                                '长方体长半米，宽20mm，高30mm',
+                                '长方体长壹拾厘米，宽20mm，高30mm',
+                                '板40×30×12mm，附加尺寸半厘米'])
+def test_unsupported_numeric_spelling_keeps_a_quantity_obligation_even_when_number_parsing_fails(text):
+    assert extract_requirements(text)['unsupported']
+
+
+@pytest.mark.parametrize('omitted', ['cube_shape', 'cube_edge'])
+def test_model_proposal_cannot_omit_either_implicit_shape_or_explicit_size(omitted):
+    from app.contracts.acceptance_v2 import AcceptanceContractV2, RequirementBindingError
+    from app.validation.requirement_binding import validate_requirement_bindings
+    from tests.e2e.source_obligation_fixture import bind
+    text = '构建一个十厘米的正方体'
+    proposal = bind(text)
+    proposal['checks'] = [c for c in proposal['checks'] if c['kind'] != omitted]
+    with pytest.raises(RequirementBindingError):
+        validate_requirement_bindings(text, AcceptanceContractV2.model_validate(proposal))
+
+
+@pytest.mark.parametrize('text,value', [
+    ('构建一个十厘米的正方体', 100.),
+    ('创建一个2.5cm的立方体', 25.),
+    ('正方体，边长一百毫米', 100.),
+    ('立方体的棱长为二十五毫米', 25.),
+    ('Create a cube with edge length 25mm', 25.),
+    ('Create a 2.5cm cube', 25.),
+])
+def test_cube_name_and_edge_are_both_required_independent_of_wording(text, value):
+    result = extract_requirements(text)
+    assert not result['unsupported'], result
+    assert sorted((r['kind'], r['comparison']['value']) for r in result['requirements']) == [
+        ('cube_edge', value), ('cube_shape', 1.)]
+
+
+def test_cube_triplet_cannot_replace_the_shape_requirement():
+    result = extract_requirements('正方体100×100×100mm')
+    assert not result['unsupported'], result
+    assert any(r['kind'] == 'cube_shape' for r in result['requirements'])
+
+
+@pytest.mark.parametrize('text', ['正方体，边长100mm，高50mm', '正方体100×50×100mm'])
+def test_inconsistent_cube_dimensions_are_rejected_before_planning(text):
+    assert extract_requirements(text)['unsupported']
+
+
+def test_confirmed_edge_uses_the_same_saved_cube_subject_without_rewriting_either_source():
+    from app.validation.requirement_binding import extract_source_requirements
+    sources = [dict(source_input_id='objective', source_kind='user', text='构建一个正方体'),
+               dict(source_input_id='dimensions', source_kind='confirmed', text='边长十厘米')]
+    result = extract_source_requirements('\n'.join(s['text'] for s in sources), requirement_sources=sources)
+    assert not result['unsupported'], result
+    edge = next(r for r in result['requirements'] if r['kind'] == 'cube_edge')
+    assert edge['comparison']['value'] == 100.
+    assert edge['source_input_id'] == 'dimensions' and edge['source_quote'] == '边长十厘米'
+
+
+@pytest.mark.parametrize('target,dimensions,expected', [
+    ('构建一个球体', '半径两厘米', [('sphere_radius', 20.)]),
+    ('构建一个圆柱体', '直径四厘米，高两厘米', [('cylinder_diameter', 40.), ('cylinder_height', 20.)]),
+])
+def test_saved_primitive_subject_is_shared_across_fields_without_borrowing_values(target, dimensions, expected):
+    from app.validation.requirement_binding import extract_source_requirements
+    sources = [dict(source_input_id='objective', source_kind='user', text=target),
+               dict(source_input_id='dimensions', source_kind='confirmed', text=dimensions)]
+    result = extract_source_requirements(target+'\n'+dimensions, requirement_sources=sources)
+    assert not result['unsupported'], result
+    dimensions_rows = [r for r in result['requirements'] if not r['kind'].endswith('_shape')]
+    shapes = [r for r in result['requirements'] if r['kind'].endswith('_shape')]
+    assert sorted((r['kind'], r['comparison']['value']) for r in dimensions_rows) == expected
+    assert len(shapes) == 1 and shapes[0]['source_input_id'] == 'objective'
+    assert shapes[0]['comparison'] == {'op': 'eq', 'value': 1., 'unit': 'count'}
+    assert all(r['source_input_id'] == 'dimensions' and r['source_kind'] == 'confirmed'
+               for r in dimensions_rows)
+
+
+@pytest.mark.parametrize('target,dimensions', [('正方体', '板40×30×12mm'), ('球体', '板半径20mm'),
+                                             ('球体', '板40×30×12mm'), ('圆柱体', '板40×30×12mm'),
+                                             ('圆柱体和球体', '半径20mm')])
+def test_saved_fields_never_share_dimensions_between_different_primitive_owners(target, dimensions):
+    from app.validation.requirement_binding import extract_source_requirements
+    sources = [dict(source_input_id='objective', source_kind='user', text=target),
+               dict(source_input_id='dimensions', source_kind='confirmed', text=dimensions)]
+    assert extract_source_requirements(target+'\n'+dimensions, requirement_sources=sources)['unsupported']
+
+
+@pytest.mark.parametrize('text', ['正方体，边长100mm，边缘特殊处理', '正方体板的边长100mm',
+                                '正方体和球体，边长100mm'])
+def test_cube_context_does_not_hide_unknown_features_or_other_owners(text):
+    assert extract_requirements(text)['unsupported']
+
+
+@pytest.mark.parametrize('text,kind', [('球体长40mm宽40mm高40mm', 'sphere_shape'),
+                                     ('圆柱体长40mm宽40mm厚25mm', 'cylinder_shape'),
+                                     ('创建一个球体', 'sphere_shape'), ('创建一个圆柱体', 'cylinder_shape')])
+def test_named_material_shape_survives_without_a_radial_dimension(text, kind):
+    result = extract_requirements(text)
+    assert not result['unsupported'], result
+    assert any(r['kind'] == kind and r['comparison'] == {'op': 'eq', 'value': 1., 'unit': 'count'}
+               for r in result['requirements']), result
+
+
 @pytest.mark.parametrize('text,mode', [
     ('盒体外壁厚度：3 mm', 'side_walls'), ('盒体侧壁厚度3mm', 'side_walls'),
     ('盒体外壁厚3mm', 'side_walls'), ('盒体底板厚度：3 mm', 'cavity_floor'),

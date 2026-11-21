@@ -80,7 +80,8 @@ class FreeCADBOMDocumentV1(FrozenBOMContract):
 
     @model_validator(mode="after")
     def validate_generator(self) -> "FreeCADBOMDocumentV1":
-        if self.generator.get("freecad_version") != "1.1.3":
+        # Saved 1.1.3 BOM evidence remains readable after the runtime upgrade.
+        if self.generator.get("freecad_version") not in {"1.1.3", "1.1.4"}:
             raise ValueError("BOM generator FreeCAD version mismatch")
         if self.generator.get("native_type") != "Assembly::BomObject":
             raise ValueError("BOM generator is not native Assembly::BomObject")

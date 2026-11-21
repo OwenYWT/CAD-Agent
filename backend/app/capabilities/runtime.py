@@ -9,6 +9,8 @@ the server.
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
 import json
 import re
 import shutil
@@ -97,6 +99,10 @@ _LOCAL_MCAD_ACTIONS = {
 _ASYNC_ACTIONS = _LOCAL_MCAD_ACTIONS | {
     ("sendcutsend", "preflight"),
 }
+
+
+def uses_native_worker(capability: str, action: str) -> bool:
+    return (_CAPABILITY_ALIASES.get(capability.strip(), capability.strip()), action.strip()) in _ASYNC_ACTIONS
 
 
 @dataclass(frozen=True)
@@ -679,7 +685,7 @@ class CapabilityRuntime:
                 {"refs", "diff", "frame", "measure", "align"},
                 default="refs",
             )
-            normalized: dict[str, Any] = {"operation": operation, "output": "inspect.json"}
+            normalized = {"operation": operation, "output": "inspect.json"}
             inputs = {
                 "input": self._input(params["input"], suffixes={".step", ".stp"})
             }
@@ -1339,59 +1345,87 @@ class CapabilityRuntime:
 
     # -- CAD Viewer -----------------------------------------------------
 
-    @staticmethod
-    def _viewer_url(port: int) -> str:
-        return f"http://127.0.0.1:{port}/__cad/server"
+    # CapabilityRuntime is reconstructed per request. Only children started by
+    # this process can be queried or reused; an occupied port proves no ownership.
+    _viewers: dict[int, tuple[Path, Path, host_process.DetachedProcess]] = {}
+    _viewer_lock = threading.Lock()
+
+    @classmethod
+    def close_viewers(cls):
+        with cls._viewer_lock:
+            for _, _, process in cls._viewers.values():
+                if process.poll() is None:
+                    process.kill()
+                process.wait()
+            cls._viewers.clear()
 
     def _viewer_status(self, params: dict[str, Any], request_id: str) -> dict[str, Any]:
         _validate_keys(params, {"port"})
         port = _integer(params.get("port", 4178), "port", minimum=1024, maximum=65535)
-        url = self._viewer_url(port)
-        try:
-            request = urllib.request.Request(url, headers={"User-Agent": "cad-agent-capability-runtime/1"})
-            with urllib.request.urlopen(request, timeout=min(self.config.network_timeout_seconds, 5)) as response:
-                payload = response.read(self.config.max_output_bytes + 1)
-            if len(payload) > self.config.max_output_bytes:
-                raise CapabilityRequestError("viewer status response exceeded the output limit")
-            try:
-                data: Any = json.loads(payload)
-            except json.JSONDecodeError:
-                data = payload.decode("utf-8", errors="replace")
-            return self._base("cad-viewer", "status", request_id, status="succeeded", data={"running": True, "url": f"http://127.0.0.1:{port}/", "server": data})
-        except (urllib.error.URLError, TimeoutError, ConnectionError):
-            return self._base("cad-viewer", "status", request_id, status="succeeded", data={"running": False, "url": f"http://127.0.0.1:{port}/"})
+        data = {"running": False, "url": f"http://127.0.0.1:{port}/"}
+        with self._viewer_lock:
+            record = self._viewers.get(port)
+            if record and record[0] == self.workspace_root and record[2].poll() is None:
+                data.update(running=True, pid=record[2].pid)
+        return self._base("cad-viewer", "status", request_id, status="succeeded", data=data)
 
     def _viewer_start(self, params: dict[str, Any], request_id: str) -> dict[str, Any]:
         _validate_keys(params, {"port", "directory", "shutdown_after"})
         port = _integer(params.get("port", 4178), "port", minimum=1024, maximum=65535)
-        existing = self._viewer_status({"port": port}, request_id)
-        if isinstance(existing.get("data"), dict) and existing["data"].get("running"):
-            existing["action"] = "start"
-            existing["checks"] = [{"name": "already_running", "passed": True}]
-            return existing
         directory = self.workspace_root
         if params.get("directory"):
             directory = self.artifacts.workspace_path(params["directory"], must_exist=True, file_only=False)
             if not directory.is_dir():
                 raise CapabilityRequestError("directory must be an existing workspace directory")
-        lifetime = _text(params.get("shutdown_after", "12h"), "shutdown_after", max_length=16, pattern=r"(?:[1-9][0-9]{0,4})(?:ms|s|m|h)")
+        lifetime = _text(params.get("shutdown_after", "12h"), "shutdown_after", max_length=16)
+        match = re.fullmatch(r"([1-9][0-9]{0,4})(ms|s|m|h)", lifetime)
+        if match is None:
+            raise CapabilityRequestError("shutdown_after has an invalid format")
+        value, unit = match.groups()
+        if int(value) * {"ms": .001, "s": 1, "m": 60, "h": 3600}[unit] > 12 * 3600:
+            raise CapabilityRequestError("shutdown_after cannot exceed 12h")
         server = self._script("cad-viewer", "viewer", "backend", "server.mjs")
-        command = ["node", str(server), "--host", "127.0.0.1", "--port", str(port), "--dir", str(directory), "--shutdown-after", lifetime]
+        command = ["node", str(server), "--host", "127.0.0.1", "--port", str(port),
+                   "--dir", str(directory), "--shutdown-after", lifetime]
         preview = self._preview(command, ())
-        if shutil.which("node") is None:
-            return self._base("cad-viewer", "start", request_id, status="blocked", command_preview=preview, blocked_reasons=["Node.js is not installed."])
-        try:
-            process = host_process.start_detached(
-                command,
-                cwd=directory,
-            )
-        except OSError:
-            return self._base("cad-viewer", "start", request_id, status="blocked", command_preview=preview, blocked_reasons=["CAD Viewer could not be started."])
-        return self._base(
-            "cad-viewer", "start", request_id, status="succeeded", command_preview=preview,
-            data={"pid": process.pid, "url": f"http://127.0.0.1:{port}/", "host": "127.0.0.1", "shutdown_after": lifetime},
-            checks=[{"name": "loopback_only", "passed": True}],
-        )
+        def blocked(message):
+            return self._base("cad-viewer", "start", request_id, status="blocked",
+                              command_preview=preview, blocked_reasons=[message])
+        with self._viewer_lock:
+            for used, (_, _, child) in list(self._viewers.items()):
+                if child.poll() is not None:
+                    del self._viewers[used]
+            record = self._viewers.get(port)
+            if record and record[:2] == (self.workspace_root, directory):
+                process = record[2]
+            else:
+                if record or any(owner == self.workspace_root for owner, _, _ in self._viewers.values()):
+                    return blocked("This port or workspace already has an active viewer.")
+                if shutil.which("node") is None:
+                    return blocked("Node.js is not installed.")
+                try:
+                    process = host_process.start_detached(command, cwd=directory)
+                except OSError:
+                    return blocked("CAD Viewer could not be started.")
+                deadline = time.monotonic() + min(5, self.config.network_timeout_seconds)
+                while process.poll() is None and time.monotonic() < deadline:
+                    try:
+                        with urllib.request.urlopen(f"http://127.0.0.1:{port}/__cad/server", timeout=.25) as response:
+                            info = json.loads(response.read(self.config.max_output_bytes + 1))
+                        if isinstance(info, dict) and info.get("pid") == process.pid and info.get("directoryRoot") == str(directory):
+                            break
+                    except (OSError, ValueError):
+                        pass
+                    time.sleep(.05)
+                else:
+                    if process.poll() is None:
+                        process.kill()
+                    process.wait()
+                    return blocked("CAD Viewer did not become ready for this workspace.")
+                self._viewers[port] = (self.workspace_root, directory, process)
+        return self._base("cad-viewer", "start", request_id, status="succeeded", command_preview=preview,
+            data={"pid": process.pid, "url": f"http://127.0.0.1:{port}/", "host": "127.0.0.1"},
+            checks=[{"name": "loopback_only", "passed": True}])
 
     def _viewer_review(self, params: dict[str, Any], request_id: str) -> dict[str, Any]:
         _validate_keys(params, {"input", "port"}, required={"input"})
@@ -1401,13 +1435,8 @@ class CapabilityRuntime:
         }
         source = self._input(params["input"], suffixes=accepted)
         port = _integer(params.get("port", 4178), "port", minimum=1024, maximum=65535)
-        status = self._viewer_status({"port": port}, request_id)
-        running = bool(isinstance(status.get("data"), dict) and status["data"].get("running"))
-        if not running:
-            started = self._viewer_start(
-                {"port": port, "directory": str(self.workspace_root), "shutdown_after": "12h"}, request_id
-            )
-            running = started.get("status") == "succeeded"
+        started = self._viewer_start({"port": port, "directory": str(self.workspace_root)}, request_id)
+        running = started["status"] == "succeeded"
         relative = source.relative_to(self.workspace_root).as_posix()
         from urllib.parse import quote
 

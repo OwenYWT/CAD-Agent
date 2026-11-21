@@ -1,8 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { authFetch } from "../auth";
+import { fetchArtifact } from "../services/clients/downloads";
 import { Icon } from "./ui/Icon";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 function LoadedSvg({ svgUrl, fitRequest }: { svgUrl: string; fitRequest: number }) {
   const [state, setState] = useState<{ objectUrl: string | null; error: boolean }>({ objectUrl: null, error: false });
@@ -32,8 +31,7 @@ function LoadedSvg({ svgUrl, fitRequest }: { svgUrl: string; fitRequest: number 
   useEffect(() => {
     const controller = new AbortController();
     let objectUrl: string | null = null;
-    const target = /^https?:\/\//.test(svgUrl) ? svgUrl : `${API_BASE}${svgUrl}`;
-    authFetch(target, { signal: controller.signal })
+    fetchArtifact(svgUrl, controller.signal)
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.text();

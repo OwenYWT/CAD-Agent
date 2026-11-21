@@ -19,7 +19,12 @@ class MeasurementScope(AcceptanceModel):
     axis: tuple[float, float, float] | None = Field(default=None,
         description="Numeric direction vector in the document axes; required for overall_dimension and hole_position. Never a text axis name.")
     point_mm: tuple[float, float, float] | None = None
-    centers_mm: tuple[tuple[float, float, float], ...] = ()
+    centers_mm: tuple[tuple[float, float, float], ...] = Field(default=(), description=(
+        "For hole_position, provide one expected center per distinct selected cylindrical passage, "
+        "matched one-to-one with the measured holes. Position is transverse to scope.axis; "
+        "points at different axial heights of the same hole are not separate hole centers. "
+        "For surface_clearance, provide two surface-interior points, one on each face. "
+        "For void_connected, provide the explicit void points whose connectivity is tested."))
     region_min_mm: tuple[float, float, float] | None = None
     region_max_mm: tuple[float, float, float] | None = None
     wall_mode: Literal["continuous_normal", "surface_normal", "radial", "local_probe"] = "continuous_normal"
@@ -185,21 +190,24 @@ class AcceptanceContract(AcceptanceModel):
 # alternative. A flat nullable nominal/optional scope plus allOf alone suggested
 # invalid inputs to real providers. Canonical persisted contracts stay unchanged.
 class _AxisScope(MeasurementScope):
-    axis: tuple[float, float, float]
+    axis: tuple[float, float, float] = Field(description=MeasurementScope.model_fields['axis'].description)
 
 
 class _PositionScope(_AxisScope):
-    centers_mm: tuple[tuple[float,float,float], ...] = Field(min_length=1)
+    centers_mm: tuple[tuple[float,float,float], ...] = Field(
+        min_length=1, description=MeasurementScope.model_fields['centers_mm'].description)
 
 
 class _VoidScope(MeasurementScope):
-    centers_mm: tuple[tuple[float,float,float], ...] = Field(min_length=2)
+    centers_mm: tuple[tuple[float,float,float], ...] = Field(
+        min_length=2, description=MeasurementScope.model_fields['centers_mm'].description)
     region_min_mm: tuple[float,float,float]
     region_max_mm: tuple[float,float,float]
 
 
 class _FacePairScope(MeasurementScope):
-    centers_mm: tuple[tuple[float,float,float], ...] = Field(min_length=2,max_length=2)
+    centers_mm: tuple[tuple[float,float,float], ...] = Field(
+        min_length=2, max_length=2, description=MeasurementScope.model_fields['centers_mm'].description)
 
 
 class _ToolCheck(AcceptanceCheck):

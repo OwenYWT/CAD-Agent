@@ -65,7 +65,26 @@ def verify(path):
             try:verify_geometry_evidence(DurableGeometryReport.model_validate(changed),**kwargs)
             except ValueError:mutations+=1
             else:raise AssertionError('tampered assembly certificate accepted: '+mutation)
-    print('CAD_ASSEMBLY_RECEIVER='+json.dumps({'cases':len(rows),'rejected_mutations':mutations}))
+    from app.contracts.geometry_request import geometry_request_digest
+    preview_line = next(line for line in Path(path).read_text().splitlines() if line.startswith('CAD_ASSEMBLY_PREVIEW_REPORTS='))
+    previews = json.loads(preview_line.split('=', 1)[1])
+    assert [row['name'] for row in previews] == ['matching', 'native-parts', 'native-fused', 'displaced']
+    for row in previews:
+        raw = row['report']
+        digest = geometry_request_digest(expected_dimensions_mm={}, dimension_tolerance=.05, expected_solid_count=2,
+                                         acceptance=row['contract'], measurement_context=row['context'])
+        kwargs = dict(request_sha256=digest, acceptance=decode_acceptance(row['contract']),
+                      expected_solid_count=2, measurement_context=row['context'])
+        verify_geometry_evidence(DurableGeometryReport.model_validate(raw), **kwargs)
+        assert (raw['outcome'] == 'passed') == (row['name'] in {'matching', 'native-parts'})
+        if row['name'] == 'matching':
+            for forged in [None, ['0'*64, raw['artifacts'][1]['sha256']], [raw['artifacts'][0]['sha256'], '0'*64]]:
+                altered = deepcopy(raw)
+                altered['artifacts'][1]['regenerated_preview'] = forged
+                try: verify_geometry_evidence(DurableGeometryReport.model_validate(altered), **kwargs)
+                except ValueError: mutations += 1
+                else: raise AssertionError('unbound preview accepted')
+    print('CAD_ASSEMBLY_RECEIVER='+json.dumps({'cases':len(rows),'preview_cases':len(previews),'rejected_mutations':mutations}))
 
 
 if __name__=='__main__':

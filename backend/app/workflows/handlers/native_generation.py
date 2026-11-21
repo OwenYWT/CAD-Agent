@@ -32,9 +32,40 @@ from app.freecad.constraint_repair import SKETCH_FAILURES
 def _provenance_reference(provenance):
     # Full read results live in task events. Do not copy document-sized
     # inspection traces into every Temporal model-job completion.
-    return {key: provenance[key] for key in (
+    reference = {key: provenance[key] for key in (
         'provider','model','provider_response_id','request_hash','response_hash','finish_reason','usage'
     ) if key in provenance}
+    calls = []
+    for item in provenance.get('tool_calls') or ():
+        raw_call = item.get('call') if isinstance(item, dict) and isinstance(item.get('call'), dict) else item
+        function = raw_call.get('function') if isinstance(raw_call, dict) else None
+        function = function if isinstance(function, dict) else {}
+        name = str(function.get('name') or raw_call.get('name') or '') if isinstance(raw_call, dict) else ''
+        if not name:
+            continue
+        arguments = function.get('arguments')
+        calls.append({
+            'name': name,
+            'arguments_hash': (
+                str(raw_call.get('arguments_hash'))
+                if isinstance(raw_call, dict) and raw_call.get('arguments_hash')
+                else hashlib.sha256(str(arguments or '').encode('utf-8')).hexdigest()
+            ),
+        })
+    execution = provenance.get('execution_tool_call')
+    if isinstance(execution, dict):
+        function = execution.get('function') if isinstance(execution.get('function'), dict) else {}
+        name = str(function.get('name') or '')
+        if name:
+            calls.append({
+                'name': name,
+                'arguments_hash': hashlib.sha256(
+                    str(function.get('arguments') or '').encode('utf-8')
+                ).hexdigest(),
+            })
+    if calls:
+        reference['tool_calls'] = calls
+    return reference
 
 async def agent_generate_operations(payload: dict[str, Any], *, freecad_operations: FreeCADOperationGenerator) -> dict[str, Any]:
     request = _agent_v2_request(payload)
@@ -153,7 +184,8 @@ async def agent_generate_operations(payload: dict[str, Any], *, freecad_operatio
                 **({'max_tool_calls': payload['work_budget_policy']['max_normal_tool_calls']}
                    if payload.get('work_budget_policy') else {}),
                 plan=plan,
-                requirements=dict(payload["requirements"]),
+                requirements={**payload["requirements"],
+                    **({'manufacturing_profile': request.manufacturing_profile} if request.manufacturing_profile is not None else {})},
                 base_state=(
                     dict(base_state)
                     if base_state is not None

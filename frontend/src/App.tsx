@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import type { AuthSession, AuthUser } from "./auth";
 import { clearAuthSession, fetchAuthConfig, fetchCurrentUser, getAuthToken, getAuthUser, LOCAL_DEV_USER, logoutAuthSession, onSessionCleared } from "./auth";
-import EngineeringWorkspace from "./components/workspace/EngineeringWorkspace";
-import SharedDocumentWorkspace from "./components/workspace/SharedDocumentWorkspace";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { LoginPage } from "./components/LoginPage";
 import { BrandMark } from "./components/common/BrandMark";
 import { LanguageSwitch } from "./i18n/LanguageSwitch";
 import { useSessionStore } from "./stores/sessionStore";
+
+const EngineeringWorkspace = lazy(() => import("./components/workspace/EngineeringWorkspace"));
+const SharedDocumentWorkspace = lazy(() => import("./components/workspace/SharedDocumentWorkspace"));
 
 function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
@@ -67,11 +68,11 @@ function App() {
     return <LoginPage onLogin={(session: AuthSession) => setAuthUser(session.user)} />;
   }
 
-  if (new URLSearchParams(window.location.search).has("document")) {
-    return <ErrorBoundary><SharedDocumentWorkspace /></ErrorBoundary>;
-  }
-
-  return <ErrorBoundary><EngineeringWorkspace onLogout={handleLogout} onUserUpdate={setAuthUser} user={authUser} /></ErrorBoundary>;
+  return <ErrorBoundary><Suspense fallback={<main aria-busy="true">正在加载工作区…</main>}>
+    {new URLSearchParams(window.location.search).has("document")
+      ? <SharedDocumentWorkspace />
+      : <EngineeringWorkspace onLogout={handleLogout} onUserUpdate={setAuthUser} user={authUser} />}
+  </Suspense></ErrorBoundary>;
 }
 
 export default App;

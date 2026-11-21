@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator, model_serializer
 from app.contracts.acceptance import AcceptanceContract, AcceptanceMeasurements, acceptance_outcome
 from app.contracts.acceptance_v2 import VersionedAcceptance
+from app.contracts.geometry_request import is_fused_assembly_preview
 from app.contracts.material_certificates import verify_material_certificate
 
 
@@ -38,6 +39,7 @@ class GeometryArtifactEvidence(BaseModel):
     dimensions_mm: tuple[float, ...] = ()
     max_dimension_error: float | None = Field(default=None, ge=0)
     issues: tuple[str, ...] = ()
+    regenerated_preview: tuple[str, str] | None = None
 
     @model_validator(mode="after")
     def successful_artifact_has_measured_geometry(self):
@@ -63,6 +65,9 @@ class DurableGeometryReport(BaseModel):
     @model_serializer(mode="wrap")
     def preserve_legacy_wire(self, handler):
         result = handler(self)
+        for artifact in result['artifacts']:
+            if artifact.get('regenerated_preview') is None:
+                artifact.pop('regenerated_preview', None)
         if self.acceptance is None:
             result.pop("acceptance", None)
         if self.acceptance_contract is None:
@@ -183,8 +188,19 @@ def verify_geometry_evidence(report, *, request_sha256, acceptance, expected_sol
                     raise ValueError('v2 feature failure differs from measured cardinality')
     if expected_solid_count is not None and report.outcome == "passed":
         solids = [a for a in report.artifacts if a.format in {"step", "stl"}]
-        if not solids or any(a.solid_count != expected_solid_count for a in solids):
+        if not solids:
             raise ValueError("final solid count did not pass")
+        steps = [a for a in solids if a.format == 'step']
+        for artifact in solids:
+            if (len(steps) == 1 and is_fused_assembly_preview(artifact.format, expected_solid_count,
+                        steps[0].solid_count, acceptance.model_dump(mode='json') if acceptance else None,
+                        measurement_context)):
+                if artifact.regenerated_preview != (steps[0].sha256, artifact.sha256):
+                    raise ValueError('assembly STL preview differs from final STEP')
+                continue
+            if artifact.solid_count == expected_solid_count:
+                continue
+            raise ValueError('final solid count did not pass')
 
 
 def geometry_failure(report: DurableGeometryReport) -> dict[str, str | None]:

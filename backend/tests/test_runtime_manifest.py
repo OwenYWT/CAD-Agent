@@ -73,14 +73,21 @@ def test_runtime_lock_covers_every_local_mcad_dependency() -> None:
     }
 
 
-def test_runtime_uses_only_official_freecad_113_appimage() -> None:
+def test_runtime_uses_only_official_freecad_114_appimage() -> None:
     lock = _runtime_lock()
     dockerfile = (SANDBOX / "Dockerfile").read_text(encoding="utf-8")
     freecad = lock["freecad"]
 
-    assert freecad["version"] == "1.1.3"
+    assert freecad["version"] == "1.1.4"
     assert freecad["distribution"] == "official-appimage"
     assert freecad["command"] == "/opt/freecad/bin/FreeCADCmd"
+    ci_manifest = json.loads(
+        (ROOT / "docs/architecture/modules.json").read_text(encoding="utf-8")
+    )
+    probe_contract = ci_manifest["required_runtime_reports"][
+        "build-images/runtime-probe.json"
+    ]
+    assert probe_contract["freecad"] == freecad["version"]
     for platform in ("linux/amd64", "linux/arm64"):
         asset = freecad["asset_by_platform"][platform]
         assert asset["filename"] in dockerfile
@@ -207,7 +214,10 @@ async def test_real_sandbox_build123d_exports_step_and_stl() -> None:
 
     result = await executor.execute(
         "from build123d import Box\n"
-        "result = Box(12, 8, 4)\n",
+        "def make_box():\n"
+        "    assert b3d.Box is build123d.Box is Box\n"
+        "    return Box(12, 8, 4)\n"
+        "result = make_box()\n",
         timeout_s=60,
     )
 

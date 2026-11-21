@@ -223,3 +223,12 @@ def test_uploaded_generators_are_not_reported_available_without_isolator(monkeyp
         assert manifest.available is False
         assert any("CADSKILLS_ISOLATED_EXECUTOR" in reason for reason in manifest.blocked_reasons)
     assert manifests["implicit-cad"].available is True
+
+def test_loopback_viewer_only_reports_owned_processes(tmp_path, monkeypatch):
+    from app.capabilities.runtime import CapabilityRuntime, RuntimeConfig
+    def unexpected(*args, **kwargs):
+        raise AssertionError("unknown loopback port should not be queried")
+    monkeypatch.setattr("urllib.request.urlopen", unexpected)
+    runtime = CapabilityRuntime(RuntimeConfig(workspace_root=tmp_path, artifact_root=tmp_path / "runs"))
+    assert runtime.execute("cad-viewer", "status", {"port": 4178})["data"]["running"] is False
+    assert runtime.execute("cad-viewer", "start", {"shutdown_after": "13h"})["status"] == "failed"

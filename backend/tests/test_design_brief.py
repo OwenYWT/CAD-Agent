@@ -76,7 +76,7 @@ def test_ensure_design_brief_builds_fallback_from_cad_plan():
     assert brief.critical_dimensions[0].reason == "用户提供或需求分析推断的关键尺寸"
     assert "tilted back support" in brief.functional_requirements
     assert "print without support" in brief.functional_requirements
-    assert "几何体封闭且适合继续做打印检查" in brief.acceptance_criteria
+    assert "独立检查几何有效性" in brief.acceptance_criteria
     assert brief.open_questions == ["需要适配的手机厚度是多少？"]
     assert plan.design_brief == brief
 
@@ -94,8 +94,34 @@ def test_ensure_design_brief_preserves_existing_brief_and_backfills_empty_lists(
 
     assert brief.intent_summary == "A printable hinge"
     assert brief.artifact_type == "hinge"
-    assert brief.printability_targets
+    assert brief.printability_targets == []
     assert brief.acceptance_criteria
+
+
+def test_brief_does_not_add_unrequested_manufacturing_or_edge_changes():
+    plan = CADPlan(description='Geometry-only cylinder', part_type='cylinder',
+        dimensions={'radius': 20, 'height': 25}, features=[],
+        constraints=['no fillets or chamfers'])
+    brief = ensure_design_brief(plan)
+    assert brief.printability_targets == []
+    assert brief.functional_requirements == plan.constraints
+    assert not any('制造' in item or '打印' in item for item in brief.acceptance_criteria)
+
+
+def test_brief_retains_all_explicit_dimensions_relations_and_questions():
+    dimensions = {f'dimension_{i}': float(i + 1) for i in range(16)}
+    items = [f'Explicit requirement {i}' for i in range(16)]
+    questions = [f'请确认部件 {i} 的装配位置。' for i in range(16)]
+    plan = CADPlan(description='Assembly', part_type='assembly', dimensions=dimensions,
+        features=items, design_brief=DesignBrief(assumptions=items,
+            functional_requirements=items, printability_targets=items,
+            acceptance_criteria=items, open_questions=questions))
+    brief = ensure_design_brief(plan)
+    for field in ('assumptions', 'functional_requirements', 'printability_targets', 'acceptance_criteria'):
+        assert getattr(brief, field) == items
+    assert brief.open_questions == questions
+    assert {item.name: item.value for item in brief.critical_dimensions} == dimensions
+    assert ensure_design_brief(plan).model_dump() == brief.model_dump()
 
 from app.agent.planner import Planner
 

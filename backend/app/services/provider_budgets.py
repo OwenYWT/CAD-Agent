@@ -15,7 +15,7 @@ from uuid import UUID, uuid5
 from sqlalchemy import text
 
 from app.config import settings
-from app.contracts.provider_budget import ProviderBudgetError
+from app.contracts.provider_budget import ProviderBudgetError, UNSENT_CONNECTION_FAILURES
 from app.db import get_database_engine, tenant_transaction
 from app.execution.canonical import canonical_sha256
 from app.execution.model_fence import assert_model_execution_current
@@ -243,13 +243,14 @@ class PgProviderBudget:
             await self._event(conn, row['id'], 'dispatch_claimed', {})
         return None
 
-    async def mark_unknown(self, reservation, *, reason):
+    async def mark_unknown(self, reservation, *, reason, diagnostics=None):
         async with self._transaction(fenced=False) as conn:
             row = await self._reservation(conn, reservation)
             if row['status'] not in {'dispatch_claimed', 'unknown'}:
                 return
             await conn.execute(text("UPDATE provider_budget_reservations SET status='unknown',updated_at=now() WHERE id=:id"), {'id': row['id']})
-            await self._event(conn, row['id'], 'unknown', {'reason': reason})
+            await self._event(conn, row['id'], 'unknown', {'reason': reason,
+                **({'diagnostics': diagnostics} if diagnostics is not None else {})})
 
     async def _accounts(self, conn, identity):
         return (await conn.execute(text('''SELECT a.* FROM provider_budget_accounts a
@@ -328,18 +329,25 @@ class PgProviderBudget:
             await self._event(conn, row['id'], status, {'receipt_hash': canonical_sha256(provenance),
                 'actual_amount': str(amount) if amount is not None else None, 'over_bound': over_bound})
 
-    async def release_unsent(self, reservation):
+    async def release_unsent(self, reservation, *, diagnostics=None):
         async with self._transaction(fenced=False) as conn:
             row = await self._reservation(conn, reservation)
             if row['status'] == 'released_unsent':
                 return
-            if row['status'] != 'reserved':
+            transport = (diagnostics or {}).get('transport', {})
+            proven_unsent = (row['status'] == 'dispatch_claimed'
+                and transport.get('failure_phase') in UNSENT_CONNECTION_FAILURES
+                and transport.get('request_headers_started') is False
+                and row['response'] is None and row['receipt'] is None)
+            if row['status'] != 'reserved' and not proven_unsent:
                 raise _error('provider_dispatch_ambiguous', 'A dispatch claim prevents an unproven refund')
             for account in await self._accounts(conn, row['id']):
                 await conn.execute(text('UPDATE provider_budget_accounts SET held=held-:amount WHERE id=:id'),
                                    {'id': account['id'], 'amount': row['reserved_amount']})
             await conn.execute(text("UPDATE provider_budget_reservations SET status='released_unsent',updated_at=now() WHERE id=:id"), {'id': row['id']})
-            await self._event(conn, row['id'], 'released_unsent', {'proof': 'dispatch_never_claimed'})
+            await self._event(conn, row['id'], 'released_unsent', {
+                'proof': 'connection_failed_before_http' if proven_unsent else 'dispatch_never_claimed',
+                **({'diagnostics': diagnostics} if diagnostics is not None else {})})
 
 
 async def recover_next_settlement():

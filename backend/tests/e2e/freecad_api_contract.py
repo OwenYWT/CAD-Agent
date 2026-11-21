@@ -1,23 +1,80 @@
 """Run actual previously unwrapped APIs, reopen/export, and reject API failure."""
 import json
 import math
+import shutil
 import sys
 import tempfile
+from itertools import product
 from pathlib import Path
 sys.path.insert(0, '/opt/cad-agent')
 import freecad_entry as runner
 App=runner.App
 
-def task(source, environment='headless', inputs=None, objects=('Box',)):
+def task(source, environment='headless', inputs=None, objects=('Box',), document_name='APIModel'):
     return {'schema_version':'mcad-capability-task.v1','capability':'freecad','operation':'execute',
         'inputs':inputs or {},'params':{'plan':{'schema_version':'freecad-operation-plan.v1',
-        'document_name':'APIModel','operations':[
+        'document_name':document_name,'operations':[
             {'op_id':'api','action':'api.execute','args':{'source':source,'environment':environment,'modules':['Part','Spreadsheet']}},
             {'op_id':'export','action':'document.export','args':{'formats':['fcstd','step'],'basename':'model','objects':list(objects)}}]}}}
 
 with tempfile.TemporaryDirectory() as root:
     root=Path(root);runner.OUTPUT_ROOT=root/'output';runner.OUTPUT_ROOT.mkdir()
     runner.INPUT_ROOT=root/'input';runner.INPUT_ROOT.mkdir()
+    # Parameter values must not be rescanned as macro placeholders, including
+    # when a saved document is reopened or a GUI child process is used.
+    document_names = ('LetterAssembly', 'MountingPlate', 'OrdinaryPlate',
+        'GUIBracket', 'AFTERPlate', 'STATUSBracket', 'PROGRAMPlate',
+        'MODULESBracket', 'INVOCATIONBracket', 'BEFOREPlate',
+        'BEFORE_AFTER_PROGRAM_STATUS_INVOCATION_MODULES_GUI')
+    for environment, document_name in product(('headless', 'gui'), document_names):
+        named=runner.run_task(task(f"""doc=App.getDocument({document_name!r})
+assert doc is document
+box=doc.addObject('Part::Box','NamedSolid')
+box.Label='Display label'
+box.Length=30;box.Width=10;box.Height=3
+""",environment=environment,objects=('NamedSolid',),document_name=document_name))
+        assert abs(runner.Part.read(named['files']['step']).Volume-900)<1e-6
+        saved_name=document_name+'.FCStd'
+        saved=runner.INPUT_ROOT/saved_name
+        shutil.copyfile(named['files']['fcstd'],saved)
+        before_edit=saved.read_bytes()
+        continuation=task(f"""doc=App.getDocument({document_name!r})
+assert doc is document
+doc.getObject('NamedSolid').Width=20
+""",environment=environment,inputs={'base':saved_name},objects=('NamedSolid',))
+        for op in continuation['params']['plan']['operations']:
+            op['op_id']='continue-'+op['op_id']
+        continued=runner.run_task(continuation)
+        assert abs(runner.Part.read(continued['files']['step']).Volume-1800)<1e-6
+        assert saved.read_bytes()==before_edit
+    shutil.copyfile(saved, runner.INPUT_ROOT/'RetainedPlate.FCStd')
+    continuation=task("""doc=App.getDocument('RetainedPlate')
+assert doc is document
+doc.getObject('NamedSolid').Width=20
+""",inputs={'base':'RetainedPlate.FCStd'},objects=('NamedSolid',))
+    for op in continuation['params']['plan']['operations']:
+        op['op_id']='continue-'+op['op_id']
+    continued=runner.run_task(continuation)
+    assert abs(runner.Part.read(continued['files']['step']).Volume-1800)<1e-6
+    try:
+        runner.run_task(task("""box=document.addObject('Part::Box','ActualSolid')
+box.Label='RequestedSolid'
+""",objects=('RequestedSolid',)))
+    except runner.FreeCADRunnerError as exc:
+        assert exc.code=='object_not_found'
+        assert exc.details['object']=='RequestedSolid'
+        objects=json.loads(exc.details['available_objects_json'])
+        assert any(row['name']=='ActualSolid' and row['label']=='RequestedSolid' for row in objects)
+    else:
+        raise AssertionError('A display label must not silently replace an internal export name')
+    try:
+        runner.run_task(task("""document=App.newDocument('Replacement')
+document.addObject('Part::Box','Box')
+"""))
+    except runner.FreeCADRunnerError as exc:
+        assert exc.code=='api_execution_failed' and 'document identity' in str(exc)
+    else:
+        raise AssertionError('API program replaced the supplied document')
     for size in [7,13]:
         source=f'''sheet=document.addObject('Spreadsheet::Sheet','Dimensions')
 sheet.set('A1','{size} mm')
@@ -80,4 +137,7 @@ Gui.activeDocument().activeView().fitAll()
         else:
             raise AssertionError('failed program authorized a candidate')
         assert Path(gui['files']['fcstd']).read_bytes()==before
-print('CAD_API_CONTRACT='+json.dumps({'spreadsheet_expression_variants':2,'gui_workbench':True,'failed_programs_rejected':2}))
+print('CAD_API_CONTRACT='+json.dumps({'spreadsheet_expression_variants':2,'gui_workbench':True,'failed_programs_rejected':2,
+    'preserved_document_name_variants':len(document_names),'document_name_environments':['headless','gui'],
+    'continued_named_documents':2*len(document_names),'saved_document_continuation':True,
+    'missing_export_diagnostic':True,'document_rebinding_rejected':True}))

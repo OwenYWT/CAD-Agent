@@ -58,8 +58,9 @@ class RepairStopped(ValueError):
 
 class NativeRepairBudget:
     """A cap over all native tool turns plus independent physical-target caps."""
-    def __init__(self, policy):
+    def __init__(self, policy, *, profile_constraint_handoff=False):
         self.policy = dict(policy)
+        self.profile_constraint_handoff = profile_constraint_handoff
         for name in ('max_attempts', 'cut_attempts', 'constraint_attempts', 'profile_attempts'):
             if type(self.policy.get(name)) is not int or not 1 <= self.policy[name] <= 32:
                 raise ValueError('invalid persisted native repair resource policy')
@@ -97,9 +98,15 @@ class NativeRepairBudget:
             same_target = (self.pending['family'], self.pending['target']) == (current['family'], current['target'])
             if previous != current['failed_operation_id'] and not same_target:
                 boundary = self.pending.get('progress_operation_id', previous)
+                # Replacing a failed outline can expose a solver error before
+                # its same consumer runs. Neither stage has passed yet.
+                handoff = (self.profile_constraint_handoff
+                    and self.pending['family'] == 'profile' and current['family'] == 'constraint'
+                    and self.pending['target'] == current['target']
+                    and current.get('progress_operation_id') == boundary)
                 if boundary in current['completed_operations']:
                     self._resolved(previous)
-                elif boundary != current['failed_operation_id']:
+                elif boundary != current['failed_operation_id'] and not handoff:
                     stop('修复后执行回退到此前操作')
                 # A different failure at that boundary can follow a successful
                 # constraint solve. Continue its diagnosis without claiming the

@@ -1,6 +1,6 @@
 const TOKEN_KEY = "cad_agent_auth_token";
 const USER_KEY = "cad_agent_auth_user";
-const API_BASE = import.meta.env.VITE_API_BASE || "";
+const API_BASE = import.meta.env?.VITE_API_BASE || "";
 
 export interface AuthUser {
   id: string;
@@ -85,7 +85,7 @@ export function authHeaders(): HeadersInit {
 }
 
 export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}) {
-  const headers = new Headers(init.headers);
+  const headers = new Headers(init.headers ?? (input instanceof Request ? input.headers : undefined));
   const workspace = new URLSearchParams(window.location.search).get("workspace");
   if (workspace && /^[0-9a-f-]{36}$/i.test(workspace)) headers.set("X-Workspace-Tenant", workspace);
   const token = getAuthToken();
@@ -93,7 +93,8 @@ export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}
     headers.set("Authorization", `Bearer ${token}`);
   }
   const response = await fetch(input, { ...init, headers });
-  if (response.status === 401) {
+  if (response.status === 401 && token && getAuthToken() === token
+      && headers.get("Authorization") === `Bearer ${token}`) {
     // Token rejected/expired: tear down the session and notify the app so it can
     // route back to the login page.
     clearAuthSession();
@@ -108,6 +109,7 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
   if (!token) return null;
   try {
     const res = await authFetch(`${API_BASE}/api/auth/me`);
+    if (token !== getAuthToken()) return getAuthToken() ? fetchCurrentUser() : null;
     if (!res.ok) return null;
     const data = (await res.json()) as { user: AuthUser };
     return data.user ?? null;
@@ -127,9 +129,11 @@ export async function fetchAuthConfig(): Promise<AuthConfig | null> {
 }
 
 export async function refreshAuthSession(): Promise<AuthSession | null> {
+  const previous = getAuthToken();
   const res = await authFetch(`${API_BASE}/api/auth/refresh`, { method: "POST" });
   if (!res.ok) return null;
   const session = (await res.json()) as AuthSession;
+  if (getAuthToken() !== previous) return null;
   saveAuthSession(session);
   refreshListeners.forEach(listener => {
     try { listener(); } catch { /* Other connections must still rotate. */ }
@@ -138,14 +142,16 @@ export async function refreshAuthSession(): Promise<AuthSession | null> {
 }
 
 export async function logoutAuthSession() {
+  const token = getAuthToken();
   try {
     await authFetch(`${API_BASE}/api/auth/logout`, { method: "POST" });
   } finally {
-    clearAuthSession();
+    if (getAuthToken() === token) clearAuthSession();
   }
 }
 
 export async function deleteAuthAccount() {
+  const token = getAuthToken();
   try {
     const res = await authFetch(`${API_BASE}/api/auth/account`, { method: "DELETE" });
     if (!res.ok) {
@@ -153,6 +159,6 @@ export async function deleteAuthAccount() {
       throw new Error(text || "注销账号失败，请稍后重试");
     }
   } finally {
-    clearAuthSession();
+    if (getAuthToken() === token) clearAuthSession();
   }
 }

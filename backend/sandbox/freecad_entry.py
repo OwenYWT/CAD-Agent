@@ -28,6 +28,7 @@ from freecad_state_projector import project_saved_document
 from freecad_state_projector import project_object
 from freecad_sketch_relations import relation_certificate
 from freecad_topology import TopologyResolutionError, resolve_topology_selector
+from freecad_native_references import NativeReferenceError, NativeReferences
 from freecad_bom import BOMError, run_bom
 from freecad_scene import component_shapes, run_scene
 from freecad_engineering import EngineeringError, run_engineering
@@ -158,7 +159,11 @@ def _object(document: Any, value: object, label: str) -> Any:
     name = _name(value, label)
     obj = document.getObject(name)
     if obj is None:
-        raise FreeCADRunnerError("object_not_found", f"{label} does not exist: {name}")
+        raise FreeCADRunnerError("object_not_found", f"{label} does not exist: {name}",
+            details={"object": name, "document_name": document.Name,
+                     "available_objects_json": json.dumps([
+                         {"name": item.Name, "label": item.Label} for item in document.Objects
+                     ], ensure_ascii=False)})
     return obj
 
 
@@ -236,6 +241,10 @@ def _sketch_create(document: Any, args: dict[str, Any]) -> dict[str, Any]:
         body = document.addObject("PartDesign::Body", body_name)
     if getattr(body, "TypeId", "") != "PartDesign::Body":
         raise FreeCADRunnerError("object_type_mismatch", f"{body_name} is not a PartDesign body")
+    # Body creation also creates Origin and datum objects in the same document
+    # namespace. FreeCAD would otherwise silently rename a conflicting Sketch.
+    if document.getObject(name) is not None:
+        raise FreeCADRunnerError("object_name_conflict", f"object already exists: {name}; choose a distinct sketch name")
     plane = str(args.get("plane", "xy"))
     plane_name = {"xy": "XY_Plane", "xz": "XZ_Plane", "yz": "YZ_Plane"}.get(plane)
     if plane_name is None:
@@ -318,6 +327,16 @@ def _sketch_add_geometry(document: Any, args: dict[str, Any]) -> dict[str, Any]:
                 )
             )
         )
+    elif kind == "arc":
+        center = App.Vector(*_point(geometry["center"], "center"), 0)
+        radius = _number(geometry["radius_mm"], "radius_mm", positive=True)
+        start = _number(geometry["start_angle_deg"], "start_angle_deg")
+        end = _number(geometry["end_angle_deg"], "end_angle_deg")
+        if not 0 < end - start < 360:
+            raise FreeCADRunnerError("invalid_geometry", "arc sweep must be between zero and 360 degrees")
+        curve = Part.ArcOfCircle(Part.Circle(center, App.Vector(0, 0, 1), radius),
+                                 math.radians(start), math.radians(end))
+        indexes.append(int(sketch.addGeometry(curve, construction)))
     elif kind == "rectangle":
         x, y = _point(geometry.get("corner"), "rectangle.corner")
         width = _number(geometry.get("width_mm"), "width_mm", positive=True)
@@ -347,22 +366,19 @@ def _sketch_add_curve_profile(document: Any, args: dict[str, Any]) -> dict[str, 
     sketch = _object(document, args["sketch"], "sketch")
     center = App.Vector(*_point(geometry["center"], "center"), 0)
     radius = _number(geometry["radius_mm"], "radius_mm", positive=True)
-    circle = Part.Circle(center, App.Vector(0, 0, 1), radius)
     kind = geometry["kind"]
     if kind == "arc":
         start = _number(geometry["start_angle_deg"], "start_angle_deg")
         end = _number(geometry["end_angle_deg"], "end_angle_deg")
-        if not 0 < end-start < 360:
-            raise FreeCADRunnerError("invalid_geometry", "arc sweep must be between zero and 360 degrees")
-        base = sketch.addGeometry(Part.ArcOfCircle(circle, math.radians(start), math.radians(end)), False)
-        indexes = [base]
+        indexes = _sketch_add_geometry(document, args)["geometry_indexes"]
+        base = indexes[0]
         radial_targets = [(base, 1, start), (base, 2, end)]
     else:
         sides = geometry["sides"]
         if not isinstance(sides, int) or isinstance(sides, bool) or sides < 3:
             raise FreeCADRunnerError("invalid_geometry", "polygon requires at least three sides")
         angle = _number(geometry.get("rotation_deg", 0), "rotation_deg")
-        base = sketch.addGeometry(circle, True)
+        base = sketch.addGeometry(Part.Circle(center, App.Vector(0, 0, 1), radius), True)
         points = [center + App.Vector(radius*math.cos(math.radians(angle)+i*2*math.pi/sides),
                    radius*math.sin(math.radians(angle)+i*2*math.pi/sides), 0) for i in range(sides)]
         indexes = list(sketch.addGeometry([Part.LineSegment(points[i], points[(i+1)%sides]) for i in range(sides)], False))
@@ -840,6 +856,20 @@ def _dressup_target(document: Any, args: dict[str, Any], label: str) -> tuple[An
     return tip, target
 
 
+def _dressup_reference(document, args):
+    selector = args['selector']
+    revision = str(args.get('_expected_revision_id') or '')
+    if selector.get('schema_version') == 'topology-selector.v2':
+        references = args.get('_native_references')
+        if references is None:
+            raise FreeCADRunnerError('topology_reference_unverified', 'Native reference context is required')
+        try:
+            return references.resolve(document, selector, revision)
+        except NativeReferenceError as exc:
+            raise FreeCADRunnerError(exc.code, str(exc)) from exc
+    return resolve_topology_selector(document, selector, expected_revision_id=revision)
+
+
 def _feature_fillet(document: Any, args: dict[str, Any]) -> dict[str, Any]:
     name = _name(args["name"], "fillet name")
     if document.getObject(name) is not None:
@@ -857,11 +887,7 @@ def _feature_fillet(document: Any, args: dict[str, Any]) -> dict[str, Any]:
         )
     if selector is not None:
         try:
-            resolved = resolve_topology_selector(
-                document,
-                selector,
-                expected_revision_id=str(args.get("_expected_revision_id") or ""),
-            )
+            resolved = _dressup_reference(document, args)
         except TopologyResolutionError as exc:
             raise FreeCADRunnerError("topology_resolution_failed", str(exc)) from exc
         if resolved["object_name"] != target.Name:
@@ -906,11 +932,7 @@ def _feature_chamfer(document: Any, args: dict[str, Any]) -> dict[str, Any]:
             raise FreeCADRunnerError("edge_scope_unsupported", str(exc)) from exc
     elif selector is not None:
         try:
-            resolved = resolve_topology_selector(
-                document,
-                selector,
-                expected_revision_id=str(args.get("_expected_revision_id") or ""),
-            )
+            resolved = _dressup_reference(document, args)
         except TopologyResolutionError as exc:
             raise FreeCADRunnerError("topology_resolution_failed", str(exc)) from exc
         if resolved["object_name"] != target.Name:
@@ -1148,11 +1170,14 @@ def _document_export(_document: Any, args: dict[str, Any]) -> dict[str, Any]:
         names=args['objects']
         if not isinstance(names,list) or not names or len(set(names))!=len(names):
             raise FreeCADRunnerError('invalid_export','export objects must be a nonempty unique list')
-        body_children={o.Name for body in _document.Objects if body.TypeId=='PartDesign::Body' for o in body.Group}
+        body_children = {o.Name: body.Name for body in _document.Objects if body.TypeId == 'PartDesign::Body' for o in body.Group}
+        export_roots = {name: body_children[name] for name in names if name in body_children}
+        if export_roots and set(formats) != {'fcstd'}:
+            roots = json.dumps(export_roots, ensure_ascii=False)
+            raise FreeCADRunnerError('invalid_export', f'select the owning Body for each intermediate feature: {roots}',
+                                     details={'export_roots_json': roots})
         for name in names:
             obj=_object(_document,name,'export object')
-            if obj.Name in body_children and set(formats) != {'fcstd'}:
-                raise FreeCADRunnerError('invalid_export','select the final Body, not an intermediate feature')
             shape=getattr(obj,'Shape',None)
             if set(formats) != {'fcstd'} and (shape is None or shape.isNull() or not shape.Solids):
                 raise FreeCADRunnerError('invalid_export','selected export object has no final solid')
@@ -1467,7 +1492,7 @@ def _open_document(task: dict[str, Any], plan: dict[str, Any], *, import_evidenc
     return document
 
 
-def _export_document(document: Any, args: dict[str, Any], *, measurement_formats=()) -> dict[str, str]:
+def _export_document(document: Any, args: dict[str, Any], *, measurement_formats=(), native_references=None) -> dict[str, str]:
     formats = list(args["formats"])
     basename = _name(args.get("basename", "model"), "export basename")
     files: dict[str, str] = {}
@@ -1511,7 +1536,7 @@ def _export_document(document: Any, args: dict[str, Any], *, measurement_formats
     state_path = OUTPUT_ROOT / "state.json"
     state_path.write_text(
         json.dumps(
-            project_saved_document(document, fcstd),
+            project_saved_document(document, fcstd, native_references=native_references),
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
@@ -1536,7 +1561,7 @@ def _validate_plan(task: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(params, dict) or not isinstance(inputs, dict):
         raise FreeCADRunnerError("invalid_task", "task params and inputs must be objects")
     if set(params) - {"plan", "expected_revision_id", "measurement_formats", "constraint_repair", "repair_acceptance_hash", "import_format",
-                      "profile_replan", "profile_acceptance_hash"} or not isinstance(
+                      "profile_replan", "profile_acceptance_hash", "native_topology"} or not isinstance(
         params.get("plan"), dict
     ):
         raise FreeCADRunnerError(
@@ -1587,6 +1612,9 @@ def _validate_plan(task: dict[str, Any]) -> dict[str, Any]:
         raise FreeCADRunnerError('invalid_plan','API plans must explicitly select final export objects')
     if set(inputs) - {"base"}:
         raise FreeCADRunnerError("invalid_task", "FreeCAD task accepts only the base input role")
+    if 'native_topology' in params and (not inputs.get('base') or not isinstance(params['native_topology'], dict)
+                                      or params.get('import_format')):
+        raise FreeCADRunnerError('invalid_task', 'Native references require a verified non-import base')
     return plan
 
 
@@ -1610,6 +1638,10 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
     operation_results: list[dict[str, str | int | float | bool | None]] = []
     validations: list[dict[str, str | int | float | bool | None]] = []
     try:
+        try:
+            references = NativeReferences(document, task['params'].get('native_topology'), fcstd_sha256=checkpoint_hash)
+        except NativeReferenceError as exc:
+            raise FreeCADRunnerError(exc.code, str(exc)) from exc
         if repair_contract:
             validate_constraint_baseline(plan, repair_contract, checkpoint_hash,
                                         task['params'].get('repair_acceptance_hash'))
@@ -1637,6 +1669,7 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
                 continue
 
             if action == 'api.execute':
+                references.invalidate()
                 records = list(ledger.OperationRecords)
                 trusted_sketches = {obj.Name: (project_object(obj),
                     getattr(obj, MAP_PROPERTY, None), list(getattr(obj, 'CADAgentRelationOrigins', ())))
@@ -1693,6 +1726,7 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
                         "_expected_revision_id": task["params"].get(
                             "expected_revision_id"
                         ),
+                        '_native_references': references,
                     }
                 result = DISPATCH[action](document, operation_args)
                 record_created_constraints(document, operation, before_constraints, plan_hash)
@@ -1708,6 +1742,8 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
                     )
                     if _bind_through_profile(document.getObject(result["object"])):
                         validation = _validate_document(document, op_id=op_id, action=action)
+                references.created(document, operation, plan_hash)
+                references.verify_uses(document, str(task['params'].get('expected_revision_id') or ''))
                 ledger.OperationRecords = [
                     *list(getattr(ledger, "OperationRecords", ())),
                     f"{op_id}:{digest}",
@@ -1752,6 +1788,8 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
                 if isinstance(exc, ConstraintVerificationError):
                     raise FreeCADRunnerError(exc.code, str(exc)[:4000], op_id=op_id,
                                              action=action, details=exc.details) from exc
+                if isinstance(exc, NativeReferenceError):
+                    raise FreeCADRunnerError(exc.code, str(exc), op_id=op_id, action=action) from exc
                 raise FreeCADRunnerError(
                     "operation_failed",
                     str(exc) or type(exc).__name__,
@@ -1809,7 +1847,7 @@ def run_task(task: dict[str, Any]) -> dict[str, Any]:
                 'evidence_json': json.dumps(verification, ensure_ascii=False, allow_nan=False)})
         export_args = plan["operations"][-1]["args"]
         files = _export_document(document, export_args,
-            measurement_formats=task['params'].get('measurement_formats', ()))
+            measurement_formats=task['params'].get('measurement_formats', ()), native_references=references)
         if import_evidence:
             try:
                 verify_saved_import(files['fcstd'])

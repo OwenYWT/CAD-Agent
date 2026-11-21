@@ -13,6 +13,19 @@ def contract(comparison, kind='planar_gap', **extra):
                         'comparison': comparison, **extra}]}
 
 
+@pytest.mark.parametrize('kind', ['annular_segment_diameter', 'annular_segment_height'])
+def test_annular_segment_requires_an_axis_point_without_target_clipping(kind):
+    comparison={'op':'eq','value':12.,'unit':'mm'}
+    valid={'axis':[0,0,1], 'point_mm':[0,0,4]}
+    parsed=AcceptanceContractV2.model_validate(contract(comparison,kind,scope=valid))
+    assert parsed.checks[0].scope.point_mm==(0.,0.,4.)
+    for scope in ({}, {'axis':[0,0,1]}, {'point_mm':[0,0,4]},
+                  {**valid,'region_min_mm':[-12,-12,0],'region_max_mm':[12,12,12]},
+                  {**valid,'centers_mm':[[0,0,4]]}):
+        with pytest.raises(ValidationError,match='annular segment'):
+            AcceptanceContractV2.model_validate(contract(comparison,kind,scope=scope))
+
+
 def test_component_selection_is_explicit_and_preserves_old_contract_wire():
     from app.contracts.acceptance_v2 import MeasurementScopeV2
     original = AcceptanceContractV2.model_validate(contract({'op':'eq','value':5.,'unit':'mm'}))
@@ -137,3 +150,37 @@ def test_feature_cardinality_cannot_disagree_with_measurements_or_be_invented():
     with pytest.raises(ValueError):
         compare_feature_measurement(check, [6.], 1e-7, feature_count=0)
     assert compare_feature_measurement(check, [6., 5.], 1e-7, feature_count=2)['outcome'] == 'failed'
+
+
+def test_v2_tool_schema_rejects_unsupported_measurement_instructions():
+    from jsonschema import Draft202012Validator
+    from app.contracts.acceptance_v2 import AcceptanceCheckV2
+    schema = Draft202012Validator(AcceptanceCheckV2.model_json_schema())
+    base = dict(check_id='size', description='source dimension', source_quote='source', binding_ref='objective')
+
+    def valid(kind, scope, value, unit):
+        row = dict(base, kind=kind, scope=scope, comparison={'op':'eq','value':value,'unit':unit})
+        return schema.is_valid(row)
+
+    assert valid('assembly_count', {'assembly_measurement':'tab_count'}, 4, 'count')
+    assert not valid('assembly_count', {'assembly_measurement':'count'}, 4, 'count')
+    assert not valid('assembly_count', {}, 4, 'count')
+    assert not valid('assembly_count', {'assembly_measurement':'tab_count'}, 2, 'mm')
+    assert not valid('rectangular_opening_count', {'axis':[0,0,1]}, 2, 'mm')
+    assert not valid('hole_count', {}, 2.5, 'count')
+    assert valid('volume', {}, 20, 'mm3')
+    assert not valid('volume', {}, 20, 'mm')
+    assert not valid('planar_gap', {}, 3, 'count')
+    assert valid('hole_through', {}, 1, 'count')
+    assert not valid('hole_through', {}, 2, 'count')
+    assert valid('planar_gap', {'axis':[1,0,0]}, 3, 'mm')
+    assert not valid('planar_gap', {'centers_mm':[[0,0,0],[3,0,0]]}, 3, 'mm')
+    assert not valid('void_connected', {'centers_mm': [[1,1,1],[1,1,1]],
+        'region_min_mm': [0,0,0], 'region_max_mm': [3,3,3]}, 1, 'count')
+    assert valid('solid_segment_height', {'axis': [0,0,1], 'point_mm': [0,0,4]}, 8, 'mm')
+    assert not valid('rectangular_opening_bounds', {'axis': [1,0,0]}, 0, 'mm')
+    from app.agent.planner import _planning_format
+    from app.models.schemas import CADPlan, ModificationPlan
+    for model, tool in [(CADPlan, 'submit_cad_plan'), (ModificationPlan, 'submit_modification_plan')]:
+        sent = _planning_format(model, tool, True, 'engineering-acceptance.v2')['tools'][0]['function']['parameters']
+        assert sent['$defs']['AcceptanceCheckV2']['allOf'] == schema.schema['allOf']

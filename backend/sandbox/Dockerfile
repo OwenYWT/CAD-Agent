@@ -15,8 +15,8 @@ RUN --mount=type=cache,target=/var/cache/freecad \
       ca-certificates curl && \
     rm -rf /var/lib/apt/lists/* && \
     case "$TARGETARCH" in \
-      amd64) asset="FreeCAD_1.1.3-Linux-x86_64-py311.AppImage"; checksum="3a853eb69ee595f779f2255dbf80a765926981d8ff68903cefee4dfb03a8f5ef" ;; \
-      arm64) asset="FreeCAD_1.1.3-Linux-aarch64-py311.AppImage"; checksum="9a8f9f7f2802bb856f2bb70f53d536e2ae06569f4e6d718407803076104ff55e" ;; \
+      amd64) asset="FreeCAD_1.1.4-Linux-x86_64-py311.AppImage"; checksum="f6dc6ba676e5ac96a565ebc8d657232f94c6158e85b4352141bd1a46f6b43434" ;; \
+      arm64) asset="FreeCAD_1.1.4-Linux-aarch64-py311.AppImage"; checksum="675d1a4295b2183e0e1d816a4b5557dcb63aeced4e60aaa28d6c3686f4c71dc9" ;; \
       *) echo "unsupported FreeCAD architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac && \
     download="/var/cache/freecad/$asset" && \
@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/var/cache/freecad \
     if ! echo "$checksum  $download" | sha256sum --check --status; then \
       curl --http1.1 --fail --location --retry 30 --retry-all-errors \
         --retry-delay 2 --continue-at - --output "$download" \
-        "https://github.com/FreeCAD/FreeCAD/releases/download/1.1.3/$asset"; \
+        "https://github.com/FreeCAD/FreeCAD/releases/download/1.1.4/$asset"; \
     fi && \
     echo "$checksum  $download" | sha256sum --check --strict && \
     chmod +x "$download" && \
@@ -128,8 +128,12 @@ COPY backend/app/freecad/sketch_relations.py /opt/cad-agent/freecad_sketch_relat
 COPY backend/sandbox/freecad_constraint_validation.py /opt/cad-agent/freecad_constraint_validation.py
 COPY backend/app/freecad/reference_geometry.py /opt/cad-agent/freecad_reference_geometry.py
 COPY backend/app/freecad/topology.py /opt/cad-agent/freecad_topology.py
+COPY backend/app/freecad/native_references.py /opt/cad-agent/freecad_native_references.py
+COPY backend/app/contracts/native_references.py /opt/cad-agent/freecad_native_reference_contracts.py
 COPY backend/sandbox/geometry_validation.py /opt/cad-agent/geometry_validation.py
 COPY backend/sandbox/feature_verification.py /opt/cad-agent/feature_verification.py
+COPY backend/sandbox/machined_features.py /opt/cad-agent/machined_features.py
+COPY backend/app/contracts/machined_feature_values.py /opt/cad-agent/machined_feature_values.py
 COPY backend/sandbox/material_measurements.py /opt/cad-agent/material_measurements.py
 COPY backend/sandbox/rectangular_assembly.py /opt/cad-agent/rectangular_assembly.py
 COPY backend/app/contracts/assembly_measurements.py /opt/cad-agent/assembly_measurements.py

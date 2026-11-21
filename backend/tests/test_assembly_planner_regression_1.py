@@ -1,12 +1,36 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+import json
 
 import pytest
 
 from app.agent.assembly_planner import AssemblyPlanner
 from app.config import settings
 from app.models.schemas import CADPlan
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('count', [9, 16])
+async def test_complete_assembly_survives_parsing_and_durable_plan_without_truncation(count):
+    from app.agent.durable_planner import DurableAgentPlanner
+    parts = [{'name': f'part_{index}', 'description': f'Independent part {index}',
+              'dimensions': {'length': 10, 'width': 10, 'height': 10},
+              'position': [index * 20, 0, 0]} for index in range(count)]
+    requested = CADPlan(description=f'Assembly of {count} independent solids', part_type='assembly',
+                        dimensions={}, features=[part['description'] for part in parts])
+    planner = AssemblyPlanner()
+    planner._client = SimpleNamespace(chat=SimpleNamespace(completions=_CompletionsStub([
+        _response(json.dumps({'assembly_description': 'Complete assembly', 'parts': parts}))])))
+    assembly = await planner.plan_assembly(requested, allow_fallback=False)
+    assert [part.name for part in assembly.parts] == [part['name'] for part in parts]
+    assert [part.position for part in assembly.parts] == [part['position'] for part in parts]
+    plan = DurableAgentPlanner().compose_generation(
+        requested.description, requested, decomposition={'kind': 'assembly', 'assembly': assembly.model_dump(mode='json')})
+    part_steps = [step for step in plan.steps if step.kind == 'assembly_part']
+    assert len(part_steps) == count
+    assert [step.part_name for step in part_steps] == [part['name'] for part in parts]
+    assert plan.steps[-1].depends_on == tuple(step.step_key for step in part_steps)
 
 
 class _CompletionsStub:
@@ -37,6 +61,29 @@ def _plan() -> CADPlan:
         dimensions={"length": 30, "width": 20, "height": 8},
         features=["底座 30x20x5", "上盖 30x20x3"],
     )
+
+
+@pytest.mark.asyncio
+async def test_assembly_decomposition_receives_the_complete_saved_design():
+    from app.models.schemas import DesignBrief
+    requested = _plan().model_copy(update={
+        'constraints': ['keep parts separate'],
+        'design_brief': DesignBrief(
+            assumptions=['cover bottom is at z=5, centred over the base'],
+            functional_requirements=['cover must not penetrate the cavity'],
+        ),
+    })
+    before = requested.model_dump(mode='json')
+    completions = _CompletionsStub([_response(json.dumps({
+        'parts': [{'name': 'base', 'description': 'base'}],
+        'assembly_description': requested.description,
+    }))])
+    planner = AssemblyPlanner()
+    planner._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    await planner.plan_assembly(requested, allow_fallback=False)
+    supplied = json.loads(completions.calls[0]['messages'][1]['content'])
+    assert supplied == before
+    assert requested.model_dump(mode='json') == before
 
 
 @pytest.mark.asyncio

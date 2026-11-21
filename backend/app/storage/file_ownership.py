@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import os
@@ -12,10 +13,12 @@ from uuid import UUID, uuid5
 
 from app.config import settings
 from app.domain.identity import IDENTITY_NAMESPACE
+from app.execution.canonical import sha256_file
 
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _OWNER_FILE = ".owner"
+_CACHE_MARKER = ".materialized"
 
 
 class FileOwnershipError(RuntimeError):
@@ -47,6 +50,21 @@ def _request_dir(request_id: str) -> Path:
     return target
 
 
+def expired_request_files(directory: Path, cutoff: float) -> list[Path]:
+    """Only completed, flat request caches belong to the TTL collector."""
+    if directory.is_symlink() or not directory.is_dir():
+        return []
+    if not any((directory / name).is_file() and not (directory / name).is_symlink()
+               for name in (_OWNER_FILE, _CACHE_MARKER)):
+        return []
+    entries = list(directory.iterdir())
+    if directory.stat().st_mtime >= cutoff or any(
+        path.is_symlink() or not path.is_file() or path.stat().st_mtime >= cutoff for path in entries
+    ):
+        return []
+    return entries
+
+
 def _fingerprint(principal: str) -> str:
     return hashlib.sha256(principal.encode("utf-8")).hexdigest()
 
@@ -58,9 +76,14 @@ def claim_request_owner(
     revision_id: str | None = None,
 ) -> Awaitable[None]:
     """Bind an existing request directory to a login user or legacy API key."""
-    if not request_id or not isinstance(principal, str) or not principal:
-        if not settings.durable_control_plane_enabled:
-            return _ImmediateAwaitable(None)
+    if not request_id:
+        return _ImmediateAwaitable(None)
+    if not settings.durable_control_plane_enabled and (not isinstance(principal, str) or not principal):
+        if not settings.auth_required and not settings.api_keys:
+            directory = _request_dir(request_id)
+            if directory.is_dir():
+                (directory / _CACHE_MARKER).touch()
+        return _ImmediateAwaitable(None)
     if settings.durable_control_plane_enabled:
         return _commit_request_files(request_id, revision_id=revision_id)
     request_dir = _request_dir(request_id)
@@ -268,10 +291,10 @@ async def hydrate_project_files(
         return [
             path
             for path in sorted(request_dir.iterdir())
-            if path.is_file() and path.name != _OWNER_FILE
+            if path.is_file() and path.name not in {_OWNER_FILE, _CACHE_MARKER}
         ]
 
-    from app.object_store import get_object
+    from app.object_store import download_verified_object, ObjectIntegrityError
 
     normalized_extensions = (
         {suffix.lower() for suffix in extensions}
@@ -281,6 +304,9 @@ async def hydrate_project_files(
     metadata = await list_project_files(request_id)
     request_dir = _request_dir(request_id)
     request_dir.mkdir(parents=True, exist_ok=True)
+    marker = request_dir / _CACHE_MARKER
+    if marker.is_file():
+        marker.touch()
     hydrated: list[Path] = []
     for record in metadata:
         filename = str(record["filename"])
@@ -297,37 +323,17 @@ async def hydrate_project_files(
 
         expected_size = int(record["size_bytes"])
         expected_sha = str(record["sha256"])
-        valid_cache = False
-        if target.is_file() and not target.is_symlink():
-            digest = hashlib.sha256()
-            size = 0
-            with target.open("rb") as handle:
-                while chunk := handle.read(8 * 1024 * 1024):
-                    digest.update(chunk)
-                    size += len(chunk)
-            valid_cache = size == expected_size and digest.hexdigest() == expected_sha
+        valid_cache = (target.is_file() and not target.is_symlink()
+                       and target.stat().st_size == expected_size
+                       and await asyncio.to_thread(sha256_file, target) == expected_sha)
         if not valid_cache:
-            payload = await get_object(str(record["object_key"]))
-            if (
-                len(payload) != expected_size
-                or hashlib.sha256(payload).hexdigest() != expected_sha
-            ):
-                raise FileOwnershipError("Stored artifact checksum mismatch")
-            temporary = target.with_name(f".{target.name}.{os.getpid()}.hydrate")
             try:
-                descriptor = os.open(
-                    temporary,
-                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-                    0o600,
-                )
-                with os.fdopen(descriptor, "wb") as handle:
-                    handle.write(payload)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                os.replace(temporary, target)
-            finally:
-                temporary.unlink(missing_ok=True)
+                await download_verified_object(record, target)
+            except ObjectIntegrityError as exc:
+                raise FileOwnershipError("Stored artifact checksum mismatch") from exc
         hydrated.append(target)
+    if hydrated:
+        (request_dir / _CACHE_MARKER).touch()
     return hydrated
 
 
@@ -418,7 +424,7 @@ async def _commit_request_files(
 
     for path in sorted(request_dir.iterdir()):
         if (
-            path.name == _OWNER_FILE
+            path.name in {_OWNER_FILE, _CACHE_MARKER}
             or path.is_symlink()
             or not path.is_file()
         ):
@@ -426,13 +432,9 @@ async def _commit_request_files(
         filename = path.name
         if not re.fullmatch(r"[A-Za-z0-9._-]+", filename):
             raise FileOwnershipError("Generated filename is unsafe")
-        digest = hashlib.sha256()
-        size_bytes = 0
-        with path.open("rb") as handle:
-            while chunk := handle.read(8 * 1024 * 1024):
-                digest.update(chunk)
-                size_bytes += len(chunk)
-        sha256 = digest.hexdigest()
+        size_bytes = path.stat().st_size
+        sha256 = await asyncio.to_thread(sha256_file, path)
+
         object_key = (
             f"workspace/tenants/{context.tenant_id}/projects/{project_id}/"
             f"requests/{request_id}/{sha256}/{filename}"
@@ -532,3 +534,4 @@ async def _commit_request_files(
                     "object_key": object_key,
                 },
             )
+    (request_dir / _CACHE_MARKER).touch()

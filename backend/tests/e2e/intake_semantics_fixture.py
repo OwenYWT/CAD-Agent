@@ -11,6 +11,22 @@ from app.validation.durable_geometry import DurableGeometryReport, verify_geomet
 
 def fixtures():
     cases = []
+    for text in ('构建一个十厘米的正方体', '正方体，边长100mm', 'Create a 10cm cube'):
+        contract = bind(text)
+        assert sorted((c['kind'], c['comparison']['value']) for c in contract['checks']) == [
+            ('cube_edge', 100.), ('cube_shape', 1.)]
+        for model, expected in [('cube_good', 'passed'), ('cube_rotated', 'passed'),
+                ('cube_wrong_size', 'failed'), ('cube_rectangular', 'indeterminate'),
+                ('cube_sheared', 'indeterminate'), ('cube_hollow', 'indeterminate'),
+                ('cube_blind_micro', 'indeterminate'), ('cube_blind_nurbs', 'indeterminate'),
+                ('cube_notch', 'indeterminate')]:
+            cases.append({'model': model, 'expected': expected, 'contract': contract})
+    cases.append({'model': 'cube_small', 'expected': 'passed', 'contract': bind('立方体棱长二十五毫米')})
+    for text, primitive in [('球体长40mm宽40mm高40mm', 'sphere'), ('圆柱体长40mm宽40mm厚25mm', 'cylinder')]:
+        contract = bind(text)
+        assert primitive+'_shape' in {c['kind'] for c in contract['checks']}
+        for suffix, expected in [('good', 'passed'), ('box', 'indeterminate')]:
+            cases.append({'model': primitive+'_'+suffix, 'expected': expected, 'contract': contract})
     for text, kind, models in [
         ('盒体外壁厚度3mm', 'wall_thickness', [('box_good','passed'),('box_wrong_wall','failed'),
             ('box_one_thin_wall','failed'),('box_wrong_floor','passed'),('box_rotated','passed'),
@@ -49,16 +65,30 @@ def verify(path):
                       expected_solid_count=None, measurement_context=row['context'])
         verify_geometry_evidence(report, **kwargs)
         assert report.outcome == row['expected'], row['model']
-        for field in ('complete', 'measured', 'coverage', 'inner_boundary', 'face_complete', 'cavity_height'):
+        for field in ('complete', 'measured', 'coverage', 'inner_boundary', 'face_complete', 'cavity_height',
+                      'cube_axes', 'cube_lengths', 'cube_inner_boundary', 'cube_pairs', 'cube_tolerance'):
             tampered = deepcopy(row['report'])
-            evidence = next((e for e in tampered['acceptance']['evidence'] if e['outcome'] != 'indeterminate'), None)
+            evidence = next((e for e in tampered['acceptance']['evidence'] if e['outcome'] != 'indeterminate'
+                             and ('material_primitive' in e['details'] or 'cavity_walls' in e['details'])), None)
             if evidence is None:
                 continue
             details = evidence['details']
             key = 'material_primitive' if 'material_primitive' in details else 'cavity_walls'
+            if field.startswith('cube_') and details.get('material_primitive', {}).get('primitive') != 'cube':
+                continue
             if key == 'material_primitive' and field in {'inner_boundary','face_complete','cavity_height'}:
                 continue
-            if field == 'complete':
+            if field == 'cube_axes':
+                details[key]['geometry']['axes'][1] = details[key]['geometry']['axes'][0]
+            elif field == 'cube_lengths':
+                details[key]['geometry']['intervals_mm'][0][1] += 1
+            elif field == 'cube_inner_boundary':
+                details[key]['geometry']['inner_boundary_counts'][0] = 1
+            elif field == 'cube_pairs':
+                details[key]['geometry']['face_axis_pairs'][1] = details[key]['geometry']['face_axis_pairs'][0]
+            elif field == 'cube_tolerance':
+                details['numerical_tolerance_mm'] = 1
+            elif field == 'complete':
                 details[key]['complete'] = False
             elif field == 'measured':
                 evidence['measured'][0] += 1

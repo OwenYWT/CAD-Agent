@@ -26,6 +26,9 @@ export CAD_MONITOR_E2E_URL="http://127.0.0.1:${CAD_BROWSER_MONITOR_PORT:-18092}/
 export TEMPORAL_TASK_QUEUE="${CAD_CI_SCOPE:-browser-contract-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}}-v1"
 export TEMPORAL_AGENT_V2_TASK_QUEUE="${CAD_CI_SCOPE:-browser-contract-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}}-v2"
 export APP_ENVIRONMENT=test DURABLE_CONTROL_PLANE_ENABLED=true AUTH_REQUIRED=true
+# Headless scenarios also exercise reconnect/reload submissions. Keep admission
+# enabled with a test workload budget; production retains its configured limit.
+export RATE_LIMIT_PER_MINUTE=120
 export AUTH_TOKEN_SECRET="$(python -c 'import secrets;print(secrets.token_hex(32))')"
 export ADMIN_PASSWORD="$(python -c 'import secrets;print(secrets.token_urlsafe(24))')"
 mkdir -p "$report_root"

@@ -84,6 +84,8 @@ def validate_sketch(sketch, specification, *, nominal):
         for old, new in zip(expected, actual):
             if old['type'] != new['type'] or bool(old.get('construction')) != bool(new.get('construction')):
                 raise ConstraintVerificationError('constraint repair changed geometry type or construction state')
+            if 'sweep_rad' in old and abs(new['last_parameter'] - new['first_parameter'] - old['sweep_rad']) > TOLERANCE:
+                raise ConstraintVerificationError('native arc sweep differs from the protected boundary')
             for field in ('start', 'end', 'center', 'radius_mm'):
                 if field not in old:
                     continue
@@ -265,6 +267,38 @@ def downstream_parameters(document, sketches):
             for item in project_parameters(obj) if item['editable']]
 
 
+def _revolve_datum(sketch, args):
+    """A point lying on the revolution axis has no independent transverse offset."""
+    import FreeCAD as App
+    coordinate = args['kind']
+    ref = args['first']
+    if (coordinate not in {'distance_x', 'distance_y'} or args.get('second') is not None
+            or args.get('value_mm') != 0 or ref.get('point_position') not in {1, 2}
+            or sketch.getConstruction(ref['geometry_index'])):
+        return None
+    placement = sketch.getGlobalPlacement()
+    direction = placement.Rotation.multVec(App.Vector(1, 0, 0) if coordinate == 'distance_x' else App.Vector(0, 1, 0))
+    point = placement.multVec(sketch.getPoint(ref['geometry_index'], ref['point_position']))
+    for feature in sketch.InList:
+        if feature.TypeId not in {'PartDesign::Revolution', 'PartDesign::Groove'} or feature.Profile[0] != sketch:
+            continue
+        body = feature.getParentGeoFeatureGroup()
+        frame = body.getGlobalPlacement()
+        axis = frame.Rotation.multVec(feature.Axis).normalize()
+        base = frame.multVec(feature.Base)
+        if abs(direction.dot(axis)) > 1e-10 or (point - base).cross(axis).Length > TOLERANCE:
+            continue
+        # Only an endpoint of a material edge lying along the rotation axis is structural.
+        for i, line in enumerate(sketch.Geometry):
+            if sketch.getConstruction(i) or line.TypeId != 'Part::GeomLineSegment':
+                continue
+            ends = [placement.multVec(p) for p in (line.StartPoint, line.EndPoint)]
+            if (min((end-point).Length for end in ends) <= TOLERANCE
+                    and all((end-base).cross(axis).Length <= TOLERANCE for end in ends)):
+                return feature.Name
+    return None
+
+
 def verify_document(document, contract, validate_document, *, max_probes=128, fraction=0.01):
     """Perturb isolated FCStd copies; no probe can mutate the accepted candidate."""
     import FreeCAD as App
@@ -291,6 +325,11 @@ def verify_document(document, contract, validate_document, *, max_probes=128, fr
             if any(path in {f'Constraints[{index}]', 'Constraints.' + sketch.Constraints[index].Name}
                    for path, _ in sketch.ExpressionEngine):
                 continue
+            datum = _revolve_datum(sketch, rule['args'])
+            if datum is not None:
+                report.setdefault('axis_anchors', []).append({'object': name, 'logical_id': rule['logical_id'],
+                                                             'revolution': datum, 'value_mm': 0})
+                continue
             parameters.append({'object': name, 'constraint': index, 'logical_id': rule['logical_id'],
                                'value': float(sketch.Constraints[index].Value), 'kind': rule['args']['kind']})
     parameters.extend(downstream_parameters(document, contract['sketches']))
@@ -312,13 +351,18 @@ def verify_document(document, contract, validate_document, *, max_probes=128, fr
             integer = parameter.get('property_type') in {'App::PropertyInteger', 'App::PropertyIntegerConstraint'}
             if integer:
                 delta = max(1, round(delta))
-            for sign in (-1, 1):
-                path = Path(folder) / f'probe-{index}-{sign}.FCStd'
+            values = [parameter['value'] - delta, parameter['value'] + delta]
+            feature = document.getObject(parameter['object'])
+            if parameter.get('property') == 'Angle' and feature.TypeId in {'PartDesign::Revolution', 'PartDesign::Groove'}:
+                # A full turn is the upper endpoint. Exercise two distinct legal edits.
+                if values[1] > 360:
+                    values[1] = parameter['value'] - delta / 2
+            for probe_index, value in enumerate(values):
+                path = Path(folder) / f'probe-{index}-{probe_index}.FCStd'
                 shutil.copyfile(original_path, path)
                 probe = App.openDocument(str(path))
                 try:
                     obj = probe.getObject(parameter['object'])
-                    value = parameter['value'] + sign * delta
                     if 'constraint' in parameter:
                         obj.setDatum(parameter['constraint'], App.Units.Quantity(f'{value} mm'))
                     else:

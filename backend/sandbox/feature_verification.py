@@ -866,7 +866,24 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                 row['details']['numerical_tolerance_mm'] = 2*tolerance + sum(
                     math.ulp(v) for v in (bounds[2],bounds[5],bounds[5]-bounds[2]))
                 row['details']['bounds_method'] = 'occt_add_optimal_without_triangulation_or_shape_tolerance_padding'
-            elif kind.startswith(('cylinder_', 'sphere_')):
+            elif kind == 'fillet_radius' or kind.startswith(('rectangular_opening_', 'semicircular_cut_', 'notched_tube_')):
+                try:
+                    from machined_features import measure_machined_feature
+                except ModuleNotFoundError:
+                    from sandbox.machined_features import measure_machined_feature
+                row['measured'], row['details']['machined_feature'] = measure_machined_feature(shape, check, tolerance)
+                row['method'] = 'complete_machined_solid_reconstruction'
+            elif kind.startswith(('annular_segment_', 'solid_segment_')):
+                try:
+                    from material_measurements import annular_segment_dimensions
+                except ModuleNotFoundError:
+                    from sandbox.material_measurements import annular_segment_dimensions
+                solid = kind.startswith('solid_segment_')
+                dimensions,certificate=annular_segment_dimensions(shape,scope,tolerance,solid=solid)
+                row['measured']=[dimensions[kind.rsplit('_',1)[1]]]
+                row['method']='complete_observed_solid_segment_material' if solid else 'complete_observed_annular_segment_material'
+                row['details']['solid_segment' if solid else 'annular_segment']=certificate
+            elif kind.startswith(('cylinder_', 'sphere_', 'cube_')):
                 try:
                     from material_measurements import primitive_dimensions
                 except ModuleNotFoundError:
@@ -876,7 +893,7 @@ def measure_checks(shape, checks, *, acceptance_version='engineering-acceptance.
                 if scope.get('axis') is not None and primitive == 'cylinder' and abs(abs(
                         _dot(_unit(scope['axis']), certificate['geometry']['axis']))-1) > 1e-10:
                     raise MeasurementSelectionError('requested axis does not match the complete material cylinder')
-                row['measured'] = [dimensions[quantity]]
+                row['measured'] = [1.] if quantity == 'shape' else [dimensions[quantity]]
                 row['method'] = 'complete_material_primitive_boundary'
                 row['details']['material_primitive'] = certificate
             elif kind.startswith('hole_'):

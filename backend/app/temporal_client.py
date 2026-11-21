@@ -15,9 +15,12 @@ from temporalio.service import RPCError
 from temporalio.worker import Worker
 
 from app.config import settings
+from app.execution.backend import RuntimeSnapshot
 
 
 _client: Client | None = None
+_RUNTIME_OBSERVATION_SECONDS = 30
+_last_runtime_observation: tuple[tuple[str, str, str, str], float, RuntimeSnapshot] | None = None
 
 
 class TemporalWorkerUnavailable(RuntimeError):
@@ -38,8 +41,9 @@ async def get_temporal_client() -> Client:
 
 def reset_temporal_client() -> None:
     """Drop the cached client after configuration changes in tests or shutdown."""
-    global _client
+    global _client, _last_runtime_observation
     _client = None
+    _last_runtime_observation = None
 
 
 async def temporal_readiness() -> dict:
@@ -158,3 +162,69 @@ async def temporal_round_trip() -> dict:
     if result != marker:
         raise RuntimeError("Temporal workflow round-trip returned unexpected data")
     return {"status": "success", "workflow_id": marker, "result": result}
+
+
+class WorkerCommandConflict(ValueError):
+    pass
+
+
+async def run_worker_command(command: dict | None) -> dict:
+    """Reuse the durable result for the same owner and immutable request."""
+    from datetime import timedelta
+    from temporalio.common import WorkflowIDReusePolicy
+    from temporalio.exceptions import WorkflowAlreadyStartedError
+    from app.execution.canonical import canonical_sha256
+
+    client = await get_temporal_client()
+    if command is None:
+        # Share a short-lived health observation across API replicas.
+        window = int(time.time()) // _RUNTIME_OBSERVATION_SECONDS
+        deployment = canonical_sha256(settings.sandbox_image)
+        workflow_id = f"runtime-inspection:{settings.temporal_task_queue}:{deployment}:{window}"
+    else:
+        workflow_id = f"cad-skills:{command['owner']}:{command['request_id']}"
+    digest = canonical_sha256(command) if command is not None else ""
+    started_here = True
+    try:
+        handle = await client.start_workflow(
+            "NativeWorkerWorkflow", command, id=workflow_id, task_queue=settings.temporal_task_queue,
+            execution_timeout=timedelta(minutes=16 if command is not None else 6),
+            id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE, memo={"command_hash": digest})
+    except WorkflowAlreadyStartedError:
+        started_here = False
+        handle = client.get_workflow_handle(workflow_id)
+        if command is not None and await (await handle.describe()).memo_value("command_hash") != digest:
+            raise WorkerCommandConflict("request_id already belongs to different action parameters")
+    try:
+        return await handle.result()
+    except asyncio.CancelledError:
+        if started_here and command is not None:
+            await handle.cancel()
+            await asyncio.gather(handle.result(), return_exceptions=True)
+        raise
+
+
+async def worker_runtime_snapshot(*, allow_last_observation: bool = False) -> RuntimeSnapshot:
+    """Readiness needs a live observation. Immutable scene lookups can use the last verified image."""
+    from temporalio.client import WorkflowFailureError
+
+    global _last_runtime_observation
+    deployment = (
+        settings.temporal_target, settings.temporal_namespace,
+        settings.temporal_task_queue, settings.sandbox_image,
+    )
+    previous = _last_runtime_observation
+    if not allow_last_observation or (previous is not None and previous[0] != deployment):
+        previous = None
+    if previous is not None and time.monotonic() - previous[1] < _RUNTIME_OBSERVATION_SECONDS:
+        return previous[2]
+
+    try:
+        facts = await asyncio.wait_for(run_worker_command(None), settings.dependency_readiness_timeout_s)
+    except (OSError, RuntimeError, WorkflowFailureError, RPCError) as exc:
+        if previous is not None:
+            return previous[2]
+        raise TemporalWorkerUnavailable("Worker runtime inspection unavailable") from exc
+    snapshot = RuntimeSnapshot(**facts)
+    _last_runtime_observation = (deployment, time.monotonic(), snapshot)
+    return snapshot

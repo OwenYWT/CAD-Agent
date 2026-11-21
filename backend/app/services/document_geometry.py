@@ -14,7 +14,7 @@ from sqlalchemy import text
 
 from app.db import tenant_transaction
 from app.freecad.semantic_state import feature_id
-from app.object_store import download_object, get_object, put_object, sha256_object
+from app.object_store import download_object, put_object, sha256_object
 from app.services.cloud_documents import authorized_document, checkpoint
 
 LOD = {'coarse', 'medium', 'fine'}
@@ -90,7 +90,7 @@ async def build_document_scene(context, document_id, revision_id, scene_task, ex
         if measured['sha256'] != source['sha256'] or measured['size_bytes'] != source['size_bytes']:
             raise ValueError('场景来源 FCStd 完整性校验失败')
         files = await execute_scene(source, known, Path(directory))
-        scene = validate_scene(json.loads(files['scene'].read_text()))
+        scene = validate_scene(json.loads(files['scene'].read_text(encoding='utf-8')))
         scene['lineage_id'] = projection.get('lineage_id', str(document_id))
         created = []
         with zipfile.ZipFile(files['meshes']) as archive:
@@ -142,7 +142,7 @@ async def build_document_scene(context, document_id, revision_id, scene_task, ex
         return _public_scene(scene, document_id, revision_id)
 
 
-async def scene_mesh(context, document_id, revision_id, sha256):
+async def scene_mesh_artifact(context, document_id, revision_id, sha256):
     if HEX.fullmatch(sha256) is None:
         raise KeyError('mesh')
     async with tenant_transaction(context.tenant_id, context.principal_id) as conn:
@@ -155,7 +155,5 @@ async def scene_mesh(context, document_id, revision_id, sha256):
             raise KeyError('mesh not in document revision')
         row = (await conn.execute(text('SELECT * FROM document_geometry_blobs WHERE id=:id AND project_id=:project'),
             {'id':next(iter(blob_ids)),'project':doc['project_id']})).mappings().one()
-    payload = await get_object(row['object_key'])
-    if len(payload) != row['size_bytes'] or hashlib.sha256(payload).hexdigest() != sha256:
-        raise RuntimeError('部件网格完整性校验失败')
-    return payload
+    return {'object_key': row['object_key'], 'size_bytes': row['size_bytes'],
+            'sha256': sha256, 'content_type': 'model/stl'}

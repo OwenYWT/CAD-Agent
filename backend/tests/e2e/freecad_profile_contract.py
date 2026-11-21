@@ -9,6 +9,22 @@ import FreeCAD as App
 import Part
 import freecad_entry as runner
 
+# Creating a Body also creates Origin and datum objects. None may silently
+# rename a requested Sketch and leave later operations pointing at another type.
+for name, body_name in [('Body', 'Body'), ('Housing', 'Housing'),
+                        ('Origin', 'Body'), ('XY_Plane', 'Body')]:
+    document = App.newDocument('NameCollision')
+    try:
+        try:
+            runner._sketch_create(document, {'name': name, 'body': body_name})
+        except runner.FreeCADRunnerError as error:
+            assert error.code == 'object_name_conflict', str(error)
+            assert not [o for o in document.Objects if o.TypeId == 'Sketcher::SketchObject']
+        else:
+            raise AssertionError('Sketch silently renamed after implicit Body creation: ' + name)
+    finally:
+        App.closeDocument(document.Name)
+
 with tempfile.TemporaryDirectory() as root:
     root = Path(root)
     runner.INPUT_ROOT = root / 'input'; runner.INPUT_ROOT.mkdir()

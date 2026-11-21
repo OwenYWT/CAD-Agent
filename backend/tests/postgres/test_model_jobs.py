@@ -25,9 +25,9 @@ pytestmark = pytest.mark.skipif(not os.getenv('CAD_MODEL_JOB_TEST_DATABASE_URL')
 
 
 @pytest_asyncio.fixture
-async def request_job(monkeypatch):
+async def request_job(monkeypatch, job_database_url):
     await close_database()
-    monkeypatch.setattr(settings,'database_url',os.environ['CAD_MODEL_JOB_TEST_DATABASE_URL'])
+    monkeypatch.setattr(settings,'database_url',job_database_url)
     monkeypatch.setattr(settings,'durable_control_plane_enabled',True)
     owner = user_principal(str(uuid4()))
     await reconcile_principal(owner)

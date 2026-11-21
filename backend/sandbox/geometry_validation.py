@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -95,8 +96,17 @@ def _bounds(values: Iterable[float]) -> dict[str, float]:
 def _dimension_error(
     dimensions: tuple[float, ...],
     expected: dict[str, float],
+    *, world_axes: bool = False,
 ) -> float | None:
     normalized = {str(key).strip().lower(): value for key, value in expected.items()}
+    if world_axes and normalized and normalized.keys() <= {'x', 'y', 'z'}:
+        errors = []
+        for axis, value in normalized.items():
+            index, target = 'xyz'.index(axis), float(value)
+            if index >= len(dimensions) or not math.isfinite(target) or target <= 0:
+                return 1.0
+            errors.append(abs(dimensions[index] - target) / target)
+        return max(errors)
     group = next(
         (group for group in _AXIS_GROUPS if all(key in normalized for key in group)),
         None,
@@ -164,19 +174,20 @@ def _validate_step(path: Path, *, role: str) -> dict[str, Any]:
     return result
 
 
-def _validate_stl(path: Path, *, role: str) -> dict[str, Any]:
+def _validate_stl(path: Path, *, role: str, expected_components: int | None = None) -> dict[str, Any]:
     import trimesh
 
     result = _common(path, role=role, artifact_format="stl")
     try:
-        from mesh_normalization import load_normalized_mesh
+        from mesh_normalization import load_normalized_components
     except ModuleNotFoundError:
-        from sandbox.mesh_normalization import load_normalized_mesh
+        from sandbox.mesh_normalization import load_normalized_components
     # Binary/ASCII STL repeats vertices per triangle and FreeCAD may emit
     # duplicate or degenerate triangles at analytic-surface seams. Normalize
     # only numerically identical vertices (1e-8 mm) and invalid duplicate
     # faces; do not fill holes or otherwise heal failed geometry.
-    mesh = load_normalized_mesh(path)
+    components = load_normalized_components(path)
+    mesh = components[0] if len(components) == 1 else trimesh.util.concatenate(components)
     dimensions = tuple(float(item) for item in mesh.bounding_box.extents)
     bounds = mesh.bounding_box.bounds
     valid = bool(
@@ -211,6 +222,9 @@ def _validate_stl(path: Path, *, role: str) -> dict[str, Any]:
         result["issues"].append("empty_mesh")
     if not mesh.is_watertight:
         result["issues"].append("not_watertight")
+    if expected_components is not None and len(components) != expected_components:
+        result['valid'] = False
+        result['issues'].append('stl_component_identity_mismatch')
     if result["volume_mm3"] <= 0.001:
         result["issues"].append("degenerate_volume")
     if min(dimensions) <= 0:
@@ -258,6 +272,38 @@ def _validate_dxf(path: Path, *, role: str) -> dict[str, Any]:
     return result
 
 
+def _acceptance_issue_strings(
+    acceptance: dict[str, Any], evidence: list[dict[str, Any]]
+) -> list[str]:
+    """Expose required acceptance measurement causes in the durable issue list.
+
+    Acceptance rows intentionally remain ``indeterminate`` when the measurement
+    kernel cannot prove a predicate.  The old report only retained that status,
+    which made source repair blind to the actual cause (for example an oblique
+    planar boundary in a rectangular assembly).  Keep the status strict while
+    carrying the row's diagnostic issues into the repair-facing report.
+    """
+    by_id = {
+        row.get("check_id"): row
+        for row in evidence
+        if isinstance(row, dict) and row.get("check_id")
+    }
+    result: list[str] = []
+    for check in acceptance.get("checks") or ():
+        if not isinstance(check, dict) or not check.get("required", True):
+            continue
+        check_id = check.get("check_id")
+        row = by_id.get(check_id)
+        if not row or row.get("outcome") == "passed":
+            continue
+        row_issues = [str(item) for item in row.get("issues") or () if str(item)]
+        if row_issues:
+            result.extend(f"acceptance:{check_id}:{item}" for item in row_issues)
+        else:
+            result.append(f"acceptance:{check_id}:{row.get('outcome', 'indeterminate')}")
+    return list(dict.fromkeys(result))
+
+
 def validate_geometry_files(
     artifacts: list[dict[str, str]],
     *,
@@ -273,20 +319,24 @@ def validate_geometry_files(
     ):
         raise ValueError("expected_solid_count must be a positive integer")
     expected = dict(expected_dimensions or {})
+    try:
+        from geometry_request import is_body_lid_stl, is_fused_assembly_preview
+    except ModuleNotFoundError:
+        from app.contracts.geometry_request import is_body_lid_stl, is_fused_assembly_preview
     reports: list[dict[str, Any]] = []
-    issues: list[str] = []
     supported = {"step": _validate_step, "stl": _validate_stl, "dxf": _validate_dxf}
     for item in artifacts:
         role = str(item["role"])
         artifact_format = str(item["format"]).lower()
         path = Path(item["path"])
         try:
-            report = supported[artifact_format](path, role=role)
-            if expected_solid_count is not None and artifact_format in {"step", "stl"}:
-                if report["solid_count"] != expected_solid_count:
-                    report["valid"] = False
-                    report["issues"].append("solid_count_mismatch")
-            error = _dimension_error(tuple(report["dimensions_mm"]), expected)
+            if ((measurement_context or {}).get('modeling_backend') == 'freecad'
+                    and is_body_lid_stl(artifact_format, expected_solid_count, acceptance)):
+                report = _validate_stl(path, role=role, expected_components=expected_solid_count)
+            else:
+                report = supported[artifact_format](path, role=role)
+            error = _dimension_error(tuple(report['dimensions_mm']), expected,
+                world_axes=(acceptance or {}).get('schema_version') == 'engineering-acceptance.v2')
             report["max_dimension_error"] = error
             if error is not None and error > dimension_tolerance:
                 report["valid"] = False
@@ -296,7 +346,40 @@ def validate_geometry_files(
             report["parseable"] = False
             report["issues"].append(f"parse_failed:{type(exc).__name__}")
         reports.append(report)
-        issues.extend(f"{role}:{issue}" for issue in report["issues"])
+    steps = [item for item in artifacts if item['format'].lower() == 'step']
+    step_reports = [item for item in reports if item['format'] == 'step']
+    step = step_reports[0] if len(step_reports) == 1 and step_reports[0]['valid'] else None
+    if expected_solid_count is not None:
+        try:
+            from mesh_normalization import export_fused_step_preview
+        except ModuleNotFoundError:
+            from sandbox.mesh_normalization import export_fused_step_preview
+        for report in reports:
+            if report['format'] not in {'step', 'stl'}:
+                continue
+            if step and report['valid'] and is_fused_assembly_preview(
+                report['format'], expected_solid_count,
+                step['solid_count'], acceptance, measurement_context,
+            ):
+                # Verify the entire preview, including cuts and component placements.
+                try:
+                    with tempfile.TemporaryDirectory() as directory:
+                        preview = Path(directory) / 'preview.stl'
+                        export_fused_step_preview(steps[0]['path'], preview)
+                        with preview.open('rb') as stream:
+                            regenerated = hashlib.file_digest(stream, 'sha256').hexdigest()
+                    if regenerated == report['sha256']:
+                        report['regenerated_preview'] = [step['sha256'], regenerated]
+                        continue
+                except (OSError, RuntimeError, ValueError) as exc:
+                    report['issues'].append(f'preview_rebuild_failed:{type(exc).__name__}')
+                report['issues'].append('assembly_preview_mismatch')
+            elif report['solid_count'] == expected_solid_count:
+                continue
+            else:
+                report['issues'].append('solid_count_mismatch')
+            report['valid'] = False
+    issues = [f"{report['role']}:{issue}" for report in reports for issue in report['issues']]
     outcome = (
         "indeterminate"
         if any(not item["parseable"] for item in reports)
@@ -328,7 +411,6 @@ def validate_geometry_files(
             from feature_verification import measure_checks
         except ModuleNotFoundError:
             from sandbox.feature_verification import measure_checks
-        steps = [item for item in artifacts if item['format'].lower() == 'step']
         evidence = []
         digest = hashlib.sha256(json.dumps(acceptance, ensure_ascii=False, sort_keys=True,
                                            separators=(',', ':')).encode()).hexdigest()
@@ -352,13 +434,17 @@ def validate_geometry_files(
         result['acceptance_contract'] = acceptance
         by_id = {e['check_id']:e for e in evidence}
         outcomes = [by_id[c['check_id']]['outcome'] for c in acceptance['checks'] if c['required']]
-        issues.extend('acceptance:'+c['check_id']+':'+by_id[c['check_id']]['outcome']
-                      for c in acceptance['checks'] if c['required'] and by_id[c['check_id']]['outcome']!='passed')
+        issues.extend(_acceptance_issue_strings(acceptance, evidence))
         if acceptance.get('unresolved'):
             outcomes.append('indeterminate');issues.append('acceptance:unresolved_requirements')
         if acceptance.get('verification_limits'):
             outcomes.append('indeterminate');issues.append('acceptance:verification_unavailable')
-        if result['outcome'] != 'failed':
+        # Match the host acceptance_outcome policy: missing requirements or
+        # unsupported measurements cannot be repaired by changing CAD source.
+        # Keep every failed measurement/artifact diagnostic in the report.
+        if acceptance.get('unresolved') or acceptance.get('verification_limits'):
+            result['outcome'] = 'indeterminate'
+        elif result['outcome'] != 'failed':
             if 'failed' in outcomes:result['outcome']='failed'
             elif 'indeterminate' in outcomes:result['outcome']='indeterminate'
     return result

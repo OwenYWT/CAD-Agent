@@ -227,9 +227,9 @@ jobs:
   mcad-core:
     name: mcad-core
     runs-on: ubuntu-24.04
-    # The expanded real-workflow suite reached case 150/163 at the former
-    # one-hour job limit, before native contracts. Keep every case mandatory.
-    timeout-minutes: 90
+    # The 209-case real-workflow suite reached 99% at 90 minutes, before
+    # native contracts and replay. Keep every case and evidence gate mandatory.
+    timeout-minutes: 120
     needs: build-images
     env:
       CAD_CI_JOB: mcad-core
@@ -329,6 +329,8 @@ jobs:
         cache-dependency-path: frontend/package-lock.json
     - run: |-
         npm ci --prefix frontend
+        # Keep Ubuntu signature verification while its primary DNS is unavailable.
+        printf '%s\n' 'https://mirrors.edge.kernel.org/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
         python -m playwright install --with-deps chromium
     - name: Create isolated data and workflow services
       run: bash scripts/ci/services.sh up
@@ -375,6 +377,8 @@ jobs:
         cache-dependency-path: frontend/package-lock.json
     - run: |-
         npm ci --prefix frontend
+        # Keep Ubuntu signature verification while its primary DNS is unavailable.
+        printf '%s\n' 'https://mirrors.edge.kernel.org/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
         python -m playwright install --with-deps chromium
     - name: Run all deploy contracts
       run: bash scripts/ci/run.sh deploy
@@ -414,12 +418,13 @@ jobs:
         cache: pip
         cache-dependency-path: backend/requirements-ci.lock
     - name: Download evidence from this exact workflow attempt
-      uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
       if: always()
       with:
         pattern: cad-ci-evidence-*-${{ github.run_id }}-${{ github.run_attempt }}
-        path: reports
-        merge-multiple: true
+        path: ${{ runner.temp }}/cad-ci-evidence
+        skip-decompress: true
+        digest-mismatch: error
     - name: Require every job, test identity and receipt
       if: always()
-      run: python scripts/ci/require_regression.py reports
+      run: python scripts/ci/require_regression.py reports --archives "$RUNNER_TEMP/cad-ci-evidence"

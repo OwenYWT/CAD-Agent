@@ -47,7 +47,7 @@ export CAD_NATIVE_E2E_REQUIRE_ADDRESS_CHANGE=1
 
 联合恢复仅接受 `cad_coedit_live_*` / `cad-coedit-live-*` 源，目标必须全新；不删除已有资源。它覆盖实际启用的 PostgreSQL 认证、MCAD 数据及包含不可变历史文件的 S3 当前对象版本，不声称恢复 Temporal 整库、所有 S3 VersionId 或可选桌面 Connector 状态。密码、原始历史、trace 和备份必须留在私有证据目录。
 
-视觉预算控制负例在 `tests/integration/test_temporal_mcadd_workflow.py -k native_visual_negative_budget_with_real_kernel`：使用明确标识的受控 Provider 判断，实际 PostgreSQL/Temporal/FreeCAD/渲染/S3 均执行。三个场景是 advisory 明确失败、required 明确失败、required 无法判断。此类结果证明门禁与预算控制，真实 Provider 的尺寸、孔位和修复效果须另测，不能互相替代。
+视觉预算控制负例见 `tests/integration/test_temporal_mcadd_workflow.py -k native_visual_negative_budget_with_real_kernel`。用例采用受控 Provider 判断，实际运行 PostgreSQL、Temporal、FreeCAD、渲染及 S3。advisory 明确失败时，旧历史修复一次，新任务保留原模型并阻断候选。required 明确失败时修复一次，无法判断时直接阻断。四种情况均回放真实命令历史。真实 Provider 的尺寸、孔位和修复效果须单独验证。
 
 ## 按依赖执行
 

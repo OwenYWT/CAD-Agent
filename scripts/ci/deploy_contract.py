@@ -114,22 +114,21 @@ def main():
     health = "import json,urllib.request,urllib.error; exec(\"try:\\n r=urllib.request.urlopen('http://localhost:8000/ready')\\nexcept urllib.error.HTTPError as e:\\n r=e\"); assert json.load(r)['durable_control_plane']['status']=='ready'"
     override = {'services': {}}
     for service in ('backend', 'workflow-worker', 'migrate'):
-        override['services'][service] = {'volumes': [f'{work}:{work}'], 'labels': {'cad.ci.owner': owner}, 'restart': 'no'}
+        override['services'][service] = {'volumes': ['cad_data:/app/data', f'{work}:{work}'],
+            'labels': {'cad.ci.owner': owner}, 'restart': 'no'}
     override['services']['backend']['healthcheck'] = {'test': ['CMD', 'python', '-c', health]}
     override['services']['minio'] = {'image': env['CAD_CI_OBJECT_STORE_IMAGE'],
         'healthcheck': {'test': ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']}}
     override['services']['minio-init'] = {'image': env['CAD_CI_OBJECT_STORE_IMAGE']}
     override['services']['edge'] = {'image': env['FRONTEND_IMAGE'],
         'entrypoint': ['nginx', '-g', 'daemon off;'],
+        'networks': ['ingress', 'default'],
         'volumes': [f'{private}/nginx.conf:/etc/nginx/conf.d/default.conf:ro', f'{certs}:/ci/certs:ro'],
         'ports': ['127.0.0.1:18443:443'], 'depends_on': ['frontend', 'minio'], 'restart': 'no'}
-    # Reset the fixed production work mount; retain only this project's volume.
-    for service in ('backend', 'workflow-worker', 'migrate'):
-        socket = os.getenv('CAD_CI_DOCKER_SOCKET', '/var/run/docker.sock')
-        override['services'][service]['volumes'] = [f'{socket}:/var/run/docker.sock',
-            'cad_data:/app/data', f'{work}:{work}']
-        if os.getenv('CAD_CI_ENGINE_SECURITY_OPT'):
-            override['services'][service]['security_opt'] = [os.environ['CAD_CI_ENGINE_SECURITY_OPT']]
+    socket = os.getenv('CAD_CI_DOCKER_SOCKET', '/var/run/docker.sock')
+    override['services']['workflow-worker']['volumes'].append(f'{socket}:/var/run/docker.sock')
+    if os.getenv('CAD_CI_ENGINE_SECURITY_OPT'):
+        override['services']['workflow-worker']['security_opt'] = [os.environ['CAD_CI_ENGINE_SECURITY_OPT']]
     # Compose !override avoids merging the production ports/mounts into CI.
     raw = yaml.safe_dump(override, sort_keys=False)
     raw = raw.replace('    volumes:\n', '    volumes: !override\n')
@@ -163,6 +162,7 @@ def main():
         (report/'monitor-database.json').write_text(json.dumps(result,indent=2))
         api = run([*compose, 'ps', '-q', 'backend'], capture_output=True).stdout.strip()
         inspected = json.loads(run([runtime, 'inspect', api], capture_output=True).stdout)[0]
+        assert all(mount['Destination'] != '/var/run/docker.sock' for mount in inspected['Mounts'])
         assert inspected['Config']['Image'] == env['BACKEND_IMAGE']
         assert all('/workspace' not in m.get('Destination', '') and '/app/backend' not in m.get('Destination', '') for m in inspected['Mounts'])
         # Browser fixtures execute inside the delivered backend, while Playwright

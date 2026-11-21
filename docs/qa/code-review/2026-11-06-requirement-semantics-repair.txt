@@ -1,0 +1,86 @@
+CAD-Agent：需求语义、跨字段归属与基础形状验收修复交接
+日期：2026-11-06，Asia/Shanghai
+工作目录：/Users/wentao/CAD-Agent-native-reliability
+分支：fix/requirement-semantics-20261105
+基线：b51bee82f3cb8c1dca8d08d5624d863aa8535355（本轮重新核对的 origin/main）
+状态：本轮修复及下述回归全部完成，可交付独立验收；全部结论限定在所列输入与几何能力范围内。
+本轮新增代码尚未提交、推送或部署。既有补丁、QA 报告、失败快照和本地数据全部保留。
+
+一、修复的根因及行为变化
+
+1. 同一个数值在前后端被不同的语法解释。
+   原来“十厘米”识别不到，混合输入中还可能把前一个数值交给后一个属性。
+   现在后端共用数量读取函数，支持常用中文整数、小数与阿拉伯数字混合；复用已有单位、范围、公差与量纲校验。前端需求卡通过只读预览接口取得同一提取器的结果，不再维护另一套数字和完整性规则。
+   用户原文不做数字替换，原句、字段、来源身份及字符位置仍可追溯；不确定的数值不会被猜成一个数。
+   入口：backend/app/validation/quantities.py；requirement_binding.py；rectangular_assembly_requirements.py；backend/app/api/tasks.py；frontend/src/adapters/requirementIntake.ts；frontend/src/components/agent/RequirementCard.tsx。
+
+2. 形状名称包含的条件没有进入验收合同。
+   原来“正方体，边长100mm”可能只验一个方向的长度；球体或圆柱写成长宽高时，也不能只靠外包尺寸证明形状。
+   现在正方体要求同时冻结完整正方体形状与实际棱长；边长、长宽高和三维尺寸间的矛盾会在规划前拒绝。球体、圆柱已有直径/半径测量继续复用；只有整体尺寸而没有对应原始体测量时，补上独立形状要求。
+   原生检查测量完整实体边界，不使用目标尺寸选择局部面。旋转后的正确正方体可通过；不等边长方体、剪切体、空心体、凹口及微小缺料不能凭包围盒通过。
+   入口：source_obligations.py；requirement_binding.py；backend/app/contracts/acceptance_v2.py；backend/sandbox/material_measurements.py；feature_verification.py；backend/app/contracts/material_certificates.py；backend/app/agent/planner.py。
+
+3. 分开填写的目标与确认尺寸缺少一致的对象归属。
+   现在复用已有部件归属规则，在所有保存字段只指向一个明确的正方体、圆柱或球体时，共享这个对象身份。数值、单位、公差及来源仍归原字段，不把拼接文本伪装成新的用户证据。
+   多个不同部件没有明确选择范围时，不共用整件测量。此前板厚与“孔要穿过整块板”的跨字段修复保留，并在真实服务中回归。
+   入口：requirement_binding.py 的 extract_source_requirements；source_obligations.py 的 source_owners。
+
+4. 覆盖检查与提取器同时漏掉条件，就可能把“没读懂”当成“没有要求”。
+   现在独立条件清单保留基础形状义务；单位标记也独立检查，不能因为某种数字写法不受支持就整条消失。创建一个产品与孔数、实体数仍分别归属，不全局忽略“一个”。
+   未知特征、未明确部件归属、矛盾尺寸以及未识别的数量会保留原句诊断并停止建模；模型提案少报形状或棱长也不能通过来源绑定。
+   入口：source_obligations.py；requirement_binding.py；现有 SourceRequirementUnavailable 与来源绑定门禁。
+
+5. 结果展示与取证对应实际验收含义。
+   形状条件显示“满足/未满足/未验证”，不把布尔条件渲染成毫米。需求预览失败可见；用户已编辑的尺寸或已作出的概念选择不会被异步预览覆盖。
+   新增原生测试保留可重开的 FCStd、STEP、冻结合同、独立报告和 BOP 诊断，后台继续核对文件摘要及测量证据。
+   入口：frontend/src/adapters/engineeringMeasurements.ts；RequirementCard.tsx；backend/tests/e2e/intake_semantics_contract.py；scripts/ci/native_contracts.sh。
+
+二、验收团队可复核的行为
+
+合法输入应保留要求并完成对应真实几何验收：
+- 构建一个十厘米的正方体。
+- 立方体棱长二十五毫米；Create a 10cm cube。
+- 长方体长100mm宽二十厘米高三十厘米。
+- 目标仅写正方体，确认尺寸写边长十厘米；圆柱、球体的对象与尺寸也可分字段保存。
+- 原有板厚确认字段与目标中的“孔要穿过整块板”。
+
+错误输入或错误模型必须被阻断：
+- 正方体边长100mm且高50mm等互相冲突的尺寸。
+- 100×50×100mm长方体冒充边长100mm正方体；长宽高相同的方块冒充球体或圆柱。
+- 空心、缺口、剪切或带微小盲孔的实体冒充完整正方体。
+- 不同部件借用同一整件尺寸；提案删除形状/棱长要求；篡改边界覆盖、测量值、正交轴、面配对或数值误差证据。
+- 未被可靠解释的数值和特征。这里保持“无法验证”的明确诊断，不以概念确认或模型自报结果绕过验收。
+
+三、已完成验证
+
+以下均针对本轮工作区；层间存在重叠，不合并计数。
+- 后端 quick 全量：2,574 通过、367 跳过、1 取消选择；所选 lint、类型检查和 CI 清单检查通过。跳过项为该入口排除的外部服务/专用运行环境测试，不能算成通过。
+- 前端：179 通过，lint、类型检查、生产构建通过。
+- 架构边界、功能测试映射和 CI 策略检查通过；新增测试已登记，未删除原必跑项或放宽旧门禁。
+- 最终镜像原生几何专项：68 组合同/模型组合符合预期，其中 20 passed、12 failed、36 indeterminate；后两类不允许形成可提交候选。后台 182 次证据篡改均被拒绝。
+- 浏览器：9 条审核、提交、刷新重载流程通过，包含中文正方体、跨字段正方体、混合中文尺寸、球体/圆柱形状，以及既有 FDM、直径、贯穿、装配流程；无页面异常。
+- 全量真实服务：176 通过、零跳过，9 个付费/实时模型专项取消选择；运行用时 41 分 02 秒。
+- 原生运行时：16 通过、零跳过。
+- 当前工作流回放：6 条通过，覆盖 McadAgentWorkflowV2、McadDurableWorkflow、McadCheckWorkflow、ModelJobWorkflow；固定发布历史回放 12 条通过。
+- 原生脚本及后台复核全套：39 个步骤全部退出码 0，其中再次运行了上述 68 组几何专项和 182 次证据篡改检查，未重复累计。
+
+最终测试镜像：localhost/cad-requirement-semantics:20261105-final
+镜像 ID：72a82afe7757db939077fcaba0c7d89c7921d92c3212108ea5f726e7a7a8e17f
+FreeCAD：1.1.3；本轮原生执行平台：本地 Linux/arm64 Podman。
+已逐一核对镜像内 42 个直接复制的后端/原生文件摘要，与当前源码一致。
+
+四、证据与复现入口
+
+持久交接证据：与本报告同目录的 2026-11-06-requirement-semantics-evidence/。
+其中 changes.patch 为相对上述基线的完整业务/测试修改（含新增 quantities.py）；manifest.json 记录源码和证据摘要；saved-models/ 与 native-measurements.json 对应 38 组可重开的模型；core/ 保存最终全量服务、运行时与回放报告及原生步骤记录。
+全部运行原始记录：/private/tmp/cad-requirement-semantics-20261105。
+原问题诊断：2026-11-04-b51bee8-cube-intake-diagnosis.txt 及其调查证据目录，未覆盖。
+新增测试主要入口：backend/tests/test_intake_dimension_semantics.py；test_requirement_basis.py；tests/integration/test_change_set_api.py；test_temporal_mcadd_workflow.py；tests/e2e/intake_semantics_fixture.py；intake_semantics_contract.py；intake_semantics_browser.py；frontend/tests/requirement-intake.test.ts；engineering-measurements.test.ts。
+验证命令复用 scripts/ci/run.sh quick backend、quick frontend、quick architecture、core；浏览器由现有 intake_semantics_browser.py 驱动。服务配置含凭据，不纳入报告或证据包；每次复跑须使用独立测试库和队列，不并发清理同一数据库。
+
+五、边界与保留事项
+
+FreeCAD、数据库、Temporal、对象存储和浏览器实际运行；模型规划阶段使用可控提案输入。未新增付费模型调用，不把结果表述为真实 AI 生成成功率，也不宣称已验证视觉、DFM、防水等级或实际打印性能。
+原生专项保存了 38 组模型文件。33 组严格 BOP 检查通过；5 组故意构造的微小 NURBS 缺料输入记录了 BOPAlgo GeomAbs_C0 诊断，并被独立验收拒绝，不能声称它们是严格 BOP 有效的反例。有效普通反例和同包围尺寸反例均通过严格 BOP 后才参与验收。
+实现期间先运行的中间版本、一次主动中止的旧全量服务任务和一次因上述 NURBS 检查断言过宽而失败的测试取证运行均保留；不将这些结果与最终版本混合计数。修正的是测试对 BOP 有效性的断言范围和诊断保存方式，未放松产品几何门禁。
+本轮没有数据库迁移，不改写已冻结的历史合同，不删除失败快照、错误恢复、独立验收或候选审核/提交门禁。新检查类型需与前后端、工作进程和原生镜像一并发布；本报告不代表已在线上发布。

@@ -1,22 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { AuthUser } from "../auth";
-import { authFetch, deleteAuthAccount, refreshAuthSession } from "../auth";
+import { deleteAuthAccount, refreshAuthSession } from "../auth";
 import { useI18n } from "../i18n/I18nContext";
 import { Icon } from "./ui/Icon";
 import { useMutationReceipt } from '../hooks/useMutationReceipt';
-import { readJson } from '../services/clients/http';
+import { listInvites, createInviteCode, disableInviteCode, findInvite, type InviteCode } from '../services/clients/invites';
 import { BillingOverview } from "./BillingOverview";
-
-const API_BASE = import.meta.env.VITE_API_BASE || "";
-
-interface InviteCode {
-  code: string;
-  max_uses: number;
-  used_count: number;
-  expires_at: string | null;
-  disabled_at: string | null;
-  created_at: string;
-}
 
 interface AccountPanelProps {
   user: AuthUser;
@@ -71,9 +60,7 @@ export function AccountPanel({ user, onUserUpdate, onLogout }: AccountPanelProps
     if (!user.is_admin) return;
     setInvitesLoading(true);
     try {
-      const res = await authFetch(`${API_BASE}/api/auth/invites`);
-      if (!res.ok) throw new Error("邀请码加载失败");
-      const data = await res.json();
+      const data = await listInvites();
       if (!Array.isArray(data)) throw new Error('邀请码列表格式无效');
       setInvites(data);
     } catch (err) {
@@ -98,17 +85,8 @@ export function AccountPanel({ user, onUserUpdate, onLogout }: AccountPanelProps
     setUncertainMutation(receipt);
     let failure = '';
     try {
-      const res = await authFetch(`${API_BASE}/api/auth/invites`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: receipt.code, max_uses: maxUses }),
-      });
-      // Parse defensively: an error response may be empty or non-JSON, and reading
-      // .detail off a failed parse would mask the real failure.
-      const raw = await res.text();
-      const data = raw ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : null;
-      if (!res.ok) throw new Error((data && data.detail) || "邀请码创建失败");
-      if (!data || !data.code) throw new Error("邀请码创建失败");
+      const data = await createInviteCode(receipt.code, maxUses);
+      if (!data?.code) throw new Error("邀请码创建失败");
     } catch (err) {
       failure = err instanceof Error ? err.message : "邀请码创建失败";
     }
@@ -122,8 +100,7 @@ export function AccountPanel({ user, onUserUpdate, onLogout }: AccountPanelProps
     const receipt = { action: 'disable' as const, code }; setUncertainMutation(receipt);
     let failure = '';
     try {
-      const response = await authFetch(`${API_BASE}/api/auth/invites/${encodeURIComponent(code)}`, { method: "DELETE" });
-      if (!response.ok) throw new Error("邀请码禁用失败");
+      await disableInviteCode(code);
     } catch (reason) { failure = reason instanceof Error ? reason.message : "邀请码禁用失败"; }
     try { await reconcileInvite(receipt, failure); }
     finally { lock.current = false; setPending(""); }
@@ -132,8 +109,7 @@ export function AccountPanel({ user, onUserUpdate, onLogout }: AccountPanelProps
   const reconcileInvite = async (receipt: NonNullable<typeof uncertainMutation>, failure = '') => {
     setPending('verify'); setError(null);
     try {
-      const response = await authFetch(`${API_BASE}/api/auth/invites/${encodeURIComponent(receipt.code)}`);
-      const actual = response.status === 404 ? null : await readJson<InviteCode>(response, '邀请码结果核对失败');
+      const actual = await findInvite(receipt.code);
       if (actual && actual.code !== receipt.code) throw new Error('邀请码结果身份不匹配');
       const applied = receipt.action === 'disable' ? !actual || Boolean(actual.disabled_at) : Boolean(actual && !actual.disabled_at && actual.max_uses === receipt.maxUses);
       setInvites(previous => actual ? [actual, ...previous.filter(item => item.code !== receipt.code)] : previous.filter(item => item.code !== receipt.code));

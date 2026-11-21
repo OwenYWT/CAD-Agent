@@ -11,7 +11,8 @@ from app.api import generate as generate_api
 from app.api import history as history_api
 from app.api import websocket as websocket_api
 from app.config import settings
-from app.models.schemas import ExecuteRequest, GenerateRequest, GenerateResponse
+from app.models.schemas import ExecuteRequest, GenerateRequest, GenerateResponse, ModifyRequest
+from app.domain.requirement_basis import RequirementBasisV1
 from app.workflows.temporal import OperationContextV1
 from fastapi import HTTPException
 
@@ -23,6 +24,99 @@ def _identity():
         "expected_base_revision_id": uuid4(),
         "idempotency_key": f"cutover-{uuid4()}",
     }
+
+
+def _confirmed_basis():
+    return RequirementBasisV1(
+        target="板，孔径6mm，孔要穿过整块板。", design_scope="geometry",
+        source_kind="user_specification", source_reference="用户指定的设计尺寸",
+        dimensions="板40×30×12mm", concept_acknowledged=True,
+    )
+
+
+@pytest.mark.parametrize('request_type', [GenerateRequest, ModifyRequest])
+def test_public_requests_validate_and_preserve_manufacturing_profile(request_type):
+    from app.models.schemas import ManufacturingProfile
+    from pydantic import ValidationError
+    profile = ManufacturingProfile(material='PETG', nozzle_diameter_mm=0.6, layer_height_mm=0.28)
+    request = request_type(prompt='cylinder height 30 mm', manufacturing_profile=profile.model_dump(), **_identity())
+    assert request.model_dump(mode='json')['manufacturing_profile'] == profile.model_dump(mode='json')
+    with pytest.raises(ValidationError):
+        request_type(prompt='cylinder height 30 mm', manufacturing_profile={'process': 'unknown'}, **_identity())
+
+
+@pytest.mark.asyncio
+async def test_public_modify_forwards_manufacturing_profile(monkeypatch):
+    from app.models.schemas import ManufacturingProfile
+    identity, workflow_run_id, calls = _identity(), uuid4(), []
+    profile = ManufacturingProfile(material='PETG', nozzle_diameter_mm=0.6, layer_height_mm=0.28)
+
+    async def submit(principal, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(workflow_run_id=workflow_run_id)
+
+    async def wait(*args, **kwargs):
+        return _success(identity, workflow_run_id)
+
+    monkeypatch.setattr(generate_api.rate_limiter, 'check', _no_rate_limit)
+    monkeypatch.setattr(generate_api, 'current_principal', lambda: object())
+    monkeypatch.setattr(generate_api, 'submit_durable_workflow', submit)
+    monkeypatch.setattr(generate_api, 'wait_for_compatibility_response', wait)
+    monkeypatch.setattr(generate_api, 'load_revision_source_inventory', _no_rate_limit)
+    monkeypatch.setattr(generate_api, 'resolve_rest_modify_submission', lambda **_: SimpleNamespace(
+        existing_code=None, modeling_backend='freecad', operation_context=None))
+    await generate_api.modify(ModifyRequest(prompt='cylinder height 30 mm', manufacturing_profile=profile,
+                                           **identity), SimpleNamespace(), None)
+    assert calls[0]['manufacturing_profile'] == profile
+
+
+@pytest.mark.parametrize("request_type", [
+    GenerateRequest, ModifyRequest, batch_api.BatchItem, batch_api.AsyncGenerateRequest,
+])
+def test_all_prompt_endpoints_validate_and_retain_confirmed_basis(request_type):
+    from pydantic import ValidationError
+    basis = _confirmed_basis()
+    request = request_type(prompt=basis.target, requirement_basis=basis.model_dump(), **_identity())
+    assert request.requirement_basis == basis
+    assert request.model_dump(mode="json")["requirement_basis"] == basis.model_dump(mode="json")
+    with pytest.raises(ValidationError):
+        request_type(prompt=basis.target, requirement_basis={
+            **basis.model_dump(), "fit_verified": True}, **_identity())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("endpoint", ["generate", "modify", "async", "batch"])
+async def test_rest_routes_forward_confirmed_basis_to_shared_submission(monkeypatch, endpoint):
+    identity, workflow_run_id, calls = _identity(), uuid4(), []
+    basis = _confirmed_basis()
+    api = batch_api if endpoint in {"async", "batch"} else generate_api
+
+    async def submit(principal, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(workflow_run_id=workflow_run_id)
+
+    async def wait(*args, **kwargs):
+        return _success(identity, workflow_run_id)
+
+    monkeypatch.setattr(api.rate_limiter, "check", _no_rate_limit)
+    monkeypatch.setattr(api, "current_principal", lambda: object())
+    monkeypatch.setattr(api, "submit_durable_workflow", submit)
+    monkeypatch.setattr(api, "wait_for_compatibility_response", wait)
+    data = {**identity, "prompt": basis.target, "requirement_basis": basis.model_dump()}
+    if endpoint == "modify":
+        monkeypatch.setattr(api, "load_revision_source_inventory", _no_rate_limit)
+        monkeypatch.setattr(api, "resolve_rest_modify_submission", lambda **_: SimpleNamespace(
+            existing_code=None, modeling_backend="freecad", operation_context=None))
+        await api.modify(ModifyRequest(**data), SimpleNamespace(), None)
+    elif endpoint == "generate":
+        await api.generate(GenerateRequest(**data), SimpleNamespace(), None)
+    elif endpoint == "async":
+        await api.generate_async(batch_api.AsyncGenerateRequest(**data), SimpleNamespace(), None)
+    else:
+        await api.batch_generate(batch_api.BatchRequest(items=[data]), SimpleNamespace(), None)
+    assert len(calls) == 1
+    assert calls[0]["objective"] == basis.target
+    assert calls[0]["requirement_basis"] == basis
 
 
 @pytest.mark.parametrize("request_type", [GenerateRequest, batch_api.AsyncGenerateRequest])
@@ -182,6 +276,9 @@ async def test_durable_submission_uses_v2_only_for_new_agent_writes(
                 mappings=lambda: SimpleNamespace(one_or_none=lambda: None)
             )
 
+        async def scalar(self, *_args, **_kwargs):
+            return None
+
     async def authorize(*_args, **_kwargs):
         return None
 
@@ -236,6 +333,66 @@ async def test_durable_submission_uses_v2_only_for_new_agent_writes(
 
     assert calls[0][0] == expected_workflow_id
     assert calls[0][1]["kind"] == expected_kind
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('mode', ['inherit', 'explicit', 'replay', 'legacy-replay', 'conflicting-replay'])
+async def test_modify_profile_is_frozen_from_immutable_source_or_prior_request(monkeypatch, mode):
+    from app.models.schemas import ManufacturingProfile
+    from app.services import durable_submission as submission_api
+    identity = _identity()
+    principal = SimpleNamespace(tenant_id=uuid4(), principal_id=uuid4())
+    profile = ManufacturingProfile(material='PETG', nozzle_diameter_mm=0.6, layer_height_mm=0.28).model_dump(mode='json')
+    changed = ManufacturingProfile(material='ABS', nozzle_diameter_mm=0.8).model_dump(mode='json')
+    code = 'result = box(2, 2, 2)'
+    context = OperationContextV1(rule='explicit_rest_operation', source_channel='rest', requested_operation='modify',
+        resolved_operation='modify', requested_modeling_backend='cadquery', submission_modeling_backend='cadquery',
+        base_revision_id=identity['expected_base_revision_id'], base_source_kind='request_code',
+        base_source_sha256=hashlib.sha256(code.encode()).hexdigest())
+    existing, calls, reads = None, [], []
+    if 'replay' in mode:
+        payload = submission_api.mcad_agent_v2_request_payload(branch_id=identity['branch_id'],
+            expected_base_revision_id=identity['expected_base_revision_id'], operation='modify', objective='height 3 mm',
+            existing_code=code, manufacturing_profile=None if mode == 'legacy-replay' else profile,
+            output_formats=('step',), confirmation_timeout_seconds=3600, modeling_backend='cadquery', operation_context=context)
+        existing = dict(id=uuid4(), project_id=identity['project_id'], requested_by_principal_id=principal.principal_id,
+                        kind='mcad.agent.v2.modify', request_payload=payload,
+                        request_payload_hash=submission_api.canonical_sha256(payload))
+
+    class Transaction:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def execute(self, *_args, **_kwargs):
+            return SimpleNamespace(mappings=lambda: SimpleNamespace(one_or_none=lambda: existing))
+
+        async def scalar(self, _statement, parameters):
+            reads.append(parameters)
+            assert parameters == dict(tenant=principal.tenant_id, project=identity['project_id'],
+                                      revision=identity['expected_base_revision_id'])
+            return {'manufacturing_profile': profile}
+
+    async def start(**kwargs):
+        calls.append(kwargs)
+        return existing['id'] if existing else uuid4(), object()
+
+    monkeypatch.setattr(submission_api, 'tenant_transaction', lambda *_: Transaction())
+    monkeypatch.setattr(submission_api, '_authorize_current_base', _no_rate_limit)
+    monkeypatch.setattr(submission_api, 'start_mcad_agent_v2_workflow', start)
+    kwargs = dict(operation='modify', objective='height 3 mm', code=code, output_formats=['step'],
+                  modeling_backend='cadquery', operation_context=context,
+                  manufacturing_profile=changed if mode in {'explicit', 'conflicting-replay'} else None)
+    if mode == 'conflicting-replay':
+        with pytest.raises(submission_api.IdempotencyConflict):
+            await submission_api.submit_durable_workflow(principal, **identity, **kwargs)
+        assert not calls
+    else:
+        await submission_api.submit_durable_workflow(principal, **identity, **kwargs)
+        assert calls[0]['manufacturing_profile'] == (changed if mode == 'explicit' else None if mode == 'legacy-replay' else profile)
+    assert bool(reads) == (mode == 'inherit')
 
 
 @pytest.mark.asyncio

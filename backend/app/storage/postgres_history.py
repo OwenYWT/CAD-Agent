@@ -26,6 +26,7 @@ from app.freecad.state_contract import (
 from app.parameters import extract_parameters
 from app.principal_context import current_principal
 from app.repositories.identity import ensure_principal
+from app.domain.projects import Permission, role_allows
 
 
 def _context(user_id: str | None = None) -> PrincipalContext:
@@ -304,30 +305,14 @@ async def session_writable_by_user(
     session_id: str,
     user_id: str | None,
 ) -> bool:
-    # Tenant RLS makes another customer's identically named session invisible.
-    return await session_belongs_to_user(session_id, user_id) or not await _session_exists(
-        session_id,
-        _context(user_id),
-    )
-
-
-async def _session_exists(
-    session_id: str,
-    context: PrincipalContext,
-) -> bool:
-    async with tenant_transaction(
-        context.tenant_id,
-        context.principal_id,
-    ) as connection:
-        return bool(
-            await connection.scalar(
-                text(
-                    "SELECT 1 FROM workspace_sessions "
-                    "WHERE tenant_id=:tenant AND id=:id"
-                ),
-                {"tenant": context.tenant_id, "id": session_id},
-            )
-        )
+    context = _context(user_id)
+    async with tenant_transaction(context.tenant_id, context.principal_id) as connection:
+        session = (await connection.execute(text("""
+            SELECT m.role FROM workspace_sessions s LEFT JOIN project_memberships m
+              ON m.project_id=s.project_id AND m.tenant_id=s.tenant_id AND m.principal_id=:principal
+            WHERE s.tenant_id=:tenant AND s.id=:id
+        """), {"tenant": context.tenant_id, "id": session_id, "principal": context.principal_id})).first()
+        return session is None or bool(session.role and role_allows(session.role, Permission.MODIFY_DESIGN))
 
 
 async def panel_writable_by_session(

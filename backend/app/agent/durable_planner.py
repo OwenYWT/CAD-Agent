@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from app.agent.assembly_planner import AssemblyPlan, AssemblyPlanner
-from app.agent.design_brief import ensure_design_brief
+from app.agent.design_brief import ensure_design_brief, apply_manufacturing_profile_to_brief
 from app.agent.durable_plan import (
     AffectedObject,
     AgentPlan,
@@ -18,7 +18,182 @@ from app.agent.durable_plan import (
 from app.agent.multi_step import BuildPhase, BuildPlan, BuildStep, PlanDecomposer
 from app.agent.orchestrator import requires_design_confirmation
 from app.agent.planner import Planner
-from app.models.schemas import CADPlan, DesignBrief, ModificationPlan
+from app.models.schemas import CADPlan, DesignBrief, ModificationPlan, ManufacturingProfile
+from app.validation.requirement_binding import extract_requirements
+
+
+_CUBE_INTENT_MARKERS = (
+    "cube",
+    "cubic box",
+    "\u6b63\u65b9\u4f53",
+    "\u7acb\u65b9\u4f53",
+)
+
+
+def _has_explicit_2d_output_intent(objective: str) -> bool:
+    lowered = objective.lower()
+    return any(marker in lowered for marker in ("dxf", "svg", "2d", "profile"))
+
+
+def _has_explicit_cube_intent(objective: str) -> bool:
+    lowered = objective.casefold()
+    return any(marker in lowered for marker in _CUBE_INTENT_MARKERS)
+
+
+def _cube_edge_from_acceptance(plan: CADPlan) -> float | None:
+    acceptance = plan.design_brief.acceptance if plan.design_brief else None
+    if acceptance is None:
+        return None
+    axis_values: dict[tuple[float, float, float], float] = {}
+    intrinsic_edges: set[float] = set()
+    for check in acceptance.checks:
+        if (
+            check.kind == "cube_edge"
+            and check.comparison.op == "eq"
+            and check.comparison.unit == "mm"
+        ):
+            intrinsic_edges.add(float(check.comparison.value))
+            continue
+        if check.kind != "overall_dimension" or check.comparison.op != "eq":
+            continue
+        axis = tuple(float(value) for value in check.scope.axis)
+        if len(axis) != 3:
+            continue
+        axis_values[axis] = float(check.comparison.value)
+    expected = [axis_values.get(axis) for axis in (
+        (1.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0),
+        (0.0, 0.0, 1.0),
+    )]
+    if intrinsic_edges:
+        if len(intrinsic_edges) != 1:
+            raise ValueError("cube acceptance contains conflicting edge dimensions")
+        return intrinsic_edges.pop()
+    if any(value is None for value in expected):
+        return None
+    if len({float(value) for value in expected}) != 1:
+        raise ValueError("cube acceptance requires equal X, Y and Z dimensions")
+    return float(expected[0])
+
+
+def _cube_edge_from_dimensions(plan: CADPlan) -> float | None:
+    dimensions = {str(key).lower(): float(value) for key, value in plan.dimensions.items()}
+    axis_values = [dimensions.get(key) for key in ("length", "width", "height")]
+    if all(value is not None for value in axis_values):
+        if len({float(value) for value in axis_values}) != 1:
+            raise ValueError("cube requirements require equal length, width and height")
+        return float(axis_values[0])
+    candidates = [dimensions.get("length"), dimensions.get("width"), dimensions.get("height")]
+    if dimensions.get("diameter") is not None:
+        candidates.append(dimensions["diameter"])
+    if dimensions.get("radius") is not None:
+        candidates.append(dimensions["radius"] * 2)
+    candidates = [float(value) for value in candidates if value is not None]
+    if not candidates or len(set(candidates)) != 1:
+        return None
+    return candidates[0]
+
+
+def _cube_edge_from_objective(objective: str) -> float | None:
+    """Recover an explicit cube edge when the model omits its CAD dimensions.
+
+    The requirement extractor is deterministic and source-bound.  Only one
+    positive exact edge value is accepted; missing, ranged, or conflicting
+    values remain unavailable and are rejected by the normalizer.
+    """
+    extracted = extract_requirements(objective)
+    if extracted.get("unsupported"):
+        return None
+    values = {
+        float(row["comparison"]["value"])
+        for row in extracted.get("requirements", ())
+        if row.get("kind") == "cube_edge"
+        and row.get("comparison", {}).get("op") == "eq"
+        and row.get("comparison", {}).get("unit") == "mm"
+    }
+    if len(values) != 1:
+        return None
+    value = values.pop()
+    return value if value > 0 else None
+
+
+def _normalize_cube_requirements(
+    plan: CADPlan,
+    objective: str,
+    *,
+    source_objective: str | None = None,
+) -> CADPlan:
+    if (
+        not _has_explicit_cube_intent(objective)
+        or plan.part_type in {"box", "profile_2d", "assembly"}
+    ):
+        return plan
+    edge = (
+        _cube_edge_from_acceptance(plan)
+        or _cube_edge_from_dimensions(plan)
+        or _cube_edge_from_objective(source_objective or objective)
+    )
+    if edge is None or edge <= 0:
+        raise ValueError("cube requirements do not contain one reliable edge dimension")
+    canonical_feature = (
+        f"base_box:length={edge:g},width={edge:g},height={edge:g}"
+    )
+    features = [
+        canonical_feature,
+        *[
+            feature
+            for feature in plan.features
+            if "cylinder" not in feature.casefold()
+        ],
+    ]
+    brief = ensure_design_brief(plan).model_copy(update={"artifact_type": "box"})
+    return plan.model_copy(
+        update={
+            "part_type": "box",
+            "dimensions": {
+                "length": edge,
+                "width": edge,
+                "height": edge,
+            },
+            "features": features,
+            "modeling_hint": "extrude_cut",
+            "design_brief": brief,
+        }
+    )
+
+
+def _normalize_generation_requirements(
+    plan: CADPlan,
+    objective: str,
+    output_formats: tuple[str, ...],
+    *,
+    source_objective: str | None = None,
+) -> CADPlan:
+    if plan.part_type != "profile_2d":
+        return plan
+    if not set(output_formats) & {"step", "stl"}:
+        return plan
+    if _has_explicit_2d_output_intent(objective):
+        return plan
+    dimensions = plan.dimensions
+    if not {"length", "width", "height"}.issubset(dimensions):
+        raise ValueError(
+            "planner classified a solid-output request as profile_2d without length, width and height"
+        )
+    brief = ensure_design_brief(plan)
+    solid_brief = brief.model_copy(update={"artifact_type": "box"})
+    normalized = plan.model_copy(
+        update={
+            "part_type": "box",
+            "modeling_hint": "extrude_cut",
+            "design_brief": solid_brief,
+        }
+    )
+    return _normalize_cube_requirements(
+        normalized,
+        objective,
+        source_objective=source_objective,
+    )
 
 
 class DurableAgentPlanner:
@@ -86,7 +261,10 @@ class DurableAgentPlanner:
         *,
         output_formats: tuple[str, ...] = ("step", "stl"),
     ) -> AgentPlan:
-        plan = await self.requirements_generation(objective)
+        plan = await self.requirements_generation(
+            objective,
+            output_formats=output_formats,
+        )
         decomposition = await self.decompose_generation(plan)
         return self.compose_generation(
             objective,
@@ -95,11 +273,24 @@ class DurableAgentPlanner:
             output_formats=output_formats,
         )
 
-    async def requirements_generation(self, objective: str, *, require_acceptance: bool = False,
-                                       acceptance_version=None, requirement_sources=None) -> CADPlan:
+    async def requirements_generation(
+        self,
+        objective: str,
+        *,
+        source_objective: str | None = None,
+        output_formats: tuple[str, ...] = ("step", "stl"),
+        require_acceptance: bool = False,
+        acceptance_version=None,
+        requirement_sources=None,
+        manufacturing_profile=None,
+    ) -> CADPlan:
         """Run only requirements interpretation; never generate CAD source."""
+        profile = ManufacturingProfile.model_validate(manufacturing_profile) if manufacturing_profile is not None else None
+        # Preferences are context, not additional geometry source assertions.
+        messages = ([{"role": "user", "content": profile.prompt_context()}] if profile else [])
+        messages.append({"role": "user", "content": objective})
         result = await self.planner.plan_new(
-            [{"role": "user", "content": objective}],
+            messages,
             **({"require_acceptance": True} if require_acceptance else {}),
             **({'acceptance_version': acceptance_version} if acceptance_version else {}),
             **({'requirement_sources': requirement_sources} if requirement_sources is not None else {}),
@@ -109,7 +300,31 @@ class DurableAgentPlanner:
                 raise ValueError('new solid requirements must retain their acceptance contract')
             if result.design_brief.acceptance.objective != objective:
                 raise ValueError('acceptance contract objective differs from the submitted requirement')
-        return result
+        source_objective = source_objective or next(
+            (
+                str(source.get("text"))
+                for source in requirement_sources or ()
+                if source.get("source_input_id") == "objective"
+                and source.get("source_kind") == "user"
+                and source.get("text")
+            ),
+            None,
+        )
+        normalized = _normalize_generation_requirements(
+            result,
+            objective,
+            output_formats,
+            source_objective=source_objective,
+        )
+        normalized = _normalize_cube_requirements(
+            normalized,
+            objective,
+            source_objective=source_objective,
+        )
+        if profile is not None:
+            normalized.manufacturing_profile = profile
+            apply_manufacturing_profile_to_brief(ensure_design_brief(normalized), profile)
+        return normalized
 
     async def decompose_generation(
         self,
@@ -378,10 +593,14 @@ class DurableAgentPlanner:
         existing_code: str,
         objective: str,
         *, require_acceptance: bool = False, acceptance_version=None, verified_state=None, requirement_sources=None,
+        manufacturing_profile=None,
     ) -> ModificationPlan:
         """Interpret a modification without generating or executing source."""
+        profile = ManufacturingProfile.model_validate(manufacturing_profile) if manufacturing_profile is not None else None
+        messages = ([{"role": "user", "content": profile.prompt_context()}] if profile else [])
+        messages.append({"role": "user", "content": objective})
         result = await self.planner.plan_modification(
-            [{"role": "user", "content": objective}],
+            messages,
             existing_code,
             **({'require_acceptance':True} if require_acceptance else {}),
             **({'acceptance_version': acceptance_version} if acceptance_version else {}),

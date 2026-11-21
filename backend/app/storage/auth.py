@@ -85,6 +85,11 @@ async def _init_tables(db: aiosqlite.Connection):
             disabled_at TEXT,
             created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS tool_confirmations (
+            id TEXT PRIMARY KEY,
+            fingerprint TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS auth_sessions (
             token_id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -755,3 +760,19 @@ async def delete_user(user_id: str):
     await db.execute("DELETE FROM auth_sessions WHERE user_id = ?", (user_id,))
     await db.execute("DELETE FROM users WHERE id = ?", (user_id,))
     await db.commit()
+
+async def save_tool_confirmation(receipt: str, fingerprint: str) -> None:
+    db = await get_db()
+    await db.execute("DELETE FROM tool_confirmations WHERE expires_at <= ?", (_now_text(),))
+    await db.execute("INSERT INTO tool_confirmations VALUES (?, ?, ?)",
+                     (receipt, fingerprint, (_now() + timedelta(minutes=5)).isoformat()))
+    await db.commit()
+
+
+async def consume_tool_confirmation(receipt: str, fingerprint: str) -> bool:
+    db = await get_db()
+    cursor = await db.execute(
+        "DELETE FROM tool_confirmations WHERE id=? AND fingerprint=? AND expires_at>?",
+        (receipt, fingerprint, _now_text()))
+    await db.commit()
+    return cursor.rowcount == 1

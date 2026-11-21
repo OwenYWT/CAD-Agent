@@ -12,6 +12,7 @@ from typing import Sequence
 
 
 TimeoutExpired = subprocess.TimeoutExpired
+DetachedProcess = subprocess.Popen[bytes]
 
 
 def run(
@@ -32,7 +33,7 @@ def run(
     )
 
 
-def start_detached(command: Sequence[str], *, cwd: str | Path):
+def start_detached(command: Sequence[str], *, cwd: str | Path) -> DetachedProcess:
     return subprocess.Popen(
         [str(part) for part in command],
         cwd=str(cwd),

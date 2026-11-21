@@ -9,8 +9,9 @@ def test_design_brief_defaults_are_chinese_user_copy():
     brief = ensure_design_brief(plan)
 
     assert brief.assumptions == ["按原型件用途和公制尺寸进行设计"]
-    assert "几何体应封闭无破面" in brief.printability_targets
+    assert brief.printability_targets == []
     assert "代码可成功执行" in brief.acceptance_criteria
+    assert "独立检查几何有效性" in brief.acceptance_criteria
 
 
 def test_planner_prompt_requires_chinese_design_brief_fields():

@@ -11,6 +11,8 @@ export interface SemanticFeature {
   annotation_version?: number; annotation_source?: "user";
   revision_created?: string | null; last_modified?: string | null;
   structure?: { category: string; container_ids: string[]; member_ids: string[]; body_tip_id: string | null } | null;
+  native_topology_bindings?: Array<{ schema_version: "topology-selector.v2"; backend: "freecad";
+    revision_id: string; object_name: string; subelement_kind: "face" | "edge"; reference_id: string }>;
   topology_bindings?: Array<{ schema_version: "topology-selector.v1"; backend: "freecad";
     revision_id: string; object_name: string; subelement_kind: "face" | "edge";
     geometry: "planar" | "circular"; axis: "x" | "y" | "z"; extreme: "min" | "max";
@@ -23,7 +25,7 @@ export interface SemanticFeature {
 
 export interface DocumentArtifact { artifact_id: string; sha256: string; url: string; size_bytes: number }
 
-export type InspectionFieldName = "properties" | "constraints" | "geometry" | "topology" | "dependencies";
+export type InspectionFieldName = "properties" | "constraints" | "geometry" | "topology" | "dependencies" | "references";
 export interface InspectionPage {
   status: "measured" | "unavailable"; reason?: string; items?: unknown[];
   total?: number; returned?: number; recorded?: number; offset?: number; omitted?: number;

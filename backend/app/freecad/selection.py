@@ -5,7 +5,7 @@ import re
 from uuid import UUID
 
 from app.domain.selection import SelectionContextV1
-from app.topology.contracts import FreeCADTopologySelector
+from app.topology.contracts import FREECAD_SELECTOR
 
 
 class SelectionError(ValueError):
@@ -22,7 +22,7 @@ def needs_selection(objective: str) -> bool:
 
 
 def freeze_selection(projection: dict, selection: SelectionContextV1, *,
-                     revision_id: UUID, state_version: int, objective: str) -> dict:
+                     revision_id: UUID, state_version: int, objective: str, native_catalog: dict | None = None) -> dict:
     if selection.revision_id != revision_id or selection.state_version != state_version:
         raise SelectionError("选择来自旧版本，请在当前已提交版本中重新选择目标")
     if str(projection.get("revision_id")) != str(revision_id) or not projection.get("fcstd"):
@@ -36,7 +36,14 @@ def freeze_selection(projection: dict, selection: SelectionContextV1, *,
     selector = selection.topology_selector
     if selector:
         feature = features[0]
-        bindings = [FreeCADTopologySelector.model_validate(b) for b in feature.get("topology_bindings", [])]
+        if selector.schema_version == 'topology-selector.v2':
+            from app.contracts.native_references import selectors, validate_catalog
+            if native_catalog is None:
+                raise SelectionError('此版本没有经过核验的完整原生引用目录，请重新选择')
+            validate_catalog(native_catalog, projection['fcstd']['sha256'])
+            bindings = [FREECAD_SELECTOR.validate_python(b) for b in selectors(native_catalog, feature['kernel_name'], revision_id)]
+        else:
+            bindings = [FREECAD_SELECTOR.validate_python(b) for b in feature.get('topology_bindings', [])]
         if selector.object_name != feature["kernel_name"] or selector not in bindings:
             raise SelectionError("子元素没有完整且唯一的测量依据，不能猜测 Face/Edge 或邻近位置")
         if not re.search(r"圆角|倒角|\bfillet\b|\bchamfer\b", objective, re.I):
@@ -132,5 +139,5 @@ def validate_selected_operations(plan, base_state: dict) -> None:
         else:
             raise SelectionError("此操作尚未定义选择范围，不能推测写入目标")
         if selection.get("topology_selector") and action in {"feature.fillet", "feature.chamfer"}:
-            if FreeCADTopologySelector.model_validate(args.get("selector") or {}) != FreeCADTopologySelector.model_validate(selection["topology_selector"]):
+            if FREECAD_SELECTOR.validate_python(args.get("selector") or {}) != FREECAD_SELECTOR.validate_python(selection["topology_selector"]):
                 raise SelectionError("圆角或倒角必须使用本次冻结的子元素选择，不能替换为全部边")

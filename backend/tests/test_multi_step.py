@@ -3,8 +3,29 @@ Tests for multi-step build planning module.
 Unit tests — no LLM calls.
 """
 import pytest
+import json
+from types import SimpleNamespace
 
 from app.agent.multi_step import BuildStep, BuildPlan, BuildPhase
+
+
+@pytest.mark.asyncio
+async def test_decomposition_preserves_design_relationships_and_constraints():
+    from app.agent.multi_step import PlanDecomposer
+    from app.models.schemas import CADPlan, DesignBrief
+    from tests.test_assembly_planner_regression_1 import _CompletionsStub, _response
+    requested = CADPlan(description='stepped sleeve', part_type='custom', dimensions={},
+        features=['coaxial bands'], constraints=['continuous bore'],
+        design_brief=DesignBrief(assumptions=['start at z=0; build along +Z']))
+    before = requested.model_dump(mode='json')
+    completions = _CompletionsStub([_response(json.dumps({
+        'complexity': 'moderate', 'steps': [{'phase': 'base', 'description': 'sleeve'}],
+    }))])
+    planner = PlanDecomposer()
+    planner._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    await planner.decompose(requested, allow_fallback=False)
+    assert json.loads(completions.calls[0]['messages'][1]['content']) == before
+    assert requested.model_dump(mode='json') == before
 
 
 class TestBuildStep:

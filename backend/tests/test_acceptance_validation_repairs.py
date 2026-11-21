@@ -1,5 +1,6 @@
 """Control-flow regression tests; real provider/kernel evidence is tested separately."""
 from uuid import uuid4
+import asyncio
 import pytest
 from temporalio.exceptions import ApplicationError
 
@@ -37,6 +38,7 @@ class GateRun(McadAgentWorkflowV2):
     def __init__(self, *, visual=("passed",), dfm=("passed",)):
         super().__init__()
         self._validation_repair_v2 = True
+        self._preserve_advisory_visual = True
         self.calls = []
         self.visual = iter(visual)
         self.dfm = iter(dfm)
@@ -99,6 +101,7 @@ async def test_inconclusive_required_image_remains_blocked():
 @pytest.mark.asyncio
 async def test_freecad_visual_budget_is_used_then_geometry_and_visual_are_rechecked():
     run = GateRun(visual=("failed", "passed"))
+    run._preserve_advisory_visual = False  # Replay a history that scheduled the advisory repair.
     result = await run._visual_gate(**arguments("visual", mode="advisory"), expected_dimensions={})
     assert result["visual"]["outcome"] == "passed"
     assert result["executed"]["staging_manifest_id"] == "new-manifest"
@@ -106,6 +109,28 @@ async def test_freecad_visual_budget_is_used_then_geometry_and_visual_are_rechec
     assert names.count("agent_v2.repair_operations") == 1
     assert names.count("agent_v2.validate_geometry") == 1
     assert names.count("agent_v2.judge_visual") == 2
+
+
+@pytest.mark.asyncio
+async def test_freecad_required_visual_budget_is_used_then_gates_are_rechecked():
+    run = GateRun(visual=("failed", "passed"))
+    result = await run._visual_gate(**arguments("visual", mode="required"), expected_dimensions={})
+    assert result["visual"]["outcome"] == "passed"
+    assert result["executed"]["staging_manifest_id"] == "new-manifest"
+    names = [name for name, _, _ in run.calls]
+    assert names.count("agent_v2.repair_operations") == 1
+    assert names.count("agent_v2.validate_geometry") == 1
+    assert names.count("agent_v2.judge_visual") == 2
+
+
+@pytest.mark.asyncio
+async def test_freecad_advisory_visual_failure_does_not_replace_verified_geometry():
+    run = GateRun(visual=("failed", "failed"))
+    with pytest.raises(ApplicationError, match="visual validation failed") as raised:
+        await run._visual_gate(**arguments("visual", mode="advisory"), expected_dimensions={})
+    assert raised.value.type == "agent_visual_validation_failed"
+    assert [name for name, _, _ in run.calls].count("agent_v2.repair_operations") == 0
+    assert [name for name, _, _ in run.calls].count("agent_v2.execute_freecad") == 0
 
 
 @pytest.mark.asyncio
@@ -136,4 +161,68 @@ async def test_visual_mismatch_cannot_succeed_after_advisory_budget_exhaustion()
     run = GateRun(visual=("failed", "failed"))
     with pytest.raises(ApplicationError):
         await run._visual_gate(**arguments("visual", mode="advisory"), expected_dimensions={})
-    assert [n for n, _, _ in run.calls].count("agent_v2.repair_operations") == 1
+    assert [n for n, _, _ in run.calls].count("agent_v2.repair_operations") == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('failed_stage', ['repair', 'execution', 'geometry', 'visual'])
+async def test_advisory_repair_failure_preserves_previously_validated_artifact(failed_stage):
+    stages = {'repair': 'agent_v2.repair_operations', 'execution': 'agent_v2.execute_freecad',
+              'geometry': 'agent_v2.validate_geometry', 'visual': 'agent_v2.judge_visual'}
+
+    class FailedOptionalRepair(GateRun):
+        async def _activity(self, name, payload, **kwargs):
+            if name == stages[failed_stage]:
+                self.calls.append((name, payload, kwargs))
+                raise ApplicationError('optional repair failed', type='test_repair_failure', non_retryable=True)
+            return await super()._activity(name, payload, **kwargs)
+
+    run = FailedOptionalRepair(dfm=('failed',))
+    run._advisory_dfm_recovery_v1 = True
+    args = arguments('dfm', mode='advisory')
+    args['modeled'].update(geometry={'outcome': 'passed', 'evidence_id': 'old-geometry'},
+                           visual={'outcome': 'passed', 'evidence_id': 'old-visual'})
+    result = await run._dfm_gate(**args)
+    assert result['executed']['staging_manifest_id'] == 'old-manifest'
+    assert result['generated']['source_id'] == 'old'
+    assert result['geometry']['evidence_id'] == 'old-geometry'
+    assert result['visual']['evidence_id'] == 'old-visual'
+    assert result['dfm']['outcome'] == 'failed'
+    for name, payload, _ in run.calls:
+        if name == 'agent_v2.execute_freecad':
+            assert payload.get('supersedes_staging_manifest_id') is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('kind', ['required', 'unverified', 'legacy', 'cancelled'])
+async def test_dfm_recovery_never_hides_required_failures_missing_evidence_or_cancellation(kind):
+    class Failure(GateRun):
+        async def _activity(self, name, payload, **kwargs):
+            if name == 'agent_v2.repair_operations':
+                if kind == 'cancelled':
+                    raise asyncio.CancelledError()
+                raise ApplicationError('repair failed', type='test_repair_failure')
+            return await super()._activity(name, payload, **kwargs)
+
+    run = Failure(dfm=('failed',))
+    run._advisory_dfm_recovery_v1 = kind != 'legacy'
+    args = arguments('dfm', mode='required' if kind == 'required' else 'advisory')
+    if kind != 'unverified':
+        args['modeled'].update(geometry={'outcome': 'passed', 'evidence_id': 'old-geometry'},
+                               visual={'outcome': 'passed', 'evidence_id': 'old-visual'})
+    with pytest.raises(asyncio.CancelledError if kind == 'cancelled' else ApplicationError):
+        await run._dfm_gate(**args)
+
+
+@pytest.mark.asyncio
+async def test_successful_optional_dfm_repair_selects_new_independently_rechecked_artifact():
+    run = GateRun(dfm=('failed', 'passed'))
+    run._advisory_dfm_recovery_v1 = True
+    args = arguments('dfm', mode='advisory')
+    args['modeled'].update(geometry={'outcome': 'passed', 'evidence_id': 'old-geometry'},
+                           visual={'outcome': 'passed', 'evidence_id': 'old-visual'})
+    result = await run._dfm_gate(**args)
+    assert result['executed']['staging_manifest_id'] == 'new-manifest'
+    assert result['geometry']['evidence_id'] != 'old-geometry'
+    assert result['visual']['evidence_id'] != 'old-visual'
+    assert result['dfm']['outcome'] == 'passed'

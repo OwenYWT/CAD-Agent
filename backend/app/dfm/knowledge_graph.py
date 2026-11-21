@@ -106,7 +106,7 @@ async def _seed_defaults():
         logger.warning("Default knowledge file not found")
         return
 
-    data = json.loads(DEFAULT_KNOWLEDGE_PATH.read_text())
+    data = json.loads(DEFAULT_KNOWLEDGE_PATH.read_text(encoding='utf-8'))
     db = _db
     assert db is not None
 

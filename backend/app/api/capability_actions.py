@@ -7,20 +7,26 @@ commands from typed action parameters.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
 import uuid
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import FileResponse
+from app.api.files import FileUploadForm, VerifiedArtifactResponse, read_upload_form
 from pydantic import BaseModel, Field
 
 from app.api.auth import rate_limiter, verify_api_key
 from app.capabilities.artifacts import ArtifactPathError, ArtifactStore, sha256_file
-from app.capabilities.registry import get_capability
-from app.capabilities.runtime import CapabilityRuntime, RuntimeConfig
+from app.capabilities.registry import has_capability
+from app.services.capability_actions import owner_root, perform_action, uses_native_worker
+from app.temporal_client import run_worker_command, WorkerCommandConflict, TemporalWorkerUnavailable
+from app.principal_context import current_principal
+from temporalio.client import WorkflowFailureError
+from temporalio.service import RPCError
 from app.config import settings
 
 
@@ -59,28 +65,6 @@ def _owner_id(api_key: str | None) -> str:
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32]
 
 
-def _owner_root(api_key: str | None) -> Path:
-    root = Path(settings.file_storage_dir).expanduser().resolve()
-    owner = (root / "capability_users" / _owner_id(api_key)).resolve()
-    owner.mkdir(parents=True, exist_ok=True)
-    return owner
-
-
-def _runtime(api_key: str | None, execution_backend=None) -> CapabilityRuntime:
-    owner = _owner_root(api_key)
-    return CapabilityRuntime(
-        RuntimeConfig(
-            workspace_root=owner,
-            artifact_root=owner / "runs",
-            isolated_executor=tuple(settings.cadskills_isolated_executor) or None,
-            allow_bambu_lan=settings.cadskills_enable_bambu_lan,
-            tenant_id=_owner_id(api_key),
-            project_id=f"capability-{_owner_id(api_key)}",
-        ),
-        execution_backend=execution_backend,
-    )
-
-
 def _safe_upload_name(raw_name: str | None) -> str:
     name = Path(raw_name or "artifact.bin").name
     if name != (raw_name or "artifact.bin") or not _SAFE_FILENAME.fullmatch(name):
@@ -91,75 +75,37 @@ def _safe_upload_name(raw_name: str | None) -> str:
     return name
 
 
-def _public_result(result: dict[str, Any], api_key: str | None) -> dict[str, Any]:
-    owner = _owner_root(api_key)
-    storage = Path(settings.file_storage_dir).expanduser().resolve()
-    repo = Path(__file__).resolve().parents[3]
-
-    def clean_text(value: str) -> str:
-        return (
-            value.replace(str(owner), "$WORKSPACE")
-            .replace(str(storage), "$WORKSPACE")
-            .replace(str(repo), "$APP")
-        )
-
-    def clean_value(value: Any) -> Any:
-        if isinstance(value, str):
-            return clean_text(value)
-        if isinstance(value, list):
-            return [clean_value(item) for item in value]
-        if isinstance(value, dict):
-            return {key: clean_value(item) for key, item in value.items()}
-        return value
-
-    public_files: list[dict[str, Any]] = []
-    for item in result.get("files") or []:
-        public = {key: value for key, value in item.items() if key != "path"}
-        relative = str(public.get("relative_path") or "")
-        parts = Path(relative).parts
-        if len(parts) >= 2:
-            request_id, filename = parts[0], parts[-1]
-            public["url"] = f"/api/capability-artifacts/runs/{request_id}/{filename}"
-            public["input"] = f"runs/{relative}"
-        public_files.append(public)
-    result["files"] = public_files
-    result["command_preview"] = [clean_text(str(part)) for part in result.get("command_preview") or []]
-    result["data"] = clean_value(result.get("data"))
-    return result
-
-
-@router.post("/api/capability-artifacts", status_code=201)
+@router.post("/api/capability-artifacts", status_code=201, openapi_extra=FileUploadForm.openapi_body())
 async def upload_capability_artifact(
     request: Request,
-    file: UploadFile = File(...),
     api_key: str | None = Depends(verify_api_key),
 ):
     await rate_limiter.check(request, api_key)
-    filename = _safe_upload_name(file.filename)
-    upload_id = uuid.uuid4().hex
-    owner = _owner_root(api_key)
-    target_dir = owner / "uploads" / upload_id
-    target_dir.mkdir(parents=True, exist_ok=False)
-    target = target_dir / filename
-    size = 0
-    try:
-        with target.open("xb") as handle:
-            while chunk := await file.read(1024 * 1024):
-                size += len(chunk)
-                if size > settings.capability_upload_max_bytes:
-                    raise HTTPException(status_code=413, detail="Artifact exceeds the configured upload limit.")
-                handle.write(chunk)
-    except Exception:
-        target.unlink(missing_ok=True)
+    async with read_upload_form(request, FileUploadForm) as form:
+        file = form.file
+        filename = _safe_upload_name(file.filename)
+        upload_id = uuid.uuid4().hex
+        owner = owner_root(_owner_id(api_key))
+        target_dir = owner / "uploads" / upload_id
+        target_dir.mkdir(parents=True, exist_ok=False)
+        target = target_dir / filename
+        size = 0
         try:
-            target_dir.rmdir()
-        except OSError:
-            pass
-        raise
-    finally:
-        await file.close()
+            with target.open("xb") as handle:
+                while chunk := await file.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > settings.capability_upload_max_bytes:
+                        raise HTTPException(status_code=413, detail="Artifact exceeds the configured upload limit.")
+                    handle.write(chunk)
+        except Exception:
+            target.unlink(missing_ok=True)
+            try:
+                target_dir.rmdir()
+            except OSError:
+                pass
+            raise
 
-    digest = sha256_file(target)
+    digest = await asyncio.to_thread(sha256_file, target)
     if settings.durable_control_plane_enabled:
         from app.storage.capability_artifacts import commit
 
@@ -191,27 +137,13 @@ async def download_capability_artifact(
 ):
     await rate_limiter.check(request, api_key)
     if settings.durable_control_plane_enabled:
-        from app.object_store import get_object
         from app.storage.capability_artifacts import get
 
         metadata = await get(scope, request_id, filename)
         if metadata is None:
             raise HTTPException(status_code=404, detail="Artifact not found")
-        payload = await get_object(metadata["object_key"])
-        if len(payload) != metadata["size_bytes"]:
-            raise HTTPException(
-                status_code=503,
-                detail="Stored artifact failed size verification",
-            )
-        return Response(
-            content=payload,
-            media_type=metadata["content_type"],
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-                "ETag": f'"{metadata["sha256"]}"',
-            },
-        )
-    owner = _owner_root(api_key)
+        return VerifiedArtifactResponse(metadata, filename=filename)
+    owner = owner_root(_owner_id(api_key))
     try:
         if scope == "runs":
             store = ArtifactStore(owner / "runs", workspace_root=owner)
@@ -238,36 +170,25 @@ async def run_capability_action(
     api_key: str | None = Depends(verify_api_key),
 ):
     await rate_limiter.check(request, api_key)
-    if get_capability(capability_id) is None:
+    if not has_capability(capability_id):
         raise HTTPException(status_code=404, detail=f"Capability '{capability_id}' not found")
-    owner = _owner_root(api_key)
-    if settings.durable_control_plane_enabled:
-        from app.storage.capability_artifacts import hydrate_values
-
-        await hydrate_values(payload.params, owner)
-    runtime = _runtime(
-        api_key,
-        getattr(request.app.state, "execution_backend", None),
-    )
-    result = await runtime.execute_async(
-        capability_id,
-        action_id,
-        payload.params,
-        payload.request_id,
-    )
-    if settings.durable_control_plane_enabled:
-        from app.storage.capability_artifacts import commit
-
-        for item in result.get("files") or []:
-            path_value = item.get("path")
-            if not path_value:
-                continue
-            path = Path(path_value).resolve()
-            await commit(
-                scope="runs",
-                request_id=result["request_id"],
-                filename=path.name,
-                path=path,
-                content_type=item.get("media_type"),
-            )
-    return _public_result(result, api_key)
+    owner = _owner_id(api_key)
+    if settings.durable_control_plane_enabled and uses_native_worker(capability_id, action_id):
+        principal = current_principal()
+        try:
+            request_id = ArtifactStore.validate_request_id(payload.request_id or uuid.uuid4().hex)
+        except ArtifactPathError as exc:
+            raise HTTPException(422, detail=str(exc)) from exc
+        command = {"owner": owner, "tenant_id": str(principal.tenant_id),
+                   "principal_id": str(principal.principal_id), "kind": principal.kind.value,
+                   "tenant_kind": principal.tenant_kind.value, "subject": principal.external_subject,
+                   "capability": capability_id, "action": action_id, "params": payload.params,
+                   "request_id": request_id}
+        try:
+            return await run_worker_command(command)
+        except WorkerCommandConflict as exc:
+            raise HTTPException(409, detail=str(exc)) from exc
+        except (WorkflowFailureError, TemporalWorkerUnavailable, RPCError) as exc:
+            raise HTTPException(503, detail="CAD Skills worker could not complete this request") from exc
+    return await perform_action(owner, capability_id, action_id, payload.params, payload.request_id,
+                                getattr(request.app.state, "execution_backend", None))

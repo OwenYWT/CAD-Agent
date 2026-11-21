@@ -71,7 +71,12 @@ MinIO，并保留原始 URI 和含端口的 Host，以便校验 S3 SigV4。
 
 后端、FreeCAD 沙箱必须构建为服务器的 `linux/amd64`。本地 ARM 镜像不能直接使用。
 标准构建文件为 `backend/Dockerfile` 和 `backend/sandbox/Dockerfile`。
-沙箱从官方 FreeCAD 1.1.3 AppImage 构建，并校验仓库中记录的架构对应 SHA-256。
+沙箱从官方 FreeCAD 1.1.4 AppImage 构建，并校验仓库中记录的架构对应 SHA-256。
+升级 FreeCAD 时须用标准构建文件生成并验证新的运行时基础镜像。
+`Dockerfile.sandbox` 的增量路径只复制项目脚本，不替换 FreeCAD 二进制；
+它的 `VERIFIED_SANDBOX_IMAGE` 必须指向已经验证的 1.1.4 基础镜像。
+重新生成 `backend/app/freecad/api_catalog.json` 时，须运行新镜像中的
+`freecad_catalog.discover()`（GUI 环境），不能仅修改目录中的版本字段。
 
 前端可在开发机运行 `npm ci`、`npm run lint`、`npm run build`，再使用
 `Dockerfile.frontend` 打包平台无关的 `dist/`。传输时只包含普通应用文件，

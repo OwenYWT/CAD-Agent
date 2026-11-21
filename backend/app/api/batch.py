@@ -6,8 +6,12 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app.api.auth import verify_api_key, rate_limiter
+from app.api.auth import get_durable_principal, verify_api_key, rate_limiter
+from app.domain.identity import PrincipalContext
+from app.services.event_relay import workflow_project_id
+from app.domain.projects import Permission
 from app.config import settings
+from app.domain.requirement_basis import RequirementBasisV1
 from app.models.schemas import (
     DurableRequestIdentity,
     DurablePrompt,
@@ -29,6 +33,7 @@ router = APIRouter(prefix="/api", tags=["batch"])
 
 class BatchItem(DurableRequestIdentity):
     prompt: str
+    requirement_basis: RequirementBasisV1 | None = None
     manufacturing_profile: ManufacturingProfile | None = None
     output_formats: list[str] = ["step", "stl"]
 
@@ -46,6 +51,7 @@ class BatchResponse(BaseModel):
 
 class AsyncGenerateRequest(DurableRequestIdentity):
     prompt: DurablePrompt
+    requirement_basis: RequirementBasisV1 | None = None
     manufacturing_profile: ManufacturingProfile | None = None
     output_formats: list[str] = ["step", "stl"]
 
@@ -95,6 +101,7 @@ async def batch_generate(
                 manufacturing_profile=item.manufacturing_profile,
                 modeling_backend=resolution.modeling_backend,
                 operation_context=resolution.operation_context,
+                **({"requirement_basis": item.requirement_basis} if item.requirement_basis is not None else {}),
             )
             return await wait_for_compatibility_response(
                 current_principal(),
@@ -155,6 +162,7 @@ async def generate_async(
         manufacturing_profile=req.manufacturing_profile,
         modeling_backend=resolution.modeling_backend,
         operation_context=resolution.operation_context,
+        **({"requirement_basis": req.requirement_basis} if req.requirement_basis is not None else {}),
     )
     return AsyncTaskStatus(
         task_id=str(submission.workflow_run_id),
@@ -165,16 +173,17 @@ async def generate_async(
 @router.get("/tasks/{task_id}", response_model=AsyncTaskStatus)
 async def get_task_status(
     task_id: str,
-    api_key: str | None = Depends(verify_api_key),
+    principal: PrincipalContext = Depends(get_durable_principal),
 ):
     """查询异步任务状态"""
     try:
         from uuid import UUID
 
-        result = await get_compatibility_response(
-            current_principal(),
-            UUID(task_id),
-        )
+        workflow_id = UUID(task_id)
+        await workflow_project_id(principal, workflow_id, permission=Permission.VIEW_PROJECT)
+        result = await get_compatibility_response(principal, workflow_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail="Task access denied") from exc
     except (ValueError, KeyError):
         raise HTTPException(status_code=404, detail="Task not found")
     status = {

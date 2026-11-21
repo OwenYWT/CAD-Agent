@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -26,7 +27,12 @@ from app.config import settings
 from app.models.workflow_requests import (FreeCADRevisionRestoreV1, McadExecutionRequest, McadOutputRequest, OperationContextV1)
 from app.workflows.temporal import (FreeCADStructuredModificationV1, mcad_workflow_request_payload, mcad_agent_v2_request_payload, start_mcad_agent_v2_workflow, start_mcad_workflow)
 from app.services.run_state import IdempotencyConflict
+from app.services.cloud_documents import revision_design_context
 from app.freecad.selection import SelectionContextV1, SelectionError, needs_selection, freeze_selection
+from app.evaluation.integration import ensure_live_session
+
+
+logger = logging.getLogger(__name__)
 
 
 _MEDIA_TYPES = {
@@ -52,6 +58,47 @@ class WorkspaceIdentity:
     project_id: UUID
     branch_id: UUID
     head_revision_id: UUID
+
+
+def _record_live_submission(
+    workflow_run_id: UUID,
+    *,
+    operation: str,
+    objective: str,
+    idempotency_key: str,
+    expected_base_revision_id: UUID,
+    revision_restore: FreeCADRevisionRestoreV1 | None = None,
+    operation_context: OperationContextV1 | None = None,
+    source_kind: str = "user_task",
+    source_id: str | None = None,
+) -> None:
+    try:
+        ensure_live_session(
+            {
+                "workflow_run_id": str(workflow_run_id),
+                "operation": operation,
+                "objective": objective,
+                "expected_base_revision_id": str(expected_base_revision_id),
+                **(
+                    {"revision_restore": revision_restore.model_dump(mode="json")}
+                    if revision_restore is not None
+                    else {}
+                ),
+                **(
+                    {"operation_context": operation_context.model_dump(mode="json")}
+                    if operation_context is not None
+                    else {}
+                ),
+            },
+            source_kind=source_kind,
+            source_id=source_id or idempotency_key,
+        )
+    except Exception as exc:
+        logger.warning(
+            "live evaluation admission failed for workflow %s: %s",
+            workflow_run_id,
+            type(exc).__name__,
+        )
 
 
 async def recover_session_submission(principal, *, session_id: str, panel_id: str, idempotency_key: str):
@@ -319,6 +366,8 @@ async def submit_durable_workflow(
     expected_state_version: int | None = None,
     selection_context: SelectionContextV1 | None = None,
     requirement_basis: RequirementBasisV1 | None = None,
+    source_kind: str = "user_task",
+    source_id: str | None = None,
 ) -> DurableSubmission:
     normalized_objective = objective.strip()
     # Older clients wrapped bare continuation commands as new design objectives.
@@ -457,7 +506,7 @@ async def submit_durable_workflow(
                 text(
                     """
                     SELECT id, project_id, requested_by_principal_id, kind,
-                           request_payload_hash
+                           request_payload_hash, request_payload
                     FROM workflow_runs
                     WHERE tenant_id=:tenant_id
                       AND idempotency_key=:idempotency_key
@@ -469,6 +518,17 @@ async def submit_durable_workflow(
                 },
             )
         ).mappings().one_or_none()
+        if operation == "modify" and manufacturing_profile is None and revision_restore is None:
+            # A retry uses its frozen request, including historical requests
+            # without a profile. A new edit inherits its immutable source's
+            # settings, never today's preferences or a later branch head.
+            design = (existing["request_payload"] if existing is not None else
+                      await revision_design_context(connection, principal.tenant_id, project_id,
+                          operation_context.source_candidate_revision_id or expected_base_revision_id))
+            saved_profile = design.get("manufacturing_profile")
+            normalized_profile = ManufacturingProfile.model_validate(saved_profile) if saved_profile is not None else None
+            request_payload["manufacturing_profile"] = normalized_profile.model_dump(mode="json") if normalized_profile else None
+            payload_hash = canonical_sha256(request_payload)
     if existing is not None:
         legacy_backend = (
             "cadquery"
@@ -567,6 +627,17 @@ async def submit_durable_workflow(
                 require_confirmation=require_confirmation,
                 commit_after_confirmation=require_confirmation,
             )
+        _record_live_submission(
+            workflow_run_id,
+            operation=operation,
+            objective=normalized_objective,
+            idempotency_key=normalized_idempotency_key,
+            expected_base_revision_id=expected_base_revision_id,
+            revision_restore=revision_restore,
+            operation_context=operation_context,
+            source_kind=source_kind,
+            source_id=source_id,
+        )
         return DurableSubmission(
             workflow_run_id=workflow_run_id,
             handle=handle,
@@ -586,12 +657,12 @@ async def submit_durable_workflow(
         if selection_context is None and not operation_context.source_candidate_revision_id and needs_selection(normalized_objective):
             raise SelectionError("请先选择目标特征；这条指令的指代无法唯一确认")
         if selection_context is not None:
-            from app.services.cloud_documents import checkpoint, authorized_document
+            from app.services.cloud_documents import checkpoint, authorized_document, freeze_checkpoint_selection
             projection = await checkpoint(principal, branch_id, expected_base_revision_id)
             async with tenant_transaction(principal.tenant_id, principal.principal_id) as connection:
                 document = await authorized_document(connection, principal, branch_id, Permission.MODIFY_DESIGN)
-            freeze_selection(projection, selection_context, revision_id=document["head_revision_id"],
-                             state_version=document["state_version"], objective=normalized_objective)
+                await freeze_checkpoint_selection(connection, projection, selection_context,
+                    revision_id=document['head_revision_id'], state_version=document['state_version'], objective=normalized_objective)
     if is_agent_v2:
         workflow_run_id, handle = await start_mcad_agent_v2_workflow(
             tenant_id=principal.tenant_id,
@@ -632,6 +703,17 @@ async def submit_durable_workflow(
             require_confirmation=require_confirmation,
             commit_after_confirmation=require_confirmation,
         )
+    _record_live_submission(
+        workflow_run_id,
+        operation=operation,
+        objective=normalized_objective,
+        idempotency_key=normalized_idempotency_key,
+        expected_base_revision_id=expected_base_revision_id,
+        revision_restore=revision_restore,
+        operation_context=operation_context,
+        source_kind=source_kind,
+        source_id=source_id,
+    )
     return DurableSubmission(
         workflow_run_id=workflow_run_id,
         handle=handle,

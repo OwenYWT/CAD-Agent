@@ -3,7 +3,10 @@ from typing import Annotated, Literal, Protocol, Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.freecad.contracts import SketchAddConstraintArgs
+from app.freecad.contracts import (
+    ConstraintReference, Coordinate, SketchAddConstraintArgs, SketchAxisReference,
+    SketchConstraintKind, SketchOriginReference,
+)
 
 
 Hash = Annotated[str, Field(pattern=r'^[0-9a-f]{64}$')]
@@ -27,10 +30,10 @@ class ConstraintRepairValidation(Protocol):
 
 
 class ConstraintDefinition(PatchModel):
-    kind: SketchAddConstraintArgs.model_fields['kind'].annotation
-    first: SketchAddConstraintArgs.model_fields['first'].annotation
-    second: SketchAddConstraintArgs.model_fields['second'].annotation = None
-    value_mm: SketchAddConstraintArgs.model_fields['value_mm'].annotation = None
+    kind: SketchConstraintKind
+    first: ConstraintReference
+    second: ConstraintReference | SketchOriginReference | SketchAxisReference | None = None
+    value_mm: Coordinate | None = None
     driving: bool = True
 
     @model_validator(mode='after')

@@ -6,7 +6,6 @@ x-app: &app
   image: ${BACKEND_IMAGE:?set verified backend image digest}
   env_file: ./backend.env
   volumes:
-    - /var/run/docker.sock:/var/run/docker.sock
     - cad_data:/app/data
     - /tmp/cad-native-work:/tmp/cad-native-work
   restart: unless-stopped
@@ -99,6 +98,9 @@ services:
 
   backend:
     <<: *app
+    environment:
+      FORWARDED_ALLOW_IPS: "172.30.252.2,172.30.252.1"
+    networks: [default, ingress]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -119,6 +121,10 @@ services:
 
   workflow-worker:
     <<: *app
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - cad_data:/app/data
+      - /tmp/cad-native-work:/tmp/cad-native-work
     command: [python, -m, app.workers.workflow_worker]
     depends_on:
       migrate:
@@ -134,6 +140,9 @@ services:
     image: ${FRONTEND_IMAGE:?set verified frontend image digest}
     ports:
       - 127.0.0.1:8091:80
+    networks:
+      ingress:
+        ipv4_address: 172.30.252.2
     depends_on:
       backend:
         condition: service_healthy
@@ -163,3 +172,11 @@ volumes:
   postgres_data:
   minio_data:
   cad_data:
+
+networks:
+  ingress:
+    ipam:
+      config:
+        - subnet: 172.30.252.0/28
+          gateway: 172.30.252.1
+          ip_range: 172.30.252.8/29

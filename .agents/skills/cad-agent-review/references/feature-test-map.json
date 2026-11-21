@@ -85,7 +85,11 @@
         "frontend/src/components/DesignBriefPanel.tsx",
         "backend/app/domain/requirement_basis.py",
         "backend/app/agent/design_brief.py",
-        "backend/app/services/durable_submission.py"
+        "backend/app/services/durable_submission.py",
+        "backend/app/validation/requirement_binding.py",
+        "backend/app/validation/quantities.py",
+        "frontend/src/adapters/requirementIntake.ts",
+        "backend/app/api/tasks.py"
       ],
       "tests": [
         "backend/tests/test_requirement_basis.py",
@@ -93,7 +97,10 @@
         "backend/tests/test_design_confirmation_gate.py",
         "backend/tests/test_contract_and_brief.py",
         "frontend/tests/manufacturingProfiles.test.ts",
-        "backend/tests/test_requirement_coordinate_coverage.py"
+        "backend/tests/test_requirement_coordinate_coverage.py",
+        "backend/tests/test_intake_dimension_semantics.py",
+        "frontend/tests/requirement-intake.test.ts",
+        "backend/tests/integration/test_change_set_api.py"
       ]
     },
     {

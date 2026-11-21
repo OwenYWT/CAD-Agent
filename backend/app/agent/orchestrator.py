@@ -7,7 +7,7 @@ from pathlib import Path
 from app.agent import run_store
 from app.agent.code_gen import CodeGenerator
 from app.agent.conversation import ConversationContext
-from app.agent.design_brief import ensure_design_brief
+from app.agent.design_brief import ensure_design_brief, apply_manufacturing_profile_to_brief
 from app.agent.failure_taxonomy import FixPath, classify
 from app.agent.planner import Planner
 from app.agent.assembly_manifest import code_hash, enrich_assembly_parts
@@ -181,35 +181,6 @@ class Orchestrator:
             return prompt
         return f"{profile.prompt_context()}\nUser request: {prompt}"
 
-    def _apply_manufacturing_profile_to_brief(
-        self, brief: DesignBrief, profile: ManufacturingProfile | None
-    ) -> None:
-        if not profile:
-            return
-        process_labels = {
-            "fdm": "FDM",
-            "sla": "SLA",
-            "cnc": "CNC",
-            "laser_cut": "激光切割",
-            "generic": "通用工艺",
-        }
-        process_label = process_labels.get(profile.process, profile.process)
-        brief.manufacturing_posture = f"{process_label} {profile.material}".strip()
-        profile_targets = [
-            f"制造工艺：{process_label}",
-            f"材料：{profile.material}",
-        ]
-        if profile.nozzle_diameter_mm is not None:
-            profile_targets.append(f"喷嘴直径：{profile.nozzle_diameter_mm:g} mm")
-        if profile.layer_height_mm is not None:
-            profile_targets.append(f"层高：{profile.layer_height_mm:g} mm")
-        if profile.build_volume_mm:
-            volume = " x ".join(f"{value:g}" for value in profile.build_volume_mm)
-            profile_targets.append(f"成型空间：{volume} mm")
-        for target in profile_targets:
-            if target not in brief.printability_targets:
-                brief.printability_targets.append(target)
-
     # === Stateless REST methods (Scheme C core) ===
 
     async def generate(
@@ -256,7 +227,7 @@ class Orchestrator:
         plan = await self.planner.plan_new([{"role": "user", "content": planner_prompt}])
         plan.manufacturing_profile = profile
         design_brief = ensure_design_brief(plan)
-        self._apply_manufacturing_profile_to_brief(design_brief, profile)
+        apply_manufacturing_profile_to_brief(design_brief, profile)
         logger.info(f"Plan: type={plan.part_type}, hint={plan.modeling_hint}, dims={plan.dimensions}")
 
         if requires_design_confirmation(design_brief):

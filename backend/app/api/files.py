@@ -1,9 +1,13 @@
-import hashlib
+from contextlib import asynccontextmanager
+from tempfile import TemporaryDirectory
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, ValidationError
 from fastapi.responses import FileResponse, Response
+from app.object_store import ObjectIntegrityError, download_verified_object
 
 from app.api.auth import verify_api_key
 from app.config import settings
@@ -46,6 +50,47 @@ _SAFE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 _SAFE_FILENAME_PATTERN = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 
+class FileUploadForm(BaseModel):
+    file: UploadFile
+
+    @classmethod
+    def openapi_body(cls):
+        return {"requestBody": {"required": True, "content": {
+            "multipart/form-data": {"schema": cls.model_json_schema()}}}}
+
+
+@asynccontextmanager
+async def read_upload_form(request: Request, model: type[FileUploadForm]):
+    # Called by the endpoint after authentication. The context also closes all
+    # spooled files on validation errors, cancellation and normal completion.
+    async with request.form(max_files=1, max_fields=len(model.model_fields) - 1) as fields:
+        try:
+            upload = model.model_validate(dict(fields))
+        except ValidationError as exc:
+            raise RequestValidationError(exc.errors(include_input=False)) from exc
+        yield upload
+
+
+class VerifiedArtifactResponse(Response):
+    """Keep the verified temporary file alive exactly for the ASGI response."""
+    def __init__(self, metadata, *, filename: str | None = None, headers=None):
+        self.metadata = metadata
+        self.filename = filename
+        super().__init__(media_type=metadata["content_type"], headers={
+            "ETag": f'"{metadata["sha256"]}"', **(headers or {})})
+
+    async def __call__(self, scope, receive, send):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "verified"
+            try:
+                await download_verified_object(self.metadata, path)
+            except ObjectIntegrityError as exc:
+                raise HTTPException(503, detail="Stored artifact failed checksum verification") from exc
+            await FileResponse(path, filename=self.filename, media_type=self.media_type,
+                               headers={k: v for k, v in self.headers.items()
+                                        if k != "content-length"})(scope, receive, send)
+
+
 @router.get("/files/{request_id}/{filename}")
 async def download_file(
     request_id: str,
@@ -75,25 +120,7 @@ async def download_file(
         metadata = await get_project_file(request_id, filename)
         if metadata is None:
             raise HTTPException(status_code=404, detail="File not found")
-        from app.object_store import get_object
-
-        payload = await get_object(metadata["object_key"])
-        if (
-            len(payload) != metadata["size_bytes"]
-            or hashlib.sha256(payload).hexdigest() != metadata["sha256"]
-        ):
-            raise HTTPException(
-                status_code=503,
-                detail="Stored file failed checksum verification",
-            )
-        return Response(
-            content=payload,
-            media_type=metadata["content_type"],
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-                "ETag": f'"{metadata["sha256"]}"',
-            },
-        )
+        return VerifiedArtifactResponse(metadata, filename=filename)
 
     # Resolve and verify the path stays within storage dir
     storage_dir = Path(settings.file_storage_dir).resolve()

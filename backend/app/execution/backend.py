@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Protocol
 
-from app.execution.contracts import ExecutionLeaseEnvelope, ExecutionResult, ExecutionSpec
+from app.execution.contracts import ExecutionLeaseEnvelope, ExecutionResult, ExecutionSpec, RuntimePlatform
 
 
 @dataclass(frozen=True)
@@ -23,6 +23,13 @@ class MaterializedExecutionOutcome:
     work_dir: Path | None
 
 
+@dataclass(frozen=True)
+class RuntimeSnapshot:
+    image_digest: str
+    platform: RuntimePlatform
+    versions: dict[str, str]
+
+
 class ExecutionBackend(Protocol):
     """Replaceable compute boundary.
 
@@ -32,7 +39,7 @@ class ExecutionBackend(Protocol):
     cancelled or superseded.
     """
 
-    def runtime_snapshot(self): ...
+    def runtime_snapshot(self) -> RuntimeSnapshot: ...
 
     async def execute(
         self,

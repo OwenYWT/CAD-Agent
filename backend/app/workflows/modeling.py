@@ -15,7 +15,7 @@ from app.llm import (
     get_last_chat_completion_provenance,
     reset_chat_completion_provenance,
 )
-from app.models.schemas import CADPlan, ModificationPlan
+from app.models.schemas import CADPlan, ModificationPlan, ManufacturingProfile
 
 
 class Retriever(Protocol):
@@ -37,12 +37,9 @@ class SourceGenerationResult:
 
 def _default_retriever() -> Retriever:
     if settings.example_retriever.strip().lower() == "vector":
-        try:
-            from app.examples.vector_retriever import VectorExampleRetriever
+        from app.examples.vector_retriever import VectorExampleRetriever
 
-            return VectorExampleRetriever()
-        except Exception:
-            pass
+        return VectorExampleRetriever()
     return ExampleRetriever()
 
 
@@ -71,10 +68,13 @@ class DurableModelingSourceGenerator:
         previous_source: str | None,
         step_index: int,
     ) -> SourceGenerationResult:
+        profile = (ManufacturingProfile.model_validate(requirements['manufacturing_profile'])
+                   if requirements.get('manufacturing_profile') is not None else None)
         if plan.model_kind == "assembly":
             return await self._generate_assembly_source(
                 step=step,
                 part_sources=tuple(requirements.get("part_sources") or ()),
+                manufacturing_profile=profile,
             )
         reset_chat_completion_provenance()
         if plan.operation == "modify":
@@ -90,6 +90,7 @@ class DurableModelingSourceGenerator:
                 existing_code,
                 examples,
                 [{"role": "user", "content": plan.objective}],
+                **({'manufacturing_profile': profile} if profile is not None else {}),
             )
             return self._result(source, step, "modify")
 
@@ -141,6 +142,7 @@ class DurableModelingSourceGenerator:
         *,
         step: AgentPlanStep,
         part_sources: tuple[dict[str, Any], ...],
+        manufacturing_profile: ManufacturingProfile | None = None,
     ) -> SourceGenerationResult:
         reset_chat_completion_provenance()
         if step.kind == "assembly_part":
@@ -150,6 +152,7 @@ class DurableModelingSourceGenerator:
                 step.description,
                 step.part_dimensions,
                 await self.retriever.find_similar(step.description, top_k=2),
+                **({'manufacturing_profile': manufacturing_profile} if manufacturing_profile is not None else {}),
             )
             return self._result(source, step, "generate_single_part")
         if step.kind != "assembly_combine":
@@ -230,6 +233,7 @@ class DurableModelingSourceGenerator:
         return (
             f"{summarize_geometry_plan(plan)}\n\n"
             f"{render_geometry_plan(plan)}"
+            + ('\n' + plan.manufacturing_profile.prompt_context() if plan.manufacturing_profile else '')
         )
 
     @staticmethod

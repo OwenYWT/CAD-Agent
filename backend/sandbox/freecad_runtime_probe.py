@@ -1,4 +1,4 @@
-"""Real FreeCAD 1.1.3 operation probe executed by the packaged FreeCADCmd."""
+"""Real FreeCAD 1.1.4 operation probe executed by the packaged FreeCADCmd."""
 
 from __future__ import annotations
 

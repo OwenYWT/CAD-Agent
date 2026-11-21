@@ -1,12 +1,21 @@
-"""Exercise real CAD projection registration and reject invalid SVG artifacts."""
+"""Exercise the Python sandbox with numeric inputs and real CAD projections."""
 import json
 from pathlib import Path
+import sys
 import xml.etree.ElementTree as ET
 
 from executor_entry import main
 
 input_path = Path('/sandbox/input/input.py')
 output = Path('/sandbox/output')
+mode = input_path.with_name('mode.txt')
+mode.write_text('analysis')
+input_path.write_text("result = {'area': int(np.multiply(3, 4))}\n")
+main()
+assert json.loads((output/'analysis.json').read_text()) == {'area': 12}
+assert {'build123d', 'cadquery'}.isdisjoint(sys.modules)
+mode.write_text('3d')
+
 base = "import cadquery as cq\nresult=cq.Workplane('XY').box(40,30,1)\n"
 input_path.write_text(base + "cq.exporters.export(result,'/sandbox/output/result.svg')\n")
 main()
@@ -17,7 +26,7 @@ svg = ET.parse(output/'result.svg').getroot()
 assert svg.tag == '{http://www.w3.org/2000/svg}svg'
 assert svg.findall('.//{http://www.w3.org/2000/svg}path')
 
-cases = ['actual_cadquery_svg_registered_with_step_and_stl']
+cases = ['numpy_analysis_without_cad_imports', 'actual_cadquery_svg_registered_with_step_and_stl']
 input_path.write_text(base)
 for invalid in ('<svg', '<html/>'):
     (output/'result.svg').write_text(invalid)

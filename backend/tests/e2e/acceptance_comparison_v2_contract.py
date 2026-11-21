@@ -63,6 +63,18 @@ print('NATIVE_ACCEPTANCE_V2_SAVED')
     report = validate_geometry_files([{'role':'model','format':'step','path':str(step)}],
         acceptance=acceptance, measurement_context=context)
     assert report['outcome']=='passed', report
+    # A measurement capability gap cannot be repaired by editing CAD source,
+    # even when a separately measurable dimension is also wrong. Preserve both
+    # diagnostics while agreeing with the host's acceptance_outcome policy.
+    unavailable = json.loads(json.dumps(acceptance))
+    unavailable['checks'][0]['comparison']['value'] = 20.
+    for field in ('verification_limits', 'unresolved'):
+        blocked = {**unavailable, field: ['Required criterion is unavailable']}
+        unresolved_report = validate_geometry_files([{'role':'model','format':'step','path':str(step)}],
+            acceptance=blocked, measurement_context=context)
+        assert unresolved_report['acceptance']['evidence'][0]['outcome'] == 'failed'
+        assert unresolved_report['outcome'] == 'indeterminate', unresolved_report
+        assert unresolved_report['acceptance_contract'] == blocked
     binding = report['acceptance']['evidence'][0]['details']['measurement_binding']
     assert binding['artifact_sha256']==before and binding['status']=='bound'
     bad = {**context, 'artifact_sha256s':['0'*64]}

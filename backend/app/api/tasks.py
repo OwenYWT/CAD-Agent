@@ -25,6 +25,7 @@ from app.models.schemas import (
     TaskCancellationRequest,
     TaskConfirmationRequest,
 )
+from app.services.document_sharing import workspace_principal
 from app.services.event_relay import (
     ConfirmationProjectionInvalid,
     CursorExpired,
@@ -38,6 +39,19 @@ from app.workflows.temporal import cancel_mcad_workflow, confirm_mcad_workflow
 router = APIRouter(prefix="/api/tasks", tags=["durable-tasks"])
 logger = logging.getLogger(__name__)
 _TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "timed_out"}
+
+
+class RequirementPreviewRequest(BaseModel):
+    objective: str = Field(min_length=1, max_length=4000)
+
+
+@router.post('/requirements/preview')
+def requirement_preview(
+    request: RequirementPreviewRequest,
+    principal: PrincipalContext = Depends(get_durable_principal),
+):
+    from app.validation.requirement_binding import preview_requirements
+    return preview_requirements(request.objective)
 
 
 def _task_snapshot_marker(
@@ -298,6 +312,13 @@ async def durable_task_websocket(
     if principal is None:
         await websocket.close(code=1013, reason="Durable principal unavailable")
         return
+    workspace = websocket.query_params.get("workspace")
+    if workspace:
+        try:
+            principal = await workspace_principal(principal, UUID(workspace))
+        except (PermissionError, ValueError):
+            await websocket.close(code=4003, reason="Workspace access denied")
+            return
     try:
         cursor = int(websocket.query_params.get("after_sequence", "0"))
         if cursor < 0:
@@ -370,9 +391,16 @@ async def durable_task_websocket(
                 })
                 await websocket.close(code=1000)
                 return
-            await asyncio.sleep(0.5)
+            try:
+                message = await asyncio.wait_for(websocket.receive(), timeout=0.5)
+                if message["type"] == "websocket.disconnect":
+                    return
+            except asyncio.TimeoutError:
+                pass
     except WebSocketDisconnect:
         return
+    except (KeyError, PermissionError):
+        await websocket.close(code=4003, reason="Task access revoked")
     except Exception:
         logger.exception("Durable task WebSocket failed")
         try:

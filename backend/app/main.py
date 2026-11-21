@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import shutil
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -11,6 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app.evaluation.mode import resolve_mode
 from app.db import close_database, database_readiness
 from app.execution.composition import get_execution_backend
 from app.object_store import object_store_readiness
@@ -18,6 +18,7 @@ from app.temporal_client import (
     temporal_agent_v2_worker_readiness,
     temporal_readiness,
     temporal_worker_readiness,
+    worker_runtime_snapshot,
 )
 
 # Configure logging with request-id correlation
@@ -69,38 +70,34 @@ def _cleanup_old_files():
     if not storage.exists():
         return
     cutoff = time.time() - settings.file_ttl_hours * 3600
+    from app.storage.file_ownership import expired_request_files
     count = 0
-    for d in storage.iterdir():
-        if d.is_dir() and d.stat().st_mtime < cutoff:
-            shutil.rmtree(d, ignore_errors=True)
-            count += 1
+    for directory in storage.iterdir():
+        try:
+            files = expired_request_files(directory, cutoff)
+            if files:
+                for path in files:
+                    path.unlink(missing_ok=True)
+                directory.rmdir()
+                count += 1
+        except OSError as exc:
+            logger.warning("Could not expire request directory %s: %s", directory.name, exc)
     if count:
         logger.info(f"Cleaned up {count} old file directories")
 
 
-def _startup_self_check(execution_backend=None):
-    """Report missing LLM or MCAD execution dependencies before the first request."""
+async def _runtime_problems(execution_backend=None):
     problems = []
-
     if not settings.has_llm_credentials:
-        problems.append(
-            f"{settings.llm_credentials_error} — planner/codegen 的第一次 LLM 调用会失败。"
-            "请在 backend/.env 写入对应的模型 API key。"
-        )
-
+        problems.append(settings.llm_credentials_error)
     try:
-        backend = execution_backend or get_execution_backend()
-        backend.runtime_snapshot()
+        if settings.durable_control_plane_enabled and execution_backend is None:
+            await worker_runtime_snapshot()
+        else:
+            backend = execution_backend or get_execution_backend()
+            await asyncio.wait_for(asyncio.to_thread(backend.runtime_snapshot), settings.dependency_readiness_timeout_s)
     except Exception as exc:
-        problems.append(f"MCAD ExecutionBackend 不可用: {str(exc)[:300]}")
-
-    if problems:
-        logger.error(
-            "启动自检发现 %d 个阻断问题，生成功能将不可用:\n  - %s",
-            len(problems), "\n  - ".join(problems),
-        )
-    else:
-        logger.info("启动自检通过: LLM key + MCAD ExecutionBackend 就绪")
+        problems.append(f"MCAD ExecutionBackend unavailable: {type(exc).__name__} {str(exc)[:240]}")
     return problems
 
 
@@ -110,7 +107,7 @@ async def _periodic_cleanup(interval_s: int = 3600):
     while True:
         try:
             await asyncio.sleep(interval_s)
-            _cleanup_old_files()
+            await asyncio.to_thread(_cleanup_old_files)
         except asyncio.CancelledError:
             break
         except Exception as e:
@@ -165,9 +162,8 @@ async def lifespan(app: FastAPI):
     settings.assert_auth_config_safe()
     settings.assert_sandbox_config_safe()
     settings.assert_durable_control_plane_config_safe()
-    _cleanup_old_files()
-    app.state.execution_backend = get_execution_backend()
-    app.state.startup_problems = _startup_self_check(app.state.execution_backend)
+    await asyncio.to_thread(_cleanup_old_files)
+    app.state.execution_backend = None if settings.durable_control_plane_enabled else get_execution_backend()
     # Provision admin + default invite eagerly so misconfig surfaces at boot, not
     # on the first request. Both are no-ops when their config is unset/empty.
     from app.storage.auth import ensure_admin_user, ensure_default_invite_code
@@ -178,6 +174,9 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     cleanup_task.cancel()
+    await asyncio.gather(cleanup_task, return_exceptions=True)
+    from app.services.capability_actions import close_viewers
+    await asyncio.to_thread(close_viewers)
     from app.storage.history import close_db
     await close_db()
     from app.storage.auth import close_db as close_auth_db
@@ -195,6 +194,7 @@ def create_app() -> FastAPI:
         description="Web application for generating and previewing CAD files from natural language.",
         lifespan=lifespan,
     )
+    app.state.evaluation_mode = resolve_mode()
 
     app.add_middleware(
         CORSMiddleware,
@@ -243,11 +243,9 @@ def create_app() -> FastAPI:
     async def ready():
         from fastapi.responses import JSONResponse
 
-        durable = await _durable_control_plane_readiness()
-        problems = [
-            *getattr(app.state, "startup_problems", []),
-            *durable["problems"],
-        ]
+        durable, runtime_problems = await asyncio.gather(
+            _durable_control_plane_readiness(), _runtime_problems())
+        problems = [*runtime_problems, *durable["problems"]]
         if problems:
             return JSONResponse(
                 status_code=503,
@@ -279,7 +277,7 @@ def create_app() -> FastAPI:
                 raise HTTPException(status_code=404, detail="Not found")
             requested = (FRONTEND_DIST / full_path).resolve()
             dist_root = FRONTEND_DIST.resolve()
-            if requested.is_file() and str(requested).startswith(str(dist_root)):
+            if requested.is_file() and requested.is_relative_to(dist_root):
                 return FileResponse(requested)
             return FileResponse(FRONTEND_DIST / "index.html")
 

@@ -110,6 +110,9 @@ def project_semantic_state(document_id: UUID, state: dict[str, Any], *,
             revision_created=old.get("revision_created") if old else str(revision_id) if revision_id and previous is not None else None,
             last_modified=old.get("last_modified") if old and old.get("content_sha256") == digest else str(revision_id) if revision_id else None,
             topology_bindings=measured_topology_bindings(obj, revision_id))
+        if state.get('native_topology') is not None:
+            from app.contracts.native_references import selectors
+            feature['native_topology_bindings'] = selectors(state['native_topology'], name, revision_id)[:32]
         # Presentation metadata is outside the established feature fingerprint:
         # a projector upgrade cannot manufacture edits to historical geometry.
         structure = obj.get("structure", {})
@@ -169,6 +172,7 @@ def bounded_agent_context(state: dict, *, target_names: list[str] | None = None)
                     "dfm": {**{k: v for k, v in dfm.items() if k in {"status", "revision_id", "evidence_id", "reason", "policy_hash"}},
                             "issues": list(dfm.get("issues") or [])[:12], "violations": list(dfm.get("violations") or [])[:12]}},
         "features": [{"name": name, "type_id": by_name[name].get("type_id"),
+                      "global_placement": by_name[name].get("global_placement"),
                       "user_role": annotations.get(name, {}).get("role"),
                       "user_intent": str(annotations.get(name, {}).get("intent") or "")[:500] or None,
                       "annotation_version": annotations.get(name, {}).get("version", 0),

@@ -533,3 +533,17 @@ class McadCheckWorkflow:
                 result_type=dict,
             )
             raise
+
+
+@workflow.defn
+class NativeWorkerWorkflow:
+    """Run a CAD Skills action, or inspect the engine from its owning worker."""
+    @workflow.run
+    async def run(self, command: dict | None) -> dict:
+        return await workflow.execute_activity(
+            "capability.execute" if command is not None else "runtime.inspect", command,
+            start_to_close_timeout=timedelta(minutes=15),
+            heartbeat_timeout=timedelta(seconds=30),
+            cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
+            retry_policy=RetryPolicy(maximum_attempts=1),
+        )

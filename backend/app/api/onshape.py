@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app.api.auth import rate_limiter, verify_api_key
 from app.config import settings
 from app.integrations.onshape import OnshapeAPIError, OnshapeNotConfigured, OnshapeService
-from app.storage import auth as auth_store
+from app.services.authentication import can_access_shared_onshape
 from app.storage import history
 from app.storage.file_ownership import FileOwnershipError, request_belongs_to
 from app.models.schemas import (
@@ -33,10 +33,7 @@ def _owner_key(api_key: str | None) -> str | None:
 
 async def _require_document_admin(api_key: str | None) -> None:
     """Shared Onshape-account browsing and writes to existing documents are privileged."""
-    if not api_key or not api_key.startswith("user:"):
-        return
-    user = await auth_store.get_user(api_key.split(":", 1)[1])
-    if not user or not user.get("is_admin"):
+    if not await can_access_shared_onshape(api_key):
         raise HTTPException(status_code=403, detail="Only administrators can access shared Onshape documents")
 
 

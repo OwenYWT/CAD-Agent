@@ -61,17 +61,24 @@ class MultipleCutGenerator:
         failure = kwargs['failure']
         if failure['error_code'] == 'geometry_validation_failed':
             self.geometry_repairs += 1
-            # Remove the unintended operations from the final turn. The real
-            # pre-turn checkpoint is reloaded; nothing is hidden from exports.
+            # Remove the extra solid, but initially select the tip instead of its owning Body.
             raw = {'operations':[{'op_id':'export-final','action':'document.export','args':{
-                'objects':['HeadphoneHook'],'formats':['fcstd','step','stl']}}]}
+                'objects':['TipPocket'],'formats':['fcstd','step','stl']}}]}
             plan = FreeCADOperationPlan.model_validate(raw)
             source = plan.model_dump_json()
             return FreeCADOperationGenerationResult(operation_plan=plan, source_code=source,
                 generator_kind='controlled-geometry-correction', provenance=fixture_provenance(source))
         identity = failure['operation_id']
         self.repairs.append((identity, failure['error_code']))
-        if failure['error_code'].startswith('sketch_'):
+        if failure['error_code'] == 'invalid_export':
+            roots = json.loads(failure['details']['export_roots_json'])
+            assert roots == {'TipPocket': 'HeadphoneHook'}
+            raw = before.model_dump(mode='json')
+            raw['operations'][-1]['args']['objects'] = list(roots.values())
+            turns = [[call('freecad_inspect', {'objects': list(roots.values()),
+                                               'fields': ['dependencies']})],
+                     [call('freecad_execute', raw)]]
+        elif failure['error_code'].startswith('sketch_'):
             context = build_patch_context(before, kwargs['diagnostic'], failure,
                 kwargs.get('base_state'), kwargs.get('prior_contract'))
             patch = {key: context[key] for key in ('plan_hash', 'checkpoint_hash', 'diagnostic_hash', 'sketch')}

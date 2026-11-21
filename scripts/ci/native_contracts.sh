@@ -9,18 +9,24 @@ mkdir -p "$report"
 "${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/parameter_dependency_fixture.py" "$report/parameter-dependency.json"
 "${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/source_obligation_fixture.py" "$report/source-obligations.json"
 "${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/intake_semantics_fixture.py" "$report/intake-semantics.json"
+"${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/annular_segment_contract.py" --fixtures "$report/annular-segments.json"
+"${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/machined_feature_contract.py" --fixtures "$report/machined-features.json"
 "${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/rectangular_assembly_fixture.py" "$report/rectangular-assembly.json"
 common=("$runtime" run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,mode=1777,size=2g --tmpfs /sandbox/input:rw,mode=777 --tmpfs /sandbox/output:rw,mode=777 -v "$root/backend/tests/e2e:/tests:ro" -v "$report/scoped-repair.json:/sandbox/input/scoped-repair.json:ro" -v "$report/parameter-dependency.json:/sandbox/input/parameter-dependency.json:ro")
-for script in freecad_cut_diagnostics_contract freecad_scoped_repair_contract freecad_profile_replan_contract freecad_constraint_diagnostics freecad_constraint_failure_snapshot freecad_constraint_profile_contract freecad_constraint_parameter_contract freecad_parameter_dependencies_contract freecad_product_acceptance_contract freecad_step_import_contract freecad_reference_fixture chamfer_scope_geometry freecad_coordinate_contract freecad_profile_contract freecad_curve_profile_contract freecad_hole_cut_contract freecad_loft_contract freecad_sweep_contract freecad_revolve_contract freecad_pattern_contract freecad_tangency_contract freecad_repair_replay_contract freecad_api_contract freecad_tool_replay_contract freecad_checkpoint_replay_contract; do
+for script in freecad_bom_geometry_contract freecad_cut_diagnostics_contract freecad_scoped_repair_contract freecad_profile_replan_contract freecad_constraint_diagnostics freecad_constraint_failure_snapshot freecad_constraint_profile_contract freecad_constraint_parameter_contract freecad_parameter_dependencies_contract freecad_native_reference_contract freecad_product_acceptance_contract freecad_step_import_contract freecad_reference_fixture chamfer_scope_geometry freecad_coordinate_contract freecad_profile_contract freecad_curve_profile_contract freecad_hole_cut_contract freecad_loft_contract freecad_sweep_contract freecad_revolve_contract freecad_pattern_contract freecad_tangency_contract freecad_repair_replay_contract freecad_api_contract freecad_tool_replay_contract freecad_checkpoint_replay_contract; do
   retention=()
   if [[ "$script" == freecad_parameter_dependencies_contract ]]; then
     mkdir -p "$report/parameter-dependency-artifacts"
     chmod 777 "$report/parameter-dependency-artifacts"
     retention=(-e CAD_DEPENDENCY_EVIDENCE_DIR=/evidence -v "$report/parameter-dependency-artifacts:/evidence")
+  elif [[ "$script" == freecad_native_reference_contract ]]; then
+    mkdir -p "$report/native-reference-artifacts"
+    chmod 777 "$report/native-reference-artifacts"
+    retention=(-e CAD_NATIVE_REFERENCE_EVIDENCE_DIR=/evidence -v "$report/native-reference-artifacts:/evidence")
   fi
   invocation=("${common[@]}")
   # Bash 3 (the macOS system shell) treats an empty array as unset under -u.
-  if [[ "$script" == freecad_parameter_dependencies_contract ]]; then invocation+=("${retention[@]}"); fi
+  if [[ "$script" == freecad_parameter_dependencies_contract || "$script" == freecad_native_reference_contract ]]; then invocation+=("${retention[@]}"); fi
   invocation+=(--entrypoint /opt/freecad/bin/FreeCADCmd "$image" -c "exec(compile(open('/tests/$script.py').read(), '/tests/$script.py', 'exec'))")
   "${invocation[@]}" > "$report/$script.log" 2>&1
   # FreeCADCmd can return zero for a Python exception; require the actual report.
@@ -39,10 +45,40 @@ for script in freecad_cut_diagnostics_contract freecad_scoped_repair_contract fr
   "${CAD_CI_PYTHON:-python}" "$root/scripts/ci/step_metadata.py" "$report" "$script" \
     "${invocation[@]}"
 done
+invocation=("${CAD_CI_PYTHON:-python}" -m benchmark.native_oracle run --output "$report/native-oracle" --seeds 32)
+"${invocation[@]}" > "$report/native-oracle.log" 2>&1
+grep -F 'CAD_NATIVE_ORACLE=' "$report/native-oracle.log"
+"${CAD_CI_PYTHON:-python}" "$root/scripts/ci/step_metadata.py" "$report" native-oracle "${invocation[@]}"
+invocation=("${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/native_oracle_controls.py" "$report/native-oracle-controls")
+"${invocation[@]}" > "$report/native-oracle-controls.log" 2>&1
+grep -F 'CAD_NATIVE_ORACLE_CONTROLS=' "$report/native-oracle-controls.log"
+"${CAD_CI_PYTHON:-python}" "$root/scripts/ci/step_metadata.py" "$report" native-oracle-controls "${invocation[@]}"
+invocation=("${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/freecad_coordinate_contract.py" --verify "$report/freecad_coordinate_contract.log")
+"${invocation[@]}" > "$report/coordinate-receiver.log" 2>&1
+grep -F 'CAD_COORDINATE_RECEIVER=' "$report/coordinate-receiver.log"
+"${CAD_CI_PYTHON:-python}" "$root/scripts/ci/step_metadata.py" "$report" coordinate-receiver "${invocation[@]}"
 invocation=("${common[@]}" -e PYTHONPATH=/opt/cad-agent --entrypoint python "$image" /tests/acceptance_comparison_v2_contract.py)
 "${invocation[@]}" > "$report/acceptance-comparison-v2.log" 2>&1
 grep -F 'CAD_ACCEPTANCE_COMPARISON_V2=' "$report/acceptance-comparison-v2.log"
 "${CAD_CI_PYTHON:-python}" "$root/scripts/ci/step_metadata.py" "$report" acceptance-comparison-v2 "${invocation[@]}"
+mkdir -p "$report/annular-segment-artifacts"
+chmod 777 "$report/annular-segment-artifacts"
+invocation=("${common[@]}" -v "$report/annular-segment-artifacts:/evidence" -e CAD_INTAKE_EVIDENCE_DIR=/evidence -v "$report/annular-segments.json:/sandbox/input/annular-segments.json:ro" -e PYTHONPATH=/opt/cad-agent --entrypoint python "$image" /tests/annular_segment_contract.py /sandbox/input/annular-segments.json)
+"${invocation[@]}" > "$report/annular-segments.log" 2>&1
+grep -F 'CAD_ANNULAR_SEGMENTS=' "$report/annular-segments.log"
+"${CAD_CI_PYTHON:-python}" "$root/scripts/ci/step_metadata.py" "$report" annular-segments "${invocation[@]}"
+invocation=("${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/annular_segment_contract.py" --verify "$report/annular-segments.log")
+"${invocation[@]}" > "$report/annular-segments-receiver.log" 2>&1
+grep -F 'CAD_ANNULAR_RECEIVER=' "$report/annular-segments-receiver.log"
+"${CAD_CI_PYTHON:-python}" "$root/scripts/ci/step_metadata.py" "$report" annular-segments-receiver "${invocation[@]}"
+invocation=("${common[@]}" -v "$report/machined-features.json:/sandbox/input/cases.json:ro" -e PYTHONPATH=/opt/cad-agent --entrypoint python "$image" /tests/machined_feature_contract.py /sandbox/input/cases.json)
+"${invocation[@]}" > "$report/machined-features.log" 2>&1
+grep -F 'CAD_MACHINED_FEATURES=' "$report/machined-features.log"
+"${CAD_CI_PYTHON:-python}" "$root/scripts/ci/step_metadata.py" "$report" machined-features "${invocation[@]}"
+invocation=("${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/machined_feature_contract.py" --verify "$report/machined-features.log")
+"${invocation[@]}" > "$report/machined-features-receiver.log" 2>&1
+grep -F 'CAD_MACHINED_RECEIVER=' "$report/machined-features-receiver.log"
+"${CAD_CI_PYTHON:-python}" "$root/scripts/ci/step_metadata.py" "$report" machined-features-receiver "${invocation[@]}"
 invocation=("${common[@]}" -e PYTHONPATH=/opt/cad-agent --entrypoint python "$image" /tests/component_measurement_contract.py)
 "${invocation[@]}" > "$report/component-measurement.log" 2>&1
 grep -F 'CAD_COMPONENT_MEASUREMENT_CONTRACT=' "$report/component-measurement.log"
@@ -57,7 +93,9 @@ invocation=("${CAD_CI_PYTHON:-python}" "$root/backend/tests/e2e/source_obligatio
 "${invocation[@]}" > "$report/source-obligations-receiver.log" 2>&1
 grep -F 'CAD_SOURCE_RECEIVER_CONTRACT=' "$report/source-obligations-receiver.log"
 "${CAD_CI_PYTHON:-python}" "$root/scripts/ci/step_metadata.py" "$report" source-obligations-receiver "${invocation[@]}"
-invocation=("${common[@]}" -v "$report/intake-semantics.json:/sandbox/input/intake-semantics.json:ro" -e PYTHONPATH=/opt/cad-agent --entrypoint python "$image" /tests/intake_semantics_contract.py)
+mkdir -p "$report/intake-semantics-artifacts"
+chmod 777 "$report/intake-semantics-artifacts"
+invocation=("${common[@]}" -v "$report/intake-semantics-artifacts:/evidence" -e CAD_INTAKE_EVIDENCE_DIR=/evidence -v "$report/intake-semantics.json:/sandbox/input/intake-semantics.json:ro" -e PYTHONPATH=/opt/cad-agent --entrypoint python "$image" /tests/intake_semantics_contract.py)
 "${invocation[@]}" > "$report/intake-semantics.log" 2>&1
 grep -F 'CAD_INTAKE_SEMANTICS=' "$report/intake-semantics.log"
 "${CAD_CI_PYTHON:-python}" "$root/scripts/ci/step_metadata.py" "$report" intake-semantics "${invocation[@]}"

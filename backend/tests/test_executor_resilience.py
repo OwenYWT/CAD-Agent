@@ -119,7 +119,7 @@ async def test_concurrency_cap_limits_parallel_executions(monkeypatch):
     active = 0
     peak = 0
 
-    def fake_sync(code, mode, extra_files):
+    def fake_sync(code, mode, extra_files, *execution_options):
         nonlocal active, peak
         active += 1
         peak = max(peak, active)

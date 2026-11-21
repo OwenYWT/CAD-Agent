@@ -11,6 +11,8 @@ from uuid import uuid4
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from unittest.mock import AsyncMock
+from app.principal_context import current_principal
 from app.api import batch as batch_api
 from app.main import app
 from app.models.schemas import GenerateResponse
@@ -46,6 +48,8 @@ async def test_async_generate_endpoint_persists_and_returns_terminal_result(
 ):
     """异步 API 返回持久 WorkflowRun，并从同一投影读取终态。"""
     workflow_run_id = uuid4()
+    monkeypatch.setitem(app.dependency_overrides, batch_api.get_durable_principal, current_principal)
+    monkeypatch.setattr(batch_api, "workflow_project_id", AsyncMock(return_value=uuid4()))
     identity = {
         "project_id": str(uuid4()),
         "branch_id": str(uuid4()),
@@ -88,8 +92,9 @@ async def test_async_generate_endpoint_persists_and_returns_terminal_result(
 
 
 @pytest.mark.asyncio
-async def test_task_status_not_found():
+async def test_task_status_not_found(monkeypatch):
     """查询不存在的任务返回 404"""
+    monkeypatch.setitem(app.dependency_overrides, batch_api.get_durable_principal, current_principal)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.get("/api/tasks/nonexistent-id")

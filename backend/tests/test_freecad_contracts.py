@@ -87,6 +87,17 @@ def test_freecad_operation_plan_normalizes_typed_args() -> None:
     assert plan.operations[-1].typed_args().formats == ("fcstd", "step", "stl")
 
 
+@pytest.mark.parametrize('body', [None, 'Housing'])
+def test_sketch_cannot_reuse_its_implicitly_created_body_name(body):
+    payload = _cylinder_plan()
+    args = payload['operations'][0]['args']
+    args['name'] = body or 'Body'
+    if body is not None:
+        args['body'] = body
+    with pytest.raises(ValidationError, match='sketch name must differ from its body'):
+        FreeCADOperationPlan.model_validate(payload)
+
+
 def test_freecad_plan_requires_one_final_export() -> None:
     payload = _cylinder_plan()
     payload["operations"] = payload["operations"][:-1]

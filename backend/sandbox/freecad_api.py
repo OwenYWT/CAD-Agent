@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+from string import Template
 import tempfile
 import uuid
 
@@ -31,37 +32,41 @@ def execute_program(document, args):
     if any(not isinstance(m,str) or not re.fullmatch(r'[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*',m) for m in modules):
         raise ValueError('invalid module name')
     work = Path(tempfile.mkdtemp(prefix='freecad-api-'))
-    before = work/'input.FCStd'; after = work/'output.FCStd'; status = work/'status.json'
+    # FreeCAD derives the reopened document's Name from the filename. Retain
+    # the actual input identity across the child-process boundary.
+    before = work/(document.Name+'.FCStd'); after = work/'output.FCStd'; status = work/'status.json'
     document.saveAs(str(before))
     invocation = uuid.uuid4().hex
     program = work/'program.py'; program.write_text(source, encoding='utf-8')
     script = work/'run.FCMacro'
-    script.write_text('''import FreeCAD as App
+    # Substitute once: inserted paths and values are data, not more markers.
+    script.write_text(Template('''import FreeCAD as App
 import Part, Sketcher, importlib, json, os, sys, traceback
 try:
-    document = App.openDocument(BEFORE)
+    document = App.openDocument($BEFORE)
     App.setActiveDocument(document.Name)
-    if GUI:
+    if $GUI:
         import FreeCADGui as Gui
-    for module in MODULES:
+    for module in $MODULES:
         importlib.import_module(module)
-    exec(compile(open(PROGRAM, encoding="utf-8").read(), PROGRAM, "exec"), globals())
-    if document is None or App.getDocument(document.Name) is not document:
+    program_globals = globals().copy()
+    exec(compile(open($PROGRAM, encoding="utf-8").read(), $PROGRAM, "exec"), program_globals)
+    if program_globals.get("document") is not document or App.getDocument(document.Name) is not document:
         raise RuntimeError("API program must preserve its document identity")
     document.recompute()
-    document.saveAs(AFTER)
-    result = {"invocation": INVOCATION, "status": "succeeded"}
+    document.saveAs($AFTER)
+    result = {"invocation": $INVOCATION, "status": "succeeded"}
 except BaseException as exc:
-    result = {"invocation": INVOCATION, "status": "failed", "exception_type":type(exc).__name__, "error": type(exc).__name__+": "+str(exc), "traceback": traceback.format_exc()}
-with open(STATUS, "w", encoding="utf-8") as output:
+    result = {"invocation": $INVOCATION, "status": "failed", "exception_type":type(exc).__name__, "error": type(exc).__name__+": "+str(exc), "traceback": traceback.format_exc()}
+with open($STATUS, "w", encoding="utf-8") as output:
     json.dump(result, output)
 sys.stdout.flush(); sys.stderr.flush()
-if GUI:
+if $GUI:
     os._exit(0 if result["status"] == "succeeded" else 1)
-'''.replace('BEFORE',repr(str(before))).replace('AFTER',repr(str(after)))
-       .replace('PROGRAM',repr(str(program))).replace('STATUS',repr(str(status)))
-       .replace('INVOCATION',repr(invocation)).replace('MODULES',repr(modules))
-       .replace('GUI',repr(environment=='gui')), encoding='utf-8')
+''').substitute(BEFORE=repr(str(before)), AFTER=repr(str(after)),
+       PROGRAM=repr(str(program)), STATUS=repr(str(status)),
+       INVOCATION=repr(invocation), MODULES=repr(modules),
+       GUI=repr(environment=='gui')), encoding='utf-8')
     env = {k:v for k,v in os.environ.items() if not k.startswith('CAD_FREECAD_')}
     display = None
     if environment == 'gui':

@@ -1,13 +1,17 @@
 import { authFetch } from "../../auth";
 import { API_BASE } from "./http";
 
-export async function downloadEngineeringArtifact(url: string, filename: string): Promise<void> {
+export function fetchArtifact(url: string, signal?: AbortSignal): Promise<Response> {
   const external = /^https?:\/\//.test(url);
   const target = external ? url : `${API_BASE}${url}`;
   // S3-compatible presigned URLs already carry short-lived authorization in
   // their query string. Sending the WordsWave bearer token to that host both
   // leaks credentials and can invalidate the object-store signature.
-  const response = external ? await fetch(target) : await authFetch(target);
+  return external ? fetch(target, { signal }) : authFetch(target, { signal });
+}
+
+export async function downloadEngineeringArtifact(url: string, filename: string): Promise<void> {
+  const response = await fetchArtifact(url);
   if (!response.ok) throw new Error(`文件下载失败（HTTP ${response.status}）`);
   const objectUrl = URL.createObjectURL(await response.blob());
   const anchor = document.createElement("a");

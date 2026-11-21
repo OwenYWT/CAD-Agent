@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 
 from app.contracts.acceptance_v2 import decode_acceptance
 from app.contracts.constraint_patch import ConstraintPatch
@@ -44,6 +45,14 @@ def construction_geometry(plan, sketch, base_state):
         elif g['kind'] == 'circle':
             geometry.append({**common, 'index': len(geometry), 'type': 'Part::GeomCircle',
                 'center': [g['center']['x'], g['center']['y'], 0], 'radius_mm': g['radius_mm']})
+        elif g['kind'] == 'arc' and op.action == 'sketch.add_geometry':
+            center = [g['center']['x'], g['center']['y'], 0]
+            angles = [math.radians(g[key]) for key in ('start_angle_deg', 'end_angle_deg')]
+            radius = g['radius_mm']
+            points = [[center[0] + radius * math.cos(a), center[1] + radius * math.sin(a), 0] for a in angles]
+            geometry.append({**common, 'index': len(geometry), 'type': 'Part::GeomArcOfCircle',
+                             'center': center, 'radius_mm': radius, 'start': points[0], 'end': points[1],
+                             'sweep_rad': angles[1] - angles[0]})
         elif g['kind'] == 'rectangle':
             x, y = g['corner']['x'], g['corner']['y']
             w, h = g['width_mm'], g['height_mm']

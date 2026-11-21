@@ -1,14 +1,12 @@
 import { useRef, useState } from 'react';
-import { authFetch } from '../../auth';
-import { API_BASE, EngineeringApiError, readJson } from '../../services/clients/http';
+import { updateSketchRelations, type Relation, type Change } from '../../services/clients/documents';
+import { EngineeringApiError } from '../../services/clients/http';
 import { useFeatureLease } from '../../hooks/useFeatureLease';
 import { useDraftGuard } from '../../hooks/useDraftGuard';
 import { useDraftHistory } from '../../hooks/useDraftHistory';
 import type { CloudDocument, SemanticFeature } from '../../types/document';
 import type { SketchDetails } from '../../types/sketch';
 
-interface Relation {sketch:string;kind:'horizontal'|'vertical'|'coincident'|'equal';first:{geometry_index:number;point_position?:number};second?:{geometry_index:number;point_position?:number}}
-interface Change {action:'add'|'delete'|'replace';logical_id:string;constraint?:Relation}
 export default function SketchRelations({document,feature,details,onSubmitted}: {
   document:CloudDocument;feature:SemanticFeature;details:SketchDetails;onSubmitted?:(id:string,base:CloudDocument)=>void;
 }) {
@@ -36,11 +34,7 @@ export default function SketchRelations({document,feature,details,onSubmitted}: 
     busy.current=true;setPending(true);setError('');
     try {
       const leaseToken=token || await lease.ensure();setToken(leaseToken);
-      const receipt=await readJson<{workflow_run_id:string}>(await authFetch(`${API_BASE}/api/documents/${base.document_id}/operations`,{
-        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'native.update',
-          expected_base_revision_id:base.head_revision_id,expected_state_version:base.state_version,idempotency_key:key,lease_token:leaseToken,
-          objective:`修改草图 ${feature.label} 的受保护几何关系`,modification:{expected_state_sha256:base.parameter_state_sha256,
-            native_edits:[{action:'sketch.patch_relations',args:{sketch:feature.kernel_name,expected_constraints_sha256:feature.sketch_constraints_sha256,changes:history.value}}]}})}),'关系修改提交失败');
+      const receipt=await updateSketchRelations(base, feature, key, leaseToken, history.value);
       setSubmitted(true);setUncertain(false);onSubmitted?.(receipt.workflow_run_id,base);void lease.release().catch(()=>{});
     } catch(e) {
       const definitive=e instanceof EngineeringApiError && e.httpStatus!==undefined && e.httpStatus<500;

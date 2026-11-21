@@ -14,6 +14,81 @@ def _geometry():
     return geometry
 
 
+def annular_segment_dimensions(shape, scope, tolerance, *, solid=False):
+    """Select an observed cylindrical band, then certify its entire material.
+
+    The axis point chooses a face, not a sample thickness or a target-sized cut.
+    Both axial endpoints and both radii come from the final BRep. The complete
+    axial slice must equal that annulus, including concealed voids and bosses.
+    """
+    import cadquery as cq
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+
+    g=_geometry()
+    if len(shape.Solids())!=1 or not shape.isValid():
+        raise ValueError('annular segment requires one valid whole solid')
+    axis=g._unit(scope['axis']); point=tuple(scope['point_mm'])
+    at=g._dot(point,axis)
+    candidates=[]
+    for index,face in enumerate(shape.Faces()):
+        if face.geomType()!='CYLINDER':continue
+        surface=BRepAdaptor_Surface(face.wrapped,True);cylinder=surface.Cylinder()
+        if abs(abs(g._dot(g._unit(cylinder.Axis().Direction().Coord()),axis))-1)>1e-10:continue
+        origin=g._axis_point(cylinder.Location().Coord(),axis)
+        if g._distance(g._axis_point(point,axis),origin)>tolerance:continue
+        u=(surface.FirstUParameter()+surface.LastUParameter())/2
+        midpoint=surface.Value(u,(surface.FirstVParameter()+surface.LastVParameter())/2).Coord()
+        radial=g._sub(g._axis_point(midpoint,axis),origin)
+        if g._dot(face.normalAt(cq.Vector(*midpoint)).toTuple(),radial)<=0:continue
+        lo,hi=sorted(g._dot(surface.Value(u,v).Coord(),axis) for v in
+                     [surface.FirstVParameter(),surface.LastVParameter()])
+        if not lo+tolerance<at<hi-tolerance:continue
+        radius=cylinder.Radius();height=hi-lo
+        if (face.innerWires() or abs(surface.LastUParameter()-surface.FirstUParameter()-2*math.pi)>1e-10
+                or abs(face.Area()-2*math.pi*radius*height)>tolerance*(4*math.pi*radius+2*height)):
+            raise ValueError('annular segment outer face is trimmed or incomplete')
+        candidates.append((index,face,origin,lo,hi,radius))
+    if len(candidates)!=1:
+        raise ValueError('axis point does not select exactly one complete annular segment')
+    index,face,origin,lo,hi,radius=candidates[0]
+    holes=[] if solid else [hole for hole in g._cylindrical_voids(shape,tolerance)
+        if hole['complete'] and abs(abs(g._dot(hole['axis'],axis))-1)<1e-10
+        and g._distance(g._axis_point(hole['origin'],axis),origin)<=tolerance
+        and all(s['radius'] is not None for s in hole['segments'])
+        and len({round(s['radius']/tolerance) for s in hole['segments']})==1
+        and min(g._dot(tuple(o+a*t for o,a in zip(hole['origin'],hole['axis'])),axis)
+                for t in [hole['start'],hole['end']])<=lo+tolerance
+        and max(g._dot(tuple(o+a*t for o,a in zip(hole['origin'],hole['axis'])),axis)
+                for t in [hole['start'],hole['end']])>=hi-tolerance]
+    if not solid and (len(holes)!=1 or holes[0]['diameter']/2>=radius-tolerance):
+        raise ValueError('annular segment lacks one complete coaxial constant-radius bore')
+    inner=0.0 if solid else holes[0]['diameter']/2
+    height=hi-lo
+    start=cq.Vector(*(o+a*lo for o,a in zip(origin,axis)));direction=cq.Vector(*axis)
+    layer=cq.Solid.makeCylinder(radius,height,start,direction)
+    if not solid:
+        layer=layer.cut(cq.Solid.makeCylinder(inner,height,start,direction))
+    # Cover all actual material in the observed axial interval, not only the
+    # expected ring. A disconnected boss/bridge cannot hide outside the ring.
+    reach=shape.BoundingBox().DiagonalLength+g._distance(start.toTuple(),shape.Center().toTuple())
+    actual=shape.intersect(cq.Solid.makeCylinder(reach,height,start,direction))
+    missing=layer.cut(actual);excess=actual.cut(layer)
+    if not all(s.isValid() for s in (layer,actual,missing,excess)) or len(layer.Solids())!=1:
+        raise ValueError('annular segment material Boolean is invalid')
+    volume_tolerance=layer.Area()*tolerance
+    absent=sum(abs(s.Volume()) for s in missing.Solids())
+    extra=sum(abs(s.Volume()) for s in excess.Solids())
+    if (solid and (missing.Solids() or excess.Solids())) or absent>volume_tolerance or extra>volume_tolerance:
+        raise ValueError('annular segment has missing or excess material')
+    dimensions={'diameter':2*radius,'inner_diameter':2*inner,'height':height}
+    return dimensions, {'schema_version':'solid-segment.v1' if solid else 'annular-segment.v1','complete':True,
+        'selection_uses_nominal':False,'dimensions_mm':dimensions,'axis':list(axis),
+        'axis_point_mm':list(point),'origin_mm':list(origin),'axial_interval_mm':[lo,hi],
+        'outer_face_index':index,'outer_surface_area_mm2':face.Area(),
+        'missing_material_mm3':absent,'excess_material_mm3':extra,
+        'boolean_volume_tolerance_mm3':volume_tolerance}
+
+
 def primitive_dimensions(shape, primitive, tolerance):
     import cadquery as cq
     from OCP.BRepAdaptor import BRepAdaptor_Surface
@@ -64,6 +139,44 @@ def primitive_dimensions(shape, primitive, tolerance):
             raise ValueError('the whole closed cylinder boundary is incomplete')
         dimensions = {'diameter':2*radius, 'radius':radius, 'height':height}
         geometry = {'axis':list(axis), 'origin_mm':list(origin), 'axial_interval_mm':[lo,hi]}
+    elif primitive == 'cube':
+        # Certify the whole six-sided boundary, not a bounding box or a
+        # nominally sized sample. Extra faces, inner wires and curved edges
+        # retain even tiny pockets/cuts as failures of this certificate.
+        if (len(faces) != 6 or any(t != 'PLANE' for t in types)
+                or len(shape.Faces()) != 6 or len(shape.Edges()) != 12 or len(shape.Vertices()) != 8
+                or any(f.innerWires() or len(f.Edges()) != 4
+                       or any(e.geomType() != 'LINE' for e in f.Edges()) for f in faces)):
+            raise ValueError('a cube requires six complete planar quadrilateral exterior faces')
+        axes, pairs = [], []
+        for i, face in enumerate(faces):
+            normal = g._unit(face.normalAt().toTuple())
+            parallel = [j for j, axis in enumerate(axes) if abs(abs(g._dot(axis, normal))-1) <= 1e-10]
+            if parallel:
+                pairs[parallel[0]].append(i)
+            else:
+                if any(abs(g._dot(axis, normal)) > 1e-10 for axis in axes):
+                    raise ValueError('cube faces are not mutually perpendicular')
+                axes.append(normal)
+                pairs.append([i])
+        if len(pairs) != 3 or any(len(pair) != 2 for pair in pairs):
+            raise ValueError('cube faces are not three opposed exterior pairs')
+        intervals = []
+        for axis, pair in zip(axes, pairs):
+            positions = [g._dot(faces[i].Center().toTuple(), axis) for i in pair]
+            lo, hi = min(positions), max(positions)
+            if hi-lo <= tolerance or any((p-(lo+hi)/2)*g._dot(faces[i].normalAt().toTuple(), axis) <= 0
+                                         for i, p in zip(pair, positions)):
+                raise ValueError('cube face pairs do not enclose positive material')
+            intervals.append([lo, hi])
+        lengths = [hi-lo for lo, hi in intervals]
+        if max(lengths)-min(lengths) > tolerance:
+            raise ValueError('the three independently measured cube edges are unequal')
+        dimensions = {'edge': sum(lengths)/3}
+        geometry = {'axes': [list(axis) for axis in axes], 'intervals_mm': intervals,
+                    'face_axis_pairs': pairs, 'edge_count': 12, 'vertex_count': 8,
+                    'inner_boundary_counts': [len(f.innerWires()) for f in faces],
+                    'boundary_edge_counts': [len(f.Edges()) for f in faces]}
     elif primitive == 'sphere':
         if not faces or any(t != 'SPHERE' for t in types):
             raise ValueError('complete spherical boundary is not certified')

@@ -85,6 +85,7 @@ class ChangeSetOperationResult:
     change_set_id: UUID
     status: str
     replayed: bool = False
+    source_workflow_run_id: UUID | None = None
 
 
 def _utcnow() -> datetime:
@@ -328,6 +329,7 @@ async def update_change_set_evidence(
     return ChangeSetOperationResult(
         change_set_id=change_set_id,
         status="pending_review",
+        source_workflow_run_id=row["source_workflow_run_id"],
     )
 
 
@@ -355,6 +357,7 @@ async def accept_change_set(
                 change_set_id=change_set_id,
                 status=row["status"],
                 replayed=True,
+                source_workflow_run_id=row["source_workflow_run_id"],
             )
         if row["status"] != "pending_review":
             raise ChangeSetStateConflict(
@@ -387,7 +390,11 @@ async def accept_change_set(
             status="accepted",
             note=review_note,
         )
-    return ChangeSetOperationResult(change_set_id=change_set_id, status="accepted")
+    return ChangeSetOperationResult(
+        change_set_id=change_set_id,
+        status="accepted",
+        source_workflow_run_id=row["source_workflow_run_id"],
+    )
 
 
 async def commit_change_set(
@@ -413,6 +420,7 @@ async def commit_change_set(
                 change_set_id=change_set_id,
                 status="committed",
                 replayed=True,
+                source_workflow_run_id=row["source_workflow_run_id"],
             )
         if row["status"] != "accepted":
             raise ChangeSetStateConflict(
@@ -474,7 +482,11 @@ async def commit_change_set(
             status="committed",
             note=row["review_note"],
         )
-    return ChangeSetOperationResult(change_set_id=change_set_id, status="committed")
+    return ChangeSetOperationResult(
+        change_set_id=change_set_id,
+        status="committed",
+        source_workflow_run_id=row["source_workflow_run_id"],
+    )
 
 
 async def request_change_set_modification(
@@ -545,6 +557,7 @@ async def _terminal_review_action(
                 change_set_id=change_set_id,
                 status=target_status,
                 replayed=True,
+                source_workflow_run_id=row["source_workflow_run_id"],
             )
         if row["status"] != "pending_review":
             raise ChangeSetStateConflict(
@@ -578,6 +591,7 @@ async def _terminal_review_action(
     return ChangeSetOperationResult(
         change_set_id=change_set_id,
         status=target_status,
+        source_workflow_run_id=row["source_workflow_run_id"],
     )
 
 
@@ -605,6 +619,7 @@ async def rollback_change_set(
                 change_set_id=change_set_id,
                 status="rolled_back",
                 replayed=True,
+                source_workflow_run_id=row["source_workflow_run_id"],
             )
         if row["status"] != "committed":
             raise ChangeSetStateConflict(
@@ -664,4 +679,5 @@ async def rollback_change_set(
     return ChangeSetOperationResult(
         change_set_id=change_set_id,
         status="rolled_back",
+        source_workflow_run_id=row["source_workflow_run_id"],
     )

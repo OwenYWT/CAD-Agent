@@ -1,18 +1,11 @@
 from __future__ import annotations
 
-from app.models.schemas import CADPlan, CriticalDimension, DesignBrief
-
-_DEFAULT_PRINTABILITY_TARGETS = [
-    "几何体应封闭无破面",
-    "最小壁厚应适合当前模型尺度和制造方式",
-    "外露边缘应在可行时做圆角或倒角处理",
-    "模型尺寸应兼顾常见桌面 3D 打印机成型空间",
-]
+from app.models.schemas import CADPlan, CriticalDimension, DesignBrief, ManufacturingProfile
 
 _DEFAULT_ACCEPTANCE_CRITERIA = [
     "代码可成功执行",
-    "至少导出一个可直接制造的模型文件",
-    "几何体封闭且适合继续做打印检查",
+    "按请求格式导出模型文件",
+    "独立检查几何有效性",
 ]
 
 _ARTIFACT_TYPE_LABELS = {
@@ -84,23 +77,23 @@ def localize_user_question(value: str) -> str:
     return _GENERIC_QUESTION
 
 
-def _localized_list(values: list[str], fallback: list[str] | None = None, limit: int = 8) -> list[str]:
+def _localized_list(values: list[str], fallback: list[str] | None = None) -> list[str]:
     localized: list[str] = []
     for value in values:
         cleaned = value.strip() if value else ""
         if not cleaned:
             continue
         localized.append(cleaned)
-    return localized[:limit] or list(fallback or [])[:limit]
+    return localized or list(fallback or [])
 
 
-def _localized_questions(values: list[str], limit: int = 8) -> list[str]:
+def _localized_questions(values: list[str]) -> list[str]:
     questions: list[str] = []
     for value in values:
         question = localize_user_question(value)
         if question and question not in questions:
             questions.append(question)
-    return questions[:limit]
+    return questions
 
 
 def _dimensions_from_plan(plan: CADPlan) -> list[CriticalDimension]:
@@ -111,7 +104,7 @@ def _dimensions_from_plan(plan: CADPlan) -> list[CriticalDimension]:
             unit="mm",
             reason="用户提供或需求分析推断的关键尺寸",
         )
-        for name, value in list(plan.dimensions.items())[:10]
+        for name, value in plan.dimensions.items()
     ]
 
 
@@ -123,7 +116,7 @@ def _localized_dimensions(items: list[CriticalDimension]) -> list[CriticalDimens
             unit=item.unit or "mm",
             reason=_localized_text(item.reason, "用于约束模型比例和制造可行性"),
         )
-        for item in items[:10]
+        for item in items
     ]
 
 
@@ -137,10 +130,7 @@ def ensure_design_brief(plan: CADPlan) -> DesignBrief:
     functional_requirements = _localized_list(
         existing.functional_requirements or [*plan.features, *plan.constraints],
     )
-    printability_targets = _localized_list(
-        existing.printability_targets,
-        fallback=_DEFAULT_PRINTABILITY_TARGETS,
-    )
+    printability_targets = _localized_list(existing.printability_targets)
     acceptance_criteria = _localized_list(
         existing.acceptance_criteria,
         fallback=_DEFAULT_ACCEPTANCE_CRITERIA,
@@ -167,3 +157,33 @@ def ensure_design_brief(plan: CADPlan) -> DesignBrief:
     )
     plan.design_brief = brief
     return brief
+
+
+def apply_manufacturing_profile_to_brief(
+    brief: DesignBrief, profile: ManufacturingProfile | None
+) -> None:
+    if not profile:
+        return
+    process_labels = {
+        "fdm": "FDM",
+        "sla": "SLA",
+        "cnc": "CNC",
+        "laser_cut": "激光切割",
+        "generic": "通用工艺",
+    }
+    process_label = process_labels.get(profile.process, profile.process)
+    brief.manufacturing_posture = f"{process_label} {profile.material}".strip()
+    profile_targets = [
+        f"制造工艺：{process_label}",
+        f"材料：{profile.material}",
+    ]
+    if profile.nozzle_diameter_mm is not None:
+        profile_targets.append(f"喷嘴直径：{profile.nozzle_diameter_mm:g} mm")
+    if profile.layer_height_mm is not None:
+        profile_targets.append(f"层高：{profile.layer_height_mm:g} mm")
+    if profile.build_volume_mm:
+        volume = " x ".join(f"{value:g}" for value in profile.build_volume_mm)
+        profile_targets.append(f"成型空间：{volume} mm")
+    for target in profile_targets:
+        if target not in brief.printability_targets:
+            brief.printability_targets.append(target)

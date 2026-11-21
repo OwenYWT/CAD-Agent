@@ -1,4 +1,9 @@
 /** User-supplied basis; references are never treated as independently verified measurements. */
+export interface RequirementIntakePreview {
+  dimensions: string;
+  complete: boolean;
+}
+
 export interface RequirementBasis {
   schema_version: "requirement-basis.v1";
   target: string;

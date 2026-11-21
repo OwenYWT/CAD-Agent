@@ -8,7 +8,7 @@ import time
 from app.agent.failure_taxonomy import classify, fix_hint_for, render_prompt_table
 from app.agent.prompts import CODEGEN_SYSTEM_PROMPT, MODIFICATION_PROMPT, ERROR_FIX_PROMPT, EZDXF_CODEGEN_PROMPT, ASSEMBLY_CODEGEN_PROMPT
 from app.config import settings, make_llm_client
-from app.models.schemas import CADPlan, ModificationPlan
+from app.models.schemas import CADPlan, ModificationPlan, ManufacturingProfile
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class CodeGenerator:
     def _format_design_brief_context(plan: CADPlan) -> str:
         brief = plan.design_brief
         if not brief:
-            return ""
+            return plan.manufacturing_profile.prompt_context() if plan.manufacturing_profile else ""
 
         dimension_lines = [
             f"- {item.name}={item.value} {item.unit}: {item.reason}"
@@ -54,6 +54,8 @@ class CodeGenerator:
             sections.append("Printability targets:\n" + "\n".join(f"- {item}" for item in brief.printability_targets))
         if brief.acceptance_criteria:
             sections.append("Acceptance criteria:\n" + "\n".join(f"- {item}" for item in brief.acceptance_criteria))
+        if plan.manufacturing_profile:
+            sections.append(plan.manufacturing_profile.prompt_context())
         return "\n\n".join(sections)
 
     @staticmethod
@@ -182,6 +184,7 @@ class CodeGenerator:
         existing_code: str,
         examples: list[dict],
         conversation: list[dict],
+        *, manufacturing_profile: ManufacturingProfile | None = None,
     ) -> str:
         system = MODIFICATION_PROMPT.format(
             existing_code=existing_code,
@@ -189,6 +192,8 @@ class CodeGenerator:
         )
 
         messages = [{"role": "user", "content": f"修改要求: {plan.description}"}]
+        if manufacturing_profile:
+            messages[0]['content'] += '\n' + manufacturing_profile.prompt_context()
 
         t0 = time.time()
         logger.info("CodeGen.modify LLM call start")
@@ -225,6 +230,56 @@ class CodeGenerator:
             error_message=error.get("message", ""),
             traceback=error.get("traceback", ""),
         )
+        if "solid_count_mismatch" in str(error.get("message", "")):
+            system += (
+                "\n\n## Solid-count mismatch repair\n"
+                "The reported solid_count_mismatch is a topology failure, not an export-format issue. "
+                "Preserve every required feature and connect every feature that belongs to the same part "
+                "with actual positive-volume overlap before union; do not use a positive clearance, "
+                "point contact, or line contact. For a two-piece enclosure, the body plus its attached "
+                "ears must form one solid while keeping the lid as a separate assembly component. "
+                "Do not delete ears, holes, grooves, or the lid merely to reduce the solid count. "
+                "不得使用正向间隙；保持上盖作为独立装配件。"
+            )
+        if "co-planar" in str(error.get("message", "")).lower() or "coplanar" in str(error.get("message", "")).lower():
+            system += (
+                "\n\n## Co-planar face selection repair\n"
+                "The CadQuery error 'Selected faces must be co-planar' means a workplane was built from faces on different planes. "
+                "Each .workplane() must be based on a single co-planar face (or one unambiguous face selector). "
+                "do not use .faces(\"|Y\") or any selector that returns opposite parallel faces; select one side explicitly, "
+                "such as .faces(\">Y\") or .faces(\"<Y\"), or create separate cutters/workplanes for separate faces. "
+                "Do not call Workplane.cleanup(); it is not a CadQuery Workplane API. Preserve all requested holes, grooves, and features."
+            )
+        if "workplane.cleanup()" in str(error.get("message", "")).lower() or "cleanup()" in str(error.get("message", "")).lower():
+            system += (
+                "\n\n## Unsupported cleanup repair\n"
+                "Workplane.cleanup() is not a CadQuery Workplane API. Remove only that call and preserve the surrounding "
+                "profile, cutter, and all requested geometry; do not replace it with a cross-plane face selection."
+            )
+        if (
+            "already applies the subtraction" in str(error.get("message", "")).lower()
+            or "body-derived cutblind" in str(error.get("message", "")).lower()
+        ):
+            system += (
+                "\n\n## Body-derived subtraction repair\n"
+                "cutBlind() already returns the modified parent body when its workplane was derived from parent.faces(...).workplane(). "
+                "Assign that returned body directly to the parent variable. Never subtract that returned body from its parent again "
+                "with parent - modified_parent or parent.cut(modified_parent). Preserve the requested cut depth and profile."
+            )
+        geometry_error = str(error.get("message", "")).lower()
+        if (
+            "rectangular assembly" in geometry_error
+            or "oblique planar boundary" in geometry_error
+            or "complete open rectangular cavity" in geometry_error
+            or "assembly-" in geometry_error
+        ):
+            system += (
+                "\n\n## Rectangular assembly geometry repair\n"
+                "The independent rectangular assembly verifier accepts only rectilinear body, lid, groove, and tab boundaries. "
+                "Keep all rectangular tabs axis-aligned to the global X/Y directions and attached to the corresponding body side. "
+                "Do not rotate tabs or other planar rectangular features by 45 degrees (or any oblique angle). "
+                "Preserve the four separate mounting tabs and their holes; do not remove them to hide the validation failure."
+            )
         repair_context = error.get("context")
         if repair_context is not None:
             system += (
@@ -309,6 +364,7 @@ class CodeGenerator:
         part_description: str,
         part_dimensions: dict,
         examples: list[dict],
+        *, manufacturing_profile: ManufacturingProfile | None = None,
     ) -> str:
         """Generate code for a single part as a function make_{name}() -> cq.Workplane."""
         system = (
@@ -316,11 +372,23 @@ class CodeGenerator:
             "规则:\n"
             "1. 定义函数 make_{name}() 返回 cq.Workplane 对象\n"
             "2. 关键尺寸在函数外定义为变量\n"
-            "3. 用简化几何，不需要精确齿形/螺纹\n"
+            "3. 保留用户明确要求的几何特征与精度，不得擅自简化齿形、螺纹或省略结构\n"
             "4. 代码末尾: result = make_{name}()\n"
             "5. 最后一行: show_object(result)\n"
             "6. 只输出 Python 代码\n"
         ).format(name=part_name)
+        system += (
+            "\n连接拓扑约束：需要连接到主体的安装耳、凸台、筋或法兰必须与主体实体有实际体积重叠后再 union；"
+            "不得使用正向间隙、仅面接触或仅线接触来连接。只有明确要求独立装配件时才保留分离实体。\n"
+            "面选择约束：每次 .workplane() 只能基于单一共面面集合；不得把不同方向或相对两侧的面放进同一个选择器链。"
+            "不要使用 .faces(\"|Y\")、.faces(\"|X\") 或其他会同时返回多个非共面面的选择器；需要两侧特征时分别建立 cutter/workplane。"
+            "Each .workplane() must be based on a single co-planar face; do not use .faces(\"|Y\") or .faces(\"|X\") for opposite sides. "
+            "不要调用 Workplane.cleanup()，该方法不是 CadQuery Workplane API。\n"
+            "For rectangular enclosure assemblies, keep tabs and grooves axis-aligned to X/Y; do not rotate them by 45 degrees unless explicitly required.\n"
+            "CadQuery subtraction rule: cutBlind() already returns the modified parent body when called on a workplane derived from "
+            "parent.faces(...).workplane(); cutThruAll() and hole() follow the same rule. Always assign that return value directly. Never treat it as an independent cutter "
+            "or subtract it from the same parent a second time. Build independent cutters from a fresh cq.Workplane when using parent.cut(cutter).\n"
+        )
 
         if examples:
             system += self._format_examples(examples)
@@ -330,6 +398,8 @@ class CodeGenerator:
             f"零件描述: {part_description}\n"
             f"尺寸: {part_dimensions}\n"
         )
+        if manufacturing_profile:
+            user_content += '\n' + manufacturing_profile.prompt_context()
 
         t0 = time.time()
         logger.info(f"CodeGen.generate_single_part start: {part_name}")
