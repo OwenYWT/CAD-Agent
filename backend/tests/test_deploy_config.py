@@ -414,16 +414,20 @@ def test_tencent_monitor_preserves_dedicated_reader_configuration():
 
 @pytest.mark.parametrize("cloud", [False, True])
 def test_trusted_proxy_addresses_match_deployed_ingress(cloud):
+    import ipaddress
     path = COMPOSE.parent / "deploy/tencent/compose.yml" if cloud else COMPOSE
     compose = yaml.safe_load(path.read_text())
     services = compose["services"]
     trusted = set(services["backend"]["environment"]["FORWARDED_ALLOW_IPS"].split(","))
     address = services["frontend"]["networks"]["ingress"]["ipv4_address"]
+    allocation = compose['networks']['ingress']['ipam']['config'][0]
+    dynamic = ipaddress.ip_network(allocation['ip_range'])
+    assert dynamic.subnet_of(ipaddress.ip_network(allocation['subnet']))
+    assert ipaddress.ip_address(address) not in dynamic
+    assert ipaddress.ip_address(allocation['gateway']) not in dynamic
     expected = {address}
     if cloud:
-        import ipaddress
-        subnet = ipaddress.ip_network(compose["networks"]["ingress"]["ipam"]["config"][0]["subnet"])
-        expected.add(str(subnet.network_address + 1))
+        expected.add(allocation['gateway'])
     assert trusted == expected
     assert set(services["frontend"]["networks"]) == {"ingress"}
     assert set(services["backend"]["networks"]) == {"ingress", "default"}

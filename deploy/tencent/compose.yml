@@ -178,3 +178,5 @@ networks:
     ipam:
       config:
         - subnet: 172.30.252.0/28
+          gateway: 172.30.252.1
+          ip_range: 172.30.252.8/29

@@ -6,6 +6,8 @@ for replay and audit, including the invalid instructions that caused a failure.
 import math
 import re
 
+from app.contracts.geometry_request import is_whole_world_scope
+
 
 def validate_v1_source_dimension_axes(
     contract,
@@ -92,6 +94,8 @@ def validate_modification_dimension_targets(
     for row in extracted.get("requirements", ()):
         property_name = row.get("property")
         if row.get("kind") != "overall_dimension" or property_name not in aliases:
+            continue
+        if not is_whole_world_scope(row['scope']):
             continue
         if row.get("source_input_id", "objective") != "objective":
             continue

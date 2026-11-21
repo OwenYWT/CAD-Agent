@@ -27,6 +27,9 @@ def _write_box(tmp_path, dimensions=(20, 10, 4)):
 
 
 def test_valid_stl_solid_passes_with_measured_dimensions(tmp_path):
+    from sandbox.geometry_validation import _dimension_error
+    assert _dimension_error((20, 10, 4), {'x': 20, 'z': 4}, world_axes=True) == 0
+    assert _dimension_error((20, 10, 4), {'x': 10, 'y': 20}, world_axes=True) == 1
     stl = _write_box(tmp_path)
     report = validate_geometry_files(
         [{"role": "stl", "format": "stl", "path": str(stl)}],

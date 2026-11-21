@@ -15,6 +15,8 @@ from temporalio.workflow import ActivityCancellationType
 from app.workflows.model_job import ModelJobWorkflow
 from app.workflows.model_job_policy import MODEL_OPERATIONS
 from app.contracts.model_operations import CAD_OPERATIONS
+from app.contracts.geometry_request import is_whole_world_scope
+from app.contracts.machined_feature_values import principal_axis
 from app.workflows.native_repair import NativeRepairBudget, RepairStopped
 from app.workflows.work_accounting import WorkAccounting, WorkBudgetPolicy
 
@@ -43,7 +45,7 @@ _CONTROL_RETRY = RetryPolicy(
 )
 
 
-def _expected_geometry_dimensions(requirements: dict[str, Any]) -> dict[str, float]:
+def _expected_geometry_dimensions(requirements: dict[str, Any], acceptance: dict | None = None) -> dict[str, float]:
     """Collect geometry dimensions for both generation and semantic edits.
 
     Generated plans store dimensions under ``dimensions`` while modification
@@ -54,6 +56,22 @@ def _expected_geometry_dimensions(requirements: dict[str, Any]) -> dict[str, flo
     promoted to overall dimensions here.
     """
     result: dict[str, float] = {}
+    if acceptance and acceptance.get('schema_version') == 'engineering-acceptance.v2':
+        # The preview's axis-aligned bounds can only corroborate whole-world extents.
+        # Intrinsic, local, ranged and toleranced dimensions have their own BRep checks.
+        for check in acceptance['checks']:
+            scope, comparison = check['scope'], check['comparison']
+            if (check['kind'] != 'overall_dimension' or not check.get('required', True)
+                    or not is_whole_world_scope(scope) or not scope.get('axis')
+                    or comparison['op'] != 'eq' or comparison['unit'] != 'mm' or comparison['value'] <= 0
+                    or comparison.get('tolerance_minus') or comparison.get('tolerance_plus')):
+                continue
+            try:
+                index = principal_axis(scope['axis'])
+            except ValueError:  # An oblique extent cannot be read from an axis-aligned box.
+                continue
+            result['xyz'[index]] = comparison['value']
+        return result
     for key, value in dict(requirements.get("dimensions") or {}).items():
         try:
             numeric = float(value)
@@ -100,6 +118,7 @@ class McadAgentWorkflowV2:
         self._candidate_build_id: str | None = None
         self._validation_repair_v2 = False
         self._preserve_advisory_visual = False
+        self._scoped_geometry_targets = False
         self._advisory_dfm_recovery_v1 = False
         self._provider_streaming_v1 = False
         self._model_jobs_v1 = False
@@ -678,6 +697,10 @@ class McadAgentWorkflowV2:
                 non_retryable=True,
             )
         step = modeled["step"]
+        if (self._scoped_geometry_targets and step['kind'] == 'assembly_part'
+                and ((plan.get('design_brief') or {}).get('acceptance') or {}).get('schema_version') == 'engineering-acceptance.v2'):
+            # Assembly-wide dimensions belong to the combined artifact.
+            expected_dimensions = {}
         generated = dict(modeled["generated"])
         executed = dict(modeled["executed"])
         source_solid_count = None
@@ -1310,6 +1333,7 @@ class McadAgentWorkflowV2:
             solid_count_policy_v2 = workflow.patched('agent-v2-solid-count-policy-v2')
             self._gate_native_recovery = workflow.patched('agent-v2-gate-native-recovery-v1')
             self._preserve_advisory_visual = workflow.patched('agent-v2-preserve-advisory-visual-v1')
+            self._scoped_geometry_targets = workflow.patched('agent-v2-scoped-geometry-targets-v1')
             self._phase = "requirements"
             requirements = await self._activity(
                 "agent_v2.requirements",
@@ -1586,7 +1610,8 @@ class McadAgentWorkflowV2:
                     }
                 )
             self._phase = "validating:geometry"
-            expected_dimensions = _expected_geometry_dimensions(requirements_payload)
+            acceptance = (self._plan.get('design_brief') or {}).get('acceptance') if self._scoped_geometry_targets else None
+            expected_dimensions = _expected_geometry_dimensions(requirements_payload, acceptance)
             validated: list[dict[str, Any]] = []
             for plan_step_index, item in enumerate(modeled):
                 if not item["step"].get("output_formats"):

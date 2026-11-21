@@ -96,8 +96,17 @@ def _bounds(values: Iterable[float]) -> dict[str, float]:
 def _dimension_error(
     dimensions: tuple[float, ...],
     expected: dict[str, float],
+    *, world_axes: bool = False,
 ) -> float | None:
     normalized = {str(key).strip().lower(): value for key, value in expected.items()}
+    if world_axes and normalized and normalized.keys() <= {'x', 'y', 'z'}:
+        errors = []
+        for axis, value in normalized.items():
+            index, target = 'xyz'.index(axis), float(value)
+            if index >= len(dimensions) or not math.isfinite(target) or target <= 0:
+                return 1.0
+            errors.append(abs(dimensions[index] - target) / target)
+        return max(errors)
     group = next(
         (group for group in _AXIS_GROUPS if all(key in normalized for key in group)),
         None,
@@ -326,7 +335,8 @@ def validate_geometry_files(
                 report = _validate_stl(path, role=role, expected_components=expected_solid_count)
             else:
                 report = supported[artifact_format](path, role=role)
-            error = _dimension_error(tuple(report["dimensions_mm"]), expected)
+            error = _dimension_error(tuple(report['dimensions_mm']), expected,
+                world_axes=(acceptance or {}).get('schema_version') == 'engineering-acceptance.v2')
             report["max_dimension_error"] = error
             if error is not None and error > dimension_tolerance:
                 report["valid"] = False

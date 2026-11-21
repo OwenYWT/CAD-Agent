@@ -3,6 +3,12 @@ import hashlib
 import json
 
 
+def is_whole_world_scope(scope):
+    return (scope.get('frame', 'world') == 'world'
+            and not any(scope.get(field) for field in ('object_ref', 'component_region', 'region_min_mm',
+                        'region_max_mm', 'point_mm', 'centers_mm', 'assembly_measurement')))
+
+
 def is_body_lid_stl(artifact_format, expected_count, acceptance):
     return (artifact_format == 'stl' and expected_count == 2
             and any(check.get('kind') == 'assembly_predicate'

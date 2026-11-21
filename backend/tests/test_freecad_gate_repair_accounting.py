@@ -99,6 +99,14 @@ def test_modification_target_dimensions_reach_geometry_gate_contract():
     assert _expected_geometry_dimensions({
         'target_params': {'width': 200.0, 'Pad.Length': 200.0},
     }) == {'width': 200.0}
+    requirements = {'dimensions': {'length': 200, 'width': 200, 'height': 200}}
+    width = {'kind': 'overall_dimension', 'scope': {'axis': [0, 1, 0]},
+             'comparison': {'op': 'eq', 'value': 200, 'unit': 'mm'}}
+    contract = {'schema_version': 'engineering-acceptance.v2', 'checks': [width]}
+    assert _expected_geometry_dimensions(requirements, contract) == {'y': 200}
+    for check in [{**width, 'kind': 'cube_edge'}, {**width, 'scope': {'axis': [0, 1, 0], 'frame': 'selected_object'}},
+                  {**width, 'comparison': {**width['comparison'], 'tolerance_plus': 20}}]:
+        assert _expected_geometry_dimensions(requirements, {**contract, 'checks':[check]}) == {}
 
 
 def test_total_budget_and_stage_counters_are_distinct_and_replay_deterministic():
