@@ -3,12 +3,38 @@ from pathlib import Path
 import tempfile
 import unittest
 import hashlib
+from io import BytesIO
+from zipfile import ZipFile
 
 from scripts.ci.require_regression import validate_jobs, validate_metadata
 from scripts.ci.require_runtime_evidence import validate
 
 
 class RegressionGate(unittest.TestCase):
+    def test_current_job_archives_preserve_nested_browser_traces(self):
+        from scripts.ci.require_regression import extract_job_archives
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            source = base / 'cad-ci-evidence-browser-e2e-100-2'
+            source.mkdir()
+            trace = BytesIO()
+            with ZipFile(trace, 'w') as inner:
+                inner.writestr('trace.trace', '{"type":"before"}')
+            archive = source / 'download.zip'
+            with ZipFile(archive, 'w') as bundle:
+                bundle.writestr('browser-e2e/trace.zip', trace.getvalue())
+            reports = base / 'reports'
+            extract_job_archives(base, reports, ['browser-e2e'], '100', '2')
+            self.assertEqual(validate(reports, {'browser-e2e/trace.zip': {'kind': 'browser-trace'}}), 1)
+            with self.assertRaises(FileNotFoundError):
+                extract_job_archives(base, reports, ['browser-e2e'], '100', '3')
+            with ZipFile(archive, 'a') as bundle:
+                bundle.writestr('different-job/job.json', '{}')
+            with self.assertRaisesRegex(ValueError, 'owner'):
+                extract_job_archives(base, reports, ['browser-e2e'], '100', '2')
+            self.assertFalse((reports / 'different-job/job.json').exists())
+
     def test_lifecycle_requires_its_own_successful_real_history(self):
         contract = {'history.json': {'kind': 'workflow-replay', 'families': ['ModelJobWorkflow']}}
         row = {'workflow_type': 'ModelJobWorkflow', 'workflow_id': 'model-job', 'run_id': 'run', 'events': 12, 'patches': [], 'replay': 'passed'}

@@ -4764,6 +4764,7 @@
       "scripts/ci/tests/test_live_budget.py::LiveBudgetContract::test_monthly_settlement_and_run_identity_are_owned",
       "scripts/ci/tests/test_live_budget.py::LiveBudgetContract::test_contended_ledger_fails_closed",
       "scripts/ci/tests/test_regression_gate.py::RegressionGate::test_every_job_must_succeed",
+      "scripts/ci/tests/test_regression_gate.py::RegressionGate::test_current_job_archives_preserve_nested_browser_traces",
       "scripts/ci/tests/test_regression_gate.py::RegressionGate::test_missing_job_fails",
       "scripts/ci/tests/test_regression_gate.py::RegressionGate::test_quick_success_cannot_replace_full_jobs",
       "scripts/ci/tests/test_regression_gate.py::RegressionGate::test_stale_commit_run_or_attempt_fails",
