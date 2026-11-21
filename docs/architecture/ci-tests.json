@@ -226,6 +226,7 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_agent_v2_real_freecad_generation_validation_seal_and_commit[en-protected-mouths]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_agent_v2_real_freecad_generation_validation_seal_and_commit[zh-protected-mouths]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_native_visual_negative_budget_with_real_kernel[advisory-failed-1]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_visual_negative_budget_with_real_kernel[advisory-failed-0]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_native_visual_negative_budget_with_real_kernel[required-failed-1]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_native_visual_negative_budget_with_real_kernel[required-indeterminate-0]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_real_geometry_capability_reports_valid_and_corrupt_artifacts",
@@ -3545,6 +3546,7 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_agent_v2_real_freecad_generation_validation_seal_and_commit[en-protected-mouths]": "set CAD_AGENT_TEST_REAL_FREECAD_AGENT=1 for the real fused flow",
       "tests/integration/test_temporal_mcadd_workflow.py::test_agent_v2_real_freecad_generation_validation_seal_and_commit[zh-protected-mouths]": "set CAD_AGENT_TEST_REAL_FREECAD_AGENT=1 for the real fused flow",
       "tests/integration/test_temporal_mcadd_workflow.py::test_native_visual_negative_budget_with_real_kernel[advisory-failed-1]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_visual_negative_budget_with_real_kernel[advisory-failed-0]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
       "tests/integration/test_temporal_mcadd_workflow.py::test_native_visual_negative_budget_with_real_kernel[required-failed-1]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
       "tests/integration/test_temporal_mcadd_workflow.py::test_native_visual_negative_budget_with_real_kernel[required-indeterminate-0]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
       "tests/integration/test_temporal_mcadd_workflow.py::test_real_geometry_capability_reports_valid_and_corrupt_artifacts": "real PostgreSQL, MinIO, Temporal, and Podman are required",
@@ -3945,6 +3947,7 @@
     "engine": "pytest",
     "node_ids": [
       "tests/integration/test_temporal_mcadd_workflow.py::test_native_visual_negative_budget_with_real_kernel[advisory-failed-1]",
+      "tests/integration/test_temporal_mcadd_workflow.py::test_native_visual_negative_budget_with_real_kernel[advisory-failed-0]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_native_visual_negative_budget_with_real_kernel[required-failed-1]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_native_visual_negative_budget_with_real_kernel[required-indeterminate-0]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_real_geometry_capability_reports_valid_and_corrupt_artifacts",

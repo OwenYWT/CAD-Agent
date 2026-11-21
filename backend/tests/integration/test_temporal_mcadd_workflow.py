@@ -1179,12 +1179,23 @@ class _NativeNegativeVisual:
 
 
 @pytest.mark.asyncio(loop_scope='module')
-@pytest.mark.parametrize('mode,outcome,expected_repairs',[
-    ('advisory','failed',1),('required','failed',1),('required','indeterminate',0),
+@pytest.mark.parametrize('mode,outcome,expected_repairs,historical',[
+    pytest.param('advisory','failed',1, True, id='advisory-failed-1'),
+    pytest.param('advisory','failed',0, False, id='advisory-failed-0'),
+    pytest.param('required','failed',1, False, id='required-failed-1'),
+    pytest.param('required','indeterminate',0, False, id='required-indeterminate-0'),
 ])
-async def test_native_visual_negative_budget_with_real_kernel(mode, outcome, expected_repairs):
+async def test_native_visual_negative_budget_with_real_kernel(mode, outcome, expected_repairs, historical, monkeypatch):
     """T10: real PG/Temporal/FreeCAD/render/S3; controlled provider negatives."""
+    from temporalio import workflow
+    from temporalio.worker import Replayer
+    from app.workflows.agent_v2 import McadAgentWorkflowV2
     from app.services.workflow_admission import create_document_workflow as create_workflow
+    original_patch = workflow.patched
+    if historical:
+        # Produce an actual command history from before advisory redesign was retired.
+        monkeypatch.setattr(workflow, 'patched', lambda change_id:
+            False if change_id == 'agent-v2-preserve-advisory-visual-v1' else original_patch(change_id))
     owner, project_id, initial = await _seed_project('native-budget-'+mode+'-'+outcome)
     objective = 'Create a 60x40x8 mm plate with one centered 6 mm through hole.'
     async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
@@ -1208,6 +1219,9 @@ async def test_native_visual_negative_budget_with_real_kernel(mode, outcome, exp
             await asyncio.wait_for(handle.result(),timeout=240)
         expected_error = 'agent_visual_validation_indeterminate' if outcome == 'indeterminate' else 'agent_visual_validation_failed'
         assert getattr(failure.value.cause, 'type', None) == expected_error
+    if historical:
+        monkeypatch.setattr(workflow, 'patched', original_patch)
+    await Replayer(workflows=[McadAgentWorkflowV2]).replay_workflow(await handle.fetch_history())
     assert native.repairs==expected_repairs and visual.judgments==expected_repairs+1
     async with tenant_transaction(owner.tenant_id,owner.principal_id) as conn:
         assert await conn.scalar(text('SELECT status FROM workflow_runs WHERE id=:id'),{'id':created.workflow_id})=='failed'
