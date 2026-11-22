@@ -100,4 +100,4 @@ docker compose up -d --build
 - [评测基线](backend/benchmark/README.md)
 - [Fusion 360 文档入口](docs/README.md#fusion-360-connector)
 
-一次性实施计划、重复的中英文使用说明和旧 Sprint 文档不再作为当前事实来源。历史产品想法只保留在明确标注的 [ForgeCAD 路线归档](docs/archive/forgecad-roadmap-2026-07.md) 中。
+一次性实施计划、重复的中英文使用说明和旧 Sprint 文档不再作为当前事实来源。已移除的历史产品研究和实施记录可通过 [Git 历史快照](https://github.com/OwenYWT/CAD-Agent/tree/e0ccfb26cc45b21828dd330fbdb5ab400571e04e/docs) 追溯。
