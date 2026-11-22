@@ -298,3 +298,54 @@ def test_aggregate_summary_groups():
     assert "complex" in s["by_difficulty"]
     assert s["by_difficulty"]["simple"]["pass@1"]["mean"] == 1.0
     assert s["by_path"]["revolve"]["pass@1"]["mean"] == 0.0
+
+
+def test_aggregate_process_evaluation_metrics_are_reported():
+    runs = [
+        {
+            **_row(True),
+            "process_evaluation": {
+                "status": "measured",
+                "workflow_activity_count": 8,
+                "cad_operation_count": 3,
+                "repair_count": 1,
+                "retry_call_count": 1,
+                "failed_call_count": 0,
+                "geometry_status": "passed",
+                "dfm_status": "passed",
+                "visual_status": "passed",
+            },
+        },
+        {
+            **_row(False),
+            "process_evaluation": {
+                "status": "measured",
+                "workflow_activity_count": 10,
+                "cad_operation_count": 4,
+                "repair_count": 2,
+                "retry_call_count": 2,
+                "failed_call_count": 1,
+                "geometry_status": "failed",
+                "dfm_status": "unknown",
+                "visual_status": "unavailable",
+            },
+        },
+    ]
+
+    aggregate = M.aggregate_case(runs)
+
+    assert aggregate["process_evaluation"] == {
+        "measured_rate": 1.0,
+        "avg_workflow_activity_count": 9.0,
+        "avg_cad_operation_count": 3.5,
+        "avg_repair_count": 1.5,
+        "avg_retry_call_count": 1.5,
+        "avg_failed_call_count": 0.5,
+        "avg_total_call_count": 0.0,
+        "avg_activity_duration_ms": 0.0,
+        "geometry_pass_rate": 0.5,
+        "dfm_pass_rate": 0.5,
+        "visual_pass_rate": 0.5,
+        "duration_measured_rate": 0.0,
+        "repair_gain_measured_rate": 0.0,
+    }

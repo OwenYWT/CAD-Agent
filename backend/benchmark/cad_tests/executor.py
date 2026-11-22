@@ -68,5 +68,9 @@ def execute_case(
         tests=tuple(results),
         result=verdict,
         artifacts=context.evidence,
-        metrics={"legacy_passed": context.row.get("passed")},
+        metrics={
+            "legacy_passed": context.row.get("passed"),
+            "process_evaluation": context.row.get("process_evaluation"),
+            "cad_test": context.row.get("cad_test"),
+        },
     )

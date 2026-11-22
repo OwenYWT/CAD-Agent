@@ -14,6 +14,8 @@ from typing import Any, Awaitable, Callable, Mapping
 from app.model_job_context import model_job_context
 
 from .contracts import EvaluationEvidence, EvaluationMode, EvaluationStatus, LiveEventStatus, utc_now
+from .cad_test_evidence import normalize_cad_test_result
+from .cad_test_runner import CadTestRunnerConfig, run_cad_test, run_cad_test_bundle
 from .mode import resolve_mode
 from .session import EvaluationSession
 from .store import FileEvaluationStore
@@ -675,4 +677,176 @@ def record_change_set_transition(
             store.finish(run_id, EvaluationStatus.FINISHED.value)
     except Exception as exc:
         logger.warning("live evaluation Change Set recording failed: %s", type(exc).__name__)
+    return run_id
+
+
+def attach_cad_test_result(
+    payload: Mapping[str, Any],
+    artifact_path: Path,
+    *,
+    case_id: str,
+    root: Path | None = None,
+    config: CadTestRunnerConfig,
+) -> str | None:
+    """Score an authoritative artifact and attach only bounded evidence."""
+
+    run_id = ensure_live_session(payload, root=root)
+    if run_id is None:
+        return None
+    workflow_id = _workflow_id(payload) or ""
+    candidate_revision_id = str(payload.get("candidate_revision_id") or "")
+    result = run_cad_test(
+        artifact_path=artifact_path,
+        case_id=case_id,
+        workflow_id=workflow_id,
+        candidate_revision_id=candidate_revision_id,
+        config=config,
+    )
+    if result is None:
+        return run_id
+    store = FileEvaluationStore(root or default_report_root())
+    expected_artifact_sha256 = result.get("artifact_sha256")
+    normalized = normalize_cad_test_result(
+        result,
+        expected_workflow_id=workflow_id,
+        expected_candidate_revision_id=(candidate_revision_id or None),
+        expected_artifact_sha256=expected_artifact_sha256,
+    )
+    try:
+        store.attach_cad_test_result(
+            run_id,
+            result,
+            expected_artifact_sha256=expected_artifact_sha256,
+        )
+        status = {
+            "passed": LiveEventStatus.PASS,
+            "failed": LiveEventStatus.FAIL,
+            "error": LiveEventStatus.ERROR,
+            "blocked": LiveEventStatus.BLOCKED,
+            "unknown": LiveEventStatus.UNKNOWN,
+            "unavailable": LiveEventStatus.UNKNOWN,
+        }.get(str(normalized["status"]), LiveEventStatus.UNKNOWN)
+        store.append_event(
+            run_id,
+            event_id=f"{run_id}:cad-test:{case_id}",
+            event_type="cad_test_finished",
+            status=status,
+            payload={
+                "case_id": case_id,
+                "status": normalized["status"],
+                "reason": normalized["reason"],
+            },
+        )
+    except Exception as exc:
+        logger.warning("live evaluation CADTest recording failed: %s", type(exc).__name__)
+    return run_id
+
+
+def attach_cad_test_artifacts(
+    payload: Mapping[str, Any],
+    artifacts: Mapping[str, Path],
+    *,
+    case_id: str,
+    root: Path | None = None,
+    config: CadTestRunnerConfig,
+) -> str | None:
+    """Attach independent scoring and native-delivery evidence for one bundle."""
+
+    run_id = ensure_live_session(payload, root=root)
+    if run_id is None:
+        return None
+    workflow_id = _workflow_id(payload) or ""
+    candidate_revision_id = str(payload.get("candidate_revision_id") or "")
+    result = run_cad_test_bundle(
+        artifacts=artifacts,
+        case_id=case_id,
+        workflow_id=workflow_id,
+        candidate_revision_id=candidate_revision_id,
+        config=config,
+    )
+    if result is None:
+        return run_id
+    store = FileEvaluationStore(root or default_report_root())
+    expected_artifact_sha256 = result.get("artifact_sha256")
+    normalized = normalize_cad_test_result(
+        result,
+        expected_workflow_id=workflow_id,
+        expected_candidate_revision_id=(candidate_revision_id or None),
+        expected_artifact_sha256=expected_artifact_sha256,
+    )
+    try:
+        store.attach_cad_test_result(
+            run_id,
+            result,
+            expected_artifact_sha256=expected_artifact_sha256,
+        )
+        status = {
+            "passed": LiveEventStatus.PASS,
+            "failed": LiveEventStatus.FAIL,
+            "error": LiveEventStatus.ERROR,
+            "blocked": LiveEventStatus.BLOCKED,
+            "unknown": LiveEventStatus.UNKNOWN,
+            "unavailable": LiveEventStatus.UNKNOWN,
+        }.get(str(normalized["status"]), LiveEventStatus.UNKNOWN)
+        store.append_event(
+            run_id,
+            event_id=f"{run_id}:cad-test:{case_id}",
+            event_type="cad_test_finished",
+            status=status,
+            payload={
+                "case_id": case_id,
+                "status": normalized["status"],
+                "reason": normalized["reason"],
+            },
+        )
+    except Exception as exc:
+        logger.warning("live evaluation CADTest bundle recording failed: %s", type(exc).__name__)
+    return run_id
+
+
+def attach_cad_test_observation(
+    payload: Mapping[str, Any],
+    result: Mapping[str, Any],
+    *,
+    root: Path | None = None,
+) -> str | None:
+    """Attach an evidence-only CADTest observation without running a scorer."""
+
+    run_id = ensure_live_session(payload, root=root)
+    if run_id is None:
+        return None
+    workflow_id = _workflow_id(payload) or ""
+    candidate_revision_id = str(payload.get("candidate_revision_id") or "")
+    store = FileEvaluationStore(root or default_report_root())
+    normalized = normalize_cad_test_result(
+        result,
+        expected_workflow_id=workflow_id,
+        expected_candidate_revision_id=(candidate_revision_id or None),
+    )
+    try:
+        store.attach_cad_test_result(run_id, result)
+        status = {
+            "passed": LiveEventStatus.PASS,
+            "failed": LiveEventStatus.FAIL,
+            "error": LiveEventStatus.ERROR,
+            "blocked": LiveEventStatus.BLOCKED,
+            "unknown": LiveEventStatus.UNKNOWN,
+            "unavailable": LiveEventStatus.UNKNOWN,
+            "not_applicable": LiveEventStatus.SKIPPED,
+        }.get(str(normalized["status"]), LiveEventStatus.UNKNOWN)
+        case = result.get("case_id")
+        event_case = str(case) if case else "not-applicable"
+        store.append_event(
+            run_id,
+            event_id=f"{run_id}:cad-test:{event_case}",
+            event_type="cad_test_finished",
+            status=status,
+            payload={
+                "case_id": case,
+                "status": normalized["status"],
+                "reason": normalized["reason"],
+            },
+        )
+    except Exception as exc:
+        logger.warning("live evaluation CADTest observation recording failed: %s", type(exc).__name__)
     return run_id

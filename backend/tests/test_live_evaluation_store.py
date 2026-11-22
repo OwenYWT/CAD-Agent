@@ -497,3 +497,39 @@ def test_file_store_records_measured_complexity_and_quality_without_guessing(tmp
     assert "## \u590d\u6742\u5ea6\u4e0e\u8d28\u91cf\u77e9\u9635" in markdown
     assert "- \u51e0\u4f55: measured" in markdown
     assert "- \u8d28\u91cf geometry: passed" in markdown
+
+
+def test_file_store_attaches_cad_test_evidence_without_changing_business_status(tmp_path):
+    from app.evaluation.contracts import EvaluationMode
+    from app.evaluation.session import EvaluationSession
+    from app.evaluation.store import FileEvaluationStore
+
+    session = EvaluationSession.create(
+        mode=EvaluationMode.OBSERVE,
+        evaluation_run_id="live-cad-test-1",
+        workflow_id="workflow-1",
+    )
+    session.finish("finished")
+    store = FileEvaluationStore(tmp_path)
+    store.create(session)
+
+    store.attach_cad_test_result(
+        "live-cad-test-1",
+        {
+            "status": "pass",
+            "case_id": "ctb-00000007",
+            "workflow_id": "workflow-1",
+            "score": {
+                "passed": True,
+                "geometry_valid": True,
+                "requirements_passed": 1,
+                "requirements_total": 1,
+            },
+            "delivery_verified": True,
+        },
+    )
+
+    report = json.loads(store.path_for(session.evaluation_run_id).read_text(encoding="utf-8"))
+    assert report["status"] == "finished"
+    assert report["cad_test"]["status"] == "passed"
+    assert report["quality_matrix"]["cad_test"]["status"] == "passed"

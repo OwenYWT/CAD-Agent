@@ -157,6 +157,57 @@ enters durable admission, then links each row to the corresponding
 `benchmark/reports/live/live_<workflow-id>.json` report. A missing or unfinished
 live report is recorded as a failed benchmark row and cannot become a pass.
 
+For a 3D live run with `CAD_TEST_DATASET_ROOT` configured, the row also includes
+the bounded `cad_test` result from the sealed candidate. The CADTest scorer and
+native-delivery verifier are repository-owned under
+`benchmark/cad_test_engine`; the configured path is data only and is never
+imported as Python code. Its `artifact_gate` contains the CADTest status,
+native delivery status, and measured STEP/STL delivery facts. A run with an
+independent CADTest result is counted as passed only when the CADTest and the
+FCStd/STEP/STL native-delivery check both pass. Missing or incomplete CADTest
+evidence remains visible as unknown and is not converted into a successful live
+evaluation.
+
+## CADTest batch evaluation
+
+The batch entry point is part of CAD-Agent and does not call the external
+project's `run.py`. The dataset is read-only input data; all scoring code,
+native delivery checks, batch aggregation, and live-report integration are in
+this repository.
+
+```powershell
+$env:CAD_TEST_DATASET_ROOT = 'D:\project\projectcad\CAD_test'
+
+python -m benchmark.cad_test_batch dataset-check
+
+python -m benchmark.cad_test_batch live `
+  --cases ctb-00000007,ctb-00001411 `
+  --repeat 1 `
+  --document-id <benchmark-document-uuid>
+```
+
+The live batch report is written under
+`backend/benchmark/reports/cad_test/<run-id>/report.json`. Each case includes
+the CADTest checks, native delivery facts, the live workflow report path, and
+the process evaluation block containing activity count, CAD operation count,
+repair count, retries, failures, geometry/DFM/visual statuses, lifecycle
+status, and measured duration. The batch summary aggregates those process
+metrics in addition to pass rates.
+
+For an already downloaded STEP artifact, score it without submitting a new
+workflow:
+
+```powershell
+python -m benchmark.cad_test_batch score `
+  --dataset-root 'D:\project\projectcad\CAD_test' `
+  --case ctb-00000007 `
+  --step .\result.step `
+  --out .\reports\cad_test\manual-ctb-00000007
+```
+
+`CAD_TEST_ROOT` remains accepted as a compatibility alias for the dataset
+root. It no longer selects a scorer script or imports code from that path.
+
 For compatibility with existing scripts, the old explicit workspace form is
 still accepted:
 

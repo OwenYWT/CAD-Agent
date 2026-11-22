@@ -52,6 +52,7 @@ from app.evaluation.integration import (
     record_activity_result,
     record_workflow_terminal,
 )
+from app.evaluation.cad_test_observer import observe_sealed_candidate
 from app.evaluation.contracts import utc_now
 
 class McadWorkflowActivities:
@@ -111,6 +112,15 @@ class McadWorkflowActivities:
             )
         except Exception:
             pass
+        if activity_name == "agent_v2.seal_candidate":
+            try:
+                await observe_sealed_candidate(payload, result)
+            except Exception:
+                pass
+            try:
+                record_workflow_terminal(payload, result)
+            except Exception:
+                pass
         return result
 
 

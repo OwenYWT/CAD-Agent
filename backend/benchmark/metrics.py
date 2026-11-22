@@ -352,6 +352,56 @@ def aggregate_case(runs: list[dict]) -> dict:
     pass^k = 1 if ALL runs passed  (stability)
     """
     passed = [r["passed"] for r in runs]
+    process_rows = [
+        r.get("process_evaluation")
+        for r in runs
+        if isinstance(r.get("process_evaluation"), dict)
+    ]
+
+    def _process_mean(key: str) -> float:
+        values = [
+            float(item[key])
+            for item in process_rows
+            if isinstance(item.get(key), (int, float))
+            and not isinstance(item.get(key), bool)
+        ]
+        return round(_mean(values), 2) if values else 0.0
+
+    def _process_rate(key: str) -> float:
+        values = [item.get(key) == "passed" for item in process_rows]
+        return round(_mean([1.0 if value else 0.0 for value in values]), 4) if values else 0.0
+
+    process_evaluation = {
+        "measured_rate": round(
+            _mean([1.0 if item.get("status") == "measured" else 0.0 for item in process_rows]),
+            4,
+        )
+        if process_rows
+        else 0.0,
+        "avg_workflow_activity_count": _process_mean("workflow_activity_count"),
+        "avg_cad_operation_count": _process_mean("cad_operation_count"),
+        "avg_repair_count": _process_mean("repair_count"),
+        "avg_retry_call_count": _process_mean("retry_call_count"),
+        "avg_failed_call_count": _process_mean("failed_call_count"),
+        "avg_total_call_count": _process_mean("total_call_count"),
+        "avg_activity_duration_ms": _process_mean("activity_duration_ms"),
+        "geometry_pass_rate": _process_rate("geometry_status"),
+        "dfm_pass_rate": _process_rate("dfm_status"),
+        "visual_pass_rate": _process_rate("visual_status"),
+        "duration_measured_rate": round(
+            _mean([1.0 if item.get("duration_status") == "measured" else 0.0 for item in process_rows]),
+            4,
+        )
+        if process_rows
+        else 0.0,
+        "repair_gain_measured_rate": round(
+            _mean([1.0 if item.get("repair_gain_status") == "measured" else 0.0 for item in process_rows]),
+            4,
+        )
+        if process_rows
+        else 0.0,
+    }
+
     return {
         "n_runs": len(runs),
         "pass@1": _rate_stats(passed),
@@ -364,6 +414,7 @@ def aggregate_case(runs: list[dict]) -> dict:
         "dim_match_rate": _rate_stats([r["dim_match"] is True for r in runs]),
         "avg_attempts": round(_mean([r["attempts"] for r in runs]), 2),
         "avg_wall_ms": round(_mean([r["wall_time_ms"] for r in runs])),
+        "process_evaluation": process_evaluation,
     }
 
 
@@ -379,6 +430,21 @@ def aggregate_summary(cases: list[dict]) -> dict:
         passk = [1.0 if c["agg"]["pass@k"] else 0.0 for c in entries]
         passhat = [1.0 if c["agg"]["pass^k"] else 0.0 for c in entries]
         wall = [c["agg"]["avg_wall_ms"] for c in entries]
+        process = [c["agg"].get("process_evaluation") or {} for c in entries]
+
+        def _process_summary(key: str) -> float:
+            return round(
+                _mean(
+                    [
+                        float(item[key])
+                        for item in process
+                        if isinstance(item.get(key), (int, float))
+                        and not isinstance(item.get(key), bool)
+                    ]
+                ),
+                4,
+            )
+
         return {
             "n_cases": len(entries),
             "pass@1": {"mean": round(_mean(p1), 4), "std": round(_std(p1), 4)},
@@ -388,6 +454,23 @@ def aggregate_summary(cases: list[dict]) -> dict:
             "printable_rate": {"mean": round(_mean(pr), 4), "std": round(_std(pr), 4)},
             "one_shot_rate": {"mean": round(_mean(os_), 4), "std": round(_std(os_), 4)},
             "avg_wall_ms": round(_mean(wall)),
+            "process_evaluation": {
+                "measured_rate": _process_summary("measured_rate"),
+                "avg_workflow_activity_count": _process_summary(
+                    "avg_workflow_activity_count"
+                ),
+                "avg_cad_operation_count": _process_summary("avg_cad_operation_count"),
+                "avg_repair_count": _process_summary("avg_repair_count"),
+                "avg_retry_call_count": _process_summary("avg_retry_call_count"),
+                "avg_failed_call_count": _process_summary("avg_failed_call_count"),
+                "avg_total_call_count": _process_summary("avg_total_call_count"),
+                "avg_activity_duration_ms": _process_summary("avg_activity_duration_ms"),
+                "geometry_pass_rate": _process_summary("geometry_pass_rate"),
+                "dfm_pass_rate": _process_summary("dfm_pass_rate"),
+                "visual_pass_rate": _process_summary("visual_pass_rate"),
+                "duration_measured_rate": _process_summary("duration_measured_rate"),
+                "repair_gain_measured_rate": _process_summary("repair_gain_measured_rate"),
+            },
         }
 
     summary = {"overall": _collect(cases)}

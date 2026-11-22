@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 from uuid import uuid4
 
 from .contracts import EvaluationEvidence, LiveEventStatus, validate_payload, utc_now
 from .consistency import summarize_tool_calls
 from .complexity_profile import build_complexity_profile, build_quality_matrix
+from .cad_test_evidence import merge_cad_test_result
 from .repair_gain import build_repair_gain
 from .resource_cost import build_resource_cost
 from .session import EvaluationSession
@@ -84,6 +85,25 @@ class FileEvaluationStore:
             evidence_rows.append(evidence.to_dict())
             return self._write(target, report)
         return target
+
+    def attach_cad_test_result(
+        self,
+        evaluation_run_id: str,
+        result: Mapping[str, Any] | None,
+        *,
+        expected_artifact_sha256: str | None = None,
+    ) -> Path:
+        """Attach independent CADTest evidence without changing business state."""
+        target = self.path_for(evaluation_run_id)
+        report = self._read(target)
+        return self._write(
+            target,
+            merge_cad_test_result(
+                report,
+                result,
+                expected_artifact_sha256=expected_artifact_sha256,
+            ),
+        )
 
     def append_tool_call(
         self,

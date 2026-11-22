@@ -8,6 +8,7 @@ and must consume the report written by the real API/Worker execution path.
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import time
 from dataclasses import dataclass
@@ -91,6 +92,150 @@ def _live_visual_rendered(report: Mapping[str, Any]) -> bool:
     return False
 
 
+def _live_cad_test_gate(report: Mapping[str, Any]) -> dict[str, Any]:
+    cad_test = report.get("cad_test")
+    if not isinstance(cad_test, Mapping):
+        return {}
+    delivery = cad_test.get("delivery")
+    delivery = delivery if isinstance(delivery, Mapping) else {}
+    gate: dict[str, Any] = {
+        "cad_test_status": str(cad_test.get("status") or "unknown"),
+        "native_delivery_verified": (
+            True
+            if delivery.get("status") == "passed"
+            else False
+            if delivery.get("status") == "failed"
+            else None
+        ),
+    }
+    for key in (
+        "symmetric_difference_volume_mm3",
+        "native_solids",
+        "step_solids",
+        "stl_facets",
+        "stl_bounds_match",
+    ):
+        if key in delivery:
+            gate[key] = delivery[key]
+    return gate
+
+
+def _process_evaluation(report: Mapping[str, Any]) -> dict[str, Any]:
+    """Project live process evidence into one benchmark-row metric block."""
+
+    calls = report.get("tool_calls")
+    calls = calls if isinstance(calls, list) else []
+    failed_call_count = sum(
+        1
+        for call in calls
+        if isinstance(call, Mapping)
+        and str(call.get("status") or "").lower() in {"failed", "fail", "error"}
+    )
+    retry_call_count = sum(
+        1
+        for call in calls
+        if isinstance(call, Mapping)
+        and (
+            bool(call.get("replayed"))
+            or (
+                isinstance(call.get("attempt"), (int, float))
+                and not isinstance(call.get("attempt"), bool)
+                and int(call.get("attempt")) > 1
+            )
+        )
+    )
+    profile = report.get("complexity_profile")
+    operation = profile.get("operation") if isinstance(profile, Mapping) else None
+    operation = operation if isinstance(operation, Mapping) else {}
+    quality = report.get("quality_matrix")
+    quality = quality if isinstance(quality, Mapping) else {}
+    resource = report.get("resource_cost")
+    resource = resource if isinstance(resource, Mapping) else {}
+    duration = resource.get("duration")
+    duration = duration if isinstance(duration, Mapping) else {}
+    consistency = report.get("consistency")
+    consistency = consistency if isinstance(consistency, Mapping) else {}
+    repair_gain = report.get("repair_gain")
+    repair_gain = repair_gain if isinstance(repair_gain, Mapping) else {}
+
+    measured = bool(calls or operation or quality or resource)
+    return {
+        "status": "measured" if measured else "unavailable",
+        "workflow_activity_count": operation.get("workflow_activity_count", 0),
+        "cad_operation_count": operation.get("cad_operation_count", 0),
+        "repair_count": operation.get("repair_count", 0),
+        "candidate_count": operation.get("candidate_count", 0),
+        "retry_call_count": retry_call_count,
+        "failed_call_count": failed_call_count,
+        "total_call_count": consistency.get("total_call_count", len(calls)),
+        "sequence_signature": consistency.get("sequence_signature"),
+        "structural_signature": consistency.get("structural_signature"),
+        "geometry_status": (
+            quality.get("geometry", {}).get("status")
+            if isinstance(quality.get("geometry"), Mapping)
+            else "unavailable"
+        ),
+        "dfm_status": (
+            quality.get("dfm", {}).get("status")
+            if isinstance(quality.get("dfm"), Mapping)
+            else "unavailable"
+        ),
+        "visual_status": (
+            quality.get("visual", {}).get("status")
+            if isinstance(quality.get("visual"), Mapping)
+            else "unavailable"
+        ),
+        "lifecycle_status": (
+            quality.get("lifecycle", {}).get("status")
+            if isinstance(quality.get("lifecycle"), Mapping)
+            else "unavailable"
+        ),
+        "total_duration_ms": resource.get(
+            "total_duration_ms", report.get("metrics", {}).get("total_duration_ms", 0)
+            if isinstance(report.get("metrics"), Mapping)
+            else 0
+        ),
+        "activity_duration_ms": duration.get("activity_duration_ms"),
+        "duration_status": duration.get("status", "unavailable"),
+        "repair_gain_status": repair_gain.get("status", "not_applicable"),
+        "improved_check_count": len(repair_gain.get("improved_checks") or [])
+        if isinstance(repair_gain.get("improved_checks"), list)
+        else 0,
+        "remaining_failure_count": len(repair_gain.get("remaining_failures") or [])
+        if isinstance(repair_gain.get("remaining_failures"), list)
+        else 0,
+    }
+
+
+_LIVE_EVALUATION_SNAPSHOT_FIELDS = (
+    "status",
+    "finished_at",
+    "metrics",
+    "tool_calls",
+    "timeline",
+    "evidence",
+    "consistency",
+    "resource_cost",
+    "complexity_profile",
+    "quality_matrix",
+    "repair_gain",
+)
+
+
+def _live_evaluation_snapshot(
+    report: Mapping[str, Any], *, status: str
+) -> dict[str, Any]:
+    """Embed developer-facing live evidence without deriving new measurements."""
+
+    snapshot = {
+        key: copy.deepcopy(report[key])
+        for key in _LIVE_EVALUATION_SNAPSHOT_FIELDS
+        if key in report
+    }
+    snapshot.setdefault("status", status)
+    return snapshot
+
+
 def _artifact_gate_from_live_report(
     report: Mapping[str, Any], case: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -111,7 +256,7 @@ def _artifact_gate_from_live_report(
     stl_readable = formats.get("stl", {}).get("parseable") is True
     geometry_nonempty = _has_nonempty_live_geometry(artifacts)
     visual_rendered = _live_visual_rendered(report)
-    return {
+    gate = {
         "source": "live_report",
         "step_readable": step_readable,
         "stl_readable": stl_readable,
@@ -124,6 +269,15 @@ def _artifact_gate_from_live_report(
             and visual_rendered
         ),
     }
+    cad_test_gate = _live_cad_test_gate(report)
+    gate.update(cad_test_gate)
+    if cad_test_gate:
+        gate["passed"] = bool(gate["passed"])
+        gate["passed"] = gate["passed"] and (
+            cad_test_gate.get("cad_test_status") == "passed"
+            and cad_test_gate.get("native_delivery_verified") is True
+        )
+    return gate
 
 
 def benchmark_row_from_live_report(
@@ -148,9 +302,14 @@ def benchmark_row_from_live_report(
             "live_report_path": str(path),
             "live_report_status": status,
             "artifact_gate": artifact_gate,
+            "process_evaluation": _process_evaluation(report),
+            "live_evaluation": _live_evaluation_snapshot(report, status=status),
         }
     )
-    row["passed"] = bool(row.get("passed")) and status == "finished" and artifact_gate["passed"]
+    cad_test = report.get("cad_test")
+    if isinstance(cad_test, Mapping):
+        row["cad_test"] = dict(cad_test)
+    row["passed"] = status == "finished" and artifact_gate["passed"]
     if status != "finished":
         row["live_report_error"] = (
             "live report is not finished" if status != "missing" else "live report is missing"

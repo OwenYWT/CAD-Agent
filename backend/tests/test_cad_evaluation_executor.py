@@ -162,3 +162,27 @@ def test_artifact_hash_requires_a_referenced_file(tmp_path):
 
     assert evaluated.tests[0].status.value == "unknown"
     assert evaluated.tests[0].failure_code == "artifact_source_unavailable"
+
+
+def test_cad_evaluation_case_preserves_process_metrics_alongside_cad_tests():
+    case, context = _context()
+    context = EvidenceContext(
+        case=context.case,
+        row={
+            "process_evaluation": {
+                "status": "measured",
+                "workflow_activity_count": 8,
+                "cad_operation_count": 3,
+                "repair_count": 1,
+            },
+            "cad_test": {"status": "passed", "requirements": {"passed": 4, "total": 4}},
+        },
+        observations=context.observations,
+        evidence=context.evidence,
+        reasons=context.reasons,
+    )
+
+    evaluated = execute_case(case, context, definitions=v0_definitions(case))
+
+    assert evaluated.metrics["process_evaluation"]["repair_count"] == 1
+    assert evaluated.metrics["cad_test"]["requirements"]["total"] == 4
