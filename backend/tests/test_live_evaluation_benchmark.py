@@ -126,6 +126,43 @@ def test_live_benchmark_row_includes_cad_test_delivery_evidence():
     assert row["artifact_gate"]["stl_facets"] == 12
 
 
+def test_live_benchmark_row_ignores_empty_cad_test_observation():
+    from benchmark.live import benchmark_row_from_live_report
+
+    row = benchmark_row_from_live_report(
+        case={"id": "P01", "description": "create a cube", "path": "extrude_cut"},
+        response=SimpleNamespace(
+            success=True,
+            inspect_report=SimpleNamespace(printable=True, verdict="pass"),
+        ),
+        live_report={
+            "status": "finished",
+            "cad_test": {},
+            "evidence": [
+                {
+                    "source_kind": "agent_v2.validate_geometry",
+                    "observed": {
+                        "artifacts": [
+                            {"format": "step", "parseable": True, "valid": True, "solid_count": 1},
+                            {"format": "stl", "parseable": True, "valid": True, "solid_count": 1},
+                        ]
+                    },
+                }
+            ],
+            "timeline": [
+                {
+                    "event_type": "visual_validation_finished",
+                    "payload": {"status": "rendered"},
+                }
+            ],
+        },
+        report_path="reports/live/live-live-1.json",
+    )
+
+    assert row["artifact_gate"]["passed"] is True
+    assert "cad_test" not in row
+
+
 def test_live_benchmark_row_does_not_pass_when_cad_test_fails():
     from benchmark.live import benchmark_row_from_live_report
 

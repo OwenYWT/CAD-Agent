@@ -94,7 +94,7 @@ def _live_visual_rendered(report: Mapping[str, Any]) -> bool:
 
 def _live_cad_test_gate(report: Mapping[str, Any]) -> dict[str, Any]:
     cad_test = report.get("cad_test")
-    if not isinstance(cad_test, Mapping):
+    if not isinstance(cad_test, Mapping) or not cad_test:
         return {}
     delivery = cad_test.get("delivery")
     delivery = delivery if isinstance(delivery, Mapping) else {}
@@ -307,7 +307,7 @@ def benchmark_row_from_live_report(
         }
     )
     cad_test = report.get("cad_test")
-    if isinstance(cad_test, Mapping):
+    if isinstance(cad_test, Mapping) and cad_test:
         row["cad_test"] = dict(cad_test)
     row["passed"] = status == "finished" and artifact_gate["passed"]
     if status != "finished":
