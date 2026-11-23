@@ -24,6 +24,7 @@ from app.evaluation.cad_test_runner import (
 from app.evaluation.mode import configure_process_mode
 from benchmark import metrics
 from benchmark.cad_test_engine.dataset import CadTestDataset, load_dataset
+from benchmark.cad_test_report import write_html_report
 from benchmark.live import LiveBenchmarkContext, run_live_case
 
 
@@ -95,6 +96,16 @@ def _select_cases(dataset: CadTestDataset, selection: str, limit: int | None) ->
         }
         for case in selected
     ]
+
+
+def _write_batch_report(output: Path, report: dict[str, Any]) -> tuple[Path, Path]:
+    report_path = output / "report.json"
+    report_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    html_path = write_html_report(report_path)
+    return report_path, html_path
 
 
 def _score(args: argparse.Namespace, dataset: CadTestDataset) -> int:
@@ -237,10 +248,8 @@ async def _live(args: argparse.Namespace, dataset: CadTestDataset) -> int:
         "summary": metrics.aggregate_summary(case_entries),
         "cases": case_entries,
     }
-    (output / "report.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
-    print(output / "report.json")
+    report_path, _html_path = _write_batch_report(output, report)
+    print(report_path)
     return 0 if all(row.get("passed") is True for row in rows) else 1
 
 

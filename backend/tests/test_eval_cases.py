@@ -358,6 +358,8 @@ def test_deadline_baseline_rejects_only_post_deadline_results_and_reaggregates()
     timed_out = normalized["cases"][0]["runs"][1]
     assert timed_out["executed"] is False
     assert timed_out["passed"] is False
+    assert timed_out["verdict_pass"] is None
+    assert timed_out["one_shot"] is None
     assert timed_out["error"] == "pipeline deadline exceeded after 180s"
     assert timed_out["observed_post_deadline_wall_ms"] == 200_000
     assert normalized["cases"][0]["agg"]["pass@1"]["mean"] == 0.5

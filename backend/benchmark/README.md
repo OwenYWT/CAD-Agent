@@ -52,7 +52,7 @@ python -m benchmark.eval --n 3 --no-rag
 
 人工复核：每次运行保存 4 视角渲染图于 `reports/<run_id>/renders/<case>_run<n>/`，自动指标抓不到的「尺寸对但形状错」靠看图兜底。
 
-> 已知口径差异：复杂件走 multi-step 路径时只填 `validation` 不填 `inspect_report`（见 `multi_step.py`），所以这些 case 的 `verdict_pass` 恒为 False，但 `printable`/`passed` 仍从 `validation` 正确取到。读 `verdict_pass_rate` 时按 `by_path` 分组看，别把 multi-step 的低 verdict 误读为质量差。
+> 已知口径差异：复杂件走 multi-step 路径时只填 `validation` 不填 `inspect_report`（见 `multi_step.py`），所以这些 case 的 `verdict_pass` 可能不可用，但 `printable`/`passed` 仍从 `validation` 正确取到。读 `verdict_pass_rate` 时按 `by_path` 分组看；`unavailable` 表示没有权威字段，不等于失败。
 
 ## 怎么读 compare 结果
 
@@ -192,7 +192,11 @@ the CADTest checks, native delivery facts, the live workflow report path, and
 the process evaluation block containing activity count, CAD operation count,
 repair count, retries, failures, geometry/DFM/visual statuses, lifecycle
 status, and measured duration. The batch summary aggregates those process
-metrics in addition to pass rates.
+metrics in addition to pass rates. The same directory also contains
+`report.html`, a developer-only static readable view of the JSON report. It
+shows the final CADTest gate separately from Live process metrics and expands
+each case to show stage durations, tool calls, timeline events, and failure
+evidence. It does not run another scorer or infer missing values.
 
 For an already downloaded STEP artifact, score it without submitting a new
 workflow:

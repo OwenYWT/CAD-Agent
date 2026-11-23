@@ -151,7 +151,8 @@ def compare_reports(base: dict, cand: dict) -> dict:
     def _delta(metric: str, nested: str | None = "mean") -> dict:
         b = bo[metric][nested] if nested else bo[metric]
         c = co[metric][nested] if nested else co[metric]
-        return {"base": b, "cand": c, "delta": round(c - b, 4)}
+        delta = round(c - b, 4) if b is not None and c is not None else None
+        return {"base": b, "cand": c, "delta": delta}
 
     base_std = bo["pass@1"]["std"]
     summary = {
@@ -164,7 +165,10 @@ def compare_reports(base: dict, cand: dict) -> dict:
         "avg_wall_ms": _delta("avg_wall_ms", None),
     }
     # significance: pass@1 delta beyond baseline noise band
-    summary["pass@1"]["significant"] = abs(summary["pass@1"]["delta"]) > max(base_std, 1e-9)
+    summary["pass@1"]["significant"] = (
+        summary["pass@1"]["delta"] is not None
+        and abs(summary["pass@1"]["delta"]) > max(base_std, 1e-9)
+    )
 
     # per-case regression analysis
     bp, cp = _case_pass1(base), _case_pass1(cand)
@@ -252,12 +256,18 @@ def print_comparison(diff: dict):
     print("-" * 56)
     for name, d in diff["summary"].items():
         if name == "avg_wall_ms":
-            print(f"  {name:20s}  {d['base']:8.0f}   {d['cand']:8.0f}   {d['delta']:+.0f}ms")
+            if d["delta"] is None:
+                print(f"  {name:20s}  unavailable")
+            else:
+                print(f"  {name:20s}  {d['base']:8.0f}   {d['cand']:8.0f}   {d['delta']:+.0f}ms")
         else:
             sig = ""
             if name == "pass@1" and d.get("significant"):
                 sig = "  *significant*"
-            print(f"  {name:20s}  {d['base']:7.1%}   {d['cand']:7.1%}   {d['delta']:+.1%}{sig}")
+            if d["delta"] is None:
+                print(f"  {name:20s}  unavailable")
+            else:
+                print(f"  {name:20s}  {d['base']:7.1%}   {d['cand']:7.1%}   {d['delta']:+.1%}{sig}")
 
     print(f"\nPer-case (of {diff['n_common']} common, threshold ±{CASE_DELTA_THRESHOLD:.0%} pass@1):")
     print(f"  ✅ fixed : {len(diff['fixed'])}   ❌ broke: {len(diff['broke'])}")

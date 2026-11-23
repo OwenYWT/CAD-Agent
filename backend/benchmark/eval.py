@@ -579,6 +579,9 @@ def main():
 
 
 def _print_summary(report: dict):
+    def _rate(value):
+        return "unavailable" if value is None else f"{value:.1%}"
+
     s = report["summary"]["overall"]
     m = report["meta"]
     print("\n" + "=" * 70)
@@ -589,14 +592,14 @@ def _print_summary(report: dict):
     print(f"\n  pass@1            : {s['pass@1']['mean']:.1%}  (±{s['pass@1']['std']:.1%})")
     print(f"  pass@k (ceiling)  : {s['pass@k']:.1%}")
     print(f"  pass^k (stable)   : {s['pass^k']:.1%}")
-    print(f"  verdict=pass      : {s['verdict_pass_rate']['mean']:.1%}")
-    print(f"  printable         : {s['printable_rate']['mean']:.1%}")
-    print(f"  one-shot          : {s['one_shot_rate']['mean']:.1%}")
+    print(f"  verdict=pass      : {_rate(s['verdict_pass_rate']['mean'])}")
+    print(f"  printable         : {_rate(s['printable_rate']['mean'])}")
+    print(f"  one-shot          : {_rate(s['one_shot_rate']['mean'])}")
     print(f"  avg wall          : {s['avg_wall_ms']}ms")
     print("\n  by difficulty:")
     for diff, d in report["summary"]["by_difficulty"].items():
         print(f"    {diff:9s}: pass@1 {d['pass@1']['mean']:.1%}  "
-              f"verdict {d['verdict_pass_rate']['mean']:.1%}  (n={d['n_cases']})")
+              f"verdict {_rate(d['verdict_pass_rate']['mean'])}  (n={d['n_cases']})")
     print("\n  by path:")
     for p, d in report["summary"]["by_path"].items():
         print(f"    {p:12s}: pass@1 {d['pass@1']['mean']:.1%}  (n={d['n_cases']})")
