@@ -284,19 +284,37 @@ def test_aggregate_case_all_pass():
     assert agg["pass^k"] is True
 
 
+def test_aggregate_case_accepts_a_failed_batch_run_without_response_attempts():
+    run = {
+        "executed": False,
+        "passed": False,
+        "error": "RuntimeError: workflow submission failed",
+        "process_evaluation": {"status": "unavailable"},
+        "wall_time_ms": 12,
+    }
+
+    aggregate = M.aggregate_case([run])
+
+    assert aggregate["avg_attempts"] == 0
+    assert aggregate["final_gate_status"]["blocked"] == 1
+
+
 def test_aggregate_summary_groups():
     cases = [
-        {"id": "A", "difficulty": "simple", "path": "extrude_cut",
+        {"id": "A", "difficulty": "basic", "path": "extrude_cut",
          "agg": M.aggregate_case([_row(True), _row(True), _row(True)])},
-        {"id": "B", "difficulty": "complex", "path": "revolve",
+        {"id": "B", "difficulty": "combined", "path": "revolve",
+         "agg": M.aggregate_case([_row(False), _row(False), _row(False)])},
+        {"id": "C", "difficulty": "complex", "path": "extrude_cut",
          "agg": M.aggregate_case([_row(False), _row(False), _row(False)])},
     ]
     s = M.aggregate_summary(cases)
-    assert s["overall"]["n_cases"] == 2
-    assert s["overall"]["pass@1"]["mean"] == pytest.approx(0.5)
-    assert "simple" in s["by_difficulty"]
-    assert "complex" in s["by_difficulty"]
-    assert s["by_difficulty"]["simple"]["pass@1"]["mean"] == 1.0
+    assert s["overall"]["n_cases"] == 3
+    assert s["overall"]["pass@1"]["mean"] == pytest.approx(1 / 3, abs=0.0001)
+    assert list(s["by_difficulty"]) == ["basic", "combined", "complex"]
+    assert s["by_difficulty"]["basic"]["pass@1"]["mean"] == 1.0
+    assert s["by_difficulty"]["combined"]["pass@1"]["mean"] == 0.0
+    assert s["by_difficulty"]["complex"]["pass@1"]["mean"] == 0.0
     assert s["by_path"]["revolve"]["pass@1"]["mean"] == 0.0
 
 

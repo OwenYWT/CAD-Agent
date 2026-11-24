@@ -481,7 +481,7 @@ def aggregate_case(runs: list[dict]) -> dict:
         "dim_match_rate": _rate_stats(
             [_optional_metric(r, "dim_match") for r in runs]
         ),
-        "avg_attempts": round(_mean([r["attempts"] for r in runs]), 2),
+        "avg_attempts": round(_mean([r.get("attempts", 0) for r in runs]), 2),
         "avg_wall_ms": round(_mean([r["wall_time_ms"] for r in runs])),
         "final_gate_status": _status_counts(
             [_final_gate_status(r) for r in runs],
@@ -581,8 +581,13 @@ def aggregate_summary(cases: list[dict]) -> dict:
     summary = {"overall": _collect(cases)}
 
     by_diff = {}
-    for diff in ("simple", "moderate", "complex"):
-        entries = [c for c in cases if c.get("difficulty") == diff]
+    difficulties = sorted(
+        {str(case.get("difficulty") or "unknown") for case in cases}
+    )
+    for diff in difficulties:
+        entries = [
+            c for c in cases if str(c.get("difficulty") or "unknown") == diff
+        ]
         if entries:
             by_diff[diff] = _collect(entries)
     summary["by_difficulty"] = by_diff

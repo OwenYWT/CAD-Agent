@@ -296,12 +296,17 @@ def benchmark_row_from_live_report(
     status = str(report.get("status") or "missing")
     run_id = _run_id_from_report(report, path)
     artifact_gate = _artifact_gate_from_live_report(report, case)
+    cad_test_gate_status = str(
+        artifact_gate.get("cad_test_status") or "unavailable"
+    ).casefold()
+    native_delivery_verified = artifact_gate.get("native_delivery_verified") is True
     row.update(
         {
             "live_evaluation_run_id": run_id,
             "live_report_path": str(path),
             "live_report_status": status,
             "artifact_gate": artifact_gate,
+            "cad_test_gate_status": cad_test_gate_status,
             "process_evaluation": _process_evaluation(report),
             "live_evaluation": _live_evaluation_snapshot(report, status=status),
         }
@@ -309,7 +314,12 @@ def benchmark_row_from_live_report(
     cad_test = report.get("cad_test")
     if isinstance(cad_test, Mapping) and cad_test:
         row["cad_test"] = dict(cad_test)
-    row["passed"] = status == "finished" and artifact_gate["passed"]
+    row["passed"] = (
+        status == "finished"
+        and artifact_gate["passed"]
+        and cad_test_gate_status == "passed"
+        and native_delivery_verified
+    )
     if status != "finished":
         row["live_report_error"] = (
             "live report is not finished" if status != "missing" else "live report is missing"

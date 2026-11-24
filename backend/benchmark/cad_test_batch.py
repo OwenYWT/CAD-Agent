@@ -215,6 +215,7 @@ async def _live(args: argparse.Namespace, dataset: CadTestDataset) -> int:
                     "passed": False,
                     "case_id": case["id"],
                     "repeat": repeat,
+                    "attempts": 0,
                     "error": f"{type(exc).__name__}: {exc}",
                     "process_evaluation": {"status": "unavailable"},
                 }

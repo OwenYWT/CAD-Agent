@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 
 
@@ -41,6 +42,10 @@ def _report() -> dict:
                         "live_report_path": "reports/live/live_test.json",
                         "artifact_gate": {
                             "passed": True,
+                            "step_readable": True,
+                            "stl_readable": True,
+                            "geometry_nonempty": True,
+                            "visual_rendered": True,
                             "cad_test_status": "passed",
                             "native_delivery_verified": True,
                         },
@@ -102,6 +107,38 @@ def test_render_html_contains_summary_cases_and_live_details():
     assert "cad_test_verified" in html
     assert "create a &lt;cube&gt;" in html
     assert "reports/live/live_test.json" in html
+
+
+def test_summary_shows_case_success_coverage_for_repeated_runs():
+    from benchmark.cad_test_report import render_html
+
+    report = _report()
+    successful_case = report["cases"][0]
+    successful_case["agg"] = {"pass@k": True}
+    report["manifest"]["repeat"] = 2
+    successful_case["runs"].append(copy.deepcopy(successful_case["runs"][0]))
+
+    for case_id in ("ctb-failed-1", "ctb-failed-2"):
+        failed_case = copy.deepcopy(successful_case)
+        failed_case["id"] = case_id
+        failed_case["agg"] = {"pass@k": False}
+        for run in failed_case["runs"]:
+            run["case_id"] = case_id
+            run["passed"] = False
+            run["cad_test"]["status"] = "failed"
+            run["artifact_gate"]["cad_test_status"] = "failed"
+            run["artifact_gate"]["native_delivery_verified"] = False
+        report["cases"].append(failed_case)
+
+    report["summary"]["overall"]["n_cases"] = 3
+    report["summary"]["overall"]["pass@k"] = 1 / 3
+
+    rendered = render_html(report)
+
+    assert "Case 成功覆盖率" in rendered
+    assert '<span class="metric-main">33.3%</span>' in rendered
+    assert '<span class="metric-detail">（1 / 3 个 Case）</span>' in rendered
+    assert "至少一次运行通过" in rendered
 
 
 def test_render_html_groups_repeated_runs_under_case_selector():
@@ -182,6 +219,86 @@ def test_case_table_uses_total_attempts_as_denominator():
     table = _case_table(report)
 
     assert "1 / 2（未记录 1）" in table
+
+
+def test_historical_report_recomputes_strict_success_when_cadtest_is_missing():
+    from benchmark.cad_test_report import render_html
+
+    report = _report()
+    run = report["cases"][0]["runs"][0]
+    run["passed"] = True
+    run["cad_test"] = {}
+    run["artifact_gate"].pop("cad_test_status")
+    run["artifact_gate"].pop("native_delivery_verified")
+
+    rendered = render_html(report)
+
+    assert '<div class="metric-label">最终通过</div><div class="metric-value">0 / 1</div>' in rendered
+    assert '<span class="metric-main">0.0%</span>' in rendered
+    assert '<span class="metric-detail">（0 / 1 个 Case）</span>' in rendered
+
+
+def test_case_table_contains_valid_detail_link():
+    from benchmark.cad_test_report import _case_table
+
+    table = _case_table(_report())
+
+    assert '<td><a href="#case-0">查看</a></td>' in table
+
+
+def test_summary_shows_stable_success_and_cadtest_observation_coverage():
+    from benchmark.cad_test_report import render_html
+
+    rendered = render_html(_report())
+
+    assert "稳定成功率" in rendered
+    assert "所有重复运行均通过" in rendered
+    assert "CADTest 记录覆盖率" in rendered
+    assert '<span class="metric-main">100.0%</span>' in rendered
+    assert '<span class="metric-detail">（1 / 1 个可交付运行）</span>' in rendered
+
+
+def test_render_html_shows_dynamic_difficulty_breakdown():
+    from benchmark.cad_test_report import render_html
+
+    report = _report()
+    basic = report["cases"][0]
+    basic["difficulty"] = "basic"
+    for difficulty in ("combined", "complex"):
+        case = copy.deepcopy(basic)
+        case["id"] = f"ctb-{difficulty}"
+        case["difficulty"] = difficulty
+        report["cases"].append(case)
+    report["summary"]["overall"]["n_cases"] = 3
+
+    rendered = render_html(report)
+
+    assert "难度分层" in rendered
+    assert "basic" in rendered
+    assert "combined" in rendered
+    assert "complex" in rendered
+
+
+def test_failure_summary_uses_first_failed_tool_call():
+    from benchmark.cad_test_report import render_html
+
+    report = _report()
+    run = report["cases"][0]["runs"][0]
+    run["passed"] = False
+    run["cad_test"] = {}
+    run["artifact_gate"] = {}
+    run["live_evaluation"]["tool_calls"] = [
+        {
+            "sequence": 1,
+            "name": "agent_v2.requirements",
+            "status": "failed",
+            "duration_ms": 25,
+        }
+    ]
+
+    rendered = render_html(report)
+
+    assert "需求解析失败" in rendered
 
 
 def test_batch_report_writer_emits_json_and_html(tmp_path):

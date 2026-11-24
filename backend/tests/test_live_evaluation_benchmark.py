@@ -67,7 +67,8 @@ def test_live_benchmark_row_maps_only_real_report_evidence_to_artifact_gate():
         "passed": True,
     }
     assert "rendered_views" not in row["artifact_gate"]
-    assert row["passed"] is True
+    assert row["cad_test_gate_status"] == "unavailable"
+    assert row["passed"] is False
 
 
 def test_live_benchmark_row_includes_cad_test_delivery_evidence():
@@ -161,6 +162,8 @@ def test_live_benchmark_row_ignores_empty_cad_test_observation():
 
     assert row["artifact_gate"]["passed"] is True
     assert "cad_test" not in row
+    assert row["cad_test_gate_status"] == "unavailable"
+    assert row["passed"] is False
 
 
 def test_live_benchmark_row_does_not_pass_when_cad_test_fails():

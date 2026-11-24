@@ -146,7 +146,9 @@ def _run_cad_test_status(run: Mapping[str, Any]) -> str:
 
 def _run_artifact_status(run: Mapping[str, Any]) -> str:
     gate = run.get("artifact_gate")
-    return _artifact_gate_status(gate) if isinstance(gate, Mapping) else "unavailable"
+    if not isinstance(gate, Mapping) or not gate:
+        return "unavailable"
+    return "passed" if _delivery_ready(run) else "failed"
 
 
 def _process_value(run: Mapping[str, Any], key: str) -> Any:
@@ -217,26 +219,112 @@ def _cad_test_run_status(run: Mapping[str, Any]) -> str:
     return "unavailable"
 
 
+def _live_report_status(run: Mapping[str, Any]) -> str:
+    status = run.get("live_report_status")
+    if status is None:
+        snapshot = run.get("live_evaluation")
+        status = snapshot.get("status") if isinstance(snapshot, Mapping) else None
+    return str(status or "unavailable").casefold()
+
+
+def _delivery_ready(run: Mapping[str, Any]) -> bool:
+    gate = run.get("artifact_gate")
+    if not isinstance(gate, Mapping) or not gate:
+        return False
+    if "dxf_readable" in gate:
+        return gate.get("dxf_readable") is True
+    delivery_fields = (
+        "step_readable",
+        "stl_readable",
+        "geometry_nonempty",
+        "visual_rendered",
+    )
+    if any(field in gate for field in delivery_fields):
+        return all(gate.get(field) is True for field in delivery_fields)
+    return gate.get("passed") is True
+
+
+def _native_delivery_verified(run: Mapping[str, Any]) -> bool:
+    gate = run.get("artifact_gate")
+    if isinstance(gate, Mapping) and "native_delivery_verified" in gate:
+        return gate.get("native_delivery_verified") is True
+    cad_test = run.get("cad_test")
+    delivery = cad_test.get("delivery") if isinstance(cad_test, Mapping) else None
+    return isinstance(delivery, Mapping) and delivery.get("status") == "passed"
+
+
+def _strict_run_passed(run: Mapping[str, Any]) -> bool:
+    return (
+        _live_report_status(run) == "finished"
+        and _delivery_ready(run)
+        and _cad_test_run_status(run) == "passed"
+        and _native_delivery_verified(run)
+    )
+
+
 def _final_run_status(run: Mapping[str, Any]) -> str:
-    if run.get("passed") is True:
+    if _strict_run_passed(run):
         return "passed"
-    if run.get("executed") is True:
-        return "failed"
+    live_status = _live_report_status(run)
     if run.get("executed") is False:
         return "blocked"
-    return "unavailable"
-
-
-def _artifact_gate_status(gate: Mapping[str, Any]) -> str:
-    if not gate:
+    if live_status != "finished":
+        return "blocked" if live_status in {"running", "blocked", "cancelled"} else "unavailable"
+    if not _delivery_ready(run):
+        gate = run.get("artifact_gate")
+        return "failed" if isinstance(gate, Mapping) and gate.get("passed") is False else "unavailable"
+    cad_test_status = _cad_test_run_status(run)
+    if cad_test_status == "unavailable":
         return "unavailable"
-    return "passed" if gate.get("passed") is True else "failed"
+    if cad_test_status == "failed" or not _native_delivery_verified(run):
+        return "failed"
+    if run.get("executed") is True:
+        return "failed"
+    return "unavailable"
 
 
 def _summary_cards(report: Mapping[str, Any]) -> str:
     rows = _rows(report)
     total = len(rows)
-    passed = sum(1 for item in rows if item["run"].get("passed") is True)
+    passed = sum(1 for item in rows if _strict_run_passed(item["run"]))
+    cases = [case for case in report.get("cases", ()) or () if isinstance(case, Mapping)]
+    overall = report.get("summary", {}).get("overall", {})
+    reported_case_total = _number(overall.get("n_cases")) if isinstance(overall, Mapping) else None
+    case_total = int(reported_case_total) if reported_case_total is not None else len(cases)
+    strict_case_runs = [
+        [run for run in case.get("runs", ()) or () if isinstance(run, Mapping)]
+        for case in cases
+    ]
+    successful_cases = sum(
+        1 for runs in strict_case_runs if any(_strict_run_passed(run) for run in runs)
+    )
+    stable_cases = sum(
+        1
+        for runs in strict_case_runs
+        if runs and all(_strict_run_passed(run) for run in runs)
+    )
+    case_coverage = (
+        f"{successful_cases / case_total * 100:.1f}%（{successful_cases} / {case_total} 个 Case）"
+        if case_total
+        else "未记录（0 / 0 个 Case）"
+    )
+    stable_success = (
+        f"{stable_cases / case_total * 100:.1f}%（{stable_cases} / {case_total} 个 Case）"
+        if case_total
+        else "未记录（0 / 0 个 Case）"
+    )
+    delivery_ready_rows = [item for item in rows if _delivery_ready(item["run"])]
+    cad_test_observed = sum(
+        1
+        for item in delivery_ready_rows
+        if _cad_test_run_status(item["run"]) != "unavailable"
+    )
+    cad_test_coverage = (
+        f"{cad_test_observed / len(delivery_ready_rows) * 100:.1f}%"
+        f"（{cad_test_observed} / {len(delivery_ready_rows)} 个可交付运行）"
+        if delivery_ready_rows
+        else "未记录（0 / 0 个可交付运行）"
+    )
     cad_test_value = _status_metric(
         rows,
         _cad_test_run_status,
@@ -265,6 +353,9 @@ def _summary_cards(report: Mapping[str, Any]) -> str:
     average_duration = _average(rows, "total_duration_ms")
     cards = (
         ("最终通过", f"{passed} / {total}", "CADTest 与交付 gate"),
+        ("Case 成功覆盖率", case_coverage, "至少一次运行通过"),
+        ("稳定成功率", stable_success, "所有重复运行均通过"),
+        ("CADTest 记录覆盖率", cad_test_coverage, "可交付运行中的真值验收记录"),
         ("CADTest 通过", cad_test_value, "需要真值的独立验收"),
         ("Live 过程记录", live_value, "真实执行过程"),
         ("几何验证通过", geometry_value, "Live 几何检查"),
@@ -281,7 +372,7 @@ def _summary_cards(report: Mapping[str, Any]) -> str:
 
 
 def _failure_category(run: Mapping[str, Any]) -> str:
-    if run.get("passed") is True:
+    if _strict_run_passed(run):
         return "通过"
     error = run.get("error")
     if isinstance(error, Mapping):
@@ -289,6 +380,37 @@ def _failure_category(run: Mapping[str, Any]) -> str:
     else:
         error_text = str(error or "")
     lowered = error_text.lower()
+    if "workflowpending" in lowered or "workflow pending" in lowered:
+        return "执行超时或仍在运行"
+    snapshot = run.get("live_evaluation")
+    tool_calls = snapshot.get("tool_calls") if isinstance(snapshot, Mapping) else None
+    failed_tool = None
+    if isinstance(tool_calls, list):
+        for call in tool_calls:
+            if not isinstance(call, Mapping):
+                continue
+            status = str(call.get("status") or "").casefold()
+            if status in {"failed", "fail", "error", "blocked"}:
+                failed_tool = str(call.get("name") or "")
+                break
+    if failed_tool == "agent_v2.requirements":
+        return "需求解析失败"
+    if failed_tool in {
+        "agent_v2.decompose",
+        "agent_v2.plan",
+        "agent_v2.generate_operations",
+    }:
+        return "操作规划失败"
+    if failed_tool in {"agent_v2.execute_freecad", "agent_v2.execute_model"}:
+        return "模型执行失败"
+    if failed_tool == "agent_v2.validate_geometry":
+        return "几何验证失败"
+    if failed_tool in {"agent_v2.render_visual", "agent_v2.judge_visual"}:
+        return "视觉验证失败"
+    if failed_tool == "agent_v2.validate_dfm":
+        return "DFM 验证失败"
+    if failed_tool == "agent_v2.terminate_candidate":
+        return "候选终止"
     if "planner model" in lowered or "overall dimension" in lowered or "hole_group" in lowered:
         return "规划阶段失败"
     if "geometry_validation_failed" in lowered:
@@ -300,6 +422,8 @@ def _failure_category(run: Mapping[str, Any]) -> str:
     cad_test = run.get("cad_test")
     if isinstance(cad_test, Mapping) and cad_test.get("status") in {"failed", "error"}:
         return "CADTest 验收失败"
+    if _delivery_ready(run) and _cad_test_run_status(run) == "unavailable":
+        return "CADTest 未记录"
     artifact_gate = run.get("artifact_gate")
     artifact_gate = artifact_gate if isinstance(artifact_gate, Mapping) else {}
     if artifact_gate.get("passed") is False:
@@ -311,7 +435,7 @@ def _failure_summary(report: Mapping[str, Any]) -> str:
     categories = Counter(
         _failure_category(item["run"])
         for item in _rows(report)
-        if item["run"].get("passed") is not True
+        if not _strict_run_passed(item["run"])
     )
     if not categories:
         return '<p class="empty">本次没有失败 case。</p>'
@@ -376,10 +500,41 @@ def _case_table(report: Mapping[str, Any]) -> str:
             f"<td>{_escape(geometry_result)}</td>"
             f"<td>{_escape(dfm_result)}</td>"
             f"<td>{_format_count(average_calls)} / {_format_duration(average_duration)}</td>"
-            f"<td><a href="#case-{case_index}">查看</a></td>"
+            f'<td><a href="#case-{case_index}">查看</a></td>'
             "</tr>"
         )
     return "\n".join(body) or '<tr><td colspan="11">没有 case 记录。</td></tr>'
+
+
+def _difficulty_breakdown(report: Mapping[str, Any]) -> str:
+    grouped: dict[str, list[list[Mapping[str, Any]]]] = {}
+    for _case_index, case, runs in _case_entries(report):
+        difficulty = str(case.get("difficulty") or "unknown")
+        grouped.setdefault(difficulty, []).append(runs)
+    rows: list[str] = []
+    for difficulty in sorted(grouped):
+        case_runs = grouped[difficulty]
+        runs = [run for entries in case_runs for run in entries]
+        passed_runs = sum(1 for run in runs if _strict_run_passed(run))
+        successful_cases = sum(
+            1 for entries in case_runs if any(_strict_run_passed(run) for run in entries)
+        )
+        stable_cases = sum(
+            1 for entries in case_runs if entries and all(_strict_run_passed(run) for run in entries)
+        )
+        run_rate = passed_runs / len(runs) if runs else 0.0
+        case_rate = successful_cases / len(case_runs) if case_runs else 0.0
+        rows.append(
+            "<tr>"
+            f"<td><code>{_escape(difficulty)}</code></td>"
+            f"<td>{len(case_runs)}</td>"
+            f"<td>{len(runs)}</td>"
+            f"<td>{passed_runs} / {len(runs)}（{run_rate * 100:.1f}%）</td>"
+            f"<td>{successful_cases} / {len(case_runs)}（{case_rate * 100:.1f}%）</td>"
+            f"<td>{stable_cases} / {len(case_runs)}</td>"
+            "</tr>"
+        )
+    return "\n".join(rows) or '<tr><td colspan="6">没有难度分层记录。</td></tr>'
 
 
 def _key_value_rows(values: Mapping[str, Any], *, duration: bool = False) -> str:
@@ -537,6 +692,9 @@ main { padding: 4px 0 52px; }
 .metric-note { margin-top: 3px; font-size: 12px; }
 .failure-strip { display: flex; flex-wrap: wrap; gap: 8px; }
 .failure-chip { padding: 7px 10px; border: 1px solid #f0c7c7; border-radius: 6px; background: #fff7f7; color: var(--bad); }
+.difficulty-wrap { overflow-x: auto; }
+.difficulty-table { min-width: 720px; background: transparent; }
+.difficulty-table th, .difficulty-table td { padding-left: 0; }
 .table-wrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
 table { width: 100%; border-collapse: collapse; min-width: 920px; }
 th, td { padding: 11px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
@@ -623,6 +781,15 @@ def render_html(report: Mapping[str, Any]) -> str:
     <section>
       <h2>总体摘要</h2>
       <div class="metrics">{_summary_cards(report)}</div>
+    </section>
+    <section>
+      <h2>难度分层</h2>
+      <div class="difficulty-wrap">
+        <table class="difficulty-table">
+          <thead><tr><th>难度</th><th>Case</th><th>运行</th><th>严格运行通过</th><th>Case 成功覆盖</th><th>稳定成功</th></tr></thead>
+          <tbody>{_difficulty_breakdown(report)}</tbody>
+        </table>
+      </div>
     </section>
     <section>
       <h2>失败分类</h2>
