@@ -103,6 +103,39 @@ async def test_generic_workflow_does_not_implicitly_enqueue_document():
         assert await conn.scalar(text("SELECT count(*) FROM task_events WHERE workflow_run_id=:id"), {"id": created.workflow_id}) == 1
 
 
+async def test_interrupted_native_import_keeps_its_key_without_a_receipt_or_queue_entry():
+    from app.services.durable_submission import ensure_workspace_identity, recover_session_submission
+    from app.services.run_state import create_workflow as reserve, IdempotencyConflict, request_workflow_cancellation
+
+    user = f"native-import-{uuid4()}"
+    owner = user_principal(user)
+    session, panel, key = (str(uuid4()) for _ in range(3))
+    doc = await ensure_workspace_identity(owner, session_id=session, panel_id=panel, title="Import", user_id=user)
+    args = dict(tenant_id=owner.tenant_id, project_id=doc.project_id, requested_by_principal_id=owner.principal_id,
+                kind="mcad.agent.v2.generate", idempotency_key=key)
+    payload = dict(operation="generate", branch_id=str(doc.branch_id),
+                   expected_base_revision_id=str(doc.head_revision_id), expected_state_version=0,
+                   operation_context={"rule": "explicit_native_import"})
+    receipt = dict(session_id=session, panel_id=panel, idempotency_key=key)
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        staged = await reserve(conn, **args, request_payload=payload)
+    assert await recover_session_submission(owner, **receipt) is None
+    with pytest.raises(IdempotencyConflict):
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+            await reserve(conn, **args, request_payload={**payload, "manufacturing_profile": {"material": "PETG"}})
+    with pytest.raises(ValueError, match="尚未上传"):
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+            await create_workflow(conn, **args, request_payload=payload)
+    async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+        assert await conn.scalar(text("SELECT count(*) FROM cad_operations WHERE id=:id"), {"id": staged.workflow_id}) == 0
+        assert await conn.scalar(text("SELECT count(*) FROM workflow_dispatches WHERE workflow_id=:id"),
+                                 {"id": staged.workflow_id}) == 0
+        await request_workflow_cancellation(conn, staged.workflow_id)
+    with pytest.raises(DocumentConflict, match="已结束"):
+        async with tenant_transaction(owner.tenant_id, owner.principal_id) as conn:
+            await create_workflow(conn, **args, request_payload=payload, import_uploaded=True)
+
+
 async def test_real_queue_serializes_and_replays_without_duplicate_mutations():
     owner, project, branch = await seed()
     first = await enqueue(owner, project, branch, key=f"replay-{branch.branch_id}")

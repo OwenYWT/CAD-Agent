@@ -54,10 +54,10 @@ export async function updateDocumentPresence(id: string, clientId: string, featu
   if (!response.ok) await readJson(response, "在线状态同步失败");
 }
 
-export async function commentOnDocument(document: CloudDocument, body: string, featureId: string | null): Promise<void> {
+export async function commentOnDocument(document: CloudDocument, body: string, featureId: string | null, commentId: string): Promise<void> {
   await readJson(await authFetch(`${API_BASE}/api/documents/${document.document_id}/comments`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ comment_id: crypto.randomUUID(), revision_id: document.revision_id, body, feature_id: featureId }),
+    body: JSON.stringify({ comment_id: commentId, revision_id: document.revision_id, body, feature_id: featureId }),
   }), "评论保存失败");
 }
 

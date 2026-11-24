@@ -9,9 +9,10 @@ import pytest
 import pytest_asyncio
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import event
 
 from app.config import settings
-from app.db import close_database
+from app.db import close_database, get_database_engine
 from app.dfm import knowledge_graph, rule_store
 from app.dfm.knowledge_graph import KGEdge, KGNode
 from app.domain.identity import user_principal
@@ -111,6 +112,25 @@ async def test_dfm_and_knowledge_are_seeded_mutable_and_tenant_isolated():
         )
     )
     assert edge.id is not None
+    # Both graphs are warm. Adding a customer's material and process must not
+    # add SQL round trips or turn a recommendation into identity writes.
+    engine = get_database_engine().sync_engine
+    statements = []
+    def record_sql(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement.lstrip().split()[0].upper())
+
+    event.listen(engine, "before_cursor_execute", record_sql)
+    try:
+        builtin = await knowledge_graph.recommend_processes(material_preference=custom_b.name)
+        builtin_statements = list(statements)
+        statements.clear()
+        customized = await knowledge_graph.recommend_processes(material_preference=custom_b.name, customer_id=customer)
+    finally:
+        event.remove(engine, "before_cursor_execute", record_sql)
+    assert statements == builtin_statements
+    assert len(statements) <= 10 and set(statements) <= {"SELECT", "SET"}
+    assert all(item.process_id != custom_a.id for item in builtin)
+    assert any(item.process_id == custom_a.id and item.material_id == custom_b.id for item in customized)
     assert await knowledge_graph.get_node(custom_a.id, customer) == custom_a
     assert await knowledge_graph.delete_edge(edge.id)
     assert await knowledge_graph.delete_node(custom_a.id, customer)

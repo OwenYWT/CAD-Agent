@@ -12,6 +12,7 @@ from pathlib import Path
 
 from temporalio.client import WorkflowHistory
 from temporalio.worker import Replayer
+from app.workers.history_replay import replay_history
 
 from app.temporal_client import get_temporal_client
 from app.workflows.agent_v2 import McadAgentWorkflowV2
@@ -37,7 +38,7 @@ async def main():
             'history_sha256':hashlib.sha256(raw.encode()).hexdigest(), 'status':'failed'}
         (out / (item['workflow_id']+'.json')).write_text(raw)
         try:
-            await replayer.replay_workflow(history)
+            await replay_history(replayer, history)
             record['status'] = 'passed'
         except Exception as error:
             record['error'] = str(error)

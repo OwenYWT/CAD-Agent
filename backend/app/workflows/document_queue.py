@@ -5,6 +5,7 @@ from datetime import timedelta
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
+from app.workflows.recorded_decisions import should_record_failure
 
 
 async def wait_for_document(workflow_instance, request: dict):
@@ -19,7 +20,9 @@ async def wait_for_document(workflow_instance, request: dict):
         # Historical restores must not wait behind an older document task.
         # A confirmation-held task can otherwise keep the restore pending for
         # the full queue timeout with no actionable explanation in the UI.
-        if request.get("revision_restore") is not None and workflow.patched("document-restore-busy-v1"):
+        if request.get("revision_restore") is not None and (
+            workflow.patched("document-restore-busy-v1") or should_record_failure("document_operation_in_progress")
+        ):
             raise ApplicationError(
                 "文档已有任务进行中，请先完成或取消前一个任务，再恢复历史版本",
                 type="document_operation_in_progress",

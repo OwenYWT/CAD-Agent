@@ -10,6 +10,7 @@ from app.api.auth import verify_api_key, rate_limiter
 from app.api.error_messages import (
     generation_error_http_status,
     public_generation_error,
+    submission_conflict_response,
 )
 from app.config import make_llm_client, settings
 from app.models.schemas import GenerateRequest, GenerateResponse, ModifyRequest
@@ -51,7 +52,7 @@ async def provider_preflight(request: Request, api_key: str | None = Depends(ver
             await client.raw_client.close()
 
 
-@router.post("/api/generate", response_model=GenerateResponse)
+@router.post("/api/generate", response_model=GenerateResponse, responses={409: {"model": GenerateResponse, "description": "Revision or idempotency conflict"}})
 async def generate(req: GenerateRequest, request: Request, api_key: str | None = Depends(verify_api_key)):
     """从自然语言描述生成 CAD 模型 (同步, 有总超时上限)"""
     await rate_limiter.check(request, api_key)
@@ -91,30 +92,8 @@ async def generate(req: GenerateRequest, request: Request, api_key: str | None =
                 content=response.model_dump(mode="json"),
             )
         return response
-    except StaleBaseRevision as exc:
-        return JSONResponse(
-            status_code=409,
-            content=GenerateResponse(
-                request_id=str(uuid.uuid4()),
-                success=False,
-                error={
-                    "type": "RevisionConflict",
-                    "message": str(exc),
-                },
-            ).model_dump(mode="json"),
-        )
-    except IdempotencyConflict as exc:
-        return JSONResponse(
-            status_code=409,
-            content=GenerateResponse(
-                request_id=str(uuid.uuid4()),
-                success=False,
-                error={
-                    "type": "IdempotencyConflict",
-                    "message": str(exc),
-                },
-            ).model_dump(mode="json"),
-        )
+    except (StaleBaseRevision, IdempotencyConflict) as exc:
+        return submission_conflict_response(exc)
     except (KeyError, PermissionError) as exc:
         return JSONResponse(
             status_code=403 if isinstance(exc, PermissionError) else 404,
@@ -214,30 +193,8 @@ async def modify(req: ModifyRequest, request: Request, api_key: str | None = Dep
                 error=exc.public_error(),
             ).model_dump(mode="json"),
         )
-    except StaleBaseRevision as exc:
-        return JSONResponse(
-            status_code=409,
-            content=GenerateResponse(
-                request_id=str(uuid.uuid4()),
-                success=False,
-                error={
-                    "type": "RevisionConflict",
-                    "message": str(exc),
-                },
-            ).model_dump(mode="json"),
-        )
-    except IdempotencyConflict as exc:
-        return JSONResponse(
-            status_code=409,
-            content=GenerateResponse(
-                request_id=str(uuid.uuid4()),
-                success=False,
-                error={
-                    "type": "IdempotencyConflict",
-                    "message": str(exc),
-                },
-            ).model_dump(mode="json"),
-        )
+    except (StaleBaseRevision, IdempotencyConflict) as exc:
+        return submission_conflict_response(exc)
     except (KeyError, PermissionError) as exc:
         return JSONResponse(
             status_code=403 if isinstance(exc, PermissionError) else 404,

@@ -62,53 +62,51 @@ async def _get_db() -> aiosqlite.Connection:
             return _db
 
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _db = await aiosqlite.connect(str(DB_PATH))
-        _db.row_factory = aiosqlite.Row
-        await _db.execute("PRAGMA journal_mode=WAL")
+        db = await aiosqlite.connect(str(DB_PATH))
+        try:
+            db.row_factory = aiosqlite.Row
+            await db.execute("PRAGMA journal_mode=WAL")
 
-        await _db.executescript("""
-            CREATE TABLE IF NOT EXISTS kg_nodes (
-                id TEXT NOT NULL,
-                type TEXT NOT NULL,
-                name TEXT NOT NULL,
-                properties TEXT DEFAULT '{}',
-                customer_id TEXT DEFAULT 'default',
-                PRIMARY KEY (id, customer_id)
-            );
-            CREATE TABLE IF NOT EXISTS kg_edges (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source_id TEXT NOT NULL,
-                target_id TEXT NOT NULL,
-                relationship TEXT NOT NULL,
-                properties TEXT DEFAULT '{}',
-                customer_id TEXT DEFAULT 'default'
-            );
-            CREATE INDEX IF NOT EXISTS idx_edges_source ON kg_edges(source_id, customer_id);
-            CREATE INDEX IF NOT EXISTS idx_edges_target ON kg_edges(target_id, customer_id);
-            CREATE INDEX IF NOT EXISTS idx_edges_rel ON kg_edges(relationship, customer_id);
-            CREATE INDEX IF NOT EXISTS idx_nodes_type ON kg_nodes(type, customer_id);
-        """)
-        await _db.commit()
+            await db.executescript("""
+                CREATE TABLE IF NOT EXISTS kg_nodes (
+                    id TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    properties TEXT DEFAULT '{}',
+                    customer_id TEXT DEFAULT 'default',
+                    PRIMARY KEY (id, customer_id)
+                );
+                CREATE TABLE IF NOT EXISTS kg_edges (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_id TEXT NOT NULL,
+                    target_id TEXT NOT NULL,
+                    relationship TEXT NOT NULL,
+                    properties TEXT DEFAULT '{}',
+                    customer_id TEXT DEFAULT 'default'
+                );
+                CREATE INDEX IF NOT EXISTS idx_edges_source ON kg_edges(source_id, customer_id);
+                CREATE INDEX IF NOT EXISTS idx_edges_target ON kg_edges(target_id, customer_id);
+                CREATE INDEX IF NOT EXISTS idx_edges_rel ON kg_edges(relationship, customer_id);
+                CREATE INDEX IF NOT EXISTS idx_nodes_type ON kg_nodes(type, customer_id);
+            """)
+            await db.execute("BEGIN IMMEDIATE")
+            # Seed defaults if empty
+            row = await db.execute_fetchall(
+                "SELECT COUNT(*) as cnt FROM kg_nodes WHERE customer_id='default'"
+            )
+            if row[0][0] == 0:
+                await _seed_defaults(db)
+            await db.commit()
+        except BaseException:
+            await db.close()
+            raise
+        _db = db
+        return db
 
-        # Seed defaults if empty
-        row = await _db.execute_fetchall(
-            "SELECT COUNT(*) as cnt FROM kg_nodes WHERE customer_id='default'"
-        )
-        if row[0][0] == 0:
-            await _seed_defaults()
 
-    return _db
-
-
-async def _seed_defaults():
+async def _seed_defaults(db: aiosqlite.Connection):
     """Load default knowledge graph from JSON."""
-    if not DEFAULT_KNOWLEDGE_PATH.exists():
-        logger.warning("Default knowledge file not found")
-        return
-
     data = json.loads(DEFAULT_KNOWLEDGE_PATH.read_text(encoding='utf-8'))
-    db = _db
-    assert db is not None
 
     for node in data.get("nodes", []):
         await db.execute(
@@ -122,7 +120,6 @@ async def _seed_defaults():
             (edge["source"], edge["target"], edge["relationship"], json.dumps(edge.get("properties", {})), "default"),
         )
 
-    await db.commit()
     logger.info("Seeded default knowledge graph")
 
 
@@ -208,7 +205,7 @@ async def get_edges(
 
     where = " AND ".join(conditions)
     rows = await db.execute_fetchall(
-        f"SELECT * FROM kg_edges WHERE {where}", params,
+        f"SELECT * FROM kg_edges WHERE {where} ORDER BY id", params,
     )
     return [
         KGEdge(
@@ -275,11 +272,34 @@ async def recommend_processes(
     customer_id: str = "default",
 ) -> list[ProcessRecommendation]:
     """Recommend processes based on part characteristics."""
-    processes = await list_nodes("process", customer_id)
+    if settings.durable_control_plane_enabled:
+        from app.dfm import postgres_store
+        graph_nodes, edges = await postgres_store.recommendation_graph(customer_id)
+    else:
+        graph_nodes = await list_nodes(customer_id=customer_id)
+        edges = await get_edges(customer_id=customer_id)
+    nodes = {node.id: node for node in graph_nodes}
+    by_source: dict[str, list[KGEdge]] = {}
+    for edge in edges:
+        by_source.setdefault(edge.source_id, []).append(edge)
     recommendations = []
 
-    for proc in processes:
-        constraints = await get_process_constraints(proc.id, customer_id=customer_id)
+    for proc in nodes.values():
+        if proc.type != "process":
+            continue
+        constraints = {}
+        material_limits = {}
+        mat_node = None
+        for edge in by_source.get(proc.id, []):
+            if edge.relationship == "has_constraint":
+                constraints.update(edge.properties)
+            elif material_preference and edge.relationship == "supports_material":
+                target = nodes.get(edge.target_id)
+                if mat_node is None and target and material_preference.lower() in target.name.lower():
+                    mat_node = target
+                if mat_node and edge.target_id == mat_node.id:
+                    material_limits.update(edge.properties)
+        constraints.update(material_limits)
         notes = []
         score = 1.0
 
@@ -293,31 +313,16 @@ async def recommend_processes(
                 score *= 0.7
                 notes.append(f"接近尺寸上限 ({max_dimension:.0f}/{proc_max_size}mm)")
 
-        # Check material compatibility
-        mat_node = None
-        mat_constraints = {}
-        if material_preference:
-            mat_edges = await get_edges(
-                source_id=proc.id, relationship="supports_material",
-                customer_id=customer_id,
-            )
-            for e in mat_edges:
-                mat = await get_node(e.target_id, customer_id)
-                if mat and material_preference.lower() in mat.name.lower():
-                    mat_node = mat
-                    mat_constraints = e.properties
-                    break
-
-            if not mat_node:
-                score *= 0.2
-                notes.append(f"不支持材料: {material_preference}")
+        if material_preference and mat_node is None:
+            score *= 0.2
+            notes.append(f"不支持材料: {material_preference}")
 
         recommendations.append(ProcessRecommendation(
             process_id=proc.id,
             process_name=proc.name,
             material_id=mat_node.id if mat_node else None,
             material_name=mat_node.name if mat_node else None,
-            constraints={**constraints, **mat_constraints},
+            constraints=constraints,
             score=round(score, 2),
             notes=notes,
         ))

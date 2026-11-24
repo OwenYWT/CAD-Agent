@@ -57,24 +57,29 @@ if ($Runtime -eq "docker") {
     }
 }
 
-if (-not $SkipSandboxBuild) {
-    Write-Host "Building sandbox image with $Runtime..." -ForegroundColor Cyan
-    Push-Location "backend\sandbox"
-    try {
-        & $Runtime build -t cad-agent-sandbox:latest .
-    } finally {
-        Pop-Location
-    }
-}
-
 if (-not $SkipInstall) {
     Write-Host "Installing backend dependencies..." -ForegroundColor Cyan
     Push-Location "backend"
     try {
         python -m pip install -r requirements.txt
+        if ($LASTEXITCODE -ne 0) { throw "Backend dependency installation failed." }
     } finally {
         Pop-Location
     }
+}
+
+Push-Location "backend"
+try {
+    $env:SANDBOX_IMAGE = python -c 'from app.config import settings; print(settings.sandbox_image)'
+    if ($LASTEXITCODE -ne 0) { throw "Could not resolve the configured sandbox image." }
+} finally {
+    Pop-Location
+}
+
+if (-not $SkipSandboxBuild) {
+    Write-Host "Building $env:SANDBOX_IMAGE with $Runtime..." -ForegroundColor Cyan
+    & $Runtime build -f backend/sandbox/Dockerfile -t $env:SANDBOX_IMAGE .
+    if ($LASTEXITCODE -ne 0) { throw "Sandbox image build failed (exit $LASTEXITCODE)." }
 }
 
 if ($BuildFrontend) {
@@ -94,8 +99,11 @@ if ($BuildFrontend) {
 
 $env:SANDBOX_RUNTIME = $Runtime
 $env:SANDBOX_COMMAND = $Runtime
+Set-Location "backend"
+python -c 'from app.execution.composition import get_execution_backend; get_execution_backend().runtime_snapshot()'
+if ($LASTEXITCODE -ne 0) { throw "FreeCAD sandbox $env:SANDBOX_IMAGE failed the backend runtime check." }
+
 Write-Host "Starting backend at http://localhost:8000" -ForegroundColor Green
 Write-Host "Readiness endpoint: http://localhost:8000/ready" -ForegroundColor Green
 Write-Host "If LLM credentials are not configured yet, /ready will report degraded but /health should be ok." -ForegroundColor Yellow
-Set-Location "backend"
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000

@@ -260,24 +260,20 @@ async def create_session(
     return _session(row)
 
 
-async def list_sessions(user_id: str | None = None) -> list[dict]:
+async def list_sessions(user_id: str | None = None, *, limit: int = 50, before: tuple[str, str] | None = None) -> list[dict]:
     context = _context(user_id)
-    async with tenant_transaction(
-        context.tenant_id,
-        context.principal_id,
-    ) as connection:
-        rows = (
-            await connection.execute(
-                text(
-                    """
-                    SELECT id, project_id, legacy_user_id, title,
-                           created_at, updated_at
-                    FROM workspace_sessions
-                    ORDER BY updated_at DESC LIMIT 50
-                    """
-                )
-            )
-        ).mappings().all()
+    params = {"limit": limit}
+    where = ""
+    if before:
+        timestamp = datetime.fromisoformat(before[0])
+        params.update(before_time=timestamp if timestamp.tzinfo else timestamp.replace(tzinfo=timezone.utc), before_id=before[1])
+        where = " WHERE (updated_at, id) < (:before_time, :before_id)"
+    async with tenant_transaction(context.tenant_id, context.principal_id) as connection:
+        rows = (await connection.execute(
+            text("SELECT id, project_id, legacy_user_id, title, created_at, updated_at FROM workspace_sessions"
+                 + where + " ORDER BY updated_at DESC, id DESC LIMIT :limit"),
+            params,
+        )).mappings().all()
     return [_session(row) for row in rows]
 
 

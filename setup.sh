@@ -24,19 +24,24 @@ if [ ! -f backend/.env ]; then
   die "Created backend/.env from template. Fill the LLM and auth values, then run this script again."
 fi
 
-say "Building sandbox image with $RUNTIME"
-if ! "$RUNTIME" image exists cad-agent-sandbox:latest >/dev/null 2>&1; then
-  ( cd backend/sandbox && "$RUNTIME" build -t cad-agent-sandbox:latest . )
-else
-  echo "Sandbox image already exists."
-fi
-
 say "Installing backend dependencies"
 ( cd backend && "$PYTHON_BIN" -m pip install -r requirements.txt )
+
+SANDBOX_IMAGE=$(cd backend && "$PYTHON_BIN" -c 'from app.config import settings; print(settings.sandbox_image)')
+export SANDBOX_IMAGE SANDBOX_RUNTIME="$RUNTIME"
+check_sandbox() {
+  ( cd backend && "$PYTHON_BIN" -c 'from app.execution.composition import get_execution_backend; get_execution_backend().runtime_snapshot()' )
+}
+
+say "Checking sandbox image $SANDBOX_IMAGE with $RUNTIME"
+if ! check_sandbox >/dev/null 2>&1; then
+  say "Building missing or incompatible sandbox image $SANDBOX_IMAGE"
+  "$RUNTIME" build -f backend/sandbox/Dockerfile -t "$SANDBOX_IMAGE" .
+  check_sandbox
+fi
 
 say "Installing frontend dependencies and building Web UI"
 ( cd frontend && npm ci && npm run build )
 
 say "Starting backend on http://localhost:8000"
-export SANDBOX_RUNTIME="$RUNTIME"
 ( cd backend && "$PYTHON_BIN" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 )

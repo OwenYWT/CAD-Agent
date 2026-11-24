@@ -157,8 +157,9 @@ _PRESERVATION = re.compile(
     rf'(?P<trailing>{_PRESERVED_PROPERTY})\s*(?:保持)?(?:不变|原值)|'
     rf'(?:preserve|keep)\s+(?:the\s+)?(?P<english>{_PRESERVED_PROPERTY})(?:\s+(?:unchanged|the same))?)', re.I)
 _DESIGN_REQUEST = re.compile(
-    r'^\s*(?:(?:请|帮我|请帮我|给我|麻烦)\s*)?(?:设计|创建|构建|制作|生成|做)\s*(?P<zh>一\s*个|1\s*个)|'
-    r'^\s*(?:please\s+)?(?:design|create|build|make|generate)\s+(?P<en>a|an|one)\b', re.I)
+    r'(?:^|(?<=[。.!！?？；;\n]))\s*(?:(?:(?:请|帮我|请帮我|给我|麻烦)\s*)?'
+    r'(?:设计|创建|构建|制作|生成|做)\s*(?P<zh>一\s*个|1\s*个)|'
+    r'(?:please\s+)?(?:design|create|build|make|generate)\s+(?P<en>a|an|one)\b)', re.I)
 _DESIGN_PRODUCT = re.compile(r'板|盒|长方体|正方形|正方体|方块|立方体|圆柱(?:体)?|球(?:体)?|挂钩|外壳|夹具|支架|零件|模型|装配体|组件|'
     r'\b(?:plate|box|block|square|cube|rectangle|cylinder|sphere|hook|enclosure|bracket|part|model|assembly)\b', re.I)
 _EQUAL_AXIS_SOLID = re.compile(r'正方体|立方体|\bcube\b', re.I)
@@ -279,7 +280,7 @@ def extract_requirements(objective: str, *, source_input_id: str = 'objective', 
     declarations = list(_DECLARED_UNIT.finditer(objective))
     declared_unit = unit_context['declared_unit']
     design_requests, external_references, external_spans = [], [], []
-    design_request = _DESIGN_REQUEST.match(objective)
+    design_request = _DESIGN_REQUEST.search(objective)
 
     def reference(start, end, label):
         return {'reference_id': f's-{source_input_id}-{start}-{end}-{label}',
@@ -912,6 +913,35 @@ def extract_source_requirements(objective, *, verified_state=None, requirement_s
     return result
 
 
+def _preview_dimensions(objective, rows):
+    if not any(row['comparison']['unit'] in {'mm', 'mm3'} for row in rows):
+        return ''
+    if len(objective.strip()) <= 1500:
+        return objective.strip()
+
+    # Retain original clauses containing dimensions, their owners and unit
+    # declarations. Sentence-ending periods and decimal points differ here.
+    spans = {tuple(ref['source_span']) for ref in [*rows, *source_owners(objective)]}
+    for row in rows:
+        spans.update(tuple(unit['source_span']) for unit in row.get('unit_sources', ()))
+        if 'coordinate_source_span' in row:
+            spans.add(tuple(row['coordinate_source_span']))
+    clauses = [clause.span() for clause in re.finditer(r'(?:\.(?=\d)|[^，,。；;.！!？?\n])+', objective)
+               if any(start < clause.end() and end > clause.start() for start, end in spans)]
+    for ranges in (clauses, sorted(spans)):
+        fragments = []
+        for start, end in ranges:
+            if fragments and (start <= fragments[-1][1] or
+                              not objective[fragments[-1][1]:start].strip(' \t\r\n，,。；;.！!？?')):
+                fragments[-1] = (fragments[-1][0], max(end, fragments[-1][1]))
+            else:
+                fragments.append((start, end))
+        dimensions = '\n'.join(objective[start:end].strip() for start, end in fragments)
+        if len(dimensions) <= 1500:
+            return dimensions
+    return ''
+
+
 def preview_requirements(objective):
     """Intake assistance from the same source semantics used before freezing.
 
@@ -920,8 +950,7 @@ def preview_requirements(objective):
     """
     parsed = extract_source_requirements(objective)
     rows = parsed['requirements']
-    dimensions = objective.strip() if len(objective) <= 1500 and any(
-        r['comparison']['unit'] in {'mm', 'mm3'} for r in rows) else ''
+    dimensions = _preview_dimensions(objective, rows)
     kinds = {r['kind'] for r in rows}
     axes = {tuple(r['scope']['axis']) for r in rows if r['kind'] == 'overall_dimension'}
     assembly = {r['scope']['assembly_measurement'] for r in rows if r['kind'] == 'assembly_dimension'}

@@ -277,21 +277,25 @@ async def create_session(session_id: str, title: str = "", user_id: str | None =
     return dict(row)
 
 
-async def list_sessions(user_id: str | None = None) -> list[dict]:
+async def list_sessions(user_id: str | None = None, *, limit: int = 50, before: tuple[str, str] | None = None) -> list[dict]:
     if settings.durable_control_plane_enabled:
         from app.storage import postgres_history
 
-        return await postgres_history.list_sessions(user_id)
+        return await postgres_history.list_sessions(user_id, limit=limit, before=before)
     db = await get_db()
+    conditions = []
+    params = []
     if user_id:
-        rows = await db.execute_fetchall(
-            "SELECT id, title, created_at, updated_at FROM sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 50",
-            (user_id,),
-        )
-    else:
-        rows = await db.execute_fetchall(
-            "SELECT id, title, created_at, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 50"
-        )
+        conditions.append("user_id = ?")
+        params.append(user_id)
+    if before:
+        conditions.append("(updated_at, id) < (?, ?)")
+        params.extend(before)
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+    rows = await db.execute_fetchall(
+        "SELECT id, title, created_at, updated_at FROM sessions" + where +
+        " ORDER BY updated_at DESC, id DESC LIMIT ?", (*params, limit),
+    )
     return [dict(r) for r in rows]
 
 

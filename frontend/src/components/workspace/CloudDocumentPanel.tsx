@@ -1,3 +1,4 @@
+import { useMutationReceipt } from "../../hooks/useMutationReceipt";
 import { useParameterEditor } from "../../controllers/useParameterEditor";
 import type { DurablePanelContext } from "../../stores/sessionStore";
 import { useEffect, useRef, useState } from "react";
@@ -102,7 +103,10 @@ export default function CloudDocumentPanel({ connection, onSubmitted, onReview, 
     treeRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({block:'nearest'});
   }, [selectedId]);
   const [localSection,setLocalSection]=useState<DocumentSection | null>(null);
-  const [body, setBody] = useState("");
+  const commentScope = `comment:${document?.document_id}:${document?.revision_id}:${selectedId ?? ""}`;
+  const [pendingComment, savePendingComment] = useMutationReceipt<{ body: string; id: string }>(commentScope);
+  const [draft, setDraft] = useState<{ scope: string; text: string } | null>(null);
+  const body = draft?.scope === commentScope ? draft.text : pendingComment?.body ?? "";
   const [commentError, setCommentError] = useState("");
   const [saving, setSaving] = useState(false);
   const [reviewLink, setReviewLink] = useState("");
@@ -120,7 +124,20 @@ export default function CloudDocumentPanel({ connection, onSubmitted, onReview, 
   };
   const addComment = async () => {
     setSaving(true); setCommentError("");
-    try { await commentOnDocument(document, body.trim(), selectedId); setBody(""); }
+    const text = body.trim();
+    try {
+      const id = pendingComment?.body === text ? pendingComment.id : crypto.randomUUID();
+      if (id !== pendingComment?.id) {
+        try { savePendingComment({ id, body: text }); }
+        catch {
+          setCommentError("评论草稿仍在此页。请检查浏览器存储空间和权限后重试。");
+          return;
+        }
+      }
+      await commentOnDocument(document, text, selectedId, id);
+      savePendingComment(null);
+      setDraft(current => current === draft ? null : current);
+    }
     catch (e) { setCommentError(e instanceof Error ? e.message : "评论保存失败"); }
     finally { setSaving(false); }
   };
@@ -165,7 +182,7 @@ export default function CloudDocumentPanel({ connection, onSubmitted, onReview, 
     </div> : null}
     {currentSection==="sharing" ? <div className="ww-inspector-section"><h3>版本评论</h3>
       <p className="type-caption text-[var(--muted)]">{selected ? `标注特征：${selected.label}` : "标注当前版本"}</p>
-      <textarea aria-label="文档评论" className="my-2 w-full rounded border border-[var(--line)] p-2 type-caption" maxLength={4000} value={body} onChange={(e) => setBody(e.target.value)} />
+      <textarea aria-label="文档评论" className="my-2 w-full rounded border border-[var(--line)] p-2 type-caption" maxLength={4000} value={body} onChange={(e) => setDraft({ scope: commentScope, text: e.target.value })} />
       <button className="workspace-button" disabled={!body.trim() || saving || !connected} onClick={() => void addComment()} type="button">{saving ? "保存中" : "保存评论"}</button>
       {commentError ? <p role="alert" className="type-caption text-red-700">{commentError}</p> : null}
       {collaboration?.comments.map((comment) => <div className="my-3 border-b border-[var(--line)] pb-3 type-caption" key={comment.id}>

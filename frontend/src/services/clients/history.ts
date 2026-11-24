@@ -39,8 +39,13 @@ export interface RestoredProject {
   }>;
 }
 
-export async function listHistoryProjects(): Promise<HistoryProject[]> {
-  const response = await authFetch(`${API_BASE}/api/history/sessions`);
+export async function listHistoryProjects(limit: number, before?: HistoryProject, signal?: AbortSignal): Promise<HistoryProject[]> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (before) {
+    query.set("before_updated_at", before.updatedAt);
+    query.set("before_id", before.id);
+  }
+  const response = await authFetch(`${API_BASE}/api/history/sessions?${query}`, { signal });
   const rows = await readJson<Array<{
     id: string;
     project_id?: string | null;

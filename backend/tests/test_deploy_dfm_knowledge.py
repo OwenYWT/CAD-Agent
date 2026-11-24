@@ -15,6 +15,7 @@ reset between, so the real seed data loads fresh.
 """
 import asyncio
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -124,27 +125,20 @@ def test_update_rule_empty_body_400(client):
 
 
 def test_clone_rule_set_then_delete_clone(client):
-    r = client.post(
-        "/api/dfm/rule-sets",
-        json={"source_id": "default_cnc", "new_id": "acme_cnc", "new_name": "ACME CNC"},
-    )
-    assert r.status_code == 200
-    cloned = r.json()
-    assert cloned["id"] == "acme_cnc"
-    assert cloned["name"] == "ACME CNC"
-    assert cloned["process"] == "CNC"
-    assert cloned["rules"], "clone should copy the source rules"
-
-    # clone now appears in the list
-    ids = {s["id"] for s in client.get("/api/dfm/rules").json()}
-    assert "acme_cnc" in ids
-
-    # a non-builtin (no default_ prefix) clone CAN be deleted -> 200
-    d = client.delete("/api/dfm/rule-sets/acme_cnc")
-    assert d.status_code == 200
-    assert d.json() == {"ok": True}
-    ids_after = {s["id"] for s in client.get("/api/dfm/rules").json()}
-    assert "acme_cnc" not in ids_after
+    for name in ("acme_cnc", "default_acme_cnc", "acme/cnc"):
+        body = {"source_id": "default_cnc", "new_id": name, "new_name": "ACME CNC"}
+        created = client.post("/api/dfm/rule-sets", json=body)
+        assert created.status_code == 200
+        assert created.json()["id"] == name and created.json()["rules"]
+        assert created.json()["process"] == "CNC" and created.json()["name"] == "ACME CNC"
+        assert client.post("/api/dfm/rule-sets", json=body).status_code == 409
+        assert client.post("/api/dfm/rule-sets", json={**body, "new_name": "另一副本"}).status_code == 409
+        assert any(item["id"] == name for item in client.get("/api/dfm/rules").json())
+        rule = created.json()["rules"][0]
+        result = client.put("/api/dfm/rules/" + quote(rule["id"], safe=""), json={"enabled": False})
+        assert result.status_code == 200 and result.json()["enabled"] is False
+        assert client.delete("/api/dfm/rule-sets/" + quote(name, safe="")).json() == {"ok": True}
+        assert all(item["id"] != name for item in client.get("/api/dfm/rules").json())
 
 
 def test_clone_unknown_source_404(client):
@@ -252,6 +246,39 @@ def test_kg_recommend_oversized_penalises(client):
     # at least one process must score strictly lower for the oversized part
     penalised = [pid for pid in huge_by_id if huge_by_id[pid] < small_by_id.get(pid, 1.0)]
     assert penalised, "oversized part should reduce some process scores"
+
+
+def test_material_limit_governs_recommendation(client):
+    for material, limit, size, expected in [
+        ("304", 600, 599, .7), ("304", 600, 600, .7),
+        ("304", 600, 601, .1), ("304", 600, 605, .1),
+        ("304", 600, 800, .1), ("304", 600, 801, .1), ("6061", 800, 605, 1),
+    ]:
+        rows = client.post("/api/knowledge/recommend", json={"material": material, "max_dimension": size}).json()
+        result = next(row for row in rows if row["process_id"] == "proc_cnc_5axis")
+        assert (result["constraints"]["max_size"], result["score"]) == (limit, expected)
+        assert any("超过" in note for note in result["notes"]) == (size > limit)
+
+
+@pytest.mark.asyncio
+async def test_cold_rules_and_knowledge_publish_only_complete_seed(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "history_db_path", str(tmp_path / "history.db"))
+    monkeypatch.setattr(kg, "DB_PATH", tmp_path / "knowledge.db")
+    for store, read in ((rule_store, rule_store.list_rule_sets), (kg, kg.list_nodes)):
+        await store.close_db()
+        try:
+            original = store._seed_defaults
+            async def interrupted(db):
+                await original(db)
+                raise RuntimeError("interrupted after seed inserts")
+            with monkeypatch.context() as fail:
+                fail.setattr(store, "_seed_defaults", interrupted)
+                with pytest.raises(RuntimeError, match="interrupted"):
+                    await read()
+            results = await asyncio.gather(*(read() for _ in range(8)))
+            assert results[0] and all(rows == results[0] for rows in results)
+        finally:
+            await store.close_db()
 
 
 def test_kg_recommend_unknown_material_penalised(client):

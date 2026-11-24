@@ -1,9 +1,8 @@
-"""Actual import/edit/check/reopen and UI regressions, without HTTP substitutions.
-
-Connection failures use a real offline browser; no fake CAD or provider runs.
-"""
+"""Real imports, edits, checks, reloads and releases with browser delivery faults."""
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 import os
 from pathlib import Path
 import re
@@ -12,6 +11,7 @@ from uuid import uuid4
 
 import httpx
 from playwright.sync_api import expect, sync_playwright
+from cloud_release_browser import publish_and_download
 from runtime_fixture import run_native_seed, wait_for_task, task_wait_seconds
 
 API = os.environ['CAD_NATIVE_E2E_URL']
@@ -91,6 +91,146 @@ asyncio.run(main())
 '''
 
 
+def check_concurrent_imports(api, source_dir):
+    for other, expected in (('baseline.step', [202, 409]), ('baseline.FCStd', [202, 202])):
+        data = {key: str(uuid4()) for key in ('session_id', 'panel_id', 'idempotency_key')}
+        start = Barrier(2)
+        def upload(name):
+            content = (source_dir / name).read_bytes()
+            start.wait(timeout=10)
+            return api.post('/api/documents/imports', data=data, files={'file': ('concurrent-' + name, content)})
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(upload, ('baseline.FCStd', other)))
+        assert sorted(r.status_code for r in responses) == expected
+        receipts = [r.json() for r in responses if r.status_code == 202]
+        assert len({r['workflow_run_id'] for r in receipts}) == 1
+        wait = wait_for_task(api, receipts[0]['workflow_run_id'], accept_confirmation=True)
+        assert wait['status'] == 'succeeded', wait.get('error_code')
+        # Enumerate the entire document prefix so a losing file with a
+        # different digest cannot hide behind a correct winner receipt.
+        checked = run_native_seed("""import asyncio, sys
+from uuid import UUID
+from sqlalchemy import text
+from app.config import settings
+from app.db import close_database, tenant_transaction
+from app.domain.identity import user_principal
+from app.models.workflow_requests import NativeImportV1
+from app.object_store import get_object_store_client
+async def main():
+    user = user_principal(sys.argv[1])
+    async with tenant_transaction(user.tenant_id, user.principal_id) as conn:
+        payload = (await conn.execute(text('SELECT request_payload FROM workflow_runs WHERE idempotency_key=:key AND tenant_id=:tenant'),
+            {'key': sys.argv[2], 'tenant': user.tenant_id})).scalars().one()
+    source = NativeImportV1.model_validate(payload['operation_context']['native_import'])
+    key = source.object_key(user.tenant_id, UUID(payload['branch_id']))
+    s3 = get_object_store_client()
+    assert s3.get_bucket_versioning(Bucket=settings.object_store_bucket)['Status'] == 'Enabled'
+    versions = s3.list_object_versions(Bucket=settings.object_store_bucket, Prefix=key.rsplit('/', 1)[0] + '/')
+    assert [r['Key'] for r in versions['Versions']] == [key] and not versions.get('DeleteMarkers')
+    await close_database()
+asyncio.run(main())
+""", [PRIVATE['owner']['user']['id'], data['idempotency_key']])
+        assert checked.returncode == 0, checked.stderr
+
+
+def check_document_session(page, api, document):
+    path = "/api/documents/" + document["document_id"]
+    shared = page.context.new_page()
+    try:
+        shared.goto(WEB + "?document=" + document["document_id"])
+        shared.get_by_role("tab", name="共享", exact=True).click()
+        synced = shared.get_by_text("文档已同步", exact=False)
+        expect(synced).to_be_visible()
+        page.get_by_role("button", name="打开账号管理").click()
+        with shared.expect_websocket(lambda ws: path + "/stream" in ws.url):
+            page.get_by_role("button", name="刷新登录状态").click()
+        expect(synced).to_be_visible()
+        page.get_by_role("button", name="关闭账号管理").click()
+
+        body = "回执丢失后重试 " + uuid4().hex
+        def lose_reply(route):
+            response = route.fetch()
+            assert response.status == 201
+            route.abort("failed")
+
+        comment = shared.get_by_role("textbox", name="文档评论")
+        save = shared.get_by_role("button", name="保存评论")
+        quota_body = "存储恢复后提交 " + uuid4().hex
+        comment.fill(quota_body)
+        # Fill real browser storage down to the last writable character.
+        shared.evaluate("""() => {
+            let value = '';
+            for (let step = 1024 * 1024; step >= 1; step /= 2) {
+                for (;;) {
+                    const next = value + 'x'.repeat(step);
+                    try { sessionStorage.setItem('qa-comment-quota', next); }
+                    catch (error) { if (error.name !== 'QuotaExceededError') throw error; break; }
+                    value = next;
+                }
+            }
+        }""")
+        posts = []
+        shared.on("request", lambda req: posts.append(req.url)
+                  if req.method == "POST" and req.url.endswith("/comments") else None)
+        save.click()
+        expect(shared.get_by_role("alert")).to_contain_text("浏览器存储")
+        expect(save).to_be_enabled()
+        expect(comment).to_have_value(quota_body)
+        assert not posts
+        shared.evaluate("sessionStorage.removeItem('qa-comment-quota')")
+        save.click()
+        expect(comment).to_have_value("")
+        assert len(posts) == 1
+        response = api.get(path + "/collaboration")
+        response.raise_for_status()
+        assert sum(row["body"] == quota_body for row in response.json()["comments"]) == 1
+
+        shared.route("**/comments", lose_reply, times=1)
+        comment.fill(body)
+        save.click()
+        expect(shared.get_by_role("alert")).to_be_visible()
+        shared.reload()
+        shared.get_by_role("tab", name="共享", exact=True).click()
+        expect(comment).to_have_value(body)
+        save.click()
+        expect(comment).to_have_value("")
+        for expected in (1, 2):
+            if expected == 2:
+                comment.fill(body)
+                save.click()
+                expect(comment).to_have_value("")
+            response = api.get(path + "/collaboration")
+            response.raise_for_status()
+            assert sum(row["body"] == body for row in response.json()["comments"]) == expected
+        publish_and_download(shared, api, path, [], OUT / "release-without-analyses.zip")
+    finally:
+        shared.close()
+
+
+def check_dfm_rule_sets(page, call):
+    sets = call("GET", "/api/dfm/rules")
+    source = next(group for group in sets if group["process"] == "FDM")
+    copy = call("POST", "/api/dfm/rule-sets", json={
+        "source_id": source["id"], "new_id": uuid4().hex, "new_name": "Browser threshold comparison",
+    })
+    try:
+        rule = next(item for item in copy["rules"] if item["threshold_min"] is not None and item["threshold_max"] is None)
+        changed = call("PUT", "/api/dfm/rules/" + rule["id"], json={"threshold_min": rule["threshold_min"] + 1})
+        page.locator(".workspace-header").get_by_role("button", name="设置", exact=True).click()
+        settings = page.get_by_role("dialog", name="设置", exact=True)
+        settings.get_by_role("tab", name="DFM 规则", exact=True).click()
+        settings.get_by_role("button", name="FDM 打印", exact=True).click()
+        expected = {rule["id"] for group in [*sets, copy] if group["process"] == "FDM" for rule in group["rules"]}
+        rows = settings.locator("[data-rule-id]")
+        expect(rows).to_have_count(len(expected))
+        assert set(rows.evaluate_all("(rows) => rows.map(row => row.dataset.ruleId)")) == expected
+        edited = settings.locator(f'[data-rule-id="{changed["id"]}"]').get_by_label("最小值", exact=False)
+        assert float(edited.input_value()) == changed["threshold_min"]
+        settings.get_by_role("button", name="关闭设置", exact=True).click()
+    finally:
+        call("DELETE", "/api/dfm/rule-sets/" + copy["id"])
+
+
 def run():
     OUT.mkdir(parents=True, exist_ok=False)
     OUT.chmod(0o700)
@@ -145,12 +285,17 @@ def run():
                 assert evidence.returncode == 0 and 'IMPORT_EVIDENCE=' in evidence.stdout
             commit(task['change_set']['id'])
             same = call('POST','/api/documents/imports',data=data,files={'file':(name,content)})
-            assert same['workflow_run_id']==receipt['workflow_run_id']
+            assert same['workflow_run_id']==receipt['workflow_run_id'] and same['status']=='succeeded'
             recovered = call('GET','/api/documents/imports/receipt', params={k:data[k] for k in ('session_id','panel_id','idempotency_key')})
-            assert recovered['workflow_run_id']==receipt['workflow_run_id']
+            assert recovered==same
+            other_profile = {**data, 'manufacturing_profile': json.dumps({'process':'fdm','material':'PETG'})}
+            assert api.post('/api/documents/imports',data=other_profile,files={'file':(name,content)}).status_code==409
+            assert api.post('/api/documents/imports',data=data,files={'file':('different'+name,content)}).status_code==409
             assert api.post('/api/documents/imports',data={**data,'idempotency_key':str(uuid4())},files={'file':(name,content)}).status_code==422
             return receipt, call('GET','/api/documents/'+receipt['branch_id']), data
 
+        check_concurrent_imports(api, kernel/'input')
+        records.append('concurrent_imports_one_workflow_and_one_source_version')
         fcstd, doc, fcstd_request = import_file('baseline.FCStd')
         step, step_doc, _ = import_file('baseline.step')
         curved, curved_doc, _ = import_file('curved-import.step')
@@ -345,6 +490,9 @@ def run():
                 scene=page.get_by_test_id('document-scene')
                 expect(scene).to_have_attribute('data-revision',saved['head_revision_id'],timeout=90000)
                 expect(page.get_by_test_id('view-identity')).to_have_css('background-color','rgb(255, 255, 255)')
+                check_document_session(page, api, saved)
+                records.append('comment_quota_preserves_draft_and_retries_once')
+                records.append('document_token_rotation_comment_retry_and_release_download')
                 records.append('actual_auth_error_padding_control_sizes_and_saved_reopen')
                 for width in [1440,1024,768,390,320]:
                     page.set_viewport_size({'width':width,'height':900})
@@ -429,6 +577,8 @@ def run():
                 expect(page.get_by_test_id('document-scene')).to_have_attribute('data-revision',saved['head_revision_id'],timeout=90000)
                 page.get_by_role('button',name='返回 Agent',exact=True).click()
                 records.append('actual_async_check_reload_and_readonly_graphical_revision_comparison')
+                check_dfm_rule_sets(page, call)
+                records.append('all_same_process_rule_ids_and_custom_threshold_visible')
                 page.locator('.workspace-header').get_by_role('button',name='设置',exact=True).click()
                 settings=page.get_by_role('dialog',name='设置',exact=True)
                 expect(settings.locator('.ww-rule').first).to_be_visible()

@@ -8,7 +8,7 @@ export function initialRequirementBasis(objective: string, preview?: Requirement
   // No second grammar here may erase Chinese units or implicit shape rules.
   const dimensions = preview?.dimensions ?? '';
   const complete = preview?.complete ?? false;
-  return {schema_version:'requirement-basis.v1', target:objective.slice(0,1000), purpose:'',
+  return {schema_version:'requirement-basis.v1', target:objective, purpose:'',
     design_scope:physical ? 'physical_fit' : 'geometry',
     source_kind: !physical && complete ? 'user_specification' : 'none',
     source_reference: !physical && complete ? '用户需求中指定的设计尺寸' : '',

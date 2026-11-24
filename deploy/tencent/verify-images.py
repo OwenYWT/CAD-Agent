@@ -36,7 +36,7 @@ def main():
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     sources = {f["path"]: f["sha256"] for f in json.loads(args.manifest.read_text())["files"]}
-    backend = {}
+    backend = {"/app/" + path: sources[path] for path in ("backend/requirements.txt", "backend/requirements.lock")}
     for path, digest in sources.items():
         if path.startswith(("backend/app/", "backend/examples/", "backend/alembic/")):
             backend["/app/" + path] = digest

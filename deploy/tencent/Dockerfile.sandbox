@@ -31,7 +31,9 @@ COPY backend/sandbox/dfm_validation.py /opt/cad-agent/dfm_validation.py
 COPY backend/sandbox/mesh_normalization.py /opt/cad-agent/mesh_normalization.py
 
 # Keep the complete source inventory aligned with the standard runtime image.
+RUN cp /opt/cad-agent/runtime-requirements.txt /tmp/base-runtime-requirements.txt
 COPY backend/sandbox/runtime-requirements.txt /opt/cad-agent/runtime-requirements.txt
+RUN cmp /tmp/base-runtime-requirements.txt /opt/cad-agent/runtime-requirements.txt && rm /tmp/base-runtime-requirements.txt
 COPY backend/sandbox/runtime-lock.json /opt/cad-agent/runtime-lock.json
 COPY backend/sandbox/patch_build123d.py /opt/cad-agent/patch_build123d.py
 COPY backend/sandbox/freecad_cut_diagnostics.py /opt/cad-agent/freecad_cut_diagnostics.py

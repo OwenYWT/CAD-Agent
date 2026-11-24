@@ -49,14 +49,16 @@ export default function RequirementCard({ objective, profile, onConfirm, onBack,
   };
   const complete=basis.source_kind!=='none' && !!basis.dimensions.trim() && !!basis.source_reference.trim();
   return <section className="ww-requirement-card" aria-label="执行前需求确认" data-task-phase="needs_input" onFocusCapture={event=>{
-    // Focusing/selecting a field starts editing before its first change event.
-    // A late preview must not replace that value or move the input selection.
-    if (event.target.matches('input, textarea, select')) edited.current = true;
+    if (!edited.current && event.target.matches('input, textarea, select')) {
+      edited.current = true;
+      // Start from the visible render even if a preview update is already queued.
+      setBasis(basis);
+    }
   }}>
     <h3>{complete ? "确认需求摘要" : "等待补充 · 确认关键条件"}</h3>
     {previewError ? <p role="status">{previewError}</p> : null}
     <p className="type-caption">只补充影响几何和适配的依据。修改尺寸后，请一并核对目标中的数值和条件。请核对下方制造设置；下列信息会随任务保存。</p>
-    <label>目标<textarea aria-label="建模目标" maxLength={1000} rows={2} value={basis.target} onChange={e=>set({target:e.target.value})} /></label>
+    <label>目标<textarea aria-label="建模目标" maxLength={4000} rows={2} value={basis.target} onChange={e=>set({target:e.target.value})} /></label>
     <label>建模用途<select aria-label="建模范围" value={basis.design_scope} onChange={e=>set({design_scope:e.target.value as RequirementBasis['design_scope'],source_kind:'none',source_reference:'',concept_acknowledged:false})}><option value="geometry">几何设计（按指定尺寸创建）</option><option value="physical_fit">与实物适配或装配</option></select></label>
     {physical ? <>
       <label>尺寸依据<select aria-label="尺寸依据" value={basis.source_kind} onChange={e=>set({source_kind:e.target.value as RequirementBasis['source_kind']})}>

@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -11,6 +12,7 @@ import aiosqlite
 from app.config import settings
 
 _db: aiosqlite.Connection | None = None
+_init_lock = asyncio.Lock()
 _PHONE_RE = re.compile(r"^\+?\d{6,20}$")
 
 
@@ -42,13 +44,20 @@ async def get_db() -> aiosqlite.Connection:
     global _db
     if _db is not None:
         return _db
-    path = _db_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    _db = await aiosqlite.connect(str(path))
-    _db.row_factory = aiosqlite.Row
-    await _db.execute("PRAGMA journal_mode=WAL")
-    await _init_tables(_db)
-    return _db
+    async with _init_lock:
+        if _db is None:
+            path = _db_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            db = await aiosqlite.connect(str(path))
+            try:
+                db.row_factory = aiosqlite.Row
+                await db.execute("PRAGMA journal_mode=WAL")
+                await _init_tables(db)
+            except BaseException:
+                await db.close()
+                raise
+            _db = db
+        return _db
 
 
 async def close_db():
@@ -530,19 +539,13 @@ async def ensure_default_invite_code():
     await db.commit()
 
 
-async def consume_invite_code(code: str) -> bool:
-    if settings.durable_control_plane_enabled:
-        from app.storage import postgres_auth
-
-        return await postgres_auth.consume_invite_code(code)
-    await ensure_default_invite_code()
+async def _claim_invite(db: aiosqlite.Connection, code: str) -> bool:
     normalized = code.strip().upper()
     if not normalized:
         return False
     allowed = _seed_invite_codes()
     if allowed and normalized not in allowed:
         return False
-    db = await get_db()
     # Pre-check expiry separately: SQLite can't reliably compare arbitrary ISO
     # strings, and expiry is time- not count-based, so it's safe to read first.
     cursor = await db.execute(
@@ -565,7 +568,6 @@ async def consume_invite_code(code: str) -> bool:
         """,
         (normalized,),
     )
-    await db.commit()
     return cursor.rowcount == 1
 
 
@@ -631,35 +633,36 @@ async def disable_invite_code(code: str):
     await db.commit()
 
 
-async def create_user(phone: str, password: str, registered_via: str) -> dict:
+async def create_user(phone: str, password: str, registered_via: str, *, invite_code: str | None = None) -> dict:
     if settings.durable_control_plane_enabled:
         from app.storage import postgres_auth
 
         return await postgres_auth.create_user(
             phone,
             password,
-            registered_via,
+            registered_via, invite_code=invite_code,
         )
     normalized = normalize_phone(phone)
     if normalized == "admin":
         raise ValueError("管理员账号不能通过注册创建")
-    if await user_exists(normalized):
-        raise ValueError("该手机号已注册，请直接登录")
-    password_hash = hash_password(password)
-    # Random, non-guessable id. (Previously sha256("phone:"+phone)[:24], which made
-    # every user's id derivable from their phone number — combined with a leaked
-    # signing key that turned into trivial token forgery.)
+    if invite_code is not None:
+        await ensure_default_invite_code()
+    await get_db()
     user_id = secrets.token_hex(16)
     now = _now_text()
-    db = await get_db()
-    await db.execute(
-        """
-        INSERT INTO users (id, phone, password_hash, registered_via, created_at, last_login_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (user_id, normalized, password_hash, registered_via, now, now),
-    )
-    await db.commit()
+    async with aiosqlite.connect(_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("BEGIN IMMEDIATE")
+        if invite_code is not None and not await _claim_invite(db, invite_code):
+            raise ValueError("邀请码无效、已过期或已用完")
+        if await db.execute_fetchall("SELECT 1 FROM users WHERE phone=? LIMIT 1", (normalized,)):
+            raise ValueError("该手机号已注册，请直接登录")
+        await db.execute(
+            """INSERT INTO users (id, phone, password_hash, registered_via, created_at, last_login_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (user_id, normalized, hash_password(password), registered_via, now, now),
+        )
+        await db.commit()
     user = await get_user(user_id)
     if user is None:
         raise RuntimeError("用户创建失败")

@@ -75,3 +75,11 @@ test('all wordings use server semantics, while absent or incomplete previews can
   assert.equal(initialRequirementBasis('适配实物的100×60×3mm板',
     {dimensions: '适配实物的100×60×3mm板', complete: true}).source_kind, 'none');
 });
+
+test('accepted long objectives retain their final requirement at every intake boundary', () => {
+  for (const size of [999, 1000, 1001, 1501, 4000]) {
+    const tail = '尾部公差 0.3 mm';
+    const objective = '板'.repeat(size - tail.length) + tail;
+    assert.equal(initialRequirementBasis(objective).target, objective);
+  }
+});

@@ -187,3 +187,21 @@ def test_capability_actions_report_runtime_blockers(monkeypatch, node_available)
     if not node_available:
         assert all(action.blocked_reason for action in viewer.actions)
         assert any("node executable was not found" in reason for reason in viewer.blocked_reasons)
+
+@pytest.mark.asyncio
+async def test_history_cursor_disambiguates_timestamps_and_survives_new_session(isolated_history):
+    for i in range(55):
+        await history.create_session(f"s-{i:02}", title=str(i), user_id="page-owner")
+    await history.create_session("other", title="other", user_id="other-owner")
+    timestamp = "2026-11-22T12:00:00+00:00"
+    db = await history.get_db()
+    await db.execute("UPDATE sessions SET updated_at=?", (timestamp,))
+    await db.commit()
+    rows = await history.list_sessions("page-owner")
+    assert len(rows) == 50
+    await history.create_session("new", title="new", user_id="page-owner")
+    await db.execute("UPDATE sessions SET updated_at=? WHERE id='new'", ("2026-11-23T12:00:00+00:00",))
+    await db.commit()
+    end = rows[-1]
+    rows += await history.list_sessions("page-owner", before=(end["updated_at"], end["id"]))
+    assert [r["id"] for r in rows] == [f"s-{i:02}" for i in reversed(range(55))]

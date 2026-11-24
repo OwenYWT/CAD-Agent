@@ -68,13 +68,14 @@ function RuleRow({ rule, onSaved }: { rule: DFMRuleData; onSaved: (rule: DFMRule
     if (values.threshold_min !== undefined && values.threshold_max !== undefined && values.threshold_min > values.threshold_max) { setError("最小阈值不能大于最大阈值"); return; }
     void update(values);
   };
-  return <article className={`ww-rule ${rule.enabled ? "" : "ww-rule--inactive"}`} aria-busy={pending}>
+  return <article data-rule-id={rule.id} className={`ww-rule ${rule.enabled ? "" : "ww-rule--inactive"}`} aria-busy={pending}>
     <label className="ww-rule-label">
       <input type="checkbox" checked={rule.enabled} disabled={pending || Boolean(uncertainUpdate)} onChange={event => void update({ enabled: event.target.checked })} />
       <span className="ww-rule-description"><span className="block text-[var(--ink)]">{rule.description}</span>
         <span className="block type-caption text-[var(--muted)]">{rule.check_type === "geometric" ? "几何规则" : "确定性启发规则"} · {rule.severity} · {rule.enabled ? "已启用" : "未启用"}</span>
       </span>
     </label>
+    <small className="type-caption text-[var(--muted)]" data-i18n-skip>{rule.id}</small>
     {rule.check_type === "geometric" && (rule.threshold_min !== null || rule.threshold_max !== null) ? <div className="ww-rule-thresholds">
       {rule.threshold_min !== null ? <label>最小值 ({rule.unit})<input aria-invalid={Boolean(error)} disabled={pending} type="number" step="any" value={min} onChange={event => edit('threshold_min', event.target.value)} /></label> : null}
       {rule.threshold_max !== null ? <label>最大值 ({rule.unit})<input aria-invalid={Boolean(error)} disabled={pending} type="number" step="any" value={max} onChange={event => edit('threshold_max', event.target.value)} /></label> : null}
@@ -104,7 +105,7 @@ export default function DFMRuleConfig({ embedded = false }: { embedded?: boolean
     return () => controller.abort();
   }, [open, attempt]);
   if (!open) return <button className="ww-settings-entry" onClick={() => { setLoading(true); setError(""); setOpen(true); }} type="button">DFM 规则配置</button>;
-  const active = ruleSets.find(item => item.process === activeProcess);
+  const active = ruleSets.filter(item => item.process === activeProcess);
   return <section className="space-y-3 p-4" aria-busy={loading}>
     <header className="flex items-center justify-between gap-2"><h4 className="type-section-heading">DFM 规则配置</h4>
       {!embedded ? <button className="workspace-button" type="button" onClick={() => guardDraft(() => setOpen(false))}>收起</button> : null}</header>
@@ -112,7 +113,9 @@ export default function DFMRuleConfig({ embedded = false }: { embedded?: boolean
     {error ? <div role="alert"><p className="text-red-700">{error}{ruleSets.length ? "；以下为上次读取的数据。" : ""}</p><button className="workspace-button mt-2" type="button" disabled={loading} onClick={() => { setLoading(true); setError(""); setAttempt(value => value + 1); }}>重试</button></div> : null}
     {!loading && !error && !ruleSets.length ? <p>暂无规则集</p> : null}
     <div className="flex flex-wrap gap-2">{[...new Set(ruleSets.map(item => item.process))].map(process => <button className="workspace-button" aria-pressed={activeProcess === process} key={process} type="button" onClick={() => guardDraft(() => setActiveProcess(process))}>{PROCESS_LABELS[process] || process}</button>)}</div>
-    <div className="ww-rule-list">{active?.rules.map(rule => <RuleRow key={`${rule.process}:${rule.id}`} rule={rule} onSaved={saved => setRuleSets(previous => previous.map(set => ({ ...set, rules: set.rules.map(item => item.id === saved.id ? saved : item) })))} />)}</div>
-    {!loading && !error && active && !active.rules.length ? <p>此工艺暂无规则</p> : null}
+    {active.map(group => <section key={group.id} data-rule-set-id={group.id}><h5>{group.name} <small data-i18n-skip>{group.id}</small></h5>
+      <div className="ww-rule-list">{group.rules.map(rule => <RuleRow key={`${rule.process}:${rule.id}`} rule={rule} onSaved={saved => setRuleSets(previous => previous.map(set => ({ ...set, rules: set.rules.map(item => item.id === saved.id ? saved : item) })))} />)}</div>
+    </section>)}
+    {!loading && !error && active.length > 0 && active.every(group => !group.rules.length) ? <p>此工艺暂无规则</p> : null}
   </section>;
 }

@@ -159,9 +159,7 @@ async def register_with_code(req: RegisterWithCodeRequest):
 @router.post("/register/invite")
 async def register_with_invite(req: RegisterWithInviteRequest):
     try:
-        if not await auth_store.consume_invite_code(req.invite_code):
-            raise HTTPException(status_code=400, detail="邀请码无效、已过期或已用完")
-        user = await auth_store.create_user(req.phone, req.password, "invite_code")
+        user = await auth_store.create_user(req.phone, req.password, "invite_code", invite_code=req.invite_code)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return await _auth_response(user)

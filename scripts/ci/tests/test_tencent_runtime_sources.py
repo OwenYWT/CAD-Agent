@@ -40,7 +40,8 @@ def test_tencent_image_verifier_covers_every_declared_runtime_file(tmp_path, mon
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     expected = runtime_copies(ROOT/'backend/sandbox/Dockerfile')
-    files = [{'path':p, 'sha256':hashlib.sha256((ROOT/p).read_bytes()).hexdigest()} for p in expected.values()]
+    locks = ["backend/requirements.txt", "backend/requirements.lock"]
+    files = [{'path':p, 'sha256':hashlib.sha256((ROOT/p).read_bytes()).hexdigest()} for p in [*expected.values(), *locks]]
     manifest = tmp_path/'manifest.json';manifest.write_text(json.dumps({'files':files}))
     captured = {}
     def capture(image, sources):
@@ -50,5 +51,7 @@ def test_tencent_image_verifier_covers_every_declared_runtime_file(tmp_path, mon
     monkeypatch.setattr(sys, 'argv', ['verify-images', '--manifest', str(manifest),
         '--backend-image', 'backend', '--sandbox-image', 'sandbox', '--report', str(tmp_path/'report.json')])
     module.main()
+    for path in locks:
+        assert captured['backend']['/app/' + path] == hashlib.sha256((ROOT/path).read_bytes()).hexdigest()
     assert captured['sandbox'] == {target:hashlib.sha256((ROOT/source).read_bytes()).hexdigest()
                                   for target, source in expected.items()}

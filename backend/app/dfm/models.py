@@ -19,6 +19,10 @@ def validate_rule_thresholds(rule: dict) -> None:
         raise ValueError('规则最小阈值不能大于最大阈值')
 
 
+class RuleSetConflict(ValueError):
+    """The requested rule set identifier is already in use."""
+
+
 class DFMRule(BaseModel):
     id: str
     process: str  # "CNC" | "FDM" | "SLA" | "injection_mold" | "sheet_metal"

@@ -107,8 +107,9 @@ async def recover_session_submission(principal, *, session_id: str, panel_id: st
     No input resolution or head comparison is repeated: an acknowledged workflow
     may already be complete, and its original base is still the correct identity.
     """
-    if not isinstance(idempotency_key, str) or not 1 <= len(idempotency_key) <= 500:
+    if not isinstance(idempotency_key, str) or not 1 <= len(idempotency_key.strip()) <= 500:
         raise ValueError("原请求标识无效")
+    idempotency_key = idempotency_key.strip()
     from app.services.cloud_documents import authorized_document
     async with tenant_transaction(principal.tenant_id, principal.principal_id) as conn:
         row = (await conn.execute(text("""SELECT w.id,w.project_id,w.status,w.request_payload,b.id AS branch_id
@@ -116,7 +117,9 @@ async def recover_session_submission(principal, *, session_id: str, panel_id: st
                 AND b.project_id=w.project_id AND b.tenant_id=w.tenant_id
             JOIN workspace_sessions s ON s.project_id=w.project_id AND s.tenant_id=w.tenant_id
             WHERE w.tenant_id=:tenant AND w.requested_by_principal_id=:principal AND w.idempotency_key=:key
-                AND s.id=:session AND b.name=:branch_name"""),
+                AND s.id=:session AND b.name=:branch_name
+                AND (w.request_payload->'operation_context'->>'rule' IS DISTINCT FROM 'explicit_native_import'
+                     OR EXISTS (SELECT 1 FROM cad_operations o WHERE o.id=w.id))"""),
             {'tenant':principal.tenant_id,'principal':principal.principal_id,'key':idempotency_key,
              'session':session_id,'branch_name':'panel-'+hashlib.sha256(panel_id.encode()).hexdigest()[:16]})).mappings().one_or_none()
         if row is None:
@@ -368,6 +371,7 @@ async def submit_durable_workflow(
     requirement_basis: RequirementBasisV1 | None = None,
     source_kind: str = "user_task",
     source_id: str | None = None,
+    native_import_bytes: bytes | None = None,
 ) -> DurableSubmission:
     normalized_objective = objective.strip()
     # Older clients wrapped bare continuation commands as new design objectives.
@@ -586,6 +590,7 @@ async def submit_durable_workflow(
             start_backend = legacy_backend if legacy_generate_replay else modeling_backend
             start_context = None if legacy_generate_replay else operation_context
             workflow_run_id, handle = await start_mcad_agent_v2_workflow(
+                native_import_bytes=native_import_bytes,
                 tenant_id=principal.tenant_id,
                 project_id=project_id,
                 principal_id=principal.principal_id,
@@ -665,6 +670,7 @@ async def submit_durable_workflow(
                     revision_id=document['head_revision_id'], state_version=document['state_version'], objective=normalized_objective)
     if is_agent_v2:
         workflow_run_id, handle = await start_mcad_agent_v2_workflow(
+            native_import_bytes=native_import_bytes,
             tenant_id=principal.tenant_id,
             project_id=project_id,
             principal_id=principal.principal_id,

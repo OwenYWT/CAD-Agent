@@ -1,4 +1,5 @@
 """Real CLI daemon, HTTP/DB queue and disk delivery; live five-minute crash recovery."""
+import hashlib
 import importlib.util
 import json
 import os
@@ -42,7 +43,17 @@ def main():
     assert executed.returncode==0,(executed.stdout,executed.stderr)
     rows=call(client,'GET',path+'/bridges')['deliveries'];actual=next(r for r in rows if r['id']==delivery['delivery_id'])
     assert actual['status']=='delivered' and actual['attempts']==1
-    receipt=actual['receipt'];assert len(list(Path(receipt['directory']).iterdir()))==receipt['file_count']==14
+    receipt=actual['receipt']
+    directory=Path(receipt['directory'])
+    release_info=call(client,'GET',path+'/releases/'+release)
+    manifest_bytes=(directory/'manifest.json').read_bytes()
+    manifest_hash=hashlib.sha256(manifest_bytes).hexdigest()
+    assert manifest_hash==release_info['artifacts']['release_manifest']['sha256']
+    manifest=json.loads(manifest_bytes)
+    expected={entry['path']:entry['sha256'] for entry in manifest['files']}
+    expected['manifest.json']=manifest_hash
+    assert {f.name:hashlib.sha256(f.read_bytes()).hexdigest() for f in directory.iterdir()}==expected
+    assert receipt['file_count']==len(expected)
     assert call(client,'POST',path+'/releases/'+release+'/deliveries',json={'bridge_id':pair['bridge_id']},expected=202)=={'delivery_id':delivery['delivery_id'],'replayed':True}
     assert subprocess.run(command,capture_output=True,timeout=30).returncode==0
     # Stop after real local writes, before acknowledgement, and let the real lease expire.

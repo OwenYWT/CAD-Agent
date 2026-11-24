@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.auth import get_optional_user
 from app.storage.history import (
@@ -23,8 +25,20 @@ def _uid(user) -> str | None:
 
 
 @router.get("/sessions")
-async def api_list_sessions(user=Depends(get_optional_user)):
-    return await list_sessions(_uid(user))
+async def api_list_sessions(
+    user=Depends(get_optional_user), limit: int = Query(50, ge=1, le=100),
+    before_updated_at: str | None = Query(None, max_length=40),
+    before_id: str | None = Query(None, min_length=1, max_length=500),
+):
+    if (before_updated_at is None) != (before_id is None):
+        raise HTTPException(422, "请同时提供上一页的更新时间和项目 ID")
+    if before_updated_at is not None:
+        try:
+            datetime.fromisoformat(before_updated_at)
+        except ValueError as exc:
+            raise HTTPException(422, "分页时间无效") from exc
+    cursor = (before_updated_at, before_id) if before_updated_at is not None and before_id is not None else None
+    return await list_sessions(_uid(user), limit=limit, before=cursor)
 
 
 @router.get("/sessions/{session_id}/panels")

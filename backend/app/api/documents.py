@@ -70,9 +70,9 @@ async def upload_native_document(request: Request, principal: PrincipalContext =
                 idempotency_key=form.idempotency_key, manufacturing_profile=profile)
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
-    except DocumentConflict as exc:
+    except (DocumentConflict, IdempotencyConflict) as exc:
         raise HTTPException(409, str(exc)) from exc
-    except (ValueError, IdempotencyConflict) as exc:
+    except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
 

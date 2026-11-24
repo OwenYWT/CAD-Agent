@@ -11,9 +11,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
-from app.db import auth_transaction
+from app.db import auth_transaction, tenant_transaction
 from app.domain.identity import platform_service_principal, user_principal
-from app.repositories.identity import reconcile_principal
+from app.repositories.identity import ensure_principal, reconcile_principal
 
 
 def _now() -> datetime:
@@ -355,25 +355,20 @@ async def ensure_default_invite_code() -> None:
             )
 
 
-async def consume_invite_code(code: str) -> bool:
-    await ensure_default_invite_code()
-    normalized = code.strip().upper()
-    if not normalized:
-        return False
-    async with auth_transaction() as connection:
-        updated = await connection.execute(
-            text(
-                """
-                UPDATE auth_invite_codes
-                SET used_count=used_count + 1
-                WHERE code=:code AND disabled_at IS NULL
-                  AND used_count < max_uses
-                  AND (expires_at IS NULL OR expires_at >= CURRENT_TIMESTAMP)
-                """
-            ),
-            {"code": normalized},
-        )
-        return updated.rowcount == 1
+async def _claim_invite(connection, code: str) -> bool:
+    updated = await connection.execute(
+        text(
+            """
+            UPDATE auth_invite_codes
+            SET used_count=used_count + 1
+            WHERE code=:code AND disabled_at IS NULL
+              AND used_count < max_uses
+              AND (expires_at IS NULL OR expires_at >= CURRENT_TIMESTAMP)
+            """
+        ),
+        {"code": code.strip().upper()},
+    )
+    return updated.rowcount == 1
 
 
 async def create_invite_code(
@@ -464,6 +459,7 @@ async def create_user(
     phone: str,
     password: str,
     registered_via: str,
+    *, invite_code: str | None = None,
 ) -> dict:
     from app.storage.auth import hash_password, normalize_phone
 
@@ -472,37 +468,41 @@ async def create_user(
         raise ValueError("管理员账号不能通过注册创建")
     user_id = secrets.token_hex(16)
     context = user_principal(user_id)
-    await reconcile_principal(context, display_name=normalized)
+    if invite_code is not None:
+        await ensure_default_invite_code()
     now = _now()
-    try:
-        async with auth_transaction() as connection:
-            await connection.execute(
-                text(
-                    """
-                    INSERT INTO auth_users (
-                        id, tenant_id, principal_id, phone,
-                        phone_lookup_hash, password_hash, registered_via,
-                        created_at, last_login_at, updated_at
-                    ) VALUES (
-                        :id, :tenant, :principal, :phone,
-                        :phone_hash, :password_hash, :registered_via,
-                        :now, :now, :now
-                    )
-                    """
-                ),
-                {
-                    "id": user_id,
-                    "tenant": context.tenant_id,
-                    "principal": context.principal_id,
-                    "phone": normalized,
-                    "phone_hash": _phone_hash(normalized),
-                    "password_hash": hash_password(password),
-                    "registered_via": registered_via,
-                    "now": now,
-                },
-            )
-    except IntegrityError as exc:
-        raise ValueError("该手机号已注册，请直接登录") from exc
+    async with tenant_transaction(context.tenant_id, context.principal_id) as connection:
+        await ensure_principal(connection, context, display_name=normalized)
+        await connection.execute(text("SET LOCAL ROLE cad_agent_auth"))
+        if invite_code is not None and not await _claim_invite(connection, invite_code):
+            raise ValueError("邀请码无效、已过期或已用完")
+        inserted = await connection.execute(
+            text(
+                """
+                INSERT INTO auth_users (
+                    id, tenant_id, principal_id, phone,
+                    phone_lookup_hash, password_hash, registered_via,
+                    created_at, last_login_at, updated_at
+                ) VALUES (
+                    :id, :tenant, :principal, :phone,
+                    :phone_hash, :password_hash, :registered_via,
+                    :now, :now, :now
+                ) ON CONFLICT (phone_lookup_hash) DO NOTHING
+                """
+            ),
+            {
+                "id": user_id,
+                "tenant": context.tenant_id,
+                "principal": context.principal_id,
+                "phone": normalized,
+                "phone_hash": _phone_hash(normalized),
+                "password_hash": hash_password(password),
+                "registered_via": registered_via,
+                "now": now,
+            },
+        )
+        if not inserted.rowcount:
+            raise ValueError("该手机号已注册，请直接登录")
     user = await get_user(user_id)
     if user is None:
         raise RuntimeError("用户创建失败")

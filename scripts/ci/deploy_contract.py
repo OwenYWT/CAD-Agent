@@ -178,6 +178,21 @@ def main():
         subprocess.run([sys.executable, str(ROOT/'scripts/ci/deploy_http_contract.py'), 'permissions'], env=test_env, check=True)
         subprocess.run([sys.executable, str(ROOT/'backend/tests/e2e/dfm_draft_reconciliation_browser.py')],
             env={**test_env, 'CAD_DRAFT_PACKAGED': '1', 'CAD_DRAFT_RECONCILIATION_REPORT': str(report/'draft-reconciliation')}, check=True)
+        # Reuse the native revision committed through the shipped Nginx and the
+        # viewer already granted access by the permissions contract.
+        people = json.loads((private/'accounts.json').read_text())
+        fixture = json.loads((report/'packaged-browser/report.json').read_text())['fixture']
+        engineering_private = private/'engineering-accounts.json'
+        with engineering_private.open('x') as stream:
+            engineering_private.chmod(0o600)
+            json.dump({'owner': people['owner'], 'guest': people['viewer'],
+                       'document_id': fixture['document_id'], 'tenant_id': fixture['tenant_id']}, stream)
+        engineering_env = {**test_env, 'CAD_NATIVE_E2E_PRIVATE': str(engineering_private),
+                           'CAD_NATIVE_E2E_EVIDENCE_DIR': str(report/'packaged-engineering')}
+        for contract in ('cloud_engineering_acceptance', 'cloud_cam_browser', 'cloud_release_acceptance',
+                         'cloud_release_browser', 'cloud_bridge_acceptance'):
+            subprocess.run([sys.executable, str(ROOT/'backend/tests/e2e'/f'{contract}.py')],
+                           env=engineering_env, check=True)
         test_env.update(baseline_images)
         subprocess.run([sys.executable, str(ROOT/'scripts/ci/release_image_contract.py')], env=test_env, check=True)
         (report/'compose.json').write_text(json.dumps({'passed': True, 'source_sha': env.get('GITHUB_SHA'),

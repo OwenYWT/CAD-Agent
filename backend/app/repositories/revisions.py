@@ -11,12 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app.domain.revisions import (
     CandidateChangeSetCreated,
     InitialBranchCreated,
+    StaleBaseRevision,
 )
 from app.execution.canonical import canonical_sha256
-
-
-class StaleBaseRevision(RuntimeError):
-    """The requested base is no longer the branch head."""
 
 
 def _json(value: dict[str, Any]) -> str:

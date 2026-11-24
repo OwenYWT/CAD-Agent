@@ -20,3 +20,10 @@ are redacted in JSON payloads. Replay never executes activities or calls provide
 CI verifies digests and required scenarios before replaying with current code.
 Existing dynamic replay remains complementary coverage. Add new fixtures with
 provenance; never regenerate these files with current code to make replay pass.
+
+The `merge-*` histories were recorded on 2026-11-22. They cover busy restores
+from `tmp_1120` (immediate failure), `compare_YWT` (timer) and marked `main`.
+The two full visual workflows used the original branch workers, native FreeCAD,
+and controlled negative visual judgments. The tmp run preserved its geometry;
+the compare run attempted a repair. Only local paths in failure stack traces
+were redacted. The manifest identifies both the captured and checked-in bytes.
