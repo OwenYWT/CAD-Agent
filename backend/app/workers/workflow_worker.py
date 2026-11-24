@@ -30,6 +30,7 @@ from app.workflows.definitions import McadCheckWorkflow, McadDurableWorkflow, Na
 from app.services.workflow_dispatch import run_dispatcher, dispatcher_readiness
 from app.services.model_jobs import submit_activity, read_activity, cancel_activity
 from app.workers.model_job_worker import ModelJobWorker
+from app.workers.history_replay import agent_history_plugin
 from app.workflows.model_job import ModelJobWorkflow
 from app.contracts.model_operations import DURABLE_OPERATIONS
 
@@ -92,6 +93,7 @@ def build_agent_v2_workflow_worker(
     }
     return ModelJobWorker(
         client,
+        plugins=[agent_history_plugin(client, settings.temporal_agent_v2_task_queue)],
         model_operations=operations,
         task_queue=settings.temporal_agent_v2_task_queue,
         workflows=[McadAgentWorkflowV2,ModelJobWorkflow],

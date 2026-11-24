@@ -22,9 +22,8 @@ from tests.intake_semantics import intake_case, IntakeSemanticsRequirements, Int
 from tests.rectangular_assembly import assembly_case, AssemblyRequirements, AssemblyOperations
 
 
-async def verify_preview_preserves_input(page):
-    # Delay the real request until the user has focused and selected the field.
-    # No response is replaced: this exercises the browser/API scheduling race.
+async def verify_preview_preserves_input(page, *, preview_queued=False):
+    # Control the ordering of the real preview, React commit and user input.
     objective, basis = intake_case('cube')
     arrived, release = asyncio.Event(), asyncio.Event()
     preview_url = '**/api/tasks/requirements/preview'
@@ -43,16 +42,38 @@ async def verify_preview_preserves_input(page):
         intake = page.get_by_role('region', name='执行前需求确认', exact=True)
         dimensions = intake.get_by_role('textbox', name='关键尺寸依据', exact=True)
         await expect(dimensions).to_have_value('')
-        await dimensions.select_text()
+        if preview_queued:
+            await dimensions.evaluate("""field => {
+                const read = Response.prototype.json;
+                Response.prototype.json = async function() {
+                    const body = await read.call(this);
+                    if (!new URL(this.url).pathname.endsWith('/requirements/preview')) return body;
+                    Response.prototype.json = read;
+                    const dimensions = body.dimensions;
+                    Object.defineProperty(body, 'dimensions', {get() {
+                        // The component reads the real response, then queues its update.
+                        // Focus between that update and its DOM commit.
+                        queueMicrotask(() => { field.select(); field.focus() });
+                        return dimensions;
+                    }});
+                    return body;
+                };
+            }""")
+        else:
+            await dimensions.select_text()
         async with page.expect_response(preview_url) as pending:
             release.set()
         response = await pending.value
         assert response.status == 200
         assert await response.json() == {'dimensions': basis.dimensions, 'complete': True}
+        await expect(dimensions).to_be_focused()
         await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
-        await page.keyboard.insert_text(basis.dimensions)
-        await expect(dimensions).to_have_value(basis.dimensions)
+        await expect(dimensions).to_have_value('')
+        edited = '边长 38 mm。边长 38 mm。' if preview_queued else basis.dimensions
+        await page.keyboard.insert_text(edited)
+        await expect(dimensions).to_have_value(edited)
         await expect(intake.get_by_role('checkbox', name='确认仅生成概念外形', exact=True)).not_to_be_checked()
+        await intake.get_by_role('button', name='返回修改', exact=True).click()
     finally:
         release.set()
         await page.unroute(preview_url, delay_preview)
@@ -76,6 +97,7 @@ async def main():
             await page.locator('#password').fill(private['owner']['password'])
             await page.locator('button[type=submit]').click()
             await verify_preview_preserves_input(page)
+            await verify_preview_preserves_input(page, preview_queued=True)
             for name in ('fdm','diameter','assembly','passage','cube','cube_split','chinese_box','sphere_bounds','cylinder_bounds',
                          'source_global','source_global_split','source_design_global'):
                 objective,basis = assembly_case() if name == 'assembly' else intake_case(name)
@@ -154,6 +176,8 @@ async def main():
                         assert document['head_revision_id'] != saved['expected_base_revision_id']
                         await page.reload()
                         await expect(page.get_by_test_id('document-scene')).to_have_attribute('data-revision',document['head_revision_id'],timeout=90000)
+                        snapshot = (await api.get(f'/api/tasks/{workflow_id}/snapshot')).raise_for_status().json()
+                        assert snapshot['request_payload']['operation_context']['requirement_basis']['dimensions'] == basis.dimensions
                         if name.startswith('source_'):
                             card = page.locator('[data-testid=authoritative-task]:visible')
                             await card.locator('summary').filter(has_text='检查结果（').click()

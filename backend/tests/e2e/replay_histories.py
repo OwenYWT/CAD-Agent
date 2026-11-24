@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from temporalio.client import Client
 from temporalio.worker import Replayer
+from app.workers.history_replay import replay_history
 from app.workflows.agent_v2 import McadAgentWorkflowV2
 from app.workflows.definitions import McadDurableWorkflow, McadCheckWorkflow, NativeWorkerWorkflow
 from app.workflows.model_job import ModelJobWorkflow
@@ -39,7 +40,7 @@ async def main(output, workflow_types=None):
             key = (name, 'agent-v2-model-jobs-v1' in patches, 'agent-v2-backend-policy-v1' in patches)
             if key in seen:
                 continue
-            await Replayer(workflows=list(types.values())).replay_workflow(history)
+            await replay_history(Replayer(workflows=list(types.values())), history)
             seen.add(key)
             report.append({'workflow_type':name,'workflow_id':item.id,'run_id':item.run_id,
                            'events':len(history.events),'patches':sorted(patches),'replay':'passed'})

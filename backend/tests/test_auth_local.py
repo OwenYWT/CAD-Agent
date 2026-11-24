@@ -672,16 +672,36 @@ def test_invite_code_max_uses_atomic_under_concurrency(client, monkeypatch):
                     headers={"Authorization": f"Bearer {atoken}"})
     assert r.status_code == 200, r.text
 
+    existing = "13800138999"
+    asyncio.run(auth_store.create_user(existing, "strong-password", "verification_code"))
+    duplicate = client.post("/api/auth/register/invite", json={
+        "phone": existing, "password": "strong-password", "invite_code": "ONESHOT",
+    })
+    assert duplicate.status_code == 400
+    assert asyncio.run(auth_store.get_invite_code("ONESHOT"))["used_count"] == 0
+
     async def _race():
         await auth_store.get_db()
         return await asyncio.gather(
-            auth_store.consume_invite_code("ONESHOT"),
-            auth_store.consume_invite_code("ONESHOT"),
-            auth_store.consume_invite_code("ONESHOT"),
+            *(auth_store.create_user(f"1380013800{i}", "strong-password", "invite_code", invite_code="ONESHOT")
+              for i in range(3)), return_exceptions=True,
         )
 
     results = asyncio.run(_race())
-    assert sum(1 for x in results if x) == 1, f"max_uses=1 must allow exactly one use, got {results}"
+    assert sum(isinstance(result, dict) for result in results) == 1
+    assert [str(result) for result in results if isinstance(result, Exception)] == ["邀请码无效、已过期或已用完"] * 2
     # used_count must not exceed max_uses
     info = asyncio.run(auth_store.get_invite_code("ONESHOT"))
     assert info["used_count"] == 1, info
+
+
+def test_workspace_cors_preflight_respects_origin_and_headers(client):
+    origin = settings.cors_origins[0]
+    path = "/api/documents/00000000-0000-0000-0000-000000000000/members"
+    headers = {"Origin": origin, "Access-Control-Request-Method": "PATCH",
+               "Access-Control-Request-Headers": "authorization,content-type,x-workspace-tenant"}
+    allowed = client.options(path, headers=headers)
+    assert allowed.status_code == 200 and allowed.headers["access-control-allow-origin"] == origin
+    other = client.options(path, headers={**headers, "Origin": "https://unlisted.example"})
+    assert other.status_code == 400 and "access-control-allow-origin" not in other.headers
+    assert client.options(path, headers={**headers, "Access-Control-Request-Headers": "x-not-permitted"}).status_code == 400

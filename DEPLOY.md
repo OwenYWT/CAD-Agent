@@ -65,7 +65,7 @@ docker buildx imagetools inspect registry.example.com/wordswave/mcad-runtime:<ve
 
 把 Registry 返回的 digest 写入 `SANDBOX_IMAGE`，然后启动：
 
-已验证的后端依赖镜像可用于受限网络下的应用更新：从仓库根目录运行 `docker build -f backend/Dockerfile.reuse-dependencies --build-arg VERIFIED_BACKEND_IMAGE=已验证的后端镜像引用 -t 新后端镜像 .`。该入口会比较两份 `requirements.txt` 的完整内容并执行 `pip check`；依赖清单改变时拒绝复用。它只重建应用层，必须记录所用基础镜像 digest，并对新镜像执行正常回归。干净安装依赖仍使用默认 `backend/Dockerfile`。
+已验证的后端依赖镜像可用于受限网络下的应用更新：从仓库根目录运行 `docker build -f backend/Dockerfile.reuse-dependencies --build-arg VERIFIED_BACKEND_IMAGE=已验证的后端镜像引用 -t 新后端镜像 .`。该入口会逐字节比对基础镜像和目标版本的 `requirements.txt`、`requirements.lock`，再执行 `pip check`；依赖清单改变时拒绝复用。它只重建应用层，必须记录所用基础镜像 digest，并对新镜像执行正常回归。干净安装依赖仍使用默认 `backend/Dockerfile`。
 
 ```bash
 docker compose config --quiet

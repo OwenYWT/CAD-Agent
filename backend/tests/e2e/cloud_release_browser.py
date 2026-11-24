@@ -11,6 +11,27 @@ from playwright.sync_api import expect,sync_playwright
 from cloud_document_acceptance import PRIVATE,call
 
 
+def publish_and_download(page, client, path, engineering_ids, destination):
+    page.get_by_role('tab',name='版本',exact=True).click()
+    panel=page.get_by_test_id('document-releases');panel.locator('summary',has_text='版本发布与 BOM').click()
+    expect(panel.get_by_role('button',name='创建不可变发布')).to_be_disabled()
+    panel.get_by_role('textbox',name='发布名称').fill('Browser '+uuid4().hex[:10])
+    for analysis in engineering_ids:panel.locator(f'input[data-evidence="{analysis}"]').check()
+    with page.expect_response(lambda r:r.url.endswith(path+'/releases') and r.request.method=='POST') as submitted:
+        panel.get_by_role('button',name='创建不可变发布').click()
+    assert submitted.value.status==202,submitted.value.text()
+    release=submitted.value.json()['release_id'];result=panel.get_by_test_id('release-result')
+    expect(result).to_have_attribute('data-release',release,timeout=180000)
+    expect(result.get_by_role('table',name='发布 BOM')).to_be_visible()
+    expect(result).to_contain_text(f'附带 {len(engineering_ids)} 项同修订工程任务证据')
+    with page.expect_download() as download:result.get_by_role('button',name='下载完整发布包').click()
+    download.value.save_as(destination)
+    reference=call(client,'GET',path+'/releases/'+release)['artifacts']['engineering_bundle']
+    assert hashlib.sha256(destination.read_bytes()).hexdigest()==reference['sha256']
+    result.scroll_into_view_if_needed()
+    return release
+
+
 def main():
     private=json.loads(PRIVATE.read_text());web=os.environ['CAD_NATIVE_E2E_WEB']
     client=httpx.Client(headers={'Authorization':'Bearer '+private['owner']['token']})
@@ -26,22 +47,9 @@ def main():
         page.locator('input[type="password"]').fill(private['owner']['password']);page.locator('button[type="submit"]').click()
         expect(page.get_by_role('button',name='新建设计',exact=True)).to_be_visible(timeout=20000)
         page.goto(web+'?document='+doc['document_id']+'&workspace='+private['tenant_id'])
-        panel=page.get_by_test_id('document-releases');panel.locator('summary',has_text='版本发布与 BOM').click()
-        expect(panel.get_by_role('button',name='创建不可变发布')).to_be_disabled()
-        panel.get_by_role('textbox',name='发布名称').fill('Browser '+uuid4().hex[:10])
-        for analysis in prior['engineering_workflow_ids']:panel.locator(f'input[data-evidence="{analysis}"]').check()
-        with page.expect_response(lambda r:r.url.endswith(path+'/releases') and r.request.method=='POST') as submitted:
-            panel.get_by_role('button',name='创建不可变发布').click()
-        assert submitted.value.status==202,submitted.value.text()
-        release=submitted.value.json()['release_id'];result=panel.get_by_test_id('release-result')
-        expect(result).to_have_attribute('data-release',release,timeout=180000)
-        expect(result.get_by_role('table',name='发布 BOM')).to_be_visible()
-        expect(result).to_contain_text('附带 2 项同修订工程任务证据')
-        with page.expect_download() as download:result.get_by_role('button',name='下载完整发布包').click()
-        destination=evidence_path('cad-expansion-release-browser.zip');download.value.save_as(destination)
-        reference=call(client,'GET',path+'/releases/'+release)['artifacts']['engineering_bundle']
-        assert hashlib.sha256(destination.read_bytes()).hexdigest()==reference['sha256']
-        result.scroll_into_view_if_needed();page.screenshot(path=str(evidence_path('cad-expansion-release-browser.png')))
+        release = publish_and_download(page, client, path, prior['engineering_workflow_ids'],
+                                       evidence_path('cad-expansion-release-browser.zip'))
+        page.screenshot(path=str(evidence_path('cad-expansion-release-browser.png')))
         after=call(client,'GET',path)
         assert (after['head_revision_id'],after['state_version'],after['fcstd'])==(doc['head_revision_id'],doc['state_version'],doc['fcstd'])
         assert not errors and not console_errors,(errors,console_errors)

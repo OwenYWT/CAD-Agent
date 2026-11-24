@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getAuthToken } from "../auth";
+import { getAuthToken, onSessionRefreshed } from "../auth";
 import { webSocketAuthProtocol } from "../adapters/durableTaskAdapter";
 import { applyDocumentEvent } from "../adapters/documentAdapter";
 import { observeDocument, forgetDocument } from "../stores/documentHeads";
@@ -115,11 +115,19 @@ export function useCloudDocument(documentId: string | null): CloudDocumentConnec
       clearTimeout(timer);
       if (socket?.readyState !== WebSocket.OPEN && socket?.readyState !== WebSocket.CONNECTING) open();
     };
+    const stopRefreshListener = onSessionRefreshed(() => {
+      clearTimeout(timer);
+      const previous = socket;
+      socket = null;
+      previous?.close();
+      setConnected(false); setError(null); setSync({ documentId, status: 'syncing' });
+      open();
+    });
     window.addEventListener('offline', offline); window.addEventListener('online', online);
     open();
     const interval = setInterval(heartbeat, 15000);
     return () => {
-      closed = true; clearTimeout(timer); clearInterval(interval); socket?.close(); forgetDocument(documentId);
+      closed = true; stopRefreshListener(); clearTimeout(timer); clearInterval(interval); socket?.close(); forgetDocument(documentId);
       window.removeEventListener('offline', offline); window.removeEventListener('online', online);
     };
   }, [documentId]);

@@ -5,8 +5,9 @@ ARG VERIFIED_BACKEND_IMAGE
 FROM ${VERIFIED_BACKEND_IMAGE}
 
 WORKDIR /app/backend
-COPY backend/requirements.txt /tmp/cad-agent-required-dependencies.txt
-RUN python -c "from pathlib import Path; a=Path('/app/backend/requirements.txt'); b=Path('/tmp/cad-agent-required-dependencies.txt'); assert a.read_bytes()==b.read_bytes(), 'Dependency declarations changed; build backend/Dockerfile with network access first'" \
+COPY backend/requirements.txt backend/requirements.lock /tmp/cad-agent-dependencies/
+RUN cmp requirements.txt /tmp/cad-agent-dependencies/requirements.txt \
+    && cmp requirements.lock /tmp/cad-agent-dependencies/requirements.lock \
     && python -m pip check
 
 # Clear the base image's application snapshot so removed modules cannot survive

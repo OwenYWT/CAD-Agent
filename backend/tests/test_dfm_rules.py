@@ -4,10 +4,11 @@ import tempfile
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 import trimesh
 
 from app.config import settings
-from app.dfm import dfm_scoring
+from app.dfm import dfm_scoring, rule_store
 from app.dfm.models import DFMRule, RuleViolation
 from app.dfm.rule_engine import DFMRuleEngine
 from app.validation.design_analyzer import DFMGeometryResult
@@ -17,6 +18,16 @@ from app.validation.design_analyzer import DFMGeometryResult
 def _no_api_key(monkeypatch):
     """Hard guarantee: DFM must work with no LLM credentials at all."""
     monkeypatch.setattr(settings, "dashscope_api_key", None)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def isolated_rules(tmp_path, monkeypatch):
+    await rule_store.close_db()
+    monkeypatch.setattr(settings, "history_db_path", str(tmp_path / "history.db"))
+    try:
+        yield
+    finally:
+        await rule_store.close_db()
 
 
 def _rule(**kw):

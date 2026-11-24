@@ -357,13 +357,12 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
       <div className="h-[100dvh] min-w-[320px] overflow-hidden bg-white text-[var(--ink)]">
         <div className="ww-app-shell">
           <ProjectSidebar
-            activeView="overview"
+            onNavigate={navigate}
             collapsed={sidebarCollapsed}
             mobileOpen={mobileSidebar}
             onCollapse={() => setSidebarCollapsed((value) => !value)}
             onLogout={onLogout}
             onMobileClose={() => setMobileSidebar(false)}
-            onNavigate={() => setMobileSidebar(false)}
             onNewProject={createProject}
             onSettings={() => setSettingsOpen(true)}
             onUserUpdate={onUserUpdate}

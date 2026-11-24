@@ -47,7 +47,8 @@ def main():
         original=int(viewer.get_attribute('data-segments'));assert original>20
         viewer.get_by_role('slider',name='加工路径进度').fill('10');expect(viewer).to_have_attribute('data-segments','10')
         viewer.get_by_role('button',name='播放加工路径').click()
-        page.wait_for_function("document.querySelector('[data-testid=cam-toolpath-viewer]').dataset.segments > 10")
+        expect(viewer).not_to_have_attribute('data-segments', '10')
+        assert int(viewer.get_attribute('data-segments')) > 10
         viewer.get_by_role('button',name='暂停路径播放').click()
         report=call(client,'GET',path+'/engineering/'+task_id)
         with page.expect_download() as download:

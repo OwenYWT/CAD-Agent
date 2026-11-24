@@ -32,19 +32,22 @@ def _membership_role(context: PrincipalContext) -> str:
     return "owner"
 
 
-async def ensure_principal(
-    connection: AsyncConnection,
-    context: PrincipalContext,
-    *,
-    display_name: str | None = None,
-) -> None:
-    tenant_name = {
+def _tenant_name(context: PrincipalContext, display_name: str | None) -> str:
+    return {
         TenantKind.PERSONAL: display_name or "个人工作区",
         TenantKind.ORGANIZATION: display_name or "团队工作区",
         TenantKind.SERVICE: display_name or "API 服务工作区",
         TenantKind.LOCAL_DEVELOPMENT: "本地开发工作区",
         TenantKind.QUARANTINE: "待认领数据隔离区",
     }[context.tenant_kind]
+
+
+async def ensure_principal(
+    connection: AsyncConnection,
+    context: PrincipalContext,
+    *,
+    display_name: str | None = None,
+) -> None:
     await connection.execute(
         text(
             """
@@ -57,7 +60,7 @@ async def ensure_principal(
         {
             "id": context.tenant_id,
             "kind": context.tenant_kind.value,
-            "name": tenant_name,
+            "name": _tenant_name(context, display_name),
             "status": _tenant_status(context),
         },
     )
@@ -112,7 +115,16 @@ async def reconcile_principal(
         context.tenant_id,
         context.principal_id,
     ) as connection:
-        await ensure_principal(connection, context, display_name=display_name)
+        current = await connection.scalar(text("""
+            SELECT 1 FROM tenant_memberships m
+            JOIN tenants t ON t.id=m.tenant_id
+            JOIN principals p ON p.id=m.principal_id AND p.tenant_id=t.id
+            WHERE m.tenant_id=:tenant AND m.principal_id=:principal AND t.name=:tenant_name
+              AND (CAST(:display_name AS text) IS NULL OR p.display_name=:display_name)
+        """), {"tenant": context.tenant_id, "principal": context.principal_id,
+               "tenant_name": _tenant_name(context, display_name), "display_name": display_name})
+        if not current:
+            await ensure_principal(connection, context, display_name=display_name)
     return context
 
 

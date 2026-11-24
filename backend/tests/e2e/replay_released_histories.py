@@ -9,6 +9,7 @@ import re
 from temporalio.client import WorkflowHistory
 from temporalio.worker import Replayer
 
+from app.workers.history_replay import replay_history
 from app.workflows.agent_v2 import McadAgentWorkflowV2
 from app.workflows.definitions import McadDurableWorkflow
 from app.workflows.model_job import ModelJobWorkflow
@@ -17,6 +18,8 @@ FIXTURES = Path(__file__).resolve().parents[1] / 'fixtures/released-histories'
 REQUIRED_CASES = {
     'before-model-jobs', 'after-model-jobs', 'parent-cancellation',
     'worker-crash-recovery', 'model-job-cancellation', 'model-job-success',
+    'busy-restore-immediate-failure', 'busy-restore-recorded-timer', 'busy-restore-versioned',
+    'advisory-visual-preserved', 'advisory-visual-repaired',
 }
 
 
@@ -53,7 +56,7 @@ async def main(output):
     replayer = Replayer(workflows=[McadAgentWorkflowV2, McadDurableWorkflow, ModelJobWorkflow])
     report = []
     for row, history in load_histories():
-        await replayer.replay_workflow(history)
+        await replay_history(replayer, history)
         report.append({key: row[key] for key in ('file', 'source_sha', 'sha256', 'cases')})
     Path(output).write_text(json.dumps({'passed': True, 'histories': report}, indent=2) + '\n')
     print(f'FROZEN RELEASE REPLAY PASSED: {len(report)} histories')

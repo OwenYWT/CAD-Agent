@@ -784,8 +784,14 @@ async def test_public_generation_routes_preserve_cross_field_basis_and_profile(e
     async with build_agent_v2_workflow_worker(temporal, backend=get_execution_backend(),
             durable_planner=planner, freecad_operations=operations), httpx.AsyncClient(
             transport=httpx.ASGITransport(app=create_app()), base_url='http://test', timeout=180) as client:
+        stale = {**payload, "expected_base_revision_id": str(uuid4()), "idempotency_key": str(uuid4())}
+        batch = endpoint == "/api/batch/generate"
+        conflict = await client.post(endpoint, headers=headers, json={"items": [stale]} if batch else stale)
+        assert conflict.status_code == (200 if batch else 409)
+        failure = conflict.json()["results"][0] if batch else conflict.json()
+        assert failure["success"] is False and failure["error"]["type"] == "RevisionConflict"
         response = await client.post(endpoint, headers=headers,
-            json={'items': [payload]} if endpoint == '/api/batch/generate' else payload)
+            json={'items': [payload]} if batch else payload)
         assert response.status_code == 200, response.text
         body = response.json()
         if endpoint.endswith('/async'):

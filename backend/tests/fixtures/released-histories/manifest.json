@@ -13,7 +13,12 @@
     "parent-cancellation",
     "worker-crash-recovery",
     "model-job-cancellation",
-    "model-job-success"
+    "model-job-success",
+    "busy-restore-immediate-failure",
+    "busy-restore-recorded-timer",
+    "busy-restore-versioned",
+    "advisory-visual-preserved",
+    "advisory-visual-repaired"
   ],
   "histories": [
     {
@@ -221,6 +226,96 @@
       ],
       "sha256": "c190bc8ad1f2ba4542f10b32673e85399490b6d37f6af3d37a5488ef692c9310",
       "raw_history_sha256": "938a74c2e9753863a409f8c51b574b5dab72933f1eb3e9675f5ef12709454414"
+    },
+    {
+      "file": "merge-tmp-busy-restore.json",
+      "workflow_type": "McadAgentWorkflowV2",
+      "workflow_id": "review-merge-fa4e38b0-7a53-4062-982b-4e2d7e55543b",
+      "run_id": "01a1feee-db0e-732f-bbe0-06e0acdcff53",
+      "source_sha": "f6e3f3773eb66a3e01c02f3eba7993e8ba8895d1",
+      "source_tree": "086c9ce082a4f8262372338b624432624666356a",
+      "capture_date": "2026-11-22",
+      "capture_kind": "isolated execution of unchanged source",
+      "source_tests": "Independent 25-event busy restore on the original tmp_1120 workflow and queue code",
+      "patch_overrides": false,
+      "events": 25,
+      "cases": [
+        "busy-restore-immediate-failure"
+      ],
+      "sha256": "6b8644e4ba2c5e9f718f2a05d4a80baaff80026de5880c66d3b45cf3a439ef52",
+      "raw_history_sha256": "217efc87ae14e587691bce90331cc11c6c5addef7997ef786f9c8c7bc198cdff"
+    },
+    {
+      "file": "merge-compare-busy-restore.json",
+      "workflow_type": "McadAgentWorkflowV2",
+      "workflow_id": "merge-queue-b7d931af-d40d-4346-baa7-d059f323fade",
+      "run_id": "01a202e2-1e9f-7125-9e36-3b3f657b47c3",
+      "source_sha": "2fd4f73075dab4dd9a2f0c5d1bb5a58c07201ab7",
+      "source_tree": "47284b0a85dc2ef55a98fa89e1a35954b9d392d4",
+      "capture_date": "2026-11-22",
+      "capture_kind": "isolated execution of unchanged source",
+      "source_tests": "Original compare_YWT V2 workflow on real Temporal; first acquisition waits, next acquisition rejects",
+      "patch_overrides": false,
+      "events": 36,
+      "cases": [
+        "busy-restore-recorded-timer"
+      ],
+      "sha256": "5cf417bba41ae87ecaed046e625918f0671e1767dd5bfa4a0adbd6b963704f0c",
+      "raw_history_sha256": "3105ba3c99dcf37097780f84ed07781ecf0899ab1c5fa875dbaed9101256df0e"
+    },
+    {
+      "file": "merge-main-busy-restore.json",
+      "workflow_type": "McadAgentWorkflowV2",
+      "workflow_id": "review-merge-42d86be4-bb14-4bb7-b9e7-6a18d49f2281",
+      "run_id": "01a1feee-fe56-79cb-8b16-1adbfc4909df",
+      "source_sha": "fd85ee69d460459cc505935e68338545dcff1ad3",
+      "source_tree": "d4be48eb3aacbc8b323e891239a61cb8a0e760ea",
+      "capture_date": "2026-11-22",
+      "capture_kind": "isolated execution of unchanged source",
+      "source_tests": "Independent version-marked main busy restore on real Temporal",
+      "patch_overrides": false,
+      "events": 27,
+      "cases": [
+        "busy-restore-versioned"
+      ],
+      "sha256": "32e4f3d49aae4b8f075c7ad9a424935c547fbc3cfb985180d9f7f93da7a3011d",
+      "raw_history_sha256": "94d6910100e073220c9dd7d1a7ae8adc38a5e359d55268b07a21095f8a53c8e0"
+    },
+    {
+      "file": "merge-tmp-advisory-visual.json",
+      "workflow_type": "McadAgentWorkflowV2",
+      "workflow_id": "mcad-agent-v2-workflow-544550dc-cd54-4a1e-a821-1d7c307b154d",
+      "run_id": "01a202e3-d62c-7b94-b21d-876b2225e609",
+      "source_sha": "f6e3f3773eb66a3e01c02f3eba7993e8ba8895d1",
+      "source_tree": "086c9ce082a4f8262372338b624432624666356a",
+      "capture_date": "2026-11-22",
+      "capture_kind": "isolated execution of unchanged source",
+      "source_tests": "Original V2 workflow and worker, PostgreSQL, MinIO, Temporal, FreeCAD 1.1.3; controlled negative vision on native renders",
+      "patch_overrides": false,
+      "events": 150,
+      "cases": [
+        "advisory-visual-preserved"
+      ],
+      "sha256": "9d6767f509244c57ee30d6e8d1a6eefd926a1b4a9c6736f24aa61056268fdccb",
+      "raw_history_sha256": "9e1225674d3de3d557cd24fae5f9b253f0b67e16499a2a258240d78c93e922cc"
+    },
+    {
+      "file": "merge-compare-advisory-visual.json",
+      "workflow_type": "McadAgentWorkflowV2",
+      "workflow_id": "mcad-agent-v2-workflow-b499172b-1280-4415-9c88-ce08561c372a",
+      "run_id": "01a202e1-3887-7d6d-a38d-c728a4a59341",
+      "source_sha": "2fd4f73075dab4dd9a2f0c5d1bb5a58c07201ab7",
+      "source_tree": "47284b0a85dc2ef55a98fa89e1a35954b9d392d4",
+      "capture_date": "2026-11-22",
+      "capture_kind": "isolated execution of unchanged source",
+      "source_tests": "Original V2 workflow and worker, PostgreSQL, MinIO, Temporal, FreeCAD 1.1.4; controlled negative vision on native renders",
+      "patch_overrides": false,
+      "events": 199,
+      "cases": [
+        "advisory-visual-repaired"
+      ],
+      "sha256": "1b92fc8832a71238ce8d680dab9d9392f6590ec7aa207d34d2f13d937b4122ad",
+      "raw_history_sha256": "a01ddf04cdf6a402761b53db7539289a4c5a308a182ff3950253936aa506b55a"
     }
   ]
 }

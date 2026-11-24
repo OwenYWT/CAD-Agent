@@ -26,6 +26,57 @@ def test_intake_preview_never_confirms_missing_ambiguous_or_uncovered_input(obje
     assert preview_requirements(objective)['complete'] is False
 
 
+@pytest.mark.parametrize('length', [1499, 1500, 1501, 4000])
+@pytest.mark.parametrize('design_first', [False, True])
+def test_precise_preview_preserves_long_target_and_dimension_authority(length, design_first):
+    from app.validation.requirement_binding import preview_requirements, extract_source_requirements
+
+    design = '构建一个边长十厘米的正方体。'
+    notes = '图' * (length - len(design) - 1) + '。'
+    objective = design + notes if design_first else notes + design
+    result = preview_requirements(objective)
+    assert result['complete'] is True
+    assert 0 < len(result['dimensions']) <= 1500
+    rows = extract_source_requirements(result['dimensions'])['requirements']
+    assert any(r['kind'] == 'cube_edge' and r['comparison']['value'] == 100 for r in rows)
+    basis = RequirementBasisV1(target=objective, dimensions=result['dimensions'], source_kind='user_specification',
+                               source_reference='用户指定的设计尺寸', design_scope='geometry')
+    assert basis.target == objective
+
+
+@pytest.mark.parametrize('design', ['正方体，边长十厘米，高五厘米。', '这个板需要一个孔。'])
+def test_notes_do_not_confirm_conflicting_or_missing_dimensions(design):
+    from app.validation.requirement_binding import preview_requirements
+    assert not preview_requirements('图纸备注。' * 320 + design)['complete']
+
+
+@pytest.mark.parametrize('before,after', [
+    ('正方体，', '，边长20mm'), ('板40×30×12mm，', '，孔径6mm'),
+])
+def test_long_note_between_geometry_clauses_does_not_hide_other_dimensions(before, after):
+    from app.validation.requirement_binding import extract_source_requirements, preview_requirements
+
+    target = before + '普通备注' * 400 + after
+    result = preview_requirements(target)
+    assert result['complete']
+    def facts(value):
+        return [(r['kind'], r['comparison']['value'], r['scope']) for r in extract_source_requirements(value)['requirements']]
+    assert facts(result['dimensions']) == facts(target)
+
+
+def test_long_preview_retains_subject_units_and_tolerance():
+    from app.validation.requirement_binding import extract_source_requirements, preview_requirements
+
+    design = '圆柱体，单位：cm。半径2，高2.5±0.1。'
+    objective = design + '图纸备注。' * 320
+    result = preview_requirements(objective)
+    assert result['complete']
+    def facts(value):
+        return sorted((r['kind'], r['comparison']['value'], r['comparison'].get('tolerance_plus'))
+                      for r in extract_source_requirements(value)['requirements'])
+    assert facts(result['dimensions']) == facts(design)
+
+
 def test_missing_dimensions_require_explicit_concept_consent():
     with pytest.raises(ValidationError):RequirementBasisV1(target='iPhone 手机壳')
     basis=RequirementBasisV1(target='iPhone 手机壳',concept_acknowledged=True)

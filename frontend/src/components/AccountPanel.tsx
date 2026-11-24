@@ -127,9 +127,8 @@ export function AccountPanel({ user, onUserUpdate, onLogout }: AccountPanelProps
     if (!window.confirm("确认注销当前账号？此操作不可恢复。")) return;
     try {
       await deleteAuthAccount();
-      onLogout();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "注销账号失败");
+      setError(translate(err instanceof Error ? err.message : "注销账号失败"));
     }
   };
 

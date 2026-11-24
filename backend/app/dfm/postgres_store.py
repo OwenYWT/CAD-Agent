@@ -5,10 +5,9 @@ import json
 from pathlib import Path
 
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
 
 from app.db import tenant_transaction
-from app.dfm.models import DFMRule, DFMRuleSet
+from app.dfm.models import DFMRule, DFMRuleSet, RuleSetConflict
 from app.principal_context import current_principal
 from app.repositories.identity import ensure_principal
 
@@ -254,71 +253,71 @@ async def clone_rule_set(
         ).mappings().one_or_none()
         if source is None:
             return None
-        try:
+        inserted = await connection.execute(
+            text(
+                """
+                INSERT INTO dfm_rule_sets (
+                    tenant_id, id, name, process, is_builtin
+                ) VALUES (:tenant, :id, :name, :process, false)
+                ON CONFLICT (tenant_id, id) DO NOTHING
+                """
+            ),
+            {
+                "tenant": context.tenant_id,
+                "id": new_id,
+                "name": new_name,
+                "process": source["process"],
+            },
+        )
+        if not inserted.rowcount:
+            raise RuleSetConflict("规则集 ID 已存在")
+        rows = (
             await connection.execute(
                 text(
                     """
-                    INSERT INTO dfm_rule_sets (
-                        tenant_id, id, name, process, is_builtin
-                    ) VALUES (:tenant, :id, :name, :process, false)
+                    SELECT * FROM dfm_rules
+                    WHERE tenant_id=:tenant AND rule_set_id=:source
+                    """
+                ),
+                {"tenant": context.tenant_id, "source": source_id},
+            )
+        ).mappings().all()
+        for row in rows:
+            rule_id = (
+                row["id"].replace(source_id, new_id)
+                if source_id in row["id"]
+                else f"{new_id}_{row['id']}"
+            )
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO dfm_rules (
+                        tenant_id, id, rule_set_id, process, category,
+                        check_type, threshold_min, threshold_max, unit,
+                        severity, description, suggestion_template, enabled
+                    ) VALUES (
+                        :tenant, :id, :set_id, :process, :category,
+                        :check_type, :minimum, :maximum, :unit,
+                        :severity, :description, :suggestion, :enabled
+                    )
                     """
                 ),
                 {
                     "tenant": context.tenant_id,
-                    "id": new_id,
-                    "name": new_name,
-                    "process": source["process"],
+                    "id": rule_id,
+                    "set_id": new_id,
+                    "process": row["process"],
+                    "category": row["category"],
+                    "check_type": row["check_type"],
+                    "minimum": row["threshold_min"],
+                    "maximum": row["threshold_max"],
+                    "unit": row["unit"],
+                    "severity": row["severity"],
+                    "description": row["description"],
+                    "suggestion": row["suggestion_template"],
+                    "enabled": row["enabled"],
                 },
             )
-            rows = (
-                await connection.execute(
-                    text(
-                        """
-                        SELECT * FROM dfm_rules
-                        WHERE tenant_id=:tenant AND rule_set_id=:source
-                        """
-                    ),
-                    {"tenant": context.tenant_id, "source": source_id},
-                )
-            ).mappings().all()
-            for row in rows:
-                rule_id = (
-                    row["id"].replace(source_id, new_id)
-                    if source_id in row["id"]
-                    else f"{new_id}_{row['id']}"
-                )
-                await connection.execute(
-                    text(
-                        """
-                        INSERT INTO dfm_rules (
-                            tenant_id, id, rule_set_id, process, category,
-                            check_type, threshold_min, threshold_max, unit,
-                            severity, description, suggestion_template, enabled
-                        ) VALUES (
-                            :tenant, :id, :set_id, :process, :category,
-                            :check_type, :minimum, :maximum, :unit,
-                            :severity, :description, :suggestion, :enabled
-                        )
-                        """
-                    ),
-                    {
-                        "tenant": context.tenant_id,
-                        "id": rule_id,
-                        "set_id": new_id,
-                        "process": row["process"],
-                        "category": row["category"],
-                        "check_type": row["check_type"],
-                        "minimum": row["threshold_min"],
-                        "maximum": row["threshold_max"],
-                        "unit": row["unit"],
-                        "severity": row["severity"],
-                        "description": row["description"],
-                        "suggestion": row["suggestion_template"],
-                        "enabled": row["enabled"],
-                    },
-                )
-        except IntegrityError as exc:
-            raise ValueError("规则集 ID 已存在") from exc
     rules = await get_rules_for_set(new_id)
     return DFMRuleSet(
         id=new_id,
@@ -329,8 +328,6 @@ async def clone_rule_set(
 
 
 async def delete_rule_set(set_id: str) -> bool:
-    if set_id.startswith("default_"):
-        return False
     context, transaction = await _rules_transaction()
     async with transaction as connection:
         deleted = await connection.execute(
@@ -346,20 +343,17 @@ async def delete_rule_set(set_id: str) -> bool:
 
 
 async def _seed_knowledge(connection, context) -> None:
-    count = await connection.scalar(
-        text(
-            """
-            SELECT count(*) FROM knowledge_nodes
-            WHERE tenant_id=:tenant AND customer_id='default'
-            """
-        ),
-        {"tenant": context.tenant_id},
-    )
-    if int(count or 0):
+    seeded = text("SELECT EXISTS (SELECT 1 FROM knowledge_nodes WHERE tenant_id=:tenant AND customer_id='default')")
+    tenant = {"tenant": context.tenant_id}
+    if await connection.scalar(seeded, tenant):
+        return
+    # Serialize first-time seeding without updating an existing user's display name.
+    locked = await connection.scalar(text("SELECT id FROM tenants WHERE id=:tenant FOR UPDATE"), tenant)
+    if locked is None:
+        await ensure_principal(connection, context)
+    if await connection.scalar(seeded, tenant):
         return
     path = ROOT / "default_knowledge.json"
-    if not path.is_file():
-        return
     data = json.loads(path.read_text(encoding="utf-8"))
     for node in data.get("nodes", []):
         await connection.execute(
@@ -430,10 +424,23 @@ def _edge(row):
     )
 
 
+async def recommendation_graph(customer_id: str):
+    context, transaction = await _rules_transaction()
+    async with transaction as connection:
+        await _seed_knowledge(connection, context)
+        row = (await connection.execute(text("""
+            SELECT ARRAY(SELECT to_jsonb(n) FROM knowledge_nodes n
+                         WHERE tenant_id=:tenant AND customer_id=:customer ORDER BY type, name),
+                   ARRAY(SELECT to_jsonb(e) FROM knowledge_edges e
+                         WHERE tenant_id=:tenant AND customer_id=:customer
+                           AND relationship IN ('has_constraint', 'supports_material') ORDER BY id)
+        """), {"tenant": context.tenant_id, "customer": customer_id})).one()
+    return [_node(item) for item in row[0]], [_edge(item) for item in row[1]]
+
+
 async def list_nodes(node_type: str | None, customer_id: str):
     context, transaction = await _rules_transaction()
     async with transaction as connection:
-        await ensure_principal(connection, context)
         await _seed_knowledge(connection, context)
         clause = "AND type=:type" if node_type else ""
         rows = (
@@ -459,7 +466,6 @@ async def list_nodes(node_type: str | None, customer_id: str):
 async def get_node(node_id: str, customer_id: str):
     context, transaction = await _rules_transaction()
     async with transaction as connection:
-        await ensure_principal(connection, context)
         await _seed_knowledge(connection, context)
         row = (
             await connection.execute(
@@ -503,7 +509,6 @@ async def get_edges(
         filters.append("relationship=:relationship")
     suffix = (" AND " + " AND ".join(filters)) if filters else ""
     async with transaction as connection:
-        await ensure_principal(connection, context)
         await _seed_knowledge(connection, context)
         rows = (
             await connection.execute(
@@ -524,7 +529,6 @@ async def get_edges(
 async def upsert_node(node):
     context, transaction = await _rules_transaction()
     async with transaction as connection:
-        await ensure_principal(connection, context)
         await _seed_knowledge(connection, context)
         await connection.execute(
             text(
@@ -556,7 +560,6 @@ async def upsert_node(node):
 async def add_edge(edge):
     context, transaction = await _rules_transaction()
     async with transaction as connection:
-        await ensure_principal(connection, context)
         await _seed_knowledge(connection, context)
         edge.id = await connection.scalar(
             text(
@@ -618,7 +621,6 @@ async def delete_edge(edge_id: int) -> bool:
 async def clone_for_customer(customer_id: str) -> int:
     context, transaction = await _rules_transaction()
     async with transaction as connection:
-        await ensure_principal(connection, context)
         await _seed_knowledge(connection, context)
         existing = await connection.scalar(
             text(

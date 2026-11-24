@@ -13,6 +13,7 @@ from functools import partial
 import boto3
 from botocore.client import BaseClient
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from app.config import settings
 
@@ -59,17 +60,26 @@ async def object_store_readiness() -> dict:
     }
 
 
-async def put_object(key: str, payload: bytes, *, content_type: str) -> dict:
+async def put_object(key: str, payload: bytes, *, content_type: str, if_absent: bool = False) -> dict:
     checksum = hashlib.sha256(payload).hexdigest()
-    await _call(
-        get_object_store_client().put_object,
-        Bucket=settings.object_store_bucket,
-        Key=key,
-        Body=payload,
-        ContentType=content_type,
-        Metadata={"sha256": checksum},
-    )
-    return {"key": key, "size_bytes": len(payload), "sha256": checksum}
+    expected = {"key": key, "size_bytes": len(payload), "sha256": checksum}
+    try:
+        await _call(
+            get_object_store_client().put_object,
+            Bucket=settings.object_store_bucket,
+            Key=key,
+            Body=payload,
+            ContentType=content_type,
+            Metadata={"sha256": checksum},
+            **({"IfNoneMatch": "*"} if if_absent else {}),
+        )
+    except ClientError as exc:
+        if not if_absent or exc.response["ResponseMetadata"]["HTTPStatusCode"] != 412:
+            raise
+        stored = await sha256_object(key)
+        if stored["size_bytes"] != len(payload) or stored["sha256"] != checksum:
+            raise RuntimeError("已保存的导入文件与提交内容不一致") from exc
+    return expected
 
 
 async def put_file(key: str, path: str | Path, *, content_type: str) -> dict:

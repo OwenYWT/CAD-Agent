@@ -6,6 +6,10 @@ from enum import StrEnum
 from uuid import UUID
 
 
+class StaleBaseRevision(RuntimeError):
+    """The requested base is no longer the branch head."""
+
+
 @dataclass(frozen=True, slots=True)
 class InitialBranchCreated:
     branch_id: UUID

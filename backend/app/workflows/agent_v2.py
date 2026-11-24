@@ -9,6 +9,7 @@ from uuid import UUID, uuid5
 
 from temporalio import workflow
 from app.workflows.document_queue import wait_for_document, release_document
+from app.workflows.recorded_decisions import should_record_failure
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError, ApplicationError, ChildWorkflowError, is_cancelled_exception
 from temporalio.workflow import ActivityCancellationType
@@ -1059,6 +1060,7 @@ class McadAgentWorkflowV2:
             )
             if freecad and policy["mode"] == "advisory" and (
                 self._preserve_advisory_visual or not self._validation_repair_v2
+                or should_record_failure("agent_visual_validation_failed")
             ):
                 # Geometry has already passed. An advisory visual mismatch must
                 # not replace a valid typed FreeCAD plan with an unverified rewrite.

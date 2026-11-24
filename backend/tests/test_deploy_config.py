@@ -361,6 +361,49 @@ def test_setup_sh_exists_and_is_bash():
     assert first.startswith("#!") and "bash" in first
 
 
+def test_local_launchers_build_the_sandbox_from_repository_root():
+    import shlex
+
+    for launcher in (SETUP_SH, REPO_ROOT / "start-web.ps1"):
+        line, = [line for line in launcher.read_text(encoding="utf-8-sig").splitlines()
+                 if " build " in line and "backend/sandbox/Dockerfile" in line]
+        args = shlex.split(line)
+        assert args[args.index("-t") + 1].lower() in {"$sandbox_image", "$env:sandbox_image"}
+        assert "from app.config import settings; print(settings.sandbox_image)" in launcher.read_text()
+        assert 'get_execution_backend().runtime_snapshot()' in launcher.read_text()
+        context = REPO_ROOT / args[-1]
+        recipe = REPO_ROOT / args[args.index("-f") + 1]
+        assert recipe == REPO_ROOT / "backend/sandbox/Dockerfile"
+        assert context.resolve() == REPO_ROOT
+        for instruction in recipe.read_text().splitlines():
+            if instruction.startswith("COPY ") and "--from=" not in instruction:
+                inputs = [arg for arg in shlex.split(instruction)[1:-1] if not arg.startswith("--")]
+                assert all((context / source).exists() for source in inputs), instruction
+
+
+@pytest.mark.parametrize(('file_value', 'override', 'expected'), [
+    (None, None, 'cad-agent-sandbox:dev'),
+    ('"localhost/cad-local:from-file"  # local sandbox', None, 'localhost/cad-local:from-file'),
+    ('localhost/cad-local:from-file', 'localhost/cad-local:from-process', 'localhost/cad-local:from-process'),
+])
+def test_launcher_image_lookup_matches_backend_settings(tmp_path, file_value, override, expected):
+    import os
+    import sys
+
+    template = (REPO_ROOT / 'backend/.env.example').read_text()
+    if file_value is not None:
+        template = '\n'.join('SANDBOX_IMAGE=' + file_value if line.startswith('SANDBOX_IMAGE=') else line
+                             for line in template.splitlines())
+    (tmp_path / '.env').write_text(template)
+    env = {**os.environ, 'PYTHONPATH': os.pathsep.join([str(REPO_ROOT / 'backend'), os.getenv('PYTHONPATH', '')])}
+    env.pop('SANDBOX_IMAGE', None)
+    if override:
+        env['SANDBOX_IMAGE'] = override
+    result = subprocess.run([sys.executable, '-c', 'from app.config import settings; print(settings.sandbox_image)'],
+                            cwd=tmp_path, env=env, capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == expected
+
+
 def test_setup_sh_passes_bash_syntax_check():
     result = subprocess.run(
         ["bash", "-n", str(SETUP_SH)],

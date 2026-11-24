@@ -130,6 +130,7 @@ def inspect_requests(requests, *, require_histories=False, receipt_recovery_cont
 
 
 async def replay_histories(requests, blockers):
+    from importlib.util import find_spec
     from temporalio.client import WorkflowHistory
     from temporalio.worker import Replayer
     from app.workflows.agent_v2 import McadAgentWorkflowV2
@@ -137,6 +138,12 @@ async def replay_histories(requests, blockers):
     from app.workflows.model_job import ModelJobWorkflow
 
     replayer = Replayer(workflows=[McadAgentWorkflowV2, McadDurableWorkflow, McadCheckWorkflow, ModelJobWorkflow])
+    # This probe also runs inside older rollback images. Use the replay path
+    # that the target image actually supports.
+    if find_spec('app.workers.history_replay') is not None:
+        from app.workers.history_replay import replay_history
+    else:
+        replay_history = Replayer.replay_workflow
     completed = []
     for item in requests:
         try:
@@ -144,7 +151,7 @@ async def replay_histories(requests, blockers):
             history = WorkflowHistory.from_json(item['temporal_id'], raw)
             if len(history.events) < 2:
                 raise ValueError('Incomplete workflow history')
-            await replayer.replay_workflow(history)
+            await replay_history(replayer, history)
             completed.append({'workflow_id': item['id'], 'temporal_id': item['temporal_id'],
                 'events': len(history.events), 'sha256': hashlib.sha256(raw.encode()).hexdigest(), 'replay': 'passed'})
         except Exception as exc:

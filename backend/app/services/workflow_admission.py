@@ -13,15 +13,25 @@ from sqlalchemy import text
 from app.domain.runs import WorkflowCreated
 from app.execution.canonical import canonical_sha256
 from app.repositories.runs import append_workflow_event
-from app.services.cloud_documents import enqueue_operation
+from app.services.cloud_documents import DocumentConflict, enqueue_operation
 from app.services.run_state import create_workflow
 from app.services.provider_budgets import admit as admit_provider_budget
+
+
+async def native_import_is_queued(connection: AsyncConnection, workflow_id: UUID) -> bool:
+    params = {"id": workflow_id}
+    status = await connection.scalar(text("SELECT status FROM workflow_runs WHERE id=:id FOR UPDATE"), params)
+    # Read after acquiring the lock so a concurrent admission's commit is visible.
+    queued = await connection.scalar(text("SELECT EXISTS (SELECT 1 FROM cad_operations WHERE id=:id)"), params)
+    if not queued and status != "pending":
+        raise DocumentConflict("导入请求已结束，无法继续上传")
+    return queued
 
 
 async def create_document_workflow(
     connection: AsyncConnection, *, tenant_id: UUID, project_id: UUID,
     requested_by_principal_id: UUID, kind: str, idempotency_key: str,
-    request_payload: dict[str, Any],
+    request_payload: dict[str, Any], import_uploaded: bool = False,
 ) -> WorkflowCreated:
     created = await create_workflow(
         connection, tenant_id=tenant_id, project_id=project_id,
@@ -29,7 +39,14 @@ async def create_document_workflow(
         idempotency_key=idempotency_key, request_payload=request_payload,
     )
     if created.replayed:
-        return created
+        if (request_payload.get("operation_context") or {}).get("rule") != "explicit_native_import":
+            return created
+        # Concurrent matching uploads may finish together. Promote their
+        # reservation to one queued operation in the outbox transaction.
+        if await native_import_is_queued(connection, created.workflow_id):
+            return created
+        if not import_uploaded:
+            raise ValueError("导入文件尚未上传，请使用原始文件继续导入")
     await admit_provider_budget(connection, tenant_id=tenant_id, workflow_id=created.workflow_id)
     await enqueue_operation(
         connection, workflow_id=created.workflow_id, tenant_id=tenant_id,

@@ -1,6 +1,8 @@
 import hashlib
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -520,6 +522,18 @@ def test_output_role_is_exact_or_unambiguous(tmp_path):
         assert paths["step"] == primary
     with pytest.raises(ValueError, match="ambiguous"):
         PodmanExecutionBackend._verified_outputs(spec, {"first": primary, "second": extra})
+
+
+def test_image_inspection_uses_configured_sandbox_timeout(monkeypatch, tmp_path):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "sandbox_timeout_s", 1)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "image").write_text("import time\ntime.sleep(2)\n")
+    with pytest.raises(subprocess.TimeoutExpired) as error:
+        inspect_container_runtime(sys.executable, IMAGE_DIGEST)
+    assert error.value.timeout == 1
+    assert error.value.cmd == [sys.executable, "image", "inspect", IMAGE_DIGEST]
 
 
 def test_runtime_failure_is_coalesced_then_recovers(monkeypatch):

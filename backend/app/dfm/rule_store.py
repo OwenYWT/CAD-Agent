@@ -3,12 +3,13 @@
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import aiosqlite
 
 from app.config import settings
-from app.dfm.models import DFMRule, DFMRuleSet
+from app.dfm.models import DFMRule, DFMRuleSet, RuleSetConflict
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,10 @@ _db: aiosqlite.Connection | None = None
 _lock = asyncio.Lock()
 
 _DEFAULT_RULES_PATH = Path(__file__).parent / "default_rules.json"
+
+
+def _database_path() -> Path:
+    return Path(settings.history_db_path.replace("history.db", "dfm_rules.db"))
 
 
 async def _get_db() -> aiosqlite.Connection:
@@ -27,53 +32,53 @@ async def _get_db() -> aiosqlite.Connection:
         if _db is not None:
             return _db
 
-        db_path = settings.history_db_path.replace("history.db", "dfm_rules.db")
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        _db = await aiosqlite.connect(db_path)
-        _db.row_factory = aiosqlite.Row
-        await _db.execute("PRAGMA journal_mode=WAL")
+        db_path = _database_path()
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        db = await aiosqlite.connect(db_path)
+        try:
+            db.row_factory = aiosqlite.Row
+            await db.execute("PRAGMA journal_mode=WAL")
 
-        await _db.executescript("""
-            CREATE TABLE IF NOT EXISTS rule_sets (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                process TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS rules (
-                id TEXT PRIMARY KEY,
-                rule_set_id TEXT NOT NULL REFERENCES rule_sets(id),
-                process TEXT NOT NULL,
-                category TEXT NOT NULL,
-                check_type TEXT NOT NULL DEFAULT 'geometric',
-                threshold_min REAL,
-                threshold_max REAL,
-                unit TEXT DEFAULT 'mm',
-                severity TEXT DEFAULT 'warning',
-                description TEXT DEFAULT '',
-                suggestion_template TEXT DEFAULT '',
-                enabled INTEGER DEFAULT 1
-            );
-            CREATE INDEX IF NOT EXISTS idx_rules_set ON rules(rule_set_id);
-            CREATE INDEX IF NOT EXISTS idx_rules_process ON rules(process);
-        """)
-        await _db.commit()
+            await db.executescript("""
+                CREATE TABLE IF NOT EXISTS rule_sets (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    process TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE IF NOT EXISTS rules (
+                    id TEXT PRIMARY KEY,
+                    rule_set_id TEXT NOT NULL REFERENCES rule_sets(id),
+                    process TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    check_type TEXT NOT NULL DEFAULT 'geometric',
+                    threshold_min REAL,
+                    threshold_max REAL,
+                    unit TEXT DEFAULT 'mm',
+                    severity TEXT DEFAULT 'warning',
+                    description TEXT DEFAULT '',
+                    suggestion_template TEXT DEFAULT '',
+                    enabled INTEGER DEFAULT 1
+                );
+                CREATE INDEX IF NOT EXISTS idx_rules_set ON rules(rule_set_id);
+                CREATE INDEX IF NOT EXISTS idx_rules_process ON rules(process);
+            """)
+            await db.execute("BEGIN IMMEDIATE")
+            # Seed defaults if empty
+            cursor = await db.execute("SELECT COUNT(*) FROM rule_sets")
+            row = await cursor.fetchone()
+            if row[0] == 0:
+                await _seed_defaults(db)
+            await db.commit()
+        except BaseException:
+            await db.close()
+            raise
+        _db = db
+        return db
 
-        # Seed defaults if empty
-        cursor = await _db.execute("SELECT COUNT(*) FROM rule_sets")
-        row = await cursor.fetchone()
-        if row[0] == 0:
-            await _seed_defaults()
 
-        return _db
-
-
-async def _seed_defaults():
+async def _seed_defaults(db: aiosqlite.Connection):
     """Load default rules from JSON and insert into database."""
-    db = _db
-    if db is None:
-        return
-
     rules_data = json.loads(_DEFAULT_RULES_PATH.read_text(encoding="utf-8"))
 
     # Group by process
@@ -102,7 +107,6 @@ async def _seed_defaults():
                     r.get("description", ""), r.get("suggestion_template", ""),
                 ),
             )
-    await db.commit()
     logger.info(f"Seeded {len(rules_data)} default DFM rules across {len(by_process)} processes")
 
 
@@ -191,6 +195,16 @@ async def update_rule(rule_id: str, updates: dict) -> DFMRule | None:
     return _row_to_rule(row) if row else None
 
 
+@asynccontextmanager
+async def _rule_set_transaction():
+    await _get_db()
+    async with aiosqlite.connect(_database_path()) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("BEGIN IMMEDIATE")
+        yield db
+        await db.commit()
+
+
 async def clone_rule_set(source_id: str, new_id: str, new_name: str) -> DFMRuleSet | None:
     if settings.durable_control_plane_enabled:
         from app.dfm import postgres_store
@@ -200,35 +214,37 @@ async def clone_rule_set(source_id: str, new_id: str, new_name: str) -> DFMRuleS
             new_id,
             new_name,
         )
-    db = await _get_db()
-    cursor = await db.execute("SELECT * FROM rule_sets WHERE id = ?", (source_id,))
-    src = await cursor.fetchone()
-    if not src:
-        return None
+    async with _rule_set_transaction() as db:
+        cursor = await db.execute("SELECT * FROM rule_sets WHERE id = ?", (source_id,))
+        src = await cursor.fetchone()
+        if not src:
+            return None
 
-    await db.execute(
-        "INSERT INTO rule_sets (id, name, process) VALUES (?, ?, ?)",
-        (new_id, new_name, src["process"]),
-    )
-
-    cursor = await db.execute("SELECT * FROM rules WHERE rule_set_id = ?", (source_id,))
-    rows = await cursor.fetchall()
-    for r in rows:
-        new_rule_id = r["id"].replace(source_id, new_id) if source_id in r["id"] else f"{new_id}_{r['id']}"
-        await db.execute(
-            """INSERT INTO rules
-               (id, rule_set_id, process, category, check_type,
-                threshold_min, threshold_max, unit, severity,
-                description, suggestion_template, enabled)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                new_rule_id, new_id, r["process"], r["category"],
-                r["check_type"], r["threshold_min"], r["threshold_max"],
-                r["unit"], r["severity"], r["description"],
-                r["suggestion_template"], r["enabled"],
-            ),
+        inserted = await db.execute(
+            "INSERT INTO rule_sets (id, name, process) VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING",
+            (new_id, new_name, src["process"]),
         )
-    await db.commit()
+
+        if not inserted.rowcount:
+            raise RuleSetConflict("规则集 ID 已存在")
+
+        cursor = await db.execute("SELECT * FROM rules WHERE rule_set_id = ?", (source_id,))
+        rows = await cursor.fetchall()
+        for r in rows:
+            new_rule_id = r["id"].replace(source_id, new_id) if source_id in r["id"] else f"{new_id}_{r['id']}"
+            await db.execute(
+                """INSERT INTO rules
+                   (id, rule_set_id, process, category, check_type,
+                    threshold_min, threshold_max, unit, severity,
+                    description, suggestion_template, enabled)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    new_rule_id, new_id, r["process"], r["category"],
+                    r["check_type"], r["threshold_min"], r["threshold_max"],
+                    r["unit"], r["severity"], r["description"],
+                    r["suggestion_template"], r["enabled"],
+                ),
+            )
     rules = await get_rules_for_set(new_id)
     return DFMRuleSet(id=new_id, name=new_name, process=src["process"], rules=rules)
 
@@ -238,12 +254,13 @@ async def delete_rule_set(set_id: str) -> bool:
         from app.dfm import postgres_store
 
         return await postgres_store.delete_rule_set(set_id)
-    if set_id.startswith("default_"):
-        return False  # Cannot delete built-in sets
-    db = await _get_db()
-    await db.execute("DELETE FROM rules WHERE rule_set_id = ?", (set_id,))
-    await db.execute("DELETE FROM rule_sets WHERE id = ?", (set_id,))
-    await db.commit()
+    async with _rule_set_transaction() as db:
+        cursor = await db.execute("SELECT process FROM rule_sets WHERE id = ?", (set_id,))
+        row = await cursor.fetchone()
+        if row is None or set_id == f"default_{row['process'].lower()}":
+            return False
+        await db.execute("DELETE FROM rules WHERE rule_set_id = ?", (set_id,))
+        await db.execute("DELETE FROM rule_sets WHERE id = ?", (set_id,))
     return True
 
 

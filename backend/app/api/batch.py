@@ -6,6 +6,9 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from app.api.error_messages import submission_conflict, submission_conflict_response
+from app.domain.revisions import StaleBaseRevision
+from app.services.run_state import IdempotencyConflict
 from app.api.auth import get_durable_principal, verify_api_key, rate_limiter
 from app.domain.identity import PrincipalContext
 from app.services.event_relay import workflow_project_id
@@ -117,7 +120,9 @@ async def batch_generate(
     # Convert exceptions to failed responses
     final_results = []
     for i, r in enumerate(results):
-        if isinstance(r, Exception):
+        if isinstance(r, (StaleBaseRevision, IdempotencyConflict)):
+            final_results.append(submission_conflict(r, f"{request_id}-{i}"))
+        elif isinstance(r, Exception):
             final_results.append(GenerateResponse(
                 request_id=f"{request_id}-{i}",
                 success=False,
@@ -137,7 +142,7 @@ async def batch_generate(
 
 # ── Async Generate ─────────────────────────────────────────
 
-@router.post("/generate/async", response_model=AsyncTaskStatus)
+@router.post("/generate/async", response_model=AsyncTaskStatus, responses={409: {"model": GenerateResponse, "description": "Revision or idempotency conflict"}})
 async def generate_async(
     req: AsyncGenerateRequest,
     request: Request,
@@ -150,20 +155,23 @@ async def generate_async(
         base_revision_id=req.expected_base_revision_id,
         output_formats=req.output_formats,
     )
-    submission = await submit_durable_workflow(
-        current_principal(),
-        project_id=req.project_id,
-        branch_id=req.branch_id,
-        expected_base_revision_id=req.expected_base_revision_id,
-        idempotency_key=req.idempotency_key,
-        operation="generate",
-        objective=req.prompt,
-        output_formats=req.output_formats,
-        manufacturing_profile=req.manufacturing_profile,
-        modeling_backend=resolution.modeling_backend,
-        operation_context=resolution.operation_context,
-        **({"requirement_basis": req.requirement_basis} if req.requirement_basis is not None else {}),
-    )
+    try:
+        submission = await submit_durable_workflow(
+            current_principal(),
+            project_id=req.project_id,
+            branch_id=req.branch_id,
+            expected_base_revision_id=req.expected_base_revision_id,
+            idempotency_key=req.idempotency_key,
+            operation="generate",
+            objective=req.prompt,
+            output_formats=req.output_formats,
+            manufacturing_profile=req.manufacturing_profile,
+            modeling_backend=resolution.modeling_backend,
+            operation_context=resolution.operation_context,
+            **({"requirement_basis": req.requirement_basis} if req.requirement_basis is not None else {}),
+        )
+    except (StaleBaseRevision, IdempotencyConflict) as exc:
+        return submission_conflict_response(exc)
     return AsyncTaskStatus(
         task_id=str(submission.workflow_run_id),
         status="pending",

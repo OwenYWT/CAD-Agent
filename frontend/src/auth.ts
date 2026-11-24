@@ -46,8 +46,8 @@ export function getAuthUser(): AuthUser | null {
 }
 
 export function saveAuthSession(session: AuthSession) {
-  localStorage.setItem(TOKEN_KEY, session.token);
   localStorage.setItem(USER_KEY, JSON.stringify(session.user));
+  localStorage.setItem(TOKEN_KEY, session.token);
 }
 
 // Listeners notified whenever the session is cleared (logout, expiry, 401).
@@ -59,7 +59,16 @@ const refreshListeners = new Set<SessionListener>();
 
 export function onSessionRefreshed(listener: SessionListener): () => void {
   refreshListeners.add(listener);
-  return () => refreshListeners.delete(listener);
+  const subject = getAuthUser()?.id;
+  const onStorage = (event: StorageEvent) => {
+    if (event.storageArea === localStorage && event.key === TOKEN_KEY && event.oldValue && event.newValue
+        && subject && getAuthUser()?.id === subject) listener();
+  };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    refreshListeners.delete(listener);
+    window.removeEventListener("storage", onStorage);
+  };
 }
 
 export function onSessionCleared(listener: SessionListener): () => void {
@@ -152,13 +161,18 @@ export async function logoutAuthSession() {
 
 export async function deleteAuthAccount() {
   const token = getAuthToken();
+  let res: Response;
   try {
-    const res = await authFetch(`${API_BASE}/api/auth/account`, { method: "DELETE" });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text || "注销账号失败，请稍后重试");
-    }
-  } finally {
-    if (getAuthToken() === token) clearAuthSession();
+    res = await authFetch(`${API_BASE}/api/auth/account`, { method: "DELETE" });
+  } catch {
+    if (token !== getAuthToken()) return;
+    const account = await fetchCurrentUser();
+    if (token !== getAuthToken()) return;
+    throw new Error(account ? "账号仍然有效，可以重试注销。" : "注销结果尚未确认，请恢复连接后重试。");
   }
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || "注销账号失败，请稍后重试");
+  }
+  if (getAuthToken() === token) clearAuthSession();
 }

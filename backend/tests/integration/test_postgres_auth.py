@@ -13,7 +13,8 @@ from alembic.config import Config
 from sqlalchemy import text
 
 from app.config import settings
-from app.db import auth_transaction, close_database
+from app.db import auth_transaction, close_database, tenant_transaction
+from app.domain.identity import user_principal
 from app.storage import auth
 
 
@@ -57,23 +58,35 @@ async def database_engine_lifecycle(migrated_database):
 
 
 @pytest.mark.asyncio(loop_scope="module")
-async def test_register_login_session_codes_and_atomic_invite_consumption():
+async def test_register_login_session_codes_and_atomic_invite_consumption(monkeypatch):
     suffix = uuid4().hex
     phone = f"+861{int(suffix[:10], 16) % 10_000_000_000:010d}"
     invite = f"PG-{suffix}"
     stored_invite = invite
     user = None
+    existing = await auth.create_user(phone + "1", "strong-password-123", "verification_code")
     try:
         created_invite = await auth.create_invite_code(invite, 1)
         stored_invite = created_invite["code"]
         assert created_invite["used_count"] == 0
-        consumed = await asyncio.gather(
-            auth.consume_invite_code(invite),
-            auth.consume_invite_code(invite),
+        with monkeypatch.context() as registration:
+            failed_id = uuid4().hex
+            registration.setattr("app.storage.postgres_auth.secrets.token_hex", lambda _: failed_id)
+            with pytest.raises(ValueError, match="手机号已注册"):
+                await auth.create_user(existing["phone"], "strong-password-123", "invite_code", invite_code=invite)
+        assert (await auth.get_invite_code(stored_invite))["used_count"] == 0
+        failed = user_principal(failed_id)
+        async with tenant_transaction(failed.tenant_id, failed.principal_id) as conn:
+            assert not await conn.scalar(text("SELECT 1 FROM tenants WHERE id=:id"), {"id": failed.tenant_id})
+            assert not await conn.scalar(text("SELECT 1 FROM principals WHERE id=:id"), {"id": failed.principal_id})
+        registrations = await asyncio.gather(
+            *(auth.create_user(phone, "strong-password-123", "invite_code", invite_code=invite) for _ in range(2)),
+            return_exceptions=True,
         )
-        assert sorted(consumed) == [False, True]
-
-        user = await auth.create_user(phone, "strong-password-123", "invite_code")
+        user, = [result for result in registrations if isinstance(result, dict)]
+        failure, = [result for result in registrations if isinstance(result, ValueError)]
+        assert str(failure) == "邀请码无效、已过期或已用完"
+        assert (await auth.get_invite_code(stored_invite))["used_count"] == 1
         assert user["phone"] == phone
         assert not user["is_admin"]
         assert await auth.authenticate_password(phone, "wrong-password") is None
@@ -104,6 +117,7 @@ async def test_register_login_session_codes_and_atomic_invite_consumption():
             code,
         )
     finally:
+        await auth.delete_user(existing["id"])
         if user is not None:
             await auth.delete_user(user["id"])
         async with auth_transaction() as connection:

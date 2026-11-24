@@ -25,7 +25,7 @@ from app.models.workflow_requests import (
 from app.models.native_modification import (FreeCADParameterUpdateV1, FreeCADNativeEditV1, FreeCADStructuredModificationV1)
 from app.services.workflow_dispatch import persist_dispatch, start_dispatch, acknowledge_dispatch
 from app.config import settings
-from app.services.workflow_admission import create_document_workflow
+from app.services.workflow_admission import create_document_workflow, native_import_is_queued
 from app.services.run_state import (
     IllegalTransition,
     create_workflow,
@@ -182,6 +182,7 @@ async def start_mcad_agent_v2_workflow(
     structured_modification: FreeCADStructuredModificationV1 | None = None,
     revision_restore: FreeCADRevisionRestoreV1 | None = None,
     expected_state_version: int | None = None,
+    native_import_bytes: bytes | None = None,
 ) -> tuple[UUID, WorkflowHandle | None]:
     """Fail closed on V2 readiness, persist once, then start V2 idempotently."""
     objective = objective.strip()
@@ -207,6 +208,21 @@ async def start_mcad_agent_v2_workflow(
     # crash between the DB commit and Temporal start can still be repaired.
     if require_worker_ready:
         await temporal_agent_v2_worker_readiness()
+    if native_import_bytes is not None:
+        from app.object_store import put_object
+        source = operation_context.native_import if operation_context else None
+        if source is None:
+            raise ValueError("导入内容缺少已确认的文件身份")
+        # Reserve the same immutable key used by every submission. Only a
+        # completed admission has a document operation and dispatch intent.
+        async with tenant_transaction(tenant_id, principal_id) as connection:
+            reserved = await create_workflow(connection, tenant_id=tenant_id, project_id=project_id,
+                requested_by_principal_id=principal_id, kind=kind,
+                idempotency_key=idempotency_key, request_payload=request_payload)
+            admitted = reserved.replayed and await native_import_is_queued(connection, reserved.workflow_id)
+        if not admitted:
+            await put_object(source.object_key(tenant_id, branch_id), native_import_bytes,
+                content_type="application/x-freecad" if source.format == "fcstd" else "model/step", if_absent=True)
     async with tenant_transaction(tenant_id, principal_id) as connection:
         created = await create_document_workflow(
             connection,
@@ -216,6 +232,7 @@ async def start_mcad_agent_v2_workflow(
             kind=kind,
             idempotency_key=idempotency_key,
             request_payload=request_payload,
+            import_uploaded=native_import_bytes is not None,
         )
         durable_request = McadAgentWorkflowV2Request(
             document_queue=True,

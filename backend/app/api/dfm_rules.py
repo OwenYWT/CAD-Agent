@@ -41,7 +41,7 @@ async def get_rules_by_process(process: str, _=Depends(verify_api_key)):
     return [r.model_dump() for r in rules]
 
 
-@router.put("/dfm/rules/{rule_id}")
+@router.put("/dfm/rules/{rule_id:path}")
 async def update_rule(rule_id: str, body: RuleUpdateBody, _=Depends(verify_api_key)):
     updates = body.model_dump(exclude_none=True)
     if not updates:
@@ -57,14 +57,17 @@ async def update_rule(rule_id: str, body: RuleUpdateBody, _=Depends(verify_api_k
 
 @router.post("/dfm/rule-sets")
 async def clone_rule_set(body: CloneRuleSetBody, _=Depends(verify_api_key)):
-    result = await rule_store.clone_rule_set(body.source_id, body.new_id, body.new_name)
+    try:
+        result = await rule_store.clone_rule_set(body.source_id, body.new_id, body.new_name)
+    except rule_store.RuleSetConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
     if not result:
         raise HTTPException(404, f"Source rule set not found: {body.source_id}")
     return result.model_dump()
 
 
-@router.delete("/dfm/rule-sets/{set_id}")
+@router.delete("/dfm/rule-sets/{set_id:path}")
 async def delete_rule_set(set_id: str, _=Depends(verify_api_key)):
     if not await rule_store.delete_rule_set(set_id):
-        raise HTTPException(400, "Cannot delete built-in rule sets")
+        raise HTTPException(400, "Rule set does not exist or is built-in")
     return {"ok": True}

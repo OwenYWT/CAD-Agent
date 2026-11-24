@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class RequirementBasisV1(BaseModel):
     model_config = ConfigDict(extra='forbid', frozen=True, str_strip_whitespace=True)
     schema_version: Literal['requirement-basis.v1'] = 'requirement-basis.v1'
-    target: str = Field(min_length=1, max_length=1000)
+    target: str = Field(min_length=1, max_length=4000)
     purpose: str = Field(default='', max_length=500)
     design_scope: Literal['geometry', 'physical_fit'] = 'physical_fit'
     source_kind: Literal['none', 'user_specification', 'user_measurement', 'reference'] = 'none'
