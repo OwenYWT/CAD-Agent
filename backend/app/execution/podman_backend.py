@@ -46,7 +46,7 @@ def inspect_container_runtime(command: str, image_ref: str) -> RuntimeSnapshot:
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=15,
+        timeout=settings.sandbox_timeout_s,
     )
     if inspected_process.returncode != 0:
         raise RuntimeError(

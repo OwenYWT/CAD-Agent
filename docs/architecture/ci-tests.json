@@ -3271,6 +3271,7 @@
       "tests/test_agent_tools_api.py::test_service_key_does_not_inherit_shared_onshape_admin",
       "tests/test_execution_backend.py::test_output_role_is_exact_or_unambiguous",
       "tests/test_execution_backend.py::test_runtime_failure_is_coalesced_then_recovers",
+      "tests/test_execution_backend.py::test_image_inspection_uses_configured_sandbox_timeout",
       "tests/test_capability_actions_api.py::test_rejected_upload_does_not_parse_form",
       "tests/test_retry_intent_ratelimit.py::test_trusted_ingress_separates_client_limits_and_ignores_untrusted_prefixes",
       "tests/test_retry_intent_ratelimit.py::test_window_capacity_preserves_active_counters_and_expires_idle_keys",
