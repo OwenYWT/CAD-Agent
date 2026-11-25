@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any, Mapping
 from uuid import uuid4
 
+from benchmark.cad_test_engine.dataset import load_dataset
+
 from .mode import EvaluationMode, resolve_mode
 
 
@@ -58,6 +60,14 @@ class CadTestRunnerConfig:
             return settings.sandbox_image
         except Exception:
             return _DEFAULT_SCORER_IMAGE
+
+    def resolved_dataset_hash(self) -> str | None:
+        if self.dataset_root is None:
+            return None
+        try:
+            return load_dataset(Path(self.dataset_root), verify_files=True).dataset_hash
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
 
 
 def _sha256(path: Path) -> str:
@@ -262,7 +272,16 @@ def run_cad_test(
             error=exc,
         )
 
-    scorer_error = score.get("scorer_error") is True or completed.returncode != 0
+    scorer_artifact_sha256 = score.get("artifact_sha256")
+    artifact_identity_mismatch = (
+        scorer_artifact_sha256 is not None
+        and str(scorer_artifact_sha256) != artifact_sha256
+    )
+    scorer_error = (
+        score.get("scorer_error") is True
+        or completed.returncode != 0
+        or artifact_identity_mismatch
+    )
     passed = score.get("passed") is True and not scorer_error
     return {
         "status": "evaluation_error" if scorer_error else ("pass" if passed else "fail"),
@@ -270,6 +289,15 @@ def run_cad_test(
         "workflow_id": workflow_id,
         "candidate_revision_id": candidate_revision_id,
         "artifact_sha256": artifact_sha256,
+        "scorer_artifact_sha256": (
+            str(scorer_artifact_sha256) if scorer_artifact_sha256 is not None else None
+        ),
+        "dataset_hash": config.resolved_dataset_hash(),
+        **(
+            {"reason": "artifact_identity_mismatch"}
+            if artifact_identity_mismatch
+            else {}
+        ),
         "scorer_image": config.resolved_image(),
         "scorer_script_sha256": _sha256(config.resolved_script()),
         "score": score,
@@ -368,10 +396,145 @@ def run_native_delivery_check(
             "error": f"{type(exc).__name__}: {str(exc)[:1000]}",
         }
     if completed.returncode != 0 and result.get("status") != "error":
+        result["passed"] = False
         result["status"] = "failed"
     elif result.get("status") not in {"error", "failed"}:
         result["status"] = "passed" if result.get("passed") is True else "failed"
     return result
+
+
+def run_cad_test_2d(
+    *,
+    artifact_path: Path,
+    case_id: str,
+    workflow_id: str,
+    candidate_revision_id: str,
+    config: CadTestRunnerConfig,
+) -> dict[str, Any] | None:
+    """Score a DXF through the repository-owned 2D route."""
+
+    if resolve_mode() is not EvaluationMode.OBSERVE:
+        return None
+    artifact = Path(artifact_path).resolve()
+    if not artifact.is_file():
+        return _error_result(
+            artifact_sha256=None,
+            workflow_id=workflow_id,
+            candidate_revision_id=candidate_revision_id,
+            case_id=case_id,
+            reason="artifact_not_found",
+        )
+    artifact_sha256 = _sha256(artifact)
+    case = config.resolved_case(case_id)
+    if config.scorer_script is None and case is None:
+        return _error_result(
+            artifact_sha256=artifact_sha256,
+            workflow_id=workflow_id,
+            candidate_revision_id=candidate_revision_id,
+            case_id=case_id,
+            reason="dataset_case_not_found",
+        )
+    output = config.root / "cad_test" / f"run-2d-{uuid4()}"
+    output.mkdir(parents=True, exist_ok=True)
+    score_path = output / "score.json"
+    try:
+        if config.scorer_script is not None:
+            command = [
+                config.python_executable,
+                str(config.scorer_script.resolve()),
+                "score",
+                "--case",
+                case_id,
+                "--step",
+                str(artifact),
+                "--out",
+                str(output),
+                "--image",
+                config.resolved_image(),
+            ]
+        else:
+            command = [
+                "podman",
+                "run",
+                "--rm",
+                "--network",
+                "none",
+                *_podman_bind_mount(_ENGINE_ROOT, "/code", readonly=True),
+                *_podman_bind_mount(case, "/case", readonly=True),
+                *_podman_bind_mount(artifact.parent, "/input", readonly=True),
+                *_podman_bind_mount(output, "/out", readonly=False),
+                "--entrypoint",
+                "python",
+                config.resolved_image(),
+                "/code/score_dxf.py",
+                f"/input/{artifact.name}",
+                "/case",
+                "/out/score.json",
+            ]
+        completed = subprocess.run(
+            command,
+            cwd=str(config.resolved_script().parent),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=config.timeout_seconds,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return _error_result(
+            artifact_sha256=artifact_sha256,
+            workflow_id=workflow_id,
+            candidate_revision_id=candidate_revision_id,
+            case_id=case_id,
+            reason="scorer_execution_failed",
+            error=exc,
+        )
+    (output / "scorer.log").write_text(
+        completed.stdout + "\n" + completed.stderr,
+        encoding="utf-8",
+    )
+    if not score_path.is_file():
+        return _error_result(
+            artifact_sha256=artifact_sha256,
+            workflow_id=workflow_id,
+            candidate_revision_id=candidate_revision_id,
+            case_id=case_id,
+            reason="score_missing",
+        )
+    try:
+        score = _load_score(score_path)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return _error_result(
+            artifact_sha256=artifact_sha256,
+            workflow_id=workflow_id,
+            candidate_revision_id=candidate_revision_id,
+            case_id=case_id,
+            reason="score_invalid",
+            error=exc,
+        )
+    scorer_artifact_sha256 = score.get("artifact_sha256")
+    artifact_identity_mismatch = (
+        scorer_artifact_sha256 is not None
+        and str(scorer_artifact_sha256) != artifact_sha256
+    )
+    scorer_error = (
+        score.get("scorer_error") is True
+        or completed.returncode != 0
+        or artifact_identity_mismatch
+    )
+    return {
+        "status": "evaluation_error" if scorer_error else ("pass" if score.get("passed") is True else "fail"),
+        "case_id": case_id,
+        "workflow_id": workflow_id,
+        "candidate_revision_id": candidate_revision_id,
+        "artifact_sha256": artifact_sha256,
+        "scorer_artifact_sha256": (
+            str(scorer_artifact_sha256) if scorer_artifact_sha256 is not None else None
+        ),
+        "dataset_hash": config.resolved_dataset_hash(),
+        "score": score,
+    }
 
 
 def run_cad_test_bundle(
@@ -381,9 +544,27 @@ def run_cad_test_bundle(
     workflow_id: str,
     candidate_revision_id: str,
     config: CadTestRunnerConfig,
+    modeling_path: str = "extrude_cut",
 ) -> dict[str, Any] | None:
     """Combine independent STEP scoring and native delivery evidence."""
 
+    if modeling_path == "2d":
+        dxf = artifacts.get("dxf")
+        if dxf is None:
+            return _error_result(
+                artifact_sha256=None,
+                workflow_id=workflow_id,
+                candidate_revision_id=candidate_revision_id,
+                case_id=case_id,
+                reason="dxf_artifact_missing",
+            ) if resolve_mode() is EvaluationMode.OBSERVE else None
+        return run_cad_test_2d(
+            artifact_path=Path(dxf),
+            case_id=case_id,
+            workflow_id=workflow_id,
+            candidate_revision_id=candidate_revision_id,
+            config=config,
+        )
     step = artifacts.get("step")
     if step is None:
         return _error_result(

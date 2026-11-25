@@ -5,16 +5,14 @@ from pathlib import Path
 import FreeCAD as App
 import Part
 import Mesh
+from native_delivery_selection import select_final_objects
 
 result={'passed':False,'freecad_version':App.Version()}
 doc=None
 try:
     inputs=json.loads(Path('/input/delivery-inputs.json').read_text())
     doc=App.openDocument('/input/'+inputs['fcstd']);doc.recompute()
-    objects=[o for o in doc.Objects if o.TypeId=='PartDesign::Body' and not o.Shape.isNull()]
-    objects += [o for o in doc.Objects if o.isDerivedFrom('Part::Feature') and o.TypeId!='PartDesign::Body'
-        and hasattr(o,'Shape') and not o.Shape.isNull()
-        and not any(p.isDerivedFrom('Part::Feature') or p.TypeId=='PartDesign::Body' for p in o.InList)]
+    objects=select_final_objects(doc.Objects)
     if not objects:raise ValueError('no final native solids')
     native=Part.makeCompound([o.Shape for o in objects]);step=Part.read('/input/'+inputs['step'])
     mesh=Mesh.Mesh('/input/'+inputs['stl'])
@@ -36,3 +34,4 @@ finally:
     if doc:App.closeDocument(doc.Name)
 Path('/out/native-delivery.json').write_text(json.dumps(result,indent=2))
 print('CAD_EVAL_NATIVE_DELIVERY='+str(result['passed']))
+raise SystemExit(0 if result['passed'] else 1)

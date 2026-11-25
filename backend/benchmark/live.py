@@ -37,6 +37,7 @@ class LiveBenchmarkContext:
     report_root: Path
     timeout_seconds: float = 180.0
     run_id: str = "live-benchmark"
+    dataset_hash: str | None = None
 
 
 Submitter = Callable[..., Awaitable[DurableSubmission]]
@@ -244,13 +245,21 @@ def _artifact_gate_from_live_report(
         str(artifact.get("format", "")).casefold(): artifact
         for artifact in artifacts
     }
+    cad_test_required = case.get("cad_test_required", True) is True
     if case.get("path") == "2d":
         dxf_readable = formats.get("dxf", {}).get("parseable") is True
-        return {
+        gate = {
             "source": "live_report",
             "dxf_readable": dxf_readable,
             "passed": dxf_readable,
         }
+        cad_test_gate = _live_cad_test_gate(report)
+        gate.update(cad_test_gate)
+        if cad_test_gate and cad_test_required:
+            gate["passed"] = gate["passed"] and (
+                cad_test_gate.get("cad_test_status") == "passed"
+            )
+        return gate
 
     step_readable = formats.get("step", {}).get("parseable") is True
     stl_readable = formats.get("stl", {}).get("parseable") is True
@@ -271,7 +280,7 @@ def _artifact_gate_from_live_report(
     }
     cad_test_gate = _live_cad_test_gate(report)
     gate.update(cad_test_gate)
-    if cad_test_gate:
+    if cad_test_gate and cad_test_required:
         gate["passed"] = bool(gate["passed"])
         gate["passed"] = gate["passed"] and (
             cad_test_gate.get("cad_test_status") == "passed"
@@ -314,11 +323,14 @@ def benchmark_row_from_live_report(
     cad_test = report.get("cad_test")
     if isinstance(cad_test, Mapping) and cad_test:
         row["cad_test"] = dict(cad_test)
-    row["passed"] = (
-        status == "finished"
-        and artifact_gate["passed"]
-        and cad_test_gate_status == "passed"
-        and native_delivery_verified
+    cad_test_required = case.get("cad_test_required", True) is True
+    is_2d = case.get("path") == "2d"
+    row["passed"] = status == "finished" and artifact_gate["passed"] and (
+        not cad_test_required
+        or (
+            cad_test_gate_status == "passed"
+            and (is_2d or native_delivery_verified)
+        )
     )
     if status != "finished":
         row["live_report_error"] = (
@@ -373,10 +385,12 @@ async def run_live_case(
         idempotency_key=f"benchmark:{context.run_id}:{case_id}:run-{repeat_index}",
         operation="generate",
         objective=str(case["description"]),
-        output_formats=["step", "stl"],
+        output_formats=["dxf"] if case.get("path") == "2d" else ["step", "stl"],
         modeling_backend="auto",
         source_kind="benchmark",
         source_id=case_id,
+        source_dataset_hash=context.dataset_hash,
+        source_modeling_path=str(case.get("path") or "extrude_cut"),
     )
     response = await waiter(
         context.principal,

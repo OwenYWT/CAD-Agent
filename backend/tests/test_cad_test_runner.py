@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -170,6 +171,85 @@ def test_bundle_keeps_step_only_evidence_incomplete(tmp_path, monkeypatch):
     assert result["native_delivery"]["status"] == "unavailable"
 
 
+def test_bundle_uses_dxf_route_without_native_3d_requirements(tmp_path, monkeypatch):
+    monkeypatch.setenv("CAD_EVALUATION_MODE", "observe")
+    _write_fake_cad_test(
+        tmp_path,
+        score={
+            "schema_version": "cad-eval-score.v1",
+            "passed": True,
+            "geometry_valid": True,
+            "requirements_passed": 1,
+            "requirements_total": 1,
+            "checks": [],
+            "scorer_error": False,
+        },
+    )
+
+    artifact = tmp_path / "result.dxf"
+    artifact.write_bytes(b"dxf-artifact")
+
+    result = run_cad_test_bundle(
+        artifacts={"dxf": artifact},
+        case_id="case-1",
+        workflow_id="workflow-1",
+        candidate_revision_id="revision-1",
+        config=_config(tmp_path),
+        modeling_path="2d",
+    )
+
+    assert result["status"] == "pass"
+    assert result["score"]["passed"] is True
+    assert "native_delivery" not in result
+
+
+def _write_verified_dataset(root: Path) -> Path:
+    dataset_root = root / "dataset"
+    case_root = dataset_root / "data" / "cases" / "case-1"
+    case_root.mkdir(parents=True)
+    (case_root / "prompt.txt").write_text("Create a test solid.", encoding="utf-8")
+    case_json = case_root / "case.json"
+    case_json.write_text("{}", encoding="utf-8")
+    controls = dataset_root / "reports" / "controls-validation.json"
+    controls.parent.mkdir(parents=True)
+    controls.write_text("{}", encoding="utf-8")
+    case_hash = hashlib.sha256(case_json.read_bytes()).hexdigest()
+    controls_hash = hashlib.sha256(controls.read_bytes()).hexdigest()
+    manifest = {
+        "status": "validated",
+        "controls_sha256": controls_hash,
+        "cases": [
+            {
+                "id": "case-1",
+                "difficulty": "basic",
+                "case_json_sha256": case_hash,
+                "file_hashes": {},
+            }
+        ],
+    }
+    encoded = json.dumps(
+        manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    manifest["dataset_hash"] = hashlib.sha256(encoded).hexdigest()
+    (dataset_root / "data" / "dataset-v1.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    return dataset_root
+
+
+def test_resolved_dataset_hash_requires_verified_dataset_files(tmp_path):
+    dataset_root = _write_verified_dataset(tmp_path)
+    config = CadTestRunnerConfig(root=tmp_path, dataset_root=dataset_root)
+
+    assert config.resolved_dataset_hash()
+
+    (dataset_root / "reports" / "controls-validation.json").write_text(
+        '{"tampered": true}', encoding="utf-8"
+    )
+
+    assert config.resolved_dataset_hash() is None
+
+
 def test_bundle_combines_verified_native_delivery(tmp_path, monkeypatch):
     monkeypatch.setenv("CAD_EVALUATION_MODE", "observe")
     _write_fake_cad_test(
@@ -234,6 +314,40 @@ def test_native_delivery_check_rejects_artifacts_from_different_directories(tmp_
         "status": "error",
         "reason": "delivery_artifacts_must_share_directory",
     }
+
+
+def test_native_delivery_nonzero_exit_cannot_report_passed(tmp_path, monkeypatch):
+    artifacts = {}
+    for kind in ("step", "fcstd", "stl"):
+        path = tmp_path / f"result.{kind}"
+        path.write_bytes(kind.encode("ascii"))
+        artifacts[kind] = path
+
+    def failed_wrapper(command, **kwargs):
+        output_mount = next(
+            item
+            for item in command
+            if item.startswith("type=bind,source=")
+            and ",destination=/out" in item
+        )
+        output_path = Path(
+            output_mount.split("source=", 1)[1].split(",destination=", 1)[0]
+        )
+        output_path.mkdir(parents=True, exist_ok=True)
+        (output_path / "native-delivery.json").write_text(
+            json.dumps({"passed": True}), encoding="utf-8"
+        )
+        return subprocess.CompletedProcess(command, 1, "", "verification failed")
+
+    monkeypatch.setattr(subprocess, "run", failed_wrapper)
+
+    result = run_native_delivery_check(
+        artifacts=artifacts,
+        config=_config(tmp_path),
+    )
+
+    assert result["status"] == "failed"
+    assert result["passed"] is False
 
 
 def test_internal_scorer_uses_mount_syntax_for_windows_host_paths(tmp_path, monkeypatch):

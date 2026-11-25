@@ -91,7 +91,8 @@ def _select_cases(dataset: CadTestDataset, selection: str, limit: int | None) ->
             **case,
             "id": str(case["id"]),
             "description": str(case.get("prompt") or ""),
-            "path": "extrude_cut",
+            "path": str(case.get("path") or "extrude_cut"),
+            "cad_test_required": True,
             "difficulty": str(case.get("difficulty") or "unknown"),
         }
         for case in selected
@@ -198,6 +199,7 @@ async def _live(args: argparse.Namespace, dataset: CadTestDataset) -> int:
         report_root=args.report_root,
         timeout_seconds=args.timeout_seconds,
         run_id=run_id,
+        dataset_hash=dataset.dataset_hash,
     )
     rows: list[dict[str, Any]] = []
     for repeat in range(1, args.repeat + 1):

@@ -2,6 +2,7 @@
 from __future__ import annotations
 import asyncio
 import hashlib
+import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -54,6 +55,8 @@ from app.evaluation.integration import (
 )
 from app.evaluation.cad_test_observer import observe_sealed_candidate
 from app.evaluation.contracts import utc_now
+
+logger = logging.getLogger(__name__)
 
 class McadWorkflowActivities:
     def __init__(
@@ -115,8 +118,11 @@ class McadWorkflowActivities:
         if activity_name == "agent_v2.seal_candidate":
             try:
                 await observe_sealed_candidate(payload, result)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "sealed-candidate evaluation observation failed: %s",
+                    type(exc).__name__,
+                )
             try:
                 record_workflow_terminal(payload, result)
             except Exception:

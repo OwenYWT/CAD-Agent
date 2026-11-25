@@ -109,6 +109,17 @@ def test_render_html_contains_summary_cases_and_live_details():
     assert "reports/live/live_test.json" in html
 
 
+def test_render_html_uses_utf8_status_labels_without_mojibake():
+    from benchmark.cad_test_report import render_html
+
+    rendered = render_html(_report())
+
+    assert "最终通过" in rendered
+    assert "通过" in rendered
+    assert "閫氳繃" not in rendered
+    assert "鏈褰" not in rendered
+
+
 def test_summary_shows_case_success_coverage_for_repeated_runs():
     from benchmark.cad_test_report import render_html
 

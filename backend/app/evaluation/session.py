@@ -54,6 +54,7 @@ class EvaluationSession:
         evaluation_run_id: str | None = None,
         source_kind: str = "user_task",
         source_id: str | None = None,
+        source_metadata: Mapping[str, str] | None = None,
         request_id: str | None = None,
         task_id: str | None = None,
         workflow_id: str | None = None,
@@ -63,6 +64,14 @@ class EvaluationSession:
         source = {"kind": source_kind}
         if source_id is not None:
             source["id"] = source_id
+        for key, value in (source_metadata or {}).items():
+            if key in {"kind", "id"}:
+                raise ValueError(f"reserved evaluation source metadata: {key}")
+            if not isinstance(key, str) or not key.strip():
+                raise ValueError("evaluation source metadata keys must be non-empty strings")
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError("evaluation source metadata values must be non-empty strings")
+            source[key] = value
         return cls(
             evaluation_run_id=evaluation_run_id or str(uuid4()),
             mode=EvaluationMode(mode),

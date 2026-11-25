@@ -99,6 +99,182 @@ async def test_sealed_benchmark_candidate_downloads_and_attaches_real_artifacts(
 
 
 @pytest.mark.asyncio
+async def test_sealed_2d_benchmark_candidate_is_not_discarded(tmp_path, monkeypatch):
+    from app.evaluation.cad_test_observer import observe_sealed_candidate
+
+    monkeypatch.setenv("CAD_EVALUATION_MODE", "observe")
+    session = EvaluationSession.create(
+        mode="observe",
+        evaluation_run_id="live-workflow-2d",
+        source_kind="benchmark",
+        source_id="X01",
+        source_metadata={"modeling_path": "2d"},
+        workflow_id="workflow-2d",
+    )
+    FileEvaluationStore(tmp_path).create(session)
+    data = b"dxf-artifact"
+    attached = []
+
+    async def download(_key, destination, *, expected_size=None):
+        Path(destination).write_bytes(data)
+        return {"sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data)}
+
+    def attach(payload, artifacts, **kwargs):
+        attached.append(
+            (
+                payload,
+                {kind: path.read_bytes() for kind, path in artifacts.items()},
+                kwargs,
+            )
+        )
+
+    monkeypatch.setattr("app.evaluation.cad_test_observer.download_object", download)
+    monkeypatch.setattr("app.evaluation.cad_test_observer.attach_cad_test_artifacts", attach)
+
+    await observe_sealed_candidate(
+        {"workflow_run_id": "workflow-2d"},
+        {
+            "status": "succeeded",
+            "candidate_revision_id": "revision-2d",
+            "artifacts": [
+                {
+                    "artifact_kind": "dxf",
+                    "object_key": "dxf",
+                    "size_bytes": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                    "is_primary": True,
+                }
+            ],
+        },
+        root=tmp_path,
+        config=CadTestRunnerConfig(root=tmp_path),
+    )
+
+    assert len(attached) == 1
+    assert set(attached[0][1]) == {"dxf"}
+    assert attached[0][2]["modeling_path"] == "2d"
+
+
+@pytest.mark.asyncio
+async def test_sealed_assembly_uses_explicit_primary_artifact_bundle(tmp_path, monkeypatch):
+    from app.evaluation.cad_test_observer import observe_sealed_candidate
+
+    monkeypatch.setenv("CAD_EVALUATION_MODE", "observe")
+    session = EvaluationSession.create(
+        mode="observe",
+        evaluation_run_id="live-workflow-assembly",
+        source_kind="benchmark",
+        source_id="A01",
+        source_metadata={"modeling_path": "assembly"},
+        workflow_id="workflow-assembly",
+    )
+    FileEvaluationStore(tmp_path).create(session)
+    attached = []
+
+    async def download(key, destination, *, expected_size=None):
+        data = key.encode("ascii")
+        Path(destination).write_bytes(data)
+        return {"sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data)}
+
+    def attach(payload, artifacts, **kwargs):
+        attached.append(
+            (
+                payload,
+                {kind: path.read_bytes() for kind, path in artifacts.items()},
+                kwargs,
+            )
+        )
+
+    artifacts = []
+    for role, primary in (("part", False), ("assembly", True)):
+        for kind in ("step", "fcstd", "stl"):
+            data = f"{role}-{kind}".encode("ascii")
+            artifacts.append(
+                {
+                    "artifact_kind": kind,
+                    "object_key": f"{role}-{kind}",
+                    "size_bytes": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                    "is_primary": primary,
+                }
+            )
+    monkeypatch.setattr("app.evaluation.cad_test_observer.download_object", download)
+    monkeypatch.setattr("app.evaluation.cad_test_observer.attach_cad_test_artifacts", attach)
+
+    await observe_sealed_candidate(
+        {"workflow_run_id": "workflow-assembly"},
+        {
+            "status": "succeeded",
+            "candidate_revision_id": "revision-assembly",
+            "artifacts": artifacts,
+        },
+        root=tmp_path,
+        config=CadTestRunnerConfig(root=tmp_path),
+    )
+
+    assert len(attached) == 1
+    assert set(attached[0][1]) == {"step", "fcstd", "stl"}
+    assert all(b"assembly" in value for value in attached[0][1].values())
+    assert attached[0][2]["modeling_path"] == "assembly"
+
+
+@pytest.mark.asyncio
+async def test_sealed_assembly_selects_combine_prefixed_artifacts_without_metadata(
+    tmp_path, monkeypatch
+):
+    from app.evaluation.cad_test_observer import observe_sealed_candidate
+
+    monkeypatch.setenv("CAD_EVALUATION_MODE", "observe")
+    session = EvaluationSession.create(
+        mode="observe",
+        evaluation_run_id="live-workflow-assembly-prefix",
+        source_kind="benchmark",
+        source_id="A02",
+        source_metadata={"modeling_path": "assembly"},
+        workflow_id="workflow-assembly-prefix",
+    )
+    FileEvaluationStore(tmp_path).create(session)
+    attached = []
+
+    async def download(key, destination, *, expected_size=None):
+        data = key.encode("ascii")
+        Path(destination).write_bytes(data)
+        return {"sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data)}
+
+    def attach(payload, artifacts, **kwargs):
+        attached.append({kind: path.read_bytes() for kind, path in artifacts.items()})
+
+    artifact_rows = []
+    for prefix in ("part-01", "combine-final"):
+        for kind in ("step", "fcstd", "stl"):
+            data = f"{prefix}-{kind}".encode("ascii")
+            artifact_rows.append(
+                {
+                    "artifact_kind": kind,
+                    "filename": f"{prefix}-model.{kind}",
+                    "object_key": f"{prefix}-{kind}",
+                    "size_bytes": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                }
+            )
+    monkeypatch.setattr("app.evaluation.cad_test_observer.download_object", download)
+    monkeypatch.setattr("app.evaluation.cad_test_observer.attach_cad_test_artifacts", attach)
+
+    await observe_sealed_candidate(
+        {"workflow_run_id": "workflow-assembly-prefix"},
+        {
+            "status": "succeeded",
+            "candidate_revision_id": "revision-assembly-prefix",
+            "artifacts": artifact_rows,
+        },
+        root=tmp_path,
+        config=CadTestRunnerConfig(root=tmp_path),
+    )
+
+    assert attached == [{kind: f"combine-final-{kind}".encode("ascii") for kind in ("step", "fcstd", "stl")}]
+
+
+@pytest.mark.asyncio
 async def test_sealed_candidate_integrity_mismatch_does_not_score_tampered_artifact(
     tmp_path, monkeypatch
 ):
@@ -137,6 +313,59 @@ async def test_sealed_candidate_integrity_mismatch_does_not_score_tampered_artif
     )
 
     assert called == []
+
+
+@pytest.mark.asyncio
+async def test_sealed_benchmark_integrity_failure_is_recorded_as_blocked_evidence(
+    tmp_path, monkeypatch
+):
+    from app.evaluation.cad_test_observer import observe_sealed_candidate
+
+    monkeypatch.setenv("CAD_EVALUATION_MODE", "observe")
+    _session(tmp_path, source_kind="benchmark", source_id="P01")
+    attached = []
+
+    async def download(_key, destination, *, expected_size=None):
+        Path(destination).write_bytes(b"tampered")
+        return {"sha256": "0" * 64, "size_bytes": 8}
+
+    def attach(payload, result, **kwargs):
+        attached.append((payload, result, kwargs))
+
+    monkeypatch.setattr("app.evaluation.cad_test_observer.download_object", download)
+    monkeypatch.setattr(
+        "app.evaluation.cad_test_observer.attach_cad_test_observation", attach
+    )
+
+    await observe_sealed_candidate(
+        {"workflow_run_id": "workflow-1"},
+        {
+            "status": "succeeded",
+            "candidate_revision_id": "revision-1",
+            "artifacts": [
+                {
+                    "artifact_kind": "step",
+                    "object_key": "step",
+                    "size_bytes": 8,
+                    "sha256": "f" * 64,
+                }
+            ],
+        },
+        root=tmp_path,
+        config=CadTestRunnerConfig(root=tmp_path),
+    )
+
+    assert len(attached) == 1
+    payload, result, kwargs = attached[0]
+    assert payload == {
+        "workflow_run_id": "workflow-1",
+        "candidate_revision_id": "revision-1",
+    }
+    assert result["status"] == "blocked"
+    assert result["reason"] == "artifact_integrity_mismatch"
+    assert result["case_id"] == "P01"
+    assert result["artifact_kind"] == "step"
+    assert kwargs["root"] == tmp_path
 
 
 @pytest.mark.asyncio
@@ -251,6 +480,64 @@ async def test_sealed_benchmark_candidate_uses_environment_configuration(tmp_pat
 
     assert len(attached) == 1
     assert attached[0][2]["case_id"] == "P01"
+
+
+@pytest.mark.asyncio
+async def test_sealed_benchmark_candidate_records_final_attachment_failure(
+    tmp_path, monkeypatch
+):
+    from app.evaluation.cad_test_observer import observe_sealed_candidate
+
+    monkeypatch.setenv("CAD_EVALUATION_MODE", "observe")
+    _session(tmp_path, source_kind="benchmark", source_id="P01")
+    source = {"step": b"step-artifact"}
+    failures = []
+
+    async def download(key, destination, *, expected_size=None):
+        data = source[key]
+        Path(destination).write_bytes(data)
+        return {"sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data)}
+
+    def attach(*args, **kwargs):
+        raise RuntimeError("attachment failed")
+
+    def record(payload, result, **kwargs):
+        failures.append((payload, result, kwargs))
+
+    monkeypatch.setattr("app.evaluation.cad_test_observer.download_object", download)
+    monkeypatch.setattr("app.evaluation.cad_test_observer.attach_cad_test_artifacts", attach)
+    monkeypatch.setattr("app.evaluation.cad_test_observer.attach_cad_test_observation", record)
+
+    await observe_sealed_candidate(
+        {"workflow_run_id": "workflow-1"},
+        {
+            "status": "succeeded",
+            "candidate_revision_id": "revision-1",
+            "artifacts": [
+                {
+                    "artifact_kind": "step",
+                    "object_key": "step",
+                    "size_bytes": len(source["step"]),
+                    "sha256": hashlib.sha256(source["step"]).hexdigest(),
+                }
+            ],
+        },
+        root=tmp_path,
+        config=CadTestRunnerConfig(root=tmp_path, scorer_image="test-image"),
+    )
+
+    assert len(failures) == 1
+    payload, result, kwargs = failures[0]
+    assert payload == {
+        "workflow_run_id": "workflow-1",
+        "candidate_revision_id": "revision-1",
+    }
+    assert result["status"] == "error"
+    assert result["reason"] == "cad_test_attachment_failed"
+    assert result["case_id"] == "P01"
+    assert result["workflow_id"] == "workflow-1"
+    assert result["candidate_revision_id"] == "revision-1"
+    assert kwargs["root"] == tmp_path
 
 
 @pytest.mark.asyncio

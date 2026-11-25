@@ -127,6 +127,35 @@ def test_live_benchmark_row_includes_cad_test_delivery_evidence():
     assert row["artifact_gate"]["stl_facets"] == 12
 
 
+def test_live_2d_benchmark_row_passes_without_3d_native_delivery():
+    from benchmark.live import benchmark_row_from_live_report
+
+    row = benchmark_row_from_live_report(
+        case={"id": "X01", "description": "create a profile", "path": "2d"},
+        response=SimpleNamespace(success=True, files={"dxf": "result.dxf"}),
+        live_report={
+            "status": "finished",
+            "cad_test": {
+                "status": "passed",
+                "verdict": True,
+            },
+            "evidence": [
+                {
+                    "source_kind": "agent_v2.validate_geometry",
+                    "observed": {
+                        "artifacts": [{"format": "dxf", "parseable": True}]
+                    },
+                }
+            ],
+        },
+        report_path="reports/live/live-X01.json",
+    )
+
+    assert row["artifact_gate"]["cad_test_status"] == "passed"
+    assert row["artifact_gate"]["native_delivery_verified"] is None
+    assert row["passed"] is True
+
+
 def test_live_benchmark_row_ignores_empty_cad_test_observation():
     from benchmark.live import benchmark_row_from_live_report
 
@@ -370,6 +399,56 @@ async def test_live_benchmark_admission_passes_case_identity_and_links_report(tm
     assert result["live_report_path"].endswith(
         f"live_live-{workflow_id}.json"
     )
+
+
+@pytest.mark.asyncio
+async def test_live_benchmark_uses_route_specific_outputs_and_dataset_identity(tmp_path):
+    from benchmark.live import LiveBenchmarkContext, run_live_case
+
+    calls = []
+    workflow_id = uuid4()
+    principal = SimpleNamespace(tenant_id=uuid4(), principal_id=uuid4())
+
+    async def submit(_principal, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(workflow_run_id=workflow_id, handle=object())
+
+    async def wait(_principal, _submission, *, timeout_seconds):
+        return SimpleNamespace(success=True, needs_confirmation=False)
+
+    report_path = tmp_path / "live" / f"live_live-{workflow_id}.json"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text(
+        json.dumps(
+            {
+                "evaluation_run_id": f"live-{workflow_id}",
+                "status": "finished",
+                "finished_at": "2026-11-26T00:00:00Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    await run_live_case(
+        {"id": "X01", "description": "create a profile", "path": "2d"},
+        context=LiveBenchmarkContext(
+            principal=principal,
+            project_id=uuid4(),
+            branch_id=uuid4(),
+            expected_base_revision_id=uuid4(),
+            report_root=tmp_path,
+            timeout_seconds=12,
+            dataset_hash="a" * 64,
+        ),
+        repeat_index=1,
+        submitter=submit,
+        waiter=wait,
+    )
+
+    assert calls[0]["output_formats"] == ["dxf"]
+    assert calls[0]["source_id"] == "X01"
+    assert calls[0]["source_dataset_hash"] == "a" * 64
+    assert calls[0]["source_modeling_path"] == "2d"
 
 
 @pytest.mark.asyncio

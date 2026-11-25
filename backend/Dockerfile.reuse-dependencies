@@ -12,8 +12,9 @@ RUN cmp requirements.txt /tmp/cad-agent-dependencies/requirements.txt \
 
 # Clear the base image's application snapshot so removed modules cannot survive
 # COPY. These paths are inside this new image layer, never the host workspace.
-RUN rm -rf /app/backend/app /app/backend/examples /app/backend/alembic /app/third_party/cadskills
+RUN rm -rf /app/backend/app /app/backend/benchmark /app/backend/examples /app/backend/alembic /app/third_party/cadskills
 COPY backend/app ./app
+COPY backend/benchmark ./benchmark
 COPY backend/examples ./examples
 COPY backend/alembic.ini .
 COPY backend/alembic ./alembic

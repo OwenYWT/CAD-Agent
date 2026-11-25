@@ -92,6 +92,8 @@ class FileEvaluationStore:
         result: Mapping[str, Any] | None,
         *,
         expected_artifact_sha256: str | None = None,
+        expected_case_id: str | None = None,
+        expected_dataset_hash: str | None = None,
     ) -> Path:
         """Attach independent CADTest evidence without changing business state."""
         target = self.path_for(evaluation_run_id)
@@ -102,6 +104,8 @@ class FileEvaluationStore:
                 report,
                 result,
                 expected_artifact_sha256=expected_artifact_sha256,
+                expected_case_id=expected_case_id,
+                expected_dataset_hash=expected_dataset_hash,
             ),
         )
 

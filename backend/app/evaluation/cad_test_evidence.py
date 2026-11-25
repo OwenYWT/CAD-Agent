@@ -69,6 +69,8 @@ def normalize_cad_test_result(
     expected_workflow_id: str | None = None,
     expected_candidate_revision_id: str | None = None,
     expected_artifact_sha256: str | None = None,
+    expected_case_id: str | None = None,
+    expected_dataset_hash: str | None = None,
 ) -> dict[str, Any]:
     """Return a bounded, evidence-based CADTest result.
 
@@ -88,11 +90,32 @@ def normalize_cad_test_result(
 
     score = _mapping(result.get("score")) or {}
     native = _mapping(result.get("native_delivery")) or {}
+    delivery_verified = _bool(result.get("delivery_verified"))
+    native_delivery_passed = _bool(native.get("passed"))
+    delivery_evidence_conflict = (
+        "delivery_verified" in result
+        and "passed" in native
+        and (
+            delivery_verified is None
+            or native_delivery_passed is None
+            or delivery_verified != native_delivery_passed
+        )
+    )
+    delivery_passed = delivery_verified
+    if delivery_passed is None:
+        delivery_passed = native_delivery_passed
+    raw_status = str(result.get("status") or "").lower()
+    explicit_reason = _text(result.get("reason"))
     workflow_id = _text(result.get("workflow_id"))
     candidate_revision_id = _text(
         result.get("candidate_revision_id") or result.get("revision_id")
     )
-    artifact_sha256 = _text(score.get("artifact_sha256") or result.get("artifact_sha256"))
+    artifact_sha256 = _text(result.get("artifact_sha256") or score.get("artifact_sha256"))
+    scorer_artifact_sha256 = _text(
+        result.get("scorer_artifact_sha256") or score.get("artifact_sha256")
+    )
+    case_id = _text(result.get("case_id"))
+    dataset_hash = _text(result.get("dataset_hash"))
     workflow_match = (
         None
         if expected_workflow_id is None
@@ -110,41 +133,84 @@ def normalize_cad_test_result(
         else artifact_sha256 is not None
         and artifact_sha256 == str(expected_artifact_sha256)
     )
+    if expected_artifact_sha256 is None and scorer_artifact_sha256 is not None:
+        artifact_match = (
+            artifact_sha256 is not None
+            and scorer_artifact_sha256 == artifact_sha256
+        )
+    scorer_artifact_mismatch = (
+        scorer_artifact_sha256 is not None
+        and (
+            artifact_sha256 is None
+            or scorer_artifact_sha256 != artifact_sha256
+        )
+    )
     identity = {
         "workflow_id": workflow_id,
         "candidate_revision_id": candidate_revision_id,
         "workflow_match": workflow_match,
         "candidate_revision_match": revision_match,
         "artifact_sha256": artifact_sha256,
+        "scorer_artifact_sha256": scorer_artifact_sha256,
         "artifact_match": artifact_match,
     }
+    case_match = None if expected_case_id is None else case_id == str(expected_case_id)
+    dataset_match = (
+        None
+        if expected_dataset_hash is None
+        else dataset_hash == str(expected_dataset_hash)
+    )
+    identity["case_match"] = case_match
+    identity["dataset_match"] = dataset_match
 
-    if workflow_match is False or revision_match is False:
+    if case_match is False:
+        status = "blocked"
+        verdict = None
+        reason = "cad_test_case_identity_mismatch"
+    elif dataset_match is False:
+        status = "blocked"
+        verdict = None
+        reason = "cad_test_dataset_identity_mismatch"
+    elif workflow_match is False or revision_match is False:
         status = "blocked"
         verdict = None
         reason = "cad_test_identity_mismatch"
+    elif scorer_artifact_mismatch:
+        status = "error"
+        verdict = None
+        reason = "cad_test_scorer_error"
     elif artifact_match is False:
         status = "blocked"
         verdict = None
         reason = "cad_test_artifact_identity_mismatch"
+    elif str(result.get("status") or "").lower() == "blocked":
+        status = "blocked"
+        verdict = None
+        reason = _text(result.get("reason")) or "cad_test_identity_mismatch"
     elif str(result.get("status") or "").lower() == "not_applicable":
         status = "not_applicable"
         verdict = None
         reason = _text(result.get("reason")) or "cad_test_not_applicable"
     else:
-        scorer_error = _bool(score.get("scorer_error")) is True or str(
-            result.get("status") or ""
-        ).lower() in _ERROR_STATUSES
+        scorer_error = (
+            _bool(score.get("scorer_error")) is True
+            or raw_status in _ERROR_STATUSES
+        )
         score_passed = _bool(score.get("passed"))
         geometry_valid = _bool(score.get("geometry_valid"))
-        delivery_passed = _bool(result.get("delivery_verified"))
-        if delivery_passed is None:
-            delivery_passed = _bool(native.get("passed"))
         requirements_passed = _non_negative_int(score.get("requirements_passed"))
         requirements_total = _non_negative_int(score.get("requirements_total"))
 
-        if scorer_error:
-            status, verdict, reason = "error", None, "cad_test_scorer_error"
+        if delivery_evidence_conflict:
+            status, verdict, reason = "error", None, "cad_test_delivery_evidence_conflict"
+        elif scorer_error:
+            status, verdict, reason = (
+                "error",
+                None,
+                explicit_reason
+                if raw_status == "error" and explicit_reason
+                else "cad_test_scorer_error",
+            )
         elif (
             score_passed is None
             or geometry_valid is None
@@ -177,9 +243,10 @@ def normalize_cad_test_result(
         "verdict": verdict,
         "authority": authority,
         "reason": reason,
+        "error_type": _text(result.get("error_type")),
         "case": {
-            "id": _text(result.get("case_id")),
-            "dataset_hash": _text(result.get("dataset_hash")),
+            "id": case_id,
+            "dataset_hash": dataset_hash,
             "scorer_hash": _text(result.get("scorer_hash")),
             "scorer_image": _text(result.get("scorer_image")),
         },
@@ -194,12 +261,12 @@ def normalize_cad_test_result(
         },
         "delivery": {
             "status": (
-                "passed"
-                if _bool(result.get("delivery_verified")) is True
-                or _bool(native.get("passed")) is True
+                "error"
+                if delivery_evidence_conflict
+                else "passed"
+                if delivery_passed is True
                 else "failed"
-                if _bool(result.get("delivery_verified")) is False
-                or _bool(native.get("passed")) is False
+                if delivery_passed is False
                 else "unknown"
             ),
             "symmetric_difference_volume_mm3": _number(
@@ -220,6 +287,8 @@ def merge_cad_test_result(
     result: Mapping[str, Any] | None,
     *,
     expected_artifact_sha256: str | None = None,
+    expected_case_id: str | None = None,
+    expected_dataset_hash: str | None = None,
 ) -> dict[str, Any]:
     """Attach normalized CADTest evidence without changing business status."""
 
@@ -230,6 +299,8 @@ def merge_cad_test_result(
         expected_workflow_id=expected_workflow_id,
         expected_candidate_revision_id=expected_revision_id,
         expected_artifact_sha256=expected_artifact_sha256,
+        expected_case_id=expected_case_id,
+        expected_dataset_hash=expected_dataset_hash,
     )
     merged = dict(report)
     merged["cad_test"] = normalized

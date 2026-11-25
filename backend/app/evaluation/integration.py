@@ -111,6 +111,7 @@ def ensure_live_session(
     root: Path | None = None,
     source_kind: str = "user_task",
     source_id: str | None = None,
+    source_metadata: Mapping[str, str] | None = None,
 ) -> str | None:
     if resolve_mode() is not EvaluationMode.OBSERVE:
         return None
@@ -124,6 +125,7 @@ def ensure_live_session(
         evaluation_run_id=run_id,
         source_kind=source_kind,
         source_id=source_id,
+        source_metadata=source_metadata,
         request_id=str(payload.get("request_id") or workflow_id),
         task_id=str(payload.get("task_id") or workflow_id),
         workflow_id=workflow_id,
@@ -680,6 +682,80 @@ def record_change_set_transition(
     return run_id
 
 
+def _cad_test_source_identity(
+    store: FileEvaluationStore,
+    run_id: str,
+) -> Mapping[str, Any]:
+    try:
+        report = json.loads(store.path_for(run_id).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    source = report.get("source")
+    return source if isinstance(source, Mapping) else {}
+
+
+def _cad_test_identity_block(
+    *,
+    source: Mapping[str, Any],
+    case_id: str,
+    workflow_id: str,
+    candidate_revision_id: str,
+    dataset_hash: str | None,
+    dataset_configured: bool,
+) -> dict[str, Any] | None:
+    reason = None
+    if source.get("kind") != "benchmark":
+        reason = "cad_test_source_identity_mismatch"
+    elif str(source.get("id") or "") != case_id:
+        reason = "cad_test_case_identity_mismatch"
+    elif dataset_configured and dataset_hash is None:
+        reason = "cad_test_dataset_integrity_unavailable"
+    elif dataset_hash is not None and not source.get("dataset_hash"):
+        reason = "cad_test_dataset_identity_missing"
+    elif dataset_hash is not None and source.get("dataset_hash") != dataset_hash:
+        reason = "cad_test_dataset_identity_mismatch"
+    if reason is None:
+        return None
+    return {
+        "status": "blocked",
+        "reason": reason,
+        "case_id": case_id,
+        "dataset_hash": dataset_hash,
+        "workflow_id": workflow_id,
+        "candidate_revision_id": candidate_revision_id,
+    }
+
+
+def _record_blocked_cad_test_result(
+    store: FileEvaluationStore,
+    run_id: str,
+    result: Mapping[str, Any],
+    *,
+    source: Mapping[str, Any],
+) -> None:
+    store.attach_cad_test_result(
+        run_id,
+        result,
+        expected_case_id=str(source.get("id") or "") or None,
+        expected_dataset_hash=(
+            str(source.get("dataset_hash") or "") or None
+            if result.get("dataset_hash") is not None
+            else None
+        ),
+    )
+    store.append_event(
+        run_id,
+        event_id=f"{run_id}:cad-test:{result.get('case_id')}",
+        event_type="cad_test_finished",
+        status=LiveEventStatus.BLOCKED,
+        payload={
+            "case_id": result.get("case_id"),
+            "status": "blocked",
+            "reason": result.get("reason"),
+        },
+    )
+
+
 def attach_cad_test_result(
     payload: Mapping[str, Any],
     artifact_path: Path,
@@ -695,6 +771,19 @@ def attach_cad_test_result(
         return None
     workflow_id = _workflow_id(payload) or ""
     candidate_revision_id = str(payload.get("candidate_revision_id") or "")
+    store = FileEvaluationStore(root or default_report_root())
+    source = _cad_test_source_identity(store, run_id)
+    blocked = _cad_test_identity_block(
+        source=source,
+        case_id=case_id,
+        workflow_id=workflow_id,
+        candidate_revision_id=candidate_revision_id,
+        dataset_hash=config.resolved_dataset_hash(),
+        dataset_configured=config.dataset_root is not None,
+    )
+    if blocked is not None:
+        _record_blocked_cad_test_result(store, run_id, blocked, source=source)
+        return run_id
     result = run_cad_test(
         artifact_path=artifact_path,
         case_id=case_id,
@@ -704,19 +793,19 @@ def attach_cad_test_result(
     )
     if result is None:
         return run_id
-    store = FileEvaluationStore(root or default_report_root())
-    expected_artifact_sha256 = result.get("artifact_sha256")
     normalized = normalize_cad_test_result(
         result,
         expected_workflow_id=workflow_id,
         expected_candidate_revision_id=(candidate_revision_id or None),
-        expected_artifact_sha256=expected_artifact_sha256,
+        expected_case_id=str(source.get("id") or "") or None,
+        expected_dataset_hash=str(source.get("dataset_hash") or "") or None,
     )
     try:
         store.attach_cad_test_result(
             run_id,
             result,
-            expected_artifact_sha256=expected_artifact_sha256,
+            expected_case_id=str(source.get("id") or "") or None,
+            expected_dataset_hash=str(source.get("dataset_hash") or "") or None,
         )
         status = {
             "passed": LiveEventStatus.PASS,
@@ -739,6 +828,7 @@ def attach_cad_test_result(
         )
     except Exception as exc:
         logger.warning("live evaluation CADTest recording failed: %s", type(exc).__name__)
+        raise
     return run_id
 
 
@@ -747,6 +837,7 @@ def attach_cad_test_artifacts(
     artifacts: Mapping[str, Path],
     *,
     case_id: str,
+    modeling_path: str | None = None,
     root: Path | None = None,
     config: CadTestRunnerConfig,
 ) -> str | None:
@@ -757,28 +848,42 @@ def attach_cad_test_artifacts(
         return None
     workflow_id = _workflow_id(payload) or ""
     candidate_revision_id = str(payload.get("candidate_revision_id") or "")
+    store = FileEvaluationStore(root or default_report_root())
+    source = _cad_test_source_identity(store, run_id)
+    blocked = _cad_test_identity_block(
+        source=source,
+        case_id=case_id,
+        workflow_id=workflow_id,
+        candidate_revision_id=candidate_revision_id,
+        dataset_hash=config.resolved_dataset_hash(),
+        dataset_configured=config.dataset_root is not None,
+    )
+    if blocked is not None:
+        _record_blocked_cad_test_result(store, run_id, blocked, source=source)
+        return run_id
     result = run_cad_test_bundle(
         artifacts=artifacts,
         case_id=case_id,
         workflow_id=workflow_id,
         candidate_revision_id=candidate_revision_id,
         config=config,
+        modeling_path=modeling_path or str(source.get("modeling_path") or "extrude_cut"),
     )
     if result is None:
         return run_id
-    store = FileEvaluationStore(root or default_report_root())
-    expected_artifact_sha256 = result.get("artifact_sha256")
     normalized = normalize_cad_test_result(
         result,
         expected_workflow_id=workflow_id,
         expected_candidate_revision_id=(candidate_revision_id or None),
-        expected_artifact_sha256=expected_artifact_sha256,
+        expected_case_id=str(source.get("id") or "") or None,
+        expected_dataset_hash=str(source.get("dataset_hash") or "") or None,
     )
     try:
         store.attach_cad_test_result(
             run_id,
             result,
-            expected_artifact_sha256=expected_artifact_sha256,
+            expected_case_id=str(source.get("id") or "") or None,
+            expected_dataset_hash=str(source.get("dataset_hash") or "") or None,
         )
         status = {
             "passed": LiveEventStatus.PASS,
@@ -801,6 +906,7 @@ def attach_cad_test_artifacts(
         )
     except Exception as exc:
         logger.warning("live evaluation CADTest bundle recording failed: %s", type(exc).__name__)
+        raise
     return run_id
 
 

@@ -20,7 +20,7 @@ from .store import FileEvaluationStore
 from .integration import default_report_root, evaluation_run_id_for_workflow
 
 logger = logging.getLogger(__name__)
-_ARTIFACT_KINDS = {"step", "fcstd", "stl"}
+_ARTIFACT_KINDS = {"step", "fcstd", "stl", "dxf"}
 
 
 def config_from_environment() -> CadTestRunnerConfig | None:
@@ -52,16 +52,19 @@ def _report_source(payload: Mapping[str, Any], root: Path) -> Mapping[str, Any] 
     return source if isinstance(source, Mapping) else None
 
 
-def _benchmark_case_id(payload: Mapping[str, Any], root: Path) -> str | None:
+def _benchmark_source(payload: Mapping[str, Any], root: Path) -> Mapping[str, Any] | None:
     source = _report_source(payload, root)
     if source is None or source.get("kind") != "benchmark":
         return None
-    source_id = source.get("id")
-    return str(source_id) if source_id else None
+    return source
 
 
-def _artifact_rows(result: Mapping[str, Any]) -> dict[str, Mapping[str, Any]] | None:
-    rows: dict[str, Mapping[str, Any]] = {}
+def _artifact_rows(
+    result: Mapping[str, Any],
+    *,
+    modeling_path: str = "extrude_cut",
+) -> dict[str, Mapping[str, Any]] | None:
+    grouped: dict[str, list[Mapping[str, Any]]] = {}
     artifacts = result.get("artifacts")
     if not isinstance(artifacts, list):
         return None
@@ -71,10 +74,55 @@ def _artifact_rows(result: Mapping[str, Any]) -> dict[str, Mapping[str, Any]] | 
         kind = str(item.get("artifact_kind") or "").lower()
         if kind not in _ARTIFACT_KINDS:
             continue
-        if kind in rows:
+        grouped.setdefault(kind, []).append(item)
+    rows: dict[str, Mapping[str, Any]] = {}
+    for kind, candidates in grouped.items():
+        if len(candidates) == 1:
+            rows[kind] = candidates[0]
+            continue
+        primary = [item for item in candidates if item.get("is_primary") is True]
+        if not primary and modeling_path == "assembly":
+            primary = [
+                item
+                for item in candidates
+                if Path(str(item.get("filename") or "")).name.startswith("combine-")
+            ]
+        if len(primary) != 1:
             return None
-        rows[kind] = item
+        rows[kind] = primary[0]
     return rows
+
+
+def _record_benchmark_observer_failure(
+    *,
+    workflow_id: object,
+    candidate_revision_id: object,
+    case_id: str,
+    reason: str,
+    root: Path,
+    artifact_kind: str | None = None,
+    status: str = "blocked",
+    error_type: str | None = None,
+) -> None:
+    result: dict[str, Any] = {
+        "status": status,
+        "reason": reason,
+        "case_id": case_id,
+        "workflow_id": str(workflow_id),
+        "candidate_revision_id": str(candidate_revision_id),
+    }
+    if artifact_kind is not None:
+        result["artifact_kind"] = artifact_kind
+    if error_type is not None:
+        result["error_type"] = error_type
+    attach_cad_test_observation(
+        {
+            "workflow_run_id": str(workflow_id),
+            "candidate_revision_id": str(candidate_revision_id),
+        },
+        result,
+        root=root,
+    )
 
 
 async def observe_sealed_candidate(
@@ -92,19 +140,30 @@ async def observe_sealed_candidate(
     config = config or config_from_environment()
     source = _report_source(payload, report_root)
     source_kind = str(source.get("kind") or "") if source else ""
-    case_id = _benchmark_case_id(payload, report_root)
-    if case_id is None or str(result.get("status")) != "succeeded":
-        if source_kind != "user_task" or str(result.get("status")) != "succeeded":
-            return
-    rows = _artifact_rows(result)
-    if not rows:
-        if source_kind != "user_task":
-            return
-
+    benchmark_source = _benchmark_source(payload, report_root)
+    case_id = str(benchmark_source.get("id") or "") if benchmark_source else None
     workflow_id = payload.get("workflow_run_id")
     candidate_revision_id = result.get("candidate_revision_id")
     if workflow_id is None or candidate_revision_id is None:
         return
+    if case_id is None or str(result.get("status")) != "succeeded":
+        if source_kind != "user_task" or str(result.get("status")) != "succeeded":
+            return
+    rows = _artifact_rows(
+        result,
+        modeling_path=str((benchmark_source or {}).get("modeling_path") or "extrude_cut"),
+    )
+    if not rows:
+        if source_kind == "benchmark" and case_id:
+            _record_benchmark_observer_failure(
+                workflow_id=workflow_id,
+                candidate_revision_id=candidate_revision_id,
+                case_id=case_id,
+                reason="artifact_selection_unavailable",
+                root=report_root,
+            )
+        elif source_kind != "user_task":
+            return
 
     if source_kind == "user_task":
         native: dict[str, Any] = {
@@ -168,6 +227,14 @@ async def observe_sealed_candidate(
         return
 
     if config is None:
+        if source_kind == "benchmark" and case_id:
+            _record_benchmark_observer_failure(
+                workflow_id=workflow_id,
+                candidate_revision_id=candidate_revision_id,
+                case_id=case_id,
+                reason="cad_test_configuration_unavailable",
+                root=report_root,
+            )
         return
 
     with tempfile.TemporaryDirectory(prefix="cad_test_bundle_") as temporary:
@@ -178,6 +245,14 @@ async def observe_sealed_candidate(
             expected_sha = str(item.get("sha256") or "")
             expected_size = item.get("size_bytes")
             if not object_key or len(expected_sha) != 64 or not isinstance(expected_size, int):
+                _record_benchmark_observer_failure(
+                    workflow_id=workflow_id,
+                    candidate_revision_id=candidate_revision_id,
+                    case_id=case_id,
+                    reason="artifact_metadata_missing",
+                    root=report_root,
+                    artifact_kind=kind,
+                )
                 return
             destination = directory / f"result.{kind}"
             try:
@@ -186,6 +261,14 @@ async def observe_sealed_candidate(
                 )
             except Exception as exc:
                 logger.warning("CADTest artifact download failed: %s", type(exc).__name__)
+                _record_benchmark_observer_failure(
+                    workflow_id=workflow_id,
+                    candidate_revision_id=candidate_revision_id,
+                    case_id=case_id,
+                    reason="artifact_download_failed",
+                    root=report_root,
+                    artifact_kind=kind,
+                )
                 return
             if (
                 facts.get("sha256") != expected_sha
@@ -193,6 +276,14 @@ async def observe_sealed_candidate(
                 or hashlib.sha256(destination.read_bytes()).hexdigest() != expected_sha
             ):
                 logger.warning("CADTest artifact integrity mismatch for %s", kind)
+                _record_benchmark_observer_failure(
+                    workflow_id=workflow_id,
+                    candidate_revision_id=candidate_revision_id,
+                    case_id=case_id,
+                    reason="artifact_integrity_mismatch",
+                    root=report_root,
+                    artifact_kind=kind,
+                )
                 return
             local_paths[kind] = destination
         try:
@@ -204,8 +295,24 @@ async def observe_sealed_candidate(
                 },
                 local_paths,
                 case_id=case_id,
+                modeling_path=str(benchmark_source.get("modeling_path") or "extrude_cut"),
                 root=report_root,
                 config=config,
             )
         except Exception as exc:
             logger.warning("CADTest sealed-candidate observation failed: %s", type(exc).__name__)
+            try:
+                _record_benchmark_observer_failure(
+                    workflow_id=workflow_id,
+                    candidate_revision_id=candidate_revision_id,
+                    case_id=case_id,
+                    reason="cad_test_attachment_failed",
+                    root=report_root,
+                    status="error",
+                    error_type=type(exc).__name__,
+                )
+            except Exception as record_exc:
+                logger.warning(
+                    "CADTest attachment failure recording failed: %s",
+                    type(record_exc).__name__,
+                )

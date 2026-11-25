@@ -13,4 +13,6 @@ This is a thin Claude Code adapter. Before reviewing, load and follow:
 
 Treat that repository-shared file and its referenced resources as the only source of truth. Translate tool names if necessary, but preserve its review workflow, evidence classifications, conclusion rules, and write boundary.
 
+For benchmark and CADTest reviews, the mandatory evaluation evidence integrity gate is maintained in the canonical skill under `### 4.1 Evaluation evidence integrity gate`; load that section before reviewing scorer, artifact, native-delivery, or benchmark changes.
+
 Do not copy or independently maintain feature maps, invariants, test matrices, scripts, or review memory under `.claude/`.

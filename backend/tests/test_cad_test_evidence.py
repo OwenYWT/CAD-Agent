@@ -61,6 +61,31 @@ def test_normalize_cad_test_result_never_passes_without_authoritative_evidence()
     assert normalized["reason"] == "cad_test_evidence_incomplete"
 
 
+def test_normalize_cad_test_result_rejects_conflicting_delivery_evidence():
+    normalized = normalize_cad_test_result(
+        _result(delivery_verified=True, native_delivery={"passed": False})
+    )
+
+    assert normalized["status"] == "error"
+    assert normalized["verdict"] is None
+    assert normalized["reason"] == "cad_test_delivery_evidence_conflict"
+    assert normalized["delivery"]["status"] == "error"
+
+
+def test_normalize_cad_test_result_preserves_attachment_error_type():
+    normalized = normalize_cad_test_result(
+        {
+            "status": "error",
+            "reason": "cad_test_attachment_failed",
+            "error_type": "RuntimeError",
+        }
+    )
+
+    assert normalized["status"] == "error"
+    assert normalized["reason"] == "cad_test_attachment_failed"
+    assert normalized["error_type"] == "RuntimeError"
+
+
 def test_normalize_cad_test_result_blocks_identity_mismatch():
     normalized = normalize_cad_test_result(
         _result(workflow_id="other-workflow"),

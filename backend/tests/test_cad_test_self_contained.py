@@ -7,6 +7,15 @@ import json
 import subprocess
 
 
+class _RouteDataset:
+    def __init__(self, cases):
+        self.cases = tuple(cases)
+        self.case_ids = frozenset(str(case["id"]) for case in cases)
+
+    def case(self, case_id):
+        return next(dict(case) for case in self.cases if case["id"] == case_id)
+
+
 def test_default_cad_test_runner_uses_repository_owned_scorer():
     from app.evaluation.cad_test_runner import CadTestRunnerConfig
 
@@ -49,6 +58,31 @@ def test_dataset_loader_reads_data_without_importing_external_package(tmp_path):
     dataset = load_dataset(tmp_path, verify_files=False)
 
     assert dataset.case("ctb-test")["prompt"] == "Create a test solid."
+
+
+def test_batch_case_selection_preserves_dataset_modeling_path():
+    from benchmark.cad_test_batch import _select_cases
+
+    dataset = _RouteDataset(
+        [
+            {
+                "id": "X01",
+                "prompt": "Create a laser-cut profile.",
+                "difficulty": "moderate",
+                "path": "2d",
+            },
+            {
+                "id": "A01",
+                "prompt": "Create an assembly.",
+                "difficulty": "complex",
+                "path": "assembly",
+            },
+        ]
+    )
+
+    selected = _select_cases(dataset, "all", None)
+
+    assert [case["path"] for case in selected] == ["2d", "assembly"]
 
 
 def test_default_runner_mounts_repository_engine_for_scoring(tmp_path, monkeypatch):
