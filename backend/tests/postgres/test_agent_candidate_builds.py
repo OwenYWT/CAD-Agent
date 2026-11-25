@@ -1,6 +1,7 @@
 """Real PostgreSQL candidate-build and staging-evidence contracts."""
 from __future__ import annotations
 
+import asyncio
 import os
 import hashlib
 from pathlib import Path
@@ -32,6 +33,7 @@ from app.repositories.identity import ensure_principal
 from app.repositories.projects import create_project
 from app.repositories.revisions import create_initial_branch
 from app.services.run_state import (
+    StaleLease,
     complete_attempt,
     create_attempt,
     create_step,
@@ -209,6 +211,30 @@ async def _succeed_attempt(owner, attempt, step, lease):
             expected=StepStatus.RUNNING,
             target=StepStatus.SUCCEEDED,
         )
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_reclaimed_lease_interrupts_preparation_and_preserves_new_owner():
+    from app.workflows.execution_support import maintain_attempt_lease
+
+    owner, _, _, _, _, step, attempt, lease = await _seed()
+    async with asyncio.timeout(12):
+        with pytest.raises(StaleLease):
+            async with maintain_attempt_lease(
+                tenant_id=owner.tenant_id, principal_id=owner.principal_id,
+                attempt_id=attempt.attempt_id, lease_token=lease.token, lease_generation=lease.generation,
+            ):
+                async with tenant_transaction(owner.tenant_id, owner.principal_id) as connection:
+                    await connection.execute(text("""
+                        UPDATE execution_attempts SET leased_until=now()-interval '1 second'
+                        WHERE id=:attempt
+                    """), {"attempt": attempt.attempt_id})
+                    successor = await lease_attempt(connection, attempt.attempt_id, worker_id="replacement")
+                    await start_attempt(connection, attempt.attempt_id,
+                                        lease_token=successor.token, lease_generation=successor.generation)
+                await asyncio.Event().wait()
+
+    await _succeed_attempt(owner, attempt, step, successor)
 
 
 @pytest.mark.asyncio(loop_scope="module")

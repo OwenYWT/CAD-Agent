@@ -25,7 +25,7 @@ from app.workflows.logical_steps import _start_agent_logical_step, _fail_agent_l
 from app.workflows.inputs import _uuid, _agent_v2_request
 from app.workflows.execution_support import _prepare_agent_validation_attempt
 from app.workflows.execution_support import _stored_validation_attempt_result
-from app.workflows.execution_support import _run_backend_with_heartbeats
+from app.workflows.execution_support import maintain_attempt_lease
 from app.workflows.execution_support import _mark_execution_failure
 from app.workflows.validation_support import _record_agent_validation_outcome
 from app.workflows.revision_inputs import _agent_validation_input
@@ -76,16 +76,86 @@ async def agent_render_visual(payload: dict[str, Any], *, backend: ExecutionBack
     temp_dir = Path(tempfile.mkdtemp(prefix="agent_visual_"))
     outcome: MaterializedExecutionOutcome | None = None
     try:
-        try:
-            _, declaration, materialized = await _agent_validation_input(
-                request=request,
-                candidate_build_id=candidate_build_id,
-                manifest_id=manifest_id,
-                temp_dir=temp_dir,
-            )
-        except Exception as exc:
+        input_error = None
+        async with maintain_attempt_lease(
+            tenant_id=request.tenant_id, principal_id=request.principal_id,
+            attempt_id=attempt_id, lease_token=lease_token, lease_generation=lease_generation,
+        ):
+            try:
+                _, declaration, materialized = await _agent_validation_input(
+                    request=request,
+                    candidate_build_id=candidate_build_id,
+                    manifest_id=manifest_id,
+                    temp_dir=temp_dir,
+                )
+            except Exception as exc:
+                input_error = exc
+            else:
+                task = {
+                    "schema_version": "mcad-capability-task.v1",
+                    "capability": "visual",
+                    "operation": "render",
+                    "params": {"width": 512, "height": 512},
+                    "inputs": {"model": declaration.filename},
+                }
+                source_code = json.dumps(
+                    task, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                )
+                snapshot = await asyncio.to_thread(backend.runtime_snapshot)
+                spec = ExecutionSpec(
+                    execution_attempt_id=str(attempt_id),
+                    workflow_run_id=str(request.workflow_run_id),
+                    step_run_id=str(step_id),
+                    tenant_id=str(request.tenant_id),
+                    project_id=str(request.project_id),
+                    expected_base_revision_id=str(request.expected_base_revision_id),
+                    idempotency_key=f"agent-v2:{request.workflow_run_id}:{step_key}:{info.attempt}",
+                    capability="mcad.visual",
+                    operation="render",
+                    mode="analysis",
+                    source=ExecutionSource(
+                        language="json",
+                        code=source_code,
+                        sha256=hashlib.sha256(source_code.encode()).hexdigest(),
+                    ),
+                    inputs=(declaration,),
+                    outputs=tuple(
+                        [
+                            OutputDeclaration(
+                                name=view,
+                                media_type="image/png",
+                                max_size_bytes=4 * 1024 * 1024,
+                            )
+                            for view in ("front", "right", "top", "isometric")
+                        ]
+                        + [
+                            OutputDeclaration(
+                                name="capability-result",
+                                media_type="application/json",
+                                max_size_bytes=512 * 1024,
+                            )
+                        ]
+                    ),
+                    runtime=RuntimeRequirement(
+                        image_digest=snapshot.image_digest,
+                        platform=snapshot.platform,
+                        sandbox_tier="ephemeral-job",
+                    ),
+                    limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit,
+                        timeout_seconds=execution_timeout(payload, 120),
+                        memory_bytes=1536 * 1024 * 1024,
+                        pids=512,
+                    ),
+                    metadata={
+                        "candidate_build_id": str(candidate_build_id),
+                        "staging_manifest_id": str(manifest_id),
+                        "gate": "visual",
+                    },
+                )
+                outcome = await backend.execute(spec, materialized_inputs=materialized)
+        if input_error is not None:
             report = indeterminate_visual_report(
-                issue=f"visual_input_unavailable:{type(exc).__name__}"
+                issue=f"visual_input_unavailable:{type(input_error).__name__}"
             )
             recorded = await _record_agent_validation_outcome(
                 payload,
@@ -101,7 +171,7 @@ async def agent_render_visual(payload: dict[str, Any], *, backend: ExecutionBack
                 lease_token=lease_token,
                 lease_generation=lease_generation,
                 error_code="visual_input_rejected",
-                error_message=str(exc)[:4000],
+                error_message=str(input_error)[:4000],
             )
             return {
                 "status": "completed",
@@ -110,77 +180,6 @@ async def agent_render_visual(payload: dict[str, Any], *, backend: ExecutionBack
                 "report": report.durable_evidence(),
                 "attempt_id": str(attempt_id),
             }
-        task = {
-            "schema_version": "mcad-capability-task.v1",
-            "capability": "visual",
-            "operation": "render",
-            "params": {"width": 512, "height": 512},
-            "inputs": {"model": declaration.filename},
-        }
-        source_code = json.dumps(
-            task, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        )
-        snapshot = await asyncio.to_thread(backend.runtime_snapshot)
-        spec = ExecutionSpec(
-            execution_attempt_id=str(attempt_id),
-            workflow_run_id=str(request.workflow_run_id),
-            step_run_id=str(step_id),
-            tenant_id=str(request.tenant_id),
-            project_id=str(request.project_id),
-            expected_base_revision_id=str(request.expected_base_revision_id),
-            idempotency_key=f"agent-v2:{request.workflow_run_id}:{step_key}:{info.attempt}",
-            capability="mcad.visual",
-            operation="render",
-            mode="analysis",
-            source=ExecutionSource(
-                language="json",
-                code=source_code,
-                sha256=hashlib.sha256(source_code.encode()).hexdigest(),
-            ),
-            inputs=(declaration,),
-            outputs=tuple(
-                [
-                    OutputDeclaration(
-                        name=view,
-                        media_type="image/png",
-                        max_size_bytes=4 * 1024 * 1024,
-                    )
-                    for view in ("front", "right", "top", "isometric")
-                ]
-                + [
-                    OutputDeclaration(
-                        name="capability-result",
-                        media_type="application/json",
-                        max_size_bytes=512 * 1024,
-                    )
-                ]
-            ),
-            runtime=RuntimeRequirement(
-                image_digest=snapshot.image_digest,
-                platform=snapshot.platform,
-                sandbox_tier="ephemeral-job",
-            ),
-            limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit,
-                timeout_seconds=execution_timeout(payload, 120),
-                memory_bytes=1536 * 1024 * 1024,
-                pids=512,
-            ),
-            metadata={
-                "candidate_build_id": str(candidate_build_id),
-                "staging_manifest_id": str(manifest_id),
-                "gate": "visual",
-            },
-        )
-        outcome = await _run_backend_with_heartbeats(
-            backend,
-            spec,
-            tenant_id=request.tenant_id,
-            principal_id=request.principal_id,
-            attempt_id=attempt_id,
-            lease_token=lease_token,
-            lease_generation=lease_generation,
-            materialized_inputs=materialized,
-        )
         runtime_provenance = (
             outcome.result.provenance.model_dump(mode="json")
             if outcome.result.provenance

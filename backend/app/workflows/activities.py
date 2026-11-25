@@ -23,7 +23,7 @@ from app.workflows.handlers.decomposition import decompose
 from app.workflows.errors import planning_error
 
 from app.workflows import execution_support
-from app.workflows.execution_support import _worker_id, _modeling_outputs, _stored_execution_result, _prepare_execution_attempt, _prepare_agent_execution_attempt, _prepare_agent_validation_attempt, _stored_validation_attempt_result, _await_provider_operation, _heartbeat_loop, _run_backend_with_heartbeats, interrupted_execution_status, _mark_execution_failure
+from app.workflows.execution_support import _worker_id, _modeling_outputs, _stored_execution_result, _prepare_execution_attempt, _prepare_agent_execution_attempt, _prepare_agent_validation_attempt, _stored_validation_attempt_result, _await_provider_operation, _heartbeat_loop, interrupted_execution_status, _mark_execution_failure
 from app.workflows import validation_support
 from app.workflows.validation_support import _record_agent_validation_outcome, _complete_check_workflow, _record_freecad_inspections
 from app.workflows import revision_inputs

@@ -4971,17 +4971,6 @@
       "mcad-runtime"
     ]
   },
-  "private-symbol|backend/app/workflows/activities.py|app.workflows.execution_support._run_backend_with_heartbeats": {
-    "owner": "execution",
-    "reason": "Retained cross-file private helper; migrate to a reviewed public port before adding consumers.",
-    "retire_in": "next change to either endpoint; no new consumers",
-    "source_sha": "dc342808390134e54db48fb63393dbc588b6004a",
-    "regression": [
-      "architecture-contract",
-      "backend",
-      "mcad-runtime"
-    ]
-  },
   "private-symbol|backend/app/workflows/activities.py|app.workflows.execution_support._stored_execution_result": {
     "owner": "execution",
     "reason": "Retained cross-file private helper; migrate to a reviewed public port before adding consumers.",
@@ -5169,17 +5158,6 @@
       "mcad-runtime"
     ]
   },
-  "private-symbol|backend/app/workflows/handlers/bom.py|app.workflows.execution_support._run_backend_with_heartbeats": {
-    "owner": "delivery",
-    "reason": "Retained cross-file private helper; migrate to a reviewed public port before adding consumers.",
-    "retire_in": "next change to either endpoint; no new consumers",
-    "source_sha": "dc342808390134e54db48fb63393dbc588b6004a",
-    "regression": [
-      "architecture-contract",
-      "backend",
-      "mcad-runtime"
-    ]
-  },
   "private-symbol|backend/app/workflows/handlers/bom.py|app.workflows.inputs._agent_v2_request": {
     "owner": "delivery",
     "reason": "Retained cross-file private helper; migrate to a reviewed public port before adding consumers.",
@@ -5258,17 +5236,6 @@
     ]
   },
   "private-symbol|backend/app/workflows/handlers/cad_execution.py|app.workflows.execution_support._prepare_agent_execution_attempt": {
-    "owner": "execution",
-    "reason": "Retained cross-file private helper; migrate to a reviewed public port before adding consumers.",
-    "retire_in": "next change to either endpoint; no new consumers",
-    "source_sha": "dc342808390134e54db48fb63393dbc588b6004a",
-    "regression": [
-      "architecture-contract",
-      "backend",
-      "mcad-runtime"
-    ]
-  },
-  "private-symbol|backend/app/workflows/handlers/cad_execution.py|app.workflows.execution_support._run_backend_with_heartbeats": {
     "owner": "execution",
     "reason": "Retained cross-file private helper; migrate to a reviewed public port before adding consumers.",
     "retire_in": "next change to either endpoint; no new consumers",
@@ -5411,17 +5378,6 @@
       "mcad-runtime"
     ]
   },
-  "private-symbol|backend/app/workflows/handlers/dfm_validation.py|app.workflows.execution_support._run_backend_with_heartbeats": {
-    "owner": "validation",
-    "reason": "Retained cross-file private helper; migrate to a reviewed public port before adding consumers.",
-    "retire_in": "next change to either endpoint; no new consumers",
-    "source_sha": "dc342808390134e54db48fb63393dbc588b6004a",
-    "regression": [
-      "architecture-contract",
-      "backend",
-      "mcad-runtime"
-    ]
-  },
   "private-symbol|backend/app/workflows/handlers/dfm_validation.py|app.workflows.inputs._agent_v2_request": {
     "owner": "validation",
     "reason": "Retained cross-file private helper; migrate to a reviewed public port before adding consumers.",
@@ -5499,17 +5455,6 @@
       "mcad-runtime"
     ]
   },
-  "private-symbol|backend/app/workflows/handlers/engineering.py|app.workflows.execution_support._run_backend_with_heartbeats": {
-    "owner": "engineering",
-    "reason": "Retained cross-file private helper; migrate to a reviewed public port before adding consumers.",
-    "retire_in": "next change to either endpoint; no new consumers",
-    "source_sha": "dc342808390134e54db48fb63393dbc588b6004a",
-    "regression": [
-      "architecture-contract",
-      "backend",
-      "mcad-runtime"
-    ]
-  },
   "private-symbol|backend/app/workflows/handlers/engineering.py|app.workflows.inputs._uuid": {
     "owner": "engineering",
     "reason": "Retained cross-file private helper; migrate to a reviewed public port before adding consumers.",
@@ -5565,17 +5510,6 @@
       "mcad-runtime"
     ]
   },
-  "private-symbol|backend/app/workflows/handlers/geometry_validation.py|app.workflows.execution_support._run_backend_with_heartbeats": {
-    "owner": "validation",
-    "reason": "Retained cross-file private helper; migrate to a reviewed public port before adding consumers.",
-    "retire_in": "next change to either endpoint; no new consumers",
-    "source_sha": "dc342808390134e54db48fb63393dbc588b6004a",
-    "regression": [
-      "architecture-contract",
-      "backend",
-      "mcad-runtime"
-    ]
-  },
   "private-symbol|backend/app/workflows/handlers/geometry_validation.py|app.workflows.inputs._agent_v2_request": {
     "owner": "validation",
     "reason": "Retained cross-file private helper; migrate to a reviewed public port before adding consumers.",
@@ -5621,17 +5555,6 @@
     ]
   },
   "private-symbol|backend/app/workflows/handlers/legacy_modeling.py|app.workflows.execution_support._prepare_execution_attempt": {
-    "owner": "execution",
-    "reason": "Retained cross-file private helper; migrate to a reviewed public port before adding consumers.",
-    "retire_in": "next change to either endpoint; no new consumers",
-    "source_sha": "dc342808390134e54db48fb63393dbc588b6004a",
-    "regression": [
-      "architecture-contract",
-      "backend",
-      "mcad-runtime"
-    ]
-  },
-  "private-symbol|backend/app/workflows/handlers/legacy_modeling.py|app.workflows.execution_support._run_backend_with_heartbeats": {
     "owner": "execution",
     "reason": "Retained cross-file private helper; migrate to a reviewed public port before adding consumers.",
     "retire_in": "next change to either endpoint; no new consumers",
@@ -5962,17 +5885,6 @@
     ]
   },
   "private-symbol|backend/app/workflows/handlers/visual_validation.py|app.workflows.execution_support._prepare_agent_validation_attempt": {
-    "owner": "validation",
-    "reason": "Retained cross-file private helper; migrate to a reviewed public port before adding consumers.",
-    "retire_in": "next change to either endpoint; no new consumers",
-    "source_sha": "dc342808390134e54db48fb63393dbc588b6004a",
-    "regression": [
-      "architecture-contract",
-      "backend",
-      "mcad-runtime"
-    ]
-  },
-  "private-symbol|backend/app/workflows/handlers/visual_validation.py|app.workflows.execution_support._run_backend_with_heartbeats": {
     "owner": "validation",
     "reason": "Retained cross-file private helper; migrate to a reviewed public port before adding consumers.",
     "retire_in": "next change to either endpoint; no new consumers",

@@ -181,6 +181,7 @@ async def test_durable_execution_does_not_block_benign_analyzer_warnings(monkeyp
     monkeypatch.setattr(cad_execution, "tenant_transaction", transaction)
     monkeypatch.setattr(cad_execution, "get_staging_manifest_for_step", no_replay)
     monkeypatch.setattr(cad_execution, "_prepare_agent_execution_attempt", prepare_attempt)
+    monkeypatch.setattr(cad_execution, "maintain_attempt_lease", transaction)
     monkeypatch.setattr(cad_execution, "_mark_execution_failure", mark_failure)
 
     with pytest.raises(ApplicationError) as raised:

@@ -1626,7 +1626,9 @@ async def test_agent_v2_plan_waits_before_candidate_source_or_execution():
 
 
 @pytest.mark.asyncio(loop_scope="module")
-async def test_agent_v2_confirmed_plan_seals_reviewable_candidate():
+async def test_agent_v2_confirmed_plan_seals_reviewable_candidate(monkeypatch):
+    from app.workflows.handlers import geometry_validation
+
     owner, project_id, initial = await _seed_project("agent-v2-candidate")
     client = await get_temporal_client()
     planner = DurableAgentPlanner(
@@ -1661,6 +1663,26 @@ async def test_agent_v2_confirmed_plan_seals_reviewable_candidate():
         objective="创建 20x10x4 mm 安装支架",
         confirmation_timeout_seconds=60,
     )
+    # A slow object read must not consume the lease before the kernel starts.
+    download = geometry_validation.download_object
+
+    async def download_after_renewal(key, path):
+        async with asyncio.timeout(12):
+            while True:
+                async with tenant_transaction(owner.tenant_id, owner.principal_id) as connection:
+                    renewed = await connection.scalar(text("""
+                        SELECT EXISTS (SELECT 1 FROM execution_attempts a
+                            JOIN step_runs s ON s.id=a.step_run_id
+                            WHERE s.workflow_run_id=:run AND s.kind='agent_geometry_validation'
+                              AND a.status='running'
+                              AND a.last_heartbeat_at >= a.started_at + interval '5 seconds')
+                    """), {"run": created.workflow_id})
+                if renewed:
+                    break
+                await asyncio.sleep(0.1)
+        return await download(key, path)
+
+    monkeypatch.setattr(geometry_validation, "download_object", download_after_renewal)
     async with build_agent_v2_workflow_worker(
         client,
         backend=get_execution_backend(),

@@ -20,7 +20,7 @@ from app.object_store import put_file
 from app.repositories.revisions import StaleBaseRevision, create_candidate_change_set
 from app.repositories.runs import append_workflow_event
 from app.services.artifact_commit import authorize_artifact_upload, commit_artifacts
-from app.services.run_state import create_step, transition_step, transition_workflow
+from app.services.run_state import StaleLease, create_step, transition_step, transition_workflow
 from app.llm import is_nonretryable_provider_error
 from app.workflows.source_preparation import SourcePreparer
 from app.models.workflow_requests import (McadSourcePreparationRequest)
@@ -28,7 +28,7 @@ from app.workflows.logical_steps import _step_row, _workflow_status, _succeed_lo
 from app.workflows.inputs import _uuid
 from app.workflows.execution_support import _stored_execution_result
 from app.workflows.execution_support import _prepare_execution_attempt
-from app.workflows.execution_support import _run_backend_with_heartbeats
+from app.workflows.execution_support import maintain_attempt_lease
 from app.workflows.execution_support import _mark_execution_failure
 
 async def prepare_source(payload: dict[str, Any], *, source_preparer: SourcePreparer) -> dict[str, Any]:
@@ -361,70 +361,65 @@ async def execute(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict
     outcome: MaterializedExecutionOutcome | None = None
     input_directory = None
     try:
-        inputs, materialized = (), None
-        if payload.get("input_artifacts"):
-            input_directory = tempfile.TemporaryDirectory(prefix="cad-engineering-input-")
-            if payload.get("scene_task"):
-                from app.workflows.scene_activities import materialize_scene_input
-                inputs, materialized = await materialize_scene_input(payload, input_directory.name)
-            else:
-                from app.workflows.engineering_activities import materialize_engineering_input
-                inputs, materialized = await materialize_engineering_input(payload, input_directory.name)
-        snapshot = await asyncio.to_thread(backend.runtime_snapshot)
-        source_code = str(execution["source_code"])
-        spec = ExecutionSpec(
-            execution_attempt_id=str(attempt_id),
-            workflow_run_id=str(workflow_id),
-            step_run_id=str(step_id),
-            tenant_id=str(tenant_id),
-            project_id=str(project_id),
-            expected_base_revision_id=str(
-                payload["expected_base_revision_id"]
-            ),
-            idempotency_key=(
-                f"temporal:{workflow_id}:{execution['step_key']}:{info.attempt}"
-            ),
-            capability=str(execution["capability"]),
-            operation=str(execution["operation"]),
-            mode=str(execution["mode"]),
-            source=ExecutionSource(
-                language=str(execution["source_language"]),
-                code=source_code,
-                sha256=hashlib.sha256(
-                    source_code.encode("utf-8")
-                ).hexdigest(),
-            ),
-            inputs=inputs,
-            outputs=tuple(
-                OutputDeclaration.model_validate(item)
-                for item in execution["outputs"]
-            ),
-            runtime=RuntimeRequirement(
-                image_digest=snapshot.image_digest,
-                platform=snapshot.platform,
-                sandbox_tier="ephemeral-job",
-            ),
-            limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit,
-                timeout_seconds=int(execution["timeout_seconds"]),
-                **({"memory_bytes": 1024 * 1024 * 1024, "pids": 256,
-                    "cpu_millis": 2000, "output_bytes": 128 * 1024 * 1024} if inputs else {}),
-            ),
-            metadata={
-                "revision_id": str(revision_id),
-                "temporal_activity_id": info.activity_id,
-                "temporal_attempt": info.attempt,
-            },
-        )
-        outcome = await _run_backend_with_heartbeats(
-            backend,
-            spec,
-            tenant_id=tenant_id,
-            principal_id=principal_id,
-            attempt_id=attempt_id,
-            lease_token=lease_token,
-            lease_generation=lease_generation,
-            materialized_inputs=materialized,
-        )
+        async with maintain_attempt_lease(
+            tenant_id=tenant_id, principal_id=principal_id,
+            attempt_id=attempt_id, lease_token=lease_token, lease_generation=lease_generation,
+        ):
+            inputs, materialized = (), None
+            if payload.get("input_artifacts"):
+                input_directory = tempfile.TemporaryDirectory(prefix="cad-engineering-input-")
+                if payload.get("scene_task"):
+                    from app.workflows.scene_activities import materialize_scene_input
+                    inputs, materialized = await materialize_scene_input(payload, input_directory.name)
+                else:
+                    from app.workflows.engineering_activities import materialize_engineering_input
+                    inputs, materialized = await materialize_engineering_input(payload, input_directory.name)
+            snapshot = await asyncio.to_thread(backend.runtime_snapshot)
+            source_code = str(execution["source_code"])
+            spec = ExecutionSpec(
+                execution_attempt_id=str(attempt_id),
+                workflow_run_id=str(workflow_id),
+                step_run_id=str(step_id),
+                tenant_id=str(tenant_id),
+                project_id=str(project_id),
+                expected_base_revision_id=str(
+                    payload["expected_base_revision_id"]
+                ),
+                idempotency_key=(
+                    f"temporal:{workflow_id}:{execution['step_key']}:{info.attempt}"
+                ),
+                capability=str(execution["capability"]),
+                operation=str(execution["operation"]),
+                mode=str(execution["mode"]),
+                source=ExecutionSource(
+                    language=str(execution["source_language"]),
+                    code=source_code,
+                    sha256=hashlib.sha256(
+                        source_code.encode("utf-8")
+                    ).hexdigest(),
+                ),
+                inputs=inputs,
+                outputs=tuple(
+                    OutputDeclaration.model_validate(item)
+                    for item in execution["outputs"]
+                ),
+                runtime=RuntimeRequirement(
+                    image_digest=snapshot.image_digest,
+                    platform=snapshot.platform,
+                    sandbox_tier="ephemeral-job",
+                ),
+                limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit,
+                    timeout_seconds=int(execution["timeout_seconds"]),
+                    **({"memory_bytes": 1024 * 1024 * 1024, "pids": 256,
+                        "cpu_millis": 2000, "output_bytes": 128 * 1024 * 1024} if inputs else {}),
+                ),
+                metadata={
+                    "revision_id": str(revision_id),
+                    "temporal_activity_id": info.activity_id,
+                    "temporal_attempt": info.attempt,
+                },
+            )
+            outcome = await backend.execute(spec, materialized_inputs=materialized)
         async with tenant_transaction(
             tenant_id,
             principal_id,
@@ -572,6 +567,8 @@ async def execute(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict
             error_code="execution_cancelled",
             error_message="Temporal cancelled the MCAD activity.",
         )
+        raise
+    except StaleLease:
         raise
     except Exception as exc:
         await _mark_execution_failure(
