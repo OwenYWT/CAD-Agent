@@ -284,6 +284,7 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_constraint_patch_incident_full_chain_and_owned_evidence[valid-baseline]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_constraint_patch_incident_full_chain_and_owned_evidence[original-self-intersecting-baseline]",
       "tests/integration/test_websocket_replay.py::test_real_websocket_replay_reconnect_slow_consumer_auth_and_retention",
+      "tests/postgres/test_agent_candidate_builds.py::test_reclaimed_lease_interrupts_preparation_and_preserves_new_owner",
       "tests/postgres/test_agent_candidate_builds.py::test_candidate_create_and_terminal_lifecycle_are_idempotent",
       "tests/postgres/test_agent_candidate_builds.py::test_generated_source_is_provenanced_immutable_and_idempotent",
       "tests/postgres/test_agent_candidate_builds.py::test_staging_manifest_requires_current_succeeded_lease_and_replays",
@@ -3633,6 +3634,7 @@
       "tests/integration/test_temporal_mcadd_workflow.py::test_constraint_patch_incident_full_chain_and_owned_evidence[valid-baseline]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
       "tests/integration/test_temporal_mcadd_workflow.py::test_constraint_patch_incident_full_chain_and_owned_evidence[original-self-intersecting-baseline]": "real PostgreSQL, MinIO, Temporal, and Podman are required",
       "tests/integration/test_websocket_replay.py::test_real_websocket_replay_reconnect_slow_consumer_auth_and_retention": "real PostgreSQL, MinIO, Temporal, and Podman are required",
+      "tests/postgres/test_agent_candidate_builds.py::test_reclaimed_lease_interrupts_preparation_and_preserves_new_owner": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests",
       "tests/postgres/test_agent_candidate_builds.py::test_candidate_create_and_terminal_lifecycle_are_idempotent": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests",
       "tests/postgres/test_agent_candidate_builds.py::test_generated_source_is_provenanced_immutable_and_idempotent": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests",
       "tests/postgres/test_agent_candidate_builds.py::test_staging_manifest_requires_current_succeeded_lease_and_replays": "CAD_AGENT_TEST_DATABASE_URL is required for real PostgreSQL tests",
@@ -4664,6 +4666,7 @@
   "transactions": {
     "engine": "pytest",
     "node_ids": [
+      "tests/postgres/test_agent_candidate_builds.py::test_reclaimed_lease_interrupts_preparation_and_preserves_new_owner",
       "tests/postgres/test_agent_candidate_builds.py::test_candidate_create_and_terminal_lifecycle_are_idempotent",
       "tests/postgres/test_agent_candidate_builds.py::test_generated_source_is_provenanced_immutable_and_idempotent",
       "tests/postgres/test_agent_candidate_builds.py::test_staging_manifest_requires_current_succeeded_lease_and_replays",

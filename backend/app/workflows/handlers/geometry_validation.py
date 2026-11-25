@@ -23,7 +23,7 @@ from app.repositories.agent_candidates import get_validation_evidence_for_manife
 from app.validation.durable_geometry import DurableGeometryReport, indeterminate_geometry_report, verify_geometry_evidence
 from app.workflows.inputs import _uuid, _agent_v2_request
 from app.workflows.execution_support import _prepare_agent_validation_attempt
-from app.workflows.execution_support import _run_backend_with_heartbeats
+from app.workflows.execution_support import maintain_attempt_lease
 from app.workflows.execution_support import _mark_execution_failure
 from app.workflows.validation_support import _record_agent_validation_outcome
 
@@ -180,223 +180,218 @@ async def agent_validate_geometry(payload: dict[str, Any], *, backend: Execution
     terminal_error_code: str | None = None
     terminal_error_message: str | None = None
     try:
-        declarations: list[ArtifactInput] = []
-        materialized: dict[str, Path] = {}
-        task_inputs: dict[str, str] = {}
-        task_artifacts: list[dict[str, str]] = []
-        integrity_issue: str | None = None
-        for index, item in enumerate(model_outputs):
-            artifact_format = str(item["format"]).lower()
-            role = f"artifact-{index:02d}"
-            filename = f"geometry-{index:02d}.{artifact_format}"
-            path = temp_dir / filename
-            try:
-                downloaded = await download_object(
-                    str(item["object_key"]),
-                    path,
-                )
-            except Exception as exc:
-                integrity_issue = f"object_unavailable:{type(exc).__name__}"
-                break
-            if (
-                downloaded["sha256"] != str(item["sha256"])
-                or downloaded["size_bytes"] != int(item["size_bytes"])
-            ):
-                integrity_issue = "object_integrity_mismatch"
-                break
-            artifact_id = f"{manifest_id}:{index}"
-            declarations.append(
-                ArtifactInput(
-                    artifact_id=artifact_id,
-                    filename=filename,
-                    sha256=str(item["sha256"]),
-                    size_bytes=int(item["size_bytes"]),
-                    media_type=str(item["content_type"]),
-                )
-            )
-            materialized[artifact_id] = path
-            task_inputs[role] = filename
-            task_artifacts.append(
-                {"role": role, "format": artifact_format}
-            )
-        if native_measurement_output is not None and integrity_issue is None:
-            item=native_measurement_output
-            filename='measurement-native.FCStd'
-            path=temp_dir/filename
-            try:
-                downloaded=await download_object(str(item['object_key']),path)
-                if downloaded['sha256']!=item['sha256'] or downloaded['size_bytes']!=item['size_bytes']:
-                    integrity_issue='native_measurement_integrity_mismatch'
-            except Exception as exc:
-                integrity_issue='native_measurement_unavailable:'+type(exc).__name__
-            if integrity_issue is None:
-                artifact_id=f'{manifest_id}:measurement-native'
-                declarations.append(ArtifactInput(artifact_id=artifact_id,filename=filename,
-                    sha256=item['sha256'],size_bytes=item['size_bytes'],media_type=item['content_type']))
-                materialized[artifact_id]=path
-                task_inputs['measurement-native']=filename
-        if integrity_issue is not None:
-            report = indeterminate_geometry_report(
-                outputs=model_outputs,
-                expected_dimensions=expected_dimensions,
-                dimension_tolerance=dimension_tolerance,
-                issue=integrity_issue,
-            )
-            execution_status = ExecutionStatus.ARTIFACT_REJECTED
-            terminal_error_code = "geometry_input_artifact_rejected"
-            terminal_error_message = integrity_issue
-            runtime_provenance = None
-        else:
-            task = {
-                "schema_version": "mcad-capability-task.v1",
-                "capability": "geometry",
-                "operation": "validate",
-                "params": {
-                    "artifacts": task_artifacts,
-                    "expected_dimensions_mm": expected_dimensions,
-                    "dimension_tolerance": dimension_tolerance,
-                    **({"expected_solid_count": payload["expected_solid_count"]}
-                       if "expected_solid_count" in payload else {}),
-                    **({"acceptance": acceptance.model_dump(mode="json")} if acceptance else {}),
-                    **({'measurement_context':measurement_context} if measurement_context is not None else {}),
-                    "output": "geometry-report.json",
-                },
-                "inputs": task_inputs,
-            }
-            source_code = json.dumps(
-                task,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            )
-            snapshot = await asyncio.to_thread(backend.runtime_snapshot)
-            spec = ExecutionSpec(
-                execution_attempt_id=str(attempt_id),
-                workflow_run_id=str(request.workflow_run_id),
-                step_run_id=str(step_id),
-                tenant_id=str(request.tenant_id),
-                project_id=str(request.project_id),
-                expected_base_revision_id=str(
-                    request.expected_base_revision_id
-                ),
-                idempotency_key=(
-                    f"agent-v2:{request.workflow_run_id}:{step_key}:"
-                    f"attempt:{info.attempt}"
-                ),
-                capability="mcad.geometry",
-                operation="validate",
-                mode="analysis",
-                source=ExecutionSource(
-                    language="json",
-                    code=source_code,
-                    sha256=hashlib.sha256(
-                        source_code.encode("utf-8")
-                    ).hexdigest(),
-                ),
-                inputs=tuple(declarations),
-                outputs=(
-                    OutputDeclaration(
-                        name="artifact",
-                        media_type="application/json",
-                        max_size_bytes=4 * 1024 * 1024,
-                    ),
-                    OutputDeclaration(
-                        name="capability-result",
-                        media_type="application/json",
-                        max_size_bytes=4 * 1024 * 1024,
-                    ),
-                ),
-                runtime=RuntimeRequirement(
-                    image_digest=snapshot.image_digest,
-                    platform=snapshot.platform,
-                    sandbox_tier="ephemeral-job",
-                ),
-                limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit, timeout_seconds=execution_timeout(payload, 120)),
-                metadata={
-                    "candidate_build_id": str(candidate_build_id),
-                    "staging_manifest_id": str(manifest_id),
-                    "gate": "geometry",
-                },
-            )
-            outcome = await _run_backend_with_heartbeats(
-                backend,
-                spec,
-                tenant_id=request.tenant_id,
-                principal_id=request.principal_id,
-                attempt_id=attempt_id,
-                lease_token=lease_token,
-                lease_generation=lease_generation,
-                materialized_inputs=materialized,
-            )
-            runtime_provenance = (
-                outcome.result.provenance.model_dump(mode="json")
-                if outcome.result.provenance
-                else None
-            )
-            if outcome.result.status is ExecutionStatus.SUCCEEDED:
-                execution_status = ExecutionStatus.SUCCEEDED
-                report_path = outcome.files.get("artifact")
-                if report_path is None:
-                    report = indeterminate_geometry_report(
-                        outputs=model_outputs,
-                        expected_dimensions=expected_dimensions,
-                        dimension_tolerance=dimension_tolerance,
-                        issue="geometry_report_missing",
+        async with maintain_attempt_lease(
+            tenant_id=request.tenant_id, principal_id=request.principal_id,
+            attempt_id=attempt_id, lease_token=lease_token, lease_generation=lease_generation,
+        ):
+            declarations: list[ArtifactInput] = []
+            materialized: dict[str, Path] = {}
+            task_inputs: dict[str, str] = {}
+            task_artifacts: list[dict[str, str]] = []
+            integrity_issue: str | None = None
+            for index, item in enumerate(model_outputs):
+                artifact_format = str(item["format"]).lower()
+                role = f"artifact-{index:02d}"
+                filename = f"geometry-{index:02d}.{artifact_format}"
+                path = temp_dir / filename
+                try:
+                    downloaded = await download_object(
+                        str(item["object_key"]),
+                        path,
                     )
-                else:
-                    try:
-                        report = DurableGeometryReport.model_validate_json(
-                            report_path.read_text(encoding="utf-8")
-                        )
-                        if guarded:
-                            verify_geometry_evidence(report, request_sha256=request_digest,
-                                acceptance=acceptance, expected_solid_count=expected_solid_count,
-                                measurement_context=measurement_context)
-                            expected_artifacts = {(f"artifact-{n:02d}", i['format'], i['sha256'], i['size_bytes']) for n, i in enumerate(model_outputs)}
-                            measured_artifacts = {(i.role, i.format, i.sha256, i.size_bytes) for i in report.artifacts}
-                            if measured_artifacts != expected_artifacts or len(report.artifacts) != len(model_outputs):
-                                raise ValueError("geometry evidence does not describe the supplied artifacts")
-                    except Exception as exc:
-                        report = indeterminate_geometry_report(
-                            outputs=model_outputs,
-                            expected_dimensions=expected_dimensions,
-                            dimension_tolerance=dimension_tolerance,
-                            issue=(
-                                "geometry_report_invalid:"
-                                f"{type(exc).__name__}"
-                            ),
-                        )
-                result_payload = {
-                    "status": "succeeded",
-                    "gate": "geometry",
-                    "outcome": report.outcome,
-                    "report": report.model_dump(mode="json"),
-                    "execution_result": outcome.result.model_dump(
-                        mode="json"
-                    ),
-                }
-            else:
-                error = outcome.result.error
-                execution_status = outcome.result.status
-                terminal_error_code = (
-                    error.code if error else "geometry_execution_failed"
+                except Exception as exc:
+                    integrity_issue = f"object_unavailable:{type(exc).__name__}"
+                    break
+                if (
+                    downloaded["sha256"] != str(item["sha256"])
+                    or downloaded["size_bytes"] != int(item["size_bytes"])
+                ):
+                    integrity_issue = "object_integrity_mismatch"
+                    break
+                artifact_id = f"{manifest_id}:{index}"
+                declarations.append(
+                    ArtifactInput(
+                        artifact_id=artifact_id,
+                        filename=filename,
+                        sha256=str(item["sha256"]),
+                        size_bytes=int(item["size_bytes"]),
+                        media_type=str(item["content_type"]),
+                    )
                 )
-                terminal_error_message = (
-                    error.message
-                    if error
-                    else "geometry validation execution failed"
+                materialized[artifact_id] = path
+                task_inputs[role] = filename
+                task_artifacts.append(
+                    {"role": role, "format": artifact_format}
                 )
+            if native_measurement_output is not None and integrity_issue is None:
+                item=native_measurement_output
+                filename='measurement-native.FCStd'
+                path=temp_dir/filename
+                try:
+                    downloaded=await download_object(str(item['object_key']),path)
+                    if downloaded['sha256']!=item['sha256'] or downloaded['size_bytes']!=item['size_bytes']:
+                        integrity_issue='native_measurement_integrity_mismatch'
+                except Exception as exc:
+                    integrity_issue='native_measurement_unavailable:'+type(exc).__name__
+                if integrity_issue is None:
+                    artifact_id=f'{manifest_id}:measurement-native'
+                    declarations.append(ArtifactInput(artifact_id=artifact_id,filename=filename,
+                        sha256=item['sha256'],size_bytes=item['size_bytes'],media_type=item['content_type']))
+                    materialized[artifact_id]=path
+                    task_inputs['measurement-native']=filename
+            if integrity_issue is not None:
                 report = indeterminate_geometry_report(
                     outputs=model_outputs,
                     expected_dimensions=expected_dimensions,
                     dimension_tolerance=dimension_tolerance,
-                    issue=(
-                        error.code if error else "geometry_execution_failed"
-                    ),
+                    issue=integrity_issue,
                 )
-        evidence = report.durable_evidence(
-            runtime_provenance=runtime_provenance
-        )
+                execution_status = ExecutionStatus.ARTIFACT_REJECTED
+                terminal_error_code = "geometry_input_artifact_rejected"
+                terminal_error_message = integrity_issue
+                runtime_provenance = None
+            else:
+                task = {
+                    "schema_version": "mcad-capability-task.v1",
+                    "capability": "geometry",
+                    "operation": "validate",
+                    "params": {
+                        "artifacts": task_artifacts,
+                        "expected_dimensions_mm": expected_dimensions,
+                        "dimension_tolerance": dimension_tolerance,
+                        **({"expected_solid_count": payload["expected_solid_count"]}
+                           if "expected_solid_count" in payload else {}),
+                        **({"acceptance": acceptance.model_dump(mode="json")} if acceptance else {}),
+                        **({'measurement_context':measurement_context} if measurement_context is not None else {}),
+                        "output": "geometry-report.json",
+                    },
+                    "inputs": task_inputs,
+                }
+                source_code = json.dumps(
+                    task,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                snapshot = await asyncio.to_thread(backend.runtime_snapshot)
+                spec = ExecutionSpec(
+                    execution_attempt_id=str(attempt_id),
+                    workflow_run_id=str(request.workflow_run_id),
+                    step_run_id=str(step_id),
+                    tenant_id=str(request.tenant_id),
+                    project_id=str(request.project_id),
+                    expected_base_revision_id=str(
+                        request.expected_base_revision_id
+                    ),
+                    idempotency_key=(
+                        f"agent-v2:{request.workflow_run_id}:{step_key}:"
+                        f"attempt:{info.attempt}"
+                    ),
+                    capability="mcad.geometry",
+                    operation="validate",
+                    mode="analysis",
+                    source=ExecutionSource(
+                        language="json",
+                        code=source_code,
+                        sha256=hashlib.sha256(
+                            source_code.encode("utf-8")
+                        ).hexdigest(),
+                    ),
+                    inputs=tuple(declarations),
+                    outputs=(
+                        OutputDeclaration(
+                            name="artifact",
+                            media_type="application/json",
+                            max_size_bytes=4 * 1024 * 1024,
+                        ),
+                        OutputDeclaration(
+                            name="capability-result",
+                            media_type="application/json",
+                            max_size_bytes=4 * 1024 * 1024,
+                        ),
+                    ),
+                    runtime=RuntimeRequirement(
+                        image_digest=snapshot.image_digest,
+                        platform=snapshot.platform,
+                        sandbox_tier="ephemeral-job",
+                    ),
+                    limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit, timeout_seconds=execution_timeout(payload, 120)),
+                    metadata={
+                        "candidate_build_id": str(candidate_build_id),
+                        "staging_manifest_id": str(manifest_id),
+                        "gate": "geometry",
+                    },
+                )
+                outcome = await backend.execute(spec, materialized_inputs=materialized)
+                runtime_provenance = (
+                    outcome.result.provenance.model_dump(mode="json")
+                    if outcome.result.provenance
+                    else None
+                )
+                if outcome.result.status is ExecutionStatus.SUCCEEDED:
+                    execution_status = ExecutionStatus.SUCCEEDED
+                    report_path = outcome.files.get("artifact")
+                    if report_path is None:
+                        report = indeterminate_geometry_report(
+                            outputs=model_outputs,
+                            expected_dimensions=expected_dimensions,
+                            dimension_tolerance=dimension_tolerance,
+                            issue="geometry_report_missing",
+                        )
+                    else:
+                        try:
+                            report = DurableGeometryReport.model_validate_json(
+                                report_path.read_text(encoding="utf-8")
+                            )
+                            if guarded:
+                                verify_geometry_evidence(report, request_sha256=request_digest,
+                                    acceptance=acceptance, expected_solid_count=expected_solid_count,
+                                    measurement_context=measurement_context)
+                                expected_artifacts = {(f"artifact-{n:02d}", i['format'], i['sha256'], i['size_bytes']) for n, i in enumerate(model_outputs)}
+                                measured_artifacts = {(i.role, i.format, i.sha256, i.size_bytes) for i in report.artifacts}
+                                if measured_artifacts != expected_artifacts or len(report.artifacts) != len(model_outputs):
+                                    raise ValueError("geometry evidence does not describe the supplied artifacts")
+                        except Exception as exc:
+                            report = indeterminate_geometry_report(
+                                outputs=model_outputs,
+                                expected_dimensions=expected_dimensions,
+                                dimension_tolerance=dimension_tolerance,
+                                issue=(
+                                    "geometry_report_invalid:"
+                                    f"{type(exc).__name__}"
+                                ),
+                            )
+                    result_payload = {
+                        "status": "succeeded",
+                        "gate": "geometry",
+                        "outcome": report.outcome,
+                        "report": report.model_dump(mode="json"),
+                        "execution_result": outcome.result.model_dump(
+                            mode="json"
+                        ),
+                    }
+                else:
+                    error = outcome.result.error
+                    execution_status = outcome.result.status
+                    terminal_error_code = (
+                        error.code if error else "geometry_execution_failed"
+                    )
+                    terminal_error_message = (
+                        error.message
+                        if error
+                        else "geometry validation execution failed"
+                    )
+                    report = indeterminate_geometry_report(
+                        outputs=model_outputs,
+                        expected_dimensions=expected_dimensions,
+                        dimension_tolerance=dimension_tolerance,
+                        issue=(
+                            error.code if error else "geometry_execution_failed"
+                        ),
+                    )
+            evidence = report.durable_evidence(
+                runtime_provenance=runtime_provenance
+            )
         recorded = await _record_agent_validation_outcome(
             payload,
             candidate_build_id=candidate_build_id,

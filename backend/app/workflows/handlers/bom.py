@@ -1,5 +1,6 @@
 """Bom use cases; Temporal names live in the adapter."""
 from __future__ import annotations
+from app.services.run_state import StaleLease
 from app.config import settings
 import asyncio
 import hashlib
@@ -22,7 +23,7 @@ from app.freecad.bom_contracts import FreeCADBOMDocumentV1, FreeCADBOMRequestV1
 from app.object_store import download_object, put_file
 from app.workflows.inputs import _uuid, _agent_v2_request
 from app.workflows.execution_support import _prepare_agent_validation_attempt
-from app.workflows.execution_support import _run_backend_with_heartbeats
+from app.workflows.execution_support import maintain_attempt_lease
 from app.workflows.execution_support import _mark_execution_failure
 from app.workflows.validation_support import _record_agent_validation_outcome
 
@@ -147,164 +148,159 @@ async def agent_generate_bom(payload: dict[str, Any], *, backend: ExecutionBacke
     temp_dir = Path(tempfile.mkdtemp(prefix="agent_bom_"))
     outcome: MaterializedExecutionOutcome | None = None
     try:
-        declarations: list[ArtifactInput] = []
-        materialized: dict[str, Path] = {}
-        task_inputs: dict[str, str] = {}
-        source_artifacts: dict[str, dict[str, Any]] = {}
-        for step in (combine_step, *part_steps):
-            row = selected[step.step_key]
-            manifest = dict(row["manifest"])
-            step_outputs = [
-                dict(item)
-                for item in manifest.get("outputs") or ()
-                if str(item.get("format") or "").lower() == "step"
-            ]
-            if len(step_outputs) != 1:
-                raise ApplicationError(
-                    "assembly BOM requires one STEP per plan step",
-                    type=(
-                        "bom_input_ambiguous"
-                        if len(step_outputs) > 1
-                        else "bom_input_missing"
-                    ),
-                    non_retryable=True,
+        async with maintain_attempt_lease(
+            tenant_id=request.tenant_id, principal_id=request.principal_id,
+            attempt_id=attempt_id, lease_token=lease_token, lease_generation=lease_generation,
+        ):
+            declarations: list[ArtifactInput] = []
+            materialized: dict[str, Path] = {}
+            task_inputs: dict[str, str] = {}
+            source_artifacts: dict[str, dict[str, Any]] = {}
+            for step in (combine_step, *part_steps):
+                row = selected[step.step_key]
+                manifest = dict(row["manifest"])
+                step_outputs = [
+                    dict(item)
+                    for item in manifest.get("outputs") or ()
+                    if str(item.get("format") or "").lower() == "step"
+                ]
+                if len(step_outputs) != 1:
+                    raise ApplicationError(
+                        "assembly BOM requires one STEP per plan step",
+                        type=(
+                            "bom_input_ambiguous"
+                            if len(step_outputs) > 1
+                            else "bom_input_missing"
+                        ),
+                        non_retryable=True,
+                    )
+                output = step_outputs[0]
+                role = (
+                    "assembly"
+                    if step.kind == "assembly_combine"
+                    else f"component:{step.step_key}"
                 )
-            output = step_outputs[0]
-            role = (
-                "assembly"
-                if step.kind == "assembly_combine"
-                else f"component:{step.step_key}"
-            )
-            filename = (
-                "combine.step"
-                if step.kind == "assembly_combine"
-                else f"{step.step_key}.step"
-            )
-            local_path = temp_dir / filename
-            downloaded = await download_object(
-                str(output["object_key"]),
-                local_path,
-            )
-            if (
-                downloaded["sha256"] != str(output["sha256"])
-                or downloaded["size_bytes"] != int(output["size_bytes"])
-            ):
-                raise ApplicationError(
-                    "assembly BOM input failed integrity verification",
-                    type="bom_input_integrity_failed",
-                    non_retryable=True,
+                filename = (
+                    "combine.step"
+                    if step.kind == "assembly_combine"
+                    else f"{step.step_key}.step"
                 )
-            artifact_id = role
-            declarations.append(ArtifactInput(
-                artifact_id=artifact_id,
-                filename=filename,
-                sha256=str(output["sha256"]),
-                size_bytes=int(output["size_bytes"]),
-                media_type=str(output["content_type"]),
-            ))
-            materialized[artifact_id] = local_path
-            task_inputs[role] = filename
-            source_artifacts[step.step_key] = {
-                "step_key": step.step_key,
-                "staging_manifest_id": str(row["id"]),
-                "artifact_role": "step",
-                "filename": filename,
-                "sha256": str(output["sha256"]),
+                local_path = temp_dir / filename
+                downloaded = await download_object(
+                    str(output["object_key"]),
+                    local_path,
+                )
+                if (
+                    downloaded["sha256"] != str(output["sha256"])
+                    or downloaded["size_bytes"] != int(output["size_bytes"])
+                ):
+                    raise ApplicationError(
+                        "assembly BOM input failed integrity verification",
+                        type="bom_input_integrity_failed",
+                        non_retryable=True,
+                    )
+                artifact_id = role
+                declarations.append(ArtifactInput(
+                    artifact_id=artifact_id,
+                    filename=filename,
+                    sha256=str(output["sha256"]),
+                    size_bytes=int(output["size_bytes"]),
+                    media_type=str(output["content_type"]),
+                ))
+                materialized[artifact_id] = local_path
+                task_inputs[role] = filename
+                source_artifacts[step.step_key] = {
+                    "step_key": step.step_key,
+                    "staging_manifest_id": str(row["id"]),
+                    "artifact_role": "step",
+                    "filename": filename,
+                    "sha256": str(output["sha256"]),
+                }
+            snapshot = await asyncio.to_thread(backend.runtime_snapshot)
+            bom_request = FreeCADBOMRequestV1(
+                candidate_build_id=candidate_build_id,
+                base_revision_id=request.expected_base_revision_id,
+                plan_hash=canonical_sha256(plan.temporal_payload()),
+                runtime_image_digest=snapshot.image_digest,
+                combine_step_key=combine_step.step_key,
+                components=tuple({
+                    "step_key": step.step_key,
+                    "label": step.part_name,
+                    "position_mm": step.part_position,
+                    "artifact_id": f"component:{step.step_key}",
+                    "quantity": 1,
+                } for step in part_steps),
+                property_columns=(),
+            )
+            task = {
+                "schema_version": "mcad-capability-task.v1",
+                "capability": "freecad",
+                "operation": "bom",
+                "params": {"request": bom_request.model_dump(mode="json")},
+                "inputs": task_inputs,
             }
-        snapshot = await asyncio.to_thread(backend.runtime_snapshot)
-        bom_request = FreeCADBOMRequestV1(
-            candidate_build_id=candidate_build_id,
-            base_revision_id=request.expected_base_revision_id,
-            plan_hash=canonical_sha256(plan.temporal_payload()),
-            runtime_image_digest=snapshot.image_digest,
-            combine_step_key=combine_step.step_key,
-            components=tuple({
-                "step_key": step.step_key,
-                "label": step.part_name,
-                "position_mm": step.part_position,
-                "artifact_id": f"component:{step.step_key}",
-                "quantity": 1,
-            } for step in part_steps),
-            property_columns=(),
-        )
-        task = {
-            "schema_version": "mcad-capability-task.v1",
-            "capability": "freecad",
-            "operation": "bom",
-            "params": {"request": bom_request.model_dump(mode="json")},
-            "inputs": task_inputs,
-        }
-        source_code = json.dumps(
-            task,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        spec = ExecutionSpec(
-            execution_attempt_id=str(attempt_id),
-            workflow_run_id=str(request.workflow_run_id),
-            step_run_id=str(step_id),
-            tenant_id=str(request.tenant_id),
-            project_id=str(request.project_id),
-            expected_base_revision_id=str(request.expected_base_revision_id),
-            idempotency_key=(
-                f"agent-v2:bom:{request.workflow_run_id}:"
-                + (f"{step_id}:" if "validation_step_key" in payload else "")
-                + f"attempt:{info.attempt}"
-            ),
-            capability="mcad.freecad",
-            operation="bom",
-            mode="analysis",
-            source=ExecutionSource(
-                language="json",
-                code=source_code,
-                sha256=hashlib.sha256(source_code.encode()).hexdigest(),
-            ),
-            inputs=tuple(declarations),
-            outputs=(
-                OutputDeclaration(
-                    name="bom-json",
-                    media_type="application/json",
-                    max_size_bytes=16 * 1024 * 1024,
+            source_code = json.dumps(
+                task,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            spec = ExecutionSpec(
+                execution_attempt_id=str(attempt_id),
+                workflow_run_id=str(request.workflow_run_id),
+                step_run_id=str(step_id),
+                tenant_id=str(request.tenant_id),
+                project_id=str(request.project_id),
+                expected_base_revision_id=str(request.expected_base_revision_id),
+                idempotency_key=(
+                    f"agent-v2:bom:{request.workflow_run_id}:"
+                    + (f"{step_id}:" if "validation_step_key" in payload else "")
+                    + f"attempt:{info.attempt}"
                 ),
-                OutputDeclaration(
-                    name="bom-csv",
-                    media_type="text/csv; charset=utf-8",
-                    max_size_bytes=16 * 1024 * 1024,
+                capability="mcad.freecad",
+                operation="bom",
+                mode="analysis",
+                source=ExecutionSource(
+                    language="json",
+                    code=source_code,
+                    sha256=hashlib.sha256(source_code.encode()).hexdigest(),
                 ),
-                OutputDeclaration(
-                    name="capability-result",
-                    media_type="application/json",
-                    max_size_bytes=512 * 1024,
+                inputs=tuple(declarations),
+                outputs=(
+                    OutputDeclaration(
+                        name="bom-json",
+                        media_type="application/json",
+                        max_size_bytes=16 * 1024 * 1024,
+                    ),
+                    OutputDeclaration(
+                        name="bom-csv",
+                        media_type="text/csv; charset=utf-8",
+                        max_size_bytes=16 * 1024 * 1024,
+                    ),
+                    OutputDeclaration(
+                        name="capability-result",
+                        media_type="application/json",
+                        max_size_bytes=512 * 1024,
+                    ),
                 ),
-            ),
-            runtime=RuntimeRequirement(
-                image_digest=snapshot.image_digest,
-                platform=snapshot.platform,
-                sandbox_tier="ephemeral-job",
-            ),
-            limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit,
-                timeout_seconds=execution_timeout(payload, 180),
-                memory_bytes=1536 * 1024 * 1024,
-                cpu_millis=2000,
-                pids=512,
-                output_bytes=384 * 1024 * 1024,
-            ),
-            metadata={
-                "candidate_build_id": str(candidate_build_id),
-                "gate": "bom",
-            },
-        )
-        outcome = await _run_backend_with_heartbeats(
-            backend,
-            spec,
-            tenant_id=request.tenant_id,
-            principal_id=request.principal_id,
-            attempt_id=attempt_id,
-            lease_token=lease_token,
-            lease_generation=lease_generation,
-            materialized_inputs=materialized,
-        )
+                runtime=RuntimeRequirement(
+                    image_digest=snapshot.image_digest,
+                    platform=snapshot.platform,
+                    sandbox_tier="ephemeral-job",
+                ),
+                limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit,
+                    timeout_seconds=execution_timeout(payload, 180),
+                    memory_bytes=1536 * 1024 * 1024,
+                    cpu_millis=2000,
+                    pids=512,
+                    output_bytes=384 * 1024 * 1024,
+                ),
+                metadata={
+                    "candidate_build_id": str(candidate_build_id),
+                    "gate": "bom",
+                },
+            )
+            outcome = await backend.execute(spec, materialized_inputs=materialized)
         if outcome.result.status is not ExecutionStatus.SUCCEEDED:
             error = outcome.result.error or ExecutionError(
                 category="cad_kernel",
@@ -460,6 +456,8 @@ async def agent_generate_bom(payload: dict[str, Any], *, backend: ExecutionBacke
             error_message=error.message,
             error=error,
         )
+        raise
+    except StaleLease:
         raise
     except Exception as exc:
         error = ExecutionError(

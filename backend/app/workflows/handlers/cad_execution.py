@@ -22,14 +22,14 @@ from app.freecad.contracts import FreeCADOperationPlan
 from app.contracts.cad_tools import execution_receipt
 from app.object_store import download_object, put_file
 from app.repositories.agent_candidates import accept_staging_manifest, get_staging_manifest_for_step
-from app.services.run_state import complete_attempt, transition_step
+from app.services.run_state import StaleLease, complete_attempt, transition_step
 from app.workflows.inputs import _uuid, _agent_v2_request
 from app.workflows.handlers.legacy_modeling import plan
 from app.workflows.execution_support import _MODELING_MEDIA_TYPES
 from app.workflows.execution_support import _modeling_outputs
 from app.workflows.execution_support import _prepare_agent_execution_attempt
 from app.workflows.execution_support import _heartbeat_loop
-from app.workflows.execution_support import _run_backend_with_heartbeats
+from app.workflows.execution_support import maintain_attempt_lease
 from app.workflows.execution_support import _mark_execution_failure
 from app.workflows.revision_inputs import _freecad_revision_artifact
 from app.workflows.checkpoint_inputs import checkpoint_manifest, checkpoint_artifact, checkpoint_context
@@ -75,77 +75,73 @@ async def agent_execute_model(payload: dict[str, Any], *, backend: ExecutionBack
     outcome: MaterializedExecutionOutcome | None = None
     upload_heartbeat: asyncio.Task | None = None
     try:
-        source_code = str(payload["source_code"])
-        source_hash = hashlib.sha256(source_code.encode("utf-8")).hexdigest()
-        if source_hash != str(payload["source_hash"]):
-            raise ApplicationError(
-                "modeling source hash does not match persisted source",
-                type="agent_source_hash_mismatch",
-                non_retryable=True,
-            )
-        analysis_warnings = analyze_execution_code(source_code)
-        if analysis_warnings:
-            message = "Static analysis failed: " + "; ".join(analysis_warnings)
-            raise ApplicationError(
-                message,
-                {
-                    "execution_attempt_id": str(attempt_id),
-                    "category": "validation",
-                    "error_code": "static_analysis_failed",
-                    "error_message": message,
-                    "runtime_error_type": "StaticAnalysis",
-                    "details": {"warnings": analysis_warnings},
-                    "evidence": {},
+        async with maintain_attempt_lease(
+            tenant_id=request.tenant_id, principal_id=request.principal_id,
+            attempt_id=attempt_id, lease_token=lease_token, lease_generation=lease_generation,
+        ):
+            source_code = str(payload["source_code"])
+            source_hash = hashlib.sha256(source_code.encode("utf-8")).hexdigest()
+            if source_hash != str(payload["source_hash"]):
+                raise ApplicationError(
+                    "modeling source hash does not match persisted source",
+                    type="agent_source_hash_mismatch",
+                    non_retryable=True,
+                )
+            analysis_warnings = analyze_execution_code(source_code)
+            if analysis_warnings:
+                message = "Static analysis failed: " + "; ".join(analysis_warnings)
+                raise ApplicationError(
+                    message,
+                    {
+                        "execution_attempt_id": str(attempt_id),
+                        "category": "validation",
+                        "error_code": "static_analysis_failed",
+                        "error_message": message,
+                        "runtime_error_type": "StaticAnalysis",
+                        "details": {"warnings": analysis_warnings},
+                        "evidence": {},
+                    },
+                    type="static_analysis_failed",
+                    non_retryable=True,
+                )
+            snapshot = await asyncio.to_thread(backend.runtime_snapshot)
+            outputs = _modeling_outputs(step, str(payload["mode"]))
+            spec = ExecutionSpec(
+                execution_attempt_id=str(attempt_id),
+                workflow_run_id=str(request.workflow_run_id),
+                step_run_id=str(step_id),
+                tenant_id=str(request.tenant_id),
+                project_id=str(request.project_id),
+                expected_base_revision_id=str(request.expected_base_revision_id),
+                idempotency_key=(
+                    f"agent-v2:{request.workflow_run_id}:{run_step_key}:"
+                    f"attempt:{info.attempt}"
+                ),
+                capability="mcad.model",
+                operation=plan.operation,
+                mode=str(payload["mode"]),
+                source=ExecutionSource(
+                    language="python",
+                    code=source_code,
+                    sha256=source_hash,
+                ),
+                outputs=outputs,
+                runtime=RuntimeRequirement(
+                    image_digest=snapshot.image_digest,
+                    platform=snapshot.platform,
+                    sandbox_tier="ephemeral-job",
+                ),
+                limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit, timeout_seconds=execution_timeout(payload, 120)),
+                metadata={
+                    "candidate_build_id": str(candidate_build_id),
+                    "source_id": str(payload["source_id"]),
+                    "plan_step_key": step.step_key,
+                    "run_step_key": run_step_key,
+                    "temporal_activity_id": info.activity_id,
+                    "temporal_attempt": info.attempt,
                 },
-                type="static_analysis_failed",
-                non_retryable=True,
             )
-        snapshot = await asyncio.to_thread(backend.runtime_snapshot)
-        outputs = _modeling_outputs(step, str(payload["mode"]))
-        spec = ExecutionSpec(
-            execution_attempt_id=str(attempt_id),
-            workflow_run_id=str(request.workflow_run_id),
-            step_run_id=str(step_id),
-            tenant_id=str(request.tenant_id),
-            project_id=str(request.project_id),
-            expected_base_revision_id=str(request.expected_base_revision_id),
-            idempotency_key=(
-                f"agent-v2:{request.workflow_run_id}:{run_step_key}:"
-                f"attempt:{info.attempt}"
-            ),
-            capability="mcad.model",
-            operation=plan.operation,
-            mode=str(payload["mode"]),
-            source=ExecutionSource(
-                language="python",
-                code=source_code,
-                sha256=source_hash,
-            ),
-            outputs=outputs,
-            runtime=RuntimeRequirement(
-                image_digest=snapshot.image_digest,
-                platform=snapshot.platform,
-                sandbox_tier="ephemeral-job",
-            ),
-            limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit, timeout_seconds=execution_timeout(payload, 120)),
-            metadata={
-                "candidate_build_id": str(candidate_build_id),
-                "source_id": str(payload["source_id"]),
-                "plan_step_key": step.step_key,
-                "run_step_key": run_step_key,
-                "temporal_activity_id": info.activity_id,
-                "temporal_attempt": info.attempt,
-            },
-        )
-        outcome = await _run_backend_with_heartbeats(
-            backend,
-            spec,
-            tenant_id=request.tenant_id,
-            principal_id=request.principal_id,
-            attempt_id=attempt_id,
-            lease_token=lease_token,
-            lease_generation=lease_generation,
-        )
+            outcome = await backend.execute(spec)
         if activity.in_activity() and activity.is_cancelled():
             raise asyncio.CancelledError
         if outcome.result.status is not ExecutionStatus.SUCCEEDED:
@@ -320,6 +316,8 @@ async def agent_execute_model(payload: dict[str, Any], *, backend: ExecutionBack
             error_code=(exc.type or "agent_model_execution_failed")[:200],
             error_message=str(exc)[:4000],
         )
+        raise
+    except StaleLease:
         raise
     except Exception as exc:
         await _mark_execution_failure(
@@ -575,64 +573,59 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
         outcome: MaterializedExecutionOutcome | None = None
         upload_heartbeat: asyncio.Task | None = None
         try:
-            snapshot = await asyncio.to_thread(backend.runtime_snapshot)
-            spec = ExecutionSpec(
-                execution_attempt_id=str(attempt_id),
-                workflow_run_id=str(request.workflow_run_id),
-                step_run_id=str(step_id),
-                tenant_id=str(request.tenant_id),
-                project_id=str(request.project_id),
-                expected_base_revision_id=str(
-                    request.expected_base_revision_id
-                ),
-                idempotency_key=(
-                    f"agent-v2:freecad:{request.workflow_run_id}:"
-                    f"{run_step_key}:attempt:{info.attempt}"
-                ),
-                capability="mcad.freecad",
-                operation="execute",
-                mode="3d",
-                source=ExecutionSource(
-                    language="json",
-                    code=task_source,
-                    sha256=hashlib.sha256(
-                        task_source.encode("utf-8")
-                    ).hexdigest(),
-                ),
-                inputs=tuple(declarations),
-                outputs=outputs,
-                runtime=RuntimeRequirement(
-                    image_digest=snapshot.image_digest,
-                    platform=snapshot.platform,
-                    sandbox_tier="ephemeral-job",
-                ),
-                limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit,
-                    timeout_seconds=execution_timeout(payload, 180),
-                    memory_bytes=1536 * 1024 * 1024,
-                    cpu_millis=2000,
-                    pids=512,
-                    output_bytes=384 * 1024 * 1024,
-                ),
-                metadata={
-                    "candidate_build_id": str(candidate_build_id),
-                    "source_id": str(payload["source_id"]),
-                    "plan_step_key": step.step_key,
-                    "run_step_key": run_step_key,
-                    "modeling_backend": "freecad",
-                    "temporal_activity_id": info.activity_id,
-                    "temporal_attempt": info.attempt,
-                },
-            )
-            outcome = await _run_backend_with_heartbeats(
-                backend,
-                spec,
-                tenant_id=request.tenant_id,
-                principal_id=request.principal_id,
-                attempt_id=attempt_id,
-                lease_token=lease_token,
-                lease_generation=lease_generation,
-                materialized_inputs=materialized,
-            )
+            async with maintain_attempt_lease(
+                tenant_id=request.tenant_id, principal_id=request.principal_id,
+                attempt_id=attempt_id, lease_token=lease_token, lease_generation=lease_generation,
+            ):
+                snapshot = await asyncio.to_thread(backend.runtime_snapshot)
+                spec = ExecutionSpec(
+                    execution_attempt_id=str(attempt_id),
+                    workflow_run_id=str(request.workflow_run_id),
+                    step_run_id=str(step_id),
+                    tenant_id=str(request.tenant_id),
+                    project_id=str(request.project_id),
+                    expected_base_revision_id=str(
+                        request.expected_base_revision_id
+                    ),
+                    idempotency_key=(
+                        f"agent-v2:freecad:{request.workflow_run_id}:"
+                        f"{run_step_key}:attempt:{info.attempt}"
+                    ),
+                    capability="mcad.freecad",
+                    operation="execute",
+                    mode="3d",
+                    source=ExecutionSource(
+                        language="json",
+                        code=task_source,
+                        sha256=hashlib.sha256(
+                            task_source.encode("utf-8")
+                        ).hexdigest(),
+                    ),
+                    inputs=tuple(declarations),
+                    outputs=outputs,
+                    runtime=RuntimeRequirement(
+                        image_digest=snapshot.image_digest,
+                        platform=snapshot.platform,
+                        sandbox_tier="ephemeral-job",
+                    ),
+                    limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit,
+                        timeout_seconds=execution_timeout(payload, 180),
+                        memory_bytes=1536 * 1024 * 1024,
+                        cpu_millis=2000,
+                        pids=512,
+                        output_bytes=384 * 1024 * 1024,
+                    ),
+                    metadata={
+                        "candidate_build_id": str(candidate_build_id),
+                        "source_id": str(payload["source_id"]),
+                        "plan_step_key": step.step_key,
+                        "run_step_key": run_step_key,
+                        "modeling_backend": "freecad",
+                        "temporal_activity_id": info.activity_id,
+                        "temporal_attempt": info.attempt,
+                    },
+                )
+                outcome = await backend.execute(spec, materialized_inputs=materialized)
             if activity.in_activity() and activity.is_cancelled():
                 raise asyncio.CancelledError
             if outcome.result.status is not ExecutionStatus.SUCCEEDED:
@@ -894,6 +887,8 @@ async def agent_execute_freecad(payload: dict[str, Any], *, backend: ExecutionBa
                 error_code=(exc.type or "agent_freecad_execution_failed")[:200],
                 error_message=str(exc)[:4000],
             )
+            raise
+        except StaleLease:
             raise
         except Exception as exc:
             await _mark_execution_failure(

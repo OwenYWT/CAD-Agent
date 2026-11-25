@@ -23,13 +23,13 @@ from app.execution.contracts import ArtifactInput, ExecutionSource, ExecutionSpe
 from app.object_store import get_object, put_file
 from app.services.artifact_commit import authorize_artifact_upload, commit_artifacts
 from app.services.design_analysis import build_design_analysis_response
-from app.services.run_state import transition_workflow
+from app.services.run_state import StaleLease, transition_workflow
 from app.validation.dfm_analyzer import DFMAnalyzer
 from app.workflows.logical_steps import _workflow_status
 from app.workflows.inputs import _uuid
 from app.workflows.execution_support import _prepare_execution_attempt
 from app.workflows.execution_support import _heartbeat_loop
-from app.workflows.execution_support import _run_backend_with_heartbeats
+from app.workflows.execution_support import maintain_attempt_lease
 from app.workflows.execution_support import _mark_execution_failure
 from app.workflows.validation_support import _complete_check_workflow
 
@@ -260,94 +260,89 @@ async def check(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[s
     report_committed = False
     post_heartbeat: asyncio.Task | None = None
     try:
-        materialized: dict[str, Path] = {}
-        for kind, row in source_artifacts.items():
-            data = await get_object(row["object_key"])
-            if (
-                len(data) != int(row["size_bytes"])
-                or hashlib.sha256(data).hexdigest() != row["sha256"]
-            ):
-                raise ApplicationError(
-                    f"The source {kind.upper()} artifact failed integrity verification.",
-                    type="check_source_artifact_integrity_failed",
-                    non_retryable=True,
-                )
-            path = temp_dir / f"source.{kind}"
-            path.write_bytes(data)
-            row["local_path"] = path
-            if kind == "step":
-                materialized[str(row["artifact_id"])] = path
+        async with maintain_attempt_lease(
+            tenant_id=tenant_id, principal_id=principal_id,
+            attempt_id=attempt_id, lease_token=lease_token, lease_generation=lease_generation,
+        ):
+            materialized: dict[str, Path] = {}
+            for kind, row in source_artifacts.items():
+                data = await get_object(row["object_key"])
+                if (
+                    len(data) != int(row["size_bytes"])
+                    or hashlib.sha256(data).hexdigest() != row["sha256"]
+                ):
+                    raise ApplicationError(
+                        f"The source {kind.upper()} artifact failed integrity verification.",
+                        type="check_source_artifact_integrity_failed",
+                        non_retryable=True,
+                    )
+                path = temp_dir / f"source.{kind}"
+                path.write_bytes(data)
+                row["local_path"] = path
+                if kind == "step":
+                    materialized[str(row["artifact_id"])] = path
 
-        snapshot = await asyncio.to_thread(
-            backend.runtime_snapshot
-        )
-        input_declarations: tuple[ArtifactInput, ...] = ()
-        if "step" in source_artifacts:
-            step_artifact = source_artifacts["step"]
-            input_declarations = (
-                ArtifactInput(
-                    artifact_id=str(step_artifact["artifact_id"]),
-                    filename="model.step",
-                    sha256=str(step_artifact["sha256"]),
-                    size_bytes=int(step_artifact["size_bytes"]),
-                    media_type=str(step_artifact["content_type"]),
-                ),
+            snapshot = await asyncio.to_thread(
+                backend.runtime_snapshot
             )
-        spec = ExecutionSpec(
-            execution_attempt_id=str(attempt_id),
-            workflow_run_id=str(workflow_id),
-            step_run_id=str(step_id),
-            tenant_id=str(tenant_id),
-            project_id=str(project_id),
-            expected_base_revision_id=str(source_revision_id),
-            idempotency_key=(
-                f"temporal:{workflow_id}:engineering_check:{info.attempt}"
-            ),
-            capability="mcad.local",
-            operation="analyze",
-            mode="analysis",
-            source=ExecutionSource(
-                language="python",
-                code=source_code,
-                sha256=hashlib.sha256(
-                    source_code.encode("utf-8")
-                ).hexdigest(),
-            ),
-            inputs=input_declarations,
-            outputs=(
-                OutputDeclaration(
-                    name="json",
-                    media_type="application/json",
-                    max_size_bytes=16 * 1024 * 1024,
-                ),
-            ),
-            runtime=RuntimeRequirement(
-                image_digest=snapshot.image_digest,
-                platform=snapshot.platform,
-                sandbox_tier="ephemeral-job",
-            ),
-            limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit,
-                timeout_seconds=int(
-                    payload.get("timeout_seconds", 120)
+            input_declarations: tuple[ArtifactInput, ...] = ()
+            if "step" in source_artifacts:
+                step_artifact = source_artifacts["step"]
+                input_declarations = (
+                    ArtifactInput(
+                        artifact_id=str(step_artifact["artifact_id"]),
+                        filename="model.step",
+                        sha256=str(step_artifact["sha256"]),
+                        size_bytes=int(step_artifact["size_bytes"]),
+                        media_type=str(step_artifact["content_type"]),
+                    ),
                 )
-            ),
-            metadata={
-                "revision_id": str(source_revision_id),
-                "source_workflow_run_id": str(source_workflow_id),
-                "temporal_activity_id": info.activity_id,
-                "temporal_attempt": info.attempt,
-            },
-        )
-        outcome = await _run_backend_with_heartbeats(
-            backend,
-            spec,
-            tenant_id=tenant_id,
-            principal_id=principal_id,
-            attempt_id=attempt_id,
-            lease_token=lease_token,
-            lease_generation=lease_generation,
-            materialized_inputs=materialized,
-        )
+            spec = ExecutionSpec(
+                execution_attempt_id=str(attempt_id),
+                workflow_run_id=str(workflow_id),
+                step_run_id=str(step_id),
+                tenant_id=str(tenant_id),
+                project_id=str(project_id),
+                expected_base_revision_id=str(source_revision_id),
+                idempotency_key=(
+                    f"temporal:{workflow_id}:engineering_check:{info.attempt}"
+                ),
+                capability="mcad.local",
+                operation="analyze",
+                mode="analysis",
+                source=ExecutionSource(
+                    language="python",
+                    code=source_code,
+                    sha256=hashlib.sha256(
+                        source_code.encode("utf-8")
+                    ).hexdigest(),
+                ),
+                inputs=input_declarations,
+                outputs=(
+                    OutputDeclaration(
+                        name="json",
+                        media_type="application/json",
+                        max_size_bytes=16 * 1024 * 1024,
+                    ),
+                ),
+                runtime=RuntimeRequirement(
+                    image_digest=snapshot.image_digest,
+                    platform=snapshot.platform,
+                    sandbox_tier="ephemeral-job",
+                ),
+                limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit,
+                    timeout_seconds=int(
+                        payload.get("timeout_seconds", 120)
+                    )
+                ),
+                metadata={
+                    "revision_id": str(source_revision_id),
+                    "source_workflow_run_id": str(source_workflow_id),
+                    "temporal_activity_id": info.activity_id,
+                    "temporal_attempt": info.attempt,
+                },
+            )
+            outcome = await backend.execute(spec, materialized_inputs=materialized)
 
         if activity.in_activity() and activity.is_cancelled():
             raise asyncio.CancelledError
@@ -543,6 +538,8 @@ async def check(payload: dict[str, Any], *, backend: ExecutionBackend) -> dict[s
                 error_code="check_activity_failed",
                 error_message="The engineering check did not commit a report.",
             )
+        raise
+    except StaleLease:
         raise
     except Exception as exc:
         if not report_committed:

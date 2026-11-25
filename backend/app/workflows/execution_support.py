@@ -4,8 +4,9 @@ import asyncio
 import json
 import os
 import socket
+from builtins import BaseExceptionGroup
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 from sqlalchemy import text
@@ -14,8 +15,7 @@ from temporalio.exceptions import ApplicationError
 from app.agent.durable_plan import AgentPlanStep
 from app.db import tenant_transaction
 from app.domain.runs import AttemptStatus, StepStatus
-from app.execution.backend import ExecutionBackend, MaterializedExecutionOutcome
-from app.execution.contracts import ExecutionError, ExecutionSpec, ExecutionStatus, OutputDeclaration
+from app.execution.contracts import ExecutionError, ExecutionStatus, OutputDeclaration
 from app.services.run_state import create_attempt, create_step, heartbeat_attempt, lease_attempt, start_attempt, transition_attempt, transition_step
 from app.workflows.logical_steps import _step_row
 from app.workflows.inputs import _uuid
@@ -602,61 +602,34 @@ async def _heartbeat_loop(
         await asyncio.sleep(5)
 
 
-async def _run_backend_with_heartbeats(
-    backend: ExecutionBackend,
-    spec: ExecutionSpec,
+@asynccontextmanager
+async def maintain_attempt_lease(
     *,
     tenant_id: UUID,
     principal_id: UUID,
     attempt_id: UUID,
     lease_token: str,
     lease_generation: int,
-    materialized_inputs: dict[str, Path] | None = None,
-) -> MaterializedExecutionOutcome:
-    execution_task = asyncio.create_task(
-        backend.execute(
-            spec,
-            materialized_inputs=materialized_inputs,
-        )
-    )
-    heartbeat_task = asyncio.create_task(
-        _heartbeat_loop(
-            tenant_id=tenant_id,
-            principal_id=principal_id,
-            attempt_id=attempt_id,
-            lease_token=lease_token,
-            lease_generation=lease_generation,
-        )
-    )
+):
+    """Renew the attempt during input reads, runtime inspection and sandbox work."""
     try:
-        done, _ = await asyncio.wait(
-            {execution_task, heartbeat_task},
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        if execution_task in done:
-            return await execution_task
-        if heartbeat_task in done:
-            heartbeat_error = heartbeat_task.exception()
-            if heartbeat_error is not None:
-                execution_task.cancel()
-                try:
-                    await execution_task
-                except (asyncio.CancelledError, Exception):
-                    pass
-                raise heartbeat_error
-        return await execution_task
-    finally:
-        heartbeat_task.cancel()
-        try:
-            await heartbeat_task
-        except asyncio.CancelledError:
-            pass
-        if not execution_task.done():
-            execution_task.cancel()
+        async with asyncio.TaskGroup() as tasks:
+            heartbeat = tasks.create_task(_heartbeat_loop(
+                tenant_id=tenant_id,
+                principal_id=principal_id,
+                attempt_id=attempt_id,
+                lease_token=lease_token,
+                lease_generation=lease_generation,
+            ))
             try:
-                await execution_task
-            except (asyncio.CancelledError, Exception):
-                pass
+                yield
+            finally:
+                heartbeat.cancel()
+    except BaseExceptionGroup as errors:
+        # Keep the original activity error type for retry and cancellation policy.
+        if len(errors.exceptions) == 1:
+            raise errors.exceptions[0] from None
+        raise
 
 
 def interrupted_execution_status(details) -> ExecutionStatus:

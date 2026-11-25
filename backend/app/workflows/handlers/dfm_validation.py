@@ -1,5 +1,6 @@
 """Dfm validation use cases; Temporal names live in the adapter."""
 from __future__ import annotations
+from app.services.run_state import StaleLease
 from app.config import settings
 import asyncio
 import hashlib
@@ -19,7 +20,7 @@ from app.validation.durable_dfm import DurableDFMReport, indeterminate_dfm_repor
 from app.validation.dfm_policy_snapshot import resolve_dfm_policy_snapshot
 from app.workflows.inputs import _uuid, _agent_v2_request
 from app.workflows.execution_support import _prepare_agent_validation_attempt
-from app.workflows.execution_support import _run_backend_with_heartbeats
+from app.workflows.execution_support import maintain_attempt_lease
 from app.workflows.execution_support import _mark_execution_failure
 from app.workflows.validation_support import _record_agent_validation_outcome
 from app.workflows.revision_inputs import _agent_validation_input
@@ -73,162 +74,157 @@ async def agent_validate_dfm(payload: dict[str, Any], *, backend: ExecutionBacke
     temp_dir = Path(tempfile.mkdtemp(prefix="agent_dfm_"))
     outcome: MaterializedExecutionOutcome | None = None
     try:
-        _, declaration, materialized = await _agent_validation_input(
-            request=request,
-            candidate_build_id=candidate_build_id,
-            manifest_id=manifest_id,
-            temp_dir=temp_dir,
-            preferred_format="step",
-        )
-        policy_path = temp_dir / "dfm-policy.json"
-        policy_path.write_bytes(policy.canonical_bytes())
-        policy_id = f"{manifest_id}:dfm-policy:{policy.policy_hash}"
-        policy_declaration = ArtifactInput(
-            artifact_id=policy_id,
-            filename=policy_path.name,
-            sha256=policy.policy_hash,
-            size_bytes=policy_path.stat().st_size,
-            media_type="application/json",
-        )
-        materialized[policy_id] = policy_path
-        task = {
-            "schema_version": "mcad-capability-task.v1",
-            "capability": "dfm",
-            "operation": "validate",
-            "params": {
-                "policy_hash": policy.policy_hash,
-                "output": "dfm-report.json",
-            },
-            "inputs": {
-                "model": declaration.filename,
-                "policy": policy_declaration.filename,
-            },
-        }
-        source_code = json.dumps(
-            task, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        )
-        snapshot = await asyncio.to_thread(backend.runtime_snapshot)
-        spec = ExecutionSpec(
-            execution_attempt_id=str(attempt_id),
-            workflow_run_id=str(request.workflow_run_id),
-            step_run_id=str(step_id),
-            tenant_id=str(request.tenant_id),
-            project_id=str(request.project_id),
-            expected_base_revision_id=str(request.expected_base_revision_id),
-            idempotency_key=f"agent-v2:{request.workflow_run_id}:{step_key}:{info.attempt}",
-            capability="mcad.dfm",
-            operation="validate",
-            mode="analysis",
-            source=ExecutionSource(
-                language="json",
-                code=source_code,
-                sha256=hashlib.sha256(source_code.encode()).hexdigest(),
-            ),
-            inputs=(declaration, policy_declaration),
-            outputs=(
-                OutputDeclaration(
-                    name="artifact",
-                    media_type="application/json",
-                    max_size_bytes=4 * 1024 * 1024,
+        async with maintain_attempt_lease(
+            tenant_id=request.tenant_id, principal_id=request.principal_id,
+            attempt_id=attempt_id, lease_token=lease_token, lease_generation=lease_generation,
+        ):
+            _, declaration, materialized = await _agent_validation_input(
+                request=request,
+                candidate_build_id=candidate_build_id,
+                manifest_id=manifest_id,
+                temp_dir=temp_dir,
+                preferred_format="step",
+            )
+            policy_path = temp_dir / "dfm-policy.json"
+            policy_path.write_bytes(policy.canonical_bytes())
+            policy_id = f"{manifest_id}:dfm-policy:{policy.policy_hash}"
+            policy_declaration = ArtifactInput(
+                artifact_id=policy_id,
+                filename=policy_path.name,
+                sha256=policy.policy_hash,
+                size_bytes=policy_path.stat().st_size,
+                media_type="application/json",
+            )
+            materialized[policy_id] = policy_path
+            task = {
+                "schema_version": "mcad-capability-task.v1",
+                "capability": "dfm",
+                "operation": "validate",
+                "params": {
+                    "policy_hash": policy.policy_hash,
+                    "output": "dfm-report.json",
+                },
+                "inputs": {
+                    "model": declaration.filename,
+                    "policy": policy_declaration.filename,
+                },
+            }
+            source_code = json.dumps(
+                task, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
+            snapshot = await asyncio.to_thread(backend.runtime_snapshot)
+            spec = ExecutionSpec(
+                execution_attempt_id=str(attempt_id),
+                workflow_run_id=str(request.workflow_run_id),
+                step_run_id=str(step_id),
+                tenant_id=str(request.tenant_id),
+                project_id=str(request.project_id),
+                expected_base_revision_id=str(request.expected_base_revision_id),
+                idempotency_key=f"agent-v2:{request.workflow_run_id}:{step_key}:{info.attempt}",
+                capability="mcad.dfm",
+                operation="validate",
+                mode="analysis",
+                source=ExecutionSource(
+                    language="json",
+                    code=source_code,
+                    sha256=hashlib.sha256(source_code.encode()).hexdigest(),
                 ),
-                OutputDeclaration(
-                    name="capability-result",
-                    media_type="application/json",
-                    max_size_bytes=4 * 1024 * 1024,
+                inputs=(declaration, policy_declaration),
+                outputs=(
+                    OutputDeclaration(
+                        name="artifact",
+                        media_type="application/json",
+                        max_size_bytes=4 * 1024 * 1024,
+                    ),
+                    OutputDeclaration(
+                        name="capability-result",
+                        media_type="application/json",
+                        max_size_bytes=4 * 1024 * 1024,
+                    ),
                 ),
-            ),
-            runtime=RuntimeRequirement(
-                image_digest=snapshot.image_digest,
-                platform=snapshot.platform,
-                sandbox_tier="ephemeral-job",
-            ),
-            limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit, timeout_seconds=execution_timeout(payload, 120)),
-            metadata={
-                "candidate_build_id": str(candidate_build_id),
-                "staging_manifest_id": str(manifest_id),
-                "gate": "dfm",
-                "policy_hash": policy.policy_hash,
-            },
-        )
-        outcome = await _run_backend_with_heartbeats(
-            backend,
-            spec,
-            tenant_id=request.tenant_id,
-            principal_id=request.principal_id,
-            attempt_id=attempt_id,
-            lease_token=lease_token,
-            lease_generation=lease_generation,
-            materialized_inputs=materialized,
-        )
-        runtime_provenance = (
-            outcome.result.provenance.model_dump(mode="json")
-            if outcome.result.provenance
-            else None
-        )
-        result_payload = None
-        report_artifact: dict[str, Any] | None = None
-        if outcome.result.status is ExecutionStatus.SUCCEEDED:
-            try:
-                report_path = outcome.files["artifact"]
-                report = DurableDFMReport.model_validate_json(
-                    report_path.read_text(encoding="utf-8")
-                )
-                if report.policy_hash != policy.policy_hash:
-                    raise ValueError("DFM report used another policy")
-                report_digest = hashlib.sha256(report_path.read_bytes()).hexdigest()
-                report_key = (
-                    "staging/agent/tenants/"
-                    f"{request.tenant_id}/candidates/{candidate_build_id}/"
-                    f"validation/{attempt_id}/{report_digest}/dfm-report.json"
-                )
-                uploaded = await put_file(
-                    report_key,
-                    report_path,
-                    content_type="application/json",
-                )
-                report_artifact = {
-                    "filename": "dfm-report.json",
-                    "object_key": report_key,
-                    "sha256": uploaded["sha256"],
-                    "size_bytes": uploaded["size_bytes"],
-                    "content_type": "application/json",
+                runtime=RuntimeRequirement(
+                    image_digest=snapshot.image_digest,
+                    platform=snapshot.platform,
+                    sandbox_tier="ephemeral-job",
+                ),
+                limits=ResourceLimits.from_configured_memory(settings.sandbox_memory_limit, timeout_seconds=execution_timeout(payload, 120)),
+                metadata={
+                    "candidate_build_id": str(candidate_build_id),
+                    "staging_manifest_id": str(manifest_id),
+                    "gate": "dfm",
+                    "policy_hash": policy.policy_hash,
+                },
+            )
+            outcome = await backend.execute(spec, materialized_inputs=materialized)
+            runtime_provenance = (
+                outcome.result.provenance.model_dump(mode="json")
+                if outcome.result.provenance
+                else None
+            )
+            result_payload = None
+            report_artifact: dict[str, Any] | None = None
+            if outcome.result.status is ExecutionStatus.SUCCEEDED:
+                try:
+                    report_path = outcome.files["artifact"]
+                    report = DurableDFMReport.model_validate_json(
+                        report_path.read_text(encoding="utf-8")
+                    )
+                    if report.policy_hash != policy.policy_hash:
+                        raise ValueError("DFM report used another policy")
+                    report_digest = hashlib.sha256(report_path.read_bytes()).hexdigest()
+                    report_key = (
+                        "staging/agent/tenants/"
+                        f"{request.tenant_id}/candidates/{candidate_build_id}/"
+                        f"validation/{attempt_id}/{report_digest}/dfm-report.json"
+                    )
+                    uploaded = await put_file(
+                        report_key,
+                        report_path,
+                        content_type="application/json",
+                    )
+                    report_artifact = {
+                        "filename": "dfm-report.json",
+                        "object_key": report_key,
+                        "sha256": uploaded["sha256"],
+                        "size_bytes": uploaded["size_bytes"],
+                        "content_type": "application/json",
+                    }
+                except Exception as exc:
+                    report = indeterminate_dfm_report(
+                        process=policy.process,
+                        material=policy.material,
+                        policy_hash=policy.policy_hash,
+                        issue=f"dfm_report_invalid:{type(exc).__name__}",
+                    )
+                execution_status = ExecutionStatus.SUCCEEDED
+                result_payload = {
+                    "status": "succeeded",
+                    "gate": "dfm",
+                    "outcome": report.outcome,
+                    "report": report.model_dump(mode="json"),
+                    "execution_result": outcome.result.model_dump(mode="json"),
                 }
-            except Exception as exc:
+                error_code = error_message = None
+            else:
+                error = outcome.result.error
                 report = indeterminate_dfm_report(
                     process=policy.process,
                     material=policy.material,
                     policy_hash=policy.policy_hash,
-                    issue=f"dfm_report_invalid:{type(exc).__name__}",
+                    issue=error.code if error else "dfm_execution_failed",
                 )
-            execution_status = ExecutionStatus.SUCCEEDED
-            result_payload = {
-                "status": "succeeded",
-                "gate": "dfm",
-                "outcome": report.outcome,
-                "report": report.model_dump(mode="json"),
-                "execution_result": outcome.result.model_dump(mode="json"),
-            }
-            error_code = error_message = None
-        else:
-            error = outcome.result.error
-            report = indeterminate_dfm_report(
-                process=policy.process,
-                material=policy.material,
-                policy_hash=policy.policy_hash,
-                issue=error.code if error else "dfm_execution_failed",
+                execution_status = outcome.result.status
+                error_code = error.code if error else "dfm_execution_failed"
+                error_message = error.message if error else "DFM execution failed"
+            evidence = report.durable_evidence(
+                runtime_provenance=runtime_provenance,
+                policy_object={
+                    **policy.model_dump(mode="json"),
+                    "policy_hash": policy.policy_hash,
+                },
             )
-            execution_status = outcome.result.status
-            error_code = error.code if error else "dfm_execution_failed"
-            error_message = error.message if error else "DFM execution failed"
-        evidence = report.durable_evidence(
-            runtime_provenance=runtime_provenance,
-            policy_object={
-                **policy.model_dump(mode="json"),
-                "policy_hash": policy.policy_hash,
-            },
-        )
-        if report_artifact is not None:
-            evidence["report_artifact"] = report_artifact
+            if report_artifact is not None:
+                evidence["report_artifact"] = report_artifact
         recorded = await _record_agent_validation_outcome(
             payload,
             candidate_build_id=candidate_build_id,
@@ -264,6 +260,8 @@ async def agent_validate_dfm(payload: dict[str, Any], *, backend: ExecutionBacke
             error_code="dfm_validation_cancelled",
             error_message="DFM validation was cancelled.",
         )
+        raise
+    except StaleLease:
         raise
     except Exception as exc:
         report = indeterminate_dfm_report(
