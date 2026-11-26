@@ -7,6 +7,7 @@ interface WorkspaceShellProps {
   agent: ReactNode;
   inspector: ReactNode;
   children: ReactNode;
+  conversationOnly: boolean;
   agentCollapsed: boolean;
   inspectorCollapsed: boolean;
   onAgentCollapse: () => void;
@@ -76,6 +77,7 @@ export default function WorkspaceShell({
   agent,
   inspector,
   children,
+  conversationOnly,
   agentCollapsed,
   inspectorCollapsed,
   onAgentCollapse,
@@ -149,15 +151,15 @@ export default function WorkspaceShell({
     <div className="ww-app-shell">
       {sidebar}
       <div className="ww-app-main">
-        {header}
-        <div className="ww-workspace" style={style}>
+        <div>{header}</div>
+        <div className="ww-workspace" data-conversation-only={conversationOnly} style={style}>
           <main className={`ww-primary-pane ${mobilePreviewOpen ? "ww-primary-pane--mobile-open" : ""}`}>{children}</main>
           {!collapsed ? <ResizeHandle direction={-1} kind="agent" label="调整右侧面板宽度" onResize={resizeAgent} /> : <div />}
           <div className={`ww-right-pane ${mobilePreviewOpen && !drawerOpen ? "ww-right-pane--mobile-hidden" : ""}`}>
-            <aside className={`ww-agent-pane ${collapsed ? "ww-pane--collapsed" : ""}`} hidden={drawerOpen}>
+            <div className={`ww-agent-pane ${collapsed ? "ww-pane--collapsed" : ""}`} role={conversationOnly ? "main" : "complementary"} aria-label="设计对话" hidden={drawerOpen}>
               {collapsed ? <button aria-label="展开 Agent" className="ww-collapsed-pane-button" onClick={onAgentCollapse} type="button"><Icon name="message" size={16} /><span>Agent</span></button> : null}
               <div className="ww-pane-host" hidden={collapsed}>{agent}</div>
-            </aside>
+            </div>
             {inspectorOverlayActive ? <button aria-label="返回模型" className="ww-inspector-overlay-backdrop" onClick={onInspectorOverlayClose} tabIndex={-1} type="button" /> : null}
             <aside aria-label="工程信息" aria-modal={inspectorOverlayActive ? true : undefined} className={`ww-inspector-pane ${inspectorOverlayActive ? "ww-inspector-pane--overlay" : ""}`} hidden={!drawerOpen} ref={inspectorRef} role={inspectorOverlayActive ? "dialog" : undefined}>
               <header className="ww-inspector-overlay-header"><button className="workspace-button" onClick={onInspectorOverlayClose || onInspectorCollapse} ref={inspectorCloseRef} type="button"><Icon name="message" size={15} />返回 Agent</button><button aria-label="关闭工程信息" className="workspace-icon-button" onClick={onInspectorOverlayClose || onInspectorCollapse} type="button"><Icon name="x" size={17} /></button></header>

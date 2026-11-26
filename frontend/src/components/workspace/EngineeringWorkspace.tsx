@@ -3,6 +3,7 @@ import type { InspectorTab } from "./WorkspaceInspector";
 import type { RequirementBasis } from "../../types/requirements";
 import { taskState } from "../../adapters/taskState";
 import { retryDurableTask } from "../../services/clients/tasks";
+import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AuthUser } from "../../auth";
 import EngineeringTasks from "./EngineeringTasks";
@@ -64,7 +65,6 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const panel = useSessionStore((state) => state.getActivePanel());
   const cloud = useCloudDocument(panel.durable?.branchId || null);
   const task = useMemo(() => taskState(panel,cloud.document), [panel, cloud.document]);
-  const [reviewDocumentChange, setReviewDocumentChange] = useState<string | null>(null);
   const onDocumentSubmitted = (id: string, document: CloudDocument) => {
     const current = useSessionStore.getState();
     if (current.ownerId !== ownerId || current.sessionId !== sessionId) return;
@@ -108,8 +108,8 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const [continuation, setContinuation] = useState<{ panelId: string; candidateRevisionId: string; baseRevisionId: string } | null>(null);
   const continuationSource = continuation?.panelId === panel.id ? continuation : null;
   const agentBlockedReason = continuationSource && continuationSource.baseRevisionId !== cloud.document?.head_revision_id ? '候选的原始保存基线已变化，请取消续改并重新核对范围。'
+    : task.phase === "candidate" && documentView.identity?.mode !== "history" ? "在候选审阅中可以保存版本或提出修改。"
     : !viewIsCommitted ? "请先返回已提交版本，再请求 AI 继续修改。"
-    : task.phase === "candidate" ? "请先应用或拒绝待确认候选，再基于已保存版本修改。"
     : pendingRequest ? "正在确认原请求是否受理，请先查询原请求状态。"
     : draftCount ? "请先提交或放弃手动编辑草稿，再让 AI 修改。"
       : panel.durable?.branchId && !cloud.connected ? "正在同步已提交文档，连接恢复后可继续修改。" : undefined;
@@ -166,7 +166,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const [agentCollapsed, setAgentCollapsed] = useState(false);
   const [drawerSelection, setDrawerSelection] = useState<{panelId:string;kind:"properties"|"checks"|"versions"|"export"|"tools"}|null>(null);
   const drawer = drawerSelection?.panelId === panel.id ? drawerSelection.kind : null;
-  const openDrawer = (kind: NonNullable<typeof drawer>) => { setDrawerSelection({panelId:panel.id,kind}); setMobilePreviewOpen(false); };
+  const openDrawer = (kind: NonNullable<typeof drawer>) => { setDrawerSelection({panelId:panel.id,kind}); };
   const closeDrawer = () => { setDrawerSelection(null); setAgentCollapsed(false); };
   const inspectorCollapsed = drawer === null;
   const [inspectorSelection,setInspectorSelection]=useState<{panelId:string;tab:InspectorTab} | null>(null);
@@ -176,10 +176,27 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   };
 
   const [mobileSidebar, setMobileSidebar] = useState(false);
+  const openSidebar = () => { setSidebarCollapsed(false); setMobileSidebar(true); };
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [mobileChoice, setMobileChoice] = useState<{panelId:string;preview:boolean}|null>(null);
-  const mobilePreviewOpen = mobileChoice?.panelId === panel.id ? mobileChoice.preview : task.hasSaved;
-  const setMobilePreviewOpen = (value:boolean | ((previous:boolean)=>boolean)) => setMobileChoice({panelId:panel.id,preview:typeof value === "function" ? value(mobilePreviewOpen) : value});
+  const [expandedPanel, setExpandedPanel] = useState<string | null>(null);
+  // Let the same renderer, camera and LOD move between the chat and full workspace.
+  const [modelHost] = useState(() => {
+    const host = document.createElement("div");
+    host.className = "ww-model-host";
+    return host;
+  });
+  const attachModel = useCallback((slot: HTMLDivElement | null) => {
+    if (slot) slot.appendChild(modelHost);
+  }, [modelHost]);
+  const modelOpen = expandedPanel === panel.id;
+  const hasPreview = Boolean(documentView.document?.fcstd || documentView.document?.mesh?.url
+    || viewedResult?.files?.stl || viewedResult?.files?.svg);
+  const conversationOnly = view === "mechanical" && !drawer && !modelOpen;
+  const openModel = () => {
+    setView("mechanical");
+    setDrawerSelection(null);
+    setExpandedPanel(panel.id);
+  };
   const [agentSuggestion, setAgentSuggestion] = useState<{
     contextKey: string;
     prompt: string;
@@ -195,6 +212,18 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
   const checksOpen = drawer === "checks";
   const setChecksOpen = (open:boolean) => open ? openDrawer("checks") : closeDrawer();
   const [changesOpen, setChangesOpen] = useState(false);
+  const [reviewTarget, setReviewTarget] = useState<{panelId: string; changeId: string; note?: string} | null>(null);
+  const selectedReview = reviewTarget?.panelId === panel.id ? reviewTarget : null;
+  const reviewChangeId = selectedReview?.changeId || panel.durable?.changeSetId;
+  const openReview = (changeId?: string | null, note?: string) => {
+    setReviewTarget(changeId ? {panelId: panel.id, changeId, note} : null);
+    setChangesOpen(true);
+  };
+  const closeReview = () => { setChangesOpen(false); setReviewTarget(null); };
+  const canDraftReview = task.phase === "candidate" && task.changeStatus === "pending_review" && !!task.changeSetId
+    && (!panel.durable?.branchId || (documentView.identity?.mode === "candidate"
+      && documentView.identity.viewedRevisionId === (task.snapshot?.change_set?.candidate_revision_id || panel.result?.revision_id)))
+    && (cloud.document?.can_review ?? canEdit) && !draftCount && !pendingRequest;
   const exportOpen = drawer === "export";
   const setExportOpen = (open:boolean) => open ? openDrawer("export") : closeDrawer();
 
@@ -248,11 +277,16 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
     if (!sendMessage(prompt, "auto", profile,undefined,basis)) return false;
     useSessionStore.getState().beginGeneration(undefined,basis);
     useSessionStore.getState().addMessage({ role: "user", content: prompt });
-    setView("mechanical"); setAgentCollapsed(false); setMobilePreviewOpen(false);
+    setView("mechanical"); setAgentCollapsed(false); setExpandedPanel(null);
     return true;
   };
 
-  const navigate = (next: string) => guardDraft(() => setView(next as EngineeringDomain));
+  const navigate = (next: string) => guardDraft(() => {
+    setView(next as EngineeringDomain);
+    setExpandedPanel(null);
+    setDrawerSelection(null);
+    setAgentCollapsed(false);
+  });
   const createProject = () => {
     guardDraft(() => { addPanel(); setView("mechanical"); });
   };
@@ -261,7 +295,8 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
     if (stage.id === "requirements" && model.result?.design_brief) { setChecksOpen(true); return; }
     if (stage.id === "manufacturing") { setChecksOpen(true); return; }
     if (stage.id === "release") { setExportOpen(true); return; }
-    if (stage.domain) setView(stage.domain);
+    if (stage.domain === "mechanical") openModel();
+    else if (stage.domain) setView(stage.domain);
   };
   const askAgent = (prompt = "") => {
     closeDrawer();
@@ -273,20 +308,18 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
       }));
     }
     setAgentCollapsed(false);
-    if (window.matchMedia("(max-width: 760px)").matches) {
-      setMobilePreviewOpen(false);
-      return;
-    }
+    setView("mechanical");
+    setExpandedPanel(null);
   };
 
   useEffect(() => {
-    if (!mobilePreviewOpen) return;
+    if (!modelOpen || drawer) return;
     const closePreview = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMobileChoice({panelId:panel.id,preview:false});
+      if (event.key === "Escape" && !event.defaultPrevented && !document.querySelector('[aria-modal="true"], [data-menu-open="true"]')) setExpandedPanel(null);
     };
     window.addEventListener("keydown", closePreview);
     return () => window.removeEventListener("keydown", closePreview);
-  }, [mobilePreviewOpen, panel.id]);
+  }, [modelOpen, drawer]);
   const executeWithProgress = (code: string) => {
     if (!executeCode(code)) return false;
     useSessionStore.getState().beginGeneration("\u6b63\u5728\u91cd\u65b0\u8ba1\u7b97\u6a21\u578b");
@@ -370,16 +403,15 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
             user={user}
           />
           <div className="ww-app-main">
-            <header className="workspace-header">
-              <button aria-label="打开项目导航" className="workspace-icon-button lg:hidden" onClick={() => setMobileSidebar(true)} type="button"><Icon name="layers" size={17} /></button>
-              <span className="workspace-header__title cursor-default">新建设计</span>
-              <span aria-label={connectionState === "connected" ? "实时任务连接正常" : undefined} className={`workspace-status hidden md:inline-flex ${connectionState === "connected" ? "text-emerald-700" : "text-amber-700"}`}><span className={connectionState === "connected" ? "bg-emerald-500" : "bg-amber-500"} />{connectionState === "connected" ? null : "实时连接中"}</span>
+            <header className="workspace-header ww-chat-header">
+              <button aria-label="打开项目导航" className="workspace-icon-button xl:hidden" onClick={openSidebar} type="button"><Icon name="sidebar" size={17} /></button>
+              <span className="workspace-header__title cursor-default">CAD-Agent</span>
+              {connectionState === "connected" ? <span role="status" aria-label="实时任务连接正常" title="实时任务连接正常" className="ww-connection-dot" /> : null}
               <div className="workspace-header__actions">
                 <LanguageSwitch className="workspace-button ww-language-switch" />
-                <button aria-label="设置" className="workspace-icon-button" onClick={() => setSettingsOpen(true)} type="button"><Icon name="settings" size={16} /></button>
               </div>
             </header>
-            <ProjectStart embedded connectionState={connectionState} onOpenHistory={() => setMobileSidebar(true)} onStart={startProject} importContext={{sessionId,panelId:panel.id,onImported:receipt=>{
+            <ProjectStart key={panel.id} embedded connectionState={connectionState} onOpenHistory={openSidebar} onStart={startProject} importContext={{sessionId,panelId:panel.id,onImported:receipt=>{
               const current=useSessionStore.getState();
               if (current.ownerId!==ownerId || current.sessionId!==sessionId) return;
               current.setDurableWorkflowStarted(receipt,panel.id);setView('mechanical');setAgentCollapsed(false);
@@ -412,12 +444,12 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
       <RequirementSummary objective={documentView.evidence?.objective || documentView.evidence?.snapshot?.prompt || task.objective}
         basis={documentView.evidence ? documentView.evidence.requirement_basis : panel.requirementBasis || (task.snapshot?.request_payload.operation_context as {requirement_basis?:RequirementBasis}|undefined)?.requirement_basis}
         profile={documentView.evidence?.manufacturing_profile || model.result?.manufacturing_profile || (!documentView.evidence ? task.snapshot?.request_payload.manufacturing_profile as ManufacturingProfile | undefined : undefined)} />
-      <CloudDocumentPanel section="activity" connection={viewedCloud} onReview={(id)=>{setReviewDocumentChange(id);setChangesOpen(true);}} /></>,
+      <CloudDocumentPanel section="activity" connection={viewedCloud} onReview={openReview} /></>,
   };
   const inspector = (
     <WorkspaceInspector {...documentSections} showHeader={false} showTabs={drawer === "tools"} visible={drawer === "tools" || drawer === "versions" || drawer === "properties"} activeTab={drawer === "properties" ? "document" : drawer === "versions" ? "versions" : inspectorTab} onTabChange={selectInspectorTab}
       canExport={canExport} canEdit={canEdit}
-      cloudDocument={<CloudDocumentPanel durable={panel.durable} section="features" key={viewKey} connection={viewedCloud} onEngineeringTasksChange={onEngineeringTasksChange} onSubmitted={onDocumentSubmitted} onReview={(id) => { setReviewDocumentChange(id); setChangesOpen(true); }} />}
+      cloudDocument={<CloudDocumentPanel durable={panel.durable} section="features" key={viewKey} connection={viewedCloud} onEngineeringTasksChange={onEngineeringTasksChange} onSubmitted={onDocumentSubmitted} onReview={openReview} />}
       artifacts={viewedArtifacts}
       onCollapse={closeDrawer}
       onExport={() => setExportOpen(true)}
@@ -474,21 +506,29 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
       <ExportDialog embedded canExport={canExport} key={`export:${panel.id}:${documentView.identity?.viewedRevisionId}`} viewLabel={viewLabel(documentView.identity)} jobs={model.exports} onClose={() => setExportOpen(false)} open={exportOpen} requestId={model.result?.request_id} />
   </div>;
 
+  const mechanical = <MechanicalWorkspace onExpand={conversationOnly && hasPreview ? openModel : undefined} savedDocument={cloud.document} onSelectTopology={viewIsCommitted ? cloud.selectTopology : undefined} nativeDocument={documentView.document} nativeDocumentId={documentView.document?.fcstd ? documentView.document.document_id : documentView.loading && cloud.document?.fcstd ? cloud.document.document_id : undefined} viewedMeshUrl={documentView.document?.mesh?.url}
+          identity={documentView.identity} selectedId={viewedSelectedId} selectionLabel={viewedSelectedId ? `${translate(selectedFromViewport ? '整个部件（显示特征）' : documentView.document?.features.find(f=>f.id===viewedSelectedId)?.type==='PartDesign::Hole' ? '孔特征' : '特征')}：${documentView.document?.features.find(f=>f.id===viewedSelectedId)?.label || ''}` : undefined}
+          onSelect={id=>{selectViewedFeature(id);setSelectionSource({id,documentId:documentView.identity?.documentId || "",source:"viewport"});}} onOpenProperties={openParameters} onCommitted={documentView.showCommitted}
+          onCandidate={panel.result?.success && panel.result.revision_id && panel.result.revision_id !== documentView.identity?.viewedRevisionId && panel.result.revision_id !== cloud.document?.head_revision_id ? showCandidate : undefined}
+          viewError={documentView.error} taskLabel={task.label} taskPhase={task.phase} hasParameters={Boolean(model.parameters.length || documentView.document?.fcstd)} currentStep={panel.currentStep} isGenerating={task.running} onAgent={() => askAgent()} onBack={() => navigate("overview")} onInspector={openParameters} onProperties={openParameters} result={model.result} />;
+
   return (
     <div className="h-[100dvh] min-w-[320px] overflow-hidden bg-white text-[var(--ink)]">
       <WorkspaceShell
-        agent={<AgentPanel key={agentKey} connection={connectionState} context={view} embedded document={cloud.document} isAdmin={user.is_admin} canModify={canEdit} canConfirm={cloud.document?.can_review ?? canEdit} onRetry={retryTask} onRecover={recoverTask} onReview={()=>setChangesOpen(true)} onCancel={cancelGeneration} onCollapse={() => setAgentCollapsed(true)} onPreview={() => { if (task.phase === "candidate") showCandidate(); else documentView.showCommitted(); setView("mechanical"); setMobilePreviewOpen(true); }} onSend={sendSelectedMessage} suggestedPrompt={agentPrompt} selectionLabel={selectionLabel} onClearSelection={()=>{cloud.clearSelection?.();setContinuation(null);}} blockedReason={agentBlockedReason} />}
-        agentCollapsed={agentCollapsed}
-        header={<><WorkspaceHeader activeTool={drawer} documentSynced={cloud.connected} documentSyncStatus={cloud.syncStatus} documentSyncError={cloud.error} viewMode={documentView.identity?.mode} canExport={canExport} connection={connectionState} onBack={() => navigate("overview")} onProperties={openParameters} onVersions={() => openDrawer("versions")} onTools={() => openDrawer("tools")} onChecks={() => setChecksOpen(true)} onExport={() => setExportOpen(true)} onMenu={() => setMobileSidebar(true)} onPreview={() => setMobilePreviewOpen((value) => !value)} onSettings={() => setSettingsOpen(true)} previewOpen={mobilePreviewOpen} project={model.project} />
-          {(mobilePreviewOpen || agentCollapsed) && ["failed","needs_input","candidate"].includes(task.phase) ? <button type="button" className="ww-mobile-task-alert workspace-button" onClick={()=>askAgent()}>{task.title} · 点击处理</button> : null}</>}
+        conversationOnly={conversationOnly}
+        agent={<AgentPanel key={agentKey} mainThread={conversationOnly} onReviewDraft={canDraftReview ? note => openReview(task.changeSetId, note) : undefined} modelArtifact={conversationOnly && hasPreview ? <div ref={attachModel} className="ww-model-slot" /> : null} viewError={conversationOnly && !hasPreview ? documentView.error : undefined} connection={connectionState} context={view} embedded document={cloud.document} isAdmin={user.is_admin} canModify={canEdit} canConfirm={cloud.document?.can_review ?? canEdit} onRetry={retryTask} onRecover={recoverTask} onReview={() => openReview(task.changeSetId)} onCancel={cancelGeneration} onCollapse={() => setAgentCollapsed(true)} onPreview={() => { if (task.phase === "candidate") showCandidate(); else documentView.showCommitted(); openModel(); }} onSend={sendSelectedMessage} suggestedPrompt={agentPrompt} selectionLabel={selectionLabel} onClearSelection={()=>{cloud.clearSelection?.();setContinuation(null);}} blockedReason={agentBlockedReason} />}
+        agentCollapsed={agentCollapsed && !conversationOnly}
+        header={<><WorkspaceHeader onMechanical={() => guardDraft(openModel)} compact={conversationOnly} canPreview={(!conversationOnly && hasPreview) || Boolean(documentView.error) || view !== "mechanical"} activeTool={drawer} documentSynced={cloud.connected} documentSyncStatus={cloud.syncStatus} documentSyncError={cloud.error} viewMode={documentView.identity?.mode} canExport={canExport} connection={connectionState} onBack={() => navigate("overview")} onProperties={openParameters} onVersions={() => openDrawer("versions")} onTools={() => openDrawer("tools")} onChecks={() => setChecksOpen(true)} onExport={() => setExportOpen(true)} onMenu={openSidebar} onPreview={() => modelOpen || view !== "mechanical" ? askAgent() : openModel()} onSettings={() => setSettingsOpen(true)} previewOpen={modelOpen || view !== "mechanical"} project={model.project} />
+          {!conversationOnly && (modelOpen || agentCollapsed) && !drawer && ["failed","needs_input","candidate"].includes(task.phase) ? <button type="button" className="ww-mobile-task-alert workspace-button"
+            onClick={() => task.phase === "candidate" ? openReview(task.changeSetId) : askAgent()}>{task.phase === "candidate" ? "审阅候选与参数变化" : `${task.title} · 点击处理`}</button> : null}</>}
         inspector={drawerContent}
         inspectorCollapsed={inspectorCollapsed}
         inspectorOverlayOpen={drawer !== null}
         onInspectorOverlayClose={closeDrawer}
-        mobilePreviewOpen={mobilePreviewOpen}
+        mobilePreviewOpen={modelOpen || view !== "mechanical"}
         onAgentCollapse={() => setAgentCollapsed(false)}
         onInspectorCollapse={closeDrawer}
-        sidebar={<ProjectSidebar activeView={view} collapsed={sidebarCollapsed} mobileOpen={mobileSidebar} onCollapse={() => setSidebarCollapsed((value) => !value)} onLogout={() => guardDraft(onLogout)} onMobileClose={() => setMobileSidebar(false)} onNavigate={navigate} onNewProject={createProject} onSettings={() => setSettingsOpen(true)} onUserUpdate={onUserUpdate} restoreContext={restoreContext} user={user} />}
+        sidebar={<ProjectSidebar collapsed={sidebarCollapsed} mobileOpen={mobileSidebar} onCollapse={() => setSidebarCollapsed((value) => !value)} onLogout={() => guardDraft(onLogout)} onMobileClose={() => setMobileSidebar(false)} onNavigate={navigate} onNewProject={createProject} onSettings={() => setSettingsOpen(true)} onUserUpdate={onUserUpdate} restoreContext={restoreContext} user={user} />}
       >
         {view === "overview" ? <ProjectFlow onOpenStage={openStage} project={model.project} stages={model.stages} task={model.task} /> : null}
         {view === "simulation" ? <section className="h-full overflow-y-auto p-6" aria-label="结构仿真工作台">
@@ -496,12 +536,9 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
           {documentView.document?.fcstd ? <EngineeringTasks key={`simulation:${viewKey}`} document={documentView.document} initiallyOpen onTasksChange={onEngineeringTasksChange} />
             : <p role="status">提交原生 CAD 模型后可配置材料、载荷与边界条件。</p>}
         </section> : null}
-        {view === "mechanical" ? <MechanicalWorkspace savedDocument={cloud.document} onSelectTopology={viewIsCommitted ? cloud.selectTopology : undefined} nativeDocument={documentView.document} nativeDocumentId={documentView.document?.fcstd ? documentView.document.document_id : documentView.loading && cloud.document?.fcstd ? cloud.document.document_id : undefined} viewedMeshUrl={documentView.document?.mesh?.url}
-          identity={documentView.identity} selectedId={viewedSelectedId} selectionLabel={viewedSelectedId ? `${translate(selectedFromViewport ? '整个部件（显示特征）' : documentView.document?.features.find(f=>f.id===viewedSelectedId)?.type==='PartDesign::Hole' ? '孔特征' : '特征')}：${documentView.document?.features.find(f=>f.id===viewedSelectedId)?.label || ''}` : undefined}
-          onSelect={id=>{selectViewedFeature(id);setSelectionSource({id,documentId:documentView.identity?.documentId || "",source:"viewport"});}} onOpenProperties={openParameters} onCommitted={documentView.showCommitted}
-          onCandidate={panel.result?.success && panel.result.revision_id && panel.result.revision_id !== documentView.identity?.viewedRevisionId && panel.result.revision_id !== cloud.document?.head_revision_id ? showCandidate : undefined}
-          viewError={documentView.error} taskLabel={task.label} taskPhase={task.phase} hasParameters={Boolean(model.parameters.length || documentView.document?.fcstd)} currentStep={panel.currentStep} isGenerating={task.running} onAgent={() => askAgent()} onBack={() => navigate("overview")} onInspector={openParameters} onProperties={openParameters} result={model.result} /> : null}
+        {view === "mechanical" && (!conversationOnly || !hasPreview) ? <div ref={attachModel} className="ww-model-slot" /> : null}
       </WorkspaceShell>
+      {view === "mechanical" ? createPortal(mechanical, modelHost, panel.id) : null}
 
       {pendingRequest && (!panel.isGenerating || connectionState !== "connected") ? <div role="status" className="fixed bottom-16 left-1/2 z-40 flex w-[min(90%,480px)] -translate-x-1/2 flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 p-3 type-caption">
         原请求尚待确认 · {pendingRequest.idempotency_key.slice(0,8)}
@@ -509,11 +546,12 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
       </div> : null}
 
       <ChangeSetDialog
-        key={`${panel.id}:${reviewDocumentChange || panel.durable?.changeSetId || "legacy"}:${changesOpen}`}
+        key={`${panel.id}:${reviewChangeId || "legacy"}:${changesOpen}`}
         activeSnapshotId={model.result?.snapshot_id}
-        changeSetId={reviewDocumentChange || panel.durable?.changeSetId}
-        onAskAgent={(prompt, source) => { setContinuation(source ? { ...source, panelId: panel.id } : null); setChangesOpen(false); documentView.showCommitted(); askAgent(prompt); }}
-        onClose={() => { setChangesOpen(false); setReviewDocumentChange(null); }}
+        changeSetId={reviewChangeId}
+        initialReviewNote={selectedReview?.note}
+        onAskAgent={(prompt, source) => { setContinuation(source ? { ...source, panelId: panel.id } : null); closeReview(); documentView.showCommitted(); askAgent(prompt); }}
+        onClose={closeReview}
         onDurableChangeSet={syncDurableChangeSet}
         onReviewed={async (status) => {
           await cloud.refresh?.();

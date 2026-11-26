@@ -23,12 +23,13 @@ test("engineering conversations render in the existing sidebar as a vertical nav
   assert.doesNotMatch(panelTabs, /scrollIntoView/);
   assert.match(
     sidebar,
-    /className="ww-sidebar-section"[\s\S]*?<p className="ww-sidebar-heading">工程线程<\/p>[\s\S]*?<PanelTabs \/>/,
+    /className="ww-sidebar-section"[\s\S]*?<p className="ww-sidebar-heading">最近对话<\/p>[\s\S]*?<PanelTabs onSelect=/,
   );
 
-  const createIndex = panelTabs.indexOf("ww-conversation-create");
-  const listIndex = panelTabs.indexOf("ww-conversation-list");
-  assert.ok(createIndex >= 0 && listIndex > createIndex, "new-conversation action must precede rows");
+  const createIndex = sidebar.indexOf("ww-new-creation");
+  assert.ok(createIndex >= 0 && createIndex < sidebar.indexOf("<PanelTabs onSelect="));
+  assert.match(sidebar, /<PanelTabs onSelect=\{\(\) => \{ onNavigate\("mechanical"\); onMobileClose\(\);/);
+  assert.doesNotMatch(panelTabs, /ww-conversation-create/);
 });
 
 test("conversation rows scroll vertically without moving the sidebar", () => {
@@ -48,7 +49,7 @@ test("conversation labels use existing Chinese and English resources", () => {
   assert.match(i18n, /\["工程线程", "Engineering threads"\]/);
   assert.match(i18n, /\["新建对话", "New conversation"\]/);
   assert.match(panelTabs, /translate\("工程线程"\)/);
-  assert.match(panelTabs, /translate\("新建对话"\)/);
+  assert.match(i18n, /\["新建设计", "New design"\]/);
 });
 
 test("default conversation titles follow the active locale without mutating storage", () => {

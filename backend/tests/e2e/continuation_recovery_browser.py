@@ -79,6 +79,7 @@ def main():
             page.screenshot(path=str(out/'legacy-failure.png'))
             card.get_by_role('button',name='恢复历史需求并确认',exact=True).click()
             intake=page.get_by_role('region',name='执行前需求确认',exact=True)
+            intake.get_by_text('核对或修改建模目标',exact=True).click()
             expect(intake.get_by_role('textbox',name='建模目标',exact=True)).to_have_value(objective)
             expect(intake.get_by_role('button',name='按概念外形继续',exact=True)).to_be_disabled()
             before=read('/api/documents/'+fixture['document'])

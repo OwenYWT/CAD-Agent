@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ConnectionState } from "../../hooks/useWebSocket";
 import { useSessionStore } from "../../stores/sessionStore";
 import type { EngineeringDomain } from "../../types/engineering";
@@ -14,6 +14,7 @@ import { Icon } from "../ui/Icon";
 import { AGENT_CONTEXT_LABELS } from "./agentContext";
 import RequirementCard, { RequirementSummary } from "./RequirementCard";
 import TaskCard from "./TaskCard";
+import ChatComposer from "./ChatComposer";
 
 const ERROR_CODE_LABELS: Record<string, string> = {
   agent_plan_backend_mismatch: "建模计划与执行后端不匹配",
@@ -55,6 +56,10 @@ function structuredErrorLabel(code?: string | null) {
 }
 
 interface AgentPanelProps {
+  mainThread?: boolean;
+  modelArtifact?: ReactNode;
+  viewError?: string;
+  onReviewDraft?: (note: string) => void;
   context: EngineeringDomain; connection: ConnectionState; suggestedPrompt?: string;
   onSend: (text:string,basis?:RequirementBasis)=>boolean;
   onCancel?:()=>void;onPreview?:()=>void;onCollapse?:()=>void;embedded?:boolean;
@@ -63,7 +68,7 @@ interface AgentPanelProps {
   document?:CloudDocument | null;
 }
 
-export default function AgentPanel({context,connection,suggestedPrompt='',onSend,onCancel,onPreview,onCollapse,embedded=false,selectionLabel,onClearSelection,blockedReason,onRetry,onRecover,onReview,isAdmin=false,canModify=true,canConfirm=canModify,document}:AgentPanelProps) {
+export default function AgentPanel({mainThread=false,modelArtifact,viewError,onReviewDraft,context,connection,suggestedPrompt='',onSend,onCancel,onPreview,onCollapse,embedded=false,selectionLabel,onClearSelection,blockedReason,onRetry,onRecover,onReview,isAdmin=false,canModify=true,canConfirm=canModify,document}:AgentPanelProps) {
   const panel=useSessionStore(state=>state.getActivePanel());
   const task=taskState(panel,document);
   const [input,setInput]=useState(suggestedPrompt);const [pendingRequest,setPendingRequest]=useState<string|null>(null);
@@ -71,11 +76,36 @@ export default function AgentPanel({context,connection,suggestedPrompt='',onSend
   const [reviseRequirements,setReviseRequirements]=useState(false);
   const reviewedTarget=useRef<string|undefined>(undefined);
   const suggestions=useMemo(()=>buildPromptSuggestions({isEmpty:panel.messages.length===0,isGenerating:task.running,result:panel.result}),[panel.messages.length,panel.result,task.running]);
-  const history=useMemo(()=>{
-    const seen=new Set<string>();return panel.messages.filter(message=>{
-      const id=message.result?.workflow_run_id;if(id){if(seen.has(id))return false;seen.add(id);}return true;
+  const lastUserIndex = panel.messages.findLastIndex(message => message.role === 'user');
+  const hasCurrentRequest = lastUserIndex >= 0 && panel.messages[lastUserIndex].content === task.objective;
+  const thread = useRef<HTMLDivElement>(null);
+  const stream = useRef<HTMLDivElement>(null);
+  const followLatest = useRef(true);
+  const composer = useRef<HTMLTextAreaElement>(null);
+  const examples = useRef<HTMLDetailsElement>(null);
+  const history = useMemo(() => {
+    const seen = new Set<string>();
+    return panel.messages.flatMap((message, index) => {
+      const id = message.result?.workflow_run_id;
+      if (id) {
+        const key = JSON.stringify([id, message.content]);
+        if (seen.has(key) || (id === task.taskId && !pendingRequest && message.result?.task_status !== 'waiting_confirmation'
+          && (message.content === 'CAD 模型已生成' || message.content === '任务已取消' || message.content.startsWith('生成失败:')))) return [];
+        seen.add(key);
+      }
+      return [{message, index}];
     });
-  },[panel.messages]);
+  }, [panel.messages, task.taskId, pendingRequest]);
+  useLayoutEffect(() => {
+    const viewport = thread.current, content = stream.current;
+    if (!viewport || !content) return;
+    const stick = () => { if (followLatest.current) viewport.scrollTop = viewport.scrollHeight; };
+    stick();
+    const observer = new ResizeObserver(stick);
+    observer.observe(content);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
   const contextValue=task.snapshot?.request_payload.operation_context as {requirement_basis?:RequirementBasis}|undefined;
   const profile=task.snapshot?.request_payload.manufacturing_profile as ManufacturingProfile|null|undefined;
   const recover = () => {
@@ -87,7 +117,10 @@ export default function AgentPanel({context,connection,suggestedPrompt='',onSend
     }
   };
   const reviewRequest=()=>{
-    if(blockedReason){setError(blockedReason);return;}if(!input.trim())return;
+    if(!input.trim() || task.running || pendingRequest)return;
+    followLatest.current = true;
+    if (task.phase === 'candidate' && onReviewDraft) { onReviewDraft(input.trim()); return; }
+    if(blockedReason){setError(blockedReason);return;}
     // A continuation after failure is a retry action, never a new objective consisting of “继续”.
     if(task.phase==='failed' && task.recovery!=='retry' && isContinuationOnly(input)){recover();return;}
     if(task.phase==='failed' && task.recovery==='retry' && isContinuationOnly(input) && onRetry){
@@ -113,25 +146,61 @@ export default function AgentPanel({context,connection,suggestedPrompt='',onSend
     finally{setConfirmationPending(false);}
   };
   return <section className={`ww-agent-panel ${embedded?'ww-agent-panel--embedded':''}`}>
-    {embedded?<header className="ww-pane-header"><div className="ww-agent-title"><span className="ww-agent-avatar">A</span><div><p className="ww-pane-eyebrow">工程协作</p><h2>Agent</h2></div></div>
-      <div className="flex items-center gap-1"><span className={`ww-connection-dot ${connection==='connected'?'ww-connection-dot--online':''}`} title={connection==='connected'?'文档连接正常':'正在连接'}/>{onCollapse?<button aria-label="折叠 Agent" className="workspace-icon-button" onClick={onCollapse} type="button"><Icon name="minus" size={15}/></button>:null}</div></header>:null}
-    <div className="ww-agent-thread">
-      <div className="ww-agent-context"><strong>{AGENT_CONTEXT_LABELS[context]}</strong><span className="ml-auto">{connection==='connected'?'文档连接正常':'连接中'}</span></div>
-      {task.objective && !pendingRequest?<RequirementSummary compact objective={task.objective} basis={contextValue?.requirement_basis || panel.requirementBasis} profile={profile}/>:null}
-      {!pendingRequest?<TaskCard key={task.taskId || 'submitting'} task={task} onRetry={onRetry} onRecover={recover} onTakeover={id=>onRecover?.("properties",id)} onCancel={onCancel} onReview={onReview} isAdmin={isAdmin} canModify={canModify} failureLabel={structuredErrorLabel(task.errorCode)}/>:null}
-      {pendingRequest && (!task.hasSaved || reviseRequirements) ? <RequirementCard key={pendingRequest} objective={pendingRequest} profile={profile} initialBasis={reviseRequirements ? contextValue?.requirement_basis || panel.requirementBasis || undefined : undefined} onBack={()=>{setPendingRequest(null);setReviseRequirements(false);}} onConfirm={basis=>execute(basis)} disabled={task.running || !canModify}/>:null}
-      {pendingRequest && task.hasSaved && !reviseRequirements ? <div className="ww-agent-confirmation" data-task-phase="needs_input"><p>确认本次修改</p><p data-i18n-skip>{pendingRequest}</p><p>目标：{selectionLabel || '当前已保存版本'}。修改明确尺寸或依据时，请先重新确认需求；原版本记录保留。</p><div className="mt-3 flex flex-wrap gap-2"><button className="workspace-button" onClick={()=>setPendingRequest(null)} type="button">返回修改</button><button className="workspace-button" onClick={()=>setReviseRequirements(true)} type="button">修改需求尺寸或依据</button><button className="workspace-button workspace-button--primary" onClick={()=>execute()} type="button">确认并执行</button></div></div>:null}
+    {embedded && !mainThread?<header className="ww-pane-header"><div className="ww-agent-title"><Icon name="message" size={16}/><h2>Agent</h2></div>
+      {onCollapse?<button aria-label="折叠 Agent" className="workspace-icon-button" onClick={onCollapse} type="button"><Icon name="minus" size={15}/></button>:null}</header>:null}
+    <div className="ww-agent-thread" ref={thread} onScroll={event => {
+      const node = event.currentTarget;
+      followLatest.current = node.scrollHeight - node.clientHeight - node.scrollTop < 72;
+    }}>
+      <div className="ww-chat-stream" ref={stream} onClickCapture={event => {
+        if (event.target instanceof Element && event.target.closest('summary')) followLatest.current = false;
+      }}>
+      {context !== 'mechanical' ? <p className="type-caption text-[var(--muted)]">{AGENT_CONTEXT_LABELS[context]}</p> : null}
+      {connection !== 'connected' ? <p role="status" className="type-caption text-amber-800">{connection === 'disconnected' ? '实时连接已断开' : '实时连接中'}</p> : null}
+      {history.map(({message, index}) => index === lastUserIndex && hasCurrentRequest
+        ? <RequirementSummary key={index} compact objective={task.objective} basis={contextValue?.requirement_basis || panel.requirementBasis} profile={profile}/>
+        : message.role === 'user'
+          ? <div key={index} className="ww-request-message" aria-label="用户需求"><p data-i18n-skip>{message.content}</p></div>
+          : <article key={index} className="ww-chat-reply" aria-label="CAD-Agent"><p data-i18n-skip={message.result ? undefined : true}>{message.content}</p>
+              {message.result?.workflow_run_id ? <details><summary>任务详情</summary>
+                {message.result.needs_confirmation ? <span>此前待确认 </span> : message.result.success === false && message.result.task_status !== 'cancelled' ? <span>上次失败 </span> : null}
+                <code>{message.result.workflow_run_id}</code></details> : null}</article>)}
+      {task.objective && !hasCurrentRequest ? <RequirementSummary compact objective={task.objective} basis={contextValue?.requirement_basis || panel.requirementBasis} profile={profile}/> : null}
+      {!pendingRequest ? <TaskCard key={task.taskId || 'submitting'} task={task} onRetry={onRetry} onRecover={recover} onTakeover={id=>onRecover?.("properties",id)} onCancel={onCancel} composerHasStop={mainThread} onReview={onReview} isAdmin={isAdmin} canModify={canModify} failureLabel={structuredErrorLabel(task.errorCode)}>{modelArtifact}</TaskCard> : modelArtifact}
+      {viewError ? <p role="alert" className="ww-agent-error">{viewError}</p> : null}
+      {pendingRequest ? <div className="ww-request-message" aria-label="待确认的需求"><p data-i18n-skip>{pendingRequest}</p></div> : null}
+      {pendingRequest && (!task.hasSaved || reviseRequirements) ? <RequirementCard key={pendingRequest} objectiveInThread objective={pendingRequest} profile={profile} initialBasis={reviseRequirements ? contextValue?.requirement_basis || panel.requirementBasis || undefined : undefined} onBack={()=>{setPendingRequest(null);setReviseRequirements(false);}} onConfirm={basis=>execute(basis)} disabled={task.running || !canModify}/>:null}
+      {pendingRequest && task.hasSaved && !reviseRequirements ? <div className="ww-agent-confirmation" data-task-phase="needs_input"><p>确认本次修改</p><p>目标：{selectionLabel || '当前已保存版本'}。修改明确尺寸或依据时，请先重新确认需求；原版本记录保留。</p><div className="mt-3 flex flex-wrap gap-2"><button className="workspace-button" onClick={()=>setPendingRequest(null)} type="button">返回修改</button><button className="workspace-button" onClick={()=>setReviseRequirements(true)} type="button">修改需求尺寸或依据</button><button className="workspace-button workspace-button--primary" onClick={()=>execute()} type="button">确认并执行</button></div></div>:null}
       {task.status==='waiting_confirmation' && panel.durable?.confirmation?<div className="ww-agent-confirmation ww-agent-confirmation--server" role="group" aria-label="服务端执行计划确认"><p>执行计划等待确认</p><dl><div><dt>需要确认</dt><dd>{panel.durable.confirmation.reason}</dd></div><div><dt>影响对象</dt><dd>{panel.durable.confirmation.affected_objects.map(item=>`${item.label}（${item.change}）`).join('、')}</dd></div></dl><details><summary>计划身份</summary><code>{panel.durable.confirmation.plan_hash}</code></details><div className="mt-3 flex gap-2"><button className="workspace-button" disabled={confirmationPending || !canConfirm} onClick={()=>void submitServerConfirmation(false)} type="button">拒绝</button><button className="workspace-button workspace-button--primary" disabled={confirmationPending || !canConfirm} onClick={()=>void submitServerConfirmation(true)} type="button">{confirmationPending?'提交中…':'确认并继续'}</button></div></div>:null}
-      {(task.phase==='candidate' || task.phase==='saved') && panel.result?.success && onPreview?<button className="workspace-button my-2" onClick={onPreview} type="button"><Icon name="box" size={14}/>查看{task.phase==='candidate'?'候选模型':'已保存模型'}</button>:null}
-      {history.length?<details className="ww-task-history"><summary>历史对话与尝试（{history.length}）</summary>{history.map((message,index)=><article className={`ww-agent-message ww-agent-message--${message.role==='user'?'user':'assistant'}`} key={`${message.role}:${index}`}><div className="ww-agent-message__meta">{message.role==='user'?'你':message.result?.needs_confirmation?'此前待确认':message.result?.success===false?'上次失败':'CAD Agent'}</div><div className="ww-agent-message__body" data-i18n-skip>{message.content}</div>{message.result?.workflow_run_id?<small>任务 {message.result.workflow_run_id}</small>:null}</article>)}</details>:null}
+      {!modelArtifact && (task.phase==='candidate' || task.phase==='saved') && panel.result?.success && onPreview?<button className="workspace-button my-2" onClick={onPreview} type="button"><Icon name="box" size={14}/>查看{task.phase==='candidate'?'候选模型':'已保存模型'}</button>:null}
       {error?<p className="ww-agent-error" role="alert">{error}</p>:null}
+      </div>
     </div>
-    <div className="ww-agent-composer-wrap">
-      {selectionLabel?<div className="mb-2 rounded border border-[var(--agent-border)] bg-[var(--agent-soft)] p-2 type-caption" data-testid="agent-selection">已选中：<span data-i18n-skip>{selectionLabel}</span>{onClearSelection?<button className="ml-2 underline" onClick={onClearSelection} type="button">清除本次 AI 选择</button>:null}</div>:null}
-      {blockedReason?<p role="status" className="mb-2 type-caption text-amber-800">{blockedReason}</p>:null}
-      <details className="ww-task-history"><summary>需求示例</summary><SuggestionPills disabled={task.running} onSelect={suggestion=>setInput(suggestion.prompt)} suggestions={suggestions}/></details>
-      <div className="ww-agent-composer"><textarea aria-label="询问 Agent" disabled={task.running || !canModify} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if((e.metaKey || e.ctrlKey) && e.key==='Enter')reviewRequest();}} placeholder="说明需求或对所选对象的修改…" rows={3} value={input}/>
-        <div className="ww-agent-composer__toolbar"><span className="ww-agent-composer__shortcut">⌘ Enter 审查</span><button aria-label="审查请求" className="ww-agent-send" disabled={!input.trim() || task.running || !!blockedReason || !canModify} onClick={reviewRequest} type="button"><Icon name="send" size={15}/></button></div></div>
-    </div>
+    <footer className="ww-chat-dock">
+      {selectionLabel ? <div className="ww-chat-selection" data-testid="agent-selection">已选中：<span data-i18n-skip>{selectionLabel}</span>
+        {onClearSelection ? <button type="button" onClick={onClearSelection}>清除本次 AI 选择</button> : null}</div> : null}
+      {blockedReason && !onReviewDraft ? <p role="status" className="ww-chat-notice">{blockedReason}</p> : null}
+      <ChatComposer inputRef={composer} label="询问 Agent" submitLabel="审查请求" value={input} onChange={setInput} onSubmit={reviewRequest}
+        placeholder={pendingRequest ? "请先确认上方的建模条件" : onReviewDraft ? "描述你希望怎样修改这个候选模型…" : "继续描述你的设计…"}
+        disabled={!!pendingRequest || (!canModify && !onReviewDraft)}
+        sendDisabled={task.running || (!!blockedReason && !onReviewDraft)}
+        onStop={task.running && mainThread ? onCancel : undefined}
+        stopDisabled={!canModify || !task.taskId || task.status === 'cancelling'}
+        tools={canModify && suggestions.length > 0 && !pendingRequest ? <details className="ww-chat-suggestions" ref={examples}
+          onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}
+          onKeyDown={event => {
+            if (event.key !== "Escape" || !event.currentTarget.open) return;
+            event.preventDefault();
+            event.currentTarget.open = false;
+            event.currentTarget.querySelector("summary")?.focus();
+          }}>
+          <summary aria-label="需求示例" title="需求示例"><Icon name="plus" size={19}/></summary>
+          <div><SuggestionPills onSelect={suggestion => {
+            setInput(suggestion.prompt);
+            if (examples.current) examples.current.open = false;
+            composer.current?.focus();
+          }} suggestions={suggestions}/></div>
+        </details> : null} />
+    </footer>
   </section>;
 }

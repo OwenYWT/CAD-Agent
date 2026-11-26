@@ -82,13 +82,19 @@ def main():
         dialog = editor.get_by_role('dialog')
         accept_in_browser(dialog, '已阅读检查结果与视觉测量限制；本次仅修改 PadB 参数，并核对提交后的原生参数。')
         expect(dialog.get_by_text('审查状态：accepted', exact=True)).to_be_visible(timeout=15000)
-        expect(dialog.get_by_role('button', name='提交版本', exact=True)).to_be_disabled()
+        expect(dialog.get_by_role('button', name='应用修改', exact=True)).to_have_count(0)
+        denied = httpx.post(BASE + '/api/change-sets/' + task['change_set']['id'] + '/commit',
+            headers={'Authorization':'Bearer '+private['editor']['token'], 'X-Workspace-Tenant':model['tenant_id']},
+            json={'note':'验证编辑者权限'})
+        assert denied.status_code == 403 and get(doc)['head_revision_id'] == before['head_revision_id']
         editor.screenshot(path=str(SHOTS / 'editor-review.png'))
         dialog.get_by_role('button', name='关闭', exact=True).last.click()
+        owner_panel.get_by_role('tab', name='需求与任务', exact=True).click()
         owner_panel.get_by_role('button', name='查看变更', exact=True).first.click()
         owner_dialog = owner.get_by_role('dialog')
-        expect(owner_dialog.get_by_role('button', name='提交版本', exact=True)).to_be_enabled(timeout=15000)
-        owner_dialog.get_by_role('button', name='提交版本', exact=True).click()
+        apply = owner_dialog.get_by_role('button', name='应用修改', exact=True)
+        expect(apply).to_be_enabled(timeout=15000)
+        apply.click()
         expect(owner_dialog.get_by_text('审查状态：committed', exact=True)).to_be_visible(timeout=20000)
         owner_dialog.get_by_role('button', name='关闭', exact=True).last.click()
         panel = editor.get_by_test_id('cloud-document-panel')
@@ -98,6 +104,7 @@ def main():
         # A live lease must be cleared when membership is downgraded.
         panel.get_by_role('spinbutton', name='PadB.Length', exact=True).focus()
         expect(panel.get_by_text('已保留此特征的编辑租约。', exact=False)).to_be_visible(timeout=10000)
+        owner.get_by_role('tab', name='共享', exact=True).click()
         owner_panel.get_by_role('button', name='管理项目成员', exact=True).click()
         row = owner_panel.get_by_test_id('member-' + editor_id)
         expect(row.get_by_role('combobox')).to_be_visible(timeout=10000)

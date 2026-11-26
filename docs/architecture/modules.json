@@ -907,6 +907,7 @@
     "frontend/src/components/Viewer3D.tsx": "P04",
     "frontend/src/components/agent/AgentDrawer.tsx": "P04",
     "frontend/src/components/agent/AgentPanel.tsx": "P04",
+    "frontend/src/components/agent/ChatComposer.tsx": "P04",
     "frontend/src/components/agent/FailureDiagnostic.tsx": "P04",
     "frontend/src/components/agent/RequirementCard.tsx": "P04",
     "frontend/src/components/agent/TaskCard.tsx": "P04",

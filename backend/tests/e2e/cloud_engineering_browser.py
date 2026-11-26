@@ -24,7 +24,13 @@ def main():
         expect(page.get_by_role('button',name='新建设计',exact=True)).to_be_visible(timeout=20000)
         workspace_flow = os.getenv('CAD_ENGINEERING_WORKSPACE_FLOW') == '1'
         if workspace_flow:
-            page.get_by_role('button',name='Create a rectangular plate',exact=False).first.click()
+            history = page.get_by_role('button',name=os.getenv('CAD_ENGINEERING_WORKSPACE_TITLE','Create a rectangular plate'),exact=False).first
+            more = page.get_by_role('button',name='加载更多历史项目',exact=True)
+            expect(history.or_(more).first).to_be_visible(timeout=20000)
+            while not history.count() and more.count():
+                with page.expect_response(lambda response: '/api/history/sessions?' in response.url):
+                    more.click()
+            history.click()
             page.get_by_role('button',name='返回项目流程：',exact=False).click()
             simulation = page.get_by_role('button',name='结构仿真',exact=True)
             expect(simulation).to_be_enabled(timeout=20000)

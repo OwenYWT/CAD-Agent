@@ -126,6 +126,38 @@ test('failed modification keeps the last valid model and clears current activity
   assert.equal(s.getActivePanel().currentStep,null);
 });
 
+test('the chat records one reply per workflow across replay and preserves the outcome of a failed edit', () => {
+  const p = panel();
+  const s = useSessionStore.getState();
+  s.addMessage({role: 'user', content: '制作底板'});
+  s.setResult({success: true, workflow_run_id: 'plate', files: {stl: '/plate.stl'}}, p.id);
+  s.applyDurableSnapshot(snapshot('plate', 'succeeded'), p.id);
+  s.beginGeneration();
+  s.addMessage({role: 'user', content: '扩大中心孔'});
+  s.setDurableWorkflowStarted({workflow_run_id: 'hole', project_id: 'project', branch_id: 'branch',
+    expected_base_revision_id: 'plate', panel_id: p.id, status: 'pending'});
+  const failure = snapshot('hole', 'failed');
+  s.applyDurableSnapshot(failure, p.id);
+  s.applyDurableSnapshot(failure, p.id);
+  assert.deepEqual(s.getActivePanel().messages.map(({role, content}) => [role, content]), [
+    ['user', '制作底板'], ['assistant', 'CAD 模型已生成'],
+    ['user', '扩大中心孔'], ['assistant', '生成失败: 模型服务额度不足'],
+  ]);
+});
+
+test('a detailed result arriving after a terminal snapshot is retained in the thread', () => {
+  const p = panel();
+  const s = useSessionStore.getState();
+  const initial = snapshot('plate', 'succeeded');
+  s.applyDurableSnapshot(initial, p.id);
+  s.setResult({success: true, workflow_run_id: 'plate', code: 'editable code', files: {stl: '/plate.stl'}}, p.id);
+  s.applyDurableSnapshot(initial, p.id);
+  const replies = s.getActivePanel().messages.filter(message => message.result?.workflow_run_id === 'plate');
+  assert.equal(replies.length, 1);
+  assert.equal(replies[0].result?.code, 'editable code');
+  assert.equal(replies[0].result?.files?.stl, '/plate.stl');
+});
+
 test('the five phases separate task outcome from saving and document sync', () => {
   const p=panel(); const s=useSessionStore.getState();
   assert.equal(taskState(s.getActivePanel()).phase,'needs_input');

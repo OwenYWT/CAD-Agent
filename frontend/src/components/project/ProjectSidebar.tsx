@@ -18,7 +18,6 @@ interface ProjectSidebarProps {
   onCollapse: () => void;
   onMobileClose: () => void;
   onNavigate: (view: string) => void;
-  activeView?: string;
   restoreContext: (panelId: string, code: string, assemblyParts?: AssemblyPartInfo[]) => void;
   user?: AuthUser;
   onLogout?: () => void;
@@ -29,12 +28,7 @@ interface ProjectSidebarProps {
 
 const PAGE_SIZE = 12;
 
-const NAV = [
-  ["mechanical", "机械设计", "box"],
-  ["overview", "项目流程", "clock"],
-] as const;
-
-export default function ProjectSidebar({ collapsed, mobileOpen, onCollapse, onMobileClose, onNavigate, activeView, restoreContext, user, onLogout, onUserUpdate, onNewProject, onSettings }: ProjectSidebarProps) {
+export default function ProjectSidebar({ collapsed, mobileOpen, onCollapse, onMobileClose, onNavigate, restoreContext, user, onLogout, onUserUpdate, onNewProject, onSettings }: ProjectSidebarProps) {
   const { locale, translate } = useI18n();
   const [history, setHistory] = useState<HistoryProject[]>([]);
   const [status, setStatus] = useState<"idle" | "loading" | "error">("loading");
@@ -113,25 +107,26 @@ export default function ProjectSidebar({ collapsed, mobileOpen, onCollapse, onMo
       <aside className={`workspace-sidebar ${collapsed ? "workspace-sidebar--collapsed" : ""} ${mobileOpen ? "workspace-sidebar--mobile-open" : ""}`}>
         <div className="ww-sidebar-brand">
           <BrandMark nameClassName="type-section-heading tracking-[-0.02em]" showName={!collapsed} />
-          <button aria-label={collapsed ? "展开侧栏" : "折叠侧栏"} className="workspace-icon-button ww-sidebar-collapse-control ml-auto" onClick={onCollapse} type="button"><Icon name={collapsed ? "chevron-right" : "minus"} size={15} /></button>
+          <button aria-label={collapsed ? "展开侧栏" : "折叠侧栏"} className="workspace-icon-button ww-sidebar-collapse-control ml-auto" onClick={onCollapse} type="button"><Icon name="sidebar" size={18} /></button>
           <button aria-label="关闭项目导航" className="workspace-icon-button ww-sidebar-mobile-close ml-auto" onClick={onMobileClose} type="button"><Icon name="x" size={16} /></button>
         </div>
         <div className="ww-sidebar-scroll">
-          {onNewProject ? <button className="ww-new-creation" onClick={() => { onNewProject(); onMobileClose(); }} title={collapsed ? "新建设计" : undefined} type="button"><Icon name="plus" size={15} /><span>新建设计</span></button> : null}
-          {!collapsed ? <p className="ww-sidebar-heading">工作区</p> : null}
-        <nav className="space-y-1" aria-label="专业工作区">
-          {NAV.map(([id, label, icon]) => <button className={`workspace-nav-item ${activeView === id ? "workspace-nav-item--active" : ""}`} key={id} disabled={!activeView} onClick={() => { onNavigate(id); onMobileClose(); }} title={!activeView ? "先新建或打开历史项目" : collapsed ? label : undefined} type="button"><Icon name={icon} size={16} /><span>{label}</span></button>)}
-        </nav>
-        {!collapsed && !activeView ? <p className="px-2 type-caption text-[var(--muted)]">先新建或打开历史项目，再进入工作区。</p> : null}
-        {!collapsed ? <div className="ww-sidebar-section"><p className="ww-sidebar-heading">工程线程</p><PanelTabs /></div> : null}
-        <div className="min-h-0 flex-1">
-          {!collapsed ? <div className="mb-1 flex items-center justify-between px-2"><span className="ww-sidebar-heading !m-0 !px-0">历史项目</span><button aria-label="刷新历史" className="workspace-icon-button !h-7 !w-7" onClick={() => reload()} type="button"><Icon name="rotate" size={13} /></button></div> : null}
+          {onNewProject ? <button className="ww-new-creation" onClick={() => { onNewProject(); onMobileClose(); }} title={collapsed ? "新建设计" : undefined} type="button"><Icon name="compose" size={18} /><span>新建设计</span></button> : null}
+        {!collapsed ? <div className="ww-sidebar-section">
+          <p className="ww-sidebar-heading">最近对话</p>
+          <PanelTabs onSelect={() => { onNavigate("mechanical"); onMobileClose(); }} />
+        </div> : null}
+        <div className="ww-sidebar-history">
+          {!collapsed && (history.length > 0 || status !== "idle") ? <div className="mb-1 flex items-center justify-between px-2"><span className="ww-sidebar-heading !m-0 !px-0">历史项目</span><button aria-label="刷新历史" className="workspace-icon-button !h-7 !w-7" onClick={() => reload()} type="button"><Icon name="rotate" size={13} /></button></div> : null}
           {status === "loading" && !collapsed ? <p className="px-2 py-3 type-body text-[var(--muted)]">正在加载…</p> : null}
           {status === "error" && !collapsed ? <div className="px-2 py-3 type-body text-red-700"><p data-i18n-skip>{error}</p><button className="mt-2 underline" onClick={() => reload()} type="button">重试</button></div> : null}
-          {status === "idle" && history.length === 0 && !collapsed ? <p className="px-2 py-3 type-body text-[var(--faint)]">暂无历史项目</p> : null}
+
           {!collapsed ? history.map((item) => <div className="group flex w-full items-center rounded-md hover:bg-[var(--subtle)]" key={item.id}><button className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left" onClick={() => void restore(item.id)} type="button"><Icon className="shrink-0 text-[var(--faint)]" name="file" size={14} /><span className="min-w-0 flex-1"><span className="block truncate type-body text-[var(--ink)]" data-i18n-skip>{item.name}</span><span className="block truncate type-caption text-[var(--faint)]">{new Date(item.updatedAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}</span></span></button><button aria-label={translate(`删除项目：${item.name}`)} className="workspace-icon-button mr-1 !h-7 !w-7 opacity-0 group-hover:opacity-100 focus:opacity-100" onClick={(event) => void remove(event, item.id)} type="button"><Icon name="trash" size={13} /></button></div>) : null}
           {!collapsed && hasMore ? <button className="workspace-button" type="button" disabled={status === "loading"} onClick={() => reload(history.at(-1))}>加载更多历史项目</button> : null}
         </div>
+        </div>
+        <div className="ww-sidebar-utilities">
+        {!collapsed && status === "idle" && history.length === 0 ? <button className="workspace-nav-item" type="button" onClick={() => reload()}><Icon name="history" size={17}/><span>刷新历史</span></button> : null}
         {onSettings ? <button className="workspace-nav-item mt-2" onClick={() => { onSettings(); onMobileClose(); }} title={collapsed ? "设置" : undefined} type="button"><Icon name="settings" size={16} /><span>设置</span></button> : null}
         </div>
         {user && onLogout && onUserUpdate ? <div className="ww-sidebar-footer"><div className="ww-sidebar-user-copy">{user.registered_via === "auth_disabled" ? <span>{translate(user.phone)}</span> : <span data-i18n-skip>{user.phone}</span>}<small>{user.is_admin ? "管理员" : "工作区成员"}</small></div><AccountPanel onLogout={onLogout} onUserUpdate={onUserUpdate} user={user} /></div> : null}

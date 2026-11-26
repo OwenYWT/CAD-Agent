@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { taskState } from "../../adapters/taskState";
 import { engineeringTaskEventLabel } from "../../utils/engineeringLabels";
 import { getTaskValidationEvidence, type TaskValidationEvidence } from "../../services/clients/tasks";
@@ -52,8 +52,8 @@ function ValidationEvidenceDetails({taskId,evidenceId}:{taskId:string;evidenceId
   </div>;
 }
 
-export default function TaskCard({task,onRetry,onRecover,onTakeover,onCancel,onReview,isAdmin=false,canModify=true,failureLabel}:{
-  task:ReturnType<typeof taskState>;onRetry?:()=>Promise<void>;onRecover?:()=>void;onTakeover?:(featureId?:string)=>void;onCancel?:()=>void;onReview?:()=>void;isAdmin?:boolean;canModify?:boolean;failureLabel?:string;
+export default function TaskCard({task,onRetry,onRecover,onTakeover,onCancel,onReview,children,composerHasStop=false,isAdmin=false,canModify=true,failureLabel}:{
+  task:ReturnType<typeof taskState>;onRetry?:()=>Promise<void>;onRecover?:()=>void;onTakeover?:(featureId?:string)=>void;onCancel?:()=>void;onReview?:()=>void;isAdmin?:boolean;canModify?:boolean;failureLabel?:string;composerHasStop?:boolean;children?:ReactNode;
 }) {
   const [retrying,setRetrying]=useState(false);const [error,setError]=useState('');const [contact,setContact]=useState(false);const [copied,setCopied]=useState(false);
   const retry=async()=>{if(!onRetry || retrying)return;setRetrying(true);setError('');try{await onRetry();}catch(e){setError(e instanceof Error?e.message:'重试提交失败');}finally{setRetrying(false);}};
@@ -62,13 +62,24 @@ export default function TaskCard({task,onRetry,onRecover,onTakeover,onCancel,onR
   const operationId = task.error && 'operation_id' in task.error ? task.error.operation_id : errorDetails.operation_id;
   const action = task.error && 'action' in task.error ? task.error.action : errorDetails.action;
   const copy=async()=>{try{await navigator.clipboard.writeText(`CAD 任务故障\n任务：${task.taskId}\n需求：${task.objective}\n错误：${task.errorCode}\n${task.errorMessage}`);setCopied(true);}catch{setError('无法访问剪贴板，请展开错误详情后手动复制。');}};
+  const step = task.status === 'running' ? snapshot?.agent?.current_step_kind : null;
+  const title = step ? STEP_NAMES[step] || engineeringTaskEventLabel(step)
+    : task.phase==='failed' && !task.quota && task.status!=='cancelled' && failureLabel ? failureLabel : task.title;
   return <section className={`ww-task-card ww-task-card--${task.phase}`} data-testid="authoritative-task" data-task-phase={task.phase} data-task-id={task.taskId || ''}>
-    <header><span className="workspace-chip">{task.label}</span><strong role={task.phase==='failed'?'alert':'status'}>{task.phase==='failed' && !task.quota && task.status!=='cancelled' && failureLabel ? failureLabel : task.title}</strong>
-      {task.running ? <span aria-label="任务正在执行" className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--agent)] border-t-transparent"/>:null}</header>
-    {task.running ? <p className="type-caption">{snapshot?.agent?.current_step_kind ? STEP_NAMES[snapshot.agent.current_step_kind] || engineeringTaskEventLabel(snapshot.agent.current_step_kind) : '等待服务端执行进度'}{task.hasSaved ? '；已保存模型保持可查看。':''}</p>:null}
+    <header>{task.running ? <span aria-label="任务正在执行" className="h-3.5 w-3.5 shrink-0 motion-safe:animate-spin rounded-full border-2 border-[var(--agent)] border-t-transparent"/>:null}
+      <strong role={task.phase==='failed'?'alert':'status'}>{title}</strong></header>
+    {task.running && !step && task.title === task.operationLabel ? <p className="type-caption">等待服务端执行进度</p> : null}
     {task.phase==='failed' ? <p className="type-caption">{task.hasSaved?'上一个有效版本保持不变。':'本次没有保存新模型。'}{task.continuationOnly ? '此任务只记录了“继续”或“重试”，缺少具体建模目标。请恢复历史需求并确认后再提交。' : '原需求已保留。'}{task.quota?'恢复模型服务额度后，可重试本次任务。':''}</p>:null}
-    {task.phase==='candidate' ? <p className="type-caption">AI 待确认方案，尚未保存为当前版本。生成成功不代表适配验证通过。</p>:null}
+    {task.phase==='candidate' && !children ? <p className="type-caption">审核并保存后，候选模型将成为当前版本。</p>:null}
     {task.phase==='needs_input' ? <p className="type-caption">{task.status==='unconfirmed'?'尚未收到明确的受理结果。请查询原请求状态，系统会沿用原请求标识，避免重复建模。':'等待必要信息或计划确认，此时没有执行建模。'}</p>:null}
+    {children}
+    <div className="ww-task-actions">
+      {task.running && onCancel && !composerHasStop ? <button className="workspace-button" type="button" disabled={!canModify || !task.taskId || task.status==='cancelling'} onClick={onCancel}>取消任务</button>:null}
+      {task.phase==='candidate' && onReview ? <button className="workspace-button workspace-button--primary" type="button" onClick={onReview} aria-label="审阅候选与参数变化">{children ? "审阅候选模型" : "审阅候选与参数变化"}</button>:null}
+      {task.phase==='failed' && task.recovery==='retry' && onRetry ? <button className="workspace-button workspace-button--primary" type="button" disabled={!canModify || retrying} onClick={()=>void retry()}>{retrying?'正在确认重试请求…':'重试本次任务'}</button>:null}
+      {task.phase==='failed' && task.recovery!=='retry' && onRecover ? <button className="workspace-button workspace-button--primary" type="button" disabled={!canModify} onClick={onRecover}>{task.recovery==='properties'?'返回属性修正参数':task.recovery==='versions'?'返回版本重新确认':task.continuationOnly ? task.recoveryObjective ? '恢复历史需求并确认' : '补充建模目标' : '修改保留的需求'}</button>:null}
+      {task.phase==='failed' && (task.quota || /provider|configuration|worker_unavailable|sandbox_protocol|internal_error/.test(task.errorCode || '')) ? <button className="workspace-button" type="button" onClick={()=>setContact(!contact)}>{isAdmin?'管理员处理说明':'联系管理员'}</button>:null}
+    </div>
     {task.phase==='failed' && task.originalModelFailure && task.repairFailureMessage ? <div data-testid="repair-failure-chain">
       <details><summary>原始建模错误 · 自动修复未完成</summary>
         <p><strong>原始建模错误：</strong>{task.originalModelFailure.error_message}</p>
@@ -76,17 +87,14 @@ export default function TaskCard({task,onRetry,onRecover,onTakeover,onCancel,onR
       </details><p className="type-caption">修复结果未通过检查，没有生成新的可审核候选。</p>
     </div>:null}
     {task.taskId && task.phase === 'failed' && (/sketch_|constraint_|repair_/.test(task.errorCode || '') || task.originalModelFailure) ? <FailureDiagnostic taskId={task.taskId} canModify={canModify} onRecover={onTakeover} /> : null}
-    {planned.length ? <details className="ww-task-plan"><summary>本次计划（{planned.length} 步）</summary><ol>{planned.map((step,i)=><li key={String(step.step_key || i)}><details><summary>{step.description ? <span data-i18n-skip>{String(step.description)}</span> : '建模步骤'}</summary><dl><div><dt>操作</dt><dd>{String(step.kind || '未提供')}</dd></div><div><dt>任务需求</dt><dd data-i18n-skip>{task.objective}</dd></div><div><dt>影响对象</dt><dd>{Array.isArray(step.affected_object_ids)?step.affected_object_ids.join('、'):'未提供'}</dd></div></dl></details></li>)}</ol></details>:null}
-    {snapshot?.steps?.length ? <details className="ww-task-steps"><summary>已记录步骤与结果（{snapshot.steps.length}）</summary><ol>{snapshot.steps.map(step=><li key={step.id}><details><summary>{STEP_NAMES[step.kind] || engineeringTaskEventLabel(step.kind)} · {task.phase==='failed' && ['pending','ready','running'].includes(step.status)?'已停止':STATUS[step.status] || '尚未完成'}</summary>
-      <p>操作标识：{step.step_key}；执行尝试：{step.attempt_count}</p><p>任务需求：<span data-i18n-skip>{task.objective}</span></p>{step.error_message?<p>{step.error_message}</p>:<p>结果：{STATUS[step.status] || '未提供'}</p>}</details></li>)}</ol></details>:null}
+    {task.taskId || planned.length || snapshot?.steps?.length ? <details className="ww-run-record"><summary>执行记录</summary>
+      <dl><div><dt>任务状态</dt><dd>{task.label}</dd></div><div><dt>操作</dt><dd>{task.operationLabel}</dd></div>
+        {task.taskId ? <div><dt>任务编号</dt><dd><code>{task.taskId}</code></dd></div> : null}</dl>
+      {planned.length ? <details className="ww-task-plan"><summary>本次计划（{planned.length} 步）</summary><ol>{planned.map((step,i)=><li key={String(step.step_key || i)}><details><summary>{step.description ? <span data-i18n-skip>{String(step.description)}</span> : '建模步骤'}</summary><dl><div><dt>操作</dt><dd>{String(step.kind || '未提供')}</dd></div><div><dt>任务需求</dt><dd data-i18n-skip>{task.objective}</dd></div><div><dt>影响对象</dt><dd>{Array.isArray(step.affected_object_ids)?step.affected_object_ids.join('、'):'未提供'}</dd></div></dl></details></li>)}</ol></details>:null}
+      {snapshot?.steps?.length ? <details className="ww-task-steps"><summary>已记录步骤与结果（{snapshot.steps.length}）</summary><ol>{snapshot.steps.map(step=><li key={step.id}><details><summary>{STEP_NAMES[step.kind] || engineeringTaskEventLabel(step.kind)} · {task.phase==='failed' && ['pending','ready','running'].includes(step.status)?'已停止':STATUS[step.status] || '尚未完成'}</summary>
+        <p>操作标识：{step.step_key}；执行尝试：{step.attempt_count}</p><p>任务需求：<span data-i18n-skip>{task.objective}</span></p>{step.error_message?<p>{step.error_message}</p>:<p>结果：{STATUS[step.status] || '未提供'}</p>}</details></li>)}</ol></details>:null}
+    </details> : null}
     {snapshot?.agent?.validations?.length ? <details><summary>检查结果（{snapshot.agent.validations.length}）</summary>{snapshot.agent.validations.map(check=><div key={check.evidence_id}><strong>{GATES[check.gate] || check.gate} · {check.outcome==='passed'?'通过':check.outcome==='failed'?'未通过':'未验证'}</strong><p>{check.mode==='required'?'必需检查':'参考检查'}；{check.issues.join('；') || '没有附加问题说明'}</p><ValidationEvidenceDetails taskId={snapshot.id} evidenceId={check.evidence_id}/></div>)}</details>:null}
-    <div className="mt-3 flex flex-wrap gap-2">
-      {task.running && onCancel ? <button className="workspace-button" type="button" disabled={!canModify || !task.taskId || task.status==='cancelling'} onClick={onCancel}>取消任务</button>:null}
-      {task.phase==='candidate' && onReview ? <button className="workspace-button workspace-button--primary" type="button" onClick={onReview}>审阅候选与参数变化</button>:null}
-      {task.phase==='failed' && task.recovery==='retry' && onRetry ? <button className="workspace-button workspace-button--primary" type="button" disabled={!canModify || retrying} onClick={()=>void retry()}>{retrying?'正在确认重试请求…':'重试本次任务'}</button>:null}
-      {task.phase==='failed' && task.recovery!=='retry' && onRecover ? <button className="workspace-button workspace-button--primary" type="button" disabled={!canModify} onClick={onRecover}>{task.recovery==='properties'?'返回属性修正参数':task.recovery==='versions'?'返回版本重新确认':task.continuationOnly ? task.recoveryObjective ? '恢复历史需求并确认' : '补充建模目标' : '修改保留的需求'}</button>:null}
-      {task.phase==='failed' && (task.quota || /provider|configuration|worker_unavailable|sandbox_protocol|internal_error/.test(task.errorCode || '')) ? <button className="workspace-button" type="button" onClick={()=>setContact(!contact)}>{isAdmin?'管理员处理说明':'联系管理员'}</button>:null}
-    </div>
     {contact ? <div className="ww-agent-confirmation"><p>{task.quota ? isAdmin ? '请核对模型服务额度与配置，恢复后重试保存的任务。' : '请将故障摘要交给项目管理员，核对模型服务额度与配置。' : '请将此任务的错误类别和故障摘要交给项目管理员，核对工作流或运行时服务。'}</p><button className="workspace-button" type="button" onClick={()=>void copy()}>{copied?'故障摘要已复制':'复制故障摘要'}</button></div>:null}
     {task.phase==='failed' ? <details className="mt-2"><summary>错误码与调用详情</summary><dl><div><dt>任务</dt><dd>{task.taskId || '尚未受理'}</dd></div><div><dt>错误码</dt><dd>{task.errorCode || '未提供'}</dd></div>
       {typeof operationId === 'string' ? <div><dt>失败操作</dt><dd>{operationId}</dd></div> : null}

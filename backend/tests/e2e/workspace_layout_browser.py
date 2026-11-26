@@ -22,7 +22,13 @@ with sync_playwright() as pw:
   expect(p.locator('.ww-agent-panel:visible')).to_have_count(1);expect(p.locator('.workspace-header__agent-action:visible')).to_have_count(0)
   expect(p.get_by_role('tab',name='BOM',exact=True)).not_to_be_visible()
   assert not any('/api/' in u and ('/bom' in u or '/onshape' in u) for u in requests)
+  expect(p.get_by_role('region',name='对话中的模型预览')).to_be_visible()
+  expect(p.locator('.ww-primary-pane')).not_to_be_visible()
+  expect(scene.locator('canvas')).to_be_visible()
   p.evaluate('window.__layoutCanvas = document.querySelector("[data-testid=document-scene] canvas")')
+  p.get_by_role('button',name='展开模型',exact=True).click()
+  expect(scene.locator('canvas')).to_be_visible()
+  assert p.evaluate('window.__layoutCanvas === document.querySelector("[data-testid=document-scene] canvas")')
   canvas=scene.locator('canvas');box=canvas.bounding_box();p.mouse.move(box['x']+box['width']*.45,box['y']+box['height']*.55);p.mouse.down();p.mouse.move(box['x']+box['width']*.52,box['y']+box['height']*.6,steps=15);p.mouse.up();p.wait_for_timeout(1500)
   before=canvas.screenshot()
   for _ in range(20):
@@ -112,7 +118,7 @@ with sync_playwright() as pw:
     if w<=760:
      control.click();p.keyboard.press('Escape')
    if w>760:
-    composer=p.locator('.ww-agent-composer-wrap').bounding_box();assert composer['y']+composer['height']<=901,(w,composer)
+    composer=p.locator('.ww-chat-dock').bounding_box();assert composer['y']+composer['height']<=901,(w,composer)
    p.screenshot(path=str(out/f'width-{w}.png'))
    rows.append({'width':w,'model':p.locator('.ww-primary-pane').bounding_box()})
   p.get_by_role('button',name='更多工具',exact=True).first.click();p.get_by_role('button',name='属性',exact=True).click();expect(p.get_by_role('dialog',name='工程信息',exact=True)).to_be_visible();p.keyboard.press('Escape');expect(p.get_by_role('dialog',name='工程信息',exact=True)).not_to_be_visible()

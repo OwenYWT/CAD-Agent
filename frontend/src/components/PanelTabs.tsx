@@ -5,8 +5,8 @@ import { Icon } from "./ui/Icon";
 import { guardDraft } from "../stores/draftGuard";
 
 /** Engineering conversations rendered in the existing project sidebar. */
-export default function PanelTabs() {
-  const { panels, activePanelId, switchPanel, addPanel, removePanel, renamePanel } =
+export default function PanelTabs({ onSelect }: { onSelect: () => void }) {
+  const { panels, activePanelId, switchPanel, removePanel, renamePanel } =
     useSessionStore();
   const { translate } = useI18n();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -42,21 +42,12 @@ export default function PanelTabs() {
 
   return (
     <nav aria-label={translate("工程线程")} className="ww-conversation-navigation">
-      <button
-        aria-label={translate("新建对话")}
-        className="ww-conversation-create type-control"
-        onClick={() => guardDraft(() => { addPanel(); })}
-        title={translate("新建对话")}
-        type="button"
-      >
-        <span>{translate("新建对话")}</span>
-        <Icon name="plus" size={16} />
-      </button>
-
       <div className="ww-conversation-list" ref={listRef} role="list">
         {panels.map((panel) => {
           const isActive = panel.id === activePanelId;
           const isEditing = editingId === panel.id;
+          const firstRequest = panel.messages.find(message => message.role === "user")?.content;
+          const title = /^对话\s*\d+$/.test(panel.title) && firstRequest ? firstRequest : translate(panel.title);
 
           return (
             <div
@@ -84,11 +75,11 @@ export default function PanelTabs() {
                 <button
                   aria-current={isActive ? "page" : undefined}
                   className="ww-conversation-switch type-control"
-                  onClick={() => guardDraft(() => switchPanel(panel.id))}
-                  onDoubleClick={() => startRename(panel.id, panel.title)}
+                  onClick={() => guardDraft(() => { switchPanel(panel.id); onSelect(); })}
+                  title={title} onDoubleClick={() => startRename(panel.id, panel.title)}
                   type="button"
                 >
-                  <span className="ww-conversation-title">{translate(panel.title)}</span>
+                  <span className="ww-conversation-title" data-i18n-skip>{title}</span>
                 </button>
               )}
               {panel.isGenerating ? <span aria-label={translate("正在处理")} className="ww-conversation-spinner" role="status" /> : null}
