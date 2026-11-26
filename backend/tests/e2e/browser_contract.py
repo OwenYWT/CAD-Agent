@@ -36,8 +36,20 @@ with httpx.Client(base_url=os.environ['CAD_NATIVE_E2E_URL'], headers={'Authoriza
             scene = page.get_by_test_id('document-scene')
             expect(scene).to_have_attribute('data-revision', __import__('re').compile('.+'), timeout=90000)
             page.evaluate('window.__contractCanvas=document.querySelector("[data-testid=document-scene] canvas")')
-            page.get_by_role('button', name='审阅候选与参数变化', exact=True).click()
+            # Drafting a review in the composer must not modify the candidate or submit a new task.
+            writes = []
+            page.on('request', lambda request: writes.append(request.url.split('?')[0])
+                    if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and '/api/' in request.url else None)
+            page.get_by_role('textbox', name='询问 Agent', exact=True).fill('保留中心孔，下一步核对厚度。')
+            page.get_by_role('button', name='审查请求', exact=True).click()
             dialog = page.get_by_role('dialog', name='变更审查')
+            expect(dialog.get_by_role('textbox', name='审查意见')).to_have_value('保留中心孔，下一步核对厚度。')
+            assert not writes
+            assert api.get('/api/change-sets/' + fixture['change_set_id']).raise_for_status().json()['status'] == 'pending_review'
+            assert api.get('/api/documents/' + fixture['document_id']).raise_for_status().json()['head_revision_id'] == fixture['base_revision_id']
+            dialog.get_by_role('button', name='关闭', exact=True).last.click()
+            page.get_by_role('button', name='审阅候选与参数变化', exact=True).click()
+            expect(dialog.get_by_role('textbox', name='审查意见')).to_have_value('')
             expect(dialog.get_by_role('button', name='应用修改', exact=True)).to_be_visible()
             dialog.get_by_role('button', name='应用修改', exact=True).click()
             expect(dialog.get_by_text('审查状态：committed', exact=True)).to_be_visible(timeout=30000)
@@ -50,18 +62,29 @@ with httpx.Client(base_url=os.environ['CAD_NATIVE_E2E_URL'], headers={'Authoriza
             assert saved['state_version'] == 1 and saved['head_revision_id'] != fixture['base_revision_id']
             expect(scene).to_have_attribute('data-revision', saved['head_revision_id'], timeout=90000)
             assert page.evaluate('window.__contractCanvas===document.querySelector("[data-testid=document-scene] canvas")')
+            expect(page.get_by_role('region', name='对话中的模型预览')).to_be_visible()
+            page.get_by_role('button', name='更多工具', exact=True).click()
+            expect(page.locator('#workspace-actions').get_by_role('status')).to_have_text('文档已同步')
+            expect(page.locator('#workspace-actions').get_by_role('button', name='机械设计', exact=True)).to_be_visible()
+            page.keyboard.press('Escape')
+            page.get_by_role('button', name='展开模型', exact=True).click()
+            expect(scene.locator('canvas')).to_be_visible()
+            assert page.evaluate('window.__contractCanvas===document.querySelector("[data-testid=document-scene] canvas")')
             for name in ('属性', '检查', '版本', '导出'):
                 page.get_by_role('button', name=name, exact=True).click()
                 expect(page.locator('.ww-inspector-pane:visible')).to_have_count(1)
                 assert page.evaluate('window.__contractCanvas===document.querySelector("[data-testid=document-scene] canvas")')
                 page.get_by_role('button', name='返回 Agent', exact=True).click()
+            page.get_by_role('button', name='返回对话', exact=True).click()
+            expect(page.get_by_role('region', name='对话中的模型预览').locator('canvas')).to_be_visible()
+            assert page.evaluate('window.__contractCanvas===document.querySelector("[data-testid=document-scene] canvas")')
             page.reload()
             expect(page.get_by_test_id('document-scene')).to_have_attribute('data-revision', saved['head_revision_id'], timeout=90000)
             page.set_viewport_size({'width':390,'height':844})
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             assert not errors, errors
             page.screenshot(path=str(out/'saved-mobile.png'))
-            (out/'report.json').write_text(json.dumps({'passed':True,'fixture':fixture,'saved_revision':saved['head_revision_id'],'real_kernel':True,'real_auth':True,'same_canvas':True,'page_errors':errors},indent=2))
+            (out/'report.json').write_text(json.dumps({'passed':True,'fixture':fixture,'saved_revision':saved['head_revision_id'],'real_kernel':True,'real_auth':True,'same_canvas':True,'review_draft_without_write':True,'page_errors':errors},indent=2))
             print('BROWSER CONTRACT PASSED')
         except BaseException:
             (out/'failure.txt').write_text(page.locator('body').inner_text())

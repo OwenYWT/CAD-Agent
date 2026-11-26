@@ -17,6 +17,7 @@ import { InlineState, WorkspaceDialog } from "../common/WorkspaceOverlay";
 
 
 interface ChangeSetDialogProps {
+  initialReviewNote?: string;
   open: boolean;
   panelId: string;
   activeSnapshotId?: string | null;
@@ -74,6 +75,7 @@ export default function ChangeSetDialog({
   panelId,
   activeSnapshotId,
   changeSetId,
+  initialReviewNote,
   onClose,
   onRestore,
   onAskAgent,
@@ -86,6 +88,7 @@ export default function ChangeSetDialog({
   const [error, setError] = useState("");
   const [restoring, setRestoring] = useState(false);
   const [reviewNote, setReviewNote] = useState("");
+  const noteFromChat = useRef(initialReviewNote);
   const [detail, setDetail] = useState<DurableChangeSetDetail | null>(null);
   const generation = useRef(0);
   const active = useRef(false);
@@ -107,7 +110,9 @@ export default function ChangeSetDialog({
         setDetail(detail);
         onDurableChangeSet?.(detail);
         setChangeSet(adaptDurableChangeSet(detail, panelId));
-        setReviewNote(detail.review_note || "");
+        setReviewNote(detail.status === "pending_review" && detail.can_review && noteFromChat.current
+          ? noteFromChat.current : detail.review_note || "");
+        noteFromChat.current = undefined;
         setStatus("success");
         return;
       }
@@ -444,27 +449,12 @@ export default function ChangeSetDialog({
 
         {changeSet ? (
           <>
-            {changeSet.source === "durable" ? (
-              <label className="block type-control text-[var(--muted)]">
-                审查意见
-                <textarea
-                  className="mt-2 min-h-20 w-full resize-y rounded-lg border border-[var(--line)] bg-white px-3 py-2 type-control text-[var(--ink)] outline-none focus:border-[var(--accent)]"
-                  maxLength={4000}
-                  onChange={(event) => setReviewNote(event.target.value)}
-                  placeholder={changeSet.validation.status === "warning" ? "存在未通过或未能判定项；接受前请填写审阅意见。" : "拒绝或请求修改时必填；接受时可选。"}
-                  value={reviewNote}
-                />
-              </label>
-            ) : null}
             <section className="border-b border-[var(--line)] pb-4">
               <div className="grid gap-3 type-body sm:grid-cols-3">
                 <div><p className="text-[var(--faint)]">修改目标</p><p className="mt-1 text-[var(--ink)]">{changeSet.objective || "未记录"}</p></div>
                 <div><p className="text-[var(--faint)]">修订序号</p><p className="mt-1 text-[var(--ink)]">{changeSet.baseVersion ? `#${changeSet.baseVersion} → #${changeSet.targetVersion}` : `父修订未知 → #${changeSet.targetVersion}`}</p></div>
                 <div><p className="text-[var(--faint)]">修改对象数</p><p className="mt-1 text-[var(--ink)]">{changeSet.modifiedObjectCount ?? "未知"}</p></div>
               </div>
-              <p className="mt-3 break-all type-caption text-[var(--faint)]">
-                任务 {changeSet.taskId || "未记录"} · 请求 {changeSet.requestId || "未记录"}
-              </p>
             </section>
 
             <section>
@@ -511,32 +501,50 @@ export default function ChangeSetDialog({
               </div>
             </section>
 
-            <section>
-              <h3 className="type-section-heading  text-[var(--ink)]">文件变化</h3>
-              {changeSet.files.length ? (
-                <div className="mt-2 space-y-2">
-                  {changeSet.files.map((file, index) => (
-                    <div className="rounded-lg border border-[var(--line)] px-3 py-2 type-body" key={`${file.format}:${file.kind}:${index}`}>
-                      <p className="text-[var(--ink)]">{file.format} · {fileKindLabel(file.kind)}</p>
-                      <p className="mt-1 break-all type-caption text-[var(--faint)]">
-                        {file.evidence === "sha256"
-                          ? "文件内容变化已由不可变 Artifact 的 SHA-256 证实。"
-                          : "仅能证实文件引用变化；当前元数据没有 SHA-256，不能声称内容已变化。"}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : <p className="mt-2 type-body text-[var(--faint)]">没有可证实的文件引用变化。</p>}
-            </section>
+            {changeSet.source === "durable" ? (
+              <label className="block type-control text-[var(--muted)]">
+                审查意见
+                <textarea
+                  className="mt-2 min-h-20 w-full resize-y rounded-lg border border-[var(--line)] bg-white px-3 py-2 type-control text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                  maxLength={4000}
+                  onChange={(event) => setReviewNote(event.target.value)}
+                  placeholder={changeSet.validation.status === "warning" ? "存在未通过或未能判定项；接受前请填写审阅意见。" : "拒绝或请求修改时必填；接受时可选。"}
+                  value={reviewNote}
+                />
+              </label>
+            ) : null}
+            <details className="ww-review-record">
+              <summary>文件与执行记录</summary>
+              <p className="mt-2 break-all type-caption text-[var(--faint)]">
+                任务 {changeSet.taskId || "未记录"} · 请求 {changeSet.requestId || "未记录"}
+              </p>
+              <section>
+                <h3 className="type-section-heading  text-[var(--ink)]">文件变化</h3>
+                {changeSet.files.length ? (
+                  <div className="mt-2 space-y-2">
+                    {changeSet.files.map((file, index) => (
+                      <div className="rounded-lg border border-[var(--line)] px-3 py-2 type-body" key={`${file.format}:${file.kind}:${index}`}>
+                        <p className="text-[var(--ink)]">{file.format} · {fileKindLabel(file.kind)}</p>
+                        <p className="mt-1 break-all type-caption text-[var(--faint)]">
+                          {file.evidence === "sha256"
+                            ? "文件内容变化已由不可变 Artifact 的 SHA-256 证实。"
+                            : "仅能证实文件引用变化；当前元数据没有 SHA-256，不能声称内容已变化。"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="mt-2 type-body text-[var(--faint)]">没有可证实的文件引用变化。</p>}
+              </section>
 
-            <section>
-              <h3 className="type-section-heading  text-[var(--ink)]">Agent 操作日志</h3>
-              {changeSet.agentLogs.length ? (
-                <ol className="mt-2 space-y-1 type-body text-[var(--muted)]">
-                  {changeSet.agentLogs.map((log) => <li key={log}>{log}</li>)}
-                </ol>
-              ) : <p className="mt-2 type-body text-[var(--faint)]">没有已持久化的 Agent 操作日志。</p>}
-            </section>
+              <section>
+                <h3 className="type-section-heading  text-[var(--ink)]">Agent 操作日志</h3>
+                {changeSet.agentLogs.length ? (
+                  <ol className="mt-2 space-y-1 type-body text-[var(--muted)]">
+                    {changeSet.agentLogs.map((log) => <li key={log}>{log}</li>)}
+                  </ol>
+                ) : <p className="mt-2 type-body text-[var(--faint)]">没有已持久化的 Agent 操作日志。</p>}
+              </section>
+            </details>
           </>
         ) : null}
       </div>

@@ -1,0 +1,621 @@
+{
+  "scope": {
+    "base_sha": "7508b94d9f4e1cf0a306508d66ab27729db2a18e",
+    "layout_branch": "ui/focused-workspace",
+    "protected_paths_same": {
+      "backend/app": {
+        "tracked_file_count": 354,
+        "path_and_content_sha256": "94ed938c827164a1a4e7e11503188c26ea1637a7e41cce870ab0e60e515a3346"
+      },
+      "backend/alembic": {
+        "tracked_file_count": 34,
+        "path_and_content_sha256": "301ae706a9cb721b1c05c6b51e6e1caa96b0f211758fc0aa513ae1b888865b0e"
+      },
+      "backend/sandbox": {
+        "tracked_file_count": 32,
+        "path_and_content_sha256": "5b68aefc392d31dc3ac4b0815325d1eda4309d624a54510774852794f10bc8c4"
+      },
+      "schemas": {
+        "tracked_file_count": 17,
+        "path_and_content_sha256": "470419ca7c35a378793330f300c0f501f4b5b296aaa22eaa76e1b2a23b6690ef"
+      },
+      "frontend/src/services": {
+        "tracked_file_count": 19,
+        "path_and_content_sha256": "2e092a04ebc28e9926e120afb023a68eabfeb207215778a19d3c38c53350d3c7"
+      },
+      "frontend/src/controllers": {
+        "tracked_file_count": 2,
+        "path_and_content_sha256": "4a9214f94668cf8e201aefad970bf1339f31d3ec94ea2860e076518d27314463"
+      },
+      "frontend/src/hooks": {
+        "tracked_file_count": 10,
+        "path_and_content_sha256": "0ad3b27187ce7acf3ea09f80e8da889f9fbd6b04257e814dbdbf11cf7a478da2"
+      },
+      "frontend/src/types": {
+        "tracked_file_count": 12,
+        "path_and_content_sha256": "6bbc81ae9e4f6515835ac5ea101d7b68cb4b47d128038167579da1370febfab6"
+      },
+      "frontend/src/adapters": {
+        "tracked_file_count": 18,
+        "path_and_content_sha256": "6772b84b6923b7e2e6dd82dfeef6d193185bf7af7afe80fe94f4cd779516a1c4"
+      }
+    },
+    "contracts_identical": true,
+    "openapi_sha256": "6cdfba4e4143876416e32405000985e66b246c3345c412798906e9ba246eb7a4",
+    "http_operations": 162,
+    "schemas": 143,
+    "websockets": 3
+  },
+  "frontend": {
+    "main_tests_passed": 183,
+    "chat_tests_passed": 185,
+    "chat_failed": 0,
+    "chat_lint": "passed",
+    "chat_typecheck_and_vite_build": "passed",
+    "build_note": "Vite reports its existing large-chunk warning."
+  },
+  "official_quick": {
+    "main": {
+      "backend": {
+        "passed": 3113,
+        "skipped": 433
+      },
+      "fusion": {
+        "passed": 189
+      },
+      "ci-contracts": {
+        "passed": 62
+      }
+    },
+    "chat": {
+      "backend": {
+        "passed": 3113,
+        "skipped": 433
+      },
+      "fusion": {
+        "passed": 189
+      },
+      "ci-contracts": {
+        "passed": 62
+      }
+    }
+  },
+  "ci_contract_subtests_per_version": 40,
+  "architecture": [
+    "Architecture boundaries passed (legacy exceptions remain explicit).",
+    "Feature map valid: 24 domains, 433 referenced paths.",
+    "CI policy passed: every pre-merge job and evidence contract remains mandatory."
+  ],
+  "postgres_suite": {
+    "passed": 144
+  },
+  "postgres_tests": {
+    "test_reclaimed_lease_interrupts_preparation_and_preserves_new_owner": "passed",
+    "test_candidate_create_and_terminal_lifecycle_are_idempotent": "passed",
+    "test_generated_source_is_provenanced_immutable_and_idempotent": "passed",
+    "test_staging_manifest_requires_current_succeeded_lease_and_replays": "passed",
+    "test_evidence_is_candidate_scoped_immutable_and_idempotent": "passed",
+    "test_seal_identity_is_one_per_candidate_and_content_bound": "passed",
+    "test_agent_candidate_tables_force_tenant_rls_and_worker_permissions": "passed",
+    "test_two_phase_commit_creates_immutable_artifacts_and_replays_once": "passed",
+    "test_partial_upload_and_hash_mismatch_cannot_commit_success": "passed",
+    "test_stale_lease_and_cancellation_cannot_attach_uploaded_bytes": "passed",
+    "test_wrong_revision_and_real_object_store_outage_fail_closed": "passed",
+    "test_orphan_cleanup_deletes_unknown_objects_but_preserves_artifacts": "passed",
+    "test_generation_migration_uses_original_operation_and_keeps_unknown_history_null": "passed",
+    "test_accept_commit_and_rollback_are_distinct_audited_operations": "passed",
+    "test_file_damage_after_accept_does_not_commit_or_lose_accepted_state[missing]": "passed",
+    "test_file_damage_after_accept_does_not_commit_or_lose_accepted_state[truncated]": "passed",
+    "test_file_damage_after_accept_does_not_commit_or_lose_accepted_state[replaced]": "passed",
+    "test_accept_requires_real_artifacts_and_successful_validation": "passed",
+    "test_reject_and_request_change_never_advance_branch": "passed",
+    "test_concurrent_accept_and_commit_are_idempotent_and_cas_safe": "passed",
+    "test_stale_base_cannot_commit_an_already_accepted_change_set": "passed",
+    "test_document_admission_and_event_roll_back_together": "passed",
+    "test_generic_workflow_does_not_implicitly_enqueue_document": "passed",
+    "test_interrupted_native_import_keeps_its_key_without_a_receipt_or_queue_entry": "passed",
+    "test_real_queue_serializes_and_replays_without_duplicate_mutations": "passed",
+    "test_head_commit_rollback_delta_and_aba_stale_state": "passed",
+    "test_candidate_cas_rejects_old_generation_after_head_returns_to_same_revision": "passed",
+    "test_merge_candidate_rejects_source_aba_at_review_and_commit": "passed",
+    "test_candidate_generation_cannot_be_rewritten": "passed",
+    "test_projection_upgrade_preserves_immutable_v1_v2_and_v3_caches": "passed",
+    "test_viewer_presence_comments_and_tenant_isolation": "passed",
+    "test_real_cross_account_invitation_does_not_grant_tenant_ownership": "passed",
+    "test_queued_operation_cannot_run_after_workspace_membership_is_revoked": "passed",
+    "test_late_cancelled_attempt_cannot_cancel_its_replacement_step": "passed",
+    "test_editor_invite_grants_project_edit_only_and_replay_cannot_restore_downgraded_role": "passed",
+    "test_snapshot_freezes_tenant_rules_and_process_material_constraints": "passed",
+    "test_snapshot_rejects_unsupported_process_instead_of_silent_fallback": "passed",
+    "test_explicit_check_configuration_ignores_ambient_identity_and_keeps_disabled_rules": "passed",
+    "test_all_disabled_native_rules_do_not_silently_restore_builtin_rules": "passed",
+    "test_legacy_check_captures_rules_once_without_rewriting_immutable_request": "passed",
+    "test_recorded_model_proposal_persists_without_a_source_binding_gate[no-limits]": "passed",
+    "test_recorded_model_proposal_persists_without_a_source_binding_gate[physical-scope-notice]": "passed",
+    "test_recorded_model_proposal_persists_without_a_source_binding_gate[unsupported-measurement]": "passed",
+    "test_planning_steps_persist_and_replay_without_new_provider_calls": "passed",
+    "test_planning_failure_marks_step_failed_without_static_fallback": "passed",
+    "test_event_and_outbox_rows_commit_together_with_matching_payloads": "passed",
+    "test_every_run_table_forces_tenant_rls": "passed",
+    "test_concurrent_events_get_one_gapless_monotonic_workflow_sequence": "passed",
+    "test_transaction_rollback_leaves_neither_event_nor_outbox": "passed",
+    "test_task_events_are_append_only": "passed",
+    "test_all_replacement_tables_force_tenant_rls_and_have_named_policies": "passed",
+    "test_runtime_rows_are_visible_only_inside_the_owning_tenant": "passed",
+    "test_auth_role_is_narrow_and_runtime_cannot_read_auth_rows": "passed",
+    "test_quarantine_index_is_tenant_isolated_and_not_runtime_visible": "passed",
+    "test_idempotent_submission_and_conflicting_input": "passed",
+    "test_requirement_error_roundtrip_keeps_code_separate_from_message": "passed",
+    "test_numeric_payload_and_result_survive_real_database_roundtrip": "passed",
+    "test_logical_step_replay_preserves_numeric_result": "passed",
+    "test_cancellation_closes_operation_and_preserves_account": "passed",
+    "test_expired_worker_lease_fences_old_writes": "passed",
+    "test_lease_database_failure_stops_provider_without_fabricating_failure": "passed",
+    "test_real_worker_returns_persisted_result": "passed",
+    "test_terminal_run_closes_outstanding_steps": "passed",
+    "test_other_tenant_cannot_read_job": "passed",
+    "test_provider_socket_cancellation_persists_real_usage_state": "passed",
+    "test_real_temporal_wait_and_cancellation": "passed",
+    "test_real_continue_as_new_keeps_one_job_and_provider_operation": "passed",
+    "test_separate_monitor_login_cannot_become_runtime_or_read_credentials": "passed",
+    "test_monitor_requires_real_platform_admin": "passed",
+    "test_actual_usage_nullable_failures_and_cross_workspace_account_grouping": "passed",
+    "test_reader_cannot_write_or_read_prompts_or_credentials": "passed",
+    "test_cancel_and_unfinished_are_not_success": "passed",
+    "test_usage_context_does_not_cross_concurrent_accounts": "passed",
+    "test_simultaneous_admission_honors_shared_currency_limit": "passed",
+    "test_logical_identity_claim_and_receipt_are_idempotent": "passed",
+    "test_completed_reply_replayed_after_worker_takeover[True]": "passed",
+    "test_completed_reply_replayed_after_worker_takeover[False]": "passed",
+    "test_missing_usage_holds_money_and_late_receipt_survives_takeover": "passed",
+    "test_unknown_attempt_cannot_be_refunded_on_lease_or_timeout": "passed",
+    "test_only_never_claimed_dispatch_can_release_and_count_is_retained": "passed",
+    "test_over_bound_usage_is_recorded_and_freezes_accounts": "passed",
+    "test_tenant_month_is_shared_across_tasks_and_rls_isolation": "passed",
+    "test_wrong_request_receipt_cannot_release_reservation[request_hash-other]": "passed",
+    "test_wrong_request_receipt_cannot_release_reservation[provider-other]": "passed",
+    "test_wrong_request_receipt_cannot_release_reservation[request_model-other]": "passed",
+    "test_unpriced_response_model_keeps_full_reservation": "passed",
+    "test_real_http_dispatch_is_independent_of_usage_log_and_fails_closed[usage_log]": "passed",
+    "test_real_http_dispatch_is_independent_of_usage_log_and_fails_closed[reservation_database]": "passed",
+    "test_real_http_dispatch_is_independent_of_usage_log_and_fails_closed[settlement_database]": "passed",
+    "test_real_http_dispatch_is_independent_of_usage_log_and_fails_closed[worker_takeover]": "passed",
+    "test_sql_settlement_failure_recovers_after_completed_job_and_worker_restart": "passed",
+    "test_unpersisted_receipt_cannot_report_model_job_success": "passed",
+    "test_pending_receipt_survives_fencing_and_settles_exactly_once[takeover]": "passed",
+    "test_pending_receipt_survives_fencing_and_settles_exactly_once[cancelled]": "passed",
+    "test_recovery_does_not_invent_missing_usage_or_release_unknown_hold": "passed",
+    "test_tls_failure_before_http_releases_only_money_and_preserves_diagnostics": "passed",
+    "test_reply_lost_after_send_retains_money_and_original_error_in_saved_job": "passed",
+    "test_tls_error_after_redirect_cannot_release_original_send": "passed",
+    "test_missing_or_ambiguous_transport_evidence_never_refunds[transport0]": "passed",
+    "test_missing_or_ambiguous_transport_evidence_never_refunds[transport1]": "passed",
+    "test_missing_or_ambiguous_transport_evidence_never_refunds[transport2]": "passed",
+    "test_missing_or_ambiguous_transport_evidence_never_refunds[transport3]": "passed",
+    "test_missing_or_ambiguous_transport_evidence_never_refunds[transport4]": "passed",
+    "test_transport_evidence_cannot_rewrite_unknown_history": "passed",
+    "test_proven_unsent_release_is_atomic_and_idempotent": "passed",
+    "test_tcp_refused_without_any_http_send_can_retry": "passed",
+    "test_stream_disconnect_keeps_unsettled_money": "passed",
+    "test_cancel_after_http_send_does_not_release_money": "passed",
+    "test_initial_branch_and_candidate_revision_are_immutable_and_uncommitted": "passed",
+    "test_change_set_idempotency_replays_and_rejects_different_candidate": "passed",
+    "test_concurrent_branch_cas_has_one_winner_and_preserves_both_candidates": "passed",
+    "test_revision_branch_and_change_set_tables_force_tenant_rls": "passed",
+    "test_cross_tenant_revision_ids_are_invisible": "passed",
+    "test_transition_matrices_cover_every_state_and_keep_terminals_closed": "passed",
+    "test_workflow_idempotency_hash_replays_and_rejects_payload_reuse": "passed",
+    "test_only_approved_workflow_and_step_transitions_are_accepted": "passed",
+    "test_retry_creates_a_new_immutable_attempt_instead_of_overwriting": "passed",
+    "test_lease_generation_fences_stale_workers_and_completion_replays_once": "passed",
+    "test_real_worker_role_can_lease_heartbeat_and_complete_without_bypass": "passed",
+    "test_attempt_identity_is_immutable_and_timeout_is_terminal": "passed",
+    "test_cancellation_intent_blocks_late_worker_completion": "passed",
+    "test_identity_mappings_are_stable_and_never_retain_raw_api_keys": "passed",
+    "test_one_authenticated_user_can_have_distinct_principals_in_multiple_tenants": "passed",
+    "test_project_policy_decisions_are_explicit[owner-delete_project-True]": "passed",
+    "test_project_policy_decisions_are_explicit[admin-manage_members-True]": "passed",
+    "test_project_policy_decisions_are_explicit[editor-modify_design-True]": "passed",
+    "test_project_policy_decisions_are_explicit[editor-manage_members-False]": "passed",
+    "test_project_policy_decisions_are_explicit[viewer-view_project-True]": "passed",
+    "test_project_policy_decisions_are_explicit[viewer-modify_design-False]": "passed",
+    "test_personal_tenant_project_membership_audit_and_usage_are_real": "passed",
+    "test_api_key_service_principal_stores_only_sha256_fingerprint": "passed",
+    "test_real_auth_dependency_binds_api_key_to_persisted_service_tenant": "passed",
+    "test_real_login_session_binds_user_to_personal_tenant": "passed",
+    "test_local_and_quarantine_mappings_persist_with_explicit_status": "passed",
+    "test_runtime_and_worker_roles_cannot_bypass_rls": "passed",
+    "test_every_control_plane_table_forces_rls_and_usage_is_provider_neutral": "passed",
+    "test_cross_tenant_ids_fail_and_pooled_transactions_do_not_leak_context": "passed",
+    "test_audit_records_are_append_only_even_inside_the_same_tenant": "passed",
+    "test_upgrade_preserves_pending_job_and_unfinished_usage": "passed",
+    "test_receipt_queue_upgrade_preserves_legacy_holds_and_blocks_lossy_downgrade": "passed",
+    "test_dispatch_is_atomic_with_workflow_and_queue": "passed",
+    "test_dispatch_leases_fence_expired_dispatchers": "passed",
+    "test_dispatch_payload_is_immutable_and_runtime_is_tenant_isolated": "passed",
+    "test_committed_intent_starts_real_kernel_without_client_retry": "passed"
+  },
+  "service_integration": {
+    "total_cases": 264,
+    "covered_unique": 264,
+    "outcomes": {
+      "passed": 255,
+      "skipped": 9
+    },
+    "unrun": []
+  },
+  "service_gated_skip_reasons": {
+    "set CAD_AGENT_TEST_LLM=1 for the real planner/codegen provider": 1,
+    "set CAD_AGENT_TEST_REAL_FREECAD_AGENT=1 for the real fused flow": 2,
+    "CAD_AGENT_TEST_REAL_VISION=1 is required for vision integration": 1,
+    "CAD_AGENT_TEST_REAL_LLM=1 is required for provider integration": 2,
+    "paid FreeCAD tool provider explicitly enabled": 1,
+    "paid checkpoint provider explicitly enabled": 1,
+    "explicit bounded live model evaluation required": 1
+  },
+  "real_kernel": {
+    "passed": 6
+  },
+  "real_kernel_tests": [
+    "test_real_backend_runs_all_local_capability_families",
+    "test_real_freecad_generate_reopen_modify_replay_and_rollback",
+    "test_real_structured_parameter_edits_revert_and_replay",
+    "test_real_freecad_hole_pocket_fillet_and_chamfer",
+    "test_real_freecad_semantic_selector_targets_current_circular_edge",
+    "test_real_cadquery_assembly_steps_generate_native_freecad_bom"
+  ],
+  "additional_real_kernel": {
+    "passed": 10
+  },
+  "additional_real_kernel_tests": [
+    "test_touching_assembly_exports_a_watertight_preview_stl[steelblue]",
+    "test_touching_assembly_exports_a_watertight_preview_stl[silver]",
+    "test_real_podman_backend_exports_step_and_stl",
+    "test_real_subtractive_features_change_solid_or_fail_closed",
+    "test_real_through_hole_survives_thickness_changes_and_reopen",
+    "test_real_sandbox_build123d_exports_step_and_stl",
+    "test_real_sandbox_blocks_file_network_and_process_access[open('/etc/passwd').read()\\n-open]",
+    "test_real_sandbox_blocks_file_network_and_process_access[import socket\\nsocket.socket()\\n-not allowed]",
+    "test_real_sandbox_blocks_file_network_and_process_access[import subprocess\\nsubprocess.run(['true'])\\n-not allowed]",
+    "test_real_execution_failures_are_normalized_and_bounded"
+  ],
+  "direct_provider_and_kernel": {
+    "passed": 2
+  },
+  "direct_provider_and_kernel_cases": {
+    "test_real_natural_language_to_freecad_plate_with_hole": "passed",
+    "test_real_provider_requests_l2_measurement_then_modifies_native_model": "passed"
+  },
+  "temporal_replay": {
+    "current": [
+      {
+        "workflow_type": "McadAgentWorkflowV2",
+        "workflow_id": "mcad-agent-v2-workflow-2af1c790-efa4-411c-8e57-74af646b304c",
+        "run_id": "01a2188f-b0a2-7acd-a05c-ef9c925aca75",
+        "events": 141,
+        "patches": [
+          "agent-v2-acceptance-bindings-v2",
+          "agent-v2-advisory-dfm-recovery-v1",
+          "agent-v2-all-3d-acceptance-v1",
+          "agent-v2-backend-policy-v1",
+          "agent-v2-cad-jobs-v1",
+          "agent-v2-engineering-acceptance-v1",
+          "agent-v2-final-solid-acceptance-v1",
+          "agent-v2-freecad-checkpoints-v1",
+          "agent-v2-freecad-constraint-patches-v1",
+          "agent-v2-gate-native-recovery-v1",
+          "agent-v2-model-jobs-v1",
+          "agent-v2-native-bom-v1",
+          "agent-v2-native-source-solid-count-v1",
+          "agent-v2-preserve-advisory-visual-v1",
+          "agent-v2-profile-constraint-handoff-v1",
+          "agent-v2-profile-replanning-v1",
+          "agent-v2-progressive-native-repair-v1",
+          "agent-v2-provider-streaming-v1",
+          "agent-v2-repair-accounting-v2",
+          "agent-v2-scoped-geometry-targets-v1",
+          "agent-v2-scoped-repair-feedback-v1",
+          "agent-v2-solid-count-policy-v2",
+          "agent-v2-validation-repair-v2"
+        ],
+        "replay": "passed"
+      },
+      {
+        "workflow_type": "McadAgentWorkflowV2",
+        "workflow_id": "mcad-agent-v2-workflow-d247051b-2740-47a6-a663-2db5106037c7",
+        "run_id": "01a2186d-b130-78f3-a7f4-f32ed7f9b958",
+        "events": 145,
+        "patches": [
+          "agent-v2-acceptance-bindings-v2",
+          "agent-v2-advisory-dfm-recovery-v1",
+          "agent-v2-all-3d-acceptance-v1",
+          "agent-v2-cad-jobs-v1",
+          "agent-v2-freecad-checkpoints-v1",
+          "agent-v2-freecad-constraint-patches-v1",
+          "agent-v2-gate-native-recovery-v1",
+          "agent-v2-model-jobs-v1",
+          "agent-v2-native-bom-v1",
+          "agent-v2-native-source-solid-count-v1",
+          "agent-v2-preserve-advisory-visual-v1",
+          "agent-v2-profile-constraint-handoff-v1",
+          "agent-v2-profile-replanning-v1",
+          "agent-v2-progressive-native-repair-v1",
+          "agent-v2-provider-streaming-v1",
+          "agent-v2-repair-accounting-v2",
+          "agent-v2-scoped-geometry-targets-v1",
+          "agent-v2-scoped-repair-feedback-v1",
+          "agent-v2-solid-count-policy-v2"
+        ],
+        "replay": "passed"
+      },
+      {
+        "workflow_type": "McadAgentWorkflowV2",
+        "workflow_id": "mcad-agent-v2-workflow-9c70661a-b6cb-4bfd-bf39-867fc4fb18bd",
+        "run_id": "01a2186b-c30e-76a3-bda0-e98e0e963d79",
+        "events": 134,
+        "patches": [
+          "agent-v2-acceptance-bindings-v2",
+          "agent-v2-advisory-dfm-recovery-v1",
+          "agent-v2-all-3d-acceptance-v1",
+          "agent-v2-cad-jobs-v1",
+          "agent-v2-freecad-checkpoints-v1",
+          "agent-v2-freecad-constraint-patches-v1",
+          "agent-v2-gate-native-recovery-v1",
+          "agent-v2-native-bom-v1",
+          "agent-v2-native-source-solid-count-v1",
+          "agent-v2-preserve-advisory-visual-v1",
+          "agent-v2-profile-constraint-handoff-v1",
+          "agent-v2-profile-replanning-v1",
+          "agent-v2-progressive-native-repair-v1",
+          "agent-v2-provider-streaming-v1",
+          "agent-v2-repair-accounting-v2",
+          "agent-v2-scoped-geometry-targets-v1",
+          "agent-v2-scoped-repair-feedback-v1",
+          "agent-v2-solid-count-policy-v2"
+        ],
+        "replay": "passed"
+      },
+      {
+        "workflow_type": "McadDurableWorkflow",
+        "workflow_id": "mcad-workflow-4bed0d90-345f-4d0b-a26f-2c443fbef541",
+        "run_id": "01a2188e-52b2-7961-9784-1dd040451012",
+        "events": 59,
+        "patches": [],
+        "replay": "passed"
+      },
+      {
+        "workflow_type": "McadCheckWorkflow",
+        "workflow_id": "mcad-check-workflow-a45b69ee-9617-4be3-8114-4358d2b2d32f",
+        "run_id": "01a2188d-f17c-749b-a464-6bdf8ad86eb0",
+        "events": 11,
+        "patches": [],
+        "replay": "passed"
+      },
+      {
+        "workflow_type": "ModelJobWorkflow",
+        "workflow_id": "2af1c790-efa4-411c-8e57-74af646b304c:model:judge-visual-modify-main-01",
+        "run_id": "01a2188f-e218-7d29-8465-5aed01c6c034",
+        "events": 28,
+        "patches": [],
+        "replay": "passed"
+      },
+      {
+        "workflow_type": "NativeWorkerWorkflow",
+        "workflow_id": "runtime-inspection:chat2ejh3k70v1:28a17933c9d87a2f64066247bb97b3f6125fa7abc0e80fbe62ab9737aa050a30:59856942",
+        "run_id": "01a2188d-f152-7c76-8786-b69d56f795fd",
+        "events": 11,
+        "patches": [],
+        "replay": "passed"
+      }
+    ],
+    "released": {
+      "passed": true,
+      "histories": [
+        {
+          "file": "new-McadAgentWorkflowV2-01a0c6e8-6575-734a-a2ba-733a0243eeb4.json",
+          "source_sha": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+          "sha256": "e0812ad8fd716522302a545286c2e60f7c81ab66f9564b4ad4884c7bb2a01b12",
+          "cases": [
+            "after-model-jobs"
+          ]
+        },
+        {
+          "file": "new-McadAgentWorkflowV2-01a0c6e8-ca99-7270-b016-bd647688cd77.json",
+          "source_sha": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+          "sha256": "7fd1f1bc74a3c64c78270705596dd11f83469e720c446cc8f67078fb5b483a72",
+          "cases": [
+            "after-model-jobs"
+          ]
+        },
+        {
+          "file": "new-McadAgentWorkflowV2-01a0c6e9-2cf4-7836-a801-dc877be99591.json",
+          "source_sha": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+          "sha256": "97af330410470811e68c6667ff3a176bbcac0c84e2bf3b98c263e4e4017515a2",
+          "cases": [
+            "after-model-jobs"
+          ]
+        },
+        {
+          "file": "new-McadAgentWorkflowV2-01a0c6e9-677c-7339-a92c-499e18bc2104.json",
+          "source_sha": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+          "sha256": "8478eed45b19f1fb96abd2ae231f2844de1fab9d01d2c6b7bd7e362e656a2d21",
+          "cases": [
+            "after-model-jobs",
+            "parent-cancellation"
+          ]
+        },
+        {
+          "file": "new-McadDurableWorkflow-01a0c6e9-79b8-7af4-9bcb-1765e3b6ab46.json",
+          "source_sha": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+          "sha256": "d174332f8ee3ae79e20971cfa5d0bb87b86499d17cfeaec82e2941b08f6ec8f0",
+          "cases": [
+            "worker-crash-recovery"
+          ]
+        },
+        {
+          "file": "new-ModelJobWorkflow-01a0c6eb-9950-7580-bed7-d1239cdb0747.json",
+          "source_sha": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+          "sha256": "11084e4a220f01289009d9dba200ccda0e01927c553cb7f4f7aa789b2eb00918",
+          "cases": [
+            "model-job-success"
+          ]
+        },
+        {
+          "file": "new-ModelJobWorkflow-01a0c6eb-a196-7dee-8f1c-a94319fccce3.json",
+          "source_sha": "62084d5c84ead7bcd88030695fdfcd61112280ea",
+          "sha256": "75f71503575972ec08d603202d620eca96c302471a4f2862f698656e7c756776",
+          "cases": [
+            "model-job-cancellation"
+          ]
+        },
+        {
+          "file": "old-McadAgentWorkflowV2-01a0c6e5-9c0f-7dff-ab0e-08a4735e0dcf.json",
+          "source_sha": "3dee44b18370203563bdf5d27788c83570004eb0",
+          "sha256": "5b93f25f6a79f6cb451cb736b132f882048c5e9ebb24d9935f59ec4a08c259ac",
+          "cases": [
+            "before-model-jobs"
+          ]
+        },
+        {
+          "file": "old-McadAgentWorkflowV2-01a0c6e5-cd37-7b8c-bfae-edcbbbb32343.json",
+          "source_sha": "3dee44b18370203563bdf5d27788c83570004eb0",
+          "sha256": "4e76f4582eb9d07cbbe280c76a8ad3cfb4f9515b5776fd970eae237ffd2ab1e7",
+          "cases": [
+            "before-model-jobs"
+          ]
+        },
+        {
+          "file": "old-McadAgentWorkflowV2-01a0c6e5-fb7e-75d7-8793-a11dbabbf4ac.json",
+          "source_sha": "3dee44b18370203563bdf5d27788c83570004eb0",
+          "sha256": "2043e92895b0fd4eda1713c771e838928591fc4f022c82f9bfd58b536e16eb12",
+          "cases": [
+            "before-model-jobs"
+          ]
+        },
+        {
+          "file": "old-McadAgentWorkflowV2-01a0c6e6-161d-714f-a232-925b3cda72da.json",
+          "source_sha": "3dee44b18370203563bdf5d27788c83570004eb0",
+          "sha256": "9117ec89aba0a2083008b92452da56ecd81fccef855d051ef729a18f11ba694c",
+          "cases": [
+            "before-model-jobs",
+            "parent-cancellation"
+          ]
+        },
+        {
+          "file": "old-McadDurableWorkflow-01a0c6e6-17f4-7e8d-85ab-d2676fc08c37.json",
+          "source_sha": "3dee44b18370203563bdf5d27788c83570004eb0",
+          "sha256": "c190bc8ad1f2ba4542f10b32673e85399490b6d37f6af3d37a5488ef692c9310",
+          "cases": [
+            "worker-crash-recovery"
+          ]
+        },
+        {
+          "file": "merge-tmp-busy-restore.json",
+          "source_sha": "f6e3f3773eb66a3e01c02f3eba7993e8ba8895d1",
+          "sha256": "6b8644e4ba2c5e9f718f2a05d4a80baaff80026de5880c66d3b45cf3a439ef52",
+          "cases": [
+            "busy-restore-immediate-failure"
+          ]
+        },
+        {
+          "file": "merge-compare-busy-restore.json",
+          "source_sha": "2fd4f73075dab4dd9a2f0c5d1bb5a58c07201ab7",
+          "sha256": "5cf417bba41ae87ecaed046e625918f0671e1767dd5bfa4a0adbd6b963704f0c",
+          "cases": [
+            "busy-restore-recorded-timer"
+          ]
+        },
+        {
+          "file": "merge-main-busy-restore.json",
+          "source_sha": "fd85ee69d460459cc505935e68338545dcff1ad3",
+          "sha256": "32e4f3d49aae4b8f075c7ad9a424935c547fbc3cfb985180d9f7f93da7a3011d",
+          "cases": [
+            "busy-restore-versioned"
+          ]
+        },
+        {
+          "file": "merge-tmp-advisory-visual.json",
+          "source_sha": "f6e3f3773eb66a3e01c02f3eba7993e8ba8895d1",
+          "sha256": "9d6767f509244c57ee30d6e8d1a6eefd926a1b4a9c6736f24aa61056268fdccb",
+          "cases": [
+            "advisory-visual-preserved"
+          ]
+        },
+        {
+          "file": "merge-compare-advisory-visual.json",
+          "source_sha": "2fd4f73075dab4dd9a2f0c5d1bb5a58c07201ab7",
+          "sha256": "1b92fc8832a71238ce8d680dab9d9392f6590ec7aa207d34d2f13d937b4122ad",
+          "cases": [
+            "advisory-visual-repaired"
+          ]
+        }
+      ]
+    }
+  },
+  "product_browser_cases": 18,
+  "layouts": [
+    {
+      "width": 1440,
+      "model": {
+        "x": 252,
+        "y": 48,
+        "width": 843,
+        "height": 852
+      }
+    },
+    {
+      "width": 1181,
+      "model": {
+        "x": 0,
+        "y": 48,
+        "width": 836,
+        "height": 852
+      }
+    },
+    {
+      "width": 1024,
+      "model": {
+        "x": 0,
+        "y": 48,
+        "width": 679,
+        "height": 852
+      }
+    },
+    {
+      "width": 900,
+      "model": {
+        "x": 0,
+        "y": 48,
+        "width": 555,
+        "height": 852
+      }
+    },
+    {
+      "width": 760,
+      "model": {
+        "x": 0,
+        "y": 52,
+        "width": 760,
+        "height": 848
+      }
+    },
+    {
+      "width": 390,
+      "model": {
+        "x": 0,
+        "y": 52,
+        "width": 390,
+        "height": 848
+      }
+    },
+    {
+      "width": 320,
+      "model": {
+        "x": 0,
+        "y": 52,
+        "width": 320,
+        "height": 848
+      }
+    }
+  ]
+}

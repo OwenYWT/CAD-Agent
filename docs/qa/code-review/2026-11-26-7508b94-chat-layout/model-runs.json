@@ -1,0 +1,1058 @@
+{
+  "source": "Playwright Chromium, real WebSocket/HTTP, Postgres rows, serialized provider receipts, versioned MinIO objects, independent FreeCAD 1.1.4 reopen and STL mesh measurement",
+  "pair_settings": {
+    "test_isolation": "fresh queues, bucket, accounts and database",
+    "llm_max_retries": 5,
+    "sandbox_image": "localhost/cad-chat-qa:7508b94"
+  },
+  "input_equivalence": true,
+  "main": {
+    "workflow": "f6305746-9f30-42a3-8e67-c5df070a024f",
+    "document": "52625650-0e03-43cd-ac12-dbaaec166bce",
+    "change": "c21609a8-9f38-43b3-8cce-44ec67c23a7c",
+    "candidate_revision": "a8f35486-8343-4a7e-95b9-40b07a7bad3a",
+    "basis": {
+      "schema_version": "requirement-basis.v1",
+      "target": "创建一块 60 × 40 × 8 mm 的矩形实心底板，长、宽、厚各允许 ±0.05 mm，体积为 19200 mm³，允许 ±0.1 mm³。只有一个实体，无孔无槽。交付可编辑的 FreeCAD、STEP 和 STL 文件。",
+      "purpose": "",
+      "design_scope": "geometry",
+      "source_kind": "user_specification",
+      "source_reference": "用户指定的设计尺寸",
+      "dimensions": "用户指定验收依据：长 60 mm、宽 40 mm、厚 8 mm，长宽厚各允许 ±0.05 mm；体积 19200 mm³，允许 ±0.1 mm³；实体数为 1，无孔无槽。",
+      "fit_notes": "",
+      "concept_acknowledged": false
+    },
+    "operation_intent": "generate",
+    "manufacturing_profile": {
+      "process": "generic",
+      "material": "Generic",
+      "nozzle_diameter_mm": null,
+      "layer_height_mm": null,
+      "build_volume_mm": [
+        220,
+        220,
+        250
+      ]
+    },
+    "submission_count": 1,
+    "status": "succeeded",
+    "document_before_review": {
+      "head_revision_id": "62e874ae-224d-45e9-b0a0-280b61d0369b",
+      "state_version": 0
+    },
+    "document_after_review": {
+      "head_revision_id": "a8f35486-8343-4a7e-95b9-40b07a7bad3a",
+      "state_version": 1
+    },
+    "browser_errors": [],
+    "observed_ws_routes": [
+      "/",
+      "/ws/{id}",
+      "/api/documents/{id}/stream",
+      "/ws/tasks/{id}",
+      "/",
+      "/api/documents/{id}/stream",
+      "/api/documents/{id}/stream",
+      "/ws/tasks/{id}",
+      "/ws/{id}"
+    ],
+    "browser_http": [
+      "GET /api/auth/config 200",
+      "GET /api/auth/me 200",
+      "GET /api/change-sets/{id} 200",
+      "GET /api/documents/{id} 200",
+      "GET /api/documents/{id}/engineering 200",
+      "GET /api/documents/{id}/revisions/{id} 200",
+      "GET /api/documents/{id}/scenes/{id} 200",
+      "GET /api/documents/{id}/scenes/{id} 202",
+      "GET /api/documents/{id}/scenes/{id}/meshes/34bb37083494dade010fed5fe65c6d94a94a8f292c98875ebaa852a308ab3a0c 200",
+      "GET /api/files/{id}/rectangular_block_60x40x8.stl 200",
+      "GET /api/history/panels/{id}/snapshots 200",
+      "GET /api/history/sessions 200",
+      "GET /api/history/snapshots/{id} 200",
+      "POST /api/auth/login/password 200",
+      "POST /api/change-sets/{id}/accept 200",
+      "POST /api/change-sets/{id}/commit 200",
+      "POST /api/documents/{id}/presence 204",
+      "POST /api/tasks/requirements/preview 200"
+    ],
+    "files_by_type": {
+      "capability-result": {
+        "sha256": "a055a89f10d18039704711c6eb46c54a5d85fcbfb080d40865b418410ff0d9ea",
+        "size": 1314,
+        "id": "aadb560e-d4d3-5a9a-a317-4c4b0515d5e9"
+      },
+      "dfm_report": {
+        "sha256": "f6a6a7a527a35cd0f4a9c355ceff86300b86bcb25f0eb72b35f42ee2b2f5a6cd",
+        "size": 621,
+        "id": "7e251c31-5d57-560e-bee9-76e55930a109"
+      },
+      "visual_render": {
+        "sha256": "2d739b057d91735396d320bb7d1d51d6e8d643da64fb0e2c0902771d19a0d2d5",
+        "size": 2132,
+        "id": "714c6753-d059-54de-af03-1aa45f492d5d"
+      },
+      "fcstd": {
+        "sha256": "84f5d59a982f60ca62cf597ec8da9db473675c766c6573daf486276cf56fa321",
+        "size": 9452,
+        "id": "3813606a-3e1f-550f-ba89-cb29da941b12"
+      },
+      "step": {
+        "sha256": "a7ba9e569ac3695bc5517cf384ba78cb9d285e22e65d01db51d6029f18e1ebdf",
+        "size": 6865,
+        "id": "e44f9d52-bbba-5e19-91fd-c4297253c7ad"
+      },
+      "stl": {
+        "sha256": "30c708d18892943424fc82b1406bd21515aa6d2969bf2b676047b5bc6f0a0a86",
+        "size": 3052,
+        "id": "bdb1d0ac-c0a7-52b4-b732-833d03aafef4"
+      },
+      "state": {
+        "sha256": "3d0896e149b4c9ab23e3df9f89c9ade5ee7c8ee05094c0366cff5c6df4f821aa",
+        "size": 24275,
+        "id": "515065bb-5ebd-59ae-8a31-e9d7dba3e76a"
+      }
+    },
+    "stl_measurement_mm": [
+      60.0,
+      40.0,
+      8.0
+    ],
+    "validations": [
+      {
+        "evidence_id": "8a6d08b8-ab90-4070-875c-434c2f24e754",
+        "evidence_hash": "71220fa07d7005da8c361cd410b4af6c9ca92fb250b7c67497d0072c7f6b9348",
+        "revision_id": "a8f35486-8343-4a7e-95b9-40b07a7bad3a",
+        "selected_for_revision": true,
+        "gate": "geometry",
+        "outcome": "passed",
+        "mode": "required"
+      },
+      {
+        "evidence_id": "43d083dc-400a-46cf-a341-de308156bace",
+        "evidence_hash": "1fbcde96f81f2db98d923aed9da76e575a26747f44eecedc17cf0e5408e3d226",
+        "revision_id": "a8f35486-8343-4a7e-95b9-40b07a7bad3a",
+        "selected_for_revision": true,
+        "gate": "visual",
+        "outcome": "passed",
+        "mode": "advisory"
+      },
+      {
+        "evidence_id": "b6d043d8-098f-4477-821a-17572f759b45",
+        "evidence_hash": "19b5ae57a04c44531ee55504456104a1ea5695ab5cb058500328b478e82f9022",
+        "revision_id": "a8f35486-8343-4a7e-95b9-40b07a7bad3a",
+        "selected_for_revision": true,
+        "gate": "dfm",
+        "outcome": "passed",
+        "mode": "advisory"
+      }
+    ],
+    "jobs": [
+      {
+        "operation": "agent_v2.requirements",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.decompose",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.generate_operations",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.execute_freecad",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.validate_geometry",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.render_visual",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.judge_visual",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.validate_dfm",
+        "status": "succeeded",
+        "generation": 1
+      }
+    ],
+    "provider_calls": [
+      {
+        "provider": "moonshot",
+        "model": "kimi-k2.7-code",
+        "status": "settled",
+        "attempt": 1,
+        "receipt_type": "object"
+      },
+      {
+        "provider": "moonshot",
+        "model": "kimi-k2.7-code",
+        "status": "settled",
+        "attempt": 1,
+        "receipt_type": "object"
+      },
+      {
+        "provider": "moonshot",
+        "model": "kimi-k2.7-code",
+        "status": "settled",
+        "attempt": 1,
+        "receipt_type": "object"
+      }
+    ],
+    "provider_receipt_fields": [
+      "finish_reason",
+      "model",
+      "provider",
+      "provider_response_id",
+      "request_hash",
+      "request_model",
+      "response_hash",
+      "tool_calls",
+      "usage"
+    ],
+    "ordered_event_count": 68,
+    "pg_revision": {
+      "base": "62e874ae-224d-45e9-b0a0-280b61d0369b",
+      "candidate": "a8f35486-8343-4a7e-95b9-40b07a7bad3a",
+      "state_version": 1,
+      "reviewed": true,
+      "parent_matches_base": true
+    },
+    "stored_objects": [
+      {
+        "kind": "fcstd",
+        "sha256": "84f5d59a982f60ca62cf597ec8da9db473675c766c6573daf486276cf56fa321",
+        "bytes": 9452,
+        "object_version": "f38d1efe-9137-4186-97b2-db9d7527a701"
+      },
+      {
+        "kind": "step",
+        "sha256": "a7ba9e569ac3695bc5517cf384ba78cb9d285e22e65d01db51d6029f18e1ebdf",
+        "bytes": 6865,
+        "object_version": "105c4285-70ec-4367-83b6-03b4e61c1a7a"
+      },
+      {
+        "kind": "stl",
+        "sha256": "30c708d18892943424fc82b1406bd21515aa6d2969bf2b676047b5bc6f0a0a86",
+        "bytes": 3052,
+        "object_version": "c5dadfe1-3199-4415-ade5-d9a06962c32f"
+      },
+      {
+        "kind": "state",
+        "sha256": "3d0896e149b4c9ab23e3df9f89c9ade5ee7c8ee05094c0366cff5c6df4f821aa",
+        "bytes": 24275,
+        "object_version": "975e8973-ccec-49b9-9d22-bf0139cedc89"
+      },
+      {
+        "kind": "capability-result",
+        "sha256": "a055a89f10d18039704711c6eb46c54a5d85fcbfb080d40865b418410ff0d9ea",
+        "bytes": 1314,
+        "object_version": "fcce8613-ca5e-4afc-b59e-37236e0e7e30"
+      },
+      {
+        "kind": "visual_render",
+        "sha256": "901716f3726d89d5c1380be08e4560df566236711317737370368ef58f9eab92",
+        "bytes": 2216,
+        "object_version": "2c23c612-1107-48e7-8a7e-83d033be26c7"
+      },
+      {
+        "kind": "visual_render",
+        "sha256": "69fa1b1880c215d5e6efcc5e10fec5c6bdbf5b2adbc5502bffcfabbca9d66a18",
+        "bytes": 2132,
+        "object_version": "9fcb9795-ec8c-41f1-84c4-03e89221f6b2"
+      },
+      {
+        "kind": "visual_render",
+        "sha256": "2d739b057d91735396d320bb7d1d51d6e8d643da64fb0e2c0902771d19a0d2d5",
+        "bytes": 2132,
+        "object_version": "44a06424-4b58-45e2-acfb-6c346fb1f873"
+      },
+      {
+        "kind": "visual_render",
+        "sha256": "a9baa52cad1ce5147fa293bb4de5fcc30dd1113fcc51a4b6fdc30645e8f9a1b3",
+        "bytes": 9292,
+        "object_version": "c13b099e-b9a8-4df2-9159-17cba1dde1f6"
+      },
+      {
+        "kind": "dfm_report",
+        "sha256": "f6a6a7a527a35cd0f4a9c355ceff86300b86bcb25f0eb72b35f42ee2b2f5a6cd",
+        "bytes": 621,
+        "object_version": "1bf08b61-5d00-4bf0-8cfc-ce34236d469f"
+      }
+    ],
+    "independent_reopen": {
+      "version": [
+        "1",
+        "1",
+        "4"
+      ],
+      "files": {
+        "fcstd": {
+          "valid": true,
+          "solids": 1,
+          "dimensions_mm": [
+            60.0,
+            40.0,
+            8.0
+          ],
+          "volume_mm3": 19200.0,
+          "feature_types": [
+            "PartDesign::Body",
+            "Sketcher::SketchObject",
+            "PartDesign::Pad"
+          ]
+        },
+        "step": {
+          "valid": true,
+          "solids": 1,
+          "dimensions_mm": [
+            60.0,
+            40.0,
+            8.0
+          ],
+          "volume_mm3": 19200.0,
+          "feature_types": []
+        }
+      },
+      "runtime_sources": {
+        "checked_files": 46,
+        "all_match": true,
+        "mismatches": []
+      }
+    },
+    "browser_verified_saved_after_reload": true
+  },
+  "chat": {
+    "workflow": "8426984d-3897-4475-bc19-eacfe3fbf446",
+    "document": "eb81c532-ca26-4db2-bade-24689ae27946",
+    "change": "bd7c7cbc-1616-4d78-b00d-884840f33325",
+    "candidate_revision": "29fb4b61-d774-438d-9a54-f84125982a57",
+    "basis": {
+      "schema_version": "requirement-basis.v1",
+      "target": "创建一块 60 × 40 × 8 mm 的矩形实心底板，长、宽、厚各允许 ±0.05 mm，体积为 19200 mm³，允许 ±0.1 mm³。只有一个实体，无孔无槽。交付可编辑的 FreeCAD、STEP 和 STL 文件。",
+      "purpose": "",
+      "design_scope": "geometry",
+      "source_kind": "user_specification",
+      "source_reference": "用户指定的设计尺寸",
+      "dimensions": "用户指定验收依据：长 60 mm、宽 40 mm、厚 8 mm，长宽厚各允许 ±0.05 mm；体积 19200 mm³，允许 ±0.1 mm³；实体数为 1，无孔无槽。",
+      "fit_notes": "",
+      "concept_acknowledged": false
+    },
+    "operation_intent": "generate",
+    "manufacturing_profile": {
+      "process": "generic",
+      "material": "Generic",
+      "nozzle_diameter_mm": null,
+      "layer_height_mm": null,
+      "build_volume_mm": [
+        220,
+        220,
+        250
+      ]
+    },
+    "submission_count": 1,
+    "status": "succeeded",
+    "document_before_review": {
+      "head_revision_id": "2bd033b4-a28a-49d9-9f6a-a36a2144f7fa",
+      "state_version": 0
+    },
+    "document_after_review": {
+      "head_revision_id": "29fb4b61-d774-438d-9a54-f84125982a57",
+      "state_version": 1
+    },
+    "browser_errors": [],
+    "observed_ws_routes": [
+      "/",
+      "/ws/{id}",
+      "/api/documents/{id}/stream",
+      "/ws/tasks/{id}",
+      "/",
+      "/api/documents/{id}/stream",
+      "/api/documents/{id}/stream",
+      "/ws/tasks/{id}",
+      "/ws/{id}"
+    ],
+    "browser_http": [
+      "GET /api/auth/config 200",
+      "GET /api/auth/me 200",
+      "GET /api/change-sets/{id} 200",
+      "GET /api/documents/{id} 200",
+      "GET /api/documents/{id}/engineering 200",
+      "GET /api/documents/{id}/revisions/{id} 200",
+      "GET /api/documents/{id}/scenes/{id} 200",
+      "GET /api/documents/{id}/scenes/{id} 202",
+      "GET /api/documents/{id}/scenes/{id}/meshes/0079a9608780994405052edb4bb17bdc802a204df2ac0894016b3bc8712daff0 200",
+      "GET /api/files/{id}/base_plate.stl 200",
+      "GET /api/history/panels/{id}/snapshots 200",
+      "GET /api/history/sessions 200",
+      "GET /api/history/snapshots/{id} 200",
+      "POST /api/auth/login/password 200",
+      "POST /api/change-sets/{id}/accept 200",
+      "POST /api/change-sets/{id}/commit 200",
+      "POST /api/documents/{id}/presence 204",
+      "POST /api/tasks/requirements/preview 200"
+    ],
+    "files_by_type": {
+      "fcstd": {
+        "sha256": "ed5aaaf7ddb3f53305721699e80b2f903078e755c4cd3126b8fe89bc8b2d0205",
+        "size": 9477,
+        "id": "325fb46d-d3d2-54d4-adf7-6d46b7ee8a27"
+      },
+      "step": {
+        "sha256": "5177814e3d0b3bb3899c7f596ce8f3549c2a3c9c8bd05a59c19839d9c4557d66",
+        "size": 6909,
+        "id": "f02b3a29-9e8c-5e94-ad72-7d85be5377e0"
+      },
+      "stl": {
+        "sha256": "10b3796875f7e4d487f3b33ad29024c2aa84d50e91c2a7a7a19f20a5fcf94100",
+        "size": 3052,
+        "id": "3028cb43-7a7c-5120-ab46-f592efa0eef2"
+      },
+      "capability-result": {
+        "sha256": "5e7381f927fa2729ce8c999ab32902696efa3fca480175ecce4cfc2e28004268",
+        "size": 1269,
+        "id": "b7a11f39-3c56-5245-a459-7b3fbec92dc1"
+      },
+      "dfm_report": {
+        "sha256": "f6a6a7a527a35cd0f4a9c355ceff86300b86bcb25f0eb72b35f42ee2b2f5a6cd",
+        "size": 621,
+        "id": "57d6f067-fe17-5c8c-a016-3b22bc61aad2"
+      },
+      "visual_render": {
+        "sha256": "2d739b057d91735396d320bb7d1d51d6e8d643da64fb0e2c0902771d19a0d2d5",
+        "size": 2132,
+        "id": "fe576da6-24b0-50c5-abdc-ce917b1e6756"
+      },
+      "state": {
+        "sha256": "41c0a85e38625e68f0a7ed8dcb53c9e5d7b8e59757d0fdf2852dd8ecfac1e832",
+        "size": 25052,
+        "id": "c8743da1-dae2-5899-9776-bdf468dc3a8e"
+      }
+    },
+    "stl_measurement_mm": [
+      60.0,
+      40.0,
+      8.0
+    ],
+    "validations": [
+      {
+        "evidence_id": "cdd41821-eed4-4fbf-be25-8edd02566906",
+        "evidence_hash": "b31a63ff2cc91a456a9564ddf9c6717981174cedea171c96d22a43af960954b1",
+        "revision_id": "29fb4b61-d774-438d-9a54-f84125982a57",
+        "selected_for_revision": true,
+        "gate": "geometry",
+        "outcome": "passed",
+        "mode": "required"
+      },
+      {
+        "evidence_id": "8994293a-7b16-4484-a376-09b59ea16eeb",
+        "evidence_hash": "a98adc7f1a467d6c9e574ecdff003ce83cd86256d4b7e992dfea7d5697496d09",
+        "revision_id": "29fb4b61-d774-438d-9a54-f84125982a57",
+        "selected_for_revision": true,
+        "gate": "visual",
+        "outcome": "passed",
+        "mode": "advisory"
+      },
+      {
+        "evidence_id": "5f15dd06-c81b-44a4-8ee6-44e62b549777",
+        "evidence_hash": "286c4f63de521fa91d24cfa5d9094b6994114e799a059f3e78ed3f961fe43c0d",
+        "revision_id": "29fb4b61-d774-438d-9a54-f84125982a57",
+        "selected_for_revision": true,
+        "gate": "dfm",
+        "outcome": "passed",
+        "mode": "advisory"
+      }
+    ],
+    "jobs": [
+      {
+        "operation": "agent_v2.requirements",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.decompose",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.generate_operations",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.execute_freecad",
+        "status": "failed",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.repair_operations",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.execute_freecad",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.validate_geometry",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.render_visual",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.judge_visual",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.validate_dfm",
+        "status": "succeeded",
+        "generation": 1
+      }
+    ],
+    "provider_calls": [
+      {
+        "provider": "moonshot",
+        "model": "kimi-k2.7-code",
+        "status": "settled",
+        "attempt": 1,
+        "receipt_type": "object"
+      },
+      {
+        "provider": "moonshot",
+        "model": "kimi-k2.7-code",
+        "status": "settled",
+        "attempt": 1,
+        "receipt_type": "object"
+      },
+      {
+        "provider": "moonshot",
+        "model": "kimi-k2.7-code",
+        "status": "settled",
+        "attempt": 1,
+        "receipt_type": "object"
+      },
+      {
+        "provider": "moonshot",
+        "model": "kimi-k2.7-code",
+        "status": "settled",
+        "attempt": 1,
+        "receipt_type": "object"
+      },
+      {
+        "provider": "moonshot",
+        "model": "kimi-k2.7-code",
+        "status": "settled",
+        "attempt": 1,
+        "receipt_type": "object"
+      }
+    ],
+    "provider_receipt_fields": [
+      "finish_reason",
+      "model",
+      "provider",
+      "provider_response_id",
+      "request_hash",
+      "request_model",
+      "response_hash",
+      "tool_calls",
+      "usage"
+    ],
+    "ordered_event_count": 81,
+    "pg_revision": {
+      "base": "2bd033b4-a28a-49d9-9f6a-a36a2144f7fa",
+      "candidate": "29fb4b61-d774-438d-9a54-f84125982a57",
+      "state_version": 1,
+      "reviewed": true,
+      "parent_matches_base": true
+    },
+    "stored_objects": [
+      {
+        "kind": "fcstd",
+        "sha256": "ed5aaaf7ddb3f53305721699e80b2f903078e755c4cd3126b8fe89bc8b2d0205",
+        "bytes": 9477,
+        "object_version": "3499b052-b6f7-4b48-aec3-4009066ee3e4"
+      },
+      {
+        "kind": "step",
+        "sha256": "5177814e3d0b3bb3899c7f596ce8f3549c2a3c9c8bd05a59c19839d9c4557d66",
+        "bytes": 6909,
+        "object_version": "a7e66ef4-7640-40af-9e35-deb8e60ee088"
+      },
+      {
+        "kind": "stl",
+        "sha256": "10b3796875f7e4d487f3b33ad29024c2aa84d50e91c2a7a7a19f20a5fcf94100",
+        "bytes": 3052,
+        "object_version": "ccb6837a-0d03-40f5-85bb-0c38c683d21b"
+      },
+      {
+        "kind": "state",
+        "sha256": "41c0a85e38625e68f0a7ed8dcb53c9e5d7b8e59757d0fdf2852dd8ecfac1e832",
+        "bytes": 25052,
+        "object_version": "5bb2f23b-c6a0-4043-86fe-dd07641c491a"
+      },
+      {
+        "kind": "capability-result",
+        "sha256": "5e7381f927fa2729ce8c999ab32902696efa3fca480175ecce4cfc2e28004268",
+        "bytes": 1269,
+        "object_version": "e8a1a4f9-2680-46a7-897e-54e4032c2f2b"
+      },
+      {
+        "kind": "visual_render",
+        "sha256": "901716f3726d89d5c1380be08e4560df566236711317737370368ef58f9eab92",
+        "bytes": 2216,
+        "object_version": "cf92e1a1-d45f-4344-8748-34760892212f"
+      },
+      {
+        "kind": "visual_render",
+        "sha256": "69fa1b1880c215d5e6efcc5e10fec5c6bdbf5b2adbc5502bffcfabbca9d66a18",
+        "bytes": 2132,
+        "object_version": "f3dd90c4-20c8-4347-95cd-44c3120013f2"
+      },
+      {
+        "kind": "visual_render",
+        "sha256": "2d739b057d91735396d320bb7d1d51d6e8d643da64fb0e2c0902771d19a0d2d5",
+        "bytes": 2132,
+        "object_version": "b9f6f221-169e-4b69-9009-3151fdd9bde5"
+      },
+      {
+        "kind": "visual_render",
+        "sha256": "a9baa52cad1ce5147fa293bb4de5fcc30dd1113fcc51a4b6fdc30645e8f9a1b3",
+        "bytes": 9292,
+        "object_version": "9cea1da4-2df0-4206-9e52-f41ad9e91a65"
+      },
+      {
+        "kind": "dfm_report",
+        "sha256": "f6a6a7a527a35cd0f4a9c355ceff86300b86bcb25f0eb72b35f42ee2b2f5a6cd",
+        "bytes": 621,
+        "object_version": "dc8806b0-1e1c-4d49-bf08-586ca157ddbf"
+      }
+    ],
+    "independent_reopen": {
+      "version": [
+        "1",
+        "1",
+        "4"
+      ],
+      "files": {
+        "fcstd": {
+          "valid": true,
+          "solids": 1,
+          "dimensions_mm": [
+            60.0,
+            40.0,
+            8.0
+          ],
+          "volume_mm3": 19200.0,
+          "feature_types": [
+            "PartDesign::Body",
+            "Sketcher::SketchObject",
+            "PartDesign::Pad"
+          ]
+        },
+        "step": {
+          "valid": true,
+          "solids": 1,
+          "dimensions_mm": [
+            60.0,
+            40.0,
+            8.0
+          ],
+          "volume_mm3": 19200.0,
+          "feature_types": []
+        }
+      },
+      "runtime_sources": {
+        "checked_files": 46,
+        "all_match": true,
+        "mismatches": []
+      }
+    },
+    "browser_verified_saved_after_reload": true
+  },
+  "default_retry_chat": {
+    "workflow": "5202eede-9e19-44d9-a0c8-314bfe75846c",
+    "document": "63bdd395-f2cd-417d-821f-02696347ad2e",
+    "change": "3a82f39a-4c17-48c3-8b93-88d3ee9f8df7",
+    "candidate_revision": "7d5e2ff1-3f01-484c-9c2d-128d367b325e",
+    "basis": {
+      "schema_version": "requirement-basis.v1",
+      "target": "创建一块 60 × 40 × 8 mm 的矩形实心底板，长、宽、厚各允许 ±0.05 mm，体积为 19200 mm³，允许 ±0.1 mm³。只有一个实体，无孔无槽。交付可编辑的 FreeCAD、STEP 和 STL 文件。",
+      "purpose": "",
+      "design_scope": "geometry",
+      "source_kind": "user_specification",
+      "source_reference": "用户指定的设计尺寸",
+      "dimensions": "用户指定验收依据：长 60 mm、宽 40 mm、厚 8 mm，长宽厚各允许 ±0.05 mm；体积 19200 mm³，允许 ±0.1 mm³；实体数为 1，无孔无槽。",
+      "fit_notes": "",
+      "concept_acknowledged": false
+    },
+    "operation_intent": "generate",
+    "manufacturing_profile": {
+      "process": "generic",
+      "material": "Generic",
+      "nozzle_diameter_mm": null,
+      "layer_height_mm": null,
+      "build_volume_mm": [
+        220,
+        220,
+        250
+      ]
+    },
+    "submission_count": 1,
+    "status": "succeeded",
+    "document_before_review": {
+      "head_revision_id": "5fd24f24-a7dd-4d41-b133-8b5a0f55d14a",
+      "state_version": 0
+    },
+    "document_after_review": {
+      "head_revision_id": "7d5e2ff1-3f01-484c-9c2d-128d367b325e",
+      "state_version": 1
+    },
+    "browser_errors": [],
+    "observed_ws_routes": [
+      "/",
+      "/ws/{id}",
+      "/api/documents/{id}/stream",
+      "/ws/tasks/{id}",
+      "/",
+      "/api/documents/{id}/stream",
+      "/api/documents/{id}/stream",
+      "/ws/tasks/{id}",
+      "/ws/{id}"
+    ],
+    "browser_http": [
+      "GET /api/auth/config 200",
+      "GET /api/auth/me 200",
+      "GET /api/change-sets/{id} 200",
+      "GET /api/documents/{id} 200",
+      "GET /api/documents/{id}/engineering 200",
+      "GET /api/documents/{id}/revisions/{id} 200",
+      "GET /api/documents/{id}/scenes/{id} 200",
+      "GET /api/documents/{id}/scenes/{id} 202",
+      "GET /api/documents/{id}/scenes/{id}/meshes/0079a9608780994405052edb4bb17bdc802a204df2ac0894016b3bc8712daff0 200",
+      "GET /api/files/{id}/base_plate.stl 200",
+      "GET /api/history/panels/{id}/snapshots 200",
+      "GET /api/history/sessions 200",
+      "GET /api/history/snapshots/{id} 200",
+      "POST /api/auth/login/password 200",
+      "POST /api/change-sets/{id}/accept 200",
+      "POST /api/change-sets/{id}/commit 200",
+      "POST /api/documents/{id}/presence 204",
+      "POST /api/tasks/requirements/preview 200"
+    ],
+    "files_by_type": {
+      "fcstd": {
+        "sha256": "b1e1fceac6b6adf9df0a37e56a1194bb3814522e726d595d87ca11c5a12de9e5",
+        "size": 9479,
+        "id": "18102789-4d4b-52e4-9776-68e1389ce82e"
+      },
+      "step": {
+        "sha256": "09e0e04581e6dc0f9bac5315f3c9db11f9debabd26efedfb5a9a16be2fde8f1a",
+        "size": 6909,
+        "id": "7fc020b0-defb-531e-86f9-1964f9091a36"
+      },
+      "stl": {
+        "sha256": "10b3796875f7e4d487f3b33ad29024c2aa84d50e91c2a7a7a19f20a5fcf94100",
+        "size": 3052,
+        "id": "02d7bd56-9882-5a73-bb8b-cb569b201466"
+      },
+      "capability-result": {
+        "sha256": "b8ffe8f0ae36d4672c788d5b7dac64021aa3bf9c13a34f023189d22072d313f6",
+        "size": 1265,
+        "id": "fc12a124-eaa5-5476-8205-e196c978ccc1"
+      },
+      "dfm_report": {
+        "sha256": "b7b721529ba7c868c66afc18eb49b9cf43be04be9b72a99ec1d1f28cb9b5fde6",
+        "size": 621,
+        "id": "efeb4a4d-ccd5-5901-86b8-73e3aab5d3d6"
+      },
+      "visual_render": {
+        "sha256": "2d739b057d91735396d320bb7d1d51d6e8d643da64fb0e2c0902771d19a0d2d5",
+        "size": 2132,
+        "id": "bd2d40f0-bef3-5705-a46b-0faa6ad16646"
+      },
+      "state": {
+        "sha256": "dc868e23d55fb275e5ad29fb3cfab090f5c8dd38dda75111353e2765cac09555",
+        "size": 25031,
+        "id": "afd590e9-9acd-5d92-9017-270695a4c77a"
+      }
+    },
+    "stl_measurement_mm": [
+      60.0,
+      40.0,
+      8.0
+    ],
+    "validations": [
+      {
+        "evidence_id": "f277588a-edb8-431e-b556-a6e5d99e0c99",
+        "evidence_hash": "6fdcc2f59f209d84f4744a66353719f882e164c264d7e2ef4c649aa3317d0c24",
+        "revision_id": "7d5e2ff1-3f01-484c-9c2d-128d367b325e",
+        "selected_for_revision": true,
+        "gate": "geometry",
+        "outcome": "passed",
+        "mode": "required"
+      },
+      {
+        "evidence_id": "336c2efa-7e55-418c-bc30-3a6924d3b2cd",
+        "evidence_hash": "55886367cdca65aaff6b8b58a245a7da6795f8aa171167a34101d51ab94857f0",
+        "revision_id": "7d5e2ff1-3f01-484c-9c2d-128d367b325e",
+        "selected_for_revision": true,
+        "gate": "visual",
+        "outcome": "passed",
+        "mode": "advisory"
+      },
+      {
+        "evidence_id": "45333b8e-94e8-4b66-aa46-08c9678e1be1",
+        "evidence_hash": "affc3a04d5b8f741cfe1e34cd4c5ae5bad793d8c163c3e9d56a046bd2c8e021f",
+        "revision_id": "7d5e2ff1-3f01-484c-9c2d-128d367b325e",
+        "selected_for_revision": true,
+        "gate": "dfm",
+        "outcome": "passed",
+        "mode": "advisory"
+      }
+    ],
+    "jobs": [
+      {
+        "operation": "agent_v2.requirements",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.decompose",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.generate_operations",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.execute_freecad",
+        "status": "failed",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.repair_operations",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.execute_freecad",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.validate_geometry",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.render_visual",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.judge_visual",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.validate_dfm",
+        "status": "succeeded",
+        "generation": 1
+      }
+    ],
+    "provider_calls": [
+      {
+        "provider": "moonshot",
+        "model": "kimi-k2.7-code",
+        "status": "settled",
+        "attempt": 1,
+        "receipt_type": "object"
+      },
+      {
+        "provider": "moonshot",
+        "model": "kimi-k2.7-code",
+        "status": "settled",
+        "attempt": 1,
+        "receipt_type": "object"
+      },
+      {
+        "provider": "moonshot",
+        "model": "kimi-k2.7-code",
+        "status": "released_unsent",
+        "attempt": 1,
+        "receipt_type": null
+      },
+      {
+        "provider": "moonshot",
+        "model": "kimi-k2.7-code",
+        "status": "settled",
+        "attempt": 2,
+        "receipt_type": "object"
+      },
+      {
+        "provider": "moonshot",
+        "model": "kimi-k2.7-code",
+        "status": "settled",
+        "attempt": 1,
+        "receipt_type": "object"
+      },
+      {
+        "provider": "moonshot",
+        "model": "kimi-k2.7-code",
+        "status": "released_unsent",
+        "attempt": 1,
+        "receipt_type": null
+      },
+      {
+        "provider": "moonshot",
+        "model": "kimi-k2.7-code",
+        "status": "settled",
+        "attempt": 2,
+        "receipt_type": "object"
+      }
+    ],
+    "provider_receipt_fields": [
+      "finish_reason",
+      "model",
+      "provider",
+      "provider_response_id",
+      "request_hash",
+      "request_model",
+      "response_hash",
+      "tool_calls",
+      "usage"
+    ],
+    "ordered_event_count": 81,
+    "pg_revision": {
+      "base": "5fd24f24-a7dd-4d41-b133-8b5a0f55d14a",
+      "candidate": "7d5e2ff1-3f01-484c-9c2d-128d367b325e",
+      "state_version": 1,
+      "reviewed": true,
+      "parent_matches_base": true
+    },
+    "stored_objects": [
+      {
+        "kind": "fcstd",
+        "sha256": "b1e1fceac6b6adf9df0a37e56a1194bb3814522e726d595d87ca11c5a12de9e5",
+        "bytes": 9479,
+        "object_version": "2d84173e-5c57-4932-b044-ebf952394e2b"
+      },
+      {
+        "kind": "step",
+        "sha256": "09e0e04581e6dc0f9bac5315f3c9db11f9debabd26efedfb5a9a16be2fde8f1a",
+        "bytes": 6909,
+        "object_version": "e242c067-b110-486d-8716-64f0cc461366"
+      },
+      {
+        "kind": "stl",
+        "sha256": "10b3796875f7e4d487f3b33ad29024c2aa84d50e91c2a7a7a19f20a5fcf94100",
+        "bytes": 3052,
+        "object_version": "62256b08-1535-48e8-a107-cacff160dac9"
+      },
+      {
+        "kind": "state",
+        "sha256": "dc868e23d55fb275e5ad29fb3cfab090f5c8dd38dda75111353e2765cac09555",
+        "bytes": 25031,
+        "object_version": "2355cb8e-1298-4cea-8362-f596bca75ebb"
+      },
+      {
+        "kind": "capability-result",
+        "sha256": "b8ffe8f0ae36d4672c788d5b7dac64021aa3bf9c13a34f023189d22072d313f6",
+        "bytes": 1265,
+        "object_version": "327f24eb-7cca-4ea3-9195-98b6e8a59ba1"
+      },
+      {
+        "kind": "visual_render",
+        "sha256": "901716f3726d89d5c1380be08e4560df566236711317737370368ef58f9eab92",
+        "bytes": 2216,
+        "object_version": "46b03e07-c283-4a79-b53e-8d0e54d23393"
+      },
+      {
+        "kind": "visual_render",
+        "sha256": "69fa1b1880c215d5e6efcc5e10fec5c6bdbf5b2adbc5502bffcfabbca9d66a18",
+        "bytes": 2132,
+        "object_version": "8f7eae66-caba-44f9-84db-2d6fc7816fc8"
+      },
+      {
+        "kind": "visual_render",
+        "sha256": "2d739b057d91735396d320bb7d1d51d6e8d643da64fb0e2c0902771d19a0d2d5",
+        "bytes": 2132,
+        "object_version": "4e88108e-d773-49b5-bf1c-079ee8c5dd2a"
+      },
+      {
+        "kind": "visual_render",
+        "sha256": "a9baa52cad1ce5147fa293bb4de5fcc30dd1113fcc51a4b6fdc30645e8f9a1b3",
+        "bytes": 9292,
+        "object_version": "b846257f-3f6d-4568-a65e-f0ad1ee0f2cb"
+      },
+      {
+        "kind": "dfm_report",
+        "sha256": "b7b721529ba7c868c66afc18eb49b9cf43be04be9b72a99ec1d1f28cb9b5fde6",
+        "bytes": 621,
+        "object_version": "2d96d63d-bebf-4135-90a5-519ad8152f67"
+      }
+    ],
+    "independent_reopen": {
+      "version": [
+        "1",
+        "1",
+        "4"
+      ],
+      "files": {
+        "fcstd": {
+          "valid": true,
+          "solids": 1,
+          "dimensions_mm": [
+            60.0,
+            40.0,
+            8.0
+          ],
+          "volume_mm3": 19200.0,
+          "feature_types": [
+            "PartDesign::Body",
+            "Sketcher::SketchObject",
+            "PartDesign::Pad"
+          ]
+        },
+        "step": {
+          "valid": true,
+          "solids": 1,
+          "dimensions_mm": [
+            60.0,
+            40.0,
+            8.0
+          ],
+          "volume_mm3": 19200.0,
+          "feature_types": []
+        }
+      },
+      "runtime_sources": {
+        "checked_files": 46,
+        "all_match": true,
+        "mismatches": []
+      }
+    },
+    "browser_verified_saved_after_reload": true
+  }
+}

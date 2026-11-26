@@ -1,0 +1,1305 @@
+{
+  "baseline_native": {
+    "passed": true,
+    "fixture": {
+      "document_id": "5186820e-cad5-4be9-b476-c0138fb22bfd",
+      "project_id": "cbb85db1-8591-57db-9048-1a1bc14d3c82",
+      "tenant_id": "87521e53-fe0f-5d2c-81c6-9c368e4746f1",
+      "base_revision_id": "197934d2-dbfd-4685-8678-055cb82b3c2a",
+      "workflow_id": "7fbce796-0c15-4eb2-874e-45697adc7ebb",
+      "change_set_id": "6c1b7700-029f-4a78-af14-bdd39507ab34"
+    },
+    "saved_revision": "25090004-add8-4335-a01a-8a2eae0f5c0a",
+    "real_kernel": true,
+    "real_auth": true,
+    "same_canvas": true,
+    "page_errors": []
+  },
+  "chat_native": {
+    "passed": true,
+    "fixture": {
+      "document_id": "4e0894f7-1d88-4436-bcb6-40fe34c5aaf1",
+      "project_id": "382845a5-98f1-502f-aa7a-766f68c34fe3",
+      "tenant_id": "87521e53-fe0f-5d2c-81c6-9c368e4746f1",
+      "base_revision_id": "62827efc-1fcf-4587-a18d-ce488b9d36c1",
+      "workflow_id": "8655cb52-a5db-49d6-902b-a0f307a0cb10",
+      "change_set_id": "fc66f95d-0f91-4da3-86d7-02997ae2280f"
+    },
+    "saved_revision": "85be71a8-95e7-45f1-a1bf-b7ee0ea2ecfc",
+    "real_kernel": true,
+    "real_auth": true,
+    "same_canvas": true,
+    "review_draft_without_write": true,
+    "page_errors": []
+  },
+  "before_parity": {
+    "main": {
+      "requirement_summary": true,
+      "mechanical_navigation": true,
+      "canvas_expanded": true,
+      "canvas_drawer": true,
+      "canvas_back_in_conversation": true
+    },
+    "chat": {
+      "requirement_summary": false,
+      "mechanical_navigation": false,
+      "canvas_expanded": false,
+      "canvas_drawer": false,
+      "canvas_back_in_conversation": false
+    }
+  },
+  "after_parity": {
+    "main": {
+      "requirement_summary": true,
+      "mechanical_navigation": true,
+      "canvas_expanded": true,
+      "canvas_drawer": true,
+      "canvas_back_in_conversation": true
+    },
+    "chat": {
+      "requirement_summary": true,
+      "mechanical_navigation": true,
+      "canvas_expanded": true,
+      "canvas_drawer": true,
+      "canvas_back_in_conversation": true
+    }
+  },
+  "before_threads": {
+    "base": {
+      "first_thread_accessible": true,
+      "rename": true,
+      "create": true,
+      "switch": true,
+      "close": true,
+      "refresh": true
+    },
+    "new": {
+      "first_thread_accessible": false
+    }
+  },
+  "after_threads": {
+    "base": {
+      "first_thread_accessible": true,
+      "rename": true,
+      "create": true,
+      "switch": true,
+      "close": true,
+      "refresh": true
+    },
+    "new": {
+      "first_thread_accessible": true,
+      "rename": true,
+      "create": true,
+      "switch": true,
+      "close": true,
+      "refresh": true
+    }
+  },
+  "manual_parameters": {
+    "fixture": {
+      "document_id": "e87cb478-6881-408c-892c-ca535ddb0f09",
+      "project_id": "fb7e390e-f21c-544d-91dc-b92411d10461",
+      "tenant_id": "87521e53-fe0f-5d2c-81c6-9c368e4746f1",
+      "base_revision_id": "bc13e780-64dc-40c4-a63f-aaa8e27f6359",
+      "workflow_id": "f3e1eb94-a1f0-45c6-908b-edd03dc30ca6",
+      "change_set_id": "36e1b996-a668-448f-bd46-9c3a126f800f",
+      "session_id": "a52d4ea0-cc60-4367-afe0-22e7542b5f84",
+      "panel_id": "527bfd63-fc99-4cf4-a718-3e83195732e8",
+      "title": "五状态原生验收 a52d4ea0"
+    },
+    "manual_workflow_id": "13c31656-ac62-403c-8592-681d1e8d6347",
+    "original_diameter_mm": 6,
+    "final_diameter_mm": 6.5,
+    "unknown_acceptance_same_request": false,
+    "panel_scope_and_draft_guard": false,
+    "unchanged_other_parameters": true,
+    "draft_and_selection_survive_collapse": true,
+    "canvas_not_remounted": true,
+    "final_generation": 2,
+    "artifact_sha256": {
+      "fcstd": "2dbaf1963b7519fa1277a135c6180f7e893af5919c0455672da614de751cf8f8",
+      "state": "9dbc980c6c8c1b0362292201b37e3ae90f441694f142d3c957a32406b156b22b",
+      "mesh": "9759efc3b9d89ab748751080119ab6f17630ee8176f85aa3df735c0fdd433065"
+    },
+    "status": "passed",
+    "mode": "candidate",
+    "page_errors": []
+  },
+  "layout": {
+    "status": "passed",
+    "widths": [
+      {
+        "width": 1440,
+        "model": {
+          "x": 252,
+          "y": 48,
+          "width": 843,
+          "height": 852
+        }
+      },
+      {
+        "width": 1181,
+        "model": {
+          "x": 0,
+          "y": 48,
+          "width": 836,
+          "height": 852
+        }
+      },
+      {
+        "width": 1024,
+        "model": {
+          "x": 0,
+          "y": 48,
+          "width": 679,
+          "height": 852
+        }
+      },
+      {
+        "width": 900,
+        "model": {
+          "x": 0,
+          "y": 48,
+          "width": 555,
+          "height": 852
+        }
+      },
+      {
+        "width": 760,
+        "model": {
+          "x": 0,
+          "y": 52,
+          "width": 760,
+          "height": 848
+        }
+      },
+      {
+        "width": 390,
+        "model": {
+          "x": 0,
+          "y": 52,
+          "width": 390,
+          "height": 848
+        }
+      },
+      {
+        "width": 320,
+        "model": {
+          "x": 0,
+          "y": 52,
+          "width": 320,
+          "height": 848
+        }
+      }
+    ],
+    "mesh_tree_and_agent_selection": "Body",
+    "same_canvas": true,
+    "camera_pixels_unchanged": true,
+    "page_errors": []
+  },
+  "product": {
+    "passed": true,
+    "cases": [
+      "concurrent_imports_one_workflow_and_one_source_version",
+      "real_curved_step_import_geometry_gate_commit_and_persisted_precision_evidence",
+      "excessive_step_precision_rejected_without_candidate_or_head_change",
+      "real_fcstd_step_import_replay_owned_receipt_and_permissions",
+      "candidate_a_to_b_native_source_saved_head_cas_idempotency_and_stale_rejection",
+      "native_volume_async_dfm_frozen_profile_and_no_model_mutation",
+      "real_failed_sketch_stopped_takeover_lease_guard_native_recovery_commit_and_stale_rejection",
+      "comment_quota_preserves_draft_and_retries_once",
+      "document_token_rotation_comment_retry_and_release_download",
+      "actual_auth_error_padding_control_sizes_and_saved_reopen",
+      "responsive_resize_source_lod_navigation_hit_targets",
+      "scoped_undo_redo_draft_focus_trap_and_kernel_selected_state",
+      "actual_async_check_reload_and_readonly_graphical_revision_comparison",
+      "all_same_process_rule_ids_and_custom_threshold_visible",
+      "direct_settings_dfm_accessible_label_nested_modal_and_real_failure_retry",
+      "native_chrome_english_identity_and_precision",
+      "actual_cad_svg_projection_zoom_and_fit_resize",
+      "shared_document_live_resize_and_inspector_visible"
+    ],
+    "paid_provider_calls": 0,
+    "source_revision": "97d95660-7b60-46c1-a5eb-addbfa1447da",
+    "source_fcstd_sha256": "a34458ccec50a34061704846c45b0b6ff30362e09da78f87765c09848e9fed34",
+    "real_kernel": true,
+    "real_auth": true,
+    "network_substitution": false
+  },
+  "billing": {
+    "passed": true,
+    "real_auth": true,
+    "real_postgres": true,
+    "persisted_reload": true,
+    "separate_accounts": true,
+    "token_refresh_reconnects": true,
+    "page_errors": []
+  },
+  "cancel": {
+    "main": {
+      "workflow": "a342aac9-d1af-45ea-91f5-75c46a8811d8",
+      "status": "cancelled",
+      "artifacts": 0,
+      "candidate": null,
+      "basis": {
+        "target": "生成一个与 60 mm × 40 mm 安装面配合的 8 mm 厚垫板。",
+        "purpose": "",
+        "fit_notes": "保留外缘 0.5 mm 装配间隙，无孔。",
+        "dimensions": "长度 60 mm，宽度 40 mm，厚度 8 mm",
+        "source_kind": "user_measurement",
+        "design_scope": "physical_fit",
+        "schema_version": "requirement-basis.v1",
+        "source_reference": "测试人员记录的安装面长宽与板厚",
+        "concept_acknowledged": false
+      },
+      "cancel_persisted": true
+    },
+    "chat": {
+      "workflow": "b1ef2827-b6c4-47b2-b5c1-98d3d7662872",
+      "status": "cancelled",
+      "artifacts": 0,
+      "candidate": null,
+      "basis": {
+        "target": "生成一个与 60 mm × 40 mm 安装面配合的 8 mm 厚垫板。",
+        "purpose": "",
+        "fit_notes": "保留外缘 0.5 mm 装配间隙，无孔。",
+        "dimensions": "长度 60 mm，宽度 40 mm，厚度 8 mm",
+        "source_kind": "user_measurement",
+        "design_scope": "physical_fit",
+        "schema_version": "requirement-basis.v1",
+        "source_reference": "测试人员记录的安装面长宽与板厚",
+        "concept_acknowledged": false
+      },
+      "cancel_persisted": true
+    }
+  },
+  "imports": [
+    {
+      "layout": "base-r2",
+      "source_type": "fcstd",
+      "source_sha256": "c00ddd7872c9b0b7d0e3d419bea2a691c7779ca768b86033d0c63a832027236a",
+      "browser_errors": [],
+      "workflow": "233d693b-a1b0-4200-8df1-eb488f4bf691",
+      "change": "e24013a1-5fec-4be7-a654-55cf04ad5253",
+      "before": "pending_review",
+      "candidate": "3f139570-d29a-448c-8245-4b4a872ec399",
+      "passed": true,
+      "after": "committed",
+      "generation_before": 0,
+      "generation_after": 1
+    },
+    {
+      "layout": "base-r2",
+      "source_type": "step",
+      "source_sha256": "e95b54ce9c8ed0620dd7eab5261f336204bb24c2b5874e9d3bcf61201631b0a6",
+      "browser_errors": [],
+      "workflow": "65a106c1-84ff-4cc9-b1f9-4fe10701ac58",
+      "change": "cd8902c1-b7a5-48b8-bbe0-f541c97a76c4",
+      "before": "pending_review",
+      "candidate": "97d1a66b-5a5a-4bef-a7a9-c7561167c2af",
+      "passed": true,
+      "after": "changes_requested",
+      "generation_before": 0,
+      "generation_after": 0
+    },
+    {
+      "layout": "new",
+      "source_type": "fcstd",
+      "source_sha256": "c00ddd7872c9b0b7d0e3d419bea2a691c7779ca768b86033d0c63a832027236a",
+      "browser_errors": [],
+      "workflow": "d9f899b8-8729-4092-9988-a064db881501",
+      "change": "295536e9-8e0c-44bc-b12c-a1c06ae1d0fe",
+      "before": "pending_review",
+      "candidate": "9bb4955c-ba5a-42c3-acbf-db3485057d0f",
+      "draft_without_write": true,
+      "passed": true,
+      "after": "committed",
+      "generation_before": 0,
+      "generation_after": 1
+    },
+    {
+      "layout": "new",
+      "source_type": "step",
+      "source_sha256": "e95b54ce9c8ed0620dd7eab5261f336204bb24c2b5874e9d3bcf61201631b0a6",
+      "browser_errors": [],
+      "workflow": "315d5ac9-fef9-4da2-ac44-f69f03d2669b",
+      "change": "4341af83-bf5b-4206-8d23-ec0cfad267c1",
+      "before": "pending_review",
+      "candidate": "6eed09cf-38aa-424a-979c-32d8485f5da4",
+      "draft_without_write": true,
+      "passed": true,
+      "after": "changes_requested",
+      "generation_before": 0,
+      "generation_after": 0
+    }
+  ],
+  "fea": {
+    "workflow_run_id": "db9055c7-4111-4dd2-81f7-395a13108b48",
+    "browser_submit_and_actual_solver": true,
+    "stress": "0.72587 MPa",
+    "displacement": "0.000022135 mm",
+    "actual_field_rendered": true,
+    "display_scale_preserves_raw_values": true,
+    "evidence_downloaded": true,
+    "source_revision_unchanged": true,
+    "main_workflow_simulation_entry_verified": true,
+    "page_errors": [],
+    "console_errors": []
+  },
+  "cam": {
+    "workflow_run_id": "79fcec7c-9abe-4442-83f0-b9c6d0eae3b9",
+    "failed_short_tool_workflow": "9a9cbf3e-10cd-4322-b4a9-a91513fc40e5",
+    "source_revision_id": "9d8050fe-41d8-47ff-b3e5-61abb3ef2e9e",
+    "actual_native_offsets_and_clearance": true,
+    "path_playback_verified": true,
+    "downloaded_nc_sha256": "ffb69724180744de360a606f5fa511c52a9b604b2009559a068c6741f68d5f09",
+    "passes": 3,
+    "segments": 192,
+    "minimum_target_clearance_mm": 0.012144116309685593,
+    "internal_loops_explicitly_excluded": 1,
+    "idempotency_verified": true,
+    "native_short_tool_rejected": true,
+    "source_revision_unchanged": true,
+    "page_errors": [],
+    "console_errors": []
+  },
+  "release_http": {
+    "document_id": "e87cb478-6881-408c-892c-ca535ddb0f09",
+    "release_id": "e087415d-fd1f-4ba5-86a1-c950dcceaa34",
+    "release_name": "Acceptance f85060ba96",
+    "source_revision_id": "9d8050fe-41d8-47ff-b3e5-61abb3ef2e9e",
+    "native_bom": {
+      "native_type": "Assembly::BomObject",
+      "freecad_version": "1.1.4"
+    },
+    "instances": 1,
+    "engineering_workflow_ids": [
+      "db9055c7-4111-4dd2-81f7-395a13108b48",
+      "79fcec7c-9abe-4442-83f0-b9c6d0eae3b9"
+    ],
+    "package_files": 15,
+    "all_hashes_verified": true,
+    "revision_unchanged": true,
+    "replay_and_conflicts_verified": true,
+    "viewer_export_and_publish_denied": true,
+    "previous_revision_analysis_rejected": false
+  },
+  "release_browser": {
+    "release_id": "ff49dff3-9d0d-45bb-bd90-9cda778c8830",
+    "actual_native_bom_rendered": true,
+    "selected_engineering_tasks": [
+      "db9055c7-4111-4dd2-81f7-395a13108b48",
+      "79fcec7c-9abe-4442-83f0-b9c6d0eae3b9"
+    ],
+    "bundle_hash_verified": true,
+    "revision_unchanged": true,
+    "page_errors": [],
+    "console_errors": []
+  },
+  "bridge": {
+    "document_id": "e87cb478-6881-408c-892c-ca535ddb0f09",
+    "bridge_id": "63f80da2-e656-4d7a-abd2-4a069dd160f1",
+    "delivery_id": "42fbfb1d-d1cf-4cc0-914c-042c7f12df8c",
+    "recovery_delivery_id": "e0e72a93-7361-45d9-94cf-b012fbf0ba21",
+    "real_cli_and_filesystem": true,
+    "file_count": 15,
+    "receipt_hashes_verified": true,
+    "live_lease_expiry_and_restart": true,
+    "actual_api_restart_verified": false,
+    "recovery_attempts": 2,
+    "existing_files_not_rewritten": true,
+    "replayed_pairing_and_stale_ack_denied": true,
+    "viewer_and_revocation_denied": true
+  },
+  "restore": {
+    "workflow": "146fbef1-5e13-45ae-984c-1130cf2a373d",
+    "original": "148736e4-8964-41b8-aabb-d4071564e13c",
+    "base": "9d8050fe-41d8-47ff-b3e5-61abb3ef2e9e",
+    "saved": "5fee9444-f30c-4375-aace-86d92f1b51c1",
+    "changeset": "be9588c3-1431-4a1b-bfa8-3a7c1659e8d4",
+    "before_version": 2,
+    "after_version": 3,
+    "prior_parameters": {
+      "Hole.Diameter": 6.5,
+      "Pad.Length": 8.0
+    },
+    "restored_parameters": {
+      "Hole.Diameter": 6.0,
+      "Pad.Length": 8.0
+    },
+    "immutable_history": true,
+    "explicit_confirmation": true,
+    "passed": true
+  },
+  "collaboration": {
+    "standalone_edit": {
+      "task_id": "10ad86a7-a18a-476a-85a2-5e9f3dbd61b6",
+      "restored_pending_task": true,
+      "actual_kernel": true,
+      "editor_cannot_commit": true,
+      "owner_committed": true,
+      "final_length_mm": 11.0
+    },
+    "membership": {
+      "downgraded_without_reload": true,
+      "lease_cleared": true,
+      "revoked_socket_and_ui": true,
+      "page_errors": []
+    }
+  },
+  "branch": {
+    "document_id": "dc27a1d0-7033-48ff-9494-3652cf447891",
+    "workflow_run_id": "9e5fe50b-8c17-4d14-ac6b-4c4b1153a60e",
+    "replayed": false,
+    "tenant_id": "87521e53-fe0f-5d2c-81c6-9c368e4746f1",
+    "source_document_id": "b6b5ff7d-1776-4279-a03f-bae8d1abac96",
+    "source_revision_id": "a3408126-0508-4cad-8031-e49813d570c3",
+    "source_state_version": 2,
+    "confirmed": true
+  },
+  "merge": {
+    "target_document_id": "b6b5ff7d-1776-4279-a03f-bae8d1abac96",
+    "source_document_id": "dc27a1d0-7033-48ff-9494-3652cf447891",
+    "tenant_id": "87521e53-fe0f-5d2c-81c6-9c368e4746f1",
+    "merged_workflow_id": "26340db2-6fea-4848-8e9d-87ec16e4addf",
+    "merged_revision_id": "353a9313-32a0-4ddb-83cd-e93276fa98ee",
+    "conflict_comparison": {
+      "document_id": "b6b5ff7d-1776-4279-a03f-bae8d1abac96",
+      "source_document_id": "dc27a1d0-7033-48ff-9494-3652cf447891",
+      "target_revision_id": "353a9313-32a0-4ddb-83cd-e93276fa98ee",
+      "target_state_version": 4,
+      "source_revision_id": "b3e53dad-019b-4116-9435-7efd81863ee2",
+      "source_state_version": 3,
+      "common_revision_id": "8fe34bdb-dd4e-4706-9cd0-e8bafb0685eb",
+      "source_changes": [
+        {
+          "feature_id": "373d3986-ff5c-5f5d-aa3f-b065a862ca5b",
+          "kernel_name": "PadA",
+          "label": "PadA",
+          "kind": "changed",
+          "fields": [
+            {
+              "name": "parameters",
+              "before": [
+                {
+                  "id": "PadA.Length",
+                  "step": null,
+                  "unit": "mm",
+                  "group": "Side1",
+                  "label": "PadA · Length",
+                  "value": 10.0,
+                  "maximum": null,
+                  "minimum": null,
+                  "editable": true,
+                  "object_name": "PadA",
+                  "property_name": "Length",
+                  "property_type": "App::PropertyLength"
+                }
+              ],
+              "after": [
+                {
+                  "id": "PadA.Length",
+                  "step": null,
+                  "unit": "mm",
+                  "group": "Side1",
+                  "label": "PadA · Length",
+                  "value": 15.0,
+                  "maximum": null,
+                  "minimum": null,
+                  "editable": true,
+                  "object_name": "PadA",
+                  "property_name": "Length",
+                  "property_type": "App::PropertyLength"
+                }
+              ]
+            },
+            {
+              "name": "geometry_sha256",
+              "before": "89a2405f7f972f0fe0f77754235a23531d4669b82a9ec575eefcb30edf77dc64",
+              "after": "901a548b99332ab54938a22b7fa57c0973912c76b0b5e998ec3878224b282367"
+            }
+          ]
+        },
+        {
+          "feature_id": "4b6c27fa-c799-5984-9cbc-40895e984544",
+          "kernel_name": "BodyA",
+          "label": "BodyA",
+          "kind": "changed",
+          "fields": [
+            {
+              "name": "geometry_sha256",
+              "before": "25b68015f64d46c3efeae9c9595e25e410b0c18c1c2f4e46d126d55347b82a0f",
+              "after": "ffc25093f502b67443b83f4894bdfcc2b2849e0a5f1ae63fd34ba558fad49206"
+            }
+          ]
+        },
+        {
+          "feature_id": "ce71494c-fbeb-5cd2-8fe7-4ce3397dbdf1",
+          "kernel_name": "SketchA",
+          "label": "SketchA",
+          "kind": "changed",
+          "fields": [
+            {
+              "name": "geometry_sha256",
+              "before": "b87b466435b2125d333bb293129ebcafac010d663a4dbbe42b3f97ea023daf79",
+              "after": "1bb6c927f85b16512ad7535f395882962784d94d7ca975b4ed43bad8cd5b868e"
+            }
+          ]
+        }
+      ],
+      "target_changes": [
+        {
+          "feature_id": "373d3986-ff5c-5f5d-aa3f-b065a862ca5b",
+          "kernel_name": "PadA",
+          "label": "PadA",
+          "kind": "changed",
+          "fields": [
+            {
+              "name": "parameters",
+              "before": [
+                {
+                  "id": "PadA.Length",
+                  "step": null,
+                  "unit": "mm",
+                  "group": "Side1",
+                  "label": "PadA · Length",
+                  "value": 10.0,
+                  "maximum": null,
+                  "minimum": null,
+                  "editable": true,
+                  "object_name": "PadA",
+                  "property_name": "Length",
+                  "property_type": "App::PropertyLength"
+                }
+              ],
+              "after": [
+                {
+                  "id": "PadA.Length",
+                  "step": null,
+                  "unit": "mm",
+                  "group": "Side1",
+                  "label": "PadA · Length",
+                  "value": 11.0,
+                  "maximum": null,
+                  "minimum": null,
+                  "editable": true,
+                  "object_name": "PadA",
+                  "property_name": "Length",
+                  "property_type": "App::PropertyLength"
+                }
+              ]
+            },
+            {
+              "name": "geometry_sha256",
+              "before": "89a2405f7f972f0fe0f77754235a23531d4669b82a9ec575eefcb30edf77dc64",
+              "after": "326103365ccb86187958dd5fe5fa1391df135dc61052a51b07286ec79516df36"
+            }
+          ]
+        },
+        {
+          "feature_id": "4b6c27fa-c799-5984-9cbc-40895e984544",
+          "kernel_name": "BodyA",
+          "label": "BodyA",
+          "kind": "changed",
+          "fields": [
+            {
+              "name": "geometry_sha256",
+              "before": "25b68015f64d46c3efeae9c9595e25e410b0c18c1c2f4e46d126d55347b82a0f",
+              "after": "5b09e1f2033354796cb1b753e1206b2b076b64b9d1b7b20ab07a7a7dd8ddae93"
+            }
+          ]
+        },
+        {
+          "feature_id": "ce71494c-fbeb-5cd2-8fe7-4ce3397dbdf1",
+          "kernel_name": "SketchA",
+          "label": "SketchA",
+          "kind": "changed",
+          "fields": [
+            {
+              "name": "geometry_sha256",
+              "before": "b87b466435b2125d333bb293129ebcafac010d663a4dbbe42b3f97ea023daf79",
+              "after": "2f9af5a1aa04aed1f7db3ab628995cd1620d4f17a8c512209f4c385de27cfdf4"
+            }
+          ]
+        }
+      ],
+      "differences": [
+        {
+          "feature_id": "373d3986-ff5c-5f5d-aa3f-b065a862ca5b",
+          "kernel_name": "PadA",
+          "label": "PadA",
+          "kind": "changed",
+          "fields": [
+            {
+              "name": "parameters",
+              "before": [
+                {
+                  "id": "PadA.Length",
+                  "step": null,
+                  "unit": "mm",
+                  "group": "Side1",
+                  "label": "PadA · Length",
+                  "value": 11.0,
+                  "maximum": null,
+                  "minimum": null,
+                  "editable": true,
+                  "object_name": "PadA",
+                  "property_name": "Length",
+                  "property_type": "App::PropertyLength"
+                }
+              ],
+              "after": [
+                {
+                  "id": "PadA.Length",
+                  "step": null,
+                  "unit": "mm",
+                  "group": "Side1",
+                  "label": "PadA · Length",
+                  "value": 15.0,
+                  "maximum": null,
+                  "minimum": null,
+                  "editable": true,
+                  "object_name": "PadA",
+                  "property_name": "Length",
+                  "property_type": "App::PropertyLength"
+                }
+              ]
+            },
+            {
+              "name": "geometry_sha256",
+              "before": "326103365ccb86187958dd5fe5fa1391df135dc61052a51b07286ec79516df36",
+              "after": "901a548b99332ab54938a22b7fa57c0973912c76b0b5e998ec3878224b282367"
+            }
+          ]
+        },
+        {
+          "feature_id": "4b6c27fa-c799-5984-9cbc-40895e984544",
+          "kernel_name": "BodyA",
+          "label": "BodyA",
+          "kind": "changed",
+          "fields": [
+            {
+              "name": "geometry_sha256",
+              "before": "5b09e1f2033354796cb1b753e1206b2b076b64b9d1b7b20ab07a7a7dd8ddae93",
+              "after": "ffc25093f502b67443b83f4894bdfcc2b2849e0a5f1ae63fd34ba558fad49206"
+            }
+          ]
+        },
+        {
+          "feature_id": "ce71494c-fbeb-5cd2-8fe7-4ce3397dbdf1",
+          "kernel_name": "SketchA",
+          "label": "SketchA",
+          "kind": "changed",
+          "fields": [
+            {
+              "name": "geometry_sha256",
+              "before": "2f9af5a1aa04aed1f7db3ab628995cd1620d4f17a8c512209f4c385de27cfdf4",
+              "after": "1bb6c927f85b16512ad7535f395882962784d94d7ca975b4ed43bad8cd5b868e"
+            }
+          ]
+        }
+      ],
+      "parameters": {
+        "updates": [],
+        "proof": null,
+        "reason": "特征 PadA 或其依赖已改变，请基于当前版本重新编辑"
+      },
+      "conflicts": [
+        {
+          "code": "parameter_rebase_conflict",
+          "message": "特征 PadA 或其依赖已改变，请基于当前版本重新编辑"
+        }
+      ],
+      "can_merge_parameters": false,
+      "annotation_policy": "保留目标分支的用途与意图；来源标注差异仅供审阅，不自动覆盖。",
+      "source_geometry_policy": "采用来源分支的完整几何，替换目标几何；重新校验并审核提交。",
+      "comparison_hash": "47c01cbd9b6f85c782c315e5b332eb9ed8b8a709e5e0c60878bd1b61da3bee0b"
+    }
+  },
+  "accounts": {
+    "browser_invite_creation": true,
+    "real_registration": true,
+    "logout_revoked_old_token": true,
+    "reload_restored": true,
+    "isolated_account_deleted": true,
+    "deleted_account_auth_denied": true
+  },
+  "fault_replay": {
+    "fixture": {
+      "document_id": "63f04c37-6ce7-4b02-b37f-7fff9cccd2a1",
+      "project_id": "acfb663a-53b6-5421-ba00-4891c15dc96a",
+      "tenant_id": "87521e53-fe0f-5d2c-81c6-9c368e4746f1",
+      "base_revision_id": "7167a1fd-0a69-49be-bb92-87b3281b3fe9",
+      "workflow_id": "70ccf285-21ca-459d-a598-06cf724b0cee",
+      "change_set_id": "059b9d39-4bd3-4dfb-b522-ad6468075724",
+      "session_id": "f57330d9-2282-450e-adfd-271834ad36f8",
+      "panel_id": "f9336455-4540-49b5-8649-8ccce672e1c4",
+      "title": "五状态原生验收 f57330d9"
+    },
+    "manual_workflow_id": "fe62a1d6-838d-4cbf-8486-7917b56e8391",
+    "original_diameter_mm": 6,
+    "final_diameter_mm": 6.5,
+    "unknown_acceptance_same_request": true,
+    "panel_scope_and_draft_guard": true,
+    "unchanged_other_parameters": true,
+    "draft_and_selection_survive_collapse": true,
+    "canvas_not_remounted": true,
+    "final_generation": 2,
+    "artifact_sha256": {
+      "fcstd": "049ee32c0bdc3ab6d292fb3430b4b55ef11196906fe17677c28d0bf2ff975072",
+      "state": "a86abf39754223a38f1a03eb854268520cd3ee90dc2140aa5523e9f9cea6f4e4",
+      "mesh": "9759efc3b9d89ab748751080119ab6f17630ee8176f85aa3df735c0fdd433065"
+    },
+    "status": "passed",
+    "mode": "candidate",
+    "page_errors": []
+  },
+  "history_delete": {
+    "layout": "qa-delete",
+    "source_type": "fcstd",
+    "source_sha256": "c00ddd7872c9b0b7d0e3d419bea2a691c7779ca768b86033d0c63a832027236a",
+    "browser_errors": [],
+    "workflow": "c460911a-f13e-490d-ad16-2ced8f163dc2",
+    "change": "16a0d5bf-9c76-4307-8a35-1cf43afe3275",
+    "before": "pending_review",
+    "candidate": "787029f3-050c-4d38-b953-a561d08d7880",
+    "draft_without_write": true,
+    "passed": true,
+    "after": "rejected",
+    "generation_before": 0,
+    "generation_after": 0,
+    "history_removed": true,
+    "soft_deleted_project": true,
+    "only_this_run": true,
+    "session": "95711bd0-af47-4f32-b192-21f5ca8ebd8a",
+    "project": "b456e984-eec8-5eb5-a708-8730f91b2724"
+  },
+  "knowledge": {
+    "main": {
+      "processes": [
+        "proc_cnc_3axis",
+        "proc_cnc_5axis",
+        "proc_fdm",
+        "proc_sla",
+        "proc_die_casting",
+        "proc_injection",
+        "proc_sheet"
+      ],
+      "fdm_materials": [
+        "mat_pla",
+        "mat_abs",
+        "mat_petg",
+        "mat_nylon_pa12",
+        "mat_pc"
+      ],
+      "suggestions": [
+        [
+          "proc_fdm",
+          "mat_pla",
+          1.0
+        ],
+        [
+          "proc_cnc_3axis",
+          null,
+          0.2
+        ],
+        [
+          "proc_cnc_5axis",
+          null,
+          0.2
+        ],
+        [
+          "proc_sla",
+          null,
+          0.2
+        ],
+        [
+          "proc_die_casting",
+          null,
+          0.2
+        ],
+        [
+          "proc_injection",
+          null,
+          0.2
+        ],
+        [
+          "proc_sheet",
+          null,
+          0.2
+        ]
+      ],
+      "returned_supplier_count": 0,
+      "browser_errors": []
+    },
+    "chat": {
+      "processes": [
+        "proc_cnc_3axis",
+        "proc_cnc_5axis",
+        "proc_fdm",
+        "proc_sla",
+        "proc_die_casting",
+        "proc_injection",
+        "proc_sheet"
+      ],
+      "fdm_materials": [
+        "mat_pla",
+        "mat_abs",
+        "mat_petg",
+        "mat_nylon_pa12",
+        "mat_pc"
+      ],
+      "suggestions": [
+        [
+          "proc_fdm",
+          "mat_pla",
+          1.0
+        ],
+        [
+          "proc_cnc_3axis",
+          null,
+          0.2
+        ],
+        [
+          "proc_cnc_5axis",
+          null,
+          0.2
+        ],
+        [
+          "proc_sla",
+          null,
+          0.2
+        ],
+        [
+          "proc_die_casting",
+          null,
+          0.2
+        ],
+        [
+          "proc_injection",
+          null,
+          0.2
+        ],
+        [
+          "proc_sheet",
+          null,
+          0.2
+        ]
+      ],
+      "returned_supplier_count": 0,
+      "browser_errors": []
+    }
+  },
+  "commit_retry": {
+    "layout": "new-retry-r2",
+    "source_type": "fcstd",
+    "source_sha256": "c00ddd7872c9b0b7d0e3d419bea2a691c7779ca768b86033d0c63a832027236a",
+    "browser_errors": [],
+    "workflow": "6094e51e-84a0-45a8-a6c2-58b7e31192ae",
+    "change": "a6787435-5baa-4b5e-8545-2f46d7b93779",
+    "before": "pending_review",
+    "candidate": "4a1c717a-0b68-424c-be89-ce97348b7ffc",
+    "draft_without_write": true,
+    "retry_same_change_set": true,
+    "interrupted_before_dispatch": true,
+    "generation_while_accepted": 0,
+    "one_accept": true,
+    "passed": true,
+    "after": "committed",
+    "generation_before": 0,
+    "generation_after": 1
+  },
+  "natural_edits": {
+    "modify": {
+      "workflow": "71fe9228-d898-44a6-9db9-e4cb1612c67f",
+      "status": "failed",
+      "actual_request": {
+        "branch_id": "eb81c532-ca26-4db2-bade-24689ae27946",
+        "operation": "modify",
+        "objective": "把当前已保存底板的 Z 厚度从 8 mm 修改为 10 mm。保持 X 长度 60 mm、Y 宽度 40 mm，保留一个无孔无槽的实体。三个尺寸允许 ±0.05 mm。新体积 24000 mm³，允许 ±0.1 mm³。",
+        "output_formats": [
+          "step",
+          "stl"
+        ],
+        "modeling_backend": "freecad",
+        "expected_base_revision_id": "29fb4b61-d774-438d-9a54-f84125982a57",
+        "manufacturing_profile": {
+          "process": "generic",
+          "material": "Generic",
+          "build_volume_mm": [
+            220.0,
+            220.0,
+            250.0
+          ],
+          "layer_height_mm": null,
+          "nozzle_diameter_mm": null
+        },
+        "requirement_basis": {
+          "target": "把当前已保存底板的 Z 厚度从 8 mm 修改为 10 mm。保持 X 长度 60 mm、Y 宽度 40 mm，保留一个无孔无槽的实体。三个尺寸允许 ±0.05 mm。新体积 24000 mm³，允许 ±0.1 mm³。",
+          "purpose": "",
+          "fit_notes": "",
+          "dimensions": "本次修改依据：长 60 mm、宽 40 mm、厚 10 mm，三个尺寸各允许 ±0.05 mm；体积 24000 mm³，允许 ±0.1 mm³；实体数 1，无孔无槽。",
+          "source_kind": "user_specification",
+          "design_scope": "geometry",
+          "schema_version": "requirement-basis.v1",
+          "source_reference": "用户指定的设计尺寸",
+          "concept_acknowledged": false
+        },
+        "requested_operation": "modify",
+        "resolved_operation": "modify",
+        "rule": "explicit_ui_intent",
+        "source_channel": "session_websocket",
+        "panel_id": "7343d4da-5c6f-4cb0-bb03-348f051f2d7f"
+      },
+      "payload_sha256": "6aee1f913ed918f417fab27dd89dcb52d6e8beece8ab545b66694e2b439c7717",
+      "change_count": 0,
+      "observed_head": "d3a601a4-284d-460d-9737-d79c7dce423a",
+      "observed_generation": 2,
+      "base": "29fb4b61-d774-438d-9a54-f84125982a57",
+      "failure_code": "ValueError",
+      "error_message": "ValueError: planner model did not return a valid modification plan: target_params.length: changed source dimension must use the semantic 'length' parameter; expected 60.0 mm",
+      "committed_changes_from_this_workflow": 0,
+      "head_observation": "point-in-time; subsequent separately approved edits to this test document can move its head"
+    },
+    "base-again": {
+      "workflow": "63d4d6de-2bae-4a9c-9361-8dcfe475c973",
+      "status": "succeeded",
+      "actual_request": {
+        "branch_id": "eb81c532-ca26-4db2-bade-24689ae27946",
+        "operation": "modify",
+        "objective": "把当前已保存底板的 Z 厚度从 8 mm 修改为 10 mm。保持 X 长度 60 mm、Y 宽度 40 mm，保留一个无孔无槽的实体。三个尺寸允许 ±0.05 mm。新体积 24000 mm³，允许 ±0.1 mm³。",
+        "output_formats": [
+          "step",
+          "stl"
+        ],
+        "modeling_backend": "freecad",
+        "expected_base_revision_id": "29fb4b61-d774-438d-9a54-f84125982a57",
+        "manufacturing_profile": {
+          "process": "generic",
+          "material": "Generic",
+          "build_volume_mm": [
+            220.0,
+            220.0,
+            250.0
+          ],
+          "layer_height_mm": null,
+          "nozzle_diameter_mm": null
+        },
+        "requirement_basis": {
+          "target": "把当前已保存底板的 Z 厚度从 8 mm 修改为 10 mm。保持 X 长度 60 mm、Y 宽度 40 mm，保留一个无孔无槽的实体。三个尺寸允许 ±0.05 mm。新体积 24000 mm³，允许 ±0.1 mm³。",
+          "purpose": "",
+          "fit_notes": "",
+          "dimensions": "本次修改依据：长 60 mm、宽 40 mm、厚 10 mm，三个尺寸各允许 ±0.05 mm；体积 24000 mm³，允许 ±0.1 mm³；实体数 1，无孔无槽。",
+          "source_kind": "user_specification",
+          "design_scope": "geometry",
+          "schema_version": "requirement-basis.v1",
+          "source_reference": "用户指定的设计尺寸",
+          "concept_acknowledged": false
+        },
+        "requested_operation": "modify",
+        "resolved_operation": "modify",
+        "rule": "explicit_ui_intent",
+        "source_channel": "session_websocket",
+        "panel_id": "7343d4da-5c6f-4cb0-bb03-348f051f2d7f"
+      },
+      "payload_sha256": "6aee1f913ed918f417fab27dd89dcb52d6e8beece8ab545b66694e2b439c7717",
+      "change_count": 1,
+      "observed_head": "d3a601a4-284d-460d-9737-d79c7dce423a",
+      "observed_generation": 2,
+      "base": "29fb4b61-d774-438d-9a54-f84125982a57",
+      "failure_code": null,
+      "error_message": null,
+      "committed_changes_from_this_workflow": 1,
+      "head_observation": "point-in-time; subsequent separately approved edits to this test document can move its head",
+      "successful_measurements": {
+        "mesh_extents_mm": [
+          60.0,
+          40.0,
+          10.0
+        ],
+        "volume_mm3": 24000.0,
+        "before_state_version": 1,
+        "after_state_version": 2,
+        "older_files_immutable": true,
+        "files": {
+          "fcstd": "15296d3273e20b96daf4b5afa7c58ed64e856d8f2d12b04c0ed81bc105c73773",
+          "step": "54c15f9f3259b45a7e38bc09e22bf5a7d78a2bfd36a0aa3e5db8074383d55441",
+          "stl": "062ebc7b3ed1484c07e45f9d8e20f74ec471733f142c9a14d79f2e0b2a9fd44a"
+        }
+      },
+      "independent_reopen": {
+        "version": [
+          "1",
+          "1",
+          "4"
+        ],
+        "files": {
+          "fcstd": {
+            "valid": true,
+            "solids": 1,
+            "dimensions_mm": [
+              60.0,
+              40.0,
+              10.0
+            ],
+            "volume_mm3": 24000.0,
+            "feature_types": [
+              "PartDesign::Body",
+              "Sketcher::SketchObject",
+              "PartDesign::Pad"
+            ]
+          },
+          "step": {
+            "valid": true,
+            "solids": 1,
+            "dimensions_mm": [
+              60.0,
+              40.0,
+              10.0
+            ],
+            "volume_mm3": 24000.0,
+            "feature_types": []
+          }
+        },
+        "runtime_sources": {
+          "checked_files": 46,
+          "all_match": true,
+          "mismatches": []
+        }
+      }
+    },
+    "explicit-edit": {
+      "workflow": "f5388776-809d-4e24-a0e4-f8405d57da9f",
+      "status": "succeeded",
+      "actual_request": {
+        "branch_id": "52625650-0e03-43cd-ac12-dbaaec166bce",
+        "operation": "modify",
+        "objective": "将选中的拉伸特征长度（板厚）从 8 mm 改为 10 mm，仅修改现有拉伸长度。沿用当前整份文档的默认导出范围和格式，导出时不指定任何对象。其余特征与尺寸沿用现状。",
+        "output_formats": [
+          "step",
+          "stl"
+        ],
+        "modeling_backend": "freecad",
+        "expected_base_revision_id": "a8f35486-8343-4a7e-95b9-40b07a7bad3a",
+        "manufacturing_profile": {
+          "process": "generic",
+          "material": "Generic",
+          "build_volume_mm": [
+            220.0,
+            220.0,
+            250.0
+          ],
+          "layer_height_mm": null,
+          "nozzle_diameter_mm": null
+        },
+        "selection_context": {
+          "feature_ids": [
+            "6f1414ab-17f3-58bc-9d37-ec7ad2b9085c"
+          ],
+          "revision_id": "a8f35486-8343-4a7e-95b9-40b07a7bad3a",
+          "state_version": 1,
+          "topology_selector": null
+        },
+        "requirement_basis": {
+          "target": "将选中的拉伸特征长度（板厚）从 8 mm 改为 10 mm，仅修改现有拉伸长度。沿用当前整份文档的默认导出范围和格式，导出时不指定任何对象。其余特征与尺寸沿用现状。",
+          "purpose": "",
+          "fit_notes": "",
+          "dimensions": "用户指定的修改尺寸：板厚 10 mm。保持当前模型的其余尺寸和特征。",
+          "source_kind": "user_specification",
+          "design_scope": "geometry",
+          "schema_version": "requirement-basis.v1",
+          "source_reference": "用户指定的设计尺寸",
+          "concept_acknowledged": false
+        },
+        "requested_operation": "modify",
+        "resolved_operation": "modify",
+        "rule": "explicit_ui_intent",
+        "source_channel": "session_websocket",
+        "panel_id": "956d207f-4075-4c79-83bd-bf0b744d77ab"
+      },
+      "payload_sha256": "c78b99ee635255e9116dcac88e3fa9435be4c6ad5ef1f436c5be80ddee2c57d3",
+      "change_count": 1,
+      "observed_head": "b2d1ffcb-4d44-439f-ae0b-df16c0f76aaf",
+      "observed_generation": 2,
+      "base": "a8f35486-8343-4a7e-95b9-40b07a7bad3a",
+      "failure_code": null,
+      "error_message": null,
+      "committed_changes_from_this_workflow": 1,
+      "head_observation": "point-in-time; subsequent separately approved edits to this test document can move its head",
+      "successful_measurements": {
+        "mesh_extents_mm": [
+          60.0,
+          40.0,
+          10.0
+        ],
+        "volume_mm3": 24000.0,
+        "before_state_version": 1,
+        "after_state_version": 2,
+        "older_files_immutable": true,
+        "files": {
+          "fcstd": "81d0e7c551db7c9e7442e2455de90ae60afe0cd144b5dcc1949725fdf6eef8de",
+          "step": "a7d6d96c3251104ed22d065ba3b6e7328f80b7b950cd58ad79db728885b0f2f6",
+          "stl": "0c846da8ce79f93648977b0ee2e1c6169259f4ce0c3999026461d9e0c9f7ba5b"
+        }
+      },
+      "independent_reopen": {
+        "version": [
+          "1",
+          "1",
+          "4"
+        ],
+        "files": {
+          "fcstd": {
+            "valid": true,
+            "solids": 1,
+            "dimensions_mm": [
+              60.0,
+              40.0,
+              10.0
+            ],
+            "volume_mm3": 24000.0,
+            "feature_types": [
+              "PartDesign::Body",
+              "Sketcher::SketchObject",
+              "PartDesign::Pad"
+            ]
+          },
+          "step": {
+            "valid": true,
+            "solids": 1,
+            "dimensions_mm": [
+              60.0,
+              40.0,
+              10.0
+            ],
+            "volume_mm3": 24000.0,
+            "feature_types": []
+          }
+        },
+        "runtime_sources": {
+          "checked_files": 46,
+          "all_match": true,
+          "mismatches": []
+        }
+      }
+    },
+    "modify-selected": {
+      "workflow": "4abbef67-1fcf-4869-b3d7-76fa434381e6",
+      "status": "failed",
+      "actual_request": {
+        "branch_id": "63bdd395-f2cd-417d-821f-02696347ad2e",
+        "operation": "modify",
+        "objective": "只将当前选中拉伸特征的厚度改为 10 mm。保持其他特征及所有其余尺寸。",
+        "output_formats": [
+          "step",
+          "stl"
+        ],
+        "modeling_backend": "freecad",
+        "expected_base_revision_id": "7d5e2ff1-3f01-484c-9c2d-128d367b325e",
+        "manufacturing_profile": {
+          "process": "generic",
+          "material": "Generic",
+          "build_volume_mm": [
+            220.0,
+            220.0,
+            250.0
+          ],
+          "layer_height_mm": null,
+          "nozzle_diameter_mm": null
+        },
+        "selection_context": {
+          "feature_ids": [
+            "b25a9758-bff0-5f45-ade8-2af4684fd98b"
+          ],
+          "revision_id": "7d5e2ff1-3f01-484c-9c2d-128d367b325e",
+          "state_version": 1,
+          "topology_selector": null
+        },
+        "requirement_basis": {
+          "target": "只将当前选中拉伸特征的厚度改为 10 mm。保持其他特征及所有其余尺寸。",
+          "purpose": "",
+          "fit_notes": "",
+          "dimensions": "用户指定的修改尺寸：板厚 10 mm。保持当前模型的其余尺寸和特征。",
+          "source_kind": "user_specification",
+          "design_scope": "geometry",
+          "schema_version": "requirement-basis.v1",
+          "source_reference": "用户指定的设计尺寸",
+          "concept_acknowledged": false
+        },
+        "requested_operation": "modify",
+        "resolved_operation": "modify",
+        "rule": "explicit_ui_intent",
+        "source_channel": "session_websocket",
+        "panel_id": "210bf585-1c18-4148-8876-df9da8eb6078"
+      },
+      "payload_sha256": "89f892013bd06e02f1adee421590d45e0b5994f037125f75fd2e55a6ac14a898",
+      "change_count": 0,
+      "observed_head": "7d5e2ff1-3f01-484c-9c2d-128d367b325e",
+      "observed_generation": 1,
+      "base": "7d5e2ff1-3f01-484c-9c2d-128d367b325e",
+      "failure_code": "SelectionError",
+      "error_message": "SelectionError: 选中特征修改不能同时改变文档导出范围",
+      "committed_changes_from_this_workflow": 0,
+      "head_observation": "point-in-time; subsequent separately approved edits to this test document can move its head"
+    },
+    "base-selected": {
+      "workflow": "d45a0268-acc1-4f86-bd34-65ada0cd16f5",
+      "status": "failed",
+      "actual_request": {
+        "branch_id": "63bdd395-f2cd-417d-821f-02696347ad2e",
+        "operation": "modify",
+        "objective": "只将当前选中拉伸特征的厚度改为 10 mm。保持其他特征及所有其余尺寸。",
+        "output_formats": [
+          "step",
+          "stl"
+        ],
+        "modeling_backend": "freecad",
+        "expected_base_revision_id": "7d5e2ff1-3f01-484c-9c2d-128d367b325e",
+        "manufacturing_profile": {
+          "process": "generic",
+          "material": "Generic",
+          "build_volume_mm": [
+            220.0,
+            220.0,
+            250.0
+          ],
+          "layer_height_mm": null,
+          "nozzle_diameter_mm": null
+        },
+        "selection_context": {
+          "feature_ids": [
+            "b25a9758-bff0-5f45-ade8-2af4684fd98b"
+          ],
+          "revision_id": "7d5e2ff1-3f01-484c-9c2d-128d367b325e",
+          "state_version": 1,
+          "topology_selector": null
+        },
+        "requirement_basis": {
+          "target": "只将当前选中拉伸特征的厚度改为 10 mm。保持其他特征及所有其余尺寸。",
+          "purpose": "",
+          "fit_notes": "",
+          "dimensions": "用户指定的修改尺寸：板厚 10 mm。保持当前模型的其余尺寸和特征。",
+          "source_kind": "user_specification",
+          "design_scope": "geometry",
+          "schema_version": "requirement-basis.v1",
+          "source_reference": "用户指定的设计尺寸",
+          "concept_acknowledged": false
+        },
+        "requested_operation": "modify",
+        "resolved_operation": "modify",
+        "rule": "explicit_ui_intent",
+        "source_channel": "session_websocket",
+        "panel_id": "210bf585-1c18-4148-8876-df9da8eb6078"
+      },
+      "payload_sha256": "89f892013bd06e02f1adee421590d45e0b5994f037125f75fd2e55a6ac14a898",
+      "change_count": 0,
+      "observed_head": "7d5e2ff1-3f01-484c-9c2d-128d367b325e",
+      "observed_generation": 1,
+      "base": "7d5e2ff1-3f01-484c-9c2d-128d367b325e",
+      "failure_code": "ProviderConnectionError",
+      "error_message": "ProviderConnectionError: 暂时无法连接模型服务，请稍后重试。",
+      "committed_changes_from_this_workflow": 0,
+      "head_observation": "point-in-time; subsequent separately approved edits to this test document can move its head"
+    }
+  }
+}

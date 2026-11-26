@@ -249,6 +249,21 @@ function updatePanel(
   );
 }
 
+function appendResultMessage(messages: ChatMessage[], result: GenerationResult, fromSnapshot = false): ChatMessage[] {
+  const cancelled = result.task_status === "cancelled";
+  const content = cancelled ? "任务已取消" : result.needs_confirmation ? "设计简报需要确认"
+    : result.success ? "CAD 模型已生成" : `生成失败: ${result.error?.message || "未知错误"}`;
+  // A WebSocket result and a replayed snapshot can describe the same reply.
+  const existing = result.workflow_run_id ? messages.findIndex(message =>
+    message.role === "assistant" && message.result?.workflow_run_id === result.workflow_run_id && message.content === content
+  ) : -1;
+  if (existing >= 0) {
+    // A snapshot may arrive before the detailed result, including its editable code.
+    return fromSnapshot ? messages : messages.map((message, index) => index === existing ? { ...message, result } : message);
+  }
+  return [...messages, {role: "assistant", content, result}];
+}
+
 function restoreGenerationResult(
   messages: ChatMessage[],
   currentCode?: string | null,
@@ -559,15 +574,6 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
           const cancelled = result.task_status === "cancelled";
           const nextWorkflowRunId = result.workflow_run_id
             || previousWorkflowRunId;
-          const assistantMsg: ChatMessage = {
-            role: "assistant",
-            content: cancelled ? "任务已取消" : result.needs_confirmation
-              ? "设计简报需要确认"
-              : result.success
-                ? "CAD 模型已生成"
-              : `生成失败: ${result.error?.message || "未知错误"}`,
-            result,
-          };
           const nextStepHistory = hasTerminalStep(p.stepHistory)
             ? p.stepHistory
             : [...p.stepHistory, terminalStepFromResult(Boolean(result.success), Boolean(result.needs_confirmation), cancelled)];
@@ -583,7 +589,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
             multiStepProgress: null,
             stepHistory: nextStepHistory,
             generationStartTime: null,
-            messages: [...p.messages, assistantMsg],
+            messages: appendResultMessage(p.messages, result),
             durable: {
               ...(p.durable || emptyDurableContext()),
               projectId: result.project_id || p.durable?.projectId || null,
@@ -808,6 +814,7 @@ export const useSessionStore = create<SessionState>()(persist((set, get) => ({
               : panel.durable?.preparedResult || null,
           },
           result: terminalResult,
+          messages: terminal && snapshotResult ? appendResultMessage(panel.messages, snapshotResult, true) : panel.messages,
           isGenerating: isDurableTaskActive(snapshot.status),
           currentStep: isDurableTaskActive(snapshot.status) ? panel.currentStep : null,
           generationStartTime: isDurableTaskActive(snapshot.status) ? panel.generationStartTime : null,

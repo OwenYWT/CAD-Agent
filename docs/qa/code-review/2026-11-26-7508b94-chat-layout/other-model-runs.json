@@ -1,0 +1,324 @@
+{
+  "base": {
+    "workflow": "f227b4be-b96e-4c7e-997b-854ba4ec5397",
+    "status": "succeeded",
+    "error_code": null,
+    "passed": true,
+    "candidate": "eed80da3-7625-4d7b-af51-7edb12f0110d",
+    "default_network_retries": true,
+    "changes_created": null,
+    "provider_statuses": [
+      "settled",
+      "settled",
+      "settled"
+    ],
+    "jobs": [
+      {
+        "operation": "agent_v2.requirements",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.decompose",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.generate_operations",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.execute_freecad",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.validate_geometry",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.render_visual",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.judge_visual",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.validate_dfm",
+        "status": "succeeded",
+        "generation": 1
+      }
+    ]
+  },
+  "new": {
+    "workflow": "affdaf41-cdd3-4eb1-bcf5-aca451a67e5d",
+    "status": "failed",
+    "error_code": "ProviderConnectionError",
+    "passed": false,
+    "candidate": null,
+    "default_network_retries": true,
+    "changes_created": 0,
+    "provider_statuses": [
+      "settled",
+      "released_unsent",
+      "released_unsent"
+    ],
+    "jobs": [
+      {
+        "operation": "agent_v2.requirements",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.decompose",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.generate_operations",
+        "status": "failed",
+        "generation": 1
+      }
+    ]
+  },
+  "new-r2": {
+    "workflow": "c886cb3a-eff4-4110-92f4-a8a9869eb250",
+    "status": "failed",
+    "error_code": "ProviderConnectionError",
+    "passed": false,
+    "candidate": null,
+    "default_network_retries": true,
+    "changes_created": 0,
+    "provider_statuses": [
+      "released_unsent",
+      "released_unsent"
+    ],
+    "jobs": [
+      {
+        "operation": "agent_v2.requirements",
+        "status": "failed",
+        "generation": 1
+      }
+    ]
+  },
+  "new-r3": {
+    "workflow": "edcec85a-9d6a-448f-899f-21e75a42a9cc",
+    "status": "failed",
+    "error_code": "ProviderConnectionError",
+    "passed": false,
+    "candidate": null,
+    "default_network_retries": true,
+    "changes_created": 0,
+    "provider_statuses": [
+      "settled",
+      "settled",
+      "released_unsent",
+      "settled",
+      "settled",
+      "released_unsent",
+      "released_unsent"
+    ],
+    "jobs": [
+      {
+        "operation": "agent_v2.requirements",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.decompose",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.generate_operations",
+        "status": "failed",
+        "generation": 1
+      }
+    ]
+  },
+  "new-r4": {
+    "workflow": "1c7852da-625e-4027-b785-f890ac64b8b0",
+    "status": "failed",
+    "error_code": "ProviderConnectionError",
+    "passed": false,
+    "candidate": null,
+    "default_network_retries": true,
+    "changes_created": 0,
+    "provider_statuses": [
+      "settled",
+      "released_unsent",
+      "released_unsent"
+    ],
+    "jobs": [
+      {
+        "operation": "agent_v2.requirements",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.decompose",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.generate_operations",
+        "status": "failed",
+        "generation": 1
+      }
+    ]
+  },
+  "base-pair": {
+    "workflow": "137fb019-28f5-4ad7-81aa-86e0656022c6",
+    "status": "succeeded",
+    "error_code": null,
+    "passed": true,
+    "candidate": "dcf4cd76-b700-4f83-9345-0c231f1e62c3",
+    "default_network_retries": false,
+    "changes_created": null,
+    "provider_statuses": [
+      "settled",
+      "settled",
+      "released_unsent",
+      "released_unsent",
+      "settled"
+    ],
+    "jobs": [
+      {
+        "operation": "agent_v2.requirements",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.decompose",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.generate_operations",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.execute_freecad",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.validate_geometry",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.render_visual",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.judge_visual",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.validate_dfm",
+        "status": "succeeded",
+        "generation": 1
+      }
+    ]
+  },
+  "new-pair": {
+    "workflow": "27a49a46-e194-48f9-98b0-1bb463faad60",
+    "status": "failed",
+    "error_code": "ValueError",
+    "passed": false,
+    "candidate": null,
+    "default_network_retries": false,
+    "changes_created": 0,
+    "provider_statuses": [
+      "released_unsent",
+      "settled",
+      "settled"
+    ],
+    "jobs": [
+      {
+        "operation": "agent_v2.requirements",
+        "status": "failed",
+        "generation": 1
+      }
+    ]
+  },
+  "new-tol-default": {
+    "workflow": "5202eede-9e19-44d9-a0c8-314bfe75846c",
+    "status": "succeeded",
+    "error_code": null,
+    "passed": true,
+    "candidate": "3a82f39a-4c17-48c3-8b93-88d3ee9f8df7",
+    "default_network_retries": true,
+    "changes_created": null,
+    "provider_statuses": [
+      "settled",
+      "settled",
+      "released_unsent",
+      "settled",
+      "settled",
+      "released_unsent",
+      "settled"
+    ],
+    "jobs": [
+      {
+        "operation": "agent_v2.requirements",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.decompose",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.generate_operations",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.execute_freecad",
+        "status": "failed",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.repair_operations",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.execute_freecad",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.validate_geometry",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.render_visual",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.judge_visual",
+        "status": "succeeded",
+        "generation": 1
+      },
+      {
+        "operation": "agent_v2.validate_dfm",
+        "status": "succeeded",
+        "generation": 1
+      }
+    ]
+  }
+}

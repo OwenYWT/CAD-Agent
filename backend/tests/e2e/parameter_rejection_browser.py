@@ -22,6 +22,7 @@ with httpx.Client(base_url=API,timeout=60) as client,sync_playwright() as pw:
  errors=[];p.on('pageerror',lambda e:errors.append(str(e)))
  try:
   login(p);p.get_by_role('button',name=fixture['title'],exact=False).first.click()
+  p.get_by_role('button',name='展开模型',exact=True).click()
   p.get_by_role('button',name='属性',exact=True).click();tree=p.locator('[data-testid=cloud-document-panel]:visible')
   tree.get_by_role('treeitem',name='Hole',exact=True).click();field=tree.get_by_role('spinbutton',name='Hole.Diameter',exact=True)
   workflows=[]
@@ -43,9 +44,12 @@ with httpx.Client(base_url=API,timeout=60) as client,sync_playwright() as pw:
     snapshot=terminal(client,p,workflow);assert snapshot['status']=='succeeded',snapshot.get('error_message')
     expect(tree.get_by_role('button',name='查看变更 / 应用修改',exact=True)).to_be_visible(timeout=30000)
     p.set_viewport_size({'width':390,'height':844});p.get_by_role('button',name='返回 Agent',exact=True).click()
-    p.get_by_role('button',name='预览',exact=True).click()
-    notice=p.get_by_role('button',name='模型已生成，候选待确认 · 点击处理',exact=True);expect(notice).to_be_visible();notice.click()
-    expect(p.get_by_test_id('authoritative-task')).to_be_visible()
+    notice=p.get_by_role('button',name='审阅候选与参数变化',exact=True)
+    expect(notice).to_be_visible();notice.click()
+    mobile_review=p.get_by_role('dialog',name='变更审查',exact=True)
+    expect(mobile_review).to_be_visible()
+    assert read(client,'/api/change-sets/'+snapshot['change_set']['id'])['status']=='pending_review'
+    mobile_review.get_by_role('button',name='关闭',exact=True).last.click()
     p.set_viewport_size({'width':1440,'height':1000});p.get_by_role('button',name='属性',exact=True).click()
     tree.get_by_role('button',name='查看变更 / 应用修改',exact=True).click()
     dialog=p.get_by_role('dialog',name='变更审查',exact=True)

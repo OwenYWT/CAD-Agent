@@ -1,6 +1,11 @@
 import type { SVGProps } from "react";
 
 export type IconName =
+  | "arrow-up"
+  | "compose"
+  | "expand"
+  | "sidebar"
+  | "stop"
   | "box"
   | "chevron-down"
   | "chevron-right"
@@ -29,6 +34,11 @@ export type IconName =
   | "x";
 
 const paths: Record<IconName, React.ReactNode> = {
+  "arrow-up": <path d="M12 20V4m-7 7 7-7 7 7"/>,
+  compose: <><path d="M13 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-7"/><path d="m16 4 4 4m-10 6-1 4 4-1L21 9a2.8 2.8 0 0 0-4-4z"/></>,
+  expand: <path d="M14 4h6v6m0-6-7 7M10 20H4v-6m0 6 7-7"/>,
+  sidebar: <><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></>,
+  stop: <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/>,
   box: <><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="m3 8 9 5 9-5"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></>,
   "chevron-down": <path d="m6 9 6 6 6-6" />,
   "chevron-right": <path d="m9 18 6-6-6-6" />,

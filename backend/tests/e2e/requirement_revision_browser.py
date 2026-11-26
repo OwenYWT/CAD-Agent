@@ -29,6 +29,7 @@ def verify_requirement_intake(page, api, fixture, out):
     page.get_by_role('button', name='审查请求', exact=True).click()
     page.get_by_role('button', name='修改需求尺寸或依据', exact=True).click()
     card = page.get_by_role('region', name='执行前需求确认', exact=True)
+    card.get_by_text('核对或修改建模目标', exact=True).click()
     expect(card.get_by_role('textbox', name='建模目标', exact=True)).to_have_value(prompt)
     dimensions = '长度 60 mm；宽度 40 mm；厚度 10 mm；孔径 12 mm'
     card.get_by_role('textbox', name='关键尺寸依据', exact=True).fill(dimensions)
@@ -94,6 +95,7 @@ def verify_initial_geometry_basis(page, api, out):
         page.get_by_role('textbox', name='工程需求', exact=True).fill(prompt)
         page.get_by_role('button', name='开始创建', exact=True).click()
         card = page.get_by_role('region', name='执行前需求确认', exact=True)
+        expect(page.get_by_role('textbox', name='工程需求', exact=True)).not_to_be_visible()
         expect(card.get_by_role('textbox', name='关键尺寸依据', exact=True)).to_have_value(prompt)
         if not automatic_complete:
             # An uncovered feature cannot become automatically confirmed just
@@ -105,6 +107,7 @@ def verify_initial_geometry_basis(page, api, out):
             dimensions = card.get_by_role('textbox', name='关键尺寸依据', exact=True)
             dimensions.clear()
             dimensions.fill(edited_dimensions or prompt)
+        card.get_by_text('核对或修改建模目标', exact=True).click()
         expect(card.get_by_role('textbox', name='建模目标', exact=True)).to_have_value(prompt)
         if '\n' in prompt:
             # Exercise the target editor too: a single-line input normalizes

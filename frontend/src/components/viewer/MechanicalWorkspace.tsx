@@ -13,6 +13,7 @@ const DocumentSceneViewer = lazy(() => import("./DocumentSceneViewer"));
 const RevisionComparison = lazy(() => import('./RevisionComparison'));
 
 interface MechanicalWorkspaceProps {
+  onExpand?: () => void;
   viewedMeshUrl?: string;
   identity?: DocumentViewIdentity | null;
   selectedId?: string | null;
@@ -45,7 +46,7 @@ export default function MechanicalWorkspace({
   result,
   isGenerating,
   taskLabel,taskPhase,hasParameters=true,
-  onBack,
+  onBack, onExpand,
 }: MechanicalWorkspaceProps) {
   const { translate } = useI18n();
   const [viewerKey, setViewerKey] = useState(0);
@@ -59,16 +60,25 @@ export default function MechanicalWorkspace({
   const activeFilename = nativeDocumentId ? "原生 CAD 模型" : activeUrl ? "几何预览" : "等待生成";
 
 
+  let previewTitle = "模型预览";
+  if (identity?.mode === "history") previewTitle = "历史版本";
+  else if (identity?.mode === "candidate" || (!identity && taskPhase === "candidate")) previewTitle = "候选模型";
+  else if (identity?.mode === "committed" || taskPhase === "saved") previewTitle = "已保存模型";
+
   return (
-    <section className="ww-viewer-shell">
-      <header className="ww-viewer-toolbar">
+    <section className="ww-viewer-shell" data-inline={Boolean(onExpand)} aria-label={onExpand ? "对话中的模型预览" : "模型工作区"}>
+      {onExpand ? <header className="ww-inline-model-title">
+        <Icon name="box" size={18} /><strong>{previewTitle}</strong>
+        {onCandidate && identity ? <button type="button" className="ww-inline-model-action" onClick={onCandidate}>预览候选变更</button> : null}
+        <button type="button" className="ww-inline-model-action" onClick={onExpand} aria-label="展开模型" title="展开模型"><Icon name="expand" size={15}/><span>展开模型</span></button>
+      </header> : <header className="ww-viewer-toolbar">
         <button aria-label="打开项目流程" className="workspace-icon-button shrink-0" onClick={onBack} title="项目流程" type="button"><Icon name="clock" size={15} /></button>
         <div className="ww-viewer-title"><strong>模型</strong><span>{activeFilename}</span></div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <span className="ww-viewer-hint hidden 2xl:inline">拖动旋转 · 滚轮缩放 · 右键平移</span>
           <button aria-label="适应视图" className="workspace-icon-button" onClick={() => setViewerKey((key) => key + 1)} title="适应视图" type="button"><Icon name="rotate" size={14} /></button>
         </div>
-      </header>
+      </header>}
       <div className="ww-viewport-meta">
           {identity && identity.mode !== "committed" && onCommitted ? <button className="workspace-button" type="button" onClick={onCommitted}>查看已提交版本</button> : null}
           {onCandidate ? <button className="workspace-button" type="button" onClick={onCandidate}>预览候选变更</button> : null}

@@ -1,0 +1,3 @@
+# Preserve the exact bytes produced by the CAD kernel for hash verification.
+models/plate.step -text -whitespace
+models/plate.stl -text -whitespace
