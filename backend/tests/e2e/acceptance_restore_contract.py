@@ -33,7 +33,8 @@ def verify_restore(page, api, fixture, out):
     middle_evidence = api.get(path + '/revisions/' + middle['head_revision_id']).raise_for_status().json()
     page.reload()
     expect(page.get_by_test_id('document-scene')).to_have_attribute('data-revision', middle['head_revision_id'], timeout=90000)
-    page.get_by_role('button', name='版本', exact=True).click()
+    page.get_by_role('button', name='更多工具', exact=True).click()
+    page.locator('#workspace-actions').get_by_role('button', name='版本', exact=True).click()
     row = page.locator(f'[data-revision-id="{original}"]')
     row.get_by_role('button', name='从此版本生成恢复候选', exact=True).click()
     if page.locator('.ww-inspector-pane').is_visible():

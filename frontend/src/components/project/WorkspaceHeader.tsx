@@ -48,7 +48,7 @@ export default function WorkspaceHeader(props: HeaderProps) {
       {actions.map(item => <button key={item.key} aria-label={item.label} aria-pressed={props.activeTool === item.key} className="workspace-button workspace-header__secondary" onClick={item.run} type="button"><Icon name={item.icon} size={15} /><span className="hidden sm:inline">{item.label}</span></button>)}
       <button aria-label="导出" disabled={props.canExport === false} title={props.canExport === false ? "当前版本尚无可导出产物，或账号没有导出权限" : undefined} className="workspace-button workspace-button--primary workspace-header__export-action workspace-header__secondary" onClick={props.onExport} type="button"><Icon name="download" size={15} /><span className="hidden sm:inline">导出</span></button>
       <button ref={menuButton} aria-label="更多工具" aria-expanded={menuOpen} aria-controls="workspace-actions" className="workspace-icon-button" onClick={() => setMenuOpen(value => !value)} title="更多工具" type="button"><Icon name="more" size={16} /></button>
-      <button aria-label="设置" className="workspace-icon-button workspace-header__settings-action workspace-header__secondary" onClick={props.onSettings} type="button"><Icon name="settings" size={16} /></button>
+      <button aria-label="设置" title="设置" className="workspace-icon-button workspace-header__settings-action" onClick={props.onSettings} type="button"><Icon name="settings" size={16} /></button>
       <LanguageSwitch className="workspace-button ww-language-switch workspace-header__secondary" />
     </div>
     {menuOpen ? <div id="workspace-actions" ref={menu} className="ww-header-menu" aria-label="工作区操作">

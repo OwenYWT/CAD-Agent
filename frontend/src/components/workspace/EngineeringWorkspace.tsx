@@ -408,6 +408,7 @@ export default function EngineeringWorkspace({ user, onLogout, onUserUpdate }: E
               <span className="workspace-header__title cursor-default">CAD-Agent</span>
               {connectionState === "connected" ? <span role="status" aria-label="实时任务连接正常" title="实时任务连接正常" className="ww-connection-dot" /> : null}
               <div className="workspace-header__actions">
+                <button aria-label="设置" title="设置" className="workspace-icon-button" onClick={() => setSettingsOpen(true)} type="button"><Icon name="settings" size={16} /></button>
                 <LanguageSwitch className="workspace-button ww-language-switch" />
               </div>
             </header>

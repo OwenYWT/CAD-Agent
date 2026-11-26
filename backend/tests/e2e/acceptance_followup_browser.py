@@ -58,6 +58,7 @@ def main():
                     page.get_by_role('button', name=fixture['title'], exact=False).first.click()
                     scene = page.get_by_test_id('document-scene')
                     expect(scene).to_have_attribute('data-revision', fixture['document']['head_revision_id'], timeout=90000)
+                    page.get_by_role('button', name='展开模型', exact=True).click()
                     page.get_by_role('button', name='属性', exact=True).click()
                     for width in [1440, 768, 390, 320]:
                         page.set_viewport_size({'width':width, 'height':900})
