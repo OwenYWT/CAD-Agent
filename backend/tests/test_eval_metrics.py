@@ -318,6 +318,30 @@ def test_aggregate_summary_groups():
     assert s["by_path"]["revolve"]["pass@1"]["mean"] == 0.0
 
 
+def test_aggregate_summary_exposes_partial_pass_metric_coverage():
+    passed_runs = [_row(True), _row(True)]
+    unavailable_runs = [_row(None), _row(None)]
+    cases = [
+        {"id": case_id, "agg": M.aggregate_case(passed_runs)}
+        for case_id in ("A", "B")
+    ]
+    cases.append({"id": "C", "agg": M.aggregate_case(unavailable_runs)})
+
+    overall = M.aggregate_summary(cases)["overall"]
+
+    assert overall["pass@1"]["mean"] == 1.0
+    assert overall["pass@k"] == 1.0
+    assert overall["pass^k"] == 1.0
+    assert overall["pass_metric_coverage"] == {
+        "scored_cases": 2,
+        "total_cases": 3,
+        "case_coverage": pytest.approx(2 / 3),
+        "scored_runs": 4,
+        "total_runs": 6,
+        "run_coverage": pytest.approx(2 / 3),
+    }
+
+
 def test_aggregate_process_evaluation_metrics_are_reported():
     runs = [
         {
@@ -404,6 +428,7 @@ def test_aggregate_missing_legacy_metrics_are_unavailable_not_failed():
         "failed": 0,
         "blocked": 0,
         "unavailable": 0,
+        "pending": 0,
         "not_applicable": 0,
         "total": 1,
     }
@@ -452,6 +477,7 @@ def test_aggregate_summary_preserves_unavailable_status_counts():
         "failed": 0,
         "blocked": 1,
         "unavailable": 0,
+        "pending": 0,
         "not_applicable": 0,
         "total": 1,
     }

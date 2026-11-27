@@ -50,7 +50,19 @@ def test_normalize_cad_test_result_preserves_independent_measurements():
     assert normalized["requirements"] == {"passed": 8, "total": 8}
     assert normalized["artifact"]["sha256"] == "a" * 64
     assert normalized["delivery"]["status"] == "passed"
+    assert normalized["model_verdict"] is True
     assert normalized["identity"]["workflow_match"] is True
+
+
+def test_normalize_cad_test_result_preserves_scorer_script_digest():
+    digest = "b" * 64
+    normalized = normalize_cad_test_result(
+        _result(scorer_hash=None, scorer_script_sha256=digest),
+        expected_workflow_id="workflow-1",
+        expected_candidate_revision_id="revision-1",
+    )
+
+    assert normalized["case"]["scorer_hash"] == digest
 
 
 def test_normalize_cad_test_result_never_passes_without_authoritative_evidence():
@@ -70,6 +82,26 @@ def test_normalize_cad_test_result_rejects_conflicting_delivery_evidence():
     assert normalized["verdict"] is None
     assert normalized["reason"] == "cad_test_delivery_evidence_conflict"
     assert normalized["delivery"]["status"] == "error"
+
+
+def test_model_verdict_is_separate_from_native_delivery_verdict():
+    result = _result(delivery_verified=False, native_delivery={"passed": False})
+    normalized = normalize_cad_test_result(result)
+
+    assert normalized["model_verdict"] is True
+    assert normalized["verdict"] is False
+    assert normalized["status"] == "failed"
+    assert normalized["delivery"]["status"] == "failed"
+
+
+def test_model_verdict_survives_missing_delivery_evidence():
+    normalized = normalize_cad_test_result(
+        _result(delivery_verified=None, native_delivery={}),
+    )
+
+    assert normalized["status"] == "unknown"
+    assert normalized["model_verdict"] is True
+    assert normalized["verdict"] is None
 
 
 def test_normalize_cad_test_result_preserves_attachment_error_type():

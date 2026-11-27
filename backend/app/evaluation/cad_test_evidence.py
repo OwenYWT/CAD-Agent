@@ -84,6 +84,7 @@ def normalize_cad_test_result(
             "schema_version": "cad-test-evidence.v1",
             "status": "unavailable",
             "verdict": None,
+            "model_verdict": None,
             "authority": "unavailable",
             "reason": "cad_test_result_unavailable",
         }
@@ -148,6 +149,8 @@ def normalize_cad_test_result(
     identity = {
         "workflow_id": workflow_id,
         "candidate_revision_id": candidate_revision_id,
+        "expected_worker_build_id": _text(result.get("expected_worker_build_id")),
+        "worker_build_id": _text(result.get("worker_build_id")),
         "workflow_match": workflow_match,
         "candidate_revision_match": revision_match,
         "artifact_sha256": artifact_sha256,
@@ -162,7 +165,15 @@ def normalize_cad_test_result(
     )
     identity["case_match"] = case_match
     identity["dataset_match"] = dataset_match
+    expected_worker_build_id = identity["expected_worker_build_id"]
+    worker_build_id = identity["worker_build_id"]
+    identity["worker_build_match"] = (
+        None
+        if expected_worker_build_id is None
+        else worker_build_id == expected_worker_build_id
+    )
 
+    model_verdict = None
     if case_match is False:
         status = "blocked"
         verdict = None
@@ -171,6 +182,10 @@ def normalize_cad_test_result(
         status = "blocked"
         verdict = None
         reason = "cad_test_dataset_identity_mismatch"
+    elif identity["worker_build_match"] is False:
+        status = "blocked"
+        verdict = None
+        reason = "cad_test_worker_identity_mismatch"
     elif workflow_match is False or revision_match is False:
         status = "blocked"
         verdict = None
@@ -214,21 +229,19 @@ def normalize_cad_test_result(
         elif (
             score_passed is None
             or geometry_valid is None
-            or delivery_passed is None
             or requirements_passed is None
             or requirements_total is None
         ):
             status, verdict, reason = "unknown", None, "cad_test_evidence_incomplete"
         else:
             requirements_passed_all = requirements_passed == requirements_total
-            verdict = bool(
-                score_passed
-                and geometry_valid
-                and delivery_passed
-                and requirements_passed_all
-            )
-            status = "passed" if verdict else "failed"
-            reason = "cad_test_verified" if verdict else "cad_test_verification_failed"
+            model_verdict = bool(score_passed and geometry_valid and requirements_passed_all)
+            if delivery_passed is None:
+                status, verdict, reason = "unknown", None, "cad_test_delivery_evidence_incomplete"
+            else:
+                verdict = bool(model_verdict and delivery_passed)
+                status = "passed" if verdict else "failed"
+                reason = "cad_test_verified" if verdict else "cad_test_verification_failed"
 
     authority = (
         "not_applicable"
@@ -241,13 +254,16 @@ def normalize_cad_test_result(
         "schema_version": "cad-test-evidence.v1",
         "status": status,
         "verdict": verdict,
+        "model_verdict": model_verdict,
         "authority": authority,
         "reason": reason,
         "error_type": _text(result.get("error_type")),
         "case": {
             "id": case_id,
             "dataset_hash": dataset_hash,
-            "scorer_hash": _text(result.get("scorer_hash")),
+            "scorer_hash": _text(
+                result.get("scorer_hash") or result.get("scorer_script_sha256")
+            ),
             "scorer_image": _text(result.get("scorer_image")),
         },
         "identity": identity,
@@ -282,6 +298,10 @@ def normalize_cad_test_result(
     return normalized
 
 
+def cad_test_quality_projection(evidence: Mapping[str, Any]) -> dict[str, Any]:
+    return {key: evidence.get(key) for key in ("status", "authority", "reason")}
+
+
 def merge_cad_test_result(
     report: Mapping[str, Any],
     result: Mapping[str, Any] | None,
@@ -305,10 +325,6 @@ def merge_cad_test_result(
     merged = dict(report)
     merged["cad_test"] = normalized
     matrix = deepcopy(_mapping(report.get("quality_matrix")) or {})
-    matrix["cad_test"] = {
-        "status": normalized["status"],
-        "authority": normalized["authority"],
-        "reason": normalized["reason"],
-    }
+    matrix["cad_test"] = cad_test_quality_projection(normalized)
     merged["quality_matrix"] = matrix
     return merged

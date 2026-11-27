@@ -140,7 +140,7 @@ def test_missing_artifact_is_evaluation_error(tmp_path, monkeypatch):
     assert result["reason"] == "artifact_not_found"
 
 
-def test_bundle_keeps_step_only_evidence_incomplete(tmp_path, monkeypatch):
+def test_bundle_rejects_step_only_delivery(tmp_path, monkeypatch):
     monkeypatch.setenv("CAD_EVALUATION_MODE", "observe")
     _write_fake_cad_test(
         tmp_path,
@@ -166,9 +166,9 @@ def test_bundle_keeps_step_only_evidence_incomplete(tmp_path, monkeypatch):
     )
 
     assert result is not None
-    assert result["score"]["passed"] is True
-    assert result["delivery_verified"] is None
-    assert result["native_delivery"]["status"] == "unavailable"
+    assert result["status"] == "evaluation_error"
+    assert result["reason"] == "required_delivery_artifacts_missing"
+    assert result["missing_artifacts"] == ["fcstd", "stl"]
 
 
 def test_bundle_uses_dxf_route_without_native_3d_requirements(tmp_path, monkeypatch):
@@ -271,7 +271,7 @@ def test_bundle_combines_verified_native_delivery(tmp_path, monkeypatch):
         artifacts[kind] = path
     monkeypatch.setattr(
         "app.evaluation.cad_test_runner.run_native_delivery_check",
-        lambda **kwargs: {"passed": True, "native_solids": 1, "step_solids": 1},
+        lambda **kwargs: {"status": "passed", "passed": True, "native_solids": 1, "step_solids": 1},
     )
 
     result = run_cad_test_bundle(
@@ -322,6 +322,8 @@ def test_native_delivery_nonzero_exit_cannot_report_passed(tmp_path, monkeypatch
         path = tmp_path / f"result.{kind}"
         path.write_bytes(kind.encode("ascii"))
         artifacts[kind] = path
+    input_sidecar = tmp_path / "delivery-inputs.json"
+    input_sidecar.write_text("keep me", encoding="utf-8")
 
     def failed_wrapper(command, **kwargs):
         output_mount = next(
@@ -334,6 +336,7 @@ def test_native_delivery_nonzero_exit_cannot_report_passed(tmp_path, monkeypatch
             output_mount.split("source=", 1)[1].split(",destination=", 1)[0]
         )
         output_path.mkdir(parents=True, exist_ok=True)
+        assert (output_path / "delivery-inputs.json").is_file()
         (output_path / "native-delivery.json").write_text(
             json.dumps({"passed": True}), encoding="utf-8"
         )
@@ -348,6 +351,7 @@ def test_native_delivery_nonzero_exit_cannot_report_passed(tmp_path, monkeypatch
 
     assert result["status"] == "failed"
     assert result["passed"] is False
+    assert input_sidecar.read_text(encoding="utf-8") == "keep me"
 
 
 def test_internal_scorer_uses_mount_syntax_for_windows_host_paths(tmp_path, monkeypatch):

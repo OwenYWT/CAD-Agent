@@ -51,6 +51,7 @@ def _report() -> dict:
                         },
                         "cad_test": {
                             "status": "passed",
+                            "verdict": True,
                             "requirements": {"passed": 2, "total": 2},
                             "reason": "cad_test_verified",
                         },

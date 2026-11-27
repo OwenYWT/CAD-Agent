@@ -1,13 +1,18 @@
 """Independent STEP measurement. Offline container entry point."""
+import hashlib
 import json
-import math
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 import cadquery as cq
 from cq_reference import tests
 
 def score(step, case):
-    model=cq.importers.importStep(str(step))
+    artifact_bytes = step.read_bytes()
+    with TemporaryDirectory() as temporary:
+        snapshot = Path(temporary) / "artifact.step"
+        snapshot.write_bytes(artifact_bytes)
+        model = cq.importers.importStep(str(snapshot))
     metadata=json.loads((case/'case.json').read_text())
     scale=metadata['linear_scale_mm_per_source_unit']
     if scale!=1:model=cq.Workplane().newObject([s.scale(1/scale) for s in model.vals()])
@@ -21,6 +26,7 @@ def score(step, case):
         if c['role']=='required':groups.setdefault(c['requirement_id'] or str(c['id']),[]).append(c['status']=='pass')
     b=model.val().BoundingBox()
     return {'schema_version':'cad-eval-score.v1','passed':validity and verdict['passed'],
+        'artifact_sha256':hashlib.sha256(artifact_bytes).hexdigest(),
         'geometry_valid':validity,'solid_count':len(solids),'volume_mm3':sum(s.Volume() for s in solids)*scale**3,
         'bbox_mm':[b.xlen*scale,b.ylen*scale,b.zlen*scale],'requirements_passed':sum(all(v) for v in groups.values()),
         'requirements_total':len(groups),'checks':verdict['checks'],

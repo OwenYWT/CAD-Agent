@@ -58,6 +58,7 @@ python -m benchmark.eval --n 3 --no-rag
 
 - **pass@1**：单次成功率（日常主看）。delta 超过基线 std 才标 `*significant*`，否则是 LLM 噪声。
 - **pass@k**：k 次里≥1 次过（能力上限）。**pass^k**：k 次全过（稳定性）。
+- `overall.pass_metric_coverage` reports scored cases/runs against all cases/runs. Pass rates remain calculated only from scored samples; check coverage before interpreting a rate as representative of the full batch.
 - **逐 case 清单**：`FIXED` / `BROKE` / `hard regressions`（曾 100% 过现在不过）。这是最有价值的——抓 prompt 改动的副作用。
 - 退出码：净回归（broke > fixed）或任何 hard regression → 非零，可作 gate。
 
@@ -157,16 +158,10 @@ enters durable admission, then links each row to the corresponding
 `benchmark/reports/live/live_<workflow-id>.json` report. A missing or unfinished
 live report is recorded as a failed benchmark row and cannot become a pass.
 
-For a 3D live run with `CAD_TEST_DATASET_ROOT` configured, the row also includes
-the bounded `cad_test` result from the sealed candidate. The CADTest scorer and
-native-delivery verifier are repository-owned under
-`benchmark/cad_test_engine`; the configured path is data only and is never
-imported as Python code. Its `artifact_gate` contains the CADTest status,
-native delivery status, and measured STEP/STL delivery facts. A run with an
-independent CADTest result is counted as passed only when the CADTest and the
-FCStd/STEP/STL native-delivery check both pass. Missing or incomplete CADTest
-evidence remains visible as unknown and is not converted into a successful live
-evaluation.
+The built-in cases in `benchmark.eval --live-observe` report business delivery
+only (`evaluation_scope=delivery_only`); they are not CADTest cases. The CLI
+reads live reports from the same `CAD_EVALUATION_REPORT_ROOT` as the API and
+Worker. Use the CADTest batch command below for independent scoring.
 
 ## CADTest batch evaluation
 
@@ -175,16 +170,46 @@ project's `run.py`. The dataset is read-only input data; all scoring code,
 native delivery checks, batch aggregation, and live-report integration are in
 this repository.
 
+Set `CAD_TEST_REQUIRED=true`, `TEMPORAL_WORKER_BUILD_ID`, and
+`CAD_TEST_DATASET_ROOT` in both the CLI and evaluator Worker environments.
+The build ID must be the same immutable deployment revision in both processes;
+Temporal Workers use build-ID versioning and scoring rejects missing or
+mismatched Worker identity before invoking the scorer. In Docker Compose, set
+`CAD_TEST_DATASET_HOST_ROOT` in the repository-root `.env` to the host dataset
+directory; the Worker mounts it read-only at `/app/cad-test-dataset`. A required
+evaluator Worker fails startup if the dataset, scorer image, FreeCAD runtime, or
+build ID is unavailable. Ordinary Workers keep `CAD_TEST_REQUIRED=false` and do
+not require CADTest assets. If using a custom report directory, set
+`CAD_EVALUATION_REPORT_ROOT` for the CLI, Worker, and API to the same shared
+directory. `CAD_TEST_OUTPUT_ROOT` only changes the scorer's working directory,
+not the live report store. `live` path flags assert the configured paths; they
+cannot configure a separately running Worker. A missing shared report or a
+Worker dataset whose hash differs from the admitted dataset cannot pass.
+
+The sealed candidate becomes available before independent CADTest scoring
+finishes. Strict batch runs wait separately for the scoring result; if the
+scoring wait expires, the row retains the business report but does not pass.
+
 ```powershell
 $env:CAD_TEST_DATASET_ROOT = 'D:\project\projectcad\CAD_test'
+$env:CAD_TEST_REQUIRED = 'true'
+$env:TEMPORAL_WORKER_BUILD_ID = '20ea31b5d0d5faf766be2b178c33c374e7559154'
+# For Docker Compose, set the same host path in the repository-root .env:
+# CAD_TEST_DATASET_HOST_ROOT=D:\project\projectcad\CAD_test
 
 python -m benchmark.cad_test_batch dataset-check
 
 python -m benchmark.cad_test_batch live `
   --cases ctb-00000007,ctb-00001411 `
   --repeat 1 `
+  --evaluation-timeout-seconds 420 `
   --document-id <benchmark-document-uuid>
 ```
+
+The live batch preflights the dataset, scorer image, report-root write access,
+and FreeCAD native-delivery runtime before submitting any model. Its generation
+timeout and independent CADTest evaluation timeout are separate; unavailable
+or pending scores are excluded from model-verdict pass-rate denominators.
 
 The live batch report is written under
 `backend/benchmark/reports/cad_test/<run-id>/report.json`. Each case includes
@@ -211,6 +236,15 @@ python -m benchmark.cad_test_batch score `
 
 `CAD_TEST_ROOT` remains accepted as a compatibility alias for the dataset
 root. It no longer selects a scorer script or imports code from that path.
+
+For a case with `path: "2d"` in the validated manifest, its `file_hashes` must
+include `data/cases/<id>/reference.dxf` and `data/cases/<id>/checks.json`.
+The reference drawing is independent of the submission. `checks.json` is
+`{"schema_version":"cad-test-dxf-checks.v1","tolerance_mm":0.01}` (choose the
+case's own positive tolerance). Both drawings must use millimeters. The scorer
+compares planar lines, circles, arcs and lightweight polylines by type, count,
+size, position and polyline connectivity/closure. Unsupported representations
+or missing truth cannot pass. The existing 3D dataset needs no conversion.
 
 For compatibility with existing scripts, the old explicit workspace form is
 still accepted:

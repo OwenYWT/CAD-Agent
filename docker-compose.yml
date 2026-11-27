@@ -116,6 +116,9 @@ services:
       TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
       TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-cad-agent-mcad}
       TEMPORAL_AGENT_V2_TASK_QUEUE: ${TEMPORAL_AGENT_V2_TASK_QUEUE:-cad-agent-mcad-v2}
+      CAD_TEST_REQUIRED: ${CAD_TEST_REQUIRED:-false}
+      CAD_TEST_DATASET_ROOT: ${CAD_TEST_DATASET_ROOT:-/app/cad-test-dataset}
+      TEMPORAL_WORKER_BUILD_ID: ${TEMPORAL_WORKER_BUILD_ID:-}
       FILE_STORAGE_DIR: /app/data/files
       HISTORY_DB_PATH: /app/data/history.db
       # Sibling kernel containers must see the same absolute input/output paths.
@@ -174,6 +177,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - cad_data:/app/data
+      - ${CAD_TEST_DATASET_HOST_ROOT:-./backend/benchmark/cad_tests}:/app/cad-test-dataset:ro
       - ${SANDBOX_WORK_DIR:-/tmp/cad-agent-work}:${SANDBOX_WORK_DIR:-/tmp/cad-agent-work}
     restart: unless-stopped
 

@@ -17,6 +17,7 @@ from typing import Any, Awaitable, Callable, Mapping
 from uuid import UUID
 
 from app.evaluation.integration import evaluation_run_id_for_workflow
+from app.evaluation.cad_test_observer import CAD_TEST_TERMINAL_STATUSES
 from app.evaluation.store import FileEvaluationStore
 from app.models.schemas import GenerateResponse
 from app.services.durable_submission import (
@@ -26,6 +27,7 @@ from app.services.durable_submission import (
 )
 from app.workflows.temporal import confirm_mcad_workflow
 from benchmark import metrics as M
+from benchmark.cad_test_gate import cad_test_delivery_passed
 
 
 @dataclass(frozen=True)
@@ -36,8 +38,10 @@ class LiveBenchmarkContext:
     expected_base_revision_id: UUID
     report_root: Path
     timeout_seconds: float = 180.0
+    cad_test_timeout_seconds: float | None = None
     run_id: str = "live-benchmark"
     dataset_hash: str | None = None
+    worker_build_id: str | None = None
 
 
 Submitter = Callable[..., Awaitable[DurableSubmission]]
@@ -237,6 +241,22 @@ def _live_evaluation_snapshot(
     return snapshot
 
 
+def _live_report_failure_message(report: Mapping[str, Any]) -> str | None:
+    for event in report.get("timeline") or []:
+        if not isinstance(event, Mapping) or event.get("event_type") != "operation_failed":
+            continue
+        payload = event.get("payload")
+        if isinstance(payload, Mapping):
+            message = payload.get("error_message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+    for key in ("error_message", "error"):
+        message = report.get(key)
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    return None
+
+
 def _artifact_gate_from_live_report(
     report: Mapping[str, Any], case: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -308,7 +328,6 @@ def benchmark_row_from_live_report(
     cad_test_gate_status = str(
         artifact_gate.get("cad_test_status") or "unavailable"
     ).casefold()
-    native_delivery_verified = artifact_gate.get("native_delivery_verified") is True
     row.update(
         {
             "live_evaluation_run_id": run_id,
@@ -323,20 +342,63 @@ def benchmark_row_from_live_report(
     cad_test = report.get("cad_test")
     if isinstance(cad_test, Mapping) and cad_test:
         row["cad_test"] = dict(cad_test)
+        identity = cad_test.get("identity")
+        if isinstance(identity, Mapping):
+            for key in ("workflow_id", "candidate_revision_id", "worker_build_id"):
+                value = identity.get(key)
+                if value is not None:
+                    row[key] = str(value)
     cad_test_required = case.get("cad_test_required", True) is True
-    is_2d = case.get("path") == "2d"
+    row["evaluation_scope"] = "cad_test" if cad_test_required else "delivery_only"
     row["passed"] = status == "finished" and artifact_gate["passed"] and (
-        not cad_test_required
-        or (
-            cad_test_gate_status == "passed"
-            and (is_2d or native_delivery_verified)
-        )
+        not cad_test_required or cad_test_delivery_passed(row)
     )
     if status != "finished":
-        row["live_report_error"] = (
-            "live report is not finished" if status != "missing" else "live report is missing"
+        row["live_report_error"] = _live_report_failure_message(report) or (
+            "live report is missing" if status == "missing"
+            else "live report is not finished" if status == "running"
+            else f"live report {status}"
         )
+    _apply_live_evaluation_outcomes(row, case)
     return row
+
+
+def _apply_live_evaluation_outcomes(row: dict[str, Any], case: Mapping[str, Any]) -> None:
+    cad_test_required = case.get("cad_test_required", True) is True
+    cad_test = row.get("cad_test")
+    cad_test = cad_test if isinstance(cad_test, Mapping) else {}
+    verdict = cad_test.get("verdict")
+    model_verdict = cad_test.get("model_verdict", verdict)
+    row["cad_test_verdict"] = verdict if isinstance(verdict, bool) else None
+    row["model_verdict"] = model_verdict if isinstance(model_verdict, bool) else None
+    status = str(cad_test.get("status") or "").casefold()
+    row["evaluation_status"] = (
+        "scored" if isinstance(verdict, bool) and status in {"passed", "failed"}
+        else "blocked" if status == "blocked"
+        else "unavailable" if status in {"error", "unknown", "unavailable"}
+        else "pending"
+    ) if cad_test_required else "not_required"
+    if row["evaluation_status"] == "pending" and row.get("live_report_error"):
+        row["evaluation_status"] = "unavailable"
+        report_status = row.get("live_report_status")
+        if report_status == "finished":
+            row["evaluation_reason"] = "cad_test_observation_timeout"
+        elif report_status in {"failed", "error"}:
+            row["evaluation_reason"] = "live_report_failed"
+        else:
+            row["evaluation_reason"] = "live_report_unavailable"
+    delivery = cad_test.get("delivery")
+    delivery = delivery if isinstance(delivery, Mapping) else {}
+    row["delivery_status"] = (
+        "not_applicable" if case.get("path") == "2d"
+        else str(delivery.get("status") or "unavailable").casefold()
+    )
+    if cad_test_required:
+        row["passed"] = (
+            bool(row["model_verdict"] and row["artifact_gate"]["passed"] and cad_test_delivery_passed(row))
+            if row["evaluation_status"] == "scored"
+            else False
+        )
 
 
 async def _wait_for_report(
@@ -344,8 +406,10 @@ async def _wait_for_report(
     *,
     timeout_seconds: float,
     poll_seconds: float = 0.1,
+    cad_test_required: bool = False,
 ) -> dict[str, Any] | None:
     deadline = time.monotonic() + timeout_seconds
+    finished_report = None
     while time.monotonic() < deadline:
         if path.is_file():
             try:
@@ -359,9 +423,14 @@ async def _wait_for_report(
                 "cancelled",
                 "error",
             }:
-                return report
-        await asyncio.sleep(poll_seconds)
-    return None
+                if not cad_test_required or report["status"] != "finished":
+                    return report
+                score = report.get("cad_test")
+                if isinstance(score, Mapping) and score.get("status") in CAD_TEST_TERMINAL_STATUSES:
+                    return report
+                finished_report = report
+        await asyncio.sleep(min(poll_seconds, max(0, deadline - time.monotonic())))
+    return finished_report
 
 
 async def run_live_case(
@@ -377,6 +446,11 @@ async def run_live_case(
 
     case_id = str(case["id"])
     started = time.monotonic()
+    is_2d = case.get("path") == "2d"
+    cad_test_required = case.get("cad_test_required", True) is True
+    output_formats = ["dxf"] if is_2d else ["step", "stl"]
+    if cad_test_required and not is_2d:
+        output_formats.append("fcstd")
     submission = await submitter(
         context.principal,
         project_id=context.project_id,
@@ -385,12 +459,13 @@ async def run_live_case(
         idempotency_key=f"benchmark:{context.run_id}:{case_id}:run-{repeat_index}",
         operation="generate",
         objective=str(case["description"]),
-        output_formats=["dxf"] if case.get("path") == "2d" else ["step", "stl"],
-        modeling_backend="auto",
+        output_formats=output_formats,
+        modeling_backend="freecad" if cad_test_required and not is_2d else "auto",
         source_kind="benchmark",
         source_id=case_id,
         source_dataset_hash=context.dataset_hash,
         source_modeling_path=str(case.get("path") or "extrude_cut"),
+        source_worker_build_id=context.worker_build_id,
     )
     response = await waiter(
         context.principal,
@@ -414,12 +489,21 @@ async def run_live_case(
     report_path = FileEvaluationStore(context.report_root).path_for(evaluation_run_id)
     report = await _wait_for_report(
         report_path,
-        timeout_seconds=context.timeout_seconds,
+        timeout_seconds=(context.cad_test_timeout_seconds or context.timeout_seconds) if cad_test_required else context.timeout_seconds,
+        cad_test_required=cad_test_required,
     )
-    return benchmark_row_from_live_report(
+    row = benchmark_row_from_live_report(
         case=case,
         response=response,
         live_report=report,
         report_path=report_path,
         wall_time_ms=int((time.monotonic() - started) * 1000),
     )
+    if (
+        row["evaluation_scope"] == "cad_test"
+        and row["live_report_status"] == "finished"
+        and row["cad_test_gate_status"] not in CAD_TEST_TERMINAL_STATUSES
+    ):
+        row["live_report_error"] = "CADTest observation did not reach a terminal result before the deadline"
+    _apply_live_evaluation_outcomes(row, case)
+    return row

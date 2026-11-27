@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
+from app.evaluation.cad_test_observer import resolve_live_cli_config
 from app.evaluation.cad_test_runner import (
     CadTestRunnerConfig,
     run_cad_test,
@@ -60,7 +61,8 @@ def _parser() -> argparse.ArgumentParser:
     live.add_argument("--branch-id", type=UUID)
     live.add_argument("--base-revision-id", type=UUID)
     live.add_argument("--timeout-seconds", type=float, default=180.0)
-    live.add_argument("--report-root", type=Path, default=Path(__file__).resolve().parent / "reports")
+    live.add_argument("--evaluation-timeout-seconds", type=float, default=420.0)
+    live.add_argument("--report-root", type=Path)
 
     return parser
 
@@ -123,7 +125,7 @@ def _score(args: argparse.Namespace, dataset: CadTestDataset) -> int:
         artifacts["fcstd"] = args.fcstd
     if args.stl is not None:
         artifacts["stl"] = args.stl
-    if set(artifacts) == {"step", "fcstd", "stl"}:
+    if args.fcstd is not None or args.stl is not None:
         result = run_cad_test_bundle(
             artifacts=artifacts,
             case_id=str(case["id"]),
@@ -151,6 +153,8 @@ def _score(args: argparse.Namespace, dataset: CadTestDataset) -> int:
 async def _live(args: argparse.Namespace, dataset: CadTestDataset) -> int:
     if args.repeat < 1:
         raise SystemExit("--repeat must be positive")
+    if args.evaluation_timeout_seconds <= 0:
+        raise SystemExit("--evaluation-timeout-seconds must be positive")
     if args.document_id is not None and any(
         value is not None for value in (args.project_id, args.branch_id, args.base_revision_id)
     ):
@@ -164,6 +168,18 @@ async def _live(args: argparse.Namespace, dataset: CadTestDataset) -> int:
 
     from app.domain.identity import local_anonymous_principal
     from benchmark.eval import _resolve_live_workspace
+    from app.evaluation.cad_test_observer import (
+        cad_test_required_from_environment,
+        require_temporal_worker_build_id,
+        validate_cad_test_worker_config,
+    )
+
+    if not cad_test_required_from_environment():
+        raise SystemExit("Set CAD_TEST_REQUIRED=true in both the CLI and evaluator Worker environments")
+    worker_build_id = require_temporal_worker_build_id()
+    configured_dataset_hash = validate_cad_test_worker_config()
+    if configured_dataset_hash != dataset.dataset_hash:
+        raise SystemExit("CLI CADTest dataset hash differs from the validated Worker configuration")
 
     principal = local_anonymous_principal()
     project_id, branch_id, base_revision_id = await _resolve_live_workspace(
@@ -182,6 +198,7 @@ async def _live(args: argparse.Namespace, dataset: CadTestDataset) -> int:
         "run_id": run_id,
         "mode": "live-product",
         "dataset_hash": dataset.dataset_hash,
+        "expected_worker_build_id": worker_build_id,
         "case_ids": [case["id"] for case in cases],
         "repeat": args.repeat,
         "process_metrics_source": "live_evaluation_report",
@@ -198,8 +215,10 @@ async def _live(args: argparse.Namespace, dataset: CadTestDataset) -> int:
         expected_base_revision_id=base_revision_id,
         report_root=args.report_root,
         timeout_seconds=args.timeout_seconds,
+        cad_test_timeout_seconds=args.evaluation_timeout_seconds,
         run_id=run_id,
         dataset_hash=dataset.dataset_hash,
+        worker_build_id=worker_build_id,
     )
     rows: list[dict[str, Any]] = []
     for repeat in range(1, args.repeat + 1):
@@ -253,11 +272,20 @@ async def _live(args: argparse.Namespace, dataset: CadTestDataset) -> int:
     }
     report_path, _html_path = _write_batch_report(output, report)
     print(report_path)
-    return 0 if all(row.get("passed") is True for row in rows) else 1
+    return 0 if rows and all(row.get("passed") is True for row in rows) else 1
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.command == "live":
+        try:
+            config, args.report_root = resolve_live_cli_config(
+                dataset_root=args.dataset_root, report_root=args.report_root,
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
+        args.dataset_root = config.dataset_root
     dataset = load_dataset(_require_dataset_root(getattr(args, "dataset_root", None)))
     if args.command == "dataset-check":
         print(

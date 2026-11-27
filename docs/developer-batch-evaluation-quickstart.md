@@ -2,6 +2,8 @@
 
 以下命令均在 PowerShell 中执行。批量评测不需要启动前端；需要数据库、Temporal、Podman、CAD-Agent Worker 和 API 已正常可用。
 
+在启动 Worker 和运行批量 CLI 的两个终端里，都先设置 `$env:CAD_TEST_DATASET_ROOT = 'D:\project\projectcad\CAD_test'`。如果自定义报告目录，在 Worker、API 和 CLI 三个终端里都把 `CAD_EVALUATION_REPORT_ROOT` 指向同一个共享目录，再启动进程。`--dataset-root` 和 `--report-root` 用于校验当前进程配置，不会修改已启动的 Worker。
+
 ## 第一步：启动 Worker
 
 打开第一个终端：
@@ -125,6 +127,10 @@ python -X utf8 -m benchmark.cad_test_batch score `
   --step "D:\path\to\result.step" `
   --out ".\benchmark\reports\cad_test\manual-ctb-00000007"
 ```
+
+单 STEP 评分只验证 STEP，不代表完整交付通过。若传入 `--fcstd` 或 `--stl`，则进入完整交付模式，两者必须同时提供；缺件、STEP 未通过、原生校验失败或无法执行时，`result.json` 不会标记为通过，命令返回非零退出码。
+
+手工补录到 Live 报告（`benchmark.cad_test_live`）要求 Worker 已写入该候选的封存制品摘要。输入必须逐份匹配封存大小和 SHA-256；历史报告没有封存摘要时，请使用修复后的 Worker 重新跑评测，不要使用另一套模型补填结果。
 
 ## 常见注意事项
 

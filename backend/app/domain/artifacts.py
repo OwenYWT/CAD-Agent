@@ -63,6 +63,7 @@ class CandidateSealResult:
     change_set_id: UUID
     artifacts: tuple[CommittedArtifact, ...]
     replayed: bool = False
+    artifact_step_keys: dict[UUID, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

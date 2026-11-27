@@ -2,6 +2,7 @@
   "backend": {
     "engine": "pytest",
     "node_ids": [
+      "tests/test_cad_test_external_recheck.py::test_dispatched_observation_survives_absent_worker_and_deduplicates",
       "tests/fusion360/test_adapter_contract.py::test_protocol_exposes_only_stable_adapter_methods",
       "tests/fusion360/test_adapter_contract.py::test_get_capabilities_is_synchronous_static_and_does_not_touch_transport",
       "tests/fusion360/test_adapter_contract.py::test_production_adapter_rejects_non_loopback_runtime",
@@ -3545,6 +3546,7 @@
       "tests/test_document_queue.py::test_pre_patch_revision_restore_replays_its_wait"
     ],
     "allowed_skips": {
+      "tests/test_cad_test_external_recheck.py::test_dispatched_observation_survives_absent_worker_and_deduplicates": "set CAD_TEST_TEMPORAL_TEST_TARGET to a test Temporal endpoint",
       "tests/integration/test_agent_candidate_seal.py::test_late_workflow_failure_during_cancellation_reaches_a_terminal_state": "real PostgreSQL and MinIO are required",
       "tests/integration/test_agent_candidate_seal.py::test_explicit_visual_failure_cannot_be_sealed_even_when_advisory": "real PostgreSQL and MinIO are required",
       "tests/integration/test_agent_candidate_seal.py::test_candidate_seal_commits_once_and_preserves_advisory_risks": "real PostgreSQL and MinIO are required",
@@ -3983,6 +3985,7 @@
   "durable-core": {
     "engine": "pytest",
     "node_ids": [
+      "tests/test_cad_test_external_recheck.py::test_dispatched_observation_survives_absent_worker_and_deduplicates",
       "tests/integration/test_temporal_mcadd_workflow.py::test_native_visual_negative_budget_with_real_kernel[advisory-failed-1]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_native_visual_negative_budget_with_real_kernel[handoff-before-advisory-decision]",
       "tests/integration/test_temporal_mcadd_workflow.py::test_native_visual_negative_budget_with_real_kernel[advisory-failed-0]",

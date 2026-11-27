@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     temporal_namespace: str = "default"
     temporal_task_queue: str = "cad-agent-mcad"
     temporal_agent_v2_task_queue: str = "cad-agent-mcad-v2"
+    temporal_worker_build_id: str = ""
+    cad_test_required: bool = False
+    cad_test_dataset_root: str = ""
     file_storage_dir: str = "./data/files"
     history_db_path: str = "./data/history.db"
     file_ttl_hours: int = 24  # generated files older than this are cleaned up

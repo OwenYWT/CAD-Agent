@@ -559,6 +559,11 @@ def _seal_result_from_payload(payload: dict[str, Any], *, replayed: bool) -> Can
             for item in payload.get("artifacts") or ()
         ),
         replayed=replayed,
+        artifact_step_keys={
+            UUID(str(item["artifact_id"])): str(item["step_key"])
+            for item in payload.get("artifacts") or ()
+            if item.get("step_key")
+        },
     )
 
 
@@ -952,8 +957,9 @@ async def seal_agent_candidate(
                     "size_bytes": item.size_bytes,
                     "sha256": item.sha256,
                     "content_type": item.content_type,
+                    "step_key": row["step_key"],
                 }
-                for item in committed
+                for item, row in zip(committed, artifact_rows, strict=True)
             ],
         }
         await connection.execute(

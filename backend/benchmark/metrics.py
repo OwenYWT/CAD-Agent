@@ -361,6 +361,9 @@ def _status_counts(values: list[str], expected: tuple[str, ...]) -> dict:
 def _final_gate_status(row: dict) -> str:
     if row.get("passed") is True:
         return "passed"
+    evaluation_status = row.get("evaluation_status")
+    if evaluation_status in {"pending", "blocked", "unavailable"}:
+        return evaluation_status
     if row.get("executed") is True:
         return "failed"
     if row.get("executed") is False:
@@ -375,8 +378,12 @@ def _cad_test_status(row: dict) -> str:
     status = str(cad_test.get("status") or "").casefold()
     if status in {"passed", "pass", "succeeded"}:
         return "passed"
-    if status in {"failed", "fail", "error"}:
+    if status in {"failed", "fail"}:
         return "failed"
+    if status == "blocked":
+        return "blocked"
+    if status in {"error", "unknown", "unavailable"}:
+        return "unavailable"
     if status in {"not_applicable", "not applicable", "skipped"}:
         return "not_applicable"
     return "unavailable"
@@ -410,7 +417,13 @@ def aggregate_case(runs: list[dict]) -> dict:
     pass@k = 1 if ANY run passed   (capability ceiling)
     pass^k = 1 if ALL runs passed  (stability)
     """
-    passed = [r["passed"] for r in runs]
+    model_verdicts = [
+        r.get("model_verdict") if r.get("evaluation_scope") == "cad_test" else r.get("passed")
+        for r in runs
+    ]
+    scored_verdicts = [value for value in model_verdicts if isinstance(value, bool)]
+    pass_at_k = any(scored_verdicts) if scored_verdicts else None
+    pass_stability = all(scored_verdicts) if scored_verdicts else None
     process_rows = [
         r.get("process_evaluation")
         for r in runs
@@ -463,9 +476,9 @@ def aggregate_case(runs: list[dict]) -> dict:
 
     return {
         "n_runs": len(runs),
-        "pass@1": _rate_stats(passed),
-        "pass@k": any(passed),
-        "pass^k": all(passed) if passed else False,
+        "pass@1": _rate_stats(model_verdicts),
+        "pass@k": pass_at_k,
+        "pass^k": pass_stability,
         "verdict_pass_rate": _rate_stats(
             [_optional_metric(r, "verdict_pass") for r in runs]
         ),
@@ -485,8 +498,26 @@ def aggregate_case(runs: list[dict]) -> dict:
         "avg_wall_ms": round(_mean([r["wall_time_ms"] for r in runs])),
         "final_gate_status": _status_counts(
             [_final_gate_status(r) for r in runs],
-            ("passed", "failed", "blocked", "unavailable", "not_applicable"),
+            ("passed", "failed", "blocked", "unavailable", "pending", "not_applicable"),
         ),
+        "model_verdict_status": _status_counts(
+            ["passed" if value is True else "failed" if value is False else "unavailable" for value in model_verdicts],
+            ("passed", "failed", "unavailable"),
+        ),
+        "evaluation_status": _status_counts(
+            [str(r.get("evaluation_status") or "unavailable") for r in runs],
+            ("scored", "pending", "blocked", "unavailable", "not_required"),
+        ),
+        "delivery_status": _status_counts(
+            [str(r.get("delivery_status") or "unavailable") for r in runs],
+            ("passed", "failed", "error", "unavailable", "not_applicable"),
+        ),
+        "candidate_counts": {
+            "generated": sum(r.get("executed") is True for r in runs),
+            "scored": sum(isinstance(value, bool) for value in model_verdicts),
+            "terminal_scored": sum(r.get("evaluation_status") == "scored" for r in runs),
+            "blocked_or_unavailable": sum(r.get("evaluation_status") in {"blocked", "unavailable"} for r in runs),
+        },
         "cad_test_status": _status_counts(
             [_cad_test_status(r) for r in runs],
             ("passed", "failed", "blocked", "unavailable", "not_applicable"),
@@ -504,11 +535,20 @@ def aggregate_summary(cases: list[dict]) -> dict:
     runs:[...], agg:{...}} entries. Produces overall + per-difficulty + per-path."""
     def _collect(entries: list[dict]) -> dict:
         # pass@1: mean over cases of each case's pass@1 mean
-        p1 = [c["agg"]["pass@1"]["mean"] for c in entries]
-        passk = [1.0 if c["agg"]["pass@k"] else 0.0 for c in entries]
-        passhat = [1.0 if c["agg"]["pass^k"] else 0.0 for c in entries]
+        p1 = [c["agg"]["pass@1"]["mean"] for c in entries if c["agg"]["pass@1"]["mean"] is not None]
+        passk = [float(c["agg"]["pass@k"]) for c in entries if c["agg"]["pass@k"] is not None]
+        passhat = [float(c["agg"]["pass^k"]) for c in entries if c["agg"]["pass^k"] is not None]
         wall = [c["agg"]["avg_wall_ms"] for c in entries]
         process = [c["agg"].get("process_evaluation") or {} for c in entries]
+        scored_runs = sum(
+            int(c["agg"].get("candidate_counts", {}).get("scored", 0))
+            for c in entries
+        )
+        total_runs = sum(int(c["agg"].get("n_runs", 0)) for c in entries)
+        scored_cases = sum(
+            int(c["agg"].get("candidate_counts", {}).get("scored", 0)) > 0
+            for c in entries
+        )
 
         def _process_summary(key: str) -> float:
             return round(
@@ -549,14 +589,29 @@ def aggregate_summary(cases: list[dict]) -> dict:
 
         return {
             "n_cases": len(entries),
-            "pass@1": {"mean": round(_mean(p1), 4), "std": round(_std(p1), 4)},
-            "pass@k": round(_mean(passk), 4),
-            "pass^k": round(_mean(passhat), 4),
+            "pass@1": {"mean": round(_mean(p1), 4) if p1 else None, "std": round(_std(p1), 4) if p1 else None},
+            "pass@k": round(_mean(passk), 4) if passk else None,
+            "pass^k": round(_mean(passhat), 4) if passhat else None,
+            "pass_metric_coverage": {
+                "scored_cases": scored_cases,
+                "total_cases": len(entries),
+                "case_coverage": scored_cases / len(entries) if entries else 0.0,
+                "scored_runs": scored_runs,
+                "total_runs": total_runs,
+                "run_coverage": scored_runs / total_runs if total_runs else 0.0,
+            },
             "verdict_pass_rate": _rate_summary("verdict_pass_rate"),
             "printable_rate": _rate_summary("printable_rate"),
             "one_shot_rate": _rate_summary("one_shot_rate"),
             "final_gate_status": _merge_status("final_gate_status"),
             "cad_test_status": _merge_status("cad_test_status"),
+            "model_verdict_status": _merge_status("model_verdict_status"),
+            "evaluation_status": _merge_status("evaluation_status"),
+            "delivery_status": _merge_status("delivery_status"),
+            "candidate_counts": {
+                key: sum(int(c["agg"].get("candidate_counts", {}).get(key, 0)) for c in entries)
+                for key in ("generated", "scored", "terminal_scored", "blocked_or_unavailable")
+            },
             "process_evaluation_status": _merge_status("process_evaluation_status"),
             "avg_wall_ms": round(_mean(wall)),
             "process_evaluation": {

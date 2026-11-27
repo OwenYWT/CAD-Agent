@@ -473,6 +473,12 @@ def _select_cases(spec: str) -> list[dict]:
     return out
 
 
+def _legacy_live_inputs(cases: list[dict]) -> tuple[list[dict], Path]:
+    from app.evaluation.integration import default_report_root
+
+    return [{**case, "cad_test_required": False} for case in cases], default_report_root()
+
+
 def main():
     ap = _parser()
     args = ap.parse_args()
@@ -493,6 +499,7 @@ def main():
 
     live_context = None
     if args.live_observe:
+        cases, live_report_root = _legacy_live_inputs(cases)
         from app.domain.identity import local_anonymous_principal
         from benchmark.live import LiveBenchmarkContext
 
@@ -511,7 +518,7 @@ def main():
             project_id=project_id,
             branch_id=branch_id,
             expected_base_revision_id=base_revision_id,
-            report_root=REPORTS_DIR,
+            report_root=live_report_root,
             timeout_seconds=args.live_timeout or settings.generate_deadline_s,
             run_id=run_id,
         )
@@ -532,6 +539,7 @@ def main():
         "sandbox_runtime": settings.sandbox_runtime,
         "runtime_identity": _runtime_identity(),
         "live_observe": args.live_observe,
+        **({"evaluation_scope": "delivery_only"} if args.live_observe else {}),
     }
 
     logger.info(f"Starting {run_id}: {len(cases)} cases x{args.n} "
@@ -589,20 +597,20 @@ def _print_summary(report: dict):
     print("=" * 70)
     print(f"model={m['model']}  rag={'on' if m['rag_enabled'] else 'off'}  "
           f"n={m['n_repeats']}  cases={m['n_cases']}  wall={m.get('total_wall_s')}s")
-    print(f"\n  pass@1            : {s['pass@1']['mean']:.1%}  (±{s['pass@1']['std']:.1%})")
-    print(f"  pass@k (ceiling)  : {s['pass@k']:.1%}")
-    print(f"  pass^k (stable)   : {s['pass^k']:.1%}")
+    print(f"\n  pass@1            : {_rate(s['pass@1']['mean'])}  (±{_rate(s['pass@1']['std'])})")
+    print(f"  pass@k (ceiling)  : {_rate(s['pass@k'])}")
+    print(f"  pass^k (stable)   : {_rate(s['pass^k'])}")
     print(f"  verdict=pass      : {_rate(s['verdict_pass_rate']['mean'])}")
     print(f"  printable         : {_rate(s['printable_rate']['mean'])}")
     print(f"  one-shot          : {_rate(s['one_shot_rate']['mean'])}")
     print(f"  avg wall          : {s['avg_wall_ms']}ms")
     print("\n  by difficulty:")
     for diff, d in report["summary"]["by_difficulty"].items():
-        print(f"    {diff:9s}: pass@1 {d['pass@1']['mean']:.1%}  "
+        print(f"    {diff:9s}: pass@1 {_rate(d['pass@1']['mean'])}  "
               f"verdict {_rate(d['verdict_pass_rate']['mean'])}  (n={d['n_cases']})")
     print("\n  by path:")
     for p, d in report["summary"]["by_path"].items():
-        print(f"    {p:12s}: pass@1 {d['pass@1']['mean']:.1%}  (n={d['n_cases']})")
+        print(f"    {p:12s}: pass@1 {_rate(d['pass@1']['mean'])}  (n={d['n_cases']})")
 
 
 if __name__ == "__main__":

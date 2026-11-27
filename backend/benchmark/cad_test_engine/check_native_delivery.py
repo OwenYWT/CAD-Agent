@@ -10,7 +10,7 @@ from native_delivery_selection import select_final_objects
 result={'passed':False,'freecad_version':App.Version()}
 doc=None
 try:
-    inputs=json.loads(Path('/input/delivery-inputs.json').read_text())
+    inputs=json.loads(Path('/out/delivery-inputs.json').read_text(encoding='utf-8'))
     doc=App.openDocument('/input/'+inputs['fcstd']);doc.recompute()
     objects=select_final_objects(doc.Objects)
     if not objects:raise ValueError('no final native solids')

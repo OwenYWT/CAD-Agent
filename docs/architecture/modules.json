@@ -113,7 +113,8 @@
         "app.services.provider_budgets",
         "app.workflows.work_accounting",
         "app.evaluation.integration",
-        "app.evaluation.cad_test_observer"
+        "app.evaluation.cad_test_observer",
+        "app.workflows.cad_test_observation"
       ],
       "allowed_dependencies": [
         "P00",
@@ -834,6 +835,7 @@
     "backend/app/workflows/__init__.py": "P00",
     "backend/app/workflows/activities.py": "P02",
     "backend/app/workflows/agent_v2.py": "M03",
+    "backend/app/workflows/cad_test_observation.py": "M03",
     "backend/app/workflows/checkpoint_inputs.py": "M03",
     "backend/app/workflows/constraint_evidence.py": "M03",
     "backend/app/workflows/definitions.py": "M03",

@@ -23,6 +23,7 @@ def test_live_benchmark_row_requires_a_finished_report():
     assert row["live_evaluation_run_id"] == "live-live-1"
     assert row["live_report_status"] == "running"
     assert row["passed"] is False
+    assert row["model_verdict"] is None
     assert row["live_report_error"] == "live report is not finished"
 
 
@@ -69,6 +70,7 @@ def test_live_benchmark_row_maps_only_real_report_evidence_to_artifact_gate():
     assert "rendered_views" not in row["artifact_gate"]
     assert row["cad_test_gate_status"] == "unavailable"
     assert row["passed"] is False
+    assert row["evaluation_status"] == "pending"
 
 
 def test_live_benchmark_row_includes_cad_test_delivery_evidence():
@@ -193,6 +195,7 @@ def test_live_benchmark_row_ignores_empty_cad_test_observation():
     assert "cad_test" not in row
     assert row["cad_test_gate_status"] == "unavailable"
     assert row["passed"] is False
+    assert row["evaluation_status"] == "pending"
 
 
 def test_live_benchmark_row_does_not_pass_when_cad_test_fails():
@@ -236,6 +239,32 @@ def test_live_benchmark_row_does_not_pass_when_cad_test_fails():
     assert row["artifact_gate"]["native_delivery_verified"] is False
     assert row["artifact_gate"]["passed"] is False
     assert row["passed"] is False
+
+
+def test_live_benchmark_row_projects_sealed_candidate_and_worker_identity():
+    from benchmark.live import benchmark_row_from_live_report
+
+    row = benchmark_row_from_live_report(
+        case={"id": "ctb-00000007", "description": "make a part", "path": "extrude_cut"},
+        response=SimpleNamespace(success=True, inspect_report=None, validation=None, files={}),
+        live_report={
+            "status": "finished",
+            "cad_test": {
+                "status": "blocked",
+                "verdict": None,
+                "identity": {
+                    "workflow_id": "workflow-1",
+                    "candidate_revision_id": "revision-1",
+                    "worker_build_id": "build-1",
+                },
+            },
+        },
+        report_path="reports/live/live-workflow-1.json",
+    )
+
+    assert row["workflow_id"] == "workflow-1"
+    assert row["candidate_revision_id"] == "revision-1"
+    assert row["worker_build_id"] == "build-1"
 
 
 def test_live_benchmark_row_uses_authoritative_gate_when_response_has_no_legacy_metrics():

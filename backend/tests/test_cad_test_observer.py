@@ -96,6 +96,12 @@ async def test_sealed_benchmark_candidate_downloads_and_attaches_real_artifacts(
     assert set(artifacts) == {"step", "fcstd", "stl"}
     assert kwargs["case_id"] == "P01"
     assert all(path.is_file() is False for path in artifacts.values())
+    seal = FileEvaluationStore(tmp_path).cad_test_seal("live-workflow-1")
+    assert seal["candidate_revision_id"] == "revision-1"
+    assert seal["artifacts"] == {
+        kind: {"sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data)}
+        for kind, data in source.items()
+    }
 
 
 @pytest.mark.asyncio
@@ -219,7 +225,7 @@ async def test_sealed_assembly_uses_explicit_primary_artifact_bundle(tmp_path, m
 
 
 @pytest.mark.asyncio
-async def test_sealed_assembly_selects_combine_prefixed_artifacts_without_metadata(
+async def test_sealed_assembly_rejects_combine_prefixed_artifacts_without_metadata(
     tmp_path, monkeypatch
 ):
     from app.evaluation.cad_test_observer import observe_sealed_candidate
@@ -271,7 +277,10 @@ async def test_sealed_assembly_selects_combine_prefixed_artifacts_without_metada
         config=CadTestRunnerConfig(root=tmp_path),
     )
 
-    assert attached == [{kind: f"combine-final-{kind}".encode("ascii") for kind in ("step", "fcstd", "stl")}]
+    assert not attached
+    report = json.loads(FileEvaluationStore(tmp_path).path_for(session.evaluation_run_id).read_text(encoding="utf-8"))
+    assert report["cad_test"]["reason"] == "artifact_selection_unavailable"
+    assert "cad_test_seal" not in report
 
 
 @pytest.mark.asyncio
@@ -541,7 +550,52 @@ async def test_sealed_benchmark_candidate_records_final_attachment_failure(
 
 
 @pytest.mark.asyncio
-async def test_seal_activity_keeps_business_result_when_observer_runs(monkeypatch):
+async def test_sealed_benchmark_reraises_when_failure_evidence_cannot_be_persisted(
+    tmp_path, monkeypatch
+):
+    from app.evaluation.cad_test_observer import observe_sealed_candidate
+
+    monkeypatch.setenv("CAD_EVALUATION_MODE", "observe")
+    _session(tmp_path, source_kind="benchmark", source_id="P01")
+    source = {"step": b"step-artifact"}
+
+    async def download(key, destination, *, expected_size=None):
+        data = source[key]
+        Path(destination).write_bytes(data)
+        return {"sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data)}
+
+    def attach(*args, **kwargs):
+        raise RuntimeError("attachment failed")
+
+    def fail_record(*args, **kwargs):
+        raise RuntimeError("failure evidence could not be stored")
+
+    monkeypatch.setattr("app.evaluation.cad_test_observer.download_object", download)
+    monkeypatch.setattr("app.evaluation.cad_test_observer.attach_cad_test_artifacts", attach)
+    monkeypatch.setattr("app.evaluation.cad_test_observer._record_benchmark_observer_failure", fail_record)
+
+    with pytest.raises(RuntimeError, match="failure evidence could not be stored"):
+        await observe_sealed_candidate(
+            {"workflow_run_id": "workflow-1"},
+            {
+                "status": "succeeded",
+                "candidate_revision_id": "revision-1",
+                "artifacts": [
+                    {
+                        "artifact_kind": "step",
+                        "object_key": "step",
+                        "size_bytes": len(source["step"]),
+                        "sha256": hashlib.sha256(source["step"]).hexdigest(),
+                    }
+                ],
+            },
+            root=tmp_path,
+            config=CadTestRunnerConfig(root=tmp_path, scorer_image="test-image"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_seal_activity_keeps_business_result_when_observation_is_dispatched(monkeypatch):
     from app.workflows.activities import McadWorkflowActivities
 
     expected = {"status": "succeeded", "candidate_revision_id": "revision-1"}
@@ -564,7 +618,7 @@ async def test_seal_activity_keeps_business_result_when_observer_runs(monkeypatc
     async def observer(payload, result):
         observed.append((payload, result))
 
-    monkeypatch.setattr("app.workflows.activities.observe_sealed_candidate", observer)
+    monkeypatch.setattr("app.workflows.activities.dispatch_cad_test_observation", observer)
     activity_instance = McadWorkflowActivities.__new__(McadWorkflowActivities)
 
     result = await activity_instance._run_observed(
@@ -576,6 +630,60 @@ async def test_seal_activity_keeps_business_result_when_observer_runs(monkeypatc
     assert result is expected
     assert observed == [({"workflow_run_id": "workflow-1"}, expected)]
     assert terminal == [({"workflow_run_id": "workflow-1"}, expected)]
+
+
+@pytest.mark.asyncio
+async def test_required_evaluation_does_not_swallow_activity_evidence_write_failure(monkeypatch):
+    from temporalio.exceptions import ApplicationError
+    from app.workflows.activities import McadWorkflowActivities
+
+    monkeypatch.setenv("CAD_TEST_REQUIRED", "true")
+    calls = []
+
+    async def operation():
+        calls.append("operation")
+        return {"status": "succeeded"}
+
+    def fail_recording(*args, **kwargs):
+        raise OSError("evidence store unavailable")
+
+    monkeypatch.setattr("app.workflows.activities.record_activity_result", fail_recording)
+    activity_instance = McadWorkflowActivities.__new__(McadWorkflowActivities)
+
+    with pytest.raises(ApplicationError) as error:
+        await activity_instance._run_observed(
+            "agent_v2.validate_geometry",
+            {"workflow_run_id": "workflow-1"},
+            operation,
+        )
+
+    assert error.value.non_retryable is True
+    assert calls == ["operation"]
+
+
+@pytest.mark.asyncio
+async def test_required_evaluation_fails_closed_when_observation_dispatch_fails(monkeypatch):
+    from temporalio.exceptions import ApplicationError
+    from app.workflows.activities import McadWorkflowActivities
+
+    monkeypatch.setenv("CAD_TEST_REQUIRED", "true")
+    monkeypatch.setattr("app.workflows.activities.record_activity_result", lambda *a, **k: None)
+    monkeypatch.setattr("app.workflows.activities.record_workflow_terminal", lambda *a, **k: None)
+
+    async def fail_dispatch(*args, **kwargs):
+        raise OSError("Temporal observation dispatch unavailable")
+
+    monkeypatch.setattr("app.workflows.activities.dispatch_cad_test_observation", fail_dispatch)
+    activity_instance = McadWorkflowActivities.__new__(McadWorkflowActivities)
+
+    with pytest.raises(ApplicationError) as error:
+        await activity_instance._run_observed(
+            "agent_v2.seal_candidate",
+            {"workflow_run_id": "workflow-1"},
+            lambda: _return_expected({"status": "succeeded", "candidate_revision_id": "revision-1"}),
+        )
+
+    assert error.value.non_retryable is True
 
 
 async def _return_expected(value):

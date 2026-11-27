@@ -38,6 +38,7 @@ def test_v1_and_v2_workers_use_distinct_queues_and_workflow_types(monkeypatch):
     assert [item.__name__ for item in captured[1]["workflows"]] == [
         "McadAgentWorkflowV2",
         "ModelJobWorkflow",
+        "CadTestObservationWorkflow",
     ]
     assert {item.__temporal_activity_definition.name for item in captured[1]["activities"]} == {
         "model_jobs.submit",
@@ -63,6 +64,7 @@ def test_v1_and_v2_workers_use_distinct_queues_and_workflow_types(monkeypatch):
         "agent_v2.validate_dfm",
         "agent_v2.generate_bom",
         "agent_v2.seal_candidate",
+        "evaluation.observe_sealed_candidate",
         "mcad.wait_confirmation",
         "mcad.resume_after_confirmation",
         "mcad.record_cancel",

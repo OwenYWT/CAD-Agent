@@ -112,9 +112,10 @@ def test_default_runner_mounts_repository_engine_for_scoring(tmp_path, monkeypat
                     "passed": True,
                     "geometry_valid": True,
                     "requirements_passed": 1,
-                    "requirements_total": 1,
-                    "checks": [],
-                    "scorer_error": False,
+                        "requirements_total": 1,
+                        "checks": [],
+                        "scorer_error": False,
+                        "artifact_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
                 }
             ),
             encoding="utf-8",

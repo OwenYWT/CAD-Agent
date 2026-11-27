@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -274,7 +275,7 @@ def run_cad_test(
 
     scorer_artifact_sha256 = score.get("artifact_sha256")
     artifact_identity_mismatch = (
-        scorer_artifact_sha256 is not None
+        (config.scorer_script is None or scorer_artifact_sha256 is not None)
         and str(scorer_artifact_sha256) != artifact_sha256
     )
     scorer_error = (
@@ -331,7 +332,7 @@ def run_native_delivery_check(
 
     output = config.root / "cad_test" / f"delivery-{uuid4()}"
     output.mkdir(parents=True, exist_ok=True)
-    (paths["step"].parent / "delivery-inputs.json").write_text(
+    (output / "delivery-inputs.json").write_text(
         json.dumps(
             {key: paths[key].name for key in ("step", "fcstd", "stl")},
             ensure_ascii=False,
@@ -361,6 +362,7 @@ def run_native_delivery_check(
         "/opt/freecad/bin/FreeCADCmd",
         config.resolved_image(),
         "-c",
+        "import sys; sys.path.insert(0, '/code'); "
         "exec(compile(open('/code/check_native_delivery.py').read(), '/code/check_native_delivery.py', 'exec'))",
     ]
     try:
@@ -395,11 +397,16 @@ def run_native_delivery_check(
             "reason": "native_delivery_result_invalid",
             "error": f"{type(exc).__name__}: {str(exc)[:1000]}",
         }
-    if completed.returncode != 0 and result.get("status") != "error":
-        result["passed"] = False
-        result["status"] = "failed"
-    elif result.get("status") not in {"error", "failed"}:
-        result["status"] = "passed" if result.get("passed") is True else "failed"
+    if not isinstance(result.get("passed"), bool):
+        return {"status": "error", "reason": "native_delivery_result_invalid"}
+    if result.get("error") or result.get("status") == "error":
+        result.update(status="error", passed=False)
+    else:
+        passed = (
+            completed.returncode == 0 and result["passed"]
+            and result.get("status") in (None, "passed")
+        )
+        result.update(status="passed" if passed else "failed", passed=passed)
     return result
 
 
@@ -425,18 +432,41 @@ def run_cad_test_2d(
             reason="artifact_not_found",
         )
     artifact_sha256 = _sha256(artifact)
-    case = config.resolved_case(case_id)
-    if config.scorer_script is None and case is None:
-        return _error_result(
-            artifact_sha256=artifact_sha256,
-            workflow_id=workflow_id,
-            candidate_revision_id=candidate_revision_id,
-            case_id=case_id,
-            reason="dataset_case_not_found",
-        )
+    dataset_hash = None
     output = config.root / "cad_test" / f"run-2d-{uuid4()}"
     output.mkdir(parents=True, exist_ok=True)
     score_path = output / "score.json"
+    case = output / "case"
+    if config.scorer_script is None:
+        try:
+            if config.dataset_root is None:
+                raise ValueError("dataset root is required")
+            dataset = load_dataset(config.dataset_root)
+            dataset_hash = dataset.dataset_hash
+            metadata = next((row for row in dataset.cases if row["id"] == case_id), {})
+            if metadata.get("path") != "2d":
+                raise ValueError("case must be registered for 2D scoring")
+            case.mkdir()
+            for filename in ("checks.json", "reference.dxf"):
+                source = dataset.case_root(case_id) / filename
+                expected = metadata["file_hashes"][source.relative_to(dataset.root).as_posix()]
+                destination = case / filename
+                shutil.copyfile(source, destination)
+                if _sha256(destination) != expected:
+                    raise ValueError("DXF truth changed while staging")
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            return _error_result(
+                artifact_sha256=artifact_sha256,
+                workflow_id=workflow_id,
+                candidate_revision_id=candidate_revision_id,
+                case_id=case_id,
+                reason="dxf_case_truth_unavailable",
+                error=exc,
+            )
+        score_path = output / "score" / "score.json"
+        score_path.parent.mkdir()
+    else:
+        dataset_hash = config.resolved_dataset_hash()
     try:
         if config.scorer_script is not None:
             command = [
@@ -462,7 +492,7 @@ def run_cad_test_2d(
                 *_podman_bind_mount(_ENGINE_ROOT, "/code", readonly=True),
                 *_podman_bind_mount(case, "/case", readonly=True),
                 *_podman_bind_mount(artifact.parent, "/input", readonly=True),
-                *_podman_bind_mount(output, "/out", readonly=False),
+                *_podman_bind_mount(score_path.parent, "/out", readonly=False),
                 "--entrypoint",
                 "python",
                 config.resolved_image(),
@@ -515,7 +545,7 @@ def run_cad_test_2d(
         )
     scorer_artifact_sha256 = score.get("artifact_sha256")
     artifact_identity_mismatch = (
-        scorer_artifact_sha256 is not None
+        (config.scorer_script is None or scorer_artifact_sha256 is not None)
         and str(scorer_artifact_sha256) != artifact_sha256
     )
     scorer_error = (
@@ -532,7 +562,8 @@ def run_cad_test_2d(
         "scorer_artifact_sha256": (
             str(scorer_artifact_sha256) if scorer_artifact_sha256 is not None else None
         ),
-        "dataset_hash": config.resolved_dataset_hash(),
+        "dataset_hash": dataset_hash,
+        "delivery_verified": not scorer_error and score.get("geometry_valid") is True,
         "score": score,
     }
 
@@ -565,17 +596,22 @@ def run_cad_test_bundle(
             candidate_revision_id=candidate_revision_id,
             config=config,
         )
-    step = artifacts.get("step")
-    if step is None:
-        return _error_result(
-            artifact_sha256=None,
-            workflow_id=workflow_id,
-            candidate_revision_id=candidate_revision_id,
-            case_id=case_id,
-            reason="step_artifact_missing",
-        ) if resolve_mode() is EvaluationMode.OBSERVE else None
+    if resolve_mode() is not EvaluationMode.OBSERVE:
+        return None
+    required = ("step", "fcstd", "stl")
+    missing = [kind for kind in required if kind not in artifacts or not Path(artifacts[kind]).is_file()]
+    if missing or set(artifacts) != set(required):
+        return {
+            **_error_result(
+                artifact_sha256=None, workflow_id=workflow_id,
+                candidate_revision_id=candidate_revision_id, case_id=case_id,
+                reason="required_delivery_artifacts_missing" if missing else "unexpected_delivery_artifacts",
+            ),
+            "dataset_hash": config.resolved_dataset_hash(),
+            "missing_artifacts": missing,
+        }
     result = run_cad_test(
-        artifact_path=Path(step),
+        artifact_path=Path(artifacts["step"]),
         case_id=case_id,
         workflow_id=workflow_id,
         candidate_revision_id=candidate_revision_id,
@@ -583,19 +619,12 @@ def run_cad_test_bundle(
     )
     if result is None:
         return None
-    required = {"step", "fcstd", "stl"}
-    if set(artifacts) != required or any(
-        not Path(artifacts[key]).is_file() for key in required
-    ):
-        result["delivery_verified"] = None
-        result["native_delivery"] = {
-            "status": "unavailable",
-            "reason": "required_delivery_artifacts_missing",
-        }
+    if result["status"] not in {"pass", "passed", "fail"}:
         return result
     native = run_native_delivery_check(artifacts=artifacts, config=config)
     result["native_delivery"] = native
-    result["delivery_verified"] = (
-        native.get("passed") if isinstance(native.get("passed"), bool) else None
-    )
+    result["delivery_verified"] = native.get("status") == "passed" and native.get("passed") is True
+    if not result["delivery_verified"] and result["status"] != "fail":
+        status = "fail" if native.get("status") == "failed" else "error"
+        result.update(status=status, reason=native.get("reason") or "native_delivery_not_verified")
     return result

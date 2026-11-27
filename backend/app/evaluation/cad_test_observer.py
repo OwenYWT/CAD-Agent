@@ -7,11 +7,15 @@ import hashlib
 import json
 import logging
 import os
+import shutil
+import subprocess
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Mapping
 
 from app.object_store import download_object
+from benchmark.cad_test_engine.dataset import load_dataset, resolve_dataset_root
 
 from .cad_test_runner import CadTestRunnerConfig, run_native_delivery_check
 from .integration import attach_cad_test_artifacts, attach_cad_test_observation
@@ -21,6 +25,82 @@ from .integration import default_report_root, evaluation_run_id_for_workflow
 
 logger = logging.getLogger(__name__)
 _ARTIFACT_KINDS = {"step", "fcstd", "stl", "dxf"}
+CAD_TEST_TERMINAL_STATUSES = frozenset({"passed", "failed", "error", "blocked", "not_applicable"})
+
+
+def cad_test_required_from_environment() -> bool:
+    return os.environ.get("CAD_TEST_REQUIRED", "").strip().casefold() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def temporal_worker_build_id() -> str | None:
+    value = os.environ.get("TEMPORAL_WORKER_BUILD_ID", "").strip()
+    return value or None
+
+
+def require_temporal_worker_build_id() -> str:
+    build_id = temporal_worker_build_id()
+    if build_id is None:
+        raise RuntimeError("TEMPORAL_WORKER_BUILD_ID is required for CADTest evaluation")
+    return build_id
+
+
+async def dispatch_cad_test_observation(payload: Mapping[str, Any], result: Mapping[str, Any]) -> None:
+    if resolve_mode() is not EvaluationMode.OBSERVE or result.get("status") != "succeeded":
+        return
+    workflow_id = payload.get("workflow_run_id")
+    revision_id = result.get("candidate_revision_id")
+    if not workflow_id or not revision_id:
+        return
+    source = _report_source(payload, default_report_root()) or {}
+    if source.get("kind") != "user_task" and not (
+        source.get("kind") == "benchmark" and source.get("id") and source.get("dataset_hash")
+    ):
+        return
+
+    from temporalio.common import WorkflowIDReusePolicy
+    from temporalio.exceptions import WorkflowAlreadyStartedError
+    from app.config import settings
+    from app.temporal_client import get_temporal_client
+    from app.workflows.cad_test_observation import CadTestObservationWorkflow
+
+    observation = {
+        "payload": {"workflow_run_id": str(workflow_id)},
+        "result": {
+            "status": "succeeded",
+            "candidate_revision_id": str(revision_id),
+            "artifacts": result.get("artifacts"),
+            "worker_build_id": temporal_worker_build_id(),
+        },
+    }
+    try:
+        async with asyncio.timeout(5):
+            client = await get_temporal_client()
+            await client.start_workflow(
+                CadTestObservationWorkflow.run,
+                observation,
+                id=f"cad-test:{workflow_id}:{revision_id}",
+                task_queue=settings.temporal_agent_v2_task_queue,
+                id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
+                execution_timeout=timedelta(minutes=30),
+            )
+    except WorkflowAlreadyStartedError:
+        return
+
+
+def cad_test_observation_recorded(payload: Mapping[str, Any], result: Mapping[str, Any]) -> bool:
+    root = default_report_root()
+    path = FileEvaluationStore(root).path_for(evaluation_run_id_for_workflow(payload["workflow_run_id"]))
+    report = json.loads(path.read_text(encoding="utf-8"))
+    score = report.get("cad_test")
+    identity = score.get("identity") if isinstance(score, Mapping) else None
+    return (
+        isinstance(score, Mapping)
+        and score.get("status") in CAD_TEST_TERMINAL_STATUSES
+        and isinstance(identity, Mapping)
+        and identity.get("candidate_revision_id") == str(result["candidate_revision_id"])
+    )
 
 
 def config_from_environment() -> CadTestRunnerConfig | None:
@@ -31,10 +111,85 @@ def config_from_environment() -> CadTestRunnerConfig | None:
     if output_root is None:
         output_root = str(default_report_root() / "cad_test")
     return CadTestRunnerConfig(
-        root=Path(output_root),
-        dataset_root=Path(dataset_root),
+        root=Path(output_root).expanduser().resolve(),
+        dataset_root=Path(dataset_root).expanduser().resolve(),
         scorer_image=os.environ.get("CAD_TEST_SCORER_IMAGE", ""),
     )
+
+
+def validate_cad_test_worker_config(
+    config: CadTestRunnerConfig | None = None,
+    *,
+    verify_runtime: bool = True,
+) -> str:
+    """Fail worker startup unless the complete scorer and native runtime is usable."""
+    config = config or config_from_environment()
+    if config is None or config.dataset_root is None:
+        raise RuntimeError("CAD_TEST_DATASET_ROOT is required when CAD evaluation is enabled")
+    try:
+        dataset = load_dataset(config.dataset_root, verify_files=True)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise RuntimeError("CADTest dataset is invalid or unavailable") from exc
+    if not dataset.cases or not dataset.dataset_hash:
+        raise RuntimeError("CADTest dataset has no verified cases")
+    if not config.resolved_image():
+        raise RuntimeError("CAD_TEST_SCORER_IMAGE or SANDBOX_IMAGE is required")
+    if not config.resolved_script().is_file():
+        raise RuntimeError("repository CADTest scorer is missing")
+    if not config.resolved_delivery_script().is_file():
+        raise RuntimeError("repository native-delivery verifier is missing")
+
+    report_root = default_report_root()
+    try:
+        report_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryFile(dir=report_root):
+            pass
+    except OSError as exc:
+        raise RuntimeError("CAD_EVALUATION_REPORT_ROOT is not writable by the Worker") from exc
+
+    if verify_runtime:
+        podman = shutil.which("podman")
+        if podman is None:
+            raise RuntimeError("Podman is required for CADTest and native delivery checks")
+        image = config.resolved_image()
+        try:
+            present = subprocess.run(
+                [podman, "image", "exists", image], capture_output=True, timeout=15, check=False,
+            )
+            if present.returncode != 0:
+                raise RuntimeError(f"CADTest runtime image is unavailable: {image}")
+            native = subprocess.run(
+                [podman, "run", "--rm", "--network", "none", "--entrypoint",
+                 "/opt/freecad/bin/FreeCADCmd", image, "--version"],
+                capture_output=True, timeout=30, check=False,
+            )
+            if native.returncode != 0:
+                raise RuntimeError("CADTest image lacks a working FreeCADCmd native-delivery runtime")
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError("CADTest container runtime preflight failed") from exc
+    return dataset.dataset_hash
+
+
+def resolve_live_cli_config(
+    *, dataset_root: Path | None, report_root: Path | None,
+) -> tuple[CadTestRunnerConfig, Path]:
+    """Treat live CLI flags as assertions about shared deployment configuration."""
+    config = config_from_environment()
+    if config is None:
+        raise ValueError("CAD_TEST_DATASET_ROOT must be configured for both the CLI and Worker")
+    reports = default_report_root()
+    if report_root is not None and report_root.expanduser().resolve() != reports:
+        raise ValueError("--report-root differs from the configured CAD_EVALUATION_REPORT_ROOT")
+    if dataset_root is not None:
+        requested = dataset_root.expanduser().resolve()
+        if requested != config.dataset_root:
+            try:
+                matches = resolve_dataset_root(requested) == resolve_dataset_root(config.dataset_root)
+            except FileNotFoundError:
+                matches = False
+            if not matches:
+                raise ValueError("--dataset-root differs from the configured CAD_TEST_DATASET_ROOT")
+    return config, reports
 
 
 def _report_source(payload: Mapping[str, Any], root: Path) -> Mapping[str, Any] | None:
@@ -76,17 +231,14 @@ def _artifact_rows(
             continue
         grouped.setdefault(kind, []).append(item)
     rows: dict[str, Mapping[str, Any]] = {}
+    assembly = modeling_path == "assembly" or any(
+        "is_primary" in item for candidates in grouped.values() for item in candidates
+    )
     for kind, candidates in grouped.items():
-        if len(candidates) == 1:
+        if len(candidates) == 1 and not assembly:
             rows[kind] = candidates[0]
             continue
         primary = [item for item in candidates if item.get("is_primary") is True]
-        if not primary and modeling_path == "assembly":
-            primary = [
-                item
-                for item in candidates
-                if Path(str(item.get("filename") or "")).name.startswith("combine-")
-            ]
         if len(primary) != 1:
             return None
         rows[kind] = primary[0]
@@ -104,12 +256,17 @@ def _record_benchmark_observer_failure(
     status: str = "blocked",
     error_type: str | None = None,
 ) -> None:
+    source = _report_source(
+        {"workflow_run_id": str(workflow_id)}, root
+    ) or {}
     result: dict[str, Any] = {
         "status": status,
         "reason": reason,
         "case_id": case_id,
         "workflow_id": str(workflow_id),
         "candidate_revision_id": str(candidate_revision_id),
+        "expected_worker_build_id": source.get("expected_worker_build_id"),
+        "worker_build_id": temporal_worker_build_id(),
     }
     if artifact_kind is not None:
         result["artifact_kind"] = artifact_kind
@@ -162,7 +319,7 @@ async def observe_sealed_candidate(
                 reason="artifact_selection_unavailable",
                 root=report_root,
             )
-        elif source_kind != "user_task":
+        if source_kind != "user_task":
             return
 
     if source_kind == "user_task":
@@ -217,6 +374,7 @@ async def observe_sealed_candidate(
                 "reason": "no_benchmark_case",
                 "workflow_id": str(workflow_id),
                 "candidate_revision_id": str(candidate_revision_id),
+                "worker_build_id": temporal_worker_build_id(),
                 "delivery_verified": native.get("passed")
                 if isinstance(native.get("passed"), bool)
                 else None,
@@ -225,6 +383,16 @@ async def observe_sealed_candidate(
             root=report_root,
         )
         return
+
+    if case_id and rows:
+        FileEvaluationStore(report_root).record_cad_test_seal(
+            evaluation_run_id_for_workflow(workflow_id),
+            candidate_revision_id=str(candidate_revision_id),
+            artifacts={
+                kind: {"sha256": item.get("sha256"), "size_bytes": item.get("size_bytes")}
+                for kind, item in rows.items()
+            },
+        )
 
     if config is None:
         if source_kind == "benchmark" and case_id:
@@ -316,3 +484,4 @@ async def observe_sealed_candidate(
                     "CADTest attachment failure recording failed: %s",
                     type(record_exc).__name__,
                 )
+                raise

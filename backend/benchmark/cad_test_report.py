@@ -8,6 +8,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from benchmark.cad_test_gate import cad_test_delivery_passed
 
 _STATUS_LABELS = {
     "passed": "通过",
@@ -244,21 +245,11 @@ def _delivery_ready(run: Mapping[str, Any]) -> bool:
     return gate.get("passed") is True
 
 
-def _native_delivery_verified(run: Mapping[str, Any]) -> bool:
-    gate = run.get("artifact_gate")
-    if isinstance(gate, Mapping) and "native_delivery_verified" in gate:
-        return gate.get("native_delivery_verified") is True
-    cad_test = run.get("cad_test")
-    delivery = cad_test.get("delivery") if isinstance(cad_test, Mapping) else None
-    return isinstance(delivery, Mapping) and delivery.get("status") == "passed"
-
-
 def _strict_run_passed(run: Mapping[str, Any]) -> bool:
     return (
         _live_report_status(run) == "finished"
         and _delivery_ready(run)
-        and _cad_test_run_status(run) == "passed"
-        and _native_delivery_verified(run)
+        and cad_test_delivery_passed(run)
     )
 
 
@@ -276,7 +267,7 @@ def _final_run_status(run: Mapping[str, Any]) -> str:
     cad_test_status = _cad_test_run_status(run)
     if cad_test_status == "unavailable":
         return "unavailable"
-    if cad_test_status == "failed" or not _native_delivery_verified(run):
+    if cad_test_status == "failed" or not cad_test_delivery_passed(run):
         return "failed"
     if run.get("executed") is True:
         return "failed"
