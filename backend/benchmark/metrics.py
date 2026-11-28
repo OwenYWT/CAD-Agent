@@ -209,10 +209,10 @@ def extract_metrics(response, case: dict, wall_time_ms: int | None = None) -> di
 
     if response is None:
         return {
-            "executed": False, "verdict": None, "verdict_pass": False,
+            "executed": False, "verdict": None, "verdict_pass": None,
             "watertight": None, "printable": None,
             "dim_match": None, "part_type_match": None, "feature_match": None,
-            "dfm_score": None, "attempts": 0, "one_shot": False,
+            "dfm_score": None, "attempts": 0, "one_shot": None,
             "exec_time_ms": 0, "wall_time_ms": wall_time_ms or 0,
             "error": "pipeline raised / None response", "passed": False,
             "evidence": {
@@ -228,7 +228,7 @@ def extract_metrics(response, case: dict, wall_time_ms: int | None = None) -> di
     executed = bool(getattr(response, "success", False))
     insp = _get_inspect(response)
     verdict = getattr(insp, "verdict", None) if insp is not None else None
-    verdict_pass = verdict == "pass"
+    verdict_pass = verdict == "pass" if verdict is not None else None
 
     watertight = _watertight(response)
     printable = _printable(response)
@@ -256,7 +256,7 @@ def extract_metrics(response, case: dict, wall_time_ms: int | None = None) -> di
 
     # --- process ---
     attempts = int(getattr(response, "attempts", 0) or 0)
-    one_shot = executed and attempts == 1
+    one_shot = executed and attempts == 1 if attempts > 0 else None
     exec_time_ms = int(getattr(response, "execution_time_ms", 0) or 0)
     err = getattr(response, "error", None)
     error = None if err is None else str(err)
@@ -338,10 +338,76 @@ def _std(xs: list[float]) -> float:
     return (sum((x - m) ** 2 for x in xs) / (len(xs) - 1)) ** 0.5
 
 
-def _rate_stats(bool_runs: list[bool]) -> dict:
-    """mean/std of a boolean metric across runs (treating True=1)."""
-    xs = [1.0 if b else 0.0 for b in bool_runs]
-    return {"mean": round(_mean(xs), 4), "std": round(_std(xs), 4), "n": len(xs)}
+def _rate_stats(bool_runs: list[bool | None]) -> dict:
+    """Aggregate a nullable boolean metric without treating missing as false."""
+    values = [value for value in bool_runs if isinstance(value, bool)]
+    xs = [1.0 if value else 0.0 for value in values]
+    return {
+        "mean": round(_mean(xs), 4) if xs else None,
+        "std": round(_std(xs), 4) if xs else None,
+        "n": len(xs),
+        "total": len(bool_runs),
+    }
+
+
+def _status_counts(values: list[str], expected: tuple[str, ...]) -> dict:
+    counts = {status: 0 for status in expected}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    counts["total"] = len(values)
+    return counts
+
+
+def _final_gate_status(row: dict) -> str:
+    if row.get("passed") is True:
+        return "passed"
+    evaluation_status = row.get("evaluation_status")
+    if evaluation_status in {"pending", "blocked", "unavailable"}:
+        return evaluation_status
+    if row.get("executed") is True:
+        return "failed"
+    if row.get("executed") is False:
+        return "blocked"
+    return "unavailable"
+
+
+def _cad_test_status(row: dict) -> str:
+    cad_test = row.get("cad_test")
+    if not isinstance(cad_test, dict):
+        return "unavailable"
+    status = str(cad_test.get("status") or "").casefold()
+    if status in {"passed", "pass", "succeeded"}:
+        return "passed"
+    if status in {"failed", "fail"}:
+        return "failed"
+    if status == "blocked":
+        return "blocked"
+    if status in {"error", "unknown", "unavailable"}:
+        return "unavailable"
+    if status in {"not_applicable", "not applicable", "skipped"}:
+        return "not_applicable"
+    return "unavailable"
+
+
+def _process_status(row: dict) -> str:
+    process = row.get("process_evaluation")
+    if not isinstance(process, dict):
+        return "unavailable"
+    status = str(process.get("status") or "").casefold()
+    if status in {"measured", "partial", "unavailable"}:
+        return status
+    return "unavailable"
+
+
+def _optional_metric(row: dict, key: str) -> bool | None:
+    value = row.get(key)
+    if not isinstance(value, bool):
+        return None
+    if key == "verdict_pass" and row.get("verdict") is None:
+        return None
+    if key == "one_shot" and int(row.get("attempts") or 0) <= 0:
+        return None
+    return value
 
 
 def aggregate_case(runs: list[dict]) -> dict:
@@ -351,19 +417,116 @@ def aggregate_case(runs: list[dict]) -> dict:
     pass@k = 1 if ANY run passed   (capability ceiling)
     pass^k = 1 if ALL runs passed  (stability)
     """
-    passed = [r["passed"] for r in runs]
+    model_verdicts = [
+        r.get("model_verdict") if r.get("evaluation_scope") == "cad_test" else r.get("passed")
+        for r in runs
+    ]
+    scored_verdicts = [value for value in model_verdicts if isinstance(value, bool)]
+    pass_at_k = any(scored_verdicts) if scored_verdicts else None
+    pass_stability = all(scored_verdicts) if scored_verdicts else None
+    process_rows = [
+        r.get("process_evaluation")
+        for r in runs
+        if isinstance(r.get("process_evaluation"), dict)
+    ]
+
+    def _process_mean(key: str) -> float:
+        values = [
+            float(item[key])
+            for item in process_rows
+            if isinstance(item.get(key), (int, float))
+            and not isinstance(item.get(key), bool)
+        ]
+        return round(_mean(values), 2) if values else 0.0
+
+    def _process_rate(key: str) -> float:
+        values = [item.get(key) == "passed" for item in process_rows]
+        return round(_mean([1.0 if value else 0.0 for value in values]), 4) if values else 0.0
+
+    process_evaluation = {
+        "measured_rate": round(
+            _mean([1.0 if item.get("status") == "measured" else 0.0 for item in process_rows]),
+            4,
+        )
+        if process_rows
+        else 0.0,
+        "avg_workflow_activity_count": _process_mean("workflow_activity_count"),
+        "avg_cad_operation_count": _process_mean("cad_operation_count"),
+        "avg_repair_count": _process_mean("repair_count"),
+        "avg_retry_call_count": _process_mean("retry_call_count"),
+        "avg_failed_call_count": _process_mean("failed_call_count"),
+        "avg_total_call_count": _process_mean("total_call_count"),
+        "avg_activity_duration_ms": _process_mean("activity_duration_ms"),
+        "geometry_pass_rate": _process_rate("geometry_status"),
+        "dfm_pass_rate": _process_rate("dfm_status"),
+        "visual_pass_rate": _process_rate("visual_status"),
+        "duration_measured_rate": round(
+            _mean([1.0 if item.get("duration_status") == "measured" else 0.0 for item in process_rows]),
+            4,
+        )
+        if process_rows
+        else 0.0,
+        "repair_gain_measured_rate": round(
+            _mean([1.0 if item.get("repair_gain_status") == "measured" else 0.0 for item in process_rows]),
+            4,
+        )
+        if process_rows
+        else 0.0,
+    }
+
     return {
         "n_runs": len(runs),
-        "pass@1": _rate_stats(passed),
-        "pass@k": any(passed),
-        "pass^k": all(passed) if passed else False,
-        "verdict_pass_rate": _rate_stats([r["verdict_pass"] for r in runs]),
-        "printable_rate": _rate_stats([r["printable"] is True for r in runs]),
-        "watertight_rate": _rate_stats([r["watertight"] is True for r in runs]),
-        "one_shot_rate": _rate_stats([r["one_shot"] for r in runs]),
-        "dim_match_rate": _rate_stats([r["dim_match"] is True for r in runs]),
-        "avg_attempts": round(_mean([r["attempts"] for r in runs]), 2),
+        "pass@1": _rate_stats(model_verdicts),
+        "pass@k": pass_at_k,
+        "pass^k": pass_stability,
+        "verdict_pass_rate": _rate_stats(
+            [_optional_metric(r, "verdict_pass") for r in runs]
+        ),
+        "printable_rate": _rate_stats(
+            [_optional_metric(r, "printable") for r in runs]
+        ),
+        "watertight_rate": _rate_stats(
+            [_optional_metric(r, "watertight") for r in runs]
+        ),
+        "one_shot_rate": _rate_stats(
+            [_optional_metric(r, "one_shot") for r in runs]
+        ),
+        "dim_match_rate": _rate_stats(
+            [_optional_metric(r, "dim_match") for r in runs]
+        ),
+        "avg_attempts": round(_mean([r.get("attempts", 0) for r in runs]), 2),
         "avg_wall_ms": round(_mean([r["wall_time_ms"] for r in runs])),
+        "final_gate_status": _status_counts(
+            [_final_gate_status(r) for r in runs],
+            ("passed", "failed", "blocked", "unavailable", "pending", "not_applicable"),
+        ),
+        "model_verdict_status": _status_counts(
+            ["passed" if value is True else "failed" if value is False else "unavailable" for value in model_verdicts],
+            ("passed", "failed", "unavailable"),
+        ),
+        "evaluation_status": _status_counts(
+            [str(r.get("evaluation_status") or "unavailable") for r in runs],
+            ("scored", "pending", "blocked", "unavailable", "not_required"),
+        ),
+        "delivery_status": _status_counts(
+            [str(r.get("delivery_status") or "unavailable") for r in runs],
+            ("passed", "failed", "error", "unavailable", "not_applicable"),
+        ),
+        "candidate_counts": {
+            "generated": sum(r.get("executed") is True for r in runs),
+            "scored": sum(isinstance(value, bool) for value in model_verdicts),
+            "terminal_scored": sum(r.get("evaluation_status") == "scored" for r in runs),
+            "blocked_or_unavailable": sum(r.get("evaluation_status") in {"blocked", "unavailable"} for r in runs),
+        },
+        "cad_test_status": _status_counts(
+            [_cad_test_status(r) for r in runs],
+            ("passed", "failed", "blocked", "unavailable", "not_applicable"),
+        ),
+        "process_evaluation_status": _status_counts(
+            [_process_status(r) for r in runs],
+            ("measured", "partial", "unavailable"),
+        ),
+        "process_evaluation": process_evaluation,
     }
 
 
@@ -372,29 +535,114 @@ def aggregate_summary(cases: list[dict]) -> dict:
     runs:[...], agg:{...}} entries. Produces overall + per-difficulty + per-path."""
     def _collect(entries: list[dict]) -> dict:
         # pass@1: mean over cases of each case's pass@1 mean
-        p1 = [c["agg"]["pass@1"]["mean"] for c in entries]
-        vp = [c["agg"]["verdict_pass_rate"]["mean"] for c in entries]
-        pr = [c["agg"]["printable_rate"]["mean"] for c in entries]
-        os_ = [c["agg"]["one_shot_rate"]["mean"] for c in entries]
-        passk = [1.0 if c["agg"]["pass@k"] else 0.0 for c in entries]
-        passhat = [1.0 if c["agg"]["pass^k"] else 0.0 for c in entries]
+        p1 = [c["agg"]["pass@1"]["mean"] for c in entries if c["agg"]["pass@1"]["mean"] is not None]
+        passk = [float(c["agg"]["pass@k"]) for c in entries if c["agg"]["pass@k"] is not None]
+        passhat = [float(c["agg"]["pass^k"]) for c in entries if c["agg"]["pass^k"] is not None]
         wall = [c["agg"]["avg_wall_ms"] for c in entries]
+        process = [c["agg"].get("process_evaluation") or {} for c in entries]
+        scored_runs = sum(
+            int(c["agg"].get("candidate_counts", {}).get("scored", 0))
+            for c in entries
+        )
+        total_runs = sum(int(c["agg"].get("n_runs", 0)) for c in entries)
+        scored_cases = sum(
+            int(c["agg"].get("candidate_counts", {}).get("scored", 0)) > 0
+            for c in entries
+        )
+
+        def _process_summary(key: str) -> float:
+            return round(
+                _mean(
+                    [
+                        float(item[key])
+                        for item in process
+                        if isinstance(item.get(key), (int, float))
+                        and not isinstance(item.get(key), bool)
+                    ]
+                ),
+                4,
+            )
+
+        def _rate_summary(key: str) -> dict:
+            values = [
+                c["agg"][key]["mean"]
+                for c in entries
+                if c["agg"][key]["mean"] is not None
+            ]
+            return {
+                "mean": round(_mean(values), 4) if values else None,
+                "std": round(_std(values), 4) if values else None,
+                "n": sum(c["agg"][key].get("n", 0) for c in entries),
+                "total": sum(c["agg"][key].get("total", 0) for c in entries),
+            }
+
+        def _merge_status(key: str) -> dict:
+            merged: dict[str, int] = {}
+            for case in entries:
+                for status, count in case["agg"].get(key, {}).items():
+                    if status != "total":
+                        merged[status] = merged.get(status, 0) + int(count)
+            merged["total"] = sum(
+                int(case["agg"].get(key, {}).get("total", 0)) for case in entries
+            )
+            return merged
+
         return {
             "n_cases": len(entries),
-            "pass@1": {"mean": round(_mean(p1), 4), "std": round(_std(p1), 4)},
-            "pass@k": round(_mean(passk), 4),
-            "pass^k": round(_mean(passhat), 4),
-            "verdict_pass_rate": {"mean": round(_mean(vp), 4), "std": round(_std(vp), 4)},
-            "printable_rate": {"mean": round(_mean(pr), 4), "std": round(_std(pr), 4)},
-            "one_shot_rate": {"mean": round(_mean(os_), 4), "std": round(_std(os_), 4)},
+            "pass@1": {"mean": round(_mean(p1), 4) if p1 else None, "std": round(_std(p1), 4) if p1 else None},
+            "pass@k": round(_mean(passk), 4) if passk else None,
+            "pass^k": round(_mean(passhat), 4) if passhat else None,
+            "pass_metric_coverage": {
+                "scored_cases": scored_cases,
+                "total_cases": len(entries),
+                "case_coverage": scored_cases / len(entries) if entries else 0.0,
+                "scored_runs": scored_runs,
+                "total_runs": total_runs,
+                "run_coverage": scored_runs / total_runs if total_runs else 0.0,
+            },
+            "verdict_pass_rate": _rate_summary("verdict_pass_rate"),
+            "printable_rate": _rate_summary("printable_rate"),
+            "one_shot_rate": _rate_summary("one_shot_rate"),
+            "final_gate_status": _merge_status("final_gate_status"),
+            "cad_test_status": _merge_status("cad_test_status"),
+            "model_verdict_status": _merge_status("model_verdict_status"),
+            "evaluation_status": _merge_status("evaluation_status"),
+            "delivery_status": _merge_status("delivery_status"),
+            "candidate_counts": {
+                key: sum(int(c["agg"].get("candidate_counts", {}).get(key, 0)) for c in entries)
+                for key in ("generated", "scored", "terminal_scored", "blocked_or_unavailable")
+            },
+            "process_evaluation_status": _merge_status("process_evaluation_status"),
             "avg_wall_ms": round(_mean(wall)),
+            "process_evaluation": {
+                "measured_rate": _process_summary("measured_rate"),
+                "avg_workflow_activity_count": _process_summary(
+                    "avg_workflow_activity_count"
+                ),
+                "avg_cad_operation_count": _process_summary("avg_cad_operation_count"),
+                "avg_repair_count": _process_summary("avg_repair_count"),
+                "avg_retry_call_count": _process_summary("avg_retry_call_count"),
+                "avg_failed_call_count": _process_summary("avg_failed_call_count"),
+                "avg_total_call_count": _process_summary("avg_total_call_count"),
+                "avg_activity_duration_ms": _process_summary("avg_activity_duration_ms"),
+                "geometry_pass_rate": _process_summary("geometry_pass_rate"),
+                "dfm_pass_rate": _process_summary("dfm_pass_rate"),
+                "visual_pass_rate": _process_summary("visual_pass_rate"),
+                "duration_measured_rate": _process_summary("duration_measured_rate"),
+                "repair_gain_measured_rate": _process_summary("repair_gain_measured_rate"),
+            },
         }
 
     summary = {"overall": _collect(cases)}
 
     by_diff = {}
-    for diff in ("simple", "moderate", "complex"):
-        entries = [c for c in cases if c.get("difficulty") == diff]
+    difficulties = sorted(
+        {str(case.get("difficulty") or "unknown") for case in cases}
+    )
+    for diff in difficulties:
+        entries = [
+            c for c in cases if str(c.get("difficulty") or "unknown") == diff
+        ]
         if entries:
             by_diff[diff] = _collect(entries)
     summary["by_difficulty"] = by_diff

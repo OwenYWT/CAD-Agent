@@ -12,6 +12,7 @@ from app.models.schemas import ParamConfig
 from app.parameters import extract_parameters
 
 _FORMAT_EXTENSIONS = {
+    "fcstd": ".FCStd",
     "step": ".step",
     "stl": ".stl",
     "dxf": ".dxf",

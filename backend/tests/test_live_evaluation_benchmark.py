@@ -23,6 +23,7 @@ def test_live_benchmark_row_requires_a_finished_report():
     assert row["live_evaluation_run_id"] == "live-live-1"
     assert row["live_report_status"] == "running"
     assert row["passed"] is False
+    assert row["model_verdict"] is None
     assert row["live_report_error"] == "live report is not finished"
 
 
@@ -67,6 +68,242 @@ def test_live_benchmark_row_maps_only_real_report_evidence_to_artifact_gate():
         "passed": True,
     }
     assert "rendered_views" not in row["artifact_gate"]
+    assert row["cad_test_gate_status"] == "unavailable"
+    assert row["passed"] is False
+    assert row["evaluation_status"] == "pending"
+
+
+def test_live_benchmark_row_includes_cad_test_delivery_evidence():
+    from benchmark.live import benchmark_row_from_live_report
+
+    cad_test = {
+        "schema_version": "cad-test-evidence.v1",
+        "status": "passed",
+        "verdict": True,
+        "authority": "independent_cad_scorer",
+        "reason": "cad_test_verified",
+        "requirements": {"passed": 4, "total": 4},
+        "delivery": {
+            "status": "passed",
+            "native_solids": 1,
+            "step_solids": 1,
+            "stl_facets": 12,
+            "stl_bounds_match": True,
+        },
+    }
+
+    row = benchmark_row_from_live_report(
+        case={"id": "P01", "description": "create a cube", "path": "extrude_cut"},
+        response=SimpleNamespace(
+            success=True,
+            inspect_report=SimpleNamespace(printable=True, verdict="pass"),
+        ),
+        live_report={
+            "status": "finished",
+            "cad_test": cad_test,
+            "evidence": [
+                {
+                    "source_kind": "agent_v2.validate_geometry",
+                    "observed": {
+                        "artifacts": [
+                            {"format": "step", "parseable": True, "valid": True, "solid_count": 1},
+                            {"format": "stl", "parseable": True, "valid": True, "solid_count": 1},
+                        ]
+                    },
+                }
+            ],
+            "timeline": [
+                {
+                    "event_type": "visual_validation_finished",
+                    "payload": {"status": "rendered"},
+                }
+            ],
+        },
+        report_path="reports/live/live-live-1.json",
+    )
+
+    assert row["cad_test"] == cad_test
+    assert row["artifact_gate"]["cad_test_status"] == "passed"
+    assert row["artifact_gate"]["native_delivery_verified"] is True
+    assert row["artifact_gate"]["native_solids"] == 1
+    assert row["artifact_gate"]["stl_facets"] == 12
+
+
+def test_live_2d_benchmark_row_passes_without_3d_native_delivery():
+    from benchmark.live import benchmark_row_from_live_report
+
+    row = benchmark_row_from_live_report(
+        case={"id": "X01", "description": "create a profile", "path": "2d"},
+        response=SimpleNamespace(success=True, files={"dxf": "result.dxf"}),
+        live_report={
+            "status": "finished",
+            "cad_test": {
+                "status": "passed",
+                "verdict": True,
+            },
+            "evidence": [
+                {
+                    "source_kind": "agent_v2.validate_geometry",
+                    "observed": {
+                        "artifacts": [{"format": "dxf", "parseable": True}]
+                    },
+                }
+            ],
+        },
+        report_path="reports/live/live-X01.json",
+    )
+
+    assert row["artifact_gate"]["cad_test_status"] == "passed"
+    assert row["artifact_gate"]["native_delivery_verified"] is None
+    assert row["passed"] is True
+
+
+def test_live_benchmark_row_ignores_empty_cad_test_observation():
+    from benchmark.live import benchmark_row_from_live_report
+
+    row = benchmark_row_from_live_report(
+        case={"id": "P01", "description": "create a cube", "path": "extrude_cut"},
+        response=SimpleNamespace(
+            success=True,
+            inspect_report=SimpleNamespace(printable=True, verdict="pass"),
+        ),
+        live_report={
+            "status": "finished",
+            "cad_test": {},
+            "evidence": [
+                {
+                    "source_kind": "agent_v2.validate_geometry",
+                    "observed": {
+                        "artifacts": [
+                            {"format": "step", "parseable": True, "valid": True, "solid_count": 1},
+                            {"format": "stl", "parseable": True, "valid": True, "solid_count": 1},
+                        ]
+                    },
+                }
+            ],
+            "timeline": [
+                {
+                    "event_type": "visual_validation_finished",
+                    "payload": {"status": "rendered"},
+                }
+            ],
+        },
+        report_path="reports/live/live-live-1.json",
+    )
+
+    assert row["artifact_gate"]["passed"] is True
+    assert "cad_test" not in row
+    assert row["cad_test_gate_status"] == "unavailable"
+    assert row["passed"] is False
+    assert row["evaluation_status"] == "pending"
+
+
+def test_live_benchmark_row_does_not_pass_when_cad_test_fails():
+    from benchmark.live import benchmark_row_from_live_report
+
+    row = benchmark_row_from_live_report(
+        case={"id": "P01", "description": "create a cube", "path": "extrude_cut"},
+        response=SimpleNamespace(
+            success=True,
+            inspect_report=SimpleNamespace(printable=True, verdict="pass"),
+        ),
+        live_report={
+            "status": "finished",
+            "cad_test": {
+                "status": "failed",
+                "verdict": False,
+                "delivery": {"status": "failed"},
+            },
+            "evidence": [
+                {
+                    "source_kind": "agent_v2.validate_geometry",
+                    "observed": {
+                        "artifacts": [
+                            {"format": "step", "parseable": True, "valid": True, "solid_count": 1},
+                            {"format": "stl", "parseable": True, "valid": True, "solid_count": 1},
+                        ]
+                    },
+                }
+            ],
+            "timeline": [
+                {
+                    "event_type": "visual_validation_finished",
+                    "payload": {"status": "rendered"},
+                }
+            ],
+        },
+        report_path="reports/live/live-live-1.json",
+    )
+
+    assert row["artifact_gate"]["cad_test_status"] == "failed"
+    assert row["artifact_gate"]["native_delivery_verified"] is False
+    assert row["artifact_gate"]["passed"] is False
+    assert row["passed"] is False
+
+
+def test_live_benchmark_row_projects_sealed_candidate_and_worker_identity():
+    from benchmark.live import benchmark_row_from_live_report
+
+    row = benchmark_row_from_live_report(
+        case={"id": "ctb-00000007", "description": "make a part", "path": "extrude_cut"},
+        response=SimpleNamespace(success=True, inspect_report=None, validation=None, files={}),
+        live_report={
+            "status": "finished",
+            "cad_test": {
+                "status": "blocked",
+                "verdict": None,
+                "identity": {
+                    "workflow_id": "workflow-1",
+                    "candidate_revision_id": "revision-1",
+                    "worker_build_id": "build-1",
+                },
+            },
+        },
+        report_path="reports/live/live-workflow-1.json",
+    )
+
+    assert row["workflow_id"] == "workflow-1"
+    assert row["candidate_revision_id"] == "revision-1"
+    assert row["worker_build_id"] == "build-1"
+
+
+def test_live_benchmark_row_uses_authoritative_gate_when_response_has_no_legacy_metrics():
+    from benchmark.live import benchmark_row_from_live_report
+
+    row = benchmark_row_from_live_report(
+        case={"id": "ctb-00000007", "description": "create a cylinder", "path": "extrude_cut"},
+        response=SimpleNamespace(
+            success=True,
+            inspect_report=None,
+            validation=None,
+            files={},
+        ),
+        live_report={
+            "status": "finished",
+            "cad_test": {
+                "status": "passed",
+                "verdict": True,
+                "delivery": {"status": "passed"},
+            },
+            "evidence": [
+                {
+                    "source_kind": "agent_v2.validate_geometry",
+                    "observed": {
+                        "artifacts": [
+                            {"format": "step", "parseable": True, "valid": True, "solid_count": 1},
+                            {"format": "stl", "parseable": True, "valid": True, "solid_count": 1},
+                        ]
+                    },
+                }
+            ],
+            "timeline": [
+                {"event_type": "visual_validation_finished", "payload": {"status": "rendered"}},
+            ],
+        },
+        report_path="reports/live/live-live-1.json",
+    )
+
+    assert row["artifact_gate"]["passed"] is True
     assert row["passed"] is True
 
 
@@ -191,6 +428,56 @@ async def test_live_benchmark_admission_passes_case_identity_and_links_report(tm
     assert result["live_report_path"].endswith(
         f"live_live-{workflow_id}.json"
     )
+
+
+@pytest.mark.asyncio
+async def test_live_benchmark_uses_route_specific_outputs_and_dataset_identity(tmp_path):
+    from benchmark.live import LiveBenchmarkContext, run_live_case
+
+    calls = []
+    workflow_id = uuid4()
+    principal = SimpleNamespace(tenant_id=uuid4(), principal_id=uuid4())
+
+    async def submit(_principal, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(workflow_run_id=workflow_id, handle=object())
+
+    async def wait(_principal, _submission, *, timeout_seconds):
+        return SimpleNamespace(success=True, needs_confirmation=False)
+
+    report_path = tmp_path / "live" / f"live_live-{workflow_id}.json"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text(
+        json.dumps(
+            {
+                "evaluation_run_id": f"live-{workflow_id}",
+                "status": "finished",
+                "finished_at": "2026-11-26T00:00:00Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    await run_live_case(
+        {"id": "X01", "description": "create a profile", "path": "2d"},
+        context=LiveBenchmarkContext(
+            principal=principal,
+            project_id=uuid4(),
+            branch_id=uuid4(),
+            expected_base_revision_id=uuid4(),
+            report_root=tmp_path,
+            timeout_seconds=12,
+            dataset_hash="a" * 64,
+        ),
+        repeat_index=1,
+        submitter=submit,
+        waiter=wait,
+    )
+
+    assert calls[0]["output_formats"] == ["dxf"]
+    assert calls[0]["source_id"] == "X01"
+    assert calls[0]["source_dataset_hash"] == "a" * 64
+    assert calls[0]["source_modeling_path"] == "2d"
 
 
 @pytest.mark.asyncio

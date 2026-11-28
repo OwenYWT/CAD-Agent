@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 from uuid import uuid4
 
 from .contracts import EvaluationEvidence, LiveEventStatus, validate_payload, utc_now
 from .consistency import summarize_tool_calls
 from .complexity_profile import build_complexity_profile, build_quality_matrix
+from .cad_test_evidence import cad_test_quality_projection, merge_cad_test_result
 from .repair_gain import build_repair_gain
 from .resource_cost import build_resource_cost
 from .session import EvaluationSession
@@ -85,6 +86,58 @@ class FileEvaluationStore:
             return self._write(target, report)
         return target
 
+    def attach_cad_test_result(
+        self,
+        evaluation_run_id: str,
+        result: Mapping[str, Any] | None,
+        *,
+        expected_artifact_sha256: str | None = None,
+        expected_case_id: str | None = None,
+        expected_dataset_hash: str | None = None,
+    ) -> Path:
+        """Attach independent CADTest evidence without changing business state."""
+        target = self.path_for(evaluation_run_id)
+        report = self._read(target)
+        return self._write(
+            target,
+            merge_cad_test_result(
+                report,
+                result,
+                expected_artifact_sha256=expected_artifact_sha256,
+                expected_case_id=expected_case_id,
+                expected_dataset_hash=expected_dataset_hash,
+            ),
+        )
+
+    def record_cad_test_seal(
+        self,
+        evaluation_run_id: str,
+        *,
+        candidate_revision_id: str,
+        artifacts: Mapping[str, Mapping[str, Any]],
+    ) -> None:
+        """Persist the worker's bounded projection of the committed seal."""
+        target = self.path_for(evaluation_run_id)
+        report = self._read(target)
+        if report.get("candidate_revision_id") not in (None, candidate_revision_id):
+            raise ValueError("CADTest seal disagrees with report candidate")
+        seal = {"candidate_revision_id": candidate_revision_id, "artifacts": dict(artifacts)}
+        previous = report.get("cad_test_seal")
+        if previous is not None and previous != seal:
+            raise ValueError("CADTest seal facts cannot be replaced")
+        if previous is None:
+            report["cad_test_seal"] = seal
+            self._write(target, report)
+
+    def cad_test_seal(self, evaluation_run_id: str) -> Mapping[str, Any]:
+        report = self._read(self.path_for(evaluation_run_id))
+        seal = report.get("cad_test_seal")
+        if not isinstance(seal, Mapping) or report.get("candidate_revision_id") not in (
+            None, seal.get("candidate_revision_id"),
+        ):
+            return {}
+        return seal
+
     def append_tool_call(
         self,
         evaluation_run_id: str,
@@ -150,6 +203,9 @@ class FileEvaluationStore:
             report, repair_gain=report["repair_gain"]
         )
         report["quality_matrix"] = build_quality_matrix(report)
+        cad_test = report.get("cad_test")
+        if isinstance(cad_test, Mapping) and cad_test.get("status"):
+            report["quality_matrix"]["cad_test"] = cad_test_quality_projection(cad_test)
         return self._write(target, report)
 
     @staticmethod

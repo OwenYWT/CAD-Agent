@@ -71,8 +71,20 @@ def _record_live_submission(
     operation_context: OperationContextV1 | None = None,
     source_kind: str = "user_task",
     source_id: str | None = None,
+    source_dataset_hash: str | None = None,
+    source_modeling_path: str | None = None,
+    source_worker_build_id: str | None = None,
 ) -> None:
     try:
+        source_metadata = {
+            key: value
+            for key, value in {
+                "dataset_hash": source_dataset_hash,
+                "modeling_path": source_modeling_path,
+                "expected_worker_build_id": source_worker_build_id,
+            }.items()
+            if value is not None
+        }
         ensure_live_session(
             {
                 "workflow_run_id": str(workflow_run_id),
@@ -92,6 +104,7 @@ def _record_live_submission(
             },
             source_kind=source_kind,
             source_id=source_id or idempotency_key,
+            **({"source_metadata": source_metadata} if source_metadata else {}),
         )
     except Exception as exc:
         logger.warning(
@@ -371,6 +384,9 @@ async def submit_durable_workflow(
     requirement_basis: RequirementBasisV1 | None = None,
     source_kind: str = "user_task",
     source_id: str | None = None,
+    source_dataset_hash: str | None = None,
+    source_modeling_path: str | None = None,
+    source_worker_build_id: str | None = None,
     native_import_bytes: bytes | None = None,
 ) -> DurableSubmission:
     normalized_objective = objective.strip()
@@ -642,6 +658,9 @@ async def submit_durable_workflow(
             operation_context=operation_context,
             source_kind=source_kind,
             source_id=source_id,
+            source_dataset_hash=source_dataset_hash,
+            source_modeling_path=source_modeling_path,
+            source_worker_build_id=source_worker_build_id,
         )
         return DurableSubmission(
             workflow_run_id=workflow_run_id,
@@ -719,6 +738,9 @@ async def submit_durable_workflow(
         operation_context=operation_context,
         source_kind=source_kind,
         source_id=source_id,
+        source_dataset_hash=source_dataset_hash,
+        source_modeling_path=source_modeling_path,
+        source_worker_build_id=source_worker_build_id,
     )
     return DurableSubmission(
         workflow_run_id=workflow_run_id,

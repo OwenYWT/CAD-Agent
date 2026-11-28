@@ -2,11 +2,13 @@
 from __future__ import annotations
 import asyncio
 import hashlib
+import logging
 import time
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 from temporalio import activity
+from temporalio.exceptions import ApplicationError
 from app.agent.durable_planner import DurableAgentPlanner
 from app.agent.durable_repair import DurableRepairSourceGenerator
 from app.agent.orchestrator import Orchestrator
@@ -52,7 +54,15 @@ from app.evaluation.integration import (
     record_activity_result,
     record_workflow_terminal,
 )
+from app.evaluation.cad_test_observer import (
+    cad_test_observation_recorded,
+    cad_test_required_from_environment,
+    dispatch_cad_test_observation,
+    observe_sealed_candidate,
+)
 from app.evaluation.contracts import utc_now
+
+logger = logging.getLogger(__name__)
 
 class McadWorkflowActivities:
     def __init__(
@@ -96,8 +106,11 @@ class McadWorkflowActivities:
                     finished_at=utc_now(),
                     duration_ms=max(0, round((time.perf_counter() - started_monotonic) * 1000)),
                 )
-            except Exception:
-                pass
+            except Exception as telemetry_error:
+                logger.warning(
+                    "activity failure evidence recording failed: %s",
+                    type(telemetry_error).__name__,
+                )
             raise
         try:
             record_activity_result(
@@ -109,9 +122,52 @@ class McadWorkflowActivities:
                 finished_at=utc_now(),
                 duration_ms=max(0, round((time.perf_counter() - started_monotonic) * 1000)),
             )
-        except Exception:
-            pass
+        except Exception as telemetry_error:
+            logger.warning(
+                "activity result evidence recording failed: %s",
+                type(telemetry_error).__name__,
+            )
+            if cad_test_required_from_environment():
+                raise ApplicationError(
+                    "Required CADTest activity evidence could not be recorded",
+                    type="CadTestEvidencePersistenceFailure",
+                    non_retryable=True,
+                ) from telemetry_error
+        if activity_name == "agent_v2.seal_candidate":
+            try:
+                record_workflow_terminal(payload, result)
+            except Exception as telemetry_error:
+                logger.warning(
+                    "workflow terminal evidence recording failed: %s",
+                    type(telemetry_error).__name__,
+                )
+                if cad_test_required_from_environment():
+                    raise ApplicationError(
+                        "Required CADTest terminal evidence could not be recorded",
+                        type="CadTestEvidencePersistenceFailure",
+                        non_retryable=True,
+                    ) from telemetry_error
+            try:
+                await dispatch_cad_test_observation(payload, result)
+            except Exception as exc:
+                logger.warning(
+                    "CADTest observation dispatch failed: %s",
+                    type(exc).__name__,
+                )
+                if cad_test_required_from_environment():
+                    raise ApplicationError(
+                        "Required CADTest observation could not be dispatched",
+                        type="CadTestObservationDispatchFailure",
+                        non_retryable=True,
+                    ) from exc
         return result
+
+    @activity.defn(name="evaluation.observe_sealed_candidate")
+    async def cad_test_observation(self, observation: dict[str, Any]) -> None:
+        payload = observation["payload"]
+        result = observation["result"]
+        if not cad_test_observation_recorded(payload, result):
+            await observe_sealed_candidate(payload, result)
 
 
     @staticmethod

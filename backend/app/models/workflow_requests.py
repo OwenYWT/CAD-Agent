@@ -302,7 +302,7 @@ class McadAgentWorkflowV2Request(BaseModel):
     structured_modification: FreeCADStructuredModificationV1 | None = None
     revision_restore: FreeCADRevisionRestoreV1 | None = None
     manufacturing_profile: dict[str, Any] | None = None
-    output_formats: tuple[Literal["step", "stl", "dxf", "svg"], ...] = (
+    output_formats: tuple[Literal["fcstd", "step", "stl", "dxf", "svg"], ...] = (
         "step",
         "stl",
     )

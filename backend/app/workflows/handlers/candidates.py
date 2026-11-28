@@ -82,6 +82,7 @@ async def agent_seal_candidate(payload: dict[str, Any]) -> dict[str, Any]:
             dict(item) for item in payload.get("selected_manifests") or ()
         ],
     )
+    assembly_step = next((step.step_key for step in plan.steps if step.kind == "assembly_combine"), None)
     return {
         "status": "succeeded",
         "seal_id": str(sealed.seal_id),
@@ -97,6 +98,10 @@ async def agent_seal_candidate(payload: dict[str, Any]) -> dict[str, Any]:
                 "size_bytes": item.size_bytes,
                 "sha256": item.sha256,
                 "content_type": item.content_type,
+                **(
+                    {"is_primary": sealed.artifact_step_keys.get(item.artifact_id) == assembly_step}
+                    if assembly_step is not None else {}
+                ),
             }
             for item in sealed.artifacts
         ],

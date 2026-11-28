@@ -7,6 +7,7 @@ from typing import Any
 
 
 _EVENT_LABELS = {
+    "cad_test_finished": "CADTest independent verification",
     "session_started": "任务已接收",
     "requirement_parsed": "需求已解析",
     "obligations_bound": "需求已绑定验收条件",
@@ -669,6 +670,48 @@ def _engineering_summary(report: Mapping[str, Any]) -> list[str]:
 def render_human_report(report: Mapping[str, Any]) -> str:
     """Render only facts already present in the live report."""
 
+    cad_test = report.get("cad_test")
+    cad_test_lines = ["## CADTest 独立验收", ""]
+    if not isinstance(cad_test, Mapping) or not cad_test:
+        cad_test_lines.append("- 状态: 未记录")
+    else:
+        status = str(cad_test.get("status") or "未记录")
+        status_label = {
+            "not_applicable": "\u4e0d\u9002\u7528",
+        }.get(status, status)
+        case = cad_test.get("case")
+        case_id = case.get("id") if isinstance(case, Mapping) else None
+        case_text = case_id or ("无数据集案例" if status == "not_applicable" else "未记录")
+        requirements = cad_test.get("requirements")
+        if isinstance(requirements, Mapping):
+            passed = requirements.get("passed")
+            total = requirements.get("total")
+            requirement_text = (
+                f"{passed}/{total}"
+                if passed is not None and total is not None
+                else "不适用" if status == "not_applicable" else "未记录"
+            )
+        else:
+            requirement_text = "不适用" if status == "not_applicable" else "未记录"
+        delivery = cad_test.get("delivery")
+        delivery_status = (
+            str(delivery.get("status") or "未记录")
+            if isinstance(delivery, Mapping)
+            else "未记录"
+        )
+        cad_test_lines.extend(
+            [
+                f"- 状态: {status_label}",
+                f"- 案例: {case_text}",
+                f"- 需求检查: {requirement_text}",
+                f"- 交付检查: {delivery_status}",
+                f"- 权威性: {cad_test.get('authority') or '未记录'}",
+                f"- 原因: {cad_test.get('reason') or '未记录'}",
+            ]
+        )
+        if status == "not_applicable":
+            cad_test_lines.insert(3, "- 数据集评分: 不适用")
+
     lines = [
         "# CAD-Agent 执行过程报告",
         "",
@@ -712,6 +755,8 @@ def render_human_report(report: Mapping[str, Any]) -> str:
         [
             "",
             *_engineering_summary(report),
+            "",
+            *cad_test_lines,
             "",
             *_render_geometry_quantitative(report),
             "",

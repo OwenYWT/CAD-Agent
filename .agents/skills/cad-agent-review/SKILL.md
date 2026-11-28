@@ -78,6 +78,21 @@ python .agents/skills/cad-agent-review/scripts/validate_feature_map.py
 
 Record each selected layer as `PASS`, `FAIL`, `BLOCKED`, `SKIPPED`, `CONTRACT_ONLY`, or `REAL_ACCEPTANCE`. Never silently skip a required test or treat a mock, unit test, or historical report as real acceptance.
 
+### 4.1 Evaluation evidence integrity gate
+
+For benchmark, CADTest, live evaluation, scorer, artifact, or native-delivery changes, treat every reported pass as an untrusted claim until the complete evidence chain is checked. This gate exists because a prior implementation allowed a different case's artifact to be scored under the current case, derived the expected artifact hash from the artifact being scored, and allowed a failed native verifier to remain a successful result when its JSON and process exit code disagreed.
+
+The review must verify all of the following:
+
+1. **Admission identity is authoritative.** Bind `case_id`, dataset identity/hash, modeling route, workflow identity, candidate/revision identity, and artifact identity at the trusted submission boundary. The scorer or attach caller must not be allowed to choose or replace the expected case after admission. A cross-case or cross-dataset control must be rejected before the scorer is invoked.
+2. **Artifact identity is independent.** Compute the actual artifact hash in the runner or trusted delivery boundary. Never derive an expected hash from the same file under test, and never treat a scorer-reported hash as authoritative without comparing it against the independently computed hash. Missing or conflicting identity evidence is `blocked` or `error`, never `passed`.
+3. **Process and result channels agree.** A scorer/native verifier must satisfy both its structured result contract and its process exit code contract. A non-zero exit code forces failure even if the JSON says `passed=true`; malformed, missing, stale, or capability-mismatched result files cannot be rescued by stdout or a success flag.
+4. **Final geometry is selected, not accumulated blindly.** Native delivery checks must select final/owned/visible objects according to explicit parent, tip, and route semantics. Do not count retained history bodies, consumed Boolean inputs, hidden construction objects, or independent assembly parts as one undifferentiated set. Add controls for valid Boolean/history, assembly, 2D, and multi-artifact routes.
+5. **Negative controls are mandatory.** For every new pass path, add and run controls for a wrong case ID, wrong dataset, swapped artifact, modified artifact, scorer hash mismatch, scorer exception, non-zero verifier exit, missing evidence, and ambiguous artifact selection. Unit mocks are logic evidence only; real container/FreeCAD controls are required before claiming runtime acceptance.
+6. **No case-specific optimization.** Fix the shared identity, provenance, route, or result-contract invariant. A change that improves one case without a generalized rule and reusable negative control is not acceptable.
+
+When this gate cannot be fully exercised because the real scorer/container is unavailable, report the result as `PASS_WITH_LIMITATIONS` or `BLOCKED` with the exact missing evidence. Do not infer real acceptance from focused unit tests, a readiness endpoint, or a historical report.
+
 ### 5. Decide closure
 
 - `PASS`: no material finding and required available layers passed.

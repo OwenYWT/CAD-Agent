@@ -101,6 +101,7 @@ def test_report_has_versioned_schema_and_developer_source_metadata():
     assert report["source"] == {"kind": "benchmark", "id": "P01"}
     assert report["evaluation_run_id"]
     assert report["timeline"] == []
+    assert report["cad_test"] == {}
 
 
 def test_evidence_contract_preserves_real_reference_and_nullable_identity():

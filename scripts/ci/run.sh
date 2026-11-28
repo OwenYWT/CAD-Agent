@@ -84,11 +84,13 @@ case "$command" in
     fi
     ;;
   core)
+    export CAD_TEST_TEMPORAL_TEST_TARGET="${TEMPORAL_TARGET:?core contracts require a real Temporal endpoint}"
     export MOONSHOT_API_KEY= DASHSCOPE_API_KEY= AZURE_OPENAI_API_KEY=
     export CAD_AGENT_TEST_EVIDENCE_DIR="$report/cad-artifacts" CAD_CONSTRAINT_REPORT="$report/constraint-chain"
     export CAD_CI_RETAIN_FAILURE_PLANS=1
     cd "$root/backend"
     suite durable-core durable-core.xml \
+      tests/test_cad_test_external_recheck.py::test_dispatched_observation_survives_absent_worker_and_deduplicates \
       tests/integration/test_temporal_mcadd_workflow.py tests/integration/test_websocket_replay.py \
       tests/integration/test_change_set_api.py tests/integration/test_postgres_project_files.py \
       tests/integration/test_postgres_history.py tests/integration/test_api_compatibility_matrix.py \

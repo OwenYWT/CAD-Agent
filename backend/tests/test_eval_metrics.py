@@ -284,17 +284,201 @@ def test_aggregate_case_all_pass():
     assert agg["pass^k"] is True
 
 
+def test_aggregate_case_accepts_a_failed_batch_run_without_response_attempts():
+    run = {
+        "executed": False,
+        "passed": False,
+        "error": "RuntimeError: workflow submission failed",
+        "process_evaluation": {"status": "unavailable"},
+        "wall_time_ms": 12,
+    }
+
+    aggregate = M.aggregate_case([run])
+
+    assert aggregate["avg_attempts"] == 0
+    assert aggregate["final_gate_status"]["blocked"] == 1
+
+
 def test_aggregate_summary_groups():
     cases = [
-        {"id": "A", "difficulty": "simple", "path": "extrude_cut",
+        {"id": "A", "difficulty": "basic", "path": "extrude_cut",
          "agg": M.aggregate_case([_row(True), _row(True), _row(True)])},
-        {"id": "B", "difficulty": "complex", "path": "revolve",
+        {"id": "B", "difficulty": "combined", "path": "revolve",
+         "agg": M.aggregate_case([_row(False), _row(False), _row(False)])},
+        {"id": "C", "difficulty": "complex", "path": "extrude_cut",
          "agg": M.aggregate_case([_row(False), _row(False), _row(False)])},
     ]
     s = M.aggregate_summary(cases)
-    assert s["overall"]["n_cases"] == 2
-    assert s["overall"]["pass@1"]["mean"] == pytest.approx(0.5)
-    assert "simple" in s["by_difficulty"]
-    assert "complex" in s["by_difficulty"]
-    assert s["by_difficulty"]["simple"]["pass@1"]["mean"] == 1.0
+    assert s["overall"]["n_cases"] == 3
+    assert s["overall"]["pass@1"]["mean"] == pytest.approx(1 / 3, abs=0.0001)
+    assert list(s["by_difficulty"]) == ["basic", "combined", "complex"]
+    assert s["by_difficulty"]["basic"]["pass@1"]["mean"] == 1.0
+    assert s["by_difficulty"]["combined"]["pass@1"]["mean"] == 0.0
+    assert s["by_difficulty"]["complex"]["pass@1"]["mean"] == 0.0
     assert s["by_path"]["revolve"]["pass@1"]["mean"] == 0.0
+
+
+def test_aggregate_summary_exposes_partial_pass_metric_coverage():
+    passed_runs = [_row(True), _row(True)]
+    unavailable_runs = [_row(None), _row(None)]
+    cases = [
+        {"id": case_id, "agg": M.aggregate_case(passed_runs)}
+        for case_id in ("A", "B")
+    ]
+    cases.append({"id": "C", "agg": M.aggregate_case(unavailable_runs)})
+
+    overall = M.aggregate_summary(cases)["overall"]
+
+    assert overall["pass@1"]["mean"] == 1.0
+    assert overall["pass@k"] == 1.0
+    assert overall["pass^k"] == 1.0
+    assert overall["pass_metric_coverage"] == {
+        "scored_cases": 2,
+        "total_cases": 3,
+        "case_coverage": pytest.approx(2 / 3),
+        "scored_runs": 4,
+        "total_runs": 6,
+        "run_coverage": pytest.approx(2 / 3),
+    }
+
+
+def test_aggregate_process_evaluation_metrics_are_reported():
+    runs = [
+        {
+            **_row(True),
+            "process_evaluation": {
+                "status": "measured",
+                "workflow_activity_count": 8,
+                "cad_operation_count": 3,
+                "repair_count": 1,
+                "retry_call_count": 1,
+                "failed_call_count": 0,
+                "geometry_status": "passed",
+                "dfm_status": "passed",
+                "visual_status": "passed",
+            },
+        },
+        {
+            **_row(False),
+            "process_evaluation": {
+                "status": "measured",
+                "workflow_activity_count": 10,
+                "cad_operation_count": 4,
+                "repair_count": 2,
+                "retry_call_count": 2,
+                "failed_call_count": 1,
+                "geometry_status": "failed",
+                "dfm_status": "unknown",
+                "visual_status": "unavailable",
+            },
+        },
+    ]
+
+    aggregate = M.aggregate_case(runs)
+
+    assert aggregate["process_evaluation"] == {
+        "measured_rate": 1.0,
+        "avg_workflow_activity_count": 9.0,
+        "avg_cad_operation_count": 3.5,
+        "avg_repair_count": 1.5,
+        "avg_retry_call_count": 1.5,
+        "avg_failed_call_count": 0.5,
+        "avg_total_call_count": 0.0,
+        "avg_activity_duration_ms": 0.0,
+        "geometry_pass_rate": 0.5,
+        "dfm_pass_rate": 0.5,
+        "visual_pass_rate": 0.5,
+        "duration_measured_rate": 0.0,
+        "repair_gain_measured_rate": 0.0,
+    }
+
+
+def test_aggregate_missing_legacy_metrics_are_unavailable_not_failed():
+    run = {
+        "executed": True,
+        "passed": True,
+        "verdict": None,
+        "verdict_pass": False,
+        "printable": None,
+        "watertight": None,
+        "one_shot": None,
+        "dim_match": None,
+        "attempts": 0,
+        "wall_time_ms": 100,
+        "cad_test": {"status": "passed"},
+        "artifact_gate": {"passed": True},
+        "process_evaluation": {"status": "measured"},
+    }
+
+    aggregate = M.aggregate_case([run])
+
+    for metric in (
+        "verdict_pass_rate",
+        "printable_rate",
+        "watertight_rate",
+        "one_shot_rate",
+        "dim_match_rate",
+    ):
+        assert aggregate[metric]["mean"] is None
+        assert aggregate[metric]["n"] == 0
+        assert aggregate[metric]["total"] == 1
+
+    assert aggregate["final_gate_status"] == {
+        "passed": 1,
+        "failed": 0,
+        "blocked": 0,
+        "unavailable": 0,
+        "pending": 0,
+        "not_applicable": 0,
+        "total": 1,
+    }
+    assert aggregate["cad_test_status"]["passed"] == 1
+    assert aggregate["cad_test_status"]["unavailable"] == 0
+    assert aggregate["process_evaluation_status"]["measured"] == 1
+
+
+def test_extract_missing_authoritative_fields_are_none():
+    response = _resp(inspect_report=None, validation=None, attempts=0)
+
+    metrics = M.extract_metrics(response, {"path": "extrude_cut"})
+
+    assert metrics["verdict_pass"] is None
+    assert metrics["printable"] is None
+    assert metrics["watertight"] is None
+    assert metrics["one_shot"] is None
+    assert metrics["dim_match"] is None
+
+
+def test_aggregate_summary_preserves_unavailable_status_counts():
+    case = {
+        "id": "unavailable",
+        "difficulty": "simple",
+        "path": "extrude_cut",
+        "runs": [{
+            "executed": False,
+            "passed": False,
+            "verdict_pass": None,
+            "printable": None,
+            "watertight": None,
+            "one_shot": None,
+            "dim_match": None,
+            "attempts": 0,
+            "wall_time_ms": 0,
+            "process_evaluation": {"status": "unavailable"},
+        }],
+    }
+    case["agg"] = M.aggregate_case(case["runs"])
+
+    overall = M.aggregate_summary([case])["overall"]
+
+    assert overall["verdict_pass_rate"]["mean"] is None
+    assert overall["final_gate_status"] == {
+        "passed": 0,
+        "failed": 0,
+        "blocked": 1,
+        "unavailable": 0,
+        "pending": 0,
+        "not_applicable": 0,
+        "total": 1,
+    }
+    assert overall["process_evaluation_status"]["unavailable"] == 1

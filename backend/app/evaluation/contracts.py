@@ -160,6 +160,7 @@ class EvaluationReport:
     metrics: Mapping[str, Any] = field(default_factory=dict)
     tool_calls: tuple[Mapping[str, Any], ...] = ()
     consistency: Mapping[str, Any] = field(default_factory=dict)
+    cad_test: Mapping[str, Any] = field(default_factory=dict)
     schema_version: str = "cad-live-evaluation-report.v1"
 
     def __post_init__(self) -> None:
@@ -171,6 +172,7 @@ class EvaluationReport:
         validate_payload(self.metrics)
         validate_payload({"tool_calls": self.tool_calls})
         validate_payload(self.consistency)
+        validate_payload(self.cad_test)
         if self.schema_version != "cad-live-evaluation-report.v1":
             raise ValueError("unsupported live evaluation report schema version")
 

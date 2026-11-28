@@ -196,6 +196,60 @@ def test_human_report_contains_blocked_engineering_summary(tmp_path):
     assert "- \u6700\u7ec8\u7ed3\u8bba: \u4efb\u52a1\u672a\u5b8c\u6210" in markdown
 
 
+def test_human_report_renders_cad_test_evidence_status():
+    from app.evaluation.human_report import render_human_report
+
+    markdown = render_human_report(
+        {
+            "evaluation_run_id": "live-1",
+            "workflow_id": "workflow-1",
+            "status": "finished",
+            "source": {"kind": "benchmark", "id": "ctb-00000007"},
+            "timeline": [],
+            "cad_test": {
+                "status": "passed",
+                "case": {"id": "ctb-00000007"},
+                "requirements": {"passed": 8, "total": 8},
+                "delivery": {"status": "passed"},
+                "reason": "cad_test_verified",
+            },
+        }
+    )
+
+    assert "## CADTest \u72ec\u7acb\u9a8c\u6536" in markdown
+    assert "- \u72b6\u6001: passed" in markdown
+    assert "- \u9700\u6c42\u68c0\u67e5: 8/8" in markdown
+    assert "- \u4ea4\u4ed8\u68c0\u67e5: passed" in markdown
+
+
+def test_human_report_explains_when_cad_test_is_not_applicable():
+    from app.evaluation.human_report import render_human_report
+
+    markdown = render_human_report(
+        {
+            "evaluation_run_id": "live-1",
+            "workflow_id": "workflow-1",
+            "status": "finished",
+            "source": {"kind": "user_task", "id": "task-1"},
+            "timeline": [],
+            "cad_test": {
+                "status": "not_applicable",
+                "case": {"id": None},
+                "requirements": {"passed": None, "total": None},
+                "delivery": {"status": "passed"},
+                "reason": "no_benchmark_case",
+            },
+        }
+    )
+
+    assert "- 状态: 不适用" in markdown
+    assert "- 案例: 无数据集案例" in markdown
+    assert "- 数据集评分: 不适用" in markdown
+    assert "- 需求检查: 不适用" in markdown
+    assert "- 交付检查: passed" in markdown
+    assert "- 原因: no_benchmark_case" in markdown
+
+
 def test_human_report_does_not_treat_terminal_failure_as_success_path(tmp_path):
     from app.evaluation.contracts import EvaluationMode
     from app.evaluation.session import EvaluationSession

@@ -35,13 +35,29 @@ def test_tencent_delivery_includes_every_declared_runtime_file():
     assert delivered == expected, {'missing_or_wrong': {k:v for k,v in expected.items() if delivered.get(k) != v}}
 
 
+def test_backend_delivery_includes_repository_owned_cadtest_engine():
+    dockerfile = (ROOT / 'backend/Dockerfile').read_text()
+    reuse_dockerfile = (ROOT / 'backend/Dockerfile.reuse-dependencies').read_text()
+
+    assert 'COPY backend/benchmark ./benchmark' in dockerfile
+    assert '/app/backend/benchmark' in reuse_dockerfile
+    assert 'COPY backend/benchmark ./benchmark' in reuse_dockerfile
+
+
 def test_tencent_image_verifier_covers_every_declared_runtime_file(tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location('tencent_verify_images', ROOT/'deploy/tencent/verify-images.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     expected = runtime_copies(ROOT/'backend/sandbox/Dockerfile')
     locks = ["backend/requirements.txt", "backend/requirements.lock"]
-    files = [{'path':p, 'sha256':hashlib.sha256((ROOT/p).read_bytes()).hexdigest()} for p in [*expected.values(), *locks]]
+    benchmark_source = "backend/benchmark/cad_test_engine/dataset.py"
+    files = [
+        {
+            'path': p,
+            'sha256': hashlib.sha256((ROOT / p).read_bytes()).hexdigest(),
+        }
+        for p in [*expected.values(), *locks, benchmark_source]
+    ]
     manifest = tmp_path/'manifest.json';manifest.write_text(json.dumps({'files':files}))
     captured = {}
     def capture(image, sources):
@@ -53,5 +69,8 @@ def test_tencent_image_verifier_covers_every_declared_runtime_file(tmp_path, mon
     module.main()
     for path in locks:
         assert captured['backend']['/app/' + path] == hashlib.sha256((ROOT/path).read_bytes()).hexdigest()
+    assert captured['backend']['/app/' + benchmark_source] == hashlib.sha256(
+        (ROOT / benchmark_source).read_bytes()
+    ).hexdigest()
     assert captured['sandbox'] == {target:hashlib.sha256((ROOT/source).read_bytes()).hexdigest()
                                   for target, source in expected.items()}

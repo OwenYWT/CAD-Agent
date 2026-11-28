@@ -112,7 +112,9 @@
         "app.workflows.native_repair",
         "app.services.provider_budgets",
         "app.workflows.work_accounting",
-        "app.evaluation.integration"
+        "app.evaluation.integration",
+        "app.evaluation.cad_test_observer",
+        "app.workflows.cad_test_observation"
       ],
       "allowed_dependencies": [
         "P00",
@@ -274,6 +276,8 @@
         "app.services.llm_usage",
         "app.services.monitor_queries",
         "app.evaluation.contracts",
+        "app.evaluation.cad_test_evidence",
+        "app.evaluation.cad_test_runner",
         "app.evaluation.mode",
         "app.evaluation.session",
         "app.evaluation.store"
@@ -831,6 +835,7 @@
     "backend/app/workflows/__init__.py": "P00",
     "backend/app/workflows/activities.py": "P02",
     "backend/app/workflows/agent_v2.py": "M03",
+    "backend/app/workflows/cad_test_observation.py": "M03",
     "backend/app/workflows/checkpoint_inputs.py": "M03",
     "backend/app/workflows/constraint_evidence.py": "M03",
     "backend/app/workflows/definitions.py": "M03",
@@ -1041,6 +1046,9 @@
     "backend/app/evaluation/complexity_profile.py": "M11",
     "backend/app/evaluation/consistency.py": "M11",
     "backend/app/evaluation/contracts.py": "M11",
+    "backend/app/evaluation/cad_test_evidence.py": "M11",
+    "backend/app/evaluation/cad_test_observer.py": "M03",
+    "backend/app/evaluation/cad_test_runner.py": "M11",
     "backend/app/evaluation/human_report.py": "M11",
     "backend/app/evaluation/integration.py": "M03",
     "backend/app/evaluation/mode.py": "M11",

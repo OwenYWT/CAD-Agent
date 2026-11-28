@@ -60,6 +60,19 @@ class TestReportGate(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'no test cases'):
             gate.validate(self.report(''), ['one'])
 
+    def test_cadtest_temporal_requires_runtime_pass_but_allows_quick_skip(self):
+        identity = 'tests/test_cad_test_external_recheck.py::test_dispatched_observation_survives_absent_worker_and_deduplicates'
+        reason = 'set CAD_TEST_TEMPORAL_TEST_TARGET to a test Temporal endpoint'
+        quick_required = gate.required_cases('backend')
+        runtime_required = gate.required_cases('durable-core')
+        self.assertIn(identity, quick_required)
+        self.assertIn(identity, runtime_required)
+        skipped = self.report(self.case(identity, '<skipped message="' + reason + '"/>'))
+        self.assertEqual(gate.validate(skipped, [identity], allowed_skips=gate.allowed_skips('backend')), 0)
+        with self.assertRaisesRegex(ValueError, 'did not pass'):
+            gate.validate(skipped, [identity], allowed_skips=gate.allowed_skips('durable-core'))
+        self.assertEqual(gate.validate(self.report(self.case(identity)), [identity]), 1)
+
     def test_ambiguous_identity_fails(self):
         body = '<testcase name="one"><properties><property name="ci_nodeid" value="one"/><property name="ci_nodeid" value="two"/></properties></testcase>'
         with self.assertRaisesRegex(ValueError, 'ambiguous'):

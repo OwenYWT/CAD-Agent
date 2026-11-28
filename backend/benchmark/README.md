@@ -52,12 +52,13 @@ python -m benchmark.eval --n 3 --no-rag
 
 人工复核：每次运行保存 4 视角渲染图于 `reports/<run_id>/renders/<case>_run<n>/`，自动指标抓不到的「尺寸对但形状错」靠看图兜底。
 
-> 已知口径差异：复杂件走 multi-step 路径时只填 `validation` 不填 `inspect_report`（见 `multi_step.py`），所以这些 case 的 `verdict_pass` 恒为 False，但 `printable`/`passed` 仍从 `validation` 正确取到。读 `verdict_pass_rate` 时按 `by_path` 分组看，别把 multi-step 的低 verdict 误读为质量差。
+> 已知口径差异：复杂件走 multi-step 路径时只填 `validation` 不填 `inspect_report`（见 `multi_step.py`），所以这些 case 的 `verdict_pass` 可能不可用，但 `printable`/`passed` 仍从 `validation` 正确取到。读 `verdict_pass_rate` 时按 `by_path` 分组看；`unavailable` 表示没有权威字段，不等于失败。
 
 ## 怎么读 compare 结果
 
 - **pass@1**：单次成功率（日常主看）。delta 超过基线 std 才标 `*significant*`，否则是 LLM 噪声。
 - **pass@k**：k 次里≥1 次过（能力上限）。**pass^k**：k 次全过（稳定性）。
+- `overall.pass_metric_coverage` reports scored cases/runs against all cases/runs. Pass rates remain calculated only from scored samples; check coverage before interpreting a rate as representative of the full batch.
 - **逐 case 清单**：`FIXED` / `BROKE` / `hard regressions`（曾 100% 过现在不过）。这是最有价值的——抓 prompt 改动的副作用。
 - 退出码：净回归（broke > fixed）或任何 hard regression → 非零，可作 gate。
 
@@ -156,6 +157,94 @@ The benchmark uses `source.kind=benchmark` and `source.id=<case-id>` when it
 enters durable admission, then links each row to the corresponding
 `benchmark/reports/live/live_<workflow-id>.json` report. A missing or unfinished
 live report is recorded as a failed benchmark row and cannot become a pass.
+
+The built-in cases in `benchmark.eval --live-observe` report business delivery
+only (`evaluation_scope=delivery_only`); they are not CADTest cases. The CLI
+reads live reports from the same `CAD_EVALUATION_REPORT_ROOT` as the API and
+Worker. Use the CADTest batch command below for independent scoring.
+
+## CADTest batch evaluation
+
+The batch entry point is part of CAD-Agent and does not call the external
+project's `run.py`. The dataset is read-only input data; all scoring code,
+native delivery checks, batch aggregation, and live-report integration are in
+this repository.
+
+Set `CAD_TEST_REQUIRED=true`, `TEMPORAL_WORKER_BUILD_ID`, and
+`CAD_TEST_DATASET_ROOT` in both the CLI and evaluator Worker environments.
+The build ID must be the same immutable deployment revision in both processes;
+Temporal Workers use build-ID versioning and scoring rejects missing or
+mismatched Worker identity before invoking the scorer. In Docker Compose, set
+`CAD_TEST_DATASET_HOST_ROOT` in the repository-root `.env` to the host dataset
+directory; the Worker mounts it read-only at `/app/cad-test-dataset`. A required
+evaluator Worker fails startup if the dataset, scorer image, FreeCAD runtime, or
+build ID is unavailable. Ordinary Workers keep `CAD_TEST_REQUIRED=false` and do
+not require CADTest assets. If using a custom report directory, set
+`CAD_EVALUATION_REPORT_ROOT` for the CLI, Worker, and API to the same shared
+directory. `CAD_TEST_OUTPUT_ROOT` only changes the scorer's working directory,
+not the live report store. `live` path flags assert the configured paths; they
+cannot configure a separately running Worker. A missing shared report or a
+Worker dataset whose hash differs from the admitted dataset cannot pass.
+
+The sealed candidate becomes available before independent CADTest scoring
+finishes. Strict batch runs wait separately for the scoring result; if the
+scoring wait expires, the row retains the business report but does not pass.
+
+```powershell
+$env:CAD_TEST_DATASET_ROOT = 'D:\project\projectcad\CAD_test'
+$env:CAD_TEST_REQUIRED = 'true'
+$env:TEMPORAL_WORKER_BUILD_ID = '20ea31b5d0d5faf766be2b178c33c374e7559154'
+# For Docker Compose, set the same host path in the repository-root .env:
+# CAD_TEST_DATASET_HOST_ROOT=D:\project\projectcad\CAD_test
+
+python -m benchmark.cad_test_batch dataset-check
+
+python -m benchmark.cad_test_batch live `
+  --cases ctb-00000007,ctb-00001411 `
+  --repeat 1 `
+  --evaluation-timeout-seconds 420 `
+  --document-id <benchmark-document-uuid>
+```
+
+The live batch preflights the dataset, scorer image, report-root write access,
+and FreeCAD native-delivery runtime before submitting any model. Its generation
+timeout and independent CADTest evaluation timeout are separate; unavailable
+or pending scores are excluded from model-verdict pass-rate denominators.
+
+The live batch report is written under
+`backend/benchmark/reports/cad_test/<run-id>/report.json`. Each case includes
+the CADTest checks, native delivery facts, the live workflow report path, and
+the process evaluation block containing activity count, CAD operation count,
+repair count, retries, failures, geometry/DFM/visual statuses, lifecycle
+status, and measured duration. The batch summary aggregates those process
+metrics in addition to pass rates. The same directory also contains
+`report.html`, a developer-only static readable view of the JSON report. It
+shows the final CADTest gate separately from Live process metrics and expands
+each case to show stage durations, tool calls, timeline events, and failure
+evidence. It does not run another scorer or infer missing values.
+
+For an already downloaded STEP artifact, score it without submitting a new
+workflow:
+
+```powershell
+python -m benchmark.cad_test_batch score `
+  --dataset-root 'D:\project\projectcad\CAD_test' `
+  --case ctb-00000007 `
+  --step .\result.step `
+  --out .\reports\cad_test\manual-ctb-00000007
+```
+
+`CAD_TEST_ROOT` remains accepted as a compatibility alias for the dataset
+root. It no longer selects a scorer script or imports code from that path.
+
+For a case with `path: "2d"` in the validated manifest, its `file_hashes` must
+include `data/cases/<id>/reference.dxf` and `data/cases/<id>/checks.json`.
+The reference drawing is independent of the submission. `checks.json` is
+`{"schema_version":"cad-test-dxf-checks.v1","tolerance_mm":0.01}` (choose the
+case's own positive tolerance). Both drawings must use millimeters. The scorer
+compares planar lines, circles, arcs and lightweight polylines by type, count,
+size, position and polyline connectivity/closure. Unsupported representations
+or missing truth cannot pass. The existing 3D dataset needs no conversion.
 
 For compatibility with existing scripts, the old explicit workspace form is
 still accepted:

@@ -12,7 +12,12 @@ from temporalio.worker import Worker
 from app.workers.usage_interceptor import UsageWorkerInterceptor
 from app.config import settings
 from app.evaluation.integration import observe_model_operation
-from app.evaluation.mode import resolve_mode
+from app.evaluation.cad_test_observer import (
+    cad_test_required_from_environment,
+    require_temporal_worker_build_id,
+    validate_cad_test_worker_config,
+    temporal_worker_build_id,
+)
 from app.agent.durable_planner import DurableAgentPlanner
 from app.agent.durable_repair import DurableRepairSourceGenerator
 from app.db import database_readiness
@@ -25,6 +30,7 @@ from app.temporal_client import get_temporal_client
 from app.workflows.activities import McadWorkflowActivities
 from app.workflows.modeling import DurableModelingSourceGenerator
 from app.workflows.agent_v2 import McadAgentWorkflowV2
+from app.workflows.cad_test_observation import CadTestObservationWorkflow
 from app.validation.durable_visual import DurableVisualValidator
 from app.workflows.definitions import McadCheckWorkflow, McadDurableWorkflow, NativeWorkerWorkflow
 from app.services.workflow_dispatch import run_dispatcher, dispatcher_readiness
@@ -33,6 +39,13 @@ from app.workers.model_job_worker import ModelJobWorker
 from app.workers.history_replay import agent_history_plugin
 from app.workflows.model_job import ModelJobWorkflow
 from app.contracts.model_operations import DURABLE_OPERATIONS
+
+
+def _temporal_worker_identity_options() -> dict[str, str]:
+    build_id = temporal_worker_build_id()
+    if build_id is None:
+        return {}
+    return {"build_id": build_id}
 
 
 def build_workflow_worker(
@@ -47,6 +60,7 @@ def build_workflow_worker(
         workflows=[McadDurableWorkflow, McadCheckWorkflow, NativeWorkerWorkflow],
         activities=activities.registered(),
         interceptors=[UsageWorkerInterceptor()],
+        **_temporal_worker_identity_options(),
     )
 
 
@@ -96,16 +110,17 @@ def build_agent_v2_workflow_worker(
         plugins=[agent_history_plugin(client, settings.temporal_agent_v2_task_queue)],
         model_operations=operations,
         task_queue=settings.temporal_agent_v2_task_queue,
-        workflows=[McadAgentWorkflowV2,ModelJobWorkflow],
-        activities=[*activities.registered_agent_v2(),submit_activity,read_activity,cancel_activity],
+        workflows=[McadAgentWorkflowV2, ModelJobWorkflow, CadTestObservationWorkflow],
+        activities=[*activities.registered_agent_v2(), submit_activity, read_activity, cancel_activity, activities.cad_test_observation],
         interceptors=[UsageWorkerInterceptor()],
+        **_temporal_worker_identity_options(),
     )
 
 
 async def run_worker() -> None:
-    evaluation_mode = resolve_mode()
-    # Resolve before worker construction so API and Worker observation modes match.
-    _ = evaluation_mode
+    if cad_test_required_from_environment():
+        require_temporal_worker_build_id()
+        validate_cad_test_worker_config()
     settings.assert_sandbox_config_safe()
     settings.assert_durable_control_plane_config_safe()
     await database_readiness()

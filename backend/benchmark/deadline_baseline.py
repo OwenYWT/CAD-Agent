@@ -31,7 +31,7 @@ def _timeout_run(run: dict, path: str, deadline_s: float) -> dict:
     return {
         "executed": False,
         "verdict": None,
-        "verdict_pass": False,
+        "verdict_pass": None,
         "watertight": None,
         "printable": None,
         "dim_match": None,
@@ -39,7 +39,7 @@ def _timeout_run(run: dict, path: str, deadline_s: float) -> dict:
         "feature_match": None,
         "dfm_score": None,
         "attempts": 0,
-        "one_shot": False,
+        "one_shot": None,
         "exec_time_ms": 0,
         "wall_time_ms": round(deadline_s * 1000),
         "error": f"pipeline deadline exceeded after {deadline_label}s",
